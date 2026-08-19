@@ -7,6 +7,7 @@ import { normalizeQuotationData } from '@/lib/quotation-defaults';
  * Authoritative Route to Apply AI Extracted Data to Current Quotation Draft
  * VERSION SAFETY GUARANTEE:
  * - Updates the CURRENT quotation draft (quotationId / templateId) in place.
+ * - Preserves the user's template design, theme, fonts, cover branding & custom pages.
  * - Does NOT create a new quotation version.
  * - Does NOT increment lead_version (V3 remains V3).
  */
@@ -36,10 +37,19 @@ export async function POST(req: NextRequest) {
       workspaceId
     });
 
-    // Normalize document schema so ChatGPT / AI JSON structures unwrap & render cleanly on canvas
-    const normalizedDoc = normalizeQuotationData(document);
+    // 1. Fetch existing quotation document to preserve custom theme, design, fonts, branding
+    const { data: existingQDoc } = await supabaseAdmin
+      .from('quotation_documents')
+      .select('content_json')
+      .eq('template_id', targetId)
+      .maybeSingle();
 
-    // 1. Update quotation_documents content_json in place
+    const baseTemplate = existingQDoc?.content_json || null;
+
+    // 2. Normalize document schema on top of the existing template
+    const normalizedDoc = normalizeQuotationData(document, baseTemplate);
+
+    // 3. Update quotation_documents content_json in place
     const { error: docErr } = await supabaseAdmin
       .from('quotation_documents')
       .update({
@@ -52,12 +62,13 @@ export async function POST(req: NextRequest) {
       console.warn('[AI Apply Document Warning]:', docErr);
     }
 
-    // 2. Update quotations table client_name & updated_at in place
+    // 4. Update quotations table client_name & updated_at in place
     try {
       await supabaseAdmin
         .from('quotations')
         .update({
-          client_name: document.cover?.coupleName || document.cover?.groomName || 'Valued Client',
+          client_name: normalizedDoc.cover?.coupleName || normalizedDoc.cover?.groomName || 'Valued Client',
+          total_amount: normalizedDoc.pricingPage?.basePrice || 0,
           updated_at: new Date().toISOString()
         })
         .or(`id.eq.${targetId},quotation_number.eq.${targetId}`);
@@ -67,8 +78,8 @@ export async function POST(req: NextRequest) {
       success: true,
       quotationId: targetId,
       templateId: targetId,
-      document,
-      message: 'AI quotation data applied successfully to current draft (version preserved).'
+      document: normalizedDoc,
+      message: 'AI quotation data applied successfully to current draft (version and design preserved).'
     });
   } catch (error: any) {
     console.error('[AI Apply Error]:', error);

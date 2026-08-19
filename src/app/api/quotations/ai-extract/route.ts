@@ -629,7 +629,7 @@ function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, contextDat
 
   // Check if rootObj is ALREADY a structured StudioCore Quotation JSON document
   if (rootObj.cover || rootObj.functionsPage || rootObj.pricingPage || rootObj.pages) {
-    const normDoc = normalizeQuotationData(rootObj);
+    const normDoc = normalizeQuotationData(rootObj, baseSchema);
 
     // Normalize crew role names across all functions in the document
     if (normDoc.functionsPage?.items && Array.isArray(normDoc.functionsPage.items)) {
@@ -803,8 +803,10 @@ function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, contextDat
     totalInvestment: `₹${totalAmount.toLocaleString('en-IN')}`
   };
 
+  const normalizedFinalDoc = normalizeQuotationData(doc, baseSchema);
+
   return {
-    document: doc,
+    document: normalizedFinalDoc,
     summary,
     missingInformation: aiData.missingInformation || [],
     conflicts: aiData.conflicts || []

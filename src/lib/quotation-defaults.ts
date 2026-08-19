@@ -1,6 +1,4 @@
-/**
- * Centralized Quotation Defaults & Pricing Calculators
- */
+// src/lib/quotation-defaults.ts
 
 export interface PageSequenceItem {
   id: string;
@@ -25,198 +23,223 @@ export const STANDARD_PAGE_DEFINITIONS: { type: string; label: string }[] = [
 ];
 
 export const DEFAULT_PAGE_SEQUENCE: PageSequenceItem[] = STANDARD_PAGE_DEFINITIONS.map(std => ({
-  id: std.type,
+  id: `${std.type}-std`,
   type: std.type,
   label: std.label,
-  isStandard: true,
+  isStandard: true
 }));
 
 export const DEFAULT_AIRY_PROPOSAL = {
-  designName: 'Wedding - Design 1',
-  eventGroup: 'Wedding',
-  look: 'Cyprus & Sand Dune',
-  primaryFont: "'Cormorant Garamond', serif",
-  secondaryFont: "'Plus Jakarta Sans', sans-serif",
+  theme: 'cyprus-sand-dune',
+  look: 'cyprus-sand-dune',
+  primaryFont: 'Cormorant Garamond',
+  secondaryFont: 'Plus Jakarta Sans',
+  designName: 'Minimalist Airy Proposal',
   pageSequence: DEFAULT_PAGE_SEQUENCE,
-  customPages: {} as Record<string, any>,
-
+  customPages: [],
   cover: {
-    groomName: 'Rahul',
-    brideName: 'Neha',
-    coupleName: 'Rahul & Neha',
-    eventType: 'Wedding',
-    sideOption: 'Both Sides',
-    locationName: 'MUMBAI',
-    brandName: 'FILMIFY WEDDINGS',
+    coupleName: 'YASH & TWINKLE',
+    groomName: 'Yash',
+    brideName: 'Twinkle',
+    eventType: 'Wedding Photography & Films',
+    weddingDate: 'December 14, 2026',
+    locationName: 'Udaipur, Rajasthan',
+    brandName: 'STUDIOCORE WEDDINGS',
+    sideOption: 'A Wedding Story',
+    photoUrl: '',
     brandLogoUrl: '',
-    brandLogoSize: 64,
-    photoUrl: 'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&q=80',
-    photoHeight: 450,
+    brandLogoSize: 80,
+    photoHeight: 360,
     photoWidth: 75,
     photoFocalY: 50,
     bgOpacity: 40,
-    frameShape: 'arch' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
-    imagePosition: 'center' as 'top' | 'center' | 'bottom',
+    frameShape: 'rounded',
+    imagePosition: 'bottom',
   },
-
   aboutUs: {
-    kicker: 'INTRODUCTION',
-    heading: 'ABOUT US',
-    text: 'Glowwed films strive to capture your love story in the most gracious way possible. All the memories of your event will be hand-picked with precision and made into films & photographs that you can cherish forever',
-    signature: 'FOUNDER & DIRECTOR, AS',
-    bottomBannerPhoto: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=1200&q=80',
-    bottomBannerHeight: 380,
-    frameShape: 'full-width' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
-    photoFocalY: 50,
+    kicker: 'WHO WE ARE',
+    heading: 'Preserving Emotions & Creating Timeless Visual Legacies',
+    text: 'We are a dedicated team of visual artists crafting heartfelt wedding films and editorial photographs that feel as timeless as your love.',
+    signature: '— StudioCore Photography Crew',
+    photo: '',
+    photoHeight: 320,
     photoWidth: 100,
-    bgOpacity: 40,
-    imagePosition: 'bottom' as 'top' | 'center' | 'bottom',
+    photoFocalY: 50,
+    frameShape: 'rounded',
+    imagePosition: 'bottom',
   },
-
   shootDetails: {
-    kicker: 'WHAT WE DO',
-    heading: 'Pre-Wedding Shoot',
-    daysText: '1 Day Shoot',
-    crewText: 'Candid Photography\nCinematography\nPortable Changing Room',
-    deliverablesHeading: 'Deliverables',
-    deliverablesText: 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n3 Save The Dates Photos\n1 count Down Reel\n1 video Reel',
-    photo: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=800&q=80',
-    photoHeight: 380,
-    photoWidth: 75,
+    visible: true,
+    kicker: 'CHAPTER ONE',
+    heading: 'Pre-Wedding Creative Session',
+    daysText: '1 Full Day Creative Session',
+    crewText: '1x Candid Photographer\n1x Cinematographer\n1x Drone Specialist',
+    deliverablesHeading: 'Curated Session Deliverables',
+    deliverablesText: '1x 60-Sec Instagram Cinematic Teaser\n40+ Color-Graded High-Resolution Master Portraits\nFull High-Resolution Digital Master Gallery Link',
+    showExclusionsNote: true,
+    photo: '',
+    photoHeight: 320,
+    photoWidth: 100,
     photoFocalY: 50,
-    bgOpacity: 40,
-    frameShape: 'rounded' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
-    imagePosition: 'bottom' as 'top' | 'center' | 'bottom',
+    frameShape: 'rounded',
+    imagePosition: 'bottom',
   },
-
   functionsPage: {
-    kicker: 'WEDDING EVENTS',
-    heading: 'FUNCTIONS & COVERAGE',
-    items: [],
-  },
-
-  deliverablesPage: {
-    kicker: 'WHAT YOU GET',
-    heading: 'DELIVERABLES',
-    selectedItems: [
-      'Full Ultra HD Super-Fine Raw Photos',
-      'High Resolution Edited Photos (300+)',
-      'Cinematic Teaser (3-5 Mins)',
-      'Traditional Wedding Film (30-45 Mins)',
-    ],
-    availableOptions: [
-      'Full Ultra HD Super-Fine Raw Photos',
-      'High Resolution Edited Photos (300+)',
-      'Cinematic Teaser (3-5 Mins)',
-      'Traditional Wedding Film (30-45 Mins)',
-      'Instagram Reels Package (5 Reels)',
-      'Drone Aerial Videography',
-    ],
-  },
-
-  specialValueAdditions: {
-    kicker: 'COMPLIMENTARY',
-    heading: 'SPECIAL VALUE ADDITIONS',
-    selectedItems: [
-      'Complimentary Pre-Wedding Couple Shoot (1 Day)',
-      'Complimentary Custom Wooden Pendrive Box',
-      'Complimentary Live Streaming for 1 Event',
-    ],
-    availableOptions: [
-      'Complimentary Pre-Wedding Couple Shoot (1 Day)',
-      'Complimentary Custom Wooden Pendrive Box',
-      'Complimentary Live Streaming for 1 Event',
-      'Complimentary Photo Booth Setup',
-    ],
-    note: '',
-    photo: '',
-    photoHeight: 360,
-    photoWidth: 75,
-    photoFocalY: 50,
-    bgOpacity: 40,
-    frameShape: 'rounded',
-    imagePosition: 'bottom',
-  },
-
-  pricingPage: {
-    kicker: 'INVESTMENT',
-    heading: 'PRICING & PACKAGE',
-    basePrice: 150000,
-    discountAmount: 0,
-    accommodationCharges: 0,
-    travelCharges: 0,
-    additionalCharges: 0,
-    gstPct: 18,
-    note: '',
-    photo: '',
-    photoHeight: 360,
-    photoWidth: 75,
-    photoFocalY: 50,
-    bgOpacity: 40,
-    frameShape: 'rounded',
-    imagePosition: 'bottom',
-  },
-
-  paymentTermsPage: {
-    kicker: 'PAYMENT SCHEDULE',
-    heading: 'PAYMENT TERMS',
-    steps: [
-      { name: 'Advance Booking', pct: '25%', amount: 37500, status: 'Pending' },
-      { name: 'On Event Day', pct: '50%', amount: 75000, status: 'Pending' },
-      { name: 'On Delivery', pct: '25%', amount: 37500, status: 'Pending' },
-    ],
-    note: '',
-    photo: '',
-    photoHeight: 360,
-    photoWidth: 75,
-    photoFocalY: 50,
-    bgOpacity: 40,
-    frameShape: 'rounded',
-    imagePosition: 'bottom',
-  },
-
-  addOnsPage: {
-    kicker: 'EXTRAS',
-    heading: 'ADD-ONS & UPGRADES',
-    items: [],
-    note: '',
-    photo: '',
-    photoHeight: 360,
-    photoWidth: 75,
-    photoFocalY: 50,
-    bgOpacity: 40,
-    frameShape: 'rounded',
-    imagePosition: 'bottom',
-  },
-
-  termsPage: {
-    kicker: 'POLICIES',
-    heading: 'TERMS & CONDITIONS',
+    kicker: 'CELEBRATIONS',
+    heading: 'Functions & Crew Coverage',
     items: [
-      'Travel & Accommodation: Client is responsible for outstation travel & stay arrangements.',
-      'Raw Data Delivery: Delivered within 7 days of event completion.',
-      'Edited Albums & Films: Delivered within 45-60 days after selection.',
-      'Copyrights: Studio retains artistic rights for promotional portfolio use.',
-    ],
-    note: '',
-    photo: '',
-    photoHeight: 360,
-    photoWidth: 75,
-    photoFocalY: 50,
-    bgOpacity: 40,
-    frameShape: 'rounded',
-    imagePosition: 'bottom',
+      {
+        id: 'func_1',
+        name: 'Haldi & Mehendi',
+        date: 'December 12, 2026',
+        dateNotFixed: false,
+        startTime: '10:00 AM',
+        endTime: '03:00 PM',
+        time: '10:00 AM - 03:00 PM',
+        durationSlot: 'Morning Rituals',
+        location: 'The Leela Palace Courtyard',
+        venue: 'The Leela Palace Courtyard',
+        notes: 'Casual bright candid portraits & organic ceremony moments',
+        requirements: [
+          { name: 'Candid Photographer', qty: 1 },
+          { name: 'Cinematographer', qty: 1 }
+        ],
+        team: '1x Candid Photographer, 1x Cinematographer'
+      },
+      {
+        id: 'func_2',
+        name: 'Sangeet & Cocktail Night',
+        date: 'December 13, 2026',
+        dateNotFixed: false,
+        startTime: '07:00 PM',
+        endTime: '01:00 AM',
+        time: '07:00 PM - 01:00 AM',
+        durationSlot: 'Evening Glamour',
+        location: 'Grand Ballroom',
+        venue: 'Grand Ballroom',
+        notes: 'High-energy dance performances, stage lighting & family portraits',
+        requirements: [
+          { name: 'Candid Photographer', qty: 1 },
+          { name: 'Traditional Photographer', qty: 1 },
+          { name: 'Cinematographer', qty: 2 }
+        ],
+        team: '1x Candid, 1x Traditional, 2x Cinematographer'
+      },
+      {
+        id: 'func_3',
+        name: 'The Wedding Ceremony & Reception',
+        date: 'December 14, 2026',
+        dateNotFixed: false,
+        startTime: '04:00 PM',
+        endTime: '12:00 AM',
+        time: '04:00 PM - 12:00 AM',
+        durationSlot: 'Main Ceremony',
+        location: 'Lakeside Mandap & Lawn',
+        venue: 'Lakeside Mandap & Lawn',
+        notes: 'Baraat, Varmala, Pheras, Emotional Vidai & Reception',
+        requirements: [
+          { name: 'Candid Photographer', qty: 2 },
+          { name: 'Traditional Photographer', qty: 1 },
+          { name: 'Cinematographer', qty: 2 },
+          { name: 'Drone Pilot', qty: 1 }
+        ],
+        team: '2x Candid, 1x Traditional, 2x Cinematographer, 1x Drone'
+      }
+    ]
   },
-
+  deliverablesPage: {
+    kicker: 'FINAL OUTPUTS',
+    heading: 'Curated Deliverables & Keepsakes',
+    selectedItems: [
+      'All Unedited High-Resolution RAW Photos (Delivered within 7 days via Hard Drive/Cloud)',
+      '350+ Signature Master Color-Graded & Retouched Photographs',
+      '1x 3 to 5-Minute 4K Cinematic Highlight Trailer Film',
+      '1x 30 to 45-Minute Long Extended Documentary Feature Film',
+      '4x Vertical Reels (9:16) tailored for Social Media & Instagram',
+      '1x Premium Handcrafted Leatherette Wedding Photobook Album (40 Sheets / 80 Pages)'
+    ],
+    availableOptions: [
+      'All Unedited High-Resolution RAW Photos',
+      '350+ Signature Master Color-Graded & Retouched Photographs',
+      '1x 3 to 5-Minute 4K Cinematic Highlight Trailer Film',
+      '1x 30 to 45-Minute Long Extended Documentary Feature Film',
+      '4x Vertical Reels (9:16) tailored for Social Media & Instagram',
+      '1x Premium Handcrafted Leatherette Wedding Photobook Album (40 Sheets / 80 Pages)',
+      '2x Mini Parent Albums (Identical Copies)',
+      'Same Day Edit (SDE) 1-Minute Reel for Reception Screen',
+      'Full Wedding Livestreaming (YouTube / Private link)',
+      'Pre-Wedding Shoot (1 Day with Hair & Makeup)'
+    ]
+  },
+  specialValueAdditions: {
+    kicker: 'COMPLIMENTARY GIFTS',
+    heading: 'Special Value Additions',
+    selectedItems: [
+      'Complimentary 4K Drone Aerial Coverage across all Wedding Functions',
+      'Express Same-Week 25-Photo Sneak Peek Gallery for Instant Social Sharing',
+      'Custom Engraved Crystal USB Presentation Box with Master Archival Drive'
+    ],
+    availableOptions: [
+      'Complimentary 4K Drone Aerial Coverage across all Wedding Functions',
+      'Express Same-Week 25-Photo Sneak Peek Gallery for Instant Social Sharing',
+      'Custom Engraved Crystal USB Presentation Box with Master Archival Drive',
+      'Complimentary 1-Minute Save the Date Animated Motion Video Invitation',
+      'Free Digital Cloud Storage for 2 Full Years'
+    ],
+    note: ''
+  },
+  pricingPage: {
+    kicker: 'INVESTMENT SUMMARY',
+    heading: 'Commercial Proposal & Package Investment',
+    basePrice: 285000,
+    discountAmount: 15000,
+    gstPct: 0,
+    travelCharges: 0,
+    accommodationCharges: 0,
+    additionalCharges: 0,
+    showExclusionsNote: true,
+    note: 'Custom customized package created specifically for your celebrations.'
+  },
+  paymentTermsPage: {
+    kicker: 'SCHEDULE',
+    heading: 'Payment Milestones & Commercial Terms',
+    steps: [
+      { name: 'Booking Advance (To lock & confirm dates)', pct: '25%', amount: 67500, status: 'Pending' },
+      { name: 'Mid-Way Milestone (15 days prior to event)', pct: '50%', amount: 135000, status: 'Pending' },
+      { name: 'Final Delivery & Album Dispatch', pct: '25%', amount: 67500, status: 'Pending' }
+    ],
+    note: 'Payments can be remitted via IMPS, NEFT, RTGS or UPI.'
+  },
+  addOnsPage: {
+    visible: false,
+    kicker: 'OPTIONAL UPGRADES',
+    heading: 'Available Add-Ons & Enhancements',
+    items: [
+      { id: 'addon_1', name: 'Same-Day Edit (SDE) Reel', price: 25000, description: '1-minute fast-turnaround reel displayed on reception LED screens' },
+      { id: 'addon_2', name: 'Parent Album Duos (2x Books)', price: 30000, description: '2 exact miniature hardbound photobook copies for parents' }
+    ]
+  },
+  termsPage: {
+    visible: true,
+    kicker: 'POLICIES',
+    heading: 'Standard Studio Policies & Terms of Service',
+    terms: [
+      'Dates are exclusively reserved upon confirmation of the 25% booking advance.',
+      'Travel, lodging, and local transit for outstation crew to be provided by client.',
+      'Delivery timeline: RAW files within 7 days; Teaser within 20 days; Full Deliverables within 6-8 weeks.',
+      'Client approvals on photo selection for albums required within 30 days of receiving gallery.',
+      'StudioCore reserves rights to display wedding media on official creative portfolio and social channels.'
+    ]
+  },
   thankYouPage: {
-    kicker: 'THANK YOU',
-    heading: 'WE LOOK FORWARD TO CAPTURING YOUR MEMORIES',
-    contactPerson: 'Filming Team',
+    kicker: 'GRATITUDE',
+    heading: 'Thank You For Choosing Us',
+    text: 'We are truly thrilled and honored to be a part of your once-in-a-lifetime journey. Let us create magic together!',
+    contactPerson: 'Sushant Sharma',
     phone: '+91 98765 43210',
-    email: 'info@filmifyweddings.com',
-    website: 'www.filmifyweddings.com',
-    instagram: '@filmifyweddings',
-    brandLogoUrl: '',
+    email: 'hello@studiocore.in',
+    website: 'www.studiocore.in',
+    social: '@studiocoreweddings',
     photo: '',
     photoHeight: 360,
     photoWidth: 75,
@@ -235,14 +258,21 @@ export function calculatePricingTotals(pricing: any) {
   const travel = Number(p?.travelCharges ?? p?.travel ?? 0);
   const addl = Number(p?.additionalCharges ?? p?.additional ?? 0);
   const gross = Math.max(0, base - disc + accom + travel + addl);
-  const gstPct = Number(p?.gstPct ?? p?.gstPercent ?? 18);
+  const gstPct = Number(p?.gstPct ?? p?.gstPercent ?? 0);
   const gstAmount = Math.round(gross * (gstPct / 100));
   const netTotal = gross + gstAmount;
   return { base, disc, accom, travel, addl, gross, gstPct, gstAmount, netTotal };
 }
 
-export function normalizeQuotationData(rawInput: any) {
-  const d = DEFAULT_AIRY_PROPOSAL;
+/**
+ * Normalizes input document payload, merging on top of the User's Active Default Template (baseTemplate).
+ * Preserves the user's design themes, fonts, colors, branding, custom pages, and default copy!
+ */
+export function normalizeQuotationData(rawInput: any, baseTemplate?: any) {
+  const d = baseTemplate && typeof baseTemplate === 'object' && Object.keys(baseTemplate).length > 0 
+    ? baseTemplate 
+    : DEFAULT_AIRY_PROPOSAL;
+
   if (!rawInput || typeof rawInput !== 'object') return d;
 
   // 1. Unwrap root wrappers if present ({ quotation: { ... } } or { pages: { ... } })
@@ -254,15 +284,15 @@ export function normalizeQuotationData(rawInput: any) {
 
   // 2. Normalize Cover
   const coverSrc = loaded.cover || pagesObj.cover || {};
-  const groomName = coverSrc.groomName ?? (d.cover.groomName || 'Rahul');
-  const brideName = coverSrc.brideName ?? (d.cover.brideName || 'Neha');
-  const coupleName = coverSrc.coupleName || (coverSrc.groomName && coverSrc.brideName ? `${coverSrc.groomName} & ${coverSrc.brideName}` : (loaded.client?.client_name || d.cover.coupleName));
-  const eventType = coverSrc.eventType ?? coverSrc.title ?? coverSrc.event_type ?? d.cover.eventType;
-  const locationName = coverSrc.locationName !== undefined ? coverSrc.locationName : (coverSrc.wedding_location || coverSrc.city || '');
-  const weddingDate = coverSrc.weddingDate || coverSrc.quotation_date || coverSrc.wedding_date || '';
+  const groomName = coverSrc.groomName ?? (d.cover?.groomName || 'Rahul');
+  const brideName = coverSrc.brideName ?? (d.cover?.brideName || 'Neha');
+  const coupleName = coverSrc.coupleName || (coverSrc.groomName && coverSrc.brideName ? `${coverSrc.groomName} & ${coverSrc.brideName}` : (loaded.client?.client_name || d.cover?.coupleName || 'Couple Name'));
+  const eventType = coverSrc.eventType ?? coverSrc.title ?? coverSrc.event_type ?? d.cover?.eventType ?? 'Wedding Photography & Films';
+  const locationName = coverSrc.locationName !== undefined ? coverSrc.locationName : (coverSrc.wedding_location || coverSrc.city || d.cover?.locationName || '');
+  const weddingDate = coverSrc.weddingDate || coverSrc.quotation_date || coverSrc.wedding_date || d.cover?.weddingDate || '';
 
   const cover = {
-    ...d.cover,
+    ...(d.cover || {}),
     ...coverSrc,
     groomName,
     brideName,
@@ -270,38 +300,49 @@ export function normalizeQuotationData(rawInput: any) {
     eventType,
     locationName,
     weddingDate,
-    sideOption: coverSrc.sideOption || d.cover.sideOption,
-    brandName: coverSrc.brandName || d.cover.brandName,
+    sideOption: coverSrc.sideOption || d.cover?.sideOption || 'A Wedding Story',
+    brandName: coverSrc.brandName || d.cover?.brandName || 'STUDIOCORE WEDDINGS',
+    brandLogoUrl: coverSrc.brandLogoUrl || d.cover?.brandLogoUrl || '',
+    brandLogoSize: coverSrc.brandLogoSize || d.cover?.brandLogoSize || 80,
+    photoUrl: coverSrc.photoUrl !== undefined ? coverSrc.photoUrl : (d.cover?.photoUrl || ''),
+    photoHeight: coverSrc.photoHeight ?? d.cover?.photoHeight ?? 360,
+    photoWidth: coverSrc.photoWidth ?? d.cover?.photoWidth ?? 75,
+    photoFocalY: coverSrc.photoFocalY ?? d.cover?.photoFocalY ?? 50,
+    bgOpacity: coverSrc.bgOpacity ?? d.cover?.bgOpacity ?? 40,
+    frameShape: coverSrc.frameShape || d.cover?.frameShape || 'rounded',
+    imagePosition: coverSrc.imagePosition || d.cover?.imagePosition || 'bottom',
   };
 
-  // 3. Normalize About Us
+  // 3. Normalize About Us (Preserves template photo & text if AI doesn't pass new copy)
   const aboutSrc = loaded.aboutUs || pagesObj.about_us || {};
   const aboutUs = {
-    ...d.aboutUs,
+    ...(d.aboutUs || {}),
     ...aboutSrc,
-    kicker: aboutSrc.kicker || d.aboutUs.kicker,
-    heading: aboutSrc.heading || d.aboutUs.heading,
-    text: aboutSrc.text || d.aboutUs.text,
-    signature: aboutSrc.signature || d.aboutUs.signature,
+    kicker: aboutSrc.kicker || d.aboutUs?.kicker || 'WHO WE ARE',
+    heading: aboutSrc.heading || d.aboutUs?.heading || 'Preserving Emotions & Creating Timeless Visual Legacies',
+    text: aboutSrc.text || d.aboutUs?.text || 'We are a dedicated team of visual artists crafting heartfelt wedding films and editorial photographs that feel as timeless as your love.',
+    signature: aboutSrc.signature || d.aboutUs?.signature || '— StudioCore Photography Crew',
+    photo: aboutSrc.photo !== undefined ? aboutSrc.photo : (d.aboutUs?.photo || ''),
   };
 
   // 4. Normalize Pre-Wedding Shoot Details
   const shootSrc = loaded.shootDetails || pagesObj.pre_wedding || {};
   const shootVisible = shootSrc.visible !== undefined 
     ? Boolean(shootSrc.visible) 
-    : Boolean(shootSrc.crewText || shootSrc.deliverablesText);
+    : Boolean(shootSrc.crewText || shootSrc.deliverablesText || d.shootDetails?.visible);
 
   const shootDetails = {
-    ...d.shootDetails,
+    ...(d.shootDetails || {}),
     ...shootSrc,
     visible: shootVisible,
-    kicker: shootSrc.kicker || d.shootDetails.kicker,
-    heading: shootSrc.heading || d.shootDetails.heading,
-    daysText: shootSrc.daysText || d.shootDetails.daysText,
-    crewText: shootSrc.crewText !== undefined ? shootSrc.crewText : d.shootDetails.crewText,
-    deliverablesHeading: shootSrc.deliverablesHeading || d.shootDetails.deliverablesHeading,
-    deliverablesText: shootSrc.deliverablesText !== undefined ? shootSrc.deliverablesText : d.shootDetails.deliverablesText,
+    kicker: shootSrc.kicker || d.shootDetails?.kicker || 'CHAPTER ONE',
+    heading: shootSrc.heading || d.shootDetails?.heading || 'Pre-Wedding Creative Session',
+    daysText: shootSrc.daysText || d.shootDetails?.daysText || '1 Full Day Creative Session',
+    crewText: shootSrc.crewText !== undefined ? shootSrc.crewText : (d.shootDetails?.crewText || ''),
+    deliverablesHeading: shootSrc.deliverablesHeading || d.shootDetails?.deliverablesHeading || 'Curated Session Deliverables',
+    deliverablesText: shootSrc.deliverablesText !== undefined ? shootSrc.deliverablesText : (d.shootDetails?.deliverablesText || ''),
     showExclusionsNote: shootSrc.showExclusionsNote !== undefined ? Boolean(shootSrc.showExclusionsNote) : true,
+    photo: shootSrc.photo !== undefined ? shootSrc.photo : (d.shootDetails?.photo || ''),
   };
 
   // 5. Normalize Functions / Events Page
@@ -349,15 +390,15 @@ export function normalizeQuotationData(rawInput: any) {
         team: Array.isArray(e.team) ? e.team.join(', ') : (e.team || requirements.map(r => `${r.qty}x ${r.name}`).join(', '))
       };
     });
-  } else if (Array.isArray(d.functionsPage.items)) {
+  } else if (Array.isArray(d.functionsPage?.items)) {
     funcItems = d.functionsPage.items;
   }
 
   const functionsPage = {
-    ...d.functionsPage,
+    ...(d.functionsPage || {}),
     ...funcsSrc,
-    kicker: funcsSrc.kicker || d.functionsPage.kicker,
-    heading: funcsSrc.heading || d.functionsPage.heading,
+    kicker: funcsSrc.kicker || d.functionsPage?.kicker || 'CELEBRATIONS',
+    heading: funcsSrc.heading || d.functionsPage?.heading || 'Functions & Crew Coverage',
     items: funcItems
   };
 
@@ -368,21 +409,21 @@ export function normalizeQuotationData(rawInput: any) {
     delivItems = delivSrc.selectedItems;
   } else if (Array.isArray(delivSrc.items) && delivSrc.items.length > 0) {
     delivItems = delivSrc.items;
-  } else {
+  } else if (Array.isArray(d.deliverablesPage?.selectedItems)) {
     delivItems = d.deliverablesPage.selectedItems;
   }
 
   const combinedOptions = Array.from(new Set([
-    ...d.deliverablesPage.availableOptions,
+    ...(d.deliverablesPage?.availableOptions || []),
     ...(Array.isArray(delivSrc.availableOptions) ? delivSrc.availableOptions : []),
     ...delivItems
   ]));
 
   const deliverablesPage = {
-    ...d.deliverablesPage,
+    ...(d.deliverablesPage || {}),
     ...delivSrc,
-    kicker: delivSrc.kicker || d.deliverablesPage.kicker,
-    heading: delivSrc.heading || d.deliverablesPage.heading,
+    kicker: delivSrc.kicker || d.deliverablesPage?.kicker || 'FINAL OUTPUTS',
+    heading: delivSrc.heading || d.deliverablesPage?.heading || 'Curated Deliverables & Keepsakes',
     selectedItems: delivItems,
     availableOptions: combinedOptions
   };
@@ -391,38 +432,38 @@ export function normalizeQuotationData(rawInput: any) {
   const valAddSrc = loaded.specialValueAdditions || pagesObj.special_value_additions || {};
   const valAddItems = Array.isArray(valAddSrc.selectedItems)
     ? valAddSrc.selectedItems
-    : (Array.isArray(valAddSrc.items) ? valAddSrc.items : []);
+    : (Array.isArray(valAddSrc.items) ? valAddSrc.items : (d.specialValueAdditions?.selectedItems || []));
 
   const valCombinedOptions = Array.from(new Set([
-    ...d.specialValueAdditions.availableOptions,
+    ...(d.specialValueAdditions?.availableOptions || []),
     ...(Array.isArray(valAddSrc.availableOptions) ? valAddSrc.availableOptions : []),
     ...valAddItems
   ]));
 
   const specialValueAdditions = {
-    ...d.specialValueAdditions,
+    ...(d.specialValueAdditions || {}),
     ...valAddSrc,
-    kicker: valAddSrc.kicker || d.specialValueAdditions.kicker,
-    heading: valAddSrc.heading || d.specialValueAdditions.heading,
+    kicker: valAddSrc.kicker || d.specialValueAdditions?.kicker || 'COMPLIMENTARY GIFTS',
+    heading: valAddSrc.heading || d.specialValueAdditions?.heading || 'Special Value Additions',
     selectedItems: valAddItems,
     availableOptions: valCombinedOptions,
-    note: valAddSrc.note || ''
+    note: valAddSrc.note || d.specialValueAdditions?.note || ''
   };
 
   // 8. Normalize Pricing Page
   const pricingSrc = loaded.pricingPage || pagesObj.pricing || {};
-  const basePrice = Number(pricingSrc.basePrice ?? pricingSrc.total_amount ?? pricingSrc.base ?? d.pricingPage.basePrice);
+  const basePrice = Number(pricingSrc.basePrice ?? pricingSrc.total_amount ?? pricingSrc.base ?? d.pricingPage?.basePrice ?? 150000);
   const discountAmount = Number(pricingSrc.discountAmount ?? pricingSrc.discount ?? 0);
-  const gstPct = Number(pricingSrc.gstPct ?? pricingSrc.gstPercent ?? 0);
+  const gstPct = Number(pricingSrc.gstPct ?? pricingSrc.gstPercent ?? (d.pricingPage?.gstPct || 0));
   const travelCharges = Number(pricingSrc.travelCharges ?? pricingSrc.travel ?? 0);
   const accommodationCharges = Number(pricingSrc.accommodationCharges ?? pricingSrc.accommodation ?? 0);
   const additionalCharges = Number(pricingSrc.additionalCharges ?? pricingSrc.additional ?? 0);
 
   const pricingPage = {
-    ...d.pricingPage,
+    ...(d.pricingPage || {}),
     ...pricingSrc,
-    kicker: pricingSrc.kicker || d.pricingPage.kicker,
-    heading: pricingSrc.heading || d.pricingPage.heading,
+    kicker: pricingSrc.kicker || d.pricingPage?.kicker || 'INVESTMENT SUMMARY',
+    heading: pricingSrc.heading || d.pricingPage?.heading || 'Commercial Proposal & Package Investment',
     basePrice,
     discountAmount,
     gstPct,
@@ -430,7 +471,7 @@ export function normalizeQuotationData(rawInput: any) {
     accommodationCharges,
     additionalCharges,
     showExclusionsNote: pricingSrc.showExclusionsNote !== undefined ? Boolean(pricingSrc.showExclusionsNote) : true,
-    note: pricingSrc.note || ''
+    note: pricingSrc.note || d.pricingPage?.note || ''
   };
 
   // 9. Normalize Payment Terms Page
@@ -439,11 +480,18 @@ export function normalizeQuotationData(rawInput: any) {
 
   let paySteps = payTermsSrc.steps || [];
   if (!Array.isArray(paySteps) || paySteps.length === 0) {
-    paySteps = [
-      { name: 'Advance Token', pct: '25%', amount: Math.round(netAmount * 0.25), status: 'Pending' },
-      { name: 'On Event Day', pct: '50%', amount: Math.round(netAmount * 0.50), status: 'Pending' },
-      { name: 'On Final Delivery', pct: '25%', amount: Math.round(netAmount * 0.25), status: 'Pending' }
-    ];
+    if (Array.isArray(d.paymentTermsPage?.steps) && d.paymentTermsPage.steps.length > 0) {
+      paySteps = d.paymentTermsPage.steps.map((s: any) => ({
+        ...s,
+        amount: Math.round(netAmount * (parseInt(s.pct, 10) || 30) / 100)
+      }));
+    } else {
+      paySteps = [
+        { name: 'Advance Token', pct: '25%', amount: Math.round(netAmount * 0.25), status: 'Pending' },
+        { name: 'On Event Day', pct: '50%', amount: Math.round(netAmount * 0.50), status: 'Pending' },
+        { name: 'On Final Delivery', pct: '25%', amount: Math.round(netAmount * 0.25), status: 'Pending' }
+      ];
+    }
   } else {
     paySteps = paySteps.map((s: any) => ({
       name: s.name || 'Payment Milestone',
@@ -454,28 +502,42 @@ export function normalizeQuotationData(rawInput: any) {
   }
 
   const paymentTermsPage = {
-    ...d.paymentTermsPage,
+    ...(d.paymentTermsPage || {}),
     ...payTermsSrc,
-    kicker: payTermsSrc.kicker || d.paymentTermsPage.kicker,
-    heading: payTermsSrc.heading || d.paymentTermsPage.heading,
+    kicker: payTermsSrc.kicker || d.paymentTermsPage?.kicker || 'SCHEDULE',
+    heading: payTermsSrc.heading || d.paymentTermsPage?.heading || 'Payment Milestones & Commercial Terms',
     steps: paySteps,
-    note: payTermsSrc.note || ''
+    note: payTermsSrc.note || d.paymentTermsPage?.note || ''
   };
 
   // 10. Normalize Thank You Page
   const thankSrc = loaded.thankYouPage || pagesObj.thank_you || {};
   const thankYouPage = {
-    ...d.thankYouPage,
+    ...(d.thankYouPage || {}),
     ...thankSrc,
-    contactPerson: thankSrc.contactPerson || thankSrc.signature || d.thankYouPage.contactPerson
+    contactPerson: thankSrc.contactPerson || thankSrc.signature || d.thankYouPage?.contactPerson || 'Studio Owner',
+    phone: thankSrc.phone || d.thankYouPage?.phone || '',
+    email: thankSrc.email || d.thankYouPage?.email || '',
+    website: thankSrc.website || d.thankYouPage?.website || '',
+    social: thankSrc.social || d.thankYouPage?.social || '',
+    photo: thankSrc.photo !== undefined ? thankSrc.photo : (d.thankYouPage?.photo || ''),
   };
 
-  // 11. Calculate Active Page Sequence from Page Visibility Flags
+  // 11. Normalize Terms Page
+  const termsSrc = loaded.termsPage || pagesObj.terms_conditions || {};
+  const termsPage = {
+    ...(d.termsPage || {}),
+    ...termsSrc,
+    visible: termsSrc.visible !== undefined ? Boolean(termsSrc.visible) : (d.termsPage?.visible ?? true),
+    terms: Array.isArray(termsSrc.terms) && termsSrc.terms.length > 0 ? termsSrc.terms : (d.termsPage?.terms || [])
+  };
+
+  // 12. Calculate Active Page Sequence from Page Visibility Flags
   const toPageSequenceItem = (rawItem: any): PageSequenceItem => {
     if (typeof rawItem === 'string') {
       const std = STANDARD_PAGE_DEFINITIONS.find(s => s.type === rawItem);
       return {
-        id: rawItem,
+        id: `${rawItem}-std`,
         type: rawItem,
         label: std?.label || rawItem.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()),
         isStandard: !!std
@@ -485,20 +547,28 @@ export function normalizeQuotationData(rawInput: any) {
       const typeStr = rawItem.type || rawItem.id || 'cover';
       const std = STANDARD_PAGE_DEFINITIONS.find(s => s.type === typeStr);
       return {
-        id: rawItem.id || typeStr,
+        id: rawItem.id || `${typeStr}-std`,
         type: typeStr,
         label: rawItem.label || std?.label || typeStr,
         isStandard: rawItem.isStandard ?? !!std,
         customId: rawItem.customId
       };
     }
-    return { id: 'cover', type: 'cover', label: 'Cover Page', isStandard: true };
+    return { id: 'cover-std', type: 'cover', label: 'Cover Page', isStandard: true };
   };
 
   let finalPageSequence: PageSequenceItem[] = [];
 
   if (Array.isArray(loaded.pageSequence) && loaded.pageSequence.length > 0) {
     finalPageSequence = loaded.pageSequence.map(toPageSequenceItem);
+  } else if (Array.isArray(d.pageSequence) && d.pageSequence.length > 0) {
+    finalPageSequence = d.pageSequence
+      .map(toPageSequenceItem)
+      .filter((p: PageSequenceItem) => {
+        if (p.type === 'shootDetails' && !shootDetails.visible) return false;
+        if (p.type === 'termsPage' && termsPage.visible === false) return false;
+        return true;
+      });
   } else {
     const rawTypes: string[] = ['cover', 'aboutUs'];
     if (shootDetails.visible) rawTypes.push('shootDetails');
@@ -517,8 +587,7 @@ export function normalizeQuotationData(rawInput: any) {
       rawTypes.push('addOnsPage');
     }
 
-    const termsSrc = loaded.termsPage || pagesObj.terms_conditions;
-    if (termsSrc?.visible !== false) rawTypes.push('termsPage');
+    if (termsPage.visible !== false) rawTypes.push('termsPage');
     rawTypes.push('thankYouPage');
 
     finalPageSequence = rawTypes.map(toPageSequenceItem);
@@ -527,6 +596,12 @@ export function normalizeQuotationData(rawInput: any) {
   return {
     ...d,
     ...loaded,
+    look: loaded.look || d.look || 'cyprus-sand-dune',
+    theme: loaded.theme || d.theme || d.look || 'cyprus-sand-dune',
+    primaryFont: loaded.primaryFont || d.primaryFont || 'Cormorant Garamond',
+    secondaryFont: loaded.secondaryFont || d.secondaryFont || 'Plus Jakarta Sans',
+    designName: loaded.designName || d.designName || 'Minimalist Airy Proposal',
+    colorPalette: loaded.colorPalette || d.colorPalette,
     cover,
     aboutUs,
     shootDetails,
@@ -535,7 +610,9 @@ export function normalizeQuotationData(rawInput: any) {
     specialValueAdditions,
     pricingPage,
     paymentTermsPage,
+    termsPage,
     thankYouPage,
+    customPages: Array.isArray(loaded.customPages) && loaded.customPages.length > 0 ? loaded.customPages : (d.customPages || []),
     pageSequence: finalPageSequence
   };
 }
