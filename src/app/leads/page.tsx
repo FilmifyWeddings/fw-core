@@ -116,9 +116,9 @@ const parseLeadComment = (comm: any): any => {
 
 export default function LeadsPage() {
   const router = useRouter();
-  const [userId, setUserId] = useState<string>(MOCK_WORKSPACE_ID);
+  const [userId, setUserId] = useState<string>('');
   const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [leads, setLeads] = useState<Lead[]>(MOCK_LEADS);
+  const [leads, setLeads] = useState<Lead[]>([]);
   const [stages, setStages] = useState<any[]>(DEFAULT_STAGES);
   const [preferences, setPreferences] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -126,7 +126,7 @@ export default function LeadsPage() {
   const [hasMore, setHasMore] = useState<boolean>(true);
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const PAGE_SIZE = 100;
-  const [isDemoMode, setIsDemoMode] = useState(true);
+  const [isDemoMode, setIsDemoMode] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeLeadId, setActiveLeadId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -321,6 +321,13 @@ export default function LeadsPage() {
   }, [leads, notifiedCommentIds, isDemoMode]);
 
   const loadLeadsAndPreferences = async (targetUserId: string, pageNum = 0) => {
+    if (!targetUserId) {
+      setLoading(false);
+      setLoadingMore(false);
+      setLeads([]);
+      return;
+    }
+
     if (pageNum === 0) {
       setLoading(true);
       setPage(0);
@@ -342,7 +349,10 @@ export default function LeadsPage() {
         .order('id', { ascending: false })
         .range(from, to);
 
-      if (!leadsErr && dbLeads) {
+      if (leadsErr) {
+        console.error('[Leads Load Error]:', leadsErr);
+        if (pageNum === 0) setLeads([]);
+      } else if (dbLeads) {
         if (dbLeads.length < PAGE_SIZE) {
           setHasMore(false);
         } else {
