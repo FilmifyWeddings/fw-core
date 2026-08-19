@@ -262,7 +262,7 @@ export async function GET(
 
     const { data: matchedDocs } = await supabaseAdmin
       .from('quotation_documents')
-      .select('id, template_id, lead_id, version, lead_version, created_at, updated_at')
+      .select('id, template_id, lead_id, version, lead_version, content_json, document_json, created_at, updated_at')
       .or(`lead_id.eq.${leadId},template_id.ilike.%${leadShortId}%`);
 
     // 3. Fetch client response metadata & quotations in parallel
@@ -285,27 +285,39 @@ export async function GET(
     );
 
     const formattedQuotations = sortedByAge.map((doc: any, idx: number) => {
-      const content = doc.content_json || {};
+      const content = doc.content_json || doc.document_json || {};
       const explicitVer = doc.lead_version || content.lead_version || (doc.version > 1 ? doc.version : null);
       const leadVer = (explicitVer && typeof explicitVer === 'number' && explicitVer > 0)
         ? explicitVer
         : (idx + 1);
 
-      let title = content.designName || content.cover?.coupleName;
+      const cover = content.cover || {};
+      const coupleName = cover.coupleName 
+        || (cover.groomName && cover.brideName ? `${cover.groomName} & ${cover.brideName}` : (cover.groomName || cover.brideName || ''))
+        || effectiveLead.name 
+        || 'Couple';
+
+      const eventType = cover.eventType 
+        || content.eventGroup 
+        || 'Wedding';
+
+      let title = '';
+      if (content.designName && content.designName !== 'Wedding - Design 1' && content.designName !== 'Design 1' && !content.designName.startsWith('FW-')) {
+        title = content.designName;
+      } else if (content.title && content.title !== 'Wedding - Design 1' && content.title !== 'Design 1' && !content.title.startsWith('FW-')) {
+        title = content.title;
+      } else {
+        const cleanEventType = eventType.replace(/quotation/i, '').trim();
+        title = `${coupleName} - ${cleanEventType} Quotation`;
+      }
+
+      if (!title || title.trim() === '' || title === 'Wedding - Design 1') {
+        title = `${effectiveLead.name || 'Client'} - Wedding Quotation`;
+      }
 
       const matchingQuote = allQuotes.find((q: any) =>
         q.id === doc.template_id || q.quotation_number === doc.template_id
       );
-
-      if (!title || title === 'Wedding - Design 1') {
-        if (matchingQuote?.title) {
-          title = matchingQuote.title;
-        }
-      }
-
-      if (!title) {
-        title = effectiveLead.name || 'Wedding Quotation';
-      }
 
       // Determine response badges for this version
       const versionResponsesList = allResponses.filter((r: any) =>
@@ -342,6 +354,7 @@ export async function GET(
         version: leadVer,
         version_label: `V${leadVer}`,
         title,
+        content_json: content,
         updated_at: doc.updated_at || doc.created_at || new Date().toISOString(),
         created_at: doc.created_at || new Date().toISOString(),
         public_token: matchingQuote?.public_token || null,

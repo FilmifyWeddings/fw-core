@@ -502,35 +502,54 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
                       }}
                       className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800 hover:border-amber-400 dark:hover:border-amber-500/50 transition-all space-y-2.5 group"
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-start gap-3 min-w-0 flex-1">
-                          <span className="px-2 py-1 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-black shrink-0">
-                            V{q.version}
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <h4 className="text-xs font-black text-zinc-900 dark:text-white truncate">
-                              {q.title || `Quotation V${q.version}`}
-                            </h4>
-                            <div className="flex items-center gap-1 text-[10px] text-zinc-400 mt-0.5">
-                              <Calendar className="w-3 h-3" />
-                              <span>{updatedDateStr}</span>
-                            </div>
-                          </div>
-                        </div>
+                      {(() => {
+                        const displayTitle = (() => {
+                          if (q.title && q.title.includes(' - ') && !q.title.includes('Design 1')) {
+                            return q.title;
+                          }
+                          const content = q.content_json || {};
+                          const cover = content.cover || {};
+                          const coupleName = cover.coupleName 
+                            || (cover.groomName && cover.brideName ? `${cover.groomName} & ${cover.brideName}` : (cover.groomName || cover.brideName || ''))
+                            || q.title
+                            || lead?.name 
+                            || 'Couple';
+                          const eventType = (cover.eventType || content.eventGroup || 'Wedding').replace(/quotation/i, '').trim();
+                          return `${coupleName} - ${eventType} Quotation`;
+                        })();
 
-                        {/* Client Response Badges */}
-                        {q.responseBadge && (
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0 ${
-                              q.responseBadge.type === 'accepted'
-                                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
-                                : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
-                            }`}
-                          >
-                            {q.responseBadge.label}
-                          </span>
-                        )}
-                      </div>
+                        return (
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-3 min-w-0 flex-1">
+                              <span className="px-2 py-1 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-black shrink-0">
+                                V{q.version}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <h4 className="text-xs font-black text-zinc-900 dark:text-white truncate" title={displayTitle}>
+                                  {displayTitle}
+                                </h4>
+                                <div className="flex items-center gap-1 text-[10px] text-zinc-400 mt-0.5">
+                                  <Calendar className="w-3 h-3" />
+                                  <span>{updatedDateStr}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Client Response Badges */}
+                            {q.responseBadge && (
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0 ${
+                                  q.responseBadge.type === 'accepted'
+                                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                                    : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                                }`}
+                              >
+                                {q.responseBadge.label}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
 
                       {/* Version Action Buttons */}
                       <div className="flex items-center justify-between pt-1 border-t border-zinc-200/50 dark:border-zinc-800/60 gap-1.5">
