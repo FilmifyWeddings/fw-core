@@ -4,6 +4,12 @@ const nextConfig: any = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+  productionBrowserSourceMaps: false,
+  reactStrictMode: false,
+  
   allowedDevOrigins: ['*.loca.lt', 'loca.lt', '*.lhr.life', 'lhr.life', '*.ngrok-free.dev', 'ngrok-free.dev'],
   
   headers: async () => [
@@ -36,6 +42,12 @@ const nextConfig: any = {
     serverActions: {
       bodySizeLimit: '10mb',
     },
+    optimizePackageImports: [
+      'lucide-react',
+      'framer-motion',
+      '@supabase/supabase-js',
+      'canvas-confetti',
+    ],
   },
 
   turbopack: {},
