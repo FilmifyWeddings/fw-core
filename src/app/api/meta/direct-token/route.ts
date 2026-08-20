@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     const discoveredPagesMap = new Map<string, { page_id: string; page_name: string; page_category: string; access_token: string }>();
 
     let workingToken = page_access_token;
-    const appId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || process.env.FACEBOOK_APP_ID || '1488107768502570';
+    const appId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || process.env.FACEBOOK_APP_ID || '1279608780825934';
     const appSecret = process.env.FACEBOOK_APP_SECRET || '4da60a4bc30f64db3570ffde1508b2b6';
 
     // Step A: Attempt exchange for 60-day Long-Lived Token if possible
