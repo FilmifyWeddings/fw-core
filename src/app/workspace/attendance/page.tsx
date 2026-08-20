@@ -8,13 +8,17 @@ import {
   Calendar, Coffee, Download, Plus, Search, Filter, RefreshCw, 
   Sparkles, Link2, Copy, Check, ShieldCheck, FileText, ChevronRight, 
   ChevronDown, Edit3, Trash2, X, ExternalLink, ArrowRight, UserCheck,
-  Send, MessageCircle, Printer, Sliders, Globe, Camera
+  Send, MessageCircle, Printer, Sliders, Globe, Camera, Award, Eye,
+  UserPlus, Compass
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import type { 
   FWTeamMember, AttendanceRecord, AttendanceLocation, 
   AttendanceShift, AttendanceLeaveRequest, AttendanceMemberLink, AttendanceHoliday
 } from '@/types';
+import GeofenceRadarMap from '@/components/attendance/GeofenceRadarMap';
+import MemberKundaliModal from '@/components/attendance/MemberKundaliModal';
+import AddTeamMemberModal from '@/components/attendance/AddTeamMemberModal';
 
 export default function AttendancePage() {
   const [activeTab, setActiveTab] = useState<'roster' | 'live' | 'matrix' | 'leaves' | 'locations' | 'shifts' | 'links'>('roster');
@@ -37,12 +41,20 @@ export default function AttendancePage() {
 
   // Modals state
   const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
+  const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+  const [showKundaliModal, setShowKundaliModal] = useState<{ open: boolean; member: FWTeamMember | null }>({
+    open: false,
+    member: null
+  });
+
+  // Selected Geofence for Map Editor
+  const [selectedLocation, setSelectedLocation] = useState<AttendanceLocation | null>(null);
   const [showAddLocationModal, setShowAddLocationModal] = useState(false);
   const [locationForm, setLocationForm] = useState({
     name: '',
-    latitude: '19.0596',
-    longitude: '72.8295',
-    radius_meters: '150',
+    latitude: 19.0596,
+    longitude: 72.8295,
+    radius_meters: 150,
     address: ''
   });
 
@@ -83,7 +95,7 @@ export default function AttendancePage() {
       const { data: { session } } = await supabase.auth.getSession();
       const workspaceId = session?.user?.id || 'ws_demo';
 
-      // 1. Fetch Team Members from canonical fw_team_members table
+      // 1. Fetch Team Members
       let teamQuery = supabase
         .from('fw_team_members')
         .select('*')
@@ -121,7 +133,11 @@ export default function AttendancePage() {
       }
 
       const { data: locData } = await locQuery;
-      setLocations(locData || []);
+      const locs = locData || [];
+      setLocations(locs);
+      if (locs.length > 0 && !selectedLocation) {
+        setSelectedLocation(locs[0]);
+      }
 
       // 4. Fetch Shifts
       let shiftQuery = supabase
@@ -177,7 +193,6 @@ export default function AttendancePage() {
       let link = memberLinks.find(l => l.member_id === memberId);
 
       if (!link) {
-        // Generate secure 32-char token
         const secureToken = `att_${memberId.slice(0, 6)}_${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
         
         const newLinkObj: AttendanceMemberLink = {
@@ -218,11 +233,11 @@ export default function AttendancePage() {
     const link = memberLinks.find(l => l.member_id === member.id);
     const fullUrl = `${window.location.origin}/attendance/${link?.secure_token || 'portal'}`;
     const phone = member.phone_number?.replace(/[^0-9]/g, '') || '';
-    const text = encodeURIComponent(`Hi ${member.name},\nHere is your personal mobile attendance punch portal link for StudioCore:\n${fullUrl}\n\nPlease bookmark this link on your phone to punch in and out.`);
+    const text = encodeURIComponent(`Hi ${member.name},\nHere is your personal mobile attendance punch portal link for StudioCore:\n${fullUrl}\n\nPlease bookmark this link on your phone to punch in with selfie & GPS.`);
     window.open(`https://wa.me/${phone}?text=${text}`, '_blank');
   };
 
-  // Save New Geofence Location
+  // Save / Update Geofence Location
   const handleSaveLocation = async () => {
     if (!locationForm.name.trim()) {
       alert('Please enter location name');
@@ -238,30 +253,50 @@ export default function AttendancePage() {
         user_id: workspaceId,
         workspace_id: workspaceId,
         name: locationForm.name.trim(),
-        latitude: parseFloat(locationForm.latitude) || 0,
-        longitude: parseFloat(locationForm.longitude) || 0,
-        radius_meters: parseInt(locationForm.radius_meters) || 150,
+        latitude: Number(locationForm.latitude) || 19.0596,
+        longitude: Number(locationForm.longitude) || 72.8295,
+        radius_meters: Number(locationForm.radius_meters) || 150,
         address: locationForm.address.trim(),
         is_active: true
       };
 
       setLocations(prev => [newLoc, ...prev]);
+      setSelectedLocation(newLoc);
 
       if (workspaceId !== 'ws_demo') {
         await supabase.from('attendance_locations').insert([newLoc]);
       }
 
       setShowAddLocationModal(false);
-      setLocationForm({
-        name: '',
-        latitude: '19.0596',
-        longitude: '72.8295',
-        radius_meters: '150',
-        address: ''
-      });
     } catch (e) {
       console.error('Save location error:', e);
     }
+  };
+
+  // Update existing Geofence coordinates or radius
+  const handleUpdateGeofenceOnMap = async (lat: number, lng: number, radius?: number) => {
+    if (!selectedLocation) return;
+    const updated = {
+      ...selectedLocation,
+      latitude: lat,
+      longitude: lng,
+      radius_meters: radius ?? selectedLocation.radius_meters
+    };
+
+    setSelectedLocation(updated);
+    setLocations(prev => prev.map(l => l.id === updated.id ? updated : l));
+
+    try {
+      await supabase
+        .from('attendance_locations')
+        .update({
+          latitude: lat,
+          longitude: lng,
+          radius_meters: radius ?? selectedLocation.radius_meters,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', selectedLocation.id);
+    } catch (_) {}
   };
 
   // Save New Shift
@@ -329,13 +364,6 @@ export default function AttendancePage() {
       }
 
       setShowLeaveModal(false);
-      setLeaveForm({
-        member_id: '',
-        leave_type: 'casual',
-        start_date: new Date().toISOString().split('T')[0],
-        end_date: new Date().toISOString().split('T')[0],
-        reason: ''
-      });
     } catch (e) {
       console.error('Leave request error:', e);
     }
@@ -350,7 +378,6 @@ export default function AttendancePage() {
         .update({ status, updated_at: new Date().toISOString() })
         .eq('id', leave.id);
 
-      // Trigger WhatsApp notification if phone number available
       if (leave.member?.phone_number) {
         const phone = leave.member.phone_number.replace(/[^0-9]/g, '');
         const text = encodeURIComponent(
@@ -462,7 +489,7 @@ export default function AttendancePage() {
       <div className="max-w-7xl mx-auto space-y-6">
 
         {/* ─────────────────────────────────────────────────────────────
-            HEADER & DATE SELECTOR
+            HEADER & ACTION CONTROLS
         ───────────────────────────────────────────────────────────── */}
         <div className="bg-white/90 backdrop-blur-md rounded-2xl p-6 border border-[#E9DFD2] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
@@ -473,11 +500,11 @@ export default function AttendancePage() {
               <div className="flex items-center gap-2.5">
                 <h1 className="text-2xl font-black tracking-tight text-slate-900">Workforce & Smart Attendance</h1>
                 <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-[#FAF3E6] text-[#8C6D33] border border-[#E9DFD2]">
-                  Enterprise Geo-Fenced
+                  Enterprise Intelligence
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Mobile WebP selfie clock-in, high-precision Haversine geofence, shifts, leaves & automatic payroll matrix.
+                Radar geofence editor, staff Kundali analytics, mobile magic links & automatic payroll timesheet.
               </p>
             </div>
           </div>
@@ -493,6 +520,15 @@ export default function AttendancePage() {
                 className="bg-transparent text-xs font-black text-slate-800 focus:outline-none cursor-pointer"
               />
             </div>
+
+            {/* Onboard Team Member Button */}
+            <button
+              onClick={() => setShowAddMemberModal(true)}
+              className="px-3.5 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-xl transition flex items-center gap-1.5 shadow-xs"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              Onboard Staff
+            </button>
 
             <button
               onClick={handleExportCSV}
@@ -631,7 +667,7 @@ export default function AttendancePage() {
               { id: 'live', label: 'Live Floor View', icon: Users },
               { id: 'matrix', label: 'Monthly Matrix & Payroll', icon: Calendar },
               { id: 'leaves', label: 'Leaves & Approvals', icon: Coffee },
-              { id: 'locations', label: 'Geofence Manager', icon: Globe },
+              { id: 'locations', label: 'Visual Radar Map', icon: Globe },
               { id: 'shifts', label: 'Shift Timings', icon: Sliders },
               { id: 'links', label: 'Employee Mobile Links', icon: Link2 },
             ].map(tab => {
@@ -656,7 +692,7 @@ export default function AttendancePage() {
         </div>
 
         {/* ─────────────────────────────────────────────────────────────
-            TAB 1: DAILY ROSTER
+            TAB 1: DAILY ROSTER (WITH KUNDALI DRILLDOWN)
         ───────────────────────────────────────────────────────────── */}
         {activeTab === 'roster' && (
           <div className="space-y-4">
@@ -683,13 +719,20 @@ export default function AttendancePage() {
 
                       return (
                         <tr key={member.id} className="hover:bg-slate-50 transition">
+                          {/* Employee Name & Kundali Click */}
                           <td className="py-3 px-4">
-                            <div className="flex items-center gap-2.5">
-                              <div className="w-8 h-8 rounded-xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-900 font-bold text-xs">
+                            <div 
+                              onClick={() => setShowKundaliModal({ open: true, member })}
+                              className="flex items-center gap-2.5 cursor-pointer group"
+                            >
+                              <div className="w-8 h-8 rounded-xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-900 font-bold text-xs group-hover:scale-105 transition-transform">
                                 {member.name.slice(0, 2).toUpperCase()}
                               </div>
                               <div>
-                                <h4 className="font-extrabold text-slate-900">{member.name}</h4>
+                                <h4 className="font-extrabold text-slate-900 group-hover:text-[#C89435] flex items-center gap-1 transition-colors">
+                                  <span>{member.name}</span>
+                                  <Eye className="w-3 h-3 text-[#8C847B] opacity-0 group-hover:opacity-100 transition-opacity" />
+                                </h4>
                                 <p className="text-[10px] font-semibold text-slate-500">{member.primary_role || 'Crew'}</p>
                               </div>
                             </div>
@@ -750,6 +793,14 @@ export default function AttendancePage() {
                           </td>
 
                           <td className="py-3 px-4 text-right space-x-2 whitespace-nowrap">
+                            <button
+                              onClick={() => setShowKundaliModal({ open: true, member })}
+                              className="px-2.5 py-1 text-[11px] font-bold text-[#8C6D33] bg-[#FAF3E6] hover:bg-[#F2E5CC] rounded-lg transition"
+                              title="View Deep Staff Kundali Analytics"
+                            >
+                              Kundali
+                            </button>
+
                             <button
                               onClick={() => handleGenerateOrCopyLink(member.id)}
                               className="px-2.5 py-1 text-[11px] font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 rounded-lg transition"
@@ -985,46 +1036,58 @@ export default function AttendancePage() {
         )}
 
         {/* ─────────────────────────────────────────────────────────────
-            TAB 5: GEOFENCE LOCATIONS MANAGER
+            TAB 5: VISUAL RADAR MAP & GEOFENCE EDITOR
         ───────────────────────────────────────────────────────────── */}
         {activeTab === 'locations' && (
           <div className="space-y-4">
             <div className="bg-white p-5 rounded-2xl border border-emerald-200 shadow-sm flex items-center justify-between">
               <div>
-                <h3 className="text-base font-black text-slate-900">Geofence Attendance Locations</h3>
-                <p className="text-xs text-slate-500">Configure studio offices and wedding venue GPS boundaries with Haversine verification.</p>
+                <h3 className="text-base font-black text-slate-900">Visual Geofence Radar Map</h3>
+                <p className="text-xs text-slate-500">Interactive dark-mode radar map with dynamic 10m–1000m radius sliders and OpenStreetMap address search.</p>
               </div>
               <button
                 onClick={() => setShowAddLocationModal(true)}
                 className="px-3.5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs transition flex items-center gap-1.5"
               >
                 <Plus className="w-3.5 h-3.5" />
-                + Add Location
+                + Add Geofence Venue
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {locations.map(loc => (
-                <div key={loc.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center">
-                        <MapPin className="w-4 h-4" />
-                      </div>
-                      <h4 className="font-extrabold text-slate-900">{loc.name}</h4>
-                    </div>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700">
-                      {loc.radius_meters}m Radius
-                    </span>
-                  </div>
+            {/* Location Selector Tabs */}
+            {locations.length > 0 && (
+              <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                {locations.map(loc => (
+                  <button
+                    key={loc.id}
+                    onClick={() => setSelectedLocation(loc)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                      selectedLocation?.id === loc.id
+                        ? 'bg-slate-900 text-white shadow-xs'
+                        : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <MapPin className="w-3 h-3 text-[#C89435]" />
+                    <span>{loc.name}</span>
+                    <span className="text-[10px] text-slate-400 font-mono">({loc.radius_meters}m)</span>
+                  </button>
+                ))}
+              </div>
+            )}
 
-                  <div className="p-3 bg-slate-50 rounded-xl text-xs space-y-1 font-mono text-slate-600">
-                    <p>Lat: {loc.latitude} • Lng: {loc.longitude}</p>
-                    {loc.address && <p className="text-[11px] font-sans text-slate-500">{loc.address}</p>}
-                  </div>
-                </div>
-              ))}
-            </div>
+            {/* Interactive Leaflet Radar Map Component */}
+            {selectedLocation && (
+              <GeofenceRadarMap
+                latitude={selectedLocation.latitude}
+                longitude={selectedLocation.longitude}
+                radiusMeters={selectedLocation.radius_meters}
+                locationName={selectedLocation.name}
+                isEditable={true}
+                height="450px"
+                onCoordinatesChange={(lat, lng) => handleUpdateGeofenceOnMap(lat, lng)}
+                onRadiusChange={(r) => handleUpdateGeofenceOnMap(selectedLocation.latitude, selectedLocation.longitude, r)}
+              />
+            )}
           </div>
         )}
 
@@ -1082,6 +1145,13 @@ export default function AttendancePage() {
                 <h3 className="text-base font-black text-slate-900">Personal Employee Attendance Links</h3>
                 <p className="text-xs text-slate-500">Each employee has a unique, secure 32-character token URL to clock-in from their mobile phone.</p>
               </div>
+              <button
+                onClick={() => setShowAddMemberModal(true)}
+                className="px-3.5 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-xl transition flex items-center gap-1.5 shadow-xs"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                Onboard Staff
+              </button>
             </div>
 
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -1140,7 +1210,37 @@ export default function AttendancePage() {
       </div>
 
       {/* ─────────────────────────────────────────────────────────────
-          MODAL: ADD GEOFENCE LOCATION
+          MODAL: STAFF MEMBER "KUNDALI" DEEP ANALYTICS DRAWER
+      ───────────────────────────────────────────────────────────── */}
+      {showKundaliModal.open && showKundaliModal.member && (
+        <MemberKundaliModal
+          isOpen={showKundaliModal.open}
+          onClose={() => setShowKundaliModal({ open: false, member: null })}
+          member={showKundaliModal.member}
+          records={records}
+          shifts={shifts}
+          onUpdateRecord={async (id, updates) => {
+            setRecords(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
+            await supabase.from('attendance_records').update(updates).eq('id', id);
+          }}
+        />
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          MODAL: ONBOARD TEAM MEMBER & MAGIC LINK
+      ───────────────────────────────────────────────────────────── */}
+      {showAddMemberModal && (
+        <AddTeamMemberModal
+          isOpen={showAddMemberModal}
+          onClose={() => setShowAddMemberModal(false)}
+          locations={locations}
+          shifts={shifts}
+          onMemberCreated={fetchAttendanceData}
+        />
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          MODAL: ADD GEOFENCE VENUE
       ───────────────────────────────────────────────────────────── */}
       <AnimatePresence>
         {showAddLocationModal && (
@@ -1163,7 +1263,7 @@ export default function AttendancePage() {
                   <label className="text-xs font-bold text-slate-700">Location / Venue Name</label>
                   <input
                     type="text"
-                    placeholder="e.g. Mumbai Studio - Andheri West"
+                    placeholder="e.g. Udaipur Palace Wedding Venue"
                     value={locationForm.name}
                     onChange={(e) => setLocationForm(prev => ({ ...prev, name: e.target.value }))}
                     className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none"
@@ -1174,10 +1274,11 @@ export default function AttendancePage() {
                   <div>
                     <label className="text-xs font-bold text-slate-700">Latitude</label>
                     <input
-                      type="text"
+                      type="number"
+                      step="any"
                       placeholder="19.0596"
                       value={locationForm.latitude}
-                      onChange={(e) => setLocationForm(prev => ({ ...prev, latitude: e.target.value }))}
+                      onChange={(e) => setLocationForm(prev => ({ ...prev, latitude: parseFloat(e.target.value) || 0 }))}
                       className="w-full px-3 py-2 text-xs font-mono bg-slate-50 border border-slate-200 rounded-xl focus:outline-none"
                     />
                   </div>
@@ -1185,10 +1286,11 @@ export default function AttendancePage() {
                   <div>
                     <label className="text-xs font-bold text-slate-700">Longitude</label>
                     <input
-                      type="text"
+                      type="number"
+                      step="any"
                       placeholder="72.8295"
                       value={locationForm.longitude}
-                      onChange={(e) => setLocationForm(prev => ({ ...prev, longitude: e.target.value }))}
+                      onChange={(e) => setLocationForm(prev => ({ ...prev, longitude: parseFloat(e.target.value) || 0 }))}
                       className="w-full px-3 py-2 text-xs font-mono bg-slate-50 border border-slate-200 rounded-xl focus:outline-none"
                     />
                   </div>
@@ -1200,7 +1302,7 @@ export default function AttendancePage() {
                     type="number"
                     placeholder="150"
                     value={locationForm.radius_meters}
-                    onChange={(e) => setLocationForm(prev => ({ ...prev, radius_meters: e.target.value }))}
+                    onChange={(e) => setLocationForm(prev => ({ ...prev, radius_meters: parseInt(e.target.value) || 150 }))}
                     className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none"
                   />
                 </div>

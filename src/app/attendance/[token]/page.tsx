@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Clock, MapPin, Camera, CheckCircle2, AlertCircle, Coffee, 
   LogOut, RefreshCw, ShieldCheck, Sparkles, AlertTriangle, Wifi, WifiOff, X,
-  Calendar, Send, ChevronRight, Check, History, Plane
+  Calendar, Send, ChevronRight, Check, History, Plane, DollarSign, Award,
+  Compass, ArrowUpRight, TrendingUp
 } from 'lucide-react';
 import type { AttendanceRecord, AttendanceBreak, AttendanceLocation } from '@/types';
 import { validateCoordinatesAgainstGeofences, GeofenceValidationResult } from '@/lib/attendance/geo-fence';
@@ -16,6 +17,9 @@ import { saveOfflinePunch, getOfflinePunches, removeOfflinePunch } from '@/lib/a
 export default function PersonalAttendancePage() {
   const params = useParams();
   const token = typeof params?.token === 'string' ? params.token : '';
+
+  // Tab State: 'punch' | 'report'
+  const [activeTab, setActiveTab] = useState<'punch' | 'report'>('punch');
 
   const [loading, setLoading] = useState(true);
   const [member, setMember] = useState<any>(null);
@@ -28,6 +32,7 @@ export default function PersonalAttendancePage() {
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
   const [isOnline, setIsOnline] = useState<boolean>(true);
   const [offlineQueueCount, setOfflineQueueCount] = useState<number>(0);
+  const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().substring(0, 7));
 
   // Verification modal state
   const [showVerifyModal, setShowVerifyModal] = useState<'check_in' | 'check_out' | null>(null);
@@ -49,8 +54,6 @@ export default function PersonalAttendancePage() {
     end_date: new Date().toISOString().split('T')[0],
     reason: ''
   });
-
-  const [showCalendarModal, setShowCalendarModal] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -201,7 +204,6 @@ export default function PersonalAttendancePage() {
         };
         setGpsLocation(coords);
 
-        // Validate against geofences
         const res = validateCoordinatesAgainstGeofences(
           { latitude: coords.lat, longitude: coords.lng },
           locations
@@ -233,7 +235,6 @@ export default function PersonalAttendancePage() {
         }
       }
 
-      // Check Offline mode
       if (!navigator.onLine) {
         await saveOfflinePunch({
           token,
@@ -339,6 +340,28 @@ export default function PersonalAttendancePage() {
     return `${hrs}h ${mins < 10 ? '0' : ''}${mins}m`;
   };
 
+  // Monthly Report Calculations
+  const monthlyStats = useMemo(() => {
+    const records = monthlyHistory.filter(r => (r.date || '').startsWith(selectedMonth));
+    const presentCount = records.filter(r => r.status === 'present' || r.status === 'late').length;
+    const lateCount = records.filter(r => r.status === 'late' || (r.late_minutes && r.late_minutes > 0)).length;
+    const totalWorkMins = records.reduce((acc, r) => acc + (r.work_duration_minutes || 0), 0);
+    const totalOTMins = records.reduce((acc, r) => acc + (r.overtime_minutes || 0), 0);
+
+    const dailyRate = 3500; // Standard daily benchmark or from member
+    const estimatedPayout = presentCount * dailyRate;
+
+    return {
+      totalLoggedDays: records.length,
+      presentCount,
+      lateCount,
+      totalHours: Math.round((totalWorkMins / 60) * 10) / 10,
+      totalOTHours: Math.round((totalOTMins / 60) * 10) / 10,
+      estimatedPayout,
+      records
+    };
+  }, [monthlyHistory, selectedMonth]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#FDFBF7] flex items-center justify-center p-4">
@@ -356,7 +379,7 @@ export default function PersonalAttendancePage() {
   return (
     <div className="min-h-screen bg-[#FDFBF7] text-[#211B17] flex flex-col justify-between max-w-md mx-auto relative shadow-2xl overflow-hidden border-x border-[#EFE8DC]">
       {/* Top App Bar */}
-      <header className="px-5 pt-6 pb-4 bg-white border-b border-[#F0E8DC] sticky top-0 z-30">
+      <header className="px-5 pt-6 pb-3 bg-white border-b border-[#F0E8DC] sticky top-0 z-30">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[#C89435] to-[#8C6D33] text-white font-bold flex items-center justify-center shadow-md text-base">
@@ -391,9 +414,36 @@ export default function PersonalAttendancePage() {
           </div>
         </div>
 
+        {/* Tab Switcher: 1. Punch Stage | 2. My Monthly Report */}
+        <div className="grid grid-cols-2 gap-2 mt-3 p-1 bg-[#FAF8F3] rounded-xl border border-[#F0E8DC]">
+          <button
+            onClick={() => setActiveTab('punch')}
+            className={`py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+              activeTab === 'punch'
+                ? 'bg-[#C89435] text-white shadow-xs'
+                : 'text-[#746E67] hover:text-[#211B17]'
+            }`}
+          >
+            <Camera className="w-3.5 h-3.5" />
+            <span>Punch Stage</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('report')}
+            className={`py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+              activeTab === 'report'
+                ? 'bg-[#C89435] text-white shadow-xs'
+                : 'text-[#746E67] hover:text-[#211B17]'
+            }`}
+          >
+            <Calendar className="w-3.5 h-3.5" />
+            <span>My Monthly Report</span>
+          </button>
+        </div>
+
         {/* Offline Queue Notification Pill */}
         {offlineQueueCount > 0 && (
-          <div className="mt-3 p-2 bg-[#FFF8E1] border border-[#FFE082] rounded-[10px] text-[11px] text-[#F57F17] flex items-center justify-between">
+          <div className="mt-2.5 p-2 bg-[#FFF8E1] border border-[#FFE082] rounded-[10px] text-[11px] text-[#F57F17] flex items-center justify-between">
             <div className="flex items-center gap-1.5">
               <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
               <span>{offlineQueueCount} offline punch(es) pending auto-sync</span>
@@ -411,125 +461,200 @@ export default function PersonalAttendancePage() {
       </header>
 
       {/* Main Body Stage */}
-      <main className="flex-1 p-5 flex flex-col justify-between">
-        {/* Live Clock & Shift Badge */}
-        <div className="text-center my-2">
-          <div className="text-[44px] font-black tracking-tight text-[#211B17] font-mono leading-none">
-            {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-          </div>
-          <p className="text-[12px] text-[#8C847B] font-medium mt-1">
-            {shifts[0]?.name ? `${shifts[0].name} (${shifts[0].start_time.substring(0, 5)} - ${shifts[0].end_time.substring(0, 5)})` : 'Standard Studio Shift (09:30 AM - 06:30 PM)'}
-          </p>
-        </div>
+      <main className="flex-1 p-5 flex flex-col justify-between overflow-y-auto">
+        {activeTab === 'punch' ? (
+          <>
+            {/* Live Clock & Shift Badge */}
+            <div className="text-center my-2">
+              <div className="text-[44px] font-black tracking-tight text-[#211B17] font-mono leading-none">
+                {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              </div>
+              <p className="text-[12px] text-[#8C847B] font-medium mt-1">
+                {shifts[0]?.name ? `${shifts[0].name} (${shifts[0].start_time.substring(0, 5)} - ${shifts[0].end_time.substring(0, 5)})` : 'Standard Studio Shift (09:30 AM - 06:30 PM)'}
+              </p>
+            </div>
 
-        {/* Status Card & Geofence Indicator */}
-        <div className="bg-white rounded-[20px] p-4 border border-[#F0E8DC] shadow-sm mb-4">
-          <div className="flex items-center justify-between mb-3 pb-3 border-b border-[#F7F2EA]">
-            <div>
-              <span className="text-[10.5px] uppercase font-bold tracking-wider text-[#99928A] block">Today's Status</span>
-              <div className="flex items-center gap-2 mt-0.5">
-                {isCheckedOut ? (
-                  <span className="px-2.5 py-0.5 rounded-full text-[12px] font-bold bg-[#ECEFF1] text-[#455A64]">
-                    Checked Out
+            {/* Status Card & Geofence Indicator */}
+            <div className="bg-white rounded-[20px] p-4 border border-[#F0E8DC] shadow-sm mb-4">
+              <div className="flex items-center justify-between mb-3 pb-3 border-b border-[#F7F2EA]">
+                <div>
+                  <span className="text-[10.5px] uppercase font-bold tracking-wider text-[#99928A] block">Today's Status</span>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    {isCheckedOut ? (
+                      <span className="px-2.5 py-0.5 rounded-full text-[12px] font-bold bg-[#ECEFF1] text-[#455A64]">
+                        Checked Out
+                      </span>
+                    ) : isCheckedIn ? (
+                      <span className="px-2.5 py-0.5 rounded-full text-[12px] font-bold bg-[#E8F5E9] text-[#2E7D32] flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-[#2E7D32] animate-ping" />
+                        On Duty ({todayRecord?.status.toUpperCase()})
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-0.5 rounded-full text-[12px] font-bold bg-[#FFF3E0] text-[#E65100]">
+                        Not Punched In
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="text-right">
+                  <span className="text-[10.5px] uppercase font-bold tracking-wider text-[#99928A] block">Working Duration</span>
+                  <span className="text-[16px] font-bold text-[#211B17] font-mono">
+                    {getLiveDurationString()}
                   </span>
-                ) : isCheckedIn ? (
-                  <span className="px-2.5 py-0.5 rounded-full text-[12px] font-bold bg-[#E8F5E9] text-[#2E7D32] flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-[#2E7D32] animate-ping" />
-                    On Duty ({todayRecord?.status.toUpperCase()})
+                </div>
+              </div>
+
+              {/* Today Timeline Points */}
+              <div className="grid grid-cols-2 gap-2 text-[11.5px]">
+                <div className="bg-[#FAF8F3] p-2.5 rounded-[12px] border border-[#F2ECE2]">
+                  <span className="text-[#8C847B] text-[10px] block">Punch In</span>
+                  <span className="font-semibold text-[#211B17]">
+                    {todayRecord?.check_in_time ? new Date(todayRecord.check_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
                   </span>
-                ) : (
-                  <span className="px-2.5 py-0.5 rounded-full text-[12px] font-bold bg-[#FFF3E0] text-[#E65100]">
-                    Not Punched In
+                  {todayRecord?.late_minutes ? (
+                    <span className="text-[9.5px] text-[#C62828] block">({todayRecord.late_minutes}m late)</span>
+                  ) : null}
+                </div>
+
+                <div className="bg-[#FAF8F3] p-2.5 rounded-[12px] border border-[#F2ECE2]">
+                  <span className="text-[#8C847B] text-[10px] block">Punch Out</span>
+                  <span className="font-semibold text-[#211B17]">
+                    {todayRecord?.check_out_time ? new Date(todayRecord.check_out_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
                   </span>
-                )}
+                  {todayRecord?.overtime_minutes ? (
+                    <span className="text-[9.5px] text-[#2E7D32] block">(+{todayRecord.overtime_minutes}m OT)</span>
+                  ) : null}
+                </div>
               </div>
             </div>
 
-            <div className="text-right">
-              <span className="text-[10.5px] uppercase font-bold tracking-wider text-[#99928A] block">Working Duration</span>
-              <span className="text-[16px] font-bold text-[#211B17] font-mono">
-                {getLiveDurationString()}
-              </span>
+            {/* Primary Action Button (Big Mobile Punch Button) */}
+            <div className="my-2 flex flex-col items-center">
+              {!isCheckedIn ? (
+                <motion.button
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => setShowVerifyModal('check_in')}
+                  className="w-44 h-44 rounded-full bg-gradient-to-tr from-[#2E7D32] via-[#388E3C] to-[#4CAF50] text-white font-bold flex flex-col items-center justify-center shadow-[0_12px_36px_rgba(46,125,50,0.38)] border-4 border-white active:shadow-inner"
+                >
+                  <Camera className="w-10 h-10 mb-1" />
+                  <span className="text-[17px] tracking-wide uppercase font-black">PUNCH IN</span>
+                  <span className="text-[10px] text-white/80 font-medium">Selfie + Geo-Radar</span>
+                </motion.button>
+              ) : !isCheckedOut ? (
+                <motion.button
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => setShowVerifyModal('check_out')}
+                  className="w-44 h-44 rounded-full bg-gradient-to-tr from-[#D32F2F] via-[#E53935] to-[#EF5350] text-white font-bold flex flex-col items-center justify-center shadow-[0_12px_36px_rgba(211,47,47,0.38)] border-4 border-white active:shadow-inner"
+                >
+                  <LogOut className="w-10 h-10 mb-1" />
+                  <span className="text-[17px] tracking-wide uppercase font-black">PUNCH OUT</span>
+                  <span className="text-[10px] text-white/80 font-medium">End Daily Shift</span>
+                </motion.button>
+              ) : (
+                <div className="w-44 h-44 rounded-full bg-[#ECEFF1] text-[#546E7A] font-bold flex flex-col items-center justify-center border-4 border-white shadow-md">
+                  <CheckCircle2 className="w-10 h-10 mb-1 text-[#2E7D32]" />
+                  <span className="text-[15px] font-black">COMPLETED</span>
+                  <span className="text-[10px] text-[#78909C]">Shift finished for today</span>
+                </div>
+              )}
+            </div>
+
+            {/* Apply Leave Shortcut */}
+            <div className="mt-3">
+              <button
+                onClick={() => setShowLeaveModal(true)}
+                className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-white border border-[#E9DFD2] rounded-[14px] text-[12px] font-semibold text-[#211B17] shadow-xs hover:border-[#C89435] transition-all"
+              >
+                <Plane className="w-4 h-4 text-[#C89435]" />
+                <span>Apply for Leave / Regularization</span>
+              </button>
+            </div>
+          </>
+        ) : (
+          /* TAB 2: MY MONTHLY REPORT & STATS */
+          <div className="space-y-4 py-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-bold text-[#211B17]">My Attendance & Earnings</h2>
+                <p className="text-xs text-[#8C847B]">Summary of your shoot attendance and estimated payout.</p>
+              </div>
+              <input
+                type="month"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="bg-white border border-[#E9DFD2] rounded-xl px-2.5 py-1 text-xs font-bold text-[#211B17] shadow-2xs font-mono"
+              />
+            </div>
+
+            {/* Monthly Earnings Card */}
+            <div className="bg-gradient-to-br from-[#211E1B] to-[#36302B] text-white p-5 rounded-[20px] shadow-lg space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-[#E5B55D] uppercase tracking-wider">Estimated Monthly Payout</span>
+                <DollarSign className="w-4 h-4 text-[#E5B55D]" />
+              </div>
+              <div className="flex items-baseline gap-1">
+                <span className="text-3xl font-black text-white font-mono">₹{monthlyStats.estimatedPayout.toLocaleString('en-IN')}</span>
+                <span className="text-xs text-white/60">({monthlyStats.presentCount} Days × ₹3,500)</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/10 text-center text-xs">
+                <div>
+                  <span className="text-white/60 text-[10px] block">Present</span>
+                  <span className="font-bold text-[#81C784]">{monthlyStats.presentCount} Days</span>
+                </div>
+                <div>
+                  <span className="text-white/60 text-[10px] block">Late Marks</span>
+                  <span className="font-bold text-[#FFB74D]">{monthlyStats.lateCount}</span>
+                </div>
+                <div>
+                  <span className="text-white/60 text-[10px] block">Overtime</span>
+                  <span className="font-bold text-[#4FC3F7]">+{monthlyStats.totalOTHours}h</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Day by Day Log */}
+            <div className="space-y-2">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-[#99928A]">Month Log ({selectedMonth})</h3>
+              {monthlyStats.records.length === 0 ? (
+                <div className="bg-white p-8 rounded-2xl border border-dashed border-[#E9DFD2] text-center text-xs text-[#8C847B]">
+                  No punch records logged for {selectedMonth}.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {monthlyStats.records.map(rec => (
+                    <div key={rec.id} className="p-3 bg-white rounded-[14px] border border-[#F0E8DC] flex items-center justify-between shadow-2xs">
+                      <div>
+                        <div className="font-bold text-xs text-[#211B17]">
+                          {new Date(rec.date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}
+                        </div>
+                        <div className="text-[10.5px] text-[#746E67] mt-0.5">
+                          In: {rec.check_in_time ? new Date(rec.check_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--'} | Out: {rec.check_out_time ? new Date(rec.check_out_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--'}
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          rec.status === 'present' ? 'bg-[#E8F5E9] text-[#2E7D32]' :
+                          rec.status === 'late' ? 'bg-[#FFF3E0] text-[#E65100]' : 'bg-[#FFEBEE] text-[#C62828]'
+                        }`}>
+                          {rec.status.toUpperCase()}
+                        </span>
+                        <div className="text-[10px] font-mono text-[#8C847B] mt-0.5">
+                          {Math.floor((rec.work_duration_minutes || 0) / 60)}h {(rec.work_duration_minutes || 0) % 60}m
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
-
-          {/* Today Timeline Points */}
-          <div className="grid grid-cols-2 gap-2 text-[11.5px]">
-            <div className="bg-[#FAF8F3] p-2.5 rounded-[12px] border border-[#F2ECE2]">
-              <span className="text-[#8C847B] text-[10px] block">Punch In</span>
-              <span className="font-semibold text-[#211B17]">
-                {todayRecord?.check_in_time ? new Date(todayRecord.check_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
-              </span>
-              {todayRecord?.late_minutes ? (
-                <span className="text-[9.5px] text-[#C62828] block">({todayRecord.late_minutes}m late)</span>
-              ) : null}
-            </div>
-
-            <div className="bg-[#FAF8F3] p-2.5 rounded-[12px] border border-[#F2ECE2]">
-              <span className="text-[#8C847B] text-[10px] block">Punch Out</span>
-              <span className="font-semibold text-[#211B17]">
-                {todayRecord?.check_out_time ? new Date(todayRecord.check_out_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
-              </span>
-              {todayRecord?.overtime_minutes ? (
-                <span className="text-[9.5px] text-[#2E7D32] block">(+{todayRecord.overtime_minutes}m OT)</span>
-              ) : null}
-            </div>
-          </div>
-        </div>
-
-        {/* Primary Action Button (Big Mobile Punch Button) */}
-        <div className="my-3 flex flex-col items-center">
-          {!isCheckedIn ? (
-            <motion.button
-              whileTap={{ scale: 0.95 }}
-              onClick={() => setShowVerifyModal('check_in')}
-              className="w-44 h-44 rounded-full bg-gradient-to-tr from-[#2E7D32] via-[#388E3C] to-[#4CAF50] text-white font-bold flex flex-col items-center justify-center shadow-[0_12px_36px_rgba(46,125,50,0.38)] border-4 border-white active:shadow-inner"
-            >
-              <Camera className="w-10 h-10 mb-1" />
-              <span className="text-[17px] tracking-wide uppercase font-black">PUNCH IN</span>
-              <span className="text-[10px] text-white/80 font-medium">Selfie + Geo-Verify</span>
-            </motion.button>
-          ) : !isCheckedOut ? (
-            <motion.button
-              whileTap={{ scale: 0.95 }}
-              onClick={() => setShowVerifyModal('check_out')}
-              className="w-44 h-44 rounded-full bg-gradient-to-tr from-[#D32F2F] via-[#E53935] to-[#EF5350] text-white font-bold flex flex-col items-center justify-center shadow-[0_12px_36px_rgba(211,47,47,0.38)] border-4 border-white active:shadow-inner"
-            >
-              <LogOut className="w-10 h-10 mb-1" />
-              <span className="text-[17px] tracking-wide uppercase font-black">PUNCH OUT</span>
-              <span className="text-[10px] text-white/80 font-medium">End Daily Shift</span>
-            </motion.button>
-          ) : (
-            <div className="w-44 h-44 rounded-full bg-[#ECEFF1] text-[#546E7A] font-bold flex flex-col items-center justify-center border-4 border-white shadow-md">
-              <CheckCircle2 className="w-10 h-10 mb-1 text-[#2E7D32]" />
-              <span className="text-[15px] font-black">COMPLETED</span>
-              <span className="text-[10px] text-[#78909C]">Shift finished for today</span>
-            </div>
-          )}
-        </div>
-
-        {/* Action Shortcuts Bar */}
-        <div className="grid grid-cols-2 gap-3 mt-4">
-          <button
-            onClick={() => setShowLeaveModal(true)}
-            className="flex items-center justify-center gap-2 py-3 px-4 bg-white border border-[#E9DFD2] rounded-[14px] text-[12px] font-semibold text-[#211B17] shadow-xs hover:border-[#C89435] transition-all"
-          >
-            <Plane className="w-4 h-4 text-[#C89435]" />
-            <span>Apply Leave</span>
-          </button>
-
-          <button
-            onClick={() => setShowCalendarModal(true)}
-            className="flex items-center justify-center gap-2 py-3 px-4 bg-white border border-[#E9DFD2] rounded-[14px] text-[12px] font-semibold text-[#211B17] shadow-xs hover:border-[#C89435] transition-all"
-          >
-            <Calendar className="w-4 h-4 text-[#1976D2]" />
-            <span>My Attendance</span>
-          </button>
-        </div>
+        )}
       </main>
 
       {/* Footer Branding */}
-      <footer className="py-3 text-center border-t border-[#F0E8DC] bg-white/60 text-[10.5px] text-[#99928A]">
+      <footer className="py-2.5 text-center border-t border-[#F0E8DC] bg-white/60 text-[10.5px] text-[#99928A]">
         StudioCore Enterprise Smart Geo-Attendance & Workforce
       </footer>
 
@@ -597,11 +722,11 @@ export default function PersonalAttendancePage() {
               )}
             </div>
 
-            {/* Real-time GPS Status Badge */}
+            {/* Real-time GPS Radar Status Badge */}
             <div className="bg-white/10 backdrop-blur-md rounded-[16px] p-3 text-white text-xs mb-3 border border-white/15">
               <div className="flex items-center gap-2 mb-1">
-                <MapPin className="w-4 h-4 text-[#4CAF50] flex-shrink-0" />
-                <span className="font-semibold">Live GPS Location</span>
+                <Compass className="w-4 h-4 text-[#4CAF50] flex-shrink-0" />
+                <span className="font-semibold">Live GPS Radar</span>
               </div>
               {gpsLocation ? (
                 <div>
@@ -618,7 +743,7 @@ export default function PersonalAttendancePage() {
               ) : (
                 <div className="flex items-center gap-1.5 text-white/70 text-[11px]">
                   <RefreshCw className="w-3 h-3 animate-spin" />
-                  <span>Acquiring high accuracy GPS coordinates...</span>
+                  <span>Acquiring GPS coordinates...</span>
                 </div>
               )}
               {gpsError && <p className="text-[10.5px] text-[#FF8A80] mt-1">{gpsError}</p>}
@@ -677,7 +802,7 @@ export default function PersonalAttendancePage() {
               <div className="flex items-center justify-between pb-3 border-b border-[#F0E8DC] mb-4">
                 <div className="flex items-center gap-2">
                   <Plane className="w-5 h-5 text-[#C89435]" />
-                  <h3 className="text-base font-bold text-[#211B17]">Apply for Leave</h3>
+                  <h3 className="text-base font-bold text-[#211B17]">Apply for Leave / Regularization</h3>
                 </div>
                 <button
                   onClick={() => setShowLeaveModal(false)}
@@ -747,97 +872,6 @@ export default function PersonalAttendancePage() {
                   <span>Submit Leave Request</span>
                 </button>
               </form>
-
-              {/* Recent Leaves History */}
-              {recentLeaves.length > 0 && (
-                <div className="mt-5 pt-4 border-t border-[#F0E8DC]">
-                  <h4 className="text-[11px] font-bold uppercase tracking-wider text-[#99928A] mb-2">
-                    Recent Requests
-                  </h4>
-                  <div className="space-y-1.5">
-                    {recentLeaves.map((l) => (
-                      <div key={l.id} className="flex items-center justify-between p-2 rounded-[10px] bg-[#FAF8F3] text-[11px]">
-                        <div>
-                          <span className="font-semibold capitalize text-[#211B17]">{l.leave_type} Leave</span>
-                          <span className="text-[#8C847B] block text-[10px]">{l.start_date} to {l.end_date}</span>
-                        </div>
-                        <span className={`px-2 py-0.5 rounded-full text-[9.5px] font-bold ${
-                          l.status === 'approved' ? 'bg-[#E8F5E9] text-[#2E7D32]' :
-                          l.status === 'rejected' ? 'bg-[#FFEBEE] text-[#C62828]' : 'bg-[#FFF8E1] text-[#F57F17]'
-                        }`}>
-                          {l.status.toUpperCase()}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ========================================================= */}
-      {/* 3. MONTHLY ATTENDANCE CALENDAR MODAL */}
-      {/* ========================================================= */}
-      <AnimatePresence>
-        {showCalendarModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
-          >
-            <motion.div
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              className="bg-white w-full max-w-md rounded-t-[24px] sm:rounded-[24px] p-6 max-h-[85vh] overflow-y-auto"
-            >
-              <div className="flex items-center justify-between pb-3 border-b border-[#F0E8DC] mb-4">
-                <div className="flex items-center gap-2">
-                  <History className="w-5 h-5 text-[#1976D2]" />
-                  <h3 className="text-base font-bold text-[#211B17]">My Attendance History</h3>
-                </div>
-                <button
-                  onClick={() => setShowCalendarModal(false)}
-                  className="w-7 h-7 rounded-full bg-[#FAF8F3] text-[#746E67] flex items-center justify-center"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              {monthlyHistory.length === 0 ? (
-                <p className="text-center text-xs text-[#8C847B] py-8">No attendance records for this month yet.</p>
-              ) : (
-                <div className="space-y-2">
-                  {monthlyHistory.map((rec) => (
-                    <div key={rec.id} className="p-3 bg-[#FAF8F3] rounded-[14px] border border-[#F0E8DC] flex items-center justify-between">
-                      <div>
-                        <div className="font-bold text-xs text-[#211B17]">
-                          {new Date(rec.date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}
-                        </div>
-                        <div className="text-[10.5px] text-[#746E67] mt-0.5">
-                          In: {rec.check_in_time ? new Date(rec.check_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--'} | Out: {rec.check_out_time ? new Date(rec.check_out_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--'}
-                        </div>
-                      </div>
-
-                      <div className="text-right">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          rec.status === 'present' ? 'bg-[#E8F5E9] text-[#2E7D32]' :
-                          rec.status === 'late' ? 'bg-[#FFF3E0] text-[#E65100]' :
-                          rec.status === 'half_day' ? 'bg-[#EDE7F6] text-[#5E35B1]' : 'bg-[#FFEBEE] text-[#C62828]'
-                        }`}>
-                          {rec.status.toUpperCase()}
-                        </span>
-                        <div className="text-[10px] font-medium text-[#8C847B] mt-0.5 font-mono">
-                          {Math.floor((rec.work_duration_minutes || 0) / 60)}h {(rec.work_duration_minutes || 0) % 60}m
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
             </motion.div>
           </motion.div>
         )}
