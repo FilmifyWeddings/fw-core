@@ -7,7 +7,7 @@ import {
   DollarSign, TrendingUp, CreditCard, Receipt, Users, Plus, Search, Filter, 
   Calendar, CheckCircle2, Clock, AlertTriangle, ArrowUpRight, ArrowDownRight, 
   FileText, Download, Printer, ExternalLink, ChevronDown, ChevronUp, Edit3, 
-  Trash2, X, RefreshCw, Sparkles, Tag, PieChart, Wallet, ArrowRight, Bell, Send, Check
+  Trash2, X, RefreshCw, Sparkles, Tag, PieChart, Wallet, ArrowRight, Bell, Send, Check, Crown
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { extractFinancialsFromQuotation } from '@/lib/quotation-finance-sync';
@@ -92,6 +92,43 @@ export default function FinancePage() {
     client?: WorkspaceClient;
     financeRecord?: ClientFinanceRecord;
   }>({ open: false });
+
+  // Final Quotation sync state
+  const [settingFinalLoadingId, setSettingFinalLoadingId] = useState<string | null>(null);
+
+  const handleSetFinalFromFinance = async (leadId: string, quotationId: string, clientId?: string) => {
+    if (!leadId || !quotationId || settingFinalLoadingId) return;
+    setSettingFinalLoadingId(quotationId);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+
+      const res = await fetch('/api/quotations/set-final', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          quotationId,
+          leadId
+        })
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && json.success) {
+        await fetchFinanceData();
+      } else {
+        alert(json.error || 'Failed to set final quotation');
+      }
+    } catch (err: any) {
+      console.error('Error setting final quotation from finance:', err);
+      alert('Failed to set final quotation.');
+    } finally {
+      setSettingFinalLoadingId(null);
+    }
+  };
 
   // Fetch Finance Data
   useEffect(() => {
@@ -192,9 +229,10 @@ export default function FinancePage() {
         dbFinances.forEach(f => financeMap.set(f.client_id, f));
       }
 
-      // 3. Fetch Latest Quotation Documents for all clients with lead_id
+      // 3. Fetch Quotation Documents for all clients with lead_id
       const leadIds = clientList.filter(c => c.lead_id).map(c => c.lead_id);
       const quoteDocMap = new Map<string, any>();
+      const allLeadQuotesMap = new Map<string, any[]>();
 
       if (leadIds.length > 0) {
         const { data: quoteDocs } = await supabase
@@ -211,8 +249,11 @@ export default function FinancePage() {
           }
 
           leadGroups.forEach((docs, leadId) => {
+            allLeadQuotesMap.set(leadId, docs);
             const finalDoc = docs.find(d => d.content_json?.is_final === true || d.is_final === true);
-            quoteDocMap.set(leadId, finalDoc || docs[0]);
+            if (finalDoc) {
+              quoteDocMap.set(leadId, finalDoc);
+            }
           });
         }
       }
@@ -223,12 +264,29 @@ export default function FinancePage() {
 
       for (const c of clientList) {
         const existing = financeMap.get(c.id);
-        const linkedQuote = c.lead_id ? quoteDocMap.get(c.lead_id) : null;
-        const qFinancials = linkedQuote && linkedQuote.content_json
-          ? extractFinancialsFromQuotation(linkedQuote.content_json, c.event_date)
+        const leadDocs = c.lead_id ? (allLeadQuotesMap.get(c.lead_id) || []) : [];
+        const availableQuotes = leadDocs.map(d => {
+          const v = Number(d.lead_version || d.version || 1);
+          const f = d.content_json ? extractFinancialsFromQuotation(d.content_json, c.event_date) : null;
+          const couple = d.content_json?.cover?.coupleName || d.content_json?.cover?.groomName || '';
+          return {
+            template_id: d.template_id,
+            version: v,
+            title: couple ? `${couple} (V${v})` : `Quotation Version ${v}`,
+            is_final: d.content_json?.is_final === true || d.is_final === true,
+            created_at: d.created_at,
+            financials: f
+          };
+        });
+
+        const linkedFinalQuote = c.lead_id ? quoteDocMap.get(c.lead_id) : null;
+        const hasFinalQuotation = Boolean(linkedFinalQuote);
+        const finalVersion = linkedFinalQuote ? Number(linkedFinalQuote.lead_version || linkedFinalQuote.version || 1) : undefined;
+        const qFinancials = linkedFinalQuote && linkedFinalQuote.content_json
+          ? extractFinancialsFromQuotation(linkedFinalQuote.content_json, c.event_date)
           : null;
 
-        if (qFinancials && qFinancials.final_total_amount > 0) {
+        if (hasFinalQuotation && qFinancials && qFinancials.final_total_amount > 0) {
           // Quotation is the primary source of truth
           const isDbCorruptOrMissing = !existing || 
             Number(existing.final_total_amount) <= 0 || 
@@ -241,6 +299,10 @@ export default function FinancePage() {
             workspace_id: workspaceId,
             client_id: c.id,
             client: c,
+            has_final_quotation: true,
+            final_quotation_version: finalVersion,
+            final_quotation_id: linkedFinalQuote.template_id,
+            available_quotations: availableQuotes,
             base_package_price: qFinancials.base_package_price,
             discount_amount: qFinancials.discount_amount,
             accommodation_charges: qFinancials.accommodation_charges,
@@ -288,7 +350,7 @@ export default function FinancePage() {
             });
           }
         } else if (existing) {
-          const rawBase = Math.max(0, Math.round(Number(existing.base_package_price) || Number(c.total_package_amount) || 150000));
+          const rawBase = Math.max(0, Math.round(Number(existing.base_package_price) || Number(c.total_package_amount) || 0));
           const discount = Math.max(0, Math.round(Number(existing.discount_amount) || 0));
           const accommodation = Math.max(0, Math.round(Number(existing.accommodation_charges) || 0));
           const travel = Math.max(0, Math.round(Number(existing.travel_charges) || 0));
@@ -303,6 +365,8 @@ export default function FinancePage() {
           finalRecords.push({
             ...existing,
             client: c,
+            has_final_quotation: false,
+            available_quotations: availableQuotes,
             base_package_price: rawBase,
             discount_amount: discount,
             accommodation_charges: accommodation,
@@ -314,14 +378,14 @@ export default function FinancePage() {
             final_total_amount: finalTotal,
             received_amount: received,
             pending_amount: pending,
-            payment_status: pending === 0 ? 'paid' : received > 0 ? 'partially_paid' : 'pending',
+            payment_status: pending === 0 && finalTotal > 0 ? 'paid' : received > 0 ? 'partially_paid' : 'pending',
             milestones: Array.isArray(existing.milestones) && existing.milestones.length > 0
               ? existing.milestones
               : generateDefaultMilestones(finalTotal, c.event_date, received)
           });
         } else {
-          // Clean default for client without quotation
-          const basePkg = Math.max(0, Math.round(Number(c.total_package_amount) || 150000));
+          // Client without quotation or without finalized quotation
+          const basePkg = Math.max(0, Math.round(Number(c.total_package_amount) || 0));
           const discount = 0;
           const subtotal = basePkg;
           const gstRate = 0;
@@ -337,6 +401,8 @@ export default function FinancePage() {
             workspace_id: workspaceId,
             client_id: c.id,
             client: c,
+            has_final_quotation: false,
+            available_quotations: availableQuotes,
             base_package_price: basePkg,
             discount_amount: discount,
             accommodation_charges: 0,
@@ -355,25 +421,6 @@ export default function FinancePage() {
           };
 
           finalRecords.push(newRecord);
-          recordsToUpsertInDB.push({
-            user_id: workspaceId,
-            workspace_id: workspaceId,
-            client_id: c.id,
-            base_package_price: basePkg,
-            discount_amount: discount,
-            accommodation_charges: 0,
-            travel_charges: 0,
-            additional_charges: 0,
-            subtotal_amount: subtotal,
-            gst_rate: gstRate,
-            gst_amount: gstAmount,
-            final_total_amount: finalTotal,
-            received_amount: received,
-            pending_amount: pending,
-            payment_status: newRecord.payment_status,
-            milestones: defaultMilestones,
-            updated_at: new Date().toISOString()
-          });
         }
       }
 
@@ -1176,6 +1223,19 @@ export default function FinancePage() {
                             }`}>
                               {record.payment_status === 'paid' ? 'Fully Paid' : record.payment_status === 'partially_paid' ? 'Partially Paid' : 'Pending'}
                             </span>
+
+                            {/* Final Quotation Status Badge */}
+                            {record.has_final_quotation ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-gradient-to-r from-amber-500 to-[#F36F21] text-white border border-amber-400 shadow-2xs">
+                                <Crown className="w-3.5 h-3.5 text-amber-100" />
+                                <span>Final Quotation (V{record.final_quotation_version || 1})</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-100 text-amber-900 border border-amber-300">
+                                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 animate-bounce" />
+                                <span>Final Quotation Not Selected</span>
+                              </span>
+                            )}
                           </div>
 
                           {/* Event details & Contact */}
@@ -1253,6 +1313,88 @@ export default function FinancePage() {
                           </button>
                         </div>
                       </div>
+
+                      {/* ── FINAL QUOTATION SELECTION BANNER (IF NOT FINALIZED) ── */}
+                      {!record.has_final_quotation && (
+                        <div className="mx-5 sm:mx-6 my-4 p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 border-2 border-dashed border-amber-400/80 space-y-3 shadow-2xs">
+                          <div className="flex items-start sm:items-center justify-between gap-2">
+                            <div className="flex items-center gap-2.5">
+                              <div className="p-2 rounded-xl bg-amber-500 text-white shadow-xs shrink-0">
+                                <Crown className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <h4 className="text-xs sm:text-sm font-black text-slate-900 tracking-tight flex flex-wrap items-center gap-1.5">
+                                  <span>Final Quotation Select Nahi Hua Hai</span>
+                                  <span className="text-[9px] px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 font-extrabold uppercase tracking-wider">
+                                    Action Required
+                                  </span>
+                                </h4>
+                                <p className="text-[11px] text-slate-600 font-medium mt-0.5">
+                                  Yeh client booked status me hai. Finance aur Payment Schedule me kaun sa Quotation Version sync karna hai, use neeche select karein:
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {record.available_quotations && record.available_quotations.length > 0 ? (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
+                              {record.available_quotations.map((q) => {
+                                const isSettingThis = settingFinalLoadingId === q.template_id;
+                                return (
+                                  <div
+                                    key={q.template_id}
+                                    className="p-3 bg-white rounded-xl border border-amber-200 hover:border-amber-400 shadow-2xs flex flex-col justify-between gap-2.5 transition group"
+                                  >
+                                    <div>
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-xs font-black text-slate-900 group-hover:text-amber-800 transition">
+                                          Version {q.version}
+                                        </span>
+                                        <span className="text-xs font-mono font-black text-amber-700">
+                                          ₹{(q.financials?.final_total_amount || 0).toLocaleString('en-IN')}
+                                        </span>
+                                      </div>
+                                      <p className="text-[10px] text-slate-500 truncate mt-0.5">
+                                        {q.title || 'Quotation Proposal'}
+                                      </p>
+                                      {q.financials?.base_package_price ? (
+                                        <p className="text-[9px] text-slate-400 font-medium mt-0.5">
+                                          Base: ₹{q.financials.base_package_price.toLocaleString('en-IN')} {q.financials.discount_amount > 0 ? `• Disc: ₹${q.financials.discount_amount.toLocaleString('en-IN')}` : ''}
+                                        </p>
+                                      ) : null}
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSetFinalFromFinance(record.client?.lead_id || '', q.template_id, record.client_id)}
+                                      disabled={isSettingThis || settingFinalLoadingId !== null}
+                                      className="w-full py-2 px-3 rounded-lg bg-gradient-to-r from-amber-500 to-[#F36F21] hover:from-amber-600 hover:to-[#E05E10] active:scale-95 text-white text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                                    >
+                                      {isSettingThis ? (
+                                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                      ) : (
+                                        <CheckCircle2 className="w-3.5 h-3.5" />
+                                      )}
+                                      <span>{isSettingThis ? 'Syncing...' : 'Set as Final Quotation'}</span>
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="p-3 bg-white/90 rounded-xl border border-amber-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+                              <span className="text-slate-600 font-medium">Is lead ke liye abhi koi Quotation nahi banaya gaya hai.</span>
+                              <Link
+                                href={record.client?.lead_id ? `/workspace/quotations` : `/leads`}
+                                className="px-3 py-1.5 bg-slate-900 hover:bg-black text-white rounded-lg font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
+                              >
+                                <Plus className="w-3.5 h-3.5 text-amber-400" />
+                                <span>Create Quotation</span>
+                              </Link>
+                            </div>
+                          )}
+                        </div>
+                      )}
 
                       {/* ── EXPANDED PRICING BREAKDOWN & PAYMENT SCHEDULE ── */}
                       <AnimatePresence>

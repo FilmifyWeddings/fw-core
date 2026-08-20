@@ -178,9 +178,10 @@ export function extractFinancialsFromQuotation(
 }
 
 /**
- * Finds the latest quotation document for a given lead ID.
+ * Strictly finds ONLY the marked Final Quotation for a given lead ID.
+ * Returns null if no quotation is explicitly marked as final or chosen by user.
  */
-export async function findLatestQuotationForLead(supabaseClient: any, leadId: string) {
+export async function findFinalQuotationForLead(supabaseClient: any, leadId: string) {
   if (!leadId) return null;
 
   try {
@@ -191,10 +192,81 @@ export async function findLatestQuotationForLead(supabaseClient: any, leadId: st
       .order('created_at', { ascending: false });
 
     if (!docErr && docs && docs.length > 0) {
-      // Prioritize marked final quotation first
       const finalDoc = docs.find((d: any) => d.content_json?.is_final === true || d.is_final === true);
       if (finalDoc) return finalDoc;
+    }
 
+    // Check leads table for final_quotation_id
+    const { data: lead } = await supabaseClient
+      .from('leads')
+      .select('final_quotation_id, quotation_id')
+      .eq('id', leadId)
+      .maybeSingle();
+
+    if (lead?.final_quotation_id && docs) {
+      const match = docs.find((d: any) => d.template_id === lead.final_quotation_id || d.id === lead.final_quotation_id);
+      if (match) return match;
+    }
+  } catch (err) {
+    console.warn('[QuotationSync] Error finding final quotation for lead:', err);
+  }
+
+  return null;
+}
+
+/**
+ * Retrieves all quotation versions for a lead, formatted with extracted financials.
+ */
+export async function findAllQuotationsForLead(supabaseClient: any, leadId: string) {
+  if (!leadId) return [];
+
+  try {
+    const { data: docs, error: docErr } = await supabaseClient
+      .from('quotation_documents')
+      .select('id, template_id, lead_id, version, lead_version, content_json, created_at, updated_at')
+      .or(`lead_id.eq.${leadId},template_id.eq.FW-L-${leadId},template_id.eq.FW-Q-${leadId}`)
+      .order('created_at', { ascending: false });
+
+    if (!docErr && docs && docs.length > 0) {
+      return docs.map((d: any) => {
+        const v = Number(d.lead_version || d.version || 1);
+        const financials = d.content_json ? extractFinancialsFromQuotation(d.content_json) : null;
+        const couple = d.content_json?.cover?.coupleName || d.content_json?.cover?.groomName || '';
+        return {
+          id: d.id,
+          template_id: d.template_id,
+          version: v,
+          title: couple ? `${couple} (V${v})` : `Quotation Version ${v}`,
+          is_final: d.content_json?.is_final === true || d.is_final === true,
+          created_at: d.created_at,
+          financials
+        };
+      });
+    }
+  } catch (err) {
+    console.warn('[QuotationSync] Error finding all quotations for lead:', err);
+  }
+
+  return [];
+}
+
+/**
+ * Finds the latest quotation document for a given lead ID.
+ */
+export async function findLatestQuotationForLead(supabaseClient: any, leadId: string) {
+  if (!leadId) return null;
+
+  try {
+    const finalDoc = await findFinalQuotationForLead(supabaseClient, leadId);
+    if (finalDoc) return finalDoc;
+
+    const { data: docs, error: docErr } = await supabaseClient
+      .from('quotation_documents')
+      .select('id, template_id, lead_id, version, lead_version, content_json, created_at, updated_at')
+      .or(`lead_id.eq.${leadId},template_id.eq.FW-L-${leadId},template_id.eq.FW-Q-${leadId}`)
+      .order('created_at', { ascending: false });
+
+    if (!docErr && docs && docs.length > 0) {
       // Find highest version or latest created
       const sorted = [...docs].sort((a: any, b: any) => {
         const verA = Number(a.lead_version || a.version || 0);

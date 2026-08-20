@@ -689,6 +689,17 @@ export interface ClientFinanceRecord {
   payment_status: 'pending' | 'partially_paid' | 'paid' | 'overdue';
   milestones: FinanceMilestoneItem[];
   notes?: string | null;
+  has_final_quotation?: boolean;
+  final_quotation_version?: number;
+  final_quotation_id?: string;
+  available_quotations?: Array<{
+    template_id: string;
+    version: number;
+    title: string;
+    is_final?: boolean;
+    created_at: string;
+    financials: any;
+  }>;
   created_at: string;
   updated_at: string;
 }

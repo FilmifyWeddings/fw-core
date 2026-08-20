@@ -8,7 +8,7 @@ import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { LeadTable } from '@/components/dashboard/lead-table';
 import { MasterSettingsHub } from '@/components/settings/master-settings-hub';
-import { extractFinancialsFromQuotation, findLatestQuotationForLead } from '@/lib/quotation-finance-sync';
+import { extractFinancialsFromQuotation, findFinalQuotationForLead } from '@/lib/quotation-finance-sync';
 
 const MOCK_WORKSPACE_ID = '00000000-0000-0000-0000-000000000000';
 
@@ -485,8 +485,8 @@ export default function LeadsPage() {
         }
       }
 
-      // 2. Fetch Latest Quotation Version for this lead
-      const latestQuote = await findLatestQuotationForLead(supabase, leadId);
+      // 2. Fetch Strictly Final Quotation Version for this lead (if chosen)
+      const latestQuote = await findFinalQuotationForLead(supabase, leadId);
       const quoteFinancials = latestQuote && latestQuote.content_json
         ? extractFinancialsFromQuotation(latestQuote.content_json, parsedEventDate)
         : null;
