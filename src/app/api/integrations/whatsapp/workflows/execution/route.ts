@@ -227,8 +227,10 @@ export async function GET(req: NextRequest) {
             sent_at: sentAtIso,
             sent_at_formatted: sentAtFormatted,
             updated_at: matchedLog?.updated_at || null,
-            updated_at_formatted: updatedAtFormatted,
-            parsed_body: parsedBody
+            parsed_body: parsedBody,
+            target_type: step.target_type || 'client',
+            target_group_jid: step.target_group_jid || null,
+            target_group_name: step.target_group_name || null,
           };
         });
 

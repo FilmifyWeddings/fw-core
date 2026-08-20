@@ -97,7 +97,16 @@ BEGIN
     -- Queue each step
     FOR r_step IN
       SELECT * FROM jsonb_to_recordset(r_workflow.workflow_steps)
-      AS steps(template_id UUID, template_name TEXT, delay_value INT, delay_unit TEXT, sort_index INT)
+      AS steps(
+        template_id UUID, 
+        template_name TEXT, 
+        delay_value INT, 
+        delay_unit TEXT, 
+        sort_index INT,
+        target_type TEXT,
+        target_group_jid TEXT,
+        target_group_name TEXT
+      )
       ORDER BY sort_index ASC
     LOOP
       -- Accumulate delay ON TOP of previous step's time (not fresh NOW())
@@ -121,19 +130,43 @@ BEGIN
         clean_phone, r_step.template_name, 'pending', v_scheduled_at
       );
 
-      INSERT INTO public.baileys_action_queue (
-        workspace_id, action_type, payload, status, next_retry_at, priority
-      ) VALUES (
-        v_workspace_id,
-        'send_template',
-        jsonb_build_object(
-          'to',            clean_phone || '@s.whatsapp.net',
-          'templateId',    r_step.template_id,
-          'variables',     v_variables,
-          'workflowLogId', v_log_id
-        ),
-        'pending', v_scheduled_at, 5
-      );
+      -- Check if step targets a WhatsApp Group or Client Direct Phone
+      IF r_step.target_type = 'group' OR (r_step.target_group_jid IS NOT NULL AND r_step.target_group_jid <> '') THEN
+        INSERT INTO public.baileys_action_queue (
+          workspace_id, action_type, recipient, scheduled_at, payload, status, next_retry_at, priority
+        ) VALUES (
+          v_workspace_id,
+          'group_dispatch',
+          r_step.target_group_jid,
+          v_scheduled_at,
+          jsonb_build_object(
+            'groupJid',        r_step.target_group_jid,
+            'targetGroupName', r_step.target_group_name,
+            'leadData',        v_variables,
+            'template_name',   r_step.template_name,
+            'templateId',      r_step.template_id,
+            'workflowLogId',   v_log_id
+          ),
+          'pending', v_scheduled_at, 5
+        );
+      ELSE
+        INSERT INTO public.baileys_action_queue (
+          workspace_id, action_type, recipient, scheduled_at, payload, status, next_retry_at, priority
+        ) VALUES (
+          v_workspace_id,
+          'send_template',
+          clean_phone || '@s.whatsapp.net',
+          v_scheduled_at,
+          jsonb_build_object(
+            'to',            clean_phone || '@s.whatsapp.net',
+            'templateId',    r_step.template_id,
+            'template_name', r_step.template_name,
+            'variables',     v_variables,
+            'workflowLogId', v_log_id
+          ),
+          'pending', v_scheduled_at, 5
+        );
+      END IF;
     END LOOP;
   END LOOP;
 

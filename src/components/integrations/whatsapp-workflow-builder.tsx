@@ -26,6 +26,13 @@ interface Template {
   id: string;
   name: string;
   type: string;
+  category?: string;
+}
+
+interface WhatsAppSyncedGroup {
+  jid: string;
+  display_name: string;
+  participant_count?: number;
 }
 
 interface WorkflowStep {
@@ -34,6 +41,9 @@ interface WorkflowStep {
   delay_value: number;
   delay_unit: 'seconds' | 'minutes' | 'hours' | 'days';
   sort_index: number;
+  target_type?: 'client' | 'group';
+  target_group_jid?: string;
+  target_group_name?: string;
 }
 
 interface Workflow {
@@ -51,6 +61,9 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [groups, setGroups] = useState<ContactGroup[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
+  const [syncedWhatsAppGroups, setSyncedWhatsAppGroups] = useState<WhatsAppSyncedGroup[]>([]);
+  const [fetchingGroups, setFetchingGroups] = useState(false);
+  const [stepGroupSearch, setStepGroupSearch] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [executingId, setExecutingId] = useState<string | null>(null);
@@ -77,10 +90,45 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Load Initial Data
+  const fetchSyncedGroups = async () => {
+    setFetchingGroups(true);
+    try {
+      // 1. Check local DB chats
+      const { data: dbGroups } = await supabase
+        .from('baileys_chats')
+        .select('jid, display_name, participant_count, is_group')
+        .eq('is_group', true)
+        .order('display_name', { ascending: true });
+
+      if (dbGroups && dbGroups.length > 0) {
+        setSyncedWhatsAppGroups(dbGroups);
+        localStorage.setItem(`wa_synced_groups_${workspaceId}`, JSON.stringify(dbGroups));
+      }
+
+      // 2. Also trigger live fetch from worker
+      const res = await fetch('/api/integrations/baileys/fetch-groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspace_id: workspaceId })
+      });
+      const data = await res.json();
+      if (data.success && data.groups && data.groups.length > 0) {
+        setSyncedWhatsAppGroups(data.groups);
+        localStorage.setItem(`wa_synced_groups_${workspaceId}`, JSON.stringify(data.groups));
+      }
+    } catch (e) {
+      console.warn('Error fetching synced WhatsApp groups:', e);
+      const cached = localStorage.getItem(`wa_synced_groups_${workspaceId}`);
+      if (cached) setSyncedWhatsAppGroups(JSON.parse(cached));
+    } finally {
+      setFetchingGroups(false);
+    }
+  };
+
   const loadData = async () => {
     setLoading(true);
     try {
-      // Fetch all three endpoints concurrently in parallel
+      // Fetch all endpoints concurrently in parallel
       const [tempRes, groupRes, workflowRes] = await Promise.all([
         fetch(`/api/templates?workspace_id=${workspaceId}`),
         fetch(`/api/integrations/whatsapp/groups?tenant_id=${workspaceId}`),
@@ -108,12 +156,16 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
         setWorkflows(list);
         localStorage.setItem(`wa_workflows_${workspaceId}`, JSON.stringify(list));
       }
+
+      fetchSyncedGroups();
     } catch (err) {
       console.warn('Fallback loading workflows from local storage', err);
       const localGroups = localStorage.getItem(`wa_contact_groups_${workspaceId}`);
       if (localGroups) setGroups(JSON.parse(localGroups));
       const localWorkflows = localStorage.getItem(`wa_workflows_${workspaceId}`);
       if (localWorkflows) setWorkflows(JSON.parse(localWorkflows));
+      const cached = localStorage.getItem(`wa_synced_groups_${workspaceId}`);
+      if (cached) setSyncedWhatsAppGroups(JSON.parse(cached));
     } finally {
       setLoading(false);
     }
@@ -166,12 +218,18 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
   // Add new card step
   const handleAddStep = () => {
     const defaultTemplate = templates[0];
+    const cat = (defaultTemplate?.category || '').toLowerCase();
+    const isGroup = cat === 'group_alert' || cat === 'group_workflow' || cat === 'group' || (defaultTemplate?.name || '').toLowerCase().startsWith('group_');
+
     const newStep: WorkflowStep = {
       template_id: defaultTemplate?.id || '',
       template_name: defaultTemplate?.name || '',
       delay_value: 30,
       delay_unit: 'seconds',
-      sort_index: steps.length
+      sort_index: steps.length,
+      target_type: isGroup ? 'group' : 'client',
+      target_group_jid: isGroup ? (syncedWhatsAppGroups[0]?.jid || '') : '',
+      target_group_name: isGroup ? (syncedWhatsAppGroups[0]?.display_name || '') : ''
     };
     setSteps([...steps, newStep]);
   };
@@ -180,10 +238,23 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
     const newSteps = [...steps];
     if (field === 'template_name') {
       const selected = templates.find(t => t.name === value);
+      const cat = (selected?.category || '').toLowerCase();
+      const isGroup = cat === 'group_alert' || cat === 'group_workflow' || cat === 'group' || (value || '').toLowerCase().startsWith('group_') || (value || '').toLowerCase().includes('group_alert');
+
       newSteps[index] = {
         ...newSteps[index],
         template_name: value,
-        template_id: selected?.id || ''
+        template_id: selected?.id || '',
+        target_type: isGroup ? 'group' : (newSteps[index].target_type || 'client'),
+        target_group_jid: isGroup && !newSteps[index].target_group_jid ? (syncedWhatsAppGroups[0]?.jid || '') : newSteps[index].target_group_jid,
+        target_group_name: isGroup && !newSteps[index].target_group_name ? (syncedWhatsAppGroups[0]?.display_name || '') : newSteps[index].target_group_name
+      };
+    } else if (field === 'target_group_jid') {
+      const foundGroup = syncedWhatsAppGroups.find(g => g.jid === value);
+      newSteps[index] = {
+        ...newSteps[index],
+        target_group_jid: value,
+        target_group_name: foundGroup?.display_name || value
       };
     } else {
       newSteps[index] = {
@@ -871,97 +942,237 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                   No step nodes configured. Add your first step below.
                 </div>
               ) : (
-                <div className="space-y-0">
-                  {steps.map((step, index) => (
-                    <React.Fragment key={index}>
+                <div className="space-y-4">
+                  {steps.map((step, index) => {
+                    const currentSearch = (stepGroupSearch[index] || '').toLowerCase();
+                    const filteredGroupsForStep = syncedWhatsAppGroups.filter(g =>
+                      (g.display_name || '').toLowerCase().includes(currentSearch) ||
+                      (g.jid || '').toLowerCase().includes(currentSearch)
+                    );
+                    const selectedTemplate = templates.find(t => t.name === step.template_name);
+                    const isGroupCategory = (selectedTemplate?.category || '').toLowerCase() === 'group_alert' || 
+                                           (selectedTemplate?.category || '').toLowerCase() === 'group_workflow' ||
+                                           (selectedTemplate?.category || '').toLowerCase() === 'group';
 
-                      {/* Drip Node with delay inside */}
-                      <div
-                        draggable
-                        onDragStart={() => handleDragStart(index)}
-                        onDragEnter={() => handleDragEnter(index)}
-                        onDragEnd={handleDragEnd}
-                        onDragOver={(e) => e.preventDefault()}
-                        className="p-5 rounded-2xl bg-slate-50/80 dark:bg-white/5 border border-zinc-200 dark:border-white/10 shadow-sm hover:border-zinc-300 dark:hover:bg-white/10 flex flex-col md:flex-row items-center gap-4 transition-all relative group"
-                      >
-                        {/* Drag Handle & Node Index */}
-                        <div className="flex items-center gap-1.5 cursor-grab active:cursor-grabbing text-zinc-400 hover:text-zinc-800 transition-colors shrink-0">
-                          <GripVertical className="w-4 h-4" />
-                          <span className="text-[10px] font-mono font-black text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 px-2 py-0.5 rounded-md">
-                            NODE #{index + 1}
-                          </span>
-                        </div>
+                    return (
+                      <React.Fragment key={index}>
 
-                        {/* Select Template */}
-                        <div className="flex-1 w-full space-y-1">
-                          <label className="text-[9px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider block">Message Template</label>
-                          <select
-                            value={step.template_name}
-                            onChange={(e) => handleUpdateStep(index, 'template_name', e.target.value)}
-                            className="w-full px-3 py-2 bg-white dark:bg-zinc-950/80 border border-zinc-200 dark:border-zinc-800 rounded-lg text-xs text-zinc-800 dark:text-zinc-300 focus:outline-none focus:border-emerald-500/60 shadow-sm"
-                          >
-                            <option value="">Select Template</option>
-                            {templates.map(t => (
-                              <option key={t.id} value={t.name}>{t.name} ({t.type})</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        {/* Custom Delay Matrix: Number + Unit */}
-                        <div className="w-full md:w-64 space-y-1">
-                          <label className="text-[9px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider flex items-center gap-1">
-                            Delay Cooldown <span className="text-[8px] text-zinc-400 font-mono font-normal">(Chained Step Timing)</span>
-                          </label>
-                          <div className="flex gap-2">
-                            <input
-                              type="number"
-                              required
-                              min="0"
-                              placeholder="1"
-                              value={step.delay_value}
-                              onChange={(e) => handleUpdateStep(index, 'delay_value', parseInt(e.target.value) || 0)}
-                              className="w-20 px-3 py-2 bg-white dark:bg-zinc-950/80 border border-zinc-200 dark:border-zinc-800 rounded-lg text-xs text-zinc-800 dark:text-zinc-200 placeholder-zinc-400 focus:outline-none text-center focus:border-emerald-500/60 shadow-sm font-bold"
-                            />
-                            <select
-                              value={step.delay_unit}
-                              onChange={(e) => handleUpdateStep(index, 'delay_unit', e.target.value)}
-                              className="flex-1 px-3 py-2 bg-white dark:bg-zinc-950/80 border border-zinc-200 dark:border-zinc-800 rounded-lg text-xs font-semibold text-zinc-800 dark:text-zinc-300 focus:outline-none cursor-pointer focus:border-emerald-500/60 shadow-sm"
-                            >
-                              <option value="seconds">Seconds</option>
-                              <option value="minutes">Minutes</option>
-                              <option value="hours">Hours</option>
-                              <option value="days">Days</option>
-                            </select>
-                          </div>
-                          <span className="text-[8.5px] text-zinc-500 dark:text-zinc-400 block font-sans leading-none pt-1">
-                            {index === 0
-                              ? `Node #1 runs ${step.delay_value} ${step.delay_unit} after lead arrives.`
-                              : `Runs ${step.delay_value} ${step.delay_unit} after previous Node #${index} fires.`}
-                          </span>
-                        </div>
-
-                        {/* Delete Node Step */}
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteStep(index)}
-                          className="p-2 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition-all shrink-0 md:self-end cursor-pointer"
+                        {/* Drip Node Card */}
+                        <div
+                          draggable
+                          onDragStart={() => handleDragStart(index)}
+                          onDragEnter={() => handleDragEnter(index)}
+                          onDragEnd={handleDragEnd}
+                          onDragOver={(e) => e.preventDefault()}
+                          className={`p-5 rounded-2xl border shadow-sm transition-all relative group space-y-4 ${
+                            step.target_type === 'group' || isGroupCategory
+                              ? 'bg-amber-500/5 dark:bg-amber-500/5 border-amber-300/40 dark:border-amber-500/20 hover:border-amber-400'
+                              : 'bg-slate-50/80 dark:bg-white/5 border-zinc-200 dark:border-white/10 hover:border-zinc-300 dark:hover:bg-white/10'
+                          }`}
                         >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
+                          {/* Node Header Row */}
+                          <div className="flex items-center justify-between gap-3 border-b border-zinc-200/60 dark:border-zinc-800 pb-3">
+                            <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1.5 cursor-grab active:cursor-grabbing text-zinc-400 hover:text-zinc-800 transition-colors">
+                                <GripVertical className="w-4 h-4" />
+                                <span className="text-[10px] font-mono font-black text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 px-2 py-0.5 rounded-md">
+                                  NODE #{index + 1}
+                                </span>
+                              </div>
 
-                      {/* Linking line */}
-                      {index < steps.length - 1 && (
-                        <div className="flex flex-col items-center py-2 select-none">
-                          <div className="w-[2px] h-8 bg-gradient-to-b from-emerald-500 via-emerald-400 to-transparent relative animate-pulse shadow-[0_0_8px_#10b981]">
-                            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                              {/* Target Type Selector Buttons */}
+                              <div className="flex items-center bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-0.5 gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateStep(index, 'target_type', 'client')}
+                                  className={`px-2.5 py-1 text-[10px] font-bold rounded-md flex items-center gap-1 transition-all cursor-pointer ${
+                                    step.target_type !== 'group' && !isGroupCategory
+                                      ? 'bg-emerald-500 text-white shadow-sm'
+                                      : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300'
+                                  }`}
+                                >
+                                  <UserCheck className="w-3 h-3" />
+                                  Client Direct Chat
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateStep(index, 'target_type', 'group')}
+                                  className={`px-2.5 py-1 text-[10px] font-bold rounded-md flex items-center gap-1 transition-all cursor-pointer ${
+                                    step.target_type === 'group' || isGroupCategory
+                                      ? 'bg-gradient-to-r from-orange-400 to-amber-500 text-black shadow-sm'
+                                      : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300'
+                                  }`}
+                                >
+                                  <Users className="w-3 h-3" />
+                                  WhatsApp Group Channel
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Delete Node Step */}
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteStep(index)}
+                              className="p-1.5 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition-all cursor-pointer"
+                              title="Delete Step Node"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
                           </div>
-                          <span className="text-[8px] text-zinc-400 font-mono tracking-widest uppercase my-0.5">drip execution delay flow</span>
-                        </div>
-                      )}
 
-                    </React.Fragment>
-                  ))}
+                          {/* Node Body Grid */}
+                          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
+                            
+                            {/* Message Template (Cols: 5) */}
+                            <div className="md:col-span-5 space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <label className="text-[9px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider block">
+                                  Message Template
+                                </label>
+                                {isGroupCategory && (
+                                  <span className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                                    Group Alert Template
+                                  </span>
+                                )}
+                              </div>
+                              <select
+                                value={step.template_name}
+                                onChange={(e) => handleUpdateStep(index, 'template_name', e.target.value)}
+                                className="w-full px-3 py-2 bg-white dark:bg-zinc-950/80 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs text-zinc-800 dark:text-zinc-300 focus:outline-none focus:border-emerald-500/60 shadow-sm"
+                              >
+                                <option value="">Select Template</option>
+                                <optgroup label="👤 Client & Drip Templates">
+                                  {templates.filter(t => !['group_alert', 'group_workflow', 'group'].includes((t.category || '').toLowerCase()) && !t.name.startsWith('group_')).map(t => (
+                                    <option key={t.id} value={t.name}>{t.name} ({t.type})</option>
+                                  ))}
+                                </optgroup>
+                                <optgroup label="👥 WhatsApp Group Templates">
+                                  {templates.filter(t => ['group_alert', 'group_workflow', 'group'].includes((t.category || '').toLowerCase()) || t.name.startsWith('group_')).map(t => (
+                                    <option key={t.id} value={t.name}>🚨 {t.name} (Group {t.type})</option>
+                                  ))}
+                                </optgroup>
+                              </select>
+                            </div>
+
+                            {/* Delay Cooldown (Cols: 7) */}
+                            <div className="md:col-span-7 space-y-1.5">
+                              <label className="text-[9px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider flex items-center gap-1">
+                                Delay Cooldown <span className="text-[8px] text-zinc-400 font-mono font-normal">(Chained Step Timing)</span>
+                              </label>
+                              <div className="flex gap-2">
+                                <input
+                                  type="number"
+                                  required
+                                  min="0"
+                                  placeholder="1"
+                                  value={step.delay_value}
+                                  onChange={(e) => handleUpdateStep(index, 'delay_value', parseInt(e.target.value) || 0)}
+                                  className="w-20 px-3 py-2 bg-white dark:bg-zinc-950/80 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs text-zinc-800 dark:text-zinc-200 placeholder-zinc-400 focus:outline-none text-center focus:border-emerald-500/60 shadow-sm font-bold"
+                                />
+                                <select
+                                  value={step.delay_unit}
+                                  onChange={(e) => handleUpdateStep(index, 'delay_unit', e.target.value)}
+                                  className="flex-1 px-3 py-2 bg-white dark:bg-zinc-950/80 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs font-semibold text-zinc-800 dark:text-zinc-300 focus:outline-none cursor-pointer focus:border-emerald-500/60 shadow-sm"
+                                >
+                                  <option value="seconds">Seconds</option>
+                                  <option value="minutes">Minutes</option>
+                                  <option value="hours">Hours</option>
+                                  <option value="days">Days</option>
+                                </select>
+                              </div>
+                              <span className="text-[8.5px] text-zinc-500 dark:text-zinc-400 block font-sans leading-none pt-0.5">
+                                {index === 0
+                                  ? `Node #1 runs ${step.delay_value} ${step.delay_unit} after lead arrives.`
+                                  : `Runs ${step.delay_value} ${step.delay_unit} after previous Node #${index} fires.`}
+                              </span>
+                            </div>
+
+                          </div>
+
+                          {/* ═══ TARGET WHATSAPP GROUP SEARCH & SELECT DOCK (When Group Target Selected) ═══ */}
+                          {(step.target_type === 'group' || isGroupCategory) && (
+                            <div className="p-4 rounded-xl border border-amber-300/40 dark:border-amber-500/20 bg-amber-500/5 dark:bg-amber-500/5 space-y-3">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Users className="w-3.5 h-3.5 text-orange-500" />
+                                  <span className="text-[10px] font-bold text-zinc-900 dark:text-white uppercase tracking-wider">
+                                    Target WhatsApp Group Destination
+                                  </span>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={fetchSyncedGroups}
+                                  disabled={fetchingGroups}
+                                  className="flex items-center gap-1 text-[9px] font-bold text-orange-600 dark:text-orange-400 hover:underline cursor-pointer disabled:opacity-50"
+                                >
+                                  <RefreshCw className={`w-3 h-3 ${fetchingGroups ? 'animate-spin' : ''}`} />
+                                  {fetchingGroups ? 'Syncing Groups...' : 'Refresh Synced Groups'}
+                                </button>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {/* Search Filter Input */}
+                                <div className="relative">
+                                  <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                  <input
+                                    type="text"
+                                    placeholder="🔍 Search group name or JID..."
+                                    value={stepGroupSearch[index] || ''}
+                                    onChange={(e) => setStepGroupSearch(prev => ({ ...prev, [index]: e.target.value }))}
+                                    className="w-full pl-8 pr-3 py-2 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-800 dark:text-zinc-200 text-xs rounded-xl focus:outline-none focus:border-orange-400"
+                                  />
+                                </div>
+
+                                {/* Group Selector Dropdown */}
+                                <div>
+                                  <select
+                                    value={step.target_group_jid || ''}
+                                    onChange={(e) => handleUpdateStep(index, 'target_group_jid', e.target.value)}
+                                    className="w-full px-3 py-2 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-800 dark:text-zinc-200 text-xs rounded-xl focus:outline-none focus:border-orange-400 font-medium"
+                                  >
+                                    <option value="">-- Choose WhatsApp Group --</option>
+                                    {filteredGroupsForStep.length === 0 ? (
+                                      <option value="" disabled>No matching WhatsApp groups found</option>
+                                    ) : (
+                                      filteredGroupsForStep.map(g => (
+                                        <option key={g.jid} value={g.jid}>
+                                          {g.display_name} ({g.participant_count || 0} members)
+                                        </option>
+                                      ))
+                                    )}
+                                  </select>
+                                </div>
+                              </div>
+
+                              {/* Selected Group Active JID Badge */}
+                              {step.target_group_jid && (
+                                <div className="flex items-center justify-between text-[10px] text-zinc-500 dark:text-zinc-400 font-mono bg-white dark:bg-zinc-900/80 px-3 py-1.5 rounded-lg border border-zinc-150 dark:border-zinc-800">
+                                  <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-bold">
+                                    <CheckCircle2 className="w-3 h-3" />
+                                    Active Target: <span className="font-sans font-extrabold text-zinc-900 dark:text-white">{step.target_group_name || 'Selected Group'}</span>
+                                  </span>
+                                  <span className="text-[9px] text-zinc-400">{step.target_group_jid}</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                        </div>
+
+                        {/* Linking line */}
+                        {index < steps.length - 1 && (
+                          <div className="flex flex-col items-center py-2 select-none">
+                            <div className="w-[2px] h-8 bg-gradient-to-b from-emerald-500 via-emerald-400 to-transparent relative animate-pulse shadow-[0_0_8px_#10b981]">
+                              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                            </div>
+                            <span className="text-[8px] text-zinc-400 font-mono tracking-widest uppercase my-0.5">drip execution delay flow</span>
+                          </div>
+                        )}
+
+                      </React.Fragment>
+                    );
+                  })}
                 </div>
               )}
 
