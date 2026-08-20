@@ -122,20 +122,19 @@ export default function AttendancePage() {
       setRecords(recordsData || []);
 
       // 3. Fetch Geofence Locations
-      let locQuery = supabase
-        .from('attendance_locations')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (workspaceId !== 'ws_demo') {
-        locQuery = locQuery.eq('user_id', workspaceId);
-      }
-
-      const { data: locData } = await locQuery;
-      const locs = locData || [];
-      setLocations(locs);
-      if (locs.length > 0 && !selectedLocation) {
-        setSelectedLocation(locs[0]);
+      // 3. Fetch Geofence Locations via dedicated backend endpoint
+      try {
+        const locRes = await fetch('/api/attendance/locations');
+        if (locRes.ok) {
+          const { locations: locData } = await locRes.json();
+          const locs = locData || [];
+          setLocations(locs);
+          if (locs.length > 0) {
+            setSelectedLocation(prev => prev && locs.some((l: any) => l.id === prev.id) ? prev : locs[0]);
+          }
+        }
+      } catch (locErr) {
+        console.error('Error loading locations from API:', locErr);
       }
 
       // 4. Fetch Shifts
@@ -244,26 +243,22 @@ export default function AttendancePage() {
     }
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const workspaceId = session?.user?.id || 'ws_demo';
+      const res = await fetch('/api/attendance/locations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: locationForm.name.trim(),
+          latitude: Number(locationForm.latitude) || 19.0596,
+          longitude: Number(locationForm.longitude) || 72.8295,
+          radius_meters: Number(locationForm.radius_meters) || 50,
+          address: locationForm.address.trim()
+        })
+      });
 
-      const newLoc: AttendanceLocation = {
-        id: `loc_${Date.now()}`,
-        user_id: workspaceId,
-        workspace_id: workspaceId,
-        name: locationForm.name.trim(),
-        latitude: Number(locationForm.latitude) || 19.0596,
-        longitude: Number(locationForm.longitude) || 72.8295,
-        radius_meters: Number(locationForm.radius_meters) || 150,
-        address: locationForm.address.trim(),
-        is_active: true
-      };
-
-      setLocations(prev => [newLoc, ...prev]);
-      setSelectedLocation(newLoc);
-
-      if (workspaceId !== 'ws_demo') {
-        await supabase.from('attendance_locations').insert([newLoc]);
+      const data = await res.json();
+      if (data.location) {
+        setLocations(prev => [data.location, ...prev.filter(l => l.id !== data.location.id)]);
+        setSelectedLocation(data.location);
       }
 
       setShowAddLocationModal(false);
@@ -288,18 +283,14 @@ export default function AttendancePage() {
     setLocations(prev => prev.map(l => l.id === updated.id ? updated : l));
 
     try {
-      await supabase
-        .from('attendance_locations')
-        .update({
-          name: placeName || selectedLocation.name,
-          latitude: lat,
-          longitude: lng,
-          address: address || selectedLocation.address,
-          radius_meters: radius ?? selectedLocation.radius_meters,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', selectedLocation.id);
-    } catch (_) {}
+      await fetch('/api/attendance/locations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+    } catch (e) {
+      console.error('Error updating geofence on map:', e);
+    }
   };
 
   // Delete Geofence
@@ -310,8 +301,10 @@ export default function AttendancePage() {
       setSelectedLocation(locations.find(l => l.id !== locId) || null);
     }
     try {
-      await supabase.from('attendance_locations').delete().eq('id', locId);
-    } catch (_) {}
+      await fetch(`/api/attendance/locations?id=${locId}`, { method: 'DELETE' });
+    } catch (e) {
+      console.error('Error deleting geofence:', e);
+    }
   };
 
   // Save New Shift

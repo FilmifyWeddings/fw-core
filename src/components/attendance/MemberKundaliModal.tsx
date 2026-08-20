@@ -370,7 +370,18 @@ export default function MemberKundaliModal({
                               No check-out photo
                             </div>
                           )}
-                          <div className="text-[10px] text-white/50 flex items-center justify-between">
+                          <div className="text-[10px] text-white/50 flex flex-col gap-0.5">
+                            <div className="flex items-center gap-1">
+                              <MapPin className="w-3 h-3 text-[#FF8A80]" />
+                              <span>GPS: {rec.check_out_lat ? `${rec.check_out_lat.toFixed(4)}, ${rec.check_out_lng?.toFixed(4)}` : '—'}</span>
+                            </div>
+                            {(rec.device_info?.check_out_address || (rec.notes && rec.notes.includes('Punch Out:'))) ? (
+                              <span className="text-[9.5px] text-white/40 truncate">
+                                {rec.device_info?.check_out_address || rec.notes?.split('Punch Out:')[1]?.trim() || ''}
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="text-[10px] text-white/50 flex items-center justify-between pt-1 border-t border-white/5">
                             <div className="flex items-center gap-1">
                               <Clock className="w-3 h-3 text-[#4FC3F7]" />
                               <span>Overtime: {rec.overtime_minutes || 0}m</span>

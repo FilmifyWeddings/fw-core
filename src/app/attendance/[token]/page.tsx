@@ -358,6 +358,8 @@ export default function PersonalAttendancePage() {
       }
 
       const endpoint = showVerifyModal === 'check_in' ? '/api/public/attendance/check-in' : '/api/public/attendance/check-out';
+      const resolvedAddress = geofenceResult?.nearestLocationName || locations[0]?.name || (gpsLocation ? `Lat: ${gpsLocation.lat.toFixed(4)}, Lng: ${gpsLocation.lng.toFixed(4)}` : '');
+
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -366,6 +368,7 @@ export default function PersonalAttendancePage() {
           lat: gpsLocation?.lat,
           lng: gpsLocation?.lng,
           accuracy: gpsLocation?.accuracy,
+          address: resolvedAddress,
           photoBase64: compressedSelfie,
           deviceInfo: {
             userAgent: navigator.userAgent,

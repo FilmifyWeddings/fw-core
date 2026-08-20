@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { calculateHaversineDistanceMeters, reverseGeocodeAddress } from '@/lib/attendance/geo-fence';
+import { calculateHaversineDistanceMeters } from '@/lib/attendance/geo-fence';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { token, lat, lng, accuracy, photoBase64, deviceInfo } = body;
+    const { token, lat, lng, accuracy, photoBase64, address, deviceInfo } = body;
 
     if (!token || !token.trim()) {
       return NextResponse.json({ error: 'Token is required' }, { status: 400 });
@@ -54,14 +54,12 @@ export async function POST(request: NextRequest) {
 
     let locationsQuery = supabaseAdmin
       .from('attendance_locations')
-      .select('id, name, latitude, longitude, radius_meters')
-      .eq('user_id', link.user_id)
+      .select('id, name, latitude, longitude, radius_meters, address')
       .eq('is_active', true);
 
     const { data: allLocations } = await locationsQuery;
     let locations = allLocations || [];
 
-    // Prioritize member assigned default geofence if present
     if (member?.default_geofence_id) {
       const userLoc = locations.find(l => l.id === member.default_geofence_id);
       if (userLoc) {
@@ -69,12 +67,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 4. Geofence Verification using Haversine
+    // 4. Ultra-Fast Geofence Verification using Haversine
     let geofenceStatus: 'verified' | 'outside_geofence' | 'no_geofence' = 'no_geofence';
     let matchedLocationId: string | null = null;
     let minDistance = Infinity;
     let closestLocationName = '';
-    let allowedRadius = 150;
+    let allowedRadius = 50;
 
     if (locations && locations.length > 0 && lat && lng) {
       for (const loc of locations) {
@@ -88,10 +86,10 @@ export async function POST(request: NextRequest) {
         if (dist < minDistance) {
           minDistance = dist;
           closestLocationName = loc.name;
-          allowedRadius = Number(loc.radius_meters || 150);
+          allowedRadius = Number(loc.radius_meters || 50);
         }
 
-        if (dist <= Number(loc.radius_meters || 150)) {
+        if (dist <= Number(loc.radius_meters || 50)) {
           geofenceStatus = 'verified';
           matchedLocationId = loc.id;
           break;
@@ -100,7 +98,6 @@ export async function POST(request: NextRequest) {
 
       if (geofenceStatus !== 'verified') {
         geofenceStatus = 'outside_geofence';
-        // If geofencing is strictly required and user is outside, block punch
         if (settings?.require_geofence !== false) {
           const distStr = minDistance >= 1000 ? `${(minDistance / 1000).toFixed(1)} km` : `${minDistance}m`;
           return NextResponse.json({
@@ -112,13 +109,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 5. Reverse Geocode Punch Address
-    let punchAddress = '';
-    if (lat && lng) {
-      punchAddress = await reverseGeocodeAddress(Number(lat), Number(lng));
-    }
+    // 5. Fast Punch Address (use client-resolved address or location name immediately)
+    let punchAddress = address || closestLocationName || (lat && lng ? `Lat: ${Number(lat).toFixed(4)}, Lng: ${Number(lng).toFixed(4)}` : '');
 
-    // 6. Persistent Selfie Upload to Supabase Storage
+    // 6. Fast Selfie Upload to Supabase Storage
     let photoPath: string | null = null;
     if (photoBase64 && photoBase64.includes('base64,')) {
       try {
@@ -126,21 +120,21 @@ export async function POST(request: NextRequest) {
         const buffer = Buffer.from(base64Data, 'base64');
         const filename = `${link.member_id}_${todayDate}_in_${Date.now()}.webp`;
 
-        const { data: uploadData, error: uploadErr } = await supabaseAdmin.storage
+        const { data: uploadData } = await supabaseAdmin.storage
           .from('attendance-selfies')
           .upload(filename, buffer, {
             contentType: 'image/webp',
             upsert: true
           });
 
-        if (!uploadErr && uploadData) {
+        if (uploadData) {
           const { data: urlData } = supabaseAdmin.storage
             .from('attendance-selfies')
             .getPublicUrl(uploadData.path);
           photoPath = urlData.publicUrl || uploadData.path;
         }
       } catch (uploadEx) {
-        console.error('Selfie storage upload exception:', uploadEx);
+        console.error('Selfie upload error:', uploadEx);
       }
     }
 
@@ -170,7 +164,6 @@ export async function POST(request: NextRequest) {
       lateMinutes = currentTotalMinutes - shiftStartMinutes;
     }
 
-    // If more than 3 hours late, mark half_day
     if (currentTotalMinutes > shiftStartMinutes + 180) {
       status = 'half_day';
     }
@@ -201,10 +194,11 @@ export async function POST(request: NextRequest) {
       device_info: {
         ...(deviceInfo || {}),
         check_in_ist: formattedIstTime,
+        check_in_address: punchAddress,
         last_heartbeat_at: nowTime.toISOString(),
         last_heartbeat_inside: true
       },
-      notes: punchAddress ? `Punch In at: ${punchAddress}` : null,
+      notes: punchAddress ? `Punch In: ${punchAddress}` : null,
       updated_at: nowTime.toISOString()
     };
 

@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { reverseGeocodeAddress } from '@/lib/attendance/geo-fence';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { token, lat, lng, accuracy, photoBase64 } = body;
+    const { token, lat, lng, accuracy, photoBase64, address } = body;
 
     if (!token || !token.trim()) {
       return NextResponse.json({ error: 'Token is required' }, { status: 400 });
@@ -82,11 +81,8 @@ export async function POST(request: NextRequest) {
     const overtimeThreshold = 540;
     const overtimeMinutes = netWorkMinutes > overtimeThreshold ? netWorkMinutes - overtimeThreshold : 0;
 
-    // Reverse geocode checkout address
-    let punchOutAddress = '';
-    if (lat && lng) {
-      punchOutAddress = await reverseGeocodeAddress(Number(lat), Number(lng));
-    }
+    // Fast Check-Out Address
+    const punchOutAddress = address || (lat && lng ? `Lat: ${Number(lat).toFixed(4)}, Lng: ${Number(lng).toFixed(4)}` : 'Studio Venue');
 
     // Persistent Check-Out Photo Upload to Supabase Storage
     let photoPath: string | null = null;
@@ -107,14 +103,27 @@ export async function POST(request: NextRequest) {
           photoPath = urlData.publicUrl || uploadData.path;
         }
       } catch (ex) {
-        console.error('Checkout photo upload exception:', ex);
+        console.error('Checkout photo upload error:', ex);
       }
     }
 
+    const formattedIstTime = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    }).format(nowTime);
+
     const updatedNotes = [
       record.notes,
-      punchOutAddress ? `Punch Out at: ${punchOutAddress}` : null
+      punchOutAddress ? `Punch Out: ${punchOutAddress}` : null
     ].filter(Boolean).join(' | ');
+
+    const updatedDeviceInfo = {
+      ...(record.device_info || {}),
+      check_out_ist: formattedIstTime,
+      check_out_address: punchOutAddress
+    };
 
     // 6. Update Record
     const updatePayload = {
@@ -127,6 +136,7 @@ export async function POST(request: NextRequest) {
       work_duration_minutes: netWorkMinutes,
       break_duration_minutes: totalBreakMinutes,
       overtime_minutes: overtimeMinutes,
+      device_info: updatedDeviceInfo,
       notes: updatedNotes,
       updated_at: nowTime.toISOString()
     };
@@ -149,7 +159,7 @@ export async function POST(request: NextRequest) {
       workDurationMinutes: netWorkMinutes,
       overtimeMinutes,
       punchOutAddress,
-      message: `Checked out at ${nowTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (Total Work: ${workHoursFormatted})`
+      message: `Checked out at ${formattedIstTime} IST (Total Work: ${workHoursFormatted})`
     });
 
   } catch (err: any) {
