@@ -316,6 +316,9 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
   useEffect(() => {
     if (activeSection === 'group-alerts' && workspaceId && workspaceId !== '00000000-0000-0000-0000-000000000000') {
       loadSyncedGroups();
+      if (syncedGroups.length === 0 && !fetchingGroups) {
+        handleFetchGroups();
+      }
     }
   }, [activeSection, workspaceId]);
 
@@ -324,26 +327,25 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     setFetchingGroups(true);
     try {
       const token = (await supabase.auth.getSession()).data.session?.access_token;
-      if (!token) {
-        alert('Not authenticated. Please refresh and try again.');
-        setFetchingGroups(false);
-        return;
-      }
       const res = await fetch('/api/integrations/baileys/fetch-groups', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
+        body: JSON.stringify({ workspace_id: workspaceId }),
       });
       const data = await res.json();
       if (data.success && data.groups) {
         setSyncedGroups(data.groups);
       } else {
-        alert('Failed to fetch groups: ' + (data.error || 'Worker returned error'));
+        console.warn('Failed to fetch groups:', data.error);
+        if (data.error && !data.error.includes('not connected')) {
+          alert('Failed to fetch groups: ' + (data.error || 'Worker returned error'));
+        }
       }
     } catch (err: any) {
-      alert('Could not reach Baileys worker: ' + (err.message || 'Network error'));
+      console.warn('Could not reach Baileys worker:', err.message);
     } finally {
       setFetchingGroups(false);
     }

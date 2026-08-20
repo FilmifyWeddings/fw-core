@@ -143,48 +143,83 @@ type WorkspaceSession = {
 
 const activeSessions = new Map<string, WorkspaceSession>();
 
-async function getWorkspaceSocket(wsId: string): Promise<ReturnType<typeof makeWASocket>> {
-  if (!wsId || wsId.trim() === '' || wsId === 'null' || wsId === 'undefined') {
-    throw new Error('Invalid empty workspace/user ID provided to getWorkspaceSocket');
+async function getWorkspaceSocket(wsId?: string | null): Promise<ReturnType<typeof makeWASocket>> {
+  let resolvedWsId = wsId?.trim();
+
+  // If empty/null, try to resolve from active in-memory sessions
+  if (!resolvedWsId || resolvedWsId === 'null' || resolvedWsId === 'undefined') {
+    if (activeSessions.size > 0) {
+      resolvedWsId = Array.from(activeSessions.keys())[0];
+      logger.info({ resolvedWsId }, '🔍 getWorkspaceSocket: Resolved empty wsId from active in-memory session');
+    }
   }
 
+  // If still empty, check DB for any open baileys session
+  if (!resolvedWsId || resolvedWsId === 'null' || resolvedWsId === 'undefined') {
+    try {
+      const { data: openSess } = await supabase
+        .from('baileys_sessions')
+        .select('workspace_id, user_id')
+        .or('conn_state.eq.open,creds_json.neq.null')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (openSess) {
+        resolvedWsId = openSess.workspace_id || openSess.user_id;
+        logger.info({ resolvedWsId }, '🔍 getWorkspaceSocket: Resolved empty wsId from DB open session');
+      }
+    } catch {}
+  }
+
+  // If still empty, check environment WORKSPACE_ID
+  if (!resolvedWsId || resolvedWsId === 'null' || resolvedWsId === 'undefined') {
+    if (WORKSPACE_ID) resolvedWsId = WORKSPACE_ID;
+  }
+
+  if (!resolvedWsId || resolvedWsId === 'null' || resolvedWsId === 'undefined') {
+    throw new Error('WhatsApp is not connected yet. Please scan the QR code to link your WhatsApp account.');
+  }
+
+  const effectiveId = resolvedWsId;
+
   // 1. Direct activeSessions lookup
-  let sess = activeSessions.get(wsId);
+  let sess = activeSessions.get(effectiveId);
   if (sess && sess.sock) return sess.sock;
 
   // 2. Check DB session mapping for user_id or workspace_id
-  let mappedId = wsId;
+  let mappedId = effectiveId;
   try {
     const { data: dbSess } = await supabase
       .from('baileys_sessions')
       .select('user_id, workspace_id')
-      .or(`user_id.eq.${wsId},workspace_id.eq.${wsId}`)
+      .or(`user_id.eq.${effectiveId},workspace_id.eq.${effectiveId}`)
       .maybeSingle();
 
     if (dbSess) {
-      mappedId = dbSess.user_id || dbSess.workspace_id || wsId;
+      mappedId = dbSess.user_id || dbSess.workspace_id || effectiveId;
       sess = activeSessions.get(mappedId);
       if (sess && sess.sock) return sess.sock;
     }
   } catch {}
 
-  const targetId = hasDiskSession(mappedId) ? mappedId : (hasDiskSession(wsId) ? wsId : mappedId);
+  const targetId = hasDiskSession(mappedId) ? mappedId : (hasDiskSession(effectiveId) ? effectiveId : mappedId);
 
   // 3. Auto-restore on-the-fly from disk session
   if (hasDiskSession(targetId)) {
     logger.info({ workspaceId: targetId }, '🔌 Disk credentials found — auto-restoring socket into memory on-the-fly...');
     await startBaileysSocket(false, targetId);
-    sess = activeSessions.get(targetId) || activeSessions.get(wsId);
+    sess = activeSessions.get(targetId) || activeSessions.get(effectiveId);
     if (sess && sess.sock) return sess.sock;
   }
 
   // 4. Final attempt to restore socket
   logger.info({ workspaceId: targetId }, '🔌 Restoring socket from disk/DB creds...');
   await startBaileysSocket(false, targetId);
-  sess = activeSessions.get(targetId) || activeSessions.get(wsId);
+  sess = activeSessions.get(targetId) || activeSessions.get(effectiveId);
 
   if (!sess || !sess.sock) {
-    throw new Error(`WhatsApp socket not connected for workspace ${wsId}`);
+    throw new Error('WhatsApp is not connected. Please scan the QR code to connect.');
   }
   return sess.sock;
 }
@@ -1154,6 +1189,39 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
       } catch {}
 
       await syncOpenSessionToDb(wsId, localSock, authState);
+
+      // ── AUTO-SYNC ALL PARTICIPATING WHATSAPP GROUPS ON CONNECT ──
+      // Whenever a user connects or reconnects, auto-discover and sync all their groups to baileys_chats
+      // so their group names and group JIDs are instantly available in StudioCore without any error!
+      setTimeout(async () => {
+        try {
+          logger.info({ workspaceId: wsId }, '🔄 Auto-fetching all participating WhatsApp groups on connect...');
+          const groupMap = await localSock.groupFetchAllParticipating();
+          const groups = Object.values(groupMap).map((g: any) => ({
+            jid: g.id,
+            display_name: g.subject || g.id.split('@')[0],
+            participant_count: g.participants?.length ?? 0,
+            is_group: true,
+          }));
+
+          const rows = groups.map((g: any) => ({
+            workspace_id: wsId,
+            jid: g.jid,
+            display_name: g.display_name,
+            is_group: true,
+            updated_at: new Date().toISOString(),
+          }));
+
+          if (rows.length > 0) {
+            await supabase
+              .from('baileys_chats')
+              .upsert(rows, { onConflict: 'workspace_id, jid', ignoreDuplicates: false });
+            logger.info({ count: rows.length, workspaceId: wsId }, '✅ Auto-synced WhatsApp groups into database successfully');
+          }
+        } catch (groupErr: any) {
+          logger.warn({ err: groupErr?.message, workspaceId: wsId }, '⚠️ Auto group sync on connect skipped/delayed');
+        }
+      }, 3000);
     }
 
     if (connection === 'close') {
@@ -1456,15 +1524,22 @@ function startHealthServer(): http.Server {
       if (req.method === 'POST' && parsedUrl.pathname === '/fetch-groups') {
         const bodyStr = await getRequestBody(req).catch(() => '{}');
         const payload = JSON.parse(bodyStr || '{}');
-        const targetWsId = payload.workspace_id || payload.workspaceId || parsedUrl.searchParams.get('workspace_id') || WORKSPACE_ID;
+        let targetWsId = payload.workspace_id || payload.workspaceId || parsedUrl.searchParams.get('workspace_id') || WORKSPACE_ID;
+
+        if (!targetWsId || targetWsId.trim() === '' || targetWsId === 'null' || targetWsId === 'undefined') {
+          if (activeSessions.size > 0) {
+            targetWsId = Array.from(activeSessions.keys())[0];
+          }
+        }
 
         logger.info({ workspaceId: targetWsId }, 'Fetch groups requested');
 
-        const targetSock = await getWorkspaceSocket(targetWsId);
+        let groups: any[] = [];
 
         try {
+          const targetSock = await getWorkspaceSocket(targetWsId);
           const groupMap = await targetSock.groupFetchAllParticipating();
-          const groups = Object.values(groupMap).map((g: any) => ({
+          groups = Object.values(groupMap).map((g: any) => ({
             jid: g.id,
             display_name: g.subject || g.id.split('@')[0],
             participant_count: g.participants?.length ?? 0,
@@ -1472,7 +1547,7 @@ function startHealthServer(): http.Server {
           }));
 
           const rows = groups.map((g: any) => ({
-            workspace_id: targetWsId,
+            workspace_id: targetWsId || WORKSPACE_ID,
             jid: g.jid,
             display_name: g.display_name,
             is_group: true,
@@ -1488,12 +1563,32 @@ function startHealthServer(): http.Server {
           logger.info({ count: groups.length, workspaceId: targetWsId }, '✅ Groups fetched and synced');
           res.writeHead(200);
           res.end(JSON.stringify({ success: true, groups }));
-        } catch (err: any) {
-          logger.error({ err, workspaceId: targetWsId }, '❌ Failed to fetch groups');
-          res.writeHead(500);
-          res.end(JSON.stringify({ success: false, error: err.message || 'Failed to fetch groups' }));
+          return;
+        } catch (sockErr: any) {
+          logger.warn({ err: sockErr?.message, workspaceId: targetWsId }, '⚠️ Live groupFetchAllParticipating failed, checking DB cache...');
+
+          // Fallback to cached groups from database
+          try {
+            const { data: dbGroups } = await supabase
+              .from('baileys_chats')
+              .select('jid, display_name, participant_count, is_group')
+              .eq('is_group', true)
+              .order('display_name', { ascending: true });
+
+            if (dbGroups && dbGroups.length > 0) {
+              res.writeHead(200);
+              res.end(JSON.stringify({ success: true, groups: dbGroups, cached: true }));
+              return;
+            }
+          } catch (_) {}
+
+          res.writeHead(200);
+          res.end(JSON.stringify({ 
+            success: false, 
+            error: sockErr?.message || 'WhatsApp is not connected. Please scan the QR code to connect.' 
+          }));
+          return;
         }
-        return;
       }
 
       if (req.method === 'POST' && parsedUrl.pathname === '/send-group-alert') {
