@@ -19,10 +19,10 @@ interface SidebarLayoutProps {
   children: React.ReactNode;
 }
 
-// Crisp, Modern StudioCore SC Brand Emblem
+// Crisp, Modern StudioCore SC Brand Emblem (Never cut-off, always prominent)
 export const StudioCoreBrandIcon = ({ className = "w-8 h-8", isCollapsed = false }: { className?: string; isCollapsed?: boolean }) => (
   <div className={`${className} rounded-xl bg-gradient-to-br from-[#D9822B] via-[#C8751F] to-[#A05A12] text-white flex items-center justify-center font-black tracking-wider shadow-sm border border-[#F5C78E]/40 shrink-0 select-none relative overflow-hidden group`}>
-    <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/20 to-transparent opacity-70 pointer-events-none" />
+    <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/25 to-transparent opacity-80 pointer-events-none" />
     <span className="relative z-10 text-[13px] font-black tracking-tight drop-shadow-xs">SC</span>
   </div>
 );
@@ -324,30 +324,43 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
           collapsed ? 'w-20' : 'w-64'
         }`}
       >
-        {/* Top Brand Logo Header */}
-        <div className="h-16 px-4 border-b border-[#F0ECE4] flex items-center justify-between shrink-0">
-          <Link href="/workspace" className="flex items-center gap-3 overflow-hidden group">
-            <StudioCoreBrandIcon className="w-9 h-9" isCollapsed={collapsed} />
-            {!collapsed && (
-              <div className="overflow-hidden">
-                <div className="flex items-center gap-1">
-                  <span className="text-[17px] font-black text-zinc-900 tracking-tight leading-none">StudioCore</span>
-                  <span className="text-amber-600 font-black text-xs">✦</span>
+        {/* Top Brand Logo Header (Never clipped, centered when collapsed) */}
+        <div className={`h-16 border-b border-[#F0ECE4] flex items-center shrink-0 ${collapsed ? 'justify-center px-1' : 'justify-between px-4'}`}>
+          {!collapsed ? (
+            <>
+              <Link href="/workspace" className="flex items-center gap-3 overflow-hidden group">
+                <StudioCoreBrandIcon className="w-9 h-9" isCollapsed={false} />
+                <div className="overflow-hidden">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[17px] font-black text-zinc-900 tracking-tight leading-none">StudioCore</span>
+                    <span className="text-amber-600 font-black text-xs">✦</span>
+                  </div>
+                  <p className="text-[10px] font-bold text-zinc-400 tracking-tight truncate mt-0.5 max-w-[130px]">
+                    {workspaceName || 'All-in-One Studio'}
+                  </p>
                 </div>
-                <p className="text-[10px] font-bold text-zinc-400 tracking-tight truncate mt-0.5 max-w-[135px]">
-                  {workspaceName || 'All-in-One Studio'}
-                </p>
-              </div>
-            )}
-          </Link>
+              </Link>
 
-          <button
-            onClick={() => setCollapsed(prev => !prev)}
-            className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-800 hover:bg-zinc-100 transition shrink-0 cursor-pointer"
-            title={collapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
-          >
-            {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-          </button>
+              <button
+                onClick={() => setCollapsed(true)}
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-800 hover:bg-zinc-100 transition shrink-0 cursor-pointer"
+                title="Collapse Sidebar"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setCollapsed(false)}
+              className="flex items-center justify-center w-12 h-12 rounded-2xl hover:bg-amber-50/80 transition-all cursor-pointer relative group"
+              title="Expand Sidebar (Click to Open)"
+            >
+              <StudioCoreBrandIcon className="w-10 h-10 shadow-sm" isCollapsed={true} />
+              <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-white border border-[#EBE7DF] text-zinc-500 flex items-center justify-center shadow-xs group-hover:scale-110 transition-transform">
+                <ChevronRight className="w-2.5 h-2.5" />
+              </div>
+            </button>
+          )}
         </div>
 
         {/* Navigation Items */}
@@ -425,7 +438,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
           })}
         </nav>
 
-        {/* Bottom Profile & Plan Card */}
+        {/* Bottom Profile & Studio Name Card */}
         <div className="p-3 border-t border-[#F0ECE4] shrink-0 bg-[#FCFBF9]">
           {!collapsed ? (
             <div className="space-y-2">
@@ -479,7 +492,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
             <div className="flex flex-col items-center gap-2">
               <button
                 onClick={() => setShowProfileModal(true)}
-                className="w-9 h-9 rounded-full cursor-pointer hover:ring-2 hover:ring-amber-400 transition"
+                className="w-10 h-10 rounded-full cursor-pointer hover:ring-2 hover:ring-amber-400 transition"
                 title="Edit Studio Profile"
               >
                 {userAvatarUrl ? (
@@ -493,7 +506,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
 
               <button
                 onClick={handleSignOut}
-                className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
                 title="Sign Out"
               >
                 <LogOut className="w-4 h-4" />
@@ -504,94 +517,40 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       </aside>
 
       {/* ─────────────────────────────────────────────────────────────
-          2. MAIN CONTENT WRAPPER & CLEAN TOPBAR (NO SEARCH BAR)
+          2. MAIN CONTENT WRAPPER (ZERO TOP BAR ON DESKTOP)
       ───────────────────────────────────────────────────────────── */}
       <div
         className={`flex-1 flex flex-col transition-all duration-300 ease-in-out ${
           collapsed ? 'lg:pl-20' : 'lg:pl-64'
         }`}
       >
-        {/* Top Floating App Bar (Clean Header without search bar) */}
-        <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-[#EBE7DF] h-16 flex items-center justify-between px-4 sm:px-6 lg:px-8 shrink-0 shadow-2xs">
-          
-          {/* Left Side: Mobile Drawer / Collapse Toggle + Studio Brand Badge */}
-          <div className="flex items-center gap-3 sm:gap-4">
+        {/* Mobile-Only Minimal Header (< 1024px) */}
+        <header className="lg:hidden sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-[#EBE7DF] h-14 flex items-center justify-between px-4 shrink-0 shadow-2xs">
+          <div className="flex items-center gap-2.5">
             <button
-              onClick={() => {
-                if (window.innerWidth < 1024) {
-                  setMobileDrawerOpen(true);
-                } else {
-                  setCollapsed(prev => !prev);
-                }
-              }}
-              className="p-2 rounded-xl text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 transition cursor-pointer"
-              aria-label="Toggle Menu"
+              onClick={() => setMobileDrawerOpen(true)}
+              className="p-1.5 rounded-xl text-zinc-700 hover:bg-zinc-100 transition cursor-pointer"
+              aria-label="Open Menu"
             >
               <Menu className="w-5 h-5" />
             </button>
-
-            {/* Studio Badge on Left */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm sm:text-base font-black text-zinc-900 tracking-tight">
-                {workspaceName || 'StudioCore'}
-              </span>
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#FAF3E6] text-[#8C6D33] border border-[#E9DFD2]">
-                Pro Studio
-              </span>
+            <div className="flex items-center gap-1.5">
+              <StudioCoreBrandIcon className="w-7 h-7" />
+              <span className="text-sm font-black text-zinc-900 tracking-tight">{workspaceName || 'StudioCore'}</span>
             </div>
           </div>
 
-          {/* Right Side: Notifications, Calendar & Studio Profile */}
-          <div className="flex items-center gap-3 sm:gap-4">
-            
-            {/* Notifications Bell */}
-            <button
-              type="button"
-              className="relative p-2 rounded-xl text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 transition cursor-pointer"
-              title="Notifications"
-            >
-              <Bell className="w-4 h-4" />
-              <span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center shadow-xs">
-                3
-              </span>
-            </button>
-
-            {/* Calendar Shortcut */}
-            <Link
-              href="/team-manager"
-              className="p-2 rounded-xl text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 transition"
-              title="Calendar & Schedules"
-            >
-              <Calendar className="w-4 h-4" />
-            </Link>
-
-            {/* Topbar Studio Profile (Shows Studio Name & Photo/Logo) */}
-            <div
-              onClick={() => setShowProfileModal(true)}
-              className="flex items-center gap-2.5 pl-2 sm:pl-3 border-l border-zinc-200 cursor-pointer group"
-            >
-              {userAvatarUrl ? (
-                <img
-                  src={userAvatarUrl}
-                  alt="Studio Logo"
-                  className="w-8 h-8 rounded-full object-cover border-2 border-amber-400 shadow-2xs group-hover:scale-105 transition-transform"
-                />
-              ) : (
-                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-400 via-amber-500 to-[#F36F21] text-white font-black text-xs flex items-center justify-center shadow-2xs">
-                  {(workspaceName || userName || 'SC').slice(0, 2).toUpperCase()}
-                </div>
-              )}
-
-              <div className="hidden sm:block text-left">
-                <h4 className="text-xs font-black text-zinc-900 group-hover:text-amber-700 transition-colors leading-tight truncate max-w-[160px]">
-                  {workspaceName || 'My Studio'}
-                </h4>
-                <p className="text-[10px] text-zinc-400 font-medium truncate">
-                  {userName || 'Studio Owner'}
-                </p>
+          <div 
+            onClick={() => setShowProfileModal(true)}
+            className="flex items-center gap-2 cursor-pointer"
+          >
+            {userAvatarUrl ? (
+              <img src={userAvatarUrl} alt="Avatar" className="w-7 h-7 rounded-full object-cover border border-amber-400" />
+            ) : (
+              <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-amber-400 via-amber-500 to-[#F36F21] text-white font-black text-[10px] flex items-center justify-center">
+                {(workspaceName || userName || 'SC').slice(0, 2).toUpperCase()}
               </div>
-            </div>
-
+            )}
           </div>
         </header>
 
@@ -687,7 +646,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
 
                 <button
                   onClick={handleSignOut}
-                  className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg"
+                  className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
                   title="Sign Out"
                 >
                   <LogOut className="w-4 h-4" />
