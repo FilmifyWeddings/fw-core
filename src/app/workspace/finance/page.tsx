@@ -115,7 +115,59 @@ export default function FinancePage() {
       }
 
       const { data: clientData } = await clientQuery;
-      const clientList = clientData || [];
+      let clientList = clientData ? [...clientData] : [];
+
+      // 1b. Check for any leads that have final_quotation_id or quotation documents not yet in workspace_clients
+      try {
+        let leadsQuery = supabase
+          .from('leads')
+          .select('id, name, client_name, phone, email, location, city, event_date, event_type, final_quotation_id, user_id, workspace_id')
+          .not('final_quotation_id', 'is', null);
+
+        if (workspaceId && workspaceId !== 'ws_demo') {
+          leadsQuery = leadsQuery.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
+        }
+
+        const { data: leadsWithFinal } = await leadsQuery;
+        if (leadsWithFinal && leadsWithFinal.length > 0) {
+          const existingLeadIds = new Set(clientList.map(c => c.lead_id).filter(Boolean));
+          for (const lead of leadsWithFinal) {
+            if (!existingLeadIds.has(lead.id)) {
+              // Auto-create workspace_client for this lead
+              const newClientPayload = {
+                lead_id: lead.id,
+                name: lead.name || lead.client_name || 'Client',
+                phone: lead.phone || '',
+                email: lead.email || '',
+                city: lead.city || lead.location || '',
+                event_type: lead.event_type || 'Wedding',
+                event_date: lead.event_date || null,
+                total_package_amount: 0,
+                paid_amount: 0,
+                status: 'active',
+                user_id: lead.user_id || workspaceId,
+                workspace_id: lead.workspace_id || workspaceId,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              };
+
+              const { data: createdClient } = await supabase
+                .from('workspace_clients')
+                .insert([newClientPayload])
+                .select('*')
+                .single();
+
+              if (createdClient) {
+                clientList.unshift(createdClient);
+                existingLeadIds.add(lead.id);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Auto-sync leads with final quotations error:', err);
+      }
+
       setClients(clientList);
 
       if (clientList.length === 0) {

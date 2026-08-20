@@ -79,13 +79,52 @@ export async function POST(req: NextRequest) {
 
     // 4. Sync with Finance Records & Workspace Clients
     if (finalDoc?.content_json) {
-      const calcFin = extractFinancialsFromQuotation(finalDoc.content_json);
+      // Fetch lead details
+      const { data: leadData } = await supabaseAdmin
+        .from('leads')
+        .select('*')
+        .eq('id', leadId)
+        .maybeSingle();
+
+      const calcFin = extractFinancialsFromQuotation(finalDoc.content_json, leadData?.event_date);
+      const effectiveUserId = leadData?.user_id || leadData?.workspace_id || userId;
+      const effectiveWorkspaceId = leadData?.workspace_id || leadData?.user_id || userId;
 
       // Find linked workspace_clients
-      const { data: linkedClients } = await supabaseAdmin
+      let { data: linkedClients } = await supabaseAdmin
         .from('workspace_clients')
-        .select('id')
+        .select('id, user_id, workspace_id, name, phone, email, event_date')
         .eq('lead_id', leadId);
+
+      // If no workspace_client exists for this lead yet, create one!
+      if (!linkedClients || linkedClients.length === 0) {
+        const newClientPayload = {
+          lead_id: leadId,
+          name: leadData?.name || leadData?.client_name || 'Client',
+          phone: leadData?.phone || '',
+          email: leadData?.email || '',
+          city: leadData?.city || leadData?.location || '',
+          event_type: calcFin.event_type || leadData?.event_type || 'Wedding',
+          event_date: calcFin.event_date || leadData?.event_date || null,
+          total_package_amount: calcFin.final_total_amount,
+          paid_amount: calcFin.received_amount,
+          status: 'active',
+          user_id: effectiveUserId,
+          workspace_id: effectiveWorkspaceId,
+          created_at: now,
+          updated_at: now
+        };
+
+        const { data: createdClient, error: clientCreateErr } = await supabaseAdmin
+          .from('workspace_clients')
+          .insert([newClientPayload])
+          .select('id, user_id, workspace_id, name, phone, email, event_date')
+          .single();
+
+        if (!clientCreateErr && createdClient) {
+          linkedClients = [createdClient];
+        }
+      }
 
       if (linkedClients && linkedClients.length > 0) {
         for (const lc of linkedClients) {
@@ -94,13 +133,14 @@ export async function POST(req: NextRequest) {
             .update({
               total_package_amount: calcFin.final_total_amount,
               paid_amount: calcFin.received_amount,
+              event_date: calcFin.event_date || lc.event_date || null,
               updated_at: now
             })
             .eq('id', lc.id);
 
           const finPayload = {
-            user_id: userId,
-            workspace_id: userId,
+            user_id: lc.user_id || effectiveUserId,
+            workspace_id: lc.workspace_id || effectiveWorkspaceId,
             client_id: lc.id,
             base_package_price: calcFin.base_package_price,
             discount_amount: calcFin.discount_amount,

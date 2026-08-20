@@ -50,7 +50,10 @@ export function extractFinancialsFromQuotation(
   const discount = Math.max(0, Math.round(Number(pricing.discountAmount ?? pricing.discount ?? 0)));
   const accommodation = Math.max(0, Math.round(Number(pricing.accommodationCharges ?? pricing.accommodation ?? 0)));
   const travel = Math.max(0, Math.round(Number(pricing.travelCharges ?? pricing.travel ?? 0)));
-  const additional = Math.max(0, Math.round(Number(pricing.additionalCharges ?? pricing.additional ?? 0)));
+  const customAddl = Array.isArray(pricing.additionalChargesList)
+    ? pricing.additionalChargesList.reduce((sum: number, c: any) => sum + (Number(c?.amount) || 0), 0)
+    : 0;
+  const additional = Math.max(0, Math.round(Number(pricing.additionalCharges ?? pricing.additional ?? 0))) + customAddl;
 
   // Calculate gross / subtotal
   let subtotal = Math.max(0, base - discount + accommodation + travel + additional);
@@ -188,6 +191,10 @@ export async function findLatestQuotationForLead(supabaseClient: any, leadId: st
       .order('created_at', { ascending: false });
 
     if (!docErr && docs && docs.length > 0) {
+      // Prioritize marked final quotation first
+      const finalDoc = docs.find((d: any) => d.content_json?.is_final === true || d.is_final === true);
+      if (finalDoc) return finalDoc;
+
       // Find highest version or latest created
       const sorted = [...docs].sort((a: any, b: any) => {
         const verA = Number(a.lead_version || a.version || 0);
