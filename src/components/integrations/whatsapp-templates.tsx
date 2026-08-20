@@ -1051,7 +1051,7 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                 <th className="py-4 px-5">Category</th>
                 <th className="py-4 px-5">Status</th>
                 <th className="py-4 px-5">Last Modified</th>
-                <th className="py-4 px-5 w-12"></th>
+                <th className="py-4 px-5 text-right font-mono text-[10px] uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -1103,25 +1103,28 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                         day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
                       })}
                     </td>
-                    <td className="py-4 px-5 text-right relative">
-                      <div className="flex items-center justify-end gap-2">
+                    <td className="py-4 px-5 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1.5">
                         <button 
+                          type="button"
                           onClick={() => handleEditClick(template)}
-                          className="p-1.5 text-zinc-500 hover:text-amber-400 transition-colors"
+                          className="p-1.5 text-zinc-400 hover:text-amber-500 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all cursor-pointer"
                           title="Edit Template"
                         >
                           <Edit className="w-3.5 h-3.5" />
                         </button>
                         <button 
+                          type="button"
                           onClick={() => handleDuplicateClick(template)}
-                          className="p-1.5 text-zinc-500 hover:text-emerald-400 transition-colors"
+                          className="p-1.5 text-zinc-400 hover:text-emerald-500 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all cursor-pointer"
                           title="Duplicate Template"
                         >
                           <Copy className="w-3.5 h-3.5" />
                         </button>
                         <button 
+                          type="button"
                           onClick={() => handleDeleteTemplate(template)}
-                          className="p-1.5 text-zinc-500 hover:text-rose-400 transition-colors"
+                          className="p-1.5 text-zinc-400 hover:text-rose-500 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all cursor-pointer"
                           title="Delete Template"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -1461,20 +1464,42 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                         {/* WhatsApp Message Bubble */}
                         <div className="max-w-[90%] self-end bg-[#005C4B] text-[#E9EDEF] rounded-2xl rounded-tr-sm p-3.5 shadow-lg space-y-2.5 relative">
                           
-                          {/* Media Header Preview */}
+                          {/* Media Header Preview (Video, Photo, PDF, Audio) */}
                           {activeTab === 'media' && mediaUrl && (
-                            <div className="rounded-xl overflow-hidden bg-black/40 border border-white/10 max-h-48 flex items-center justify-center">
-                              {mediaMime?.includes('video') ? (
-                                <div className="py-12 flex flex-col items-center gap-1.5 text-zinc-400">
-                                  <Video className="w-8 h-8 text-emerald-400" />
-                                  <span className="text-[10px] font-mono">Video Attachment</span>
+                            <div className="rounded-xl overflow-hidden bg-black/60 border border-white/10 w-full relative">
+                              {mediaMime?.includes('video') || mediaUrl.match(/\.(mp4|webm|mov|mkv)$/i) ? (
+                                <div className="relative group/vid">
+                                  <video
+                                    src={mediaUrl}
+                                    controls
+                                    playsInline
+                                    className="w-full max-h-52 object-cover rounded-lg bg-black"
+                                  />
+                                  <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded text-[8px] font-mono text-white flex items-center gap-1 pointer-events-none">
+                                    <Video className="w-2.5 h-2.5 text-emerald-400" />
+                                    <span>VIDEO</span>
+                                  </div>
+                                </div>
+                              ) : mediaMime?.includes('pdf') || mediaUrl.match(/\.(pdf|doc|docx|csv|xls|xlsx)$/i) ? (
+                                <div className="p-3 bg-[#111B21] flex items-center gap-3 rounded-lg border border-white/5">
+                                  <div className="w-10 h-10 rounded-lg bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0">
+                                    <FileText className="w-5 h-5" />
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-xs font-bold text-white truncate">
+                                      {mediaUrl.split('/').pop()?.split('?')[0] || 'Document Attachment'}
+                                    </p>
+                                    <p className="text-[9px] font-mono text-zinc-400">PDF • Document File</p>
+                                  </div>
                                 </div>
                               ) : (
                                 <img
                                   src={mediaUrl}
-                                  alt="Media preview"
-                                  className="w-full h-auto object-cover max-h-48 rounded-lg"
-                                  onError={(e) => { (e.target as any).style.display = 'none'; }}
+                                  alt="Photo Preview"
+                                  className="w-full h-auto object-cover max-h-52 rounded-lg"
+                                  onError={(e) => {
+                                    (e.target as any).style.display = 'none';
+                                  }}
                                 />
                               )}
                             </div>
@@ -1742,280 +1767,6 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                   )}
                 </tbody>
               </table>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Left Column — Configuration */}
-            <div className="space-y-5">
-              {/* Group Selector */}
-              <div className="p-5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 backdrop-blur-md space-y-4">
-                <div className="flex items-center gap-2">
-                  <Users className="w-4 h-4 text-orange-400" />
-                  <h4 className="text-xs font-bold text-zinc-900 dark:text-white uppercase tracking-wider">Target WhatsApp Group</h4>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 dark:text-zinc-400">
-                    Select from synced groups
-                  </label>
-                  <select
-                    value={alertGroupId}
-                    onChange={(e) => setAlertGroupId(e.target.value)}
-                    className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-800 dark:text-zinc-300 text-xs rounded-xl focus:outline-none"
-                  >
-                    <option value="">-- Choose a synced group --</option>
-                    {syncedGroups.map((g) => (
-                      <option key={g.jid} value={g.jid}>
-                        {g.display_name || g.jid}
-                      </option>
-                    ))}
-                    <option value="__manual__">Enter JID manually...</option>
-                  </select>
-                </div>
-
-                {alertGroupId === '__manual__' && (
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 dark:text-zinc-400">
-                      Group JID (e.g. 1203630249481@g.us)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="1203630249481@g.us"
-                      value={alertGroupIdManual}
-                      onChange={(e) => setAlertGroupIdManual(e.target.value)}
-                      className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-800 dark:text-zinc-300 text-xs rounded-xl focus:outline-none font-mono"
-                    />
-                  </div>
-                )}
-
-                {savedAlertGroupId && (
-                  <div className="flex items-center gap-1.5 text-[10px] text-emerald-500 dark:text-emerald-400">
-                    <CheckCircle2 className="w-3 h-3" />
-                    <span>Active group: <span className="font-mono font-bold">{savedAlertGroupId}</span></span>
-                  </div>
-                )}
-              </div>
-
-              {/* Fetch & List All Groups Sub-section */}
-              <div className="p-5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 backdrop-blur-md space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Users className="w-4 h-4 text-orange-400" />
-                    <h4 className="text-xs font-bold text-zinc-900 dark:text-white uppercase tracking-wider">All WhatsApp Groups</h4>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleFetchGroups}
-                    disabled={fetchingGroups}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-orange-300 dark:hover:border-orange-600 text-zinc-700 dark:text-zinc-300 text-[10px] font-bold rounded-lg transition-all disabled:opacity-50"
-                  >
-                    <RefreshCw className={`w-3 h-3 ${fetchingGroups ? 'animate-spin' : ''}`} />
-                    {fetchingGroups ? 'Syncing...' : 'Fetch Active Groups'}
-                  </button>
-                </div>
-
-                {syncedGroups.length === 0 ? (
-                  <div className="py-6 text-center border border-dashed border-zinc-200 dark:border-zinc-800 rounded-xl">
-                    <Users className="w-6 h-6 text-zinc-300 dark:text-zinc-700 mx-auto mb-2" />
-                    <p className="text-[10px] text-zinc-500 dark:text-zinc-500">
-                      {fetchingGroups ? 'Fetching groups from WhatsApp...' : 'No groups loaded yet. Click "Fetch Active Groups" to sync.'}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="max-h-64 overflow-y-auto rounded-xl border border-zinc-100 dark:border-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-900 scrollbar-thin scrollbar-thumb-zinc-200 dark:scrollbar-thumb-zinc-800">
-                    {syncedGroups.map((g) => (
-                      <div
-                        key={g.jid}
-                        className="flex items-center justify-between px-3 py-2.5 hover:bg-zinc-50 dark:hover:bg-zinc-900/30 transition-colors group"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                          <div className="w-7 h-7 rounded-lg bg-orange-500/10 dark:bg-orange-500/5 flex items-center justify-center shrink-0">
-                            <Users className="w-3.5 h-3.5 text-orange-500 dark:text-orange-400" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-xs font-semibold text-zinc-900 dark:text-white truncate">
-                              {g.display_name || 'Unnamed Group'}
-                            </p>
-                            <p className="text-[10px] font-mono text-zinc-400 dark:text-zinc-500 truncate">
-                              {g.jid}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0 ml-2">
-                          {typeof g.participant_count === 'number' && g.participant_count > 0 && (
-                            <span className="text-[9px] text-zinc-400 dark:text-zinc-500 font-mono">
-                              {g.participant_count} members
-                            </span>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => handleCopyJid(g.jid)}
-                            className="p-1.5 rounded-lg text-zinc-400 hover:text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-950/20 transition-all opacity-60 group-hover:opacity-100"
-                            title="Copy JID"
-                          >
-                            {copiedJid === g.jid ? (
-                              <Check className="w-3.5 h-3.5 text-emerald-500" />
-                            ) : (
-                              <Copy className="w-3.5 h-3.5" />
-                            )}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {syncedGroups.length > 0 && (
-                  <p className="text-[9px] text-zinc-400 dark:text-zinc-600 italic">
-                    {syncedGroups.length} group{syncedGroups.length !== 1 ? 's' : ''} synced. Click "Fetch Active Groups" to force-refresh from WhatsApp.
-                  </p>
-                )}
-              </div>
-
-              {/* Template Editor */}
-              <div className="p-5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 backdrop-blur-md space-y-4">
-                <div className="flex items-center gap-2">
-                  <MessageSquare className="w-4 h-4 text-orange-400" />
-                  <h4 className="text-xs font-bold text-zinc-900 dark:text-white uppercase tracking-wider">Alert Message Template</h4>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 dark:text-zinc-400">
-                    Use dynamic placeholders
-                  </label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {[
-                      { label: 'Created Time', tag: '{{created_time}}' },
-                      { label: 'Full Name', tag: '{{full_name}}' },
-                      { label: 'Shoot Type', tag: '{{shoot_type}}' },
-                      { label: 'Location', tag: '{{location}}' },
-                      { label: 'Budget', tag: '{{budget}}' },
-                      { label: 'Phone', tag: '{{phone}}' },
-                      { label: 'Email', tag: '{{email}}' },
-                      { label: 'Source', tag: '{{source}}' },
-                    ].map((item) => (
-                      <button
-                        key={item.tag}
-                        type="button"
-                        onClick={() => {
-                          setAlertTemplate(prev => prev + (prev.endsWith('\n') || prev === '' ? '' : '\n') + item.label + ' : *' + item.tag + '*\n');
-                        }}
-                        className="px-2 py-1 text-[10px] font-mono bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-lg hover:border-orange-300 dark:hover:border-orange-600 hover:text-orange-500 transition-colors cursor-pointer"
-                        title={`Insert ${item.label} placeholder`}
-                      >
-                        {item.tag}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 dark:text-zinc-400">
-                    Template message
-                  </label>
-                  <textarea
-                    placeholder="Write your alert template here using {{placeholders}}..."
-                    value={alertTemplate}
-                    onChange={(e) => setAlertTemplate(e.target.value)}
-                    rows={12}
-                    className="w-full p-3 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 text-zinc-850 dark:text-zinc-200 text-xs rounded-xl focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-700 font-mono leading-relaxed"
-                  />
-                </div>
-
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={handleSaveAlertConfig}
-                    disabled={alertSaving}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-orange-400 to-amber-500 text-black text-xs font-bold rounded-xl shadow-lg shadow-orange-500/10 hover:opacity-95 disabled:opacity-50 transition-all"
-                  >
-                    {alertSaving ? (
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Check className="w-3.5 h-3.5" />
-                    )}
-                    Save Configuration
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSendTestAlert}
-                    disabled={alertTestSending}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 text-xs font-bold rounded-xl hover:border-zinc-300 dark:hover:border-zinc-700 disabled:opacity-50 transition-all"
-                  >
-                    {alertTestSending ? (
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Send className="w-3.5 h-3.5" />
-                    )}
-                    Send Test Alert
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Right Column — Live Preview */}
-            <div className="space-y-5">
-              <div className="p-5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 backdrop-blur-md space-y-4 sticky top-6">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <h4 className="text-xs font-bold text-zinc-900 dark:text-white uppercase tracking-wider">Live Preview</h4>
-                </div>
-
-                {/* WhatsApp-style message bubble */}
-                <div className="bg-[#DCF8C6] dark:bg-[#005C4B] rounded-xl p-4 max-w-sm shadow-md">
-                  <div className="bg-white dark:bg-[#1F2C33] rounded-lg p-4 shadow-sm border border-zinc-100 dark:border-zinc-800">
-                    <pre className="whitespace-pre-wrap text-xs text-zinc-800 dark:text-zinc-200 font-sans leading-relaxed">
-                      {getAlertPreview()}
-                    </pre>
-                  </div>
-                  <div className="flex items-center justify-end gap-1 mt-1.5 px-1">
-                    <span className="text-[8px] text-zinc-500 dark:text-zinc-400">
-                      {new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                    <CheckCircle2 className="w-3 h-3 text-blue-500" />
-                  </div>
-                </div>
-
-                {/* Placeholders Reference */}
-                <div className="mt-4 p-4 rounded-xl bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-100 dark:border-zinc-900">
-                  <h5 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-3">
-                    Available Placeholders
-                  </h5>
-                  <div className="grid grid-cols-2 gap-2">
-                    {[
-                      { tag: '{{created_time}}', desc: 'Alert timestamp' },
-                      { tag: '{{full_name}}', desc: 'Lead full name' },
-                      { tag: '{{shoot_type}}', desc: 'Type of shoot' },
-                      { tag: '{{location}}', desc: 'City / area' },
-                      { tag: '{{budget}}', desc: 'Max budget' },
-                      { tag: '{{phone}}', desc: 'Phone number' },
-                      { tag: '{{email}}', desc: 'Email address' },
-                      { tag: '{{source}}', desc: 'Lead source' },
-                      { tag: '{{score}}', desc: 'Lead score' },
-                      { tag: '{{status}}', desc: 'Lead status' },
-                    ].map((item) => (
-                      <div key={item.tag} className="flex flex-col">
-                        <span className="text-[10px] font-mono text-orange-500 dark:text-orange-400 font-bold">{item.tag}</span>
-                        <span className="text-[9px] text-zinc-500 dark:text-zinc-500">{item.desc}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* How it works */}
-                <div className="p-4 rounded-xl bg-orange-50/50 dark:bg-orange-950/10 border border-orange-200/30 dark:border-orange-900/20">
-                  <h5 className="text-[10px] font-bold uppercase tracking-wider text-orange-600 dark:text-orange-400 mb-2">
-                    How it works
-                  </h5>
-                  <ol className="text-[10px] text-zinc-600 dark:text-zinc-400 space-y-1.5 list-decimal list-inside">
-                    <li>Select or enter your WhatsApp Group JID above</li>
-                    <li>Design the alert message using dynamic placeholders</li>
-                    <li>Click <strong>Save Configuration</strong> to persist settings</li>
-                    <li>When a new lead arrives, the system auto-fires the formatted alert to your group</li>
-                  </ol>
-                </div>
-              </div>
             </div>
           </div>
         </div>
