@@ -6,7 +6,8 @@ import {
   Search, Plus, MoreVertical, CheckCircle2, XCircle, Clock, Timer, 
   Trash2, ShieldCheck, FileText, Image as ImageIcon, 
   Vote, HelpCircle, PhoneCall, Link2, X, PlusCircle, Check, RefreshCw,
-  Edit, Copy, ChevronDown, Users, Bell, Send, MessageSquare, HardDrive, AlertTriangle, Folder
+  Edit, Copy, ChevronDown, Users, Bell, Send, MessageSquare, HardDrive, AlertTriangle, Folder,
+  UserCheck, Sparkles, Globe, Calendar, Type, CheckSquare, Upload, Video, ExternalLink, Layers
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { 
@@ -102,7 +103,7 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
   // Builder form states
   const [name, setName] = useState('');
   const [nameError, setNameError] = useState(false);
-  const [category, setCategory] = useState<'utility' | 'marketing' | 'authentication'>('utility');
+  const [category, setCategory] = useState<'utility' | 'marketing' | 'authentication' | 'group_alert' | 'group_workflow'>('utility');
   const [language, setLanguage] = useState('en_US');
   const [activeTab, setActiveTab] = useState<'text' | 'media' | 'poll'>('text');
   
@@ -110,6 +111,58 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
   const [mediaMime, setMediaMime] = useState('');
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+
+  // Live Preview Dynamic Token Evaluator
+  const getLivePreviewText = (text: string) => {
+    const sampleData: Record<string, string> = {
+      first_name: 'Riya',
+      last_name: 'Sharma',
+      full_name: 'Riya Sharma',
+      phone_number: '+91 98765 43210',
+      phone: '+91 98765 43210',
+      email: 'riya.sharma@example.com',
+      city: 'Mumbai',
+      location: 'Mumbai, Maharashtra',
+      address: 'Bandra West, Mumbai',
+      lead_owner: 'Sahil Dhonde',
+      status: 'In Discussion',
+      score: '85 (Hot Lead)',
+      event_date: '15 Dec 2026',
+      wedding_date: '15 Dec 2026',
+      groom_name: 'Rohit Verma',
+      bride_name: 'Riya Sharma',
+      shoot_type: 'Wedding & Reception',
+      kind_of_shoot: 'Wedding',
+      what_kind_of_shoot: 'Wedding Shoot',
+      which_city: 'Mumbai',
+      venue: 'Taj Lands End, Bandra',
+      event_venue: 'Taj Lands End',
+      budget: '₹2,50,000',
+      max_budget: '₹2,50,000',
+      approximate_budget: '₹2,50,000',
+      expected_guests: '450 Guests',
+      call_time: '09:00 AM',
+      form_name: 'Wedding Photography Lead Form',
+      campaign_name: 'Weddings 2026 Season Campaign',
+      ad_name: 'Cinematic Teaser Ad #1',
+      adset_name: 'Mumbai Brides 22-30',
+      platform: 'Instagram / Facebook',
+      facebook_lead_id: 'fb_lead_982348912',
+      instagram_handle: '@riyasharma_official',
+      wedding_events: 'Sangeet, Haldi, Wedding, Reception',
+      notes: 'Couple looking for premium cinematic video & traditional photo package.',
+      created_time: '21 Aug 2026, 02:49 am',
+      current_date: '21/08/2026',
+      timestamp: new Date().toISOString(),
+    };
+
+    if (!text) return 'Start typing your template message...';
+
+    return text.replace(/\{\{([^{}]+)\}\}/g, (_, key) => {
+      const cleanKey = key.trim().toLowerCase();
+      return sampleData[cleanKey] || `[${key}]`;
+    });
+  };
 
   // Custom states for Dynamic Fields insert
   const [showShortcodeDropdown, setShowShortcodeDropdown] = useState(false);
@@ -261,6 +314,33 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     setLanguage('en_US');
     setActiveTab('text');
     setTextBody('');
+    setMediaUrl('');
+    setMediaMime('');
+    setPollQuestion('');
+    setPollAllowMultiple(false);
+    setPollOptions([{ id: '1', text: '' }, { id: '2', text: '' }]);
+    setButtons([]);
+    setMetaApprovalRequired(false);
+    setShowBuilder(true);
+  };
+
+  const handleAddNewGroupTemplateClick = () => {
+    setEditTemplateId(null);
+    setName('group_lead_alert');
+    setNameError(false);
+    setCategory('group_alert');
+    setLanguage('en_US');
+    setActiveTab('text');
+    setTextBody(
+      '*🚨 New Lead Alert! 🚨*\n\n' +
+      '1. Created Time : *{{created_time}}*\n' +
+      '2. Full Name : *{{full_name}}*\n' +
+      '3. Kind of Shoot : *{{shoot_type}}*\n' +
+      '4. Location : *{{location}}*\n' +
+      '5. Max Budget : *{{budget}}*\n' +
+      '6. Phone Number : *{{phone}}*\n' +
+      '7. Source : *{{source}}*'
+    );
     setMediaUrl('');
     setMediaMime('');
     setPollQuestion('');
@@ -674,29 +754,87 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                   setShowShortcodeDropdown(false);
                 }}
               />
-              <div className="absolute left-0 mt-1 w-64 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-855 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none z-40 overflow-y-auto max-h-80 py-1.5 font-sans">
-                <div className="px-3 py-1 text-[9px] uppercase font-bold text-zinc-400 dark:text-zinc-500 tracking-wider">Client Info</div>
+              <div className="absolute left-0 mt-1 w-72 rounded-2xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 shadow-2xl z-40 overflow-y-auto max-h-96 py-2 font-sans">
+                {/* 1. Client & Lead Info */}
+                <div className="px-3 py-1 text-[9px] uppercase font-bold text-emerald-600 dark:text-emerald-400 tracking-wider flex items-center gap-1">
+                  <UserCheck className="w-3 h-3" /> Client & Contact Info
+                </div>
                 {[
+                  { label: 'Full Name', tag: '{{full_name}}' },
                   { label: 'First Name', tag: '{{first_name}}' },
                   { label: 'Last Name', tag: '{{last_name}}' },
-                  { label: 'Full Name', tag: '{{full_name}}' },
                   { label: 'Phone Number', tag: '{{phone_number}}' },
-                ].map(renderOption)}
-                
-                <div className="border-t border-zinc-100 dark:border-zinc-900 my-1.5" />
-                <div className="px-3 py-1 text-[9px] uppercase font-bold text-zinc-400 dark:text-zinc-500 tracking-wider">System / Time</div>
-                {[
-                  { label: 'Timestamp', tag: '{{timestamp}}' },
-                  { label: 'Current Date', tag: '{{current_date}}' },
+                  { label: 'Phone (Short)', tag: '{{phone}}' },
+                  { label: 'Email Address', tag: '{{email}}' },
+                  { label: 'City', tag: '{{city}}' },
+                  { label: 'Full Location', tag: '{{location}}' },
+                  { label: 'Address', tag: '{{address}}' },
+                  { label: 'Lead Owner', tag: '{{lead_owner}}' },
+                  { label: 'Lead Status', tag: '{{status}}' },
+                  { label: 'Lead Score', tag: '{{score}}' },
                 ].map(renderOption)}
 
                 <div className="border-t border-zinc-100 dark:border-zinc-900 my-1.5" />
-                <div className="px-3 py-1 text-[9px] uppercase font-bold text-zinc-400 dark:text-zinc-500 tracking-wider">Meta / Campaign</div>
+
+                {/* 2. Wedding & Event Specifications */}
+                <div className="px-3 py-1 text-[9px] uppercase font-bold text-rose-500 dark:text-rose-400 tracking-wider flex items-center gap-1">
+                  <Sparkles className="w-3 h-3" /> Wedding & Event Details
+                </div>
                 {[
-                  { label: 'Facebook Lead ID', tag: '{{facebook_lead_id}}' },
+                  { label: 'Event Date', tag: '{{event_date}}' },
+                  { label: 'Wedding Date', tag: '{{wedding_date}}' },
+                  { label: 'Groom Name', tag: '{{groom_name}}' },
+                  { label: 'Bride Name', tag: '{{bride_name}}' },
+                  { label: 'Shoot Type', tag: '{{shoot_type}}' },
+                  { label: 'Venue', tag: '{{venue}}' },
+                  { label: 'Max Budget', tag: '{{budget}}' },
+                  { label: 'Budget Range', tag: '{{max_budget}}' },
+                  { label: 'Expected Guests', tag: '{{expected_guests}}' },
+                  { label: 'Call Time', tag: '{{call_time}}' },
+                ].map(renderOption)}
+
+                <div className="border-t border-zinc-100 dark:border-zinc-900 my-1.5" />
+
+                {/* 3. Meta Custom Form Questions */}
+                <div className="px-3 py-1 text-[9px] uppercase font-bold text-purple-500 dark:text-purple-400 tracking-wider flex items-center gap-1">
+                  <HelpCircle className="w-3 h-3" /> Meta Form Custom Questions
+                </div>
+                {[
+                  { label: 'Kind of Shoot', tag: '{{kind_of_shoot}}' },
+                  { label: 'What Kind of Shoot', tag: '{{what_kind_of_shoot}}' },
+                  { label: 'Which City', tag: '{{which_city}}' },
+                  { label: 'Approx Budget', tag: '{{approximate_budget}}' },
+                  { label: 'Event Venue', tag: '{{event_venue}}' },
+                  { label: 'Wedding Events', tag: '{{wedding_events}}' },
+                  { label: 'Instagram Handle', tag: '{{instagram_handle}}' },
+                  { label: 'Notes', tag: '{{notes}}' },
+                ].map(renderOption)}
+
+                <div className="border-t border-zinc-100 dark:border-zinc-900 my-1.5" />
+
+                {/* 4. Meta & Campaign Metadata */}
+                <div className="px-3 py-1 text-[9px] uppercase font-bold text-blue-500 dark:text-blue-400 tracking-wider flex items-center gap-1">
+                  <Globe className="w-3 h-3" /> Meta & Campaign Info
+                </div>
+                {[
                   { label: 'Form Name', tag: '{{form_name}}' },
                   { label: 'Campaign Name', tag: '{{campaign_name}}' },
-                  { label: 'Platform', tag: '{{platform}}' },
+                  { label: 'Ad Name', tag: '{{ad_name}}' },
+                  { label: 'Adset Name', tag: '{{adset_name}}' },
+                  { label: 'Platform Source', tag: '{{platform}}' },
+                  { label: 'Facebook Lead ID', tag: '{{facebook_lead_id}}' },
+                ].map(renderOption)}
+
+                <div className="border-t border-zinc-100 dark:border-zinc-900 my-1.5" />
+
+                {/* 5. System & Dates */}
+                <div className="px-3 py-1 text-[9px] uppercase font-bold text-amber-500 dark:text-amber-400 tracking-wider flex items-center gap-1">
+                  <Calendar className="w-3 h-3" /> System Dates & Times
+                </div>
+                {[
+                  { label: 'Created Time', tag: '{{created_time}}' },
+                  { label: 'Current Date', tag: '{{current_date}}' },
+                  { label: 'Timestamp (ISO)', tag: '{{timestamp}}' },
                 ].map(renderOption)}
               </div>
             </>
@@ -993,15 +1131,20 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="w-full max-w-4xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden"
+              className="w-full max-w-5xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 rounded-2xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden"
             >
               {/* Header */}
               <div className="flex items-center justify-between border-b border-zinc-150 dark:border-zinc-900 p-5">
                 <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[9px] font-mono uppercase tracking-widest text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-500/20">
+                      WhatsApp Template Designer
+                    </span>
+                    <span className="text-[10px] text-zinc-400 font-mono">• Live Simulator</span>
+                  </div>
                   <h3 className="text-base font-bold text-zinc-900 dark:text-white">
-                    {editTemplateId ? `Edit template: ${name}` : 'Create a new template'}
+                    {editTemplateId ? `Edit Template: ${name}` : 'Create a New Template'}
                   </h3>
-                  <p className="text-[10px] text-zinc-550 dark:text-zinc-500">Configure parameters, dynamic contents, and submit for validation</p>
                 </div>
                 <button 
                   onClick={() => setShowBuilder(false)}
@@ -1011,363 +1154,372 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                 </button>
               </div>
 
-              {/* Form Content */}
-              <form onSubmit={handleCreateTemplate} className="flex-1 overflow-y-auto p-6 space-y-6">
-                
-                {/* Core configuration parameters */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 dark:text-zinc-400">Template name</label>
-                    <input 
-                      type="text"
-                      placeholder="e.g. welcome_drip"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      className={`w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border ${nameError ? 'border-rose-500' : 'border-zinc-200 dark:border-zinc-800'} text-zinc-850 dark:text-zinc-200 text-xs rounded-xl focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-700`}
-                    />
-                    {nameError && <p className="text-[10px] text-rose-450 dark:text-rose-400">Invalid input</p>}
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 dark:text-zinc-400">Template category</label>
-                    <select
-                      value={category}
-                      onChange={(e: any) => setCategory(e.target.value)}
-                      className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-800 dark:text-zinc-300 text-xs rounded-xl focus:outline-none"
-                    >
-                      <option value="utility">Utility</option>
-                      <option value="marketing">Marketing</option>
-                      <option value="authentication">Authentication</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 dark:text-zinc-400">Template Language</label>
-                    <select
-                      value={language}
-                      onChange={(e) => setLanguage(e.target.value)}
-                      className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-800 dark:text-zinc-300 text-xs rounded-xl focus:outline-none"
-                    >
-                      <option value="en_US">English (US)</option>
-                      <option value="hi_IN">Hindi (India)</option>
-                      <option value="es_ES">Spanish (Spain)</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Media Url & Mime (always at the top as per image) */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 dark:text-zinc-400">Default Send Media URL</label>
-                    <input 
-                      type="text"
-                      placeholder="https://example.com/media.jpg"
-                      value={mediaUrl}
-                      onChange={(e) => setMediaUrl(e.target.value)}
-                      className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-850 dark:text-zinc-200 text-xs rounded-xl focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-700"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 dark:text-zinc-400">Default Send Media MIME / Type</label>
-                    <input 
-                      type="text"
-                      placeholder="image/jpeg"
-                      value={mediaMime}
-                      onChange={(e) => setMediaMime(e.target.value)}
-                      className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-850 dark:text-zinc-200 text-xs rounded-xl focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-700"
-                    />
-                  </div>
-                </div>
-
-                {/* Content Tabs header */}
-                <div className="border border-zinc-200 dark:border-zinc-900 rounded-xl bg-zinc-50 dark:bg-zinc-950/40 p-1 flex gap-1.5">
-                  {(['text', 'media', 'poll'] as const).map((tab) => (
-                    <button
-                      key={tab}
-                      type="button"
-                      onClick={() => setActiveTab(tab)}
-                      className={`flex-1 py-2 text-xs font-semibold rounded-lg capitalize flex items-center justify-center gap-1.5 transition-all ${
-                        activeTab === tab 
-                          ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-700 shadow-sm' 
-                          : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300'
-                      }`}
-                    >
-                      {tab === 'text' && <FileText className="w-3.5 h-3.5" />}
-                      {tab === 'media' && <ImageIcon className="w-3.5 h-3.5" />}
-                      {tab === 'poll' && <Vote className="w-3.5 h-3.5" />}
-                      {tab}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Tab content panels */}
-                <div className="border border-zinc-200 dark:border-zinc-900 rounded-2xl bg-zinc-50/20 dark:bg-zinc-950/60 p-5 space-y-4">
-                  {activeTab === 'text' && (
-                    <div className="space-y-4">
-                      {/* Editor bar */}
-                      {renderFormattingToolbar()}
+              {/* Form Content in 2-Column Split */}
+              <form onSubmit={handleCreateTemplate} className="flex-1 overflow-y-auto p-6">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                  
+                  {/* Left Column: Form Configuration (7 cols) */}
+                  <div className="lg:col-span-7 space-y-5">
+                    
+                    {/* Core configuration parameters */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 dark:text-zinc-400">Template name</label>
+                        <input 
+                          type="text"
+                          placeholder="e.g. welcome_drip"
+                          value={name}
+                          onChange={(e) => setName(e.target.value)}
+                          className={`w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border ${nameError ? 'border-rose-500' : 'border-zinc-200 dark:border-zinc-800'} text-zinc-850 dark:text-zinc-200 text-xs rounded-xl focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-700`}
+                        />
+                        {nameError && <p className="text-[10px] text-rose-450 dark:text-rose-400">Invalid input</p>}
+                      </div>
 
                       <div className="space-y-1.5">
-                        <label className="text-[10px] uppercase font-bold text-zinc-550 dark:text-zinc-400">Template body</label>
-                        <textarea
-                          ref={textareaRef}
-                          placeholder="Write template message here..."
-                          value={textBody}
-                          onChange={(e) => setTextBody(e.target.value)}
-                          onFocus={() => setIsTextareaFocused(true)}
-                          onBlur={() => setTimeout(() => setIsTextareaFocused(false), 200)}
-                          rows={6}
-                          className="w-full p-3 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 text-zinc-850 dark:text-zinc-200 text-xs rounded-xl focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-700"
+                        <label className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 dark:text-zinc-400">Template category</label>
+                        <select
+                          value={category}
+                          onChange={(e: any) => setCategory(e.target.value)}
+                          className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-800 dark:text-zinc-300 text-xs rounded-xl focus:outline-none"
+                        >
+                          <option value="utility">Utility (Client Drip & Welcome)</option>
+                          <option value="marketing">Marketing (Offers & Promotions)</option>
+                          <option value="group_alert">Group Alert (Lead Alert to Team)</option>
+                          <option value="group_workflow">Group Workflow (Anniversary / Pre-Event)</option>
+                          <option value="authentication">Authentication (OTP / Verify)</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 dark:text-zinc-400">Language</label>
+                        <select
+                          value={language}
+                          onChange={(e) => setLanguage(e.target.value)}
+                          className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-800 dark:text-zinc-300 text-xs rounded-xl focus:outline-none"
+                        >
+                          <option value="en_US">English (US)</option>
+                          <option value="hi_IN">Hindi (India)</option>
+                          <option value="es_ES">Spanish (Spain)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Media Url & Mime */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 dark:text-zinc-400">Default Send Media URL</label>
+                        <input 
+                          type="text"
+                          placeholder="https://example.com/media.jpg"
+                          value={mediaUrl}
+                          onChange={(e) => setMediaUrl(e.target.value)}
+                          className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-850 dark:text-zinc-200 text-xs rounded-xl focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-700"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 dark:text-zinc-400">Media MIME Type</label>
+                        <input 
+                          type="text"
+                          placeholder="image/jpeg or video/mp4"
+                          value={mediaMime}
+                          onChange={(e) => setMediaMime(e.target.value)}
+                          className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-850 dark:text-zinc-200 text-xs rounded-xl focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-700"
                         />
                       </div>
                     </div>
-                  )}
 
-                  {activeTab === 'media' && (
+                    {/* Content Tabs header */}
+                    <div className="border border-zinc-200 dark:border-zinc-900 rounded-xl bg-zinc-50 dark:bg-zinc-950/40 p-1 flex gap-1.5">
+                      {(['text', 'media', 'poll'] as const).map((tab) => (
+                        <button
+                          key={tab}
+                          type="button"
+                          onClick={() => setActiveTab(tab)}
+                          className={`flex-1 py-2 text-xs font-semibold rounded-lg capitalize flex items-center justify-center gap-1.5 transition-all ${
+                            activeTab === tab 
+                              ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-700 shadow-sm' 
+                              : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300'
+                          }`}
+                        >
+                          {tab === 'text' && <Type className="w-3.5 h-3.5" />}
+                          {tab === 'media' && <ImageIcon className="w-3.5 h-3.5" />}
+                          {tab === 'poll' && <CheckSquare className="w-3.5 h-3.5" />}
+                          {tab}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Dynamic Tabs Content */}
                     <div className="space-y-4">
-                      {/* Drag Zone */}
-                      <div 
-                        onClick={() => fileInputRef.current?.click()}
-                        className="border border-dashed border-zinc-250 dark:border-zinc-800 rounded-xl p-8 text-center bg-zinc-50/50 dark:bg-zinc-900/20 space-y-1 cursor-pointer hover:border-zinc-455 dark:hover:border-zinc-700 transition-colors"
-                      >
-                        <input 
-                          type="file"
-                          ref={fileInputRef}
-                          onChange={handleFileChange}
-                          className="hidden"
-                        />
-                        {uploading ? (
-                          <div className="space-y-2 py-2">
-                            <RefreshCw className="w-8 h-8 text-orange-400 mx-auto animate-spin" />
-                            <p className="text-xs text-zinc-600 dark:text-zinc-350 font-semibold">Uploading file...</p>
+                      {activeTab === 'text' && (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 dark:text-zinc-400">Message Body</label>
+                            {renderFormattingToolbar()}
                           </div>
-                        ) : (
-                          <>
-                            <ImageIcon className="w-8 h-8 text-zinc-400 dark:text-zinc-600 mx-auto" />
-                            <p className="text-xs text-zinc-700 dark:text-zinc-300 font-semibold">
-                              {mediaUrl ? 'File selected (Click to replace)' : 'Drop files here or click to browse'}
-                            </p>
-                             <p className="text-[10px] text-zinc-500">
-                               {mediaUrl ? `MIME: ${mediaMime}` : 'Single file only (Max: Image 50MB, Video 50MB, Document 100MB)'}
-                             </p>
-                          </>
-                        )}
-                      </div>
+                          <textarea 
+                            ref={textareaRef}
+                            rows={8}
+                            value={textBody}
+                            onChange={(e) => setTextBody(e.target.value)}
+                            onFocus={() => setIsTextareaFocused(true)}
+                            onBlur={() => setIsTextareaFocused(false)}
+                            placeholder="Type your message with {{full_name}}, {{shoot_type}}, {{budget}}..."
+                            className="w-full p-3 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 text-zinc-850 dark:text-zinc-200 text-xs rounded-xl focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-700 font-mono leading-relaxed"
+                          />
+                        </div>
+                      )}
 
-                      {/* Live Media Preview Thumbnail */}
-                      {mediaUrl && (
-                        <div className="relative border border-zinc-200 dark:border-zinc-850 rounded-xl p-4 bg-zinc-50 dark:bg-zinc-950/40 backdrop-blur-md flex flex-col items-center justify-center group overflow-hidden">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setMediaUrl('');
-                              setMediaMime('');
-                            }}
-                            className="absolute top-2.5 right-2.5 p-1 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-500 hover:text-rose-600 dark:hover:text-rose-450 hover:border-rose-200 dark:hover:border-rose-950/20 transition-all z-10"
-                            title="Remove media"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-
-                          <div className="w-full flex flex-col items-center gap-3">
-                            {mediaMime.startsWith('image/') || (!mediaMime && mediaUrl.match(/\.(jpeg|jpg|gif|png|webp)/i)) ? (
-                              <img 
-                                src={mediaUrl} 
-                                alt="Media preview" 
-                                className="max-h-36 object-contain rounded-lg border border-zinc-200 dark:border-zinc-800/80 shadow-md"
+                      {activeTab === 'media' && (
+                        <div className="space-y-4">
+                          <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 bg-zinc-50/50 dark:bg-zinc-900/20 space-y-3">
+                            <label className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 dark:text-zinc-400">Media Header Attachment</label>
+                            <div className="flex gap-3">
+                              <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept="image/*,video/*,application/pdf"
+                                onChange={handleFileChange}
+                                className="hidden"
                               />
-                            ) : mediaMime.startsWith('video/') || (!mediaMime && mediaUrl.match(/\.(mp4|webm|ogg)/i)) ? (
-                              <video 
-                                src={mediaUrl} 
-                                controls 
-                                className="max-h-36 w-full object-contain rounded-lg border border-zinc-200 dark:border-zinc-800/80 shadow-md"
-                              />
-                            ) : (
-                              <div className="w-14 h-14 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 flex items-center justify-center">
-                                <FileText className="w-6 h-6 text-orange-500 dark:text-orange-400" />
-                              </div>
-                            )}
-
-                            <div className="text-center space-y-0.5 w-full px-4">
-                              <p className="text-[9px] text-zinc-600 dark:text-zinc-400 truncate max-w-full font-mono">{mediaUrl}</p>
-                              <p className="text-[8px] text-zinc-500 dark:text-zinc-500 uppercase font-bold tracking-wider">
-                                {mediaMime || 'Unknown MIME'}
-                              </p>
+                              <button
+                                type="button"
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={uploading}
+                                className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:border-zinc-300 transition-all cursor-pointer disabled:opacity-50"
+                              >
+                                <Upload className="w-3.5 h-3.5" />
+                                {uploading ? 'Uploading...' : 'Upload Media File'}
+                              </button>
                             </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 dark:text-zinc-400">Media Caption Text</label>
+                              {renderFormattingToolbar()}
+                            </div>
+                            <textarea 
+                              ref={textareaRef}
+                              rows={6}
+                              value={textBody}
+                              onChange={(e) => setTextBody(e.target.value)}
+                              onFocus={() => setIsTextareaFocused(true)}
+                              onBlur={() => setIsTextareaFocused(false)}
+                              placeholder="Caption text displayed beneath the media..."
+                              className="w-full p-3 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 text-zinc-850 dark:text-zinc-200 text-xs rounded-xl focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-700 font-mono leading-relaxed"
+                            />
                           </div>
                         </div>
                       )}
 
-                      {/* Text editor for media body */}
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] uppercase font-bold text-zinc-550 dark:text-zinc-400">Template body</label>
-                        {renderFormattingToolbar()}
-                        <textarea
-                          ref={textareaRef}
-                          placeholder="Write body text accompanying the media..."
-                          value={textBody}
-                          onChange={(e) => setTextBody(e.target.value)}
-                          onFocus={() => setIsTextareaFocused(true)}
-                          onBlur={() => setTimeout(() => setIsTextareaFocused(false), 200)}
-                          rows={4}
-                          className="w-full p-3 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 text-zinc-850 dark:text-zinc-200 text-xs rounded-xl focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-700"
-                        />
-                      </div>
-                    </div>
-                  )}
+                      {activeTab === 'poll' && (
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <label className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 dark:text-zinc-400">Poll Question</label>
+                            <input
+                              type="text"
+                              value={pollQuestion}
+                              onChange={(e) => setPollQuestion(e.target.value)}
+                              placeholder="e.g. Which photography package do you prefer?"
+                              className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-850 dark:text-zinc-200 text-xs rounded-xl focus:outline-none"
+                            />
+                          </div>
 
-                  {activeTab === 'poll' && (
-                    <div className="space-y-4">
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 dark:text-zinc-400">Poll Options</label>
+                              <button
+                                type="button"
+                                onClick={handleAddPollOption}
+                                className="text-[10px] font-bold text-emerald-500 hover:text-emerald-400"
+                              >
+                                + Add Option
+                              </button>
+                            </div>
+                            <div className="space-y-2">
+                              {pollOptions.map((opt, oIdx) => (
+                                <div key={opt.id} className="flex items-center gap-2">
+                                  <span className="text-[10px] font-mono text-zinc-400 w-4">{oIdx + 1}.</span>
+                                  <input
+                                    type="text"
+                                    value={opt.text}
+                                    onChange={(e) => {
+                                      setPollOptions(prev => prev.map(o => o.id === opt.id ? { ...o, text: e.target.value } : o));
+                                    }}
+                                    placeholder={`Option ${oIdx + 1}`}
+                                    className="flex-1 px-3 py-1.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-xs text-zinc-800 dark:text-zinc-200 rounded-lg focus:outline-none"
+                                  />
+                                  {pollOptions.length > 2 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemovePollOption(opt.id)}
+                                      className="text-zinc-400 hover:text-rose-500 p-1"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Action Quick Links */}
+                    <div className="p-4 border border-zinc-200 dark:border-zinc-850 rounded-xl bg-zinc-50/40 dark:bg-zinc-900/20 space-y-3">
                       <div className="flex items-center justify-between">
                         <div>
-                          <h5 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Interactive Poll Configuration</h5>
-                          <p className="text-[9px] text-zinc-500">Min 2 options, max 6 options.</p>
+                          <h4 className="text-xs font-bold text-zinc-900 dark:text-white">Quick Action Buttons</h4>
+                          <p className="text-[9px] text-zinc-400">Add tap-to-call or URL redirect buttons (max 3)</p>
                         </div>
-                        <div className="flex items-center gap-3">
-                          <label className="text-[10px] text-zinc-550 dark:text-zinc-400 font-semibold flex items-center gap-1.5 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={pollAllowMultiple}
-                              onChange={(e) => setPollAllowMultiple(e.target.checked)}
-                              className="rounded bg-white dark:bg-zinc-900 border-zinc-250 dark:border-zinc-800 text-orange-500 focus:ring-0 w-3 h-3"
-                            />
-                            Allow multiple answers
-                          </label>
+                        <div className="flex gap-2">
                           <button
                             type="button"
-                            onClick={handleAddPollOption}
-                            className="px-2.5 py-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 text-zinc-700 dark:text-zinc-300 text-[10px] font-bold rounded-lg transition-all"
+                            onClick={() => handleAddButton('url')}
+                            className="px-2 py-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 text-[10px] font-bold rounded-lg cursor-pointer hover:border-zinc-300"
                           >
-                            + Add Option
+                            + URL Link
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAddButton('phone')}
+                            className="px-2 py-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 text-[10px] font-bold rounded-lg cursor-pointer hover:border-zinc-300"
+                          >
+                            + Call Phone
                           </button>
                         </div>
                       </div>
 
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] uppercase font-bold text-zinc-550 dark:text-zinc-500">Question</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. Choose your photoshoot theme"
-                          value={pollQuestion}
-                          onChange={(e) => setPollQuestion(e.target.value)}
-                          className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-850 dark:text-zinc-200 text-xs rounded-xl focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-700"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        {pollOptions.map((opt, idx) => (
-                          <div key={opt.id} className="flex items-center gap-3 bg-zinc-50 dark:bg-zinc-900/20 p-2 border border-zinc-150 dark:border-zinc-900 rounded-xl">
-                            <span className="text-[10px] font-bold bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-500 px-2 py-0.5 rounded font-mono">
-                              Option #{idx + 1}
-                            </span>
-                            <input
-                              type="text"
-                              placeholder="Option text"
-                              value={opt.text}
-                              onChange={(e) => {
-                                  setPollOptions(prev => prev.map(o => o.id === opt.id ? { ...o, text: e.target.value } : o));
-                              }}
-                              className="flex-1 bg-transparent text-xs text-zinc-800 dark:text-zinc-300 border-b border-zinc-200 dark:border-zinc-900 focus:outline-none focus:border-zinc-455 dark:focus:border-zinc-800"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleRemovePollOption(opt.id)}
-                              className="text-[10px] text-zinc-500 hover:text-rose-500 font-bold"
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                      <p className="text-[9px] text-zinc-500 italic">Tip: WhatsApp polls perform best with short, clear options.</p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Action Interactive buttons row modifiers */}
-                <div className="p-5 border border-zinc-250 dark:border-zinc-900 rounded-2xl bg-zinc-50/20 dark:bg-zinc-950/40 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="text-xs font-semibold text-zinc-900 dark:text-white">Quick Action Links (100% Reliable Delivery)</h4>
-                      <p className="text-[9px] text-zinc-550 dark:text-zinc-500">Add URL links or telephone click actions — delivered as text (max 3)</p>
-                    </div>
-                    <div className="flex gap-2">
-                      <button 
-                        type="button" 
-                        onClick={() => handleAddButton('url')}
-                        className="flex items-center gap-1 px-2 py-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 text-zinc-700 dark:text-zinc-300 text-[10px] font-bold rounded-lg"
-                      >
-                        + URL Link
-                      </button>
-                      <button 
-                        type="button" 
-                        onClick={() => handleAddButton('phone')}
-                        className="flex items-center gap-1 px-2 py-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 text-zinc-700 dark:text-zinc-300 text-[10px] font-bold rounded-lg"
-                      >
-                        + Telephone
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Action links list */}
-                  {buttons.length === 0 ? (
-                    <p className="text-[10px] text-zinc-500 dark:text-zinc-600 italic">No action links added yet.</p>
-                  ) : (
-                    <div className="space-y-2.5">
-                      {buttons.map((btn, bIdx) => (
-                        <div key={btn.id} className="flex flex-col gap-2 bg-zinc-50 dark:bg-zinc-900/40 p-2.5 border border-zinc-200 dark:border-zinc-800/80 rounded-xl">
-                          <div className="flex gap-2 items-center">
-                            <span className="text-[9px] font-mono bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-1.5 py-0.5 rounded capitalize text-zinc-500 dark:text-zinc-400 font-bold shrink-0">
-                              {btn.type === 'url' ? '🔗 URL' : '📞 Call'}
-                            </span>
-                            <input 
-                              type="text"
-                              value={btn.text}
-                              onChange={(e) => {
-                                setButtons(prev => prev.map(b => b.id === btn.id ? { ...b, text: e.target.value } : b));
-                              }}
-                              placeholder="Link label (shown on phone)"
-                              className="bg-transparent text-xs text-zinc-900 dark:text-white border-b border-zinc-250 dark:border-zinc-800 focus:outline-none flex-1"
-                            />
-                            <button 
-                              type="button"
-                              onClick={() => handleRemoveButton(btn.id)}
-                              className="text-zinc-400 hover:text-rose-500"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                          <div className="flex flex-col gap-0.5">
-                            <label className="text-[9px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                              {btn.type === 'url' ? 'Destination URL' : 'Phone Number'}
-                            </label>
-                            <input 
-                              type="text"
-                              value={btn.value}
-                              onChange={(e) => {
-                                setButtons(prev => prev.map(b => b.id === btn.id ? { ...b, value: e.target.value } : b));
-                              }}
-                              placeholder={
-                                btn.type === 'url' ? 'https://example.com/page' 
-                                : '+919876543210'
-                              }
-                              className="bg-white dark:bg-zinc-900 text-xs text-zinc-900 dark:text-zinc-100 border border-zinc-300 dark:border-zinc-700 focus:outline-none focus:border-blue-400 dark:focus:border-blue-500 focus:ring-1 focus:ring-blue-400/30 dark:focus:ring-blue-500/30 w-full font-mono px-2.5 py-1.5 rounded-lg"
-                            />
-                            <p className="text-[8px] text-zinc-400 dark:text-zinc-600 italic">
-                              {btn.type === 'url' ? 'Full URL — appears as a tappable text link in the message' 
-                                : 'Phone number to dial (include country code, e.g. +91...)'}
-                            </p>
-                          </div>
+                      {buttons.map(btn => (
+                        <div key={btn.id} className="flex items-center gap-2 p-2 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-xs">
+                          <span className="text-[9px] font-mono text-zinc-400 font-bold uppercase">{btn.type}</span>
+                          <input
+                            type="text"
+                            value={btn.text}
+                            onChange={e => setButtons(prev => prev.map(b => b.id === btn.id ? { ...b, text: e.target.value } : b))}
+                            placeholder="Button label"
+                            className="flex-1 bg-transparent border-b border-zinc-200 dark:border-zinc-700 px-1 py-0.5 text-xs text-zinc-800 dark:text-zinc-200 focus:outline-none"
+                          />
+                          <input
+                            type="text"
+                            value={btn.value}
+                            onChange={e => setButtons(prev => prev.map(b => b.id === btn.id ? { ...b, value: e.target.value } : b))}
+                            placeholder={btn.type === 'url' ? 'https://...' : '+91...'}
+                            className="flex-1 bg-transparent border-b border-zinc-200 dark:border-zinc-700 px-1 py-0.5 text-xs font-mono text-zinc-800 dark:text-zinc-200 focus:outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveButton(btn.id)}
+                            className="text-zinc-400 hover:text-rose-500 p-1"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       ))}
                     </div>
-                  )}
+
+                  </div>
+
+                  {/* Right Column: Live Interactive WhatsApp Simulator (5 cols) */}
+                  <div className="lg:col-span-5 space-y-3">
+                    <div className="sticky top-0 bg-[#0B141A] rounded-2xl border border-zinc-800 overflow-hidden shadow-xl">
+                      
+                      {/* WhatsApp Phone Top Header */}
+                      <div className="bg-[#202C33] px-3.5 py-2.5 flex items-center justify-between text-white border-b border-zinc-800/80">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-full bg-[#00A884] flex items-center justify-center text-white font-black text-xs shadow-sm">
+                            FW
+                          </div>
+                          <div>
+                            <div className="font-bold text-xs leading-tight">Filmify Weddings</div>
+                            <div className="text-[9px] text-[#00A884] font-mono">online • WhatsApp Business</div>
+                          </div>
+                        </div>
+                        <div className="w-2 h-2 rounded-full bg-[#00A884] animate-ping" />
+                      </div>
+
+                      {/* WhatsApp Chat Body Wallpaper */}
+                      <div className="p-4 min-h-[380px] flex flex-col justify-end bg-[radial-gradient(#202C33_1px,transparent_1px)] [background-size:16px_16px] bg-[#0B141A]">
+                        
+                        {/* WhatsApp Message Bubble */}
+                        <div className="max-w-[90%] self-end bg-[#005C4B] text-[#E9EDEF] rounded-2xl rounded-tr-sm p-3.5 shadow-lg space-y-2.5 relative">
+                          
+                          {/* Media Header Preview */}
+                          {activeTab === 'media' && mediaUrl && (
+                            <div className="rounded-xl overflow-hidden bg-black/40 border border-white/10 max-h-48 flex items-center justify-center">
+                              {mediaMime?.includes('video') ? (
+                                <div className="py-12 flex flex-col items-center gap-1.5 text-zinc-400">
+                                  <Video className="w-8 h-8 text-emerald-400" />
+                                  <span className="text-[10px] font-mono">Video Attachment</span>
+                                </div>
+                              ) : (
+                                <img
+                                  src={mediaUrl}
+                                  alt="Media preview"
+                                  className="w-full h-auto object-cover max-h-48 rounded-lg"
+                                  onError={(e) => { (e.target as any).style.display = 'none'; }}
+                                />
+                              )}
+                            </div>
+                          )}
+
+                          {/* Poll Preview */}
+                          {activeTab === 'poll' && (
+                            <div className="space-y-2 bg-[#111B21] p-3 rounded-xl border border-white/10">
+                              <div className="font-bold text-xs text-white">
+                                📊 {pollQuestion || 'Sample Poll Question'}
+                              </div>
+                              <div className="text-[9px] text-zinc-400">Select one option</div>
+                              <div className="space-y-1.5 pt-1">
+                                {pollOptions.filter(o => o.text).map((o, idx) => (
+                                  <div key={idx} className="flex items-center gap-2 p-2 rounded-lg bg-[#202C33] text-xs text-zinc-200">
+                                    <div className="w-3.5 h-3.5 rounded-full border border-zinc-500" />
+                                    <span>{o.text}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Formatted Text Message */}
+                          {activeTab !== 'poll' && (
+                            <div className="text-xs whitespace-pre-wrap leading-relaxed font-sans select-text">
+                              {getLivePreviewText(textBody)}
+                            </div>
+                          )}
+
+                          {/* Message Time & Checkmark */}
+                          <div className="flex items-center justify-end gap-1 text-[9px] text-zinc-400 font-mono pt-1">
+                            <span>{new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                            <span className="text-[#53BDEB] font-bold">✓✓</span>
+                          </div>
+
+                        </div>
+
+                        {/* Quick Action Link Buttons */}
+                        {buttons.length > 0 && (
+                          <div className="max-w-[90%] self-end w-full space-y-1 mt-1.5">
+                            {buttons.map(b => (
+                              <div key={b.id} className="w-full py-2 bg-[#202C33] text-[#53BDEB] text-xs font-bold text-center rounded-xl border border-white/5 flex items-center justify-center gap-1.5 shadow-sm">
+                                {b.type === 'url' ? <ExternalLink className="w-3 h-3" /> : <PhoneCall className="w-3 h-3" />}
+                                <span>{b.text || 'Action Button'}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                      </div>
+
+                    </div>
+                  </div>
+
                 </div>
 
-                {/* Meta approval and create buttons */}
-                <div className="border-t border-zinc-200 dark:border-zinc-900 pt-5 flex items-center justify-between">
-                  <label className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400 cursor-pointer font-medium selection:bg-transparent">
+                {/* Submit Bar */}
+                <div className="border-t border-zinc-200 dark:border-zinc-900 pt-5 mt-6 flex items-center justify-between">
+                  <label className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400 cursor-pointer font-medium">
                     <input
                       type="checkbox"
                       checked={metaApprovalRequired}
@@ -1380,9 +1532,9 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                   <button
                     type="submit"
                     disabled={loading}
-                    className="px-6 py-2.5 bg-gradient-to-r from-orange-400 to-amber-500 text-black text-xs font-bold rounded-xl shadow-lg shadow-orange-500/10 hover:opacity-95 disabled:opacity-50"
+                    className="px-6 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-500/20 hover:opacity-95 disabled:opacity-50 cursor-pointer"
                   >
-                    {loading ? 'Processing...' : editTemplateId ? 'Update Template' : 'Create Template'}
+                    {loading ? 'Processing...' : editTemplateId ? 'Update Template' : 'Save & Publish Template'}
                   </button>
                 </div>
 
@@ -1474,6 +1626,109 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                   Design customized templates for WhatsApp Groups (Lead Alerts, Team Notifications, Couples Group Anniversary Wishes, etc.)
                 </p>
               </div>
+            </div>
+          </div>
+
+          {/* Group Templates Table Dock */}
+          <div className="p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 backdrop-blur-md shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-extrabold text-zinc-900 dark:text-white flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-orange-500" />
+                  Custom Group Templates Library
+                </h4>
+                <p className="text-[10px] text-zinc-400">
+                  Manage multiple templates for sales alerts, shoot schedules, and couple anniversary greetings.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleAddNewGroupTemplateClick}
+                className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-orange-400 to-amber-500 text-black text-xs font-bold rounded-xl shadow-lg shadow-orange-500/10 hover:opacity-95 transition-all cursor-pointer shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                Add New Group Template
+              </button>
+            </div>
+
+            {/* Table */}
+            <div className="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 dark:bg-zinc-900/60 text-zinc-500 dark:text-zinc-400 border-b border-zinc-200 dark:border-zinc-800 font-mono text-[10px] uppercase tracking-wider">
+                  <tr>
+                    <th className="py-3 px-4">Template Name</th>
+                    <th className="py-3 px-4">Category</th>
+                    <th className="py-3 px-4">Type</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4">Updated</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-900">
+                  {templates.filter(t => t.category === 'group_alert' || t.category === 'group_workflow' || t.category === 'group' || t.name.toLowerCase().includes('group') || t.name.toLowerCase().includes('alert')).length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-zinc-400 text-xs font-mono">
+                        No custom group templates created yet. Click "+ Add New Group Template" to create one.
+                      </td>
+                    </tr>
+                  ) : (
+                    templates.filter(t => t.category === 'group_alert' || t.category === 'group_workflow' || t.category === 'group' || t.name.toLowerCase().includes('group') || t.name.toLowerCase().includes('alert')).map((t) => (
+                      <tr key={t.id} className="hover:bg-slate-50/80 dark:hover:bg-zinc-900/40 transition-colors">
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-zinc-900 dark:text-white flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-orange-400" />
+                            {t.name}
+                          </div>
+                          <span className="text-[9px] font-mono text-zinc-400">{t.language}</span>
+                        </td>
+                        <td className="py-3 px-4 capitalize font-semibold text-zinc-700 dark:text-zinc-300">
+                          {t.category === 'group_alert' ? '🚨 Lead Alert' : t.category === 'group_workflow' ? '💍 Group Workflow' : t.category}
+                        </td>
+                        <td className="py-3 px-4 capitalize font-mono text-zinc-600 dark:text-zinc-400">
+                          {t.type}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20">
+                            {t.status}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-zinc-400 font-mono text-[10px]">
+                          {new Date(t.updated_at || t.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleEditClick(t)}
+                              className="p-1.5 text-zinc-400 hover:text-amber-500 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all cursor-pointer"
+                              title="Edit Template"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDuplicateClick(t)}
+                              className="p-1.5 text-zinc-400 hover:text-emerald-500 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all cursor-pointer"
+                              title="Duplicate Template"
+                            >
+                              <Copy className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteTemplate(t)}
+                              className="p-1.5 text-zinc-400 hover:text-rose-500 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all cursor-pointer"
+                              title="Delete Template"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
 

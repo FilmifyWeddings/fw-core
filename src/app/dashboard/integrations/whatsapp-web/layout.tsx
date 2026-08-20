@@ -13,7 +13,7 @@ import { supabase } from '@/lib/supabase';
 
 const MOCK_WORKSPACE_ID = '00000000-0000-0000-0000-000000000000';
 
-type WaTab = 'device' | 'single-send' | 'chat' | 'templates' | 'workflows' | 'groups' | 'analytics' | 'system-health' | 'message-queue';
+type WaTab = 'device' | 'analytics-console' | 'single-send' | 'chat' | 'templates' | 'workflows' | 'groups' | 'analytics' | 'system-health' | 'message-queue';
 type ShootCategory = 'all' | 'wedding' | 'commercial';
 
 const TABS: { id: WaTab; label: string; icon: React.ReactNode; path: string }[] = [
@@ -22,6 +22,12 @@ const TABS: { id: WaTab; label: string; icon: React.ReactNode; path: string }[] 
     label: 'Device Link',
     icon: <ScanQrCode className="w-4 h-4" />,
     path: '/dashboard/integrations/whatsapp-web'
+  },
+  {
+    id: 'analytics-console',
+    label: 'Analytics Console',
+    icon: <BarChart3 className="w-4 h-4 text-emerald-400" />,
+    path: '/dashboard/integrations/whatsapp-web/analytics'
   },
   {
     id: 'single-send',
@@ -91,7 +97,8 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
   const [pollerStatus, setPollerStatus] = useState<'running' | 'stopped' | 'checking'>('checking');
 
   let activeTab: WaTab = 'device';
-  if (pathname === '/dashboard/integrations/whatsapp-web/single-send') activeTab = 'single-send';
+  if (pathname === '/dashboard/integrations/whatsapp-web/analytics') activeTab = 'analytics-console';
+  else if (pathname === '/dashboard/integrations/whatsapp-web/single-send') activeTab = 'single-send';
   else if (pathname === '/dashboard/integrations/whatsapp-web/chat') activeTab = 'chat';
   else if (pathname === '/dashboard/integrations/whatsapp-web/templates') activeTab = 'templates';
   else if (pathname === '/dashboard/integrations/whatsapp-web/workflows') activeTab = 'workflows';
