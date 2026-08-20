@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { calculateHaversineDistanceMeters } from '@/lib/attendance/geo-fence';
+import { calculateHaversineDistanceMeters, reverseGeocodeAddress } from '@/lib/attendance/geo-fence';
 
 export async function POST(request: NextRequest) {
   try {
@@ -39,20 +39,37 @@ export async function POST(request: NextRequest) {
       }, { status: 409 });
     }
 
-    // 3. Fetch Settings & Geofence Locations
+    // 3. Fetch Settings, Member & Geofence Locations
+    const { data: member } = await supabaseAdmin
+      .from('fw_team_members')
+      .select('*')
+      .eq('id', link.member_id)
+      .single();
+
     const { data: settings } = await supabaseAdmin
       .from('attendance_settings')
       .select('*')
       .eq('user_id', link.user_id)
       .maybeSingle();
 
-    const { data: locations } = await supabaseAdmin
+    let locationsQuery = supabaseAdmin
       .from('attendance_locations')
       .select('id, name, latitude, longitude, radius_meters')
       .eq('user_id', link.user_id)
       .eq('is_active', true);
 
-    // 4. Geofence Verification
+    const { data: allLocations } = await locationsQuery;
+    let locations = allLocations || [];
+
+    // Prioritize member assigned default geofence if present
+    if (member?.default_geofence_id) {
+      const userLoc = locations.find(l => l.id === member.default_geofence_id);
+      if (userLoc) {
+        locations = [userLoc, ...locations.filter(l => l.id !== member.default_geofence_id)];
+      }
+    }
+
+    // 4. Geofence Verification using Haversine
     let geofenceStatus: 'verified' | 'outside_geofence' | 'no_geofence' = 'no_geofence';
     let matchedLocationId: string | null = null;
     let minDistance = Infinity;
@@ -84,10 +101,10 @@ export async function POST(request: NextRequest) {
       if (geofenceStatus !== 'verified') {
         geofenceStatus = 'outside_geofence';
         // If geofencing is strictly required and user is outside, block punch
-        if (settings?.require_geofence) {
+        if (settings?.require_geofence !== false) {
           const distStr = minDistance >= 1000 ? `${(minDistance / 1000).toFixed(1)} km` : `${minDistance}m`;
           return NextResponse.json({
-            error: `You are ${distStr} away from ${closestLocationName}. Allowed radius: ${allowedRadius}m.`,
+            error: `You are outside the punch zone (${distStr} away from ${closestLocationName}). Allowed radius: ${allowedRadius}m.`,
             distanceMeters: minDistance,
             allowedRadiusMeters: allowedRadius
           }, { status: 403 });
@@ -95,17 +112,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 5. Selfie Upload to Supabase Storage
+    // 5. Reverse Geocode Punch Address
+    let punchAddress = '';
+    if (lat && lng) {
+      punchAddress = await reverseGeocodeAddress(Number(lat), Number(lng));
+    }
+
+    // 6. Persistent Selfie Upload to Supabase Storage
     let photoPath: string | null = null;
     if (photoBase64 && photoBase64.includes('base64,')) {
       try {
         const base64Data = photoBase64.split('base64,')[1];
         const buffer = Buffer.from(base64Data, 'base64');
-        const now = new Date();
-        const yyyy = now.getFullYear();
-        const mm = String(now.getMonth() + 1).padStart(2, '0');
-        const dd = String(now.getDate()).padStart(2, '0');
-        const filename = `${link.workspace_id}/${link.member_id}/${yyyy}/${mm}/${dd}/in_${Date.now()}.webp`;
+        const filename = `${link.member_id}_${todayDate}_in_${Date.now()}.webp`;
 
         const { data: uploadData, error: uploadErr } = await supabaseAdmin.storage
           .from('attendance-selfies')
@@ -125,7 +144,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 6. Calculate Late status based on Shift / Grace Period
+    // 7. Automated Attendance Status Evaluation
     const nowTime = new Date();
     const currentHour = nowTime.getHours();
     const currentMin = nowTime.getMinutes();
@@ -150,7 +169,7 @@ export async function POST(request: NextRequest) {
       status = 'half_day';
     }
 
-    // 7. Insert/Update Daily Attendance Record
+    // 8. Insert/Update Daily Attendance Record
     const recordPayload = {
       user_id: link.user_id,
       workspace_id: link.workspace_id,
@@ -161,12 +180,13 @@ export async function POST(request: NextRequest) {
       check_in_lat: lat ? Number(lat) : null,
       check_in_lng: lng ? Number(lng) : null,
       check_in_accuracy: accuracy ? Number(accuracy) : null,
-      check_in_photo_path: photoPath,
+      check_in_photo_path: photoPath || photoBase64, // fallback base64 so image is never lost
       check_in_location_id: matchedLocationId,
       check_in_verified: true,
       check_in_geofence_status: geofenceStatus,
       late_minutes: lateMinutes,
       device_info: deviceInfo || {},
+      notes: punchAddress ? `Punch In at: ${punchAddress}` : null,
       updated_at: nowTime.toISOString()
     };
 
@@ -198,6 +218,7 @@ export async function POST(request: NextRequest) {
       status,
       lateMinutes,
       geofenceStatus,
+      punchAddress,
       message: status === 'late' 
         ? `Checked in at ${nowTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (${lateMinutes} min late)`
         : `Checked in successfully on time at ${nowTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`

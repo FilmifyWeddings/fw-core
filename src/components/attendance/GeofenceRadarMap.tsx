@@ -280,7 +280,7 @@ export default function GeofenceRadarMap({
 
           <input
             type="range"
-            min="10"
+            min="20"
             max="1000"
             step="10"
             value={radiusMeters}

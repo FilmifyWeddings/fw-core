@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { reverseGeocodeAddress } from '@/lib/attendance/geo-fence';
 
 export async function POST(request: NextRequest) {
   try {
@@ -71,17 +72,29 @@ export async function POST(request: NextRequest) {
     const grossMinutes = Math.max(0, Math.round((checkOutMs - checkInMs) / 60000));
     const netWorkMinutes = Math.max(0, grossMinutes - totalBreakMinutes);
 
+    // Automated Half Day Check: If total working minutes < 240 mins (4 hours)
+    let finalStatus = record.status;
+    if (netWorkMinutes < 240) {
+      finalStatus = 'half_day';
+    }
+
     // Overtime threshold (default 9 hours = 540 min)
     const overtimeThreshold = 540;
     const overtimeMinutes = netWorkMinutes > overtimeThreshold ? netWorkMinutes - overtimeThreshold : 0;
 
-    // Optional Check-Out Photo Upload
+    // Reverse geocode checkout address
+    let punchOutAddress = '';
+    if (lat && lng) {
+      punchOutAddress = await reverseGeocodeAddress(Number(lat), Number(lng));
+    }
+
+    // Persistent Check-Out Photo Upload to Supabase Storage
     let photoPath: string | null = null;
     if (photoBase64 && photoBase64.includes('base64,')) {
       try {
         const base64Data = photoBase64.split('base64,')[1];
         const buffer = Buffer.from(base64Data, 'base64');
-        const filename = `${link.workspace_id}/${link.member_id}/${nowTime.getFullYear()}/${String(nowTime.getMonth() + 1).padStart(2, '0')}/${String(nowTime.getDate()).padStart(2, '0')}/out_${Date.now()}.webp`;
+        const filename = `${link.member_id}_${todayDate}_out_${Date.now()}.webp`;
 
         const { data: uploadData } = await supabaseAdmin.storage
           .from('attendance-selfies')
@@ -98,16 +111,23 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const updatedNotes = [
+      record.notes,
+      punchOutAddress ? `Punch Out at: ${punchOutAddress}` : null
+    ].filter(Boolean).join(' | ');
+
     // 6. Update Record
     const updatePayload = {
+      status: finalStatus,
       check_out_time: nowTime.toISOString(),
       check_out_lat: lat ? Number(lat) : null,
       check_out_lng: lng ? Number(lng) : null,
-      check_out_photo_path: photoPath || record.check_out_photo_path,
+      check_out_photo_path: photoPath || photoBase64 || record.check_out_photo_path,
       check_out_verified: true,
       work_duration_minutes: netWorkMinutes,
       break_duration_minutes: totalBreakMinutes,
       overtime_minutes: overtimeMinutes,
+      notes: updatedNotes,
       updated_at: nowTime.toISOString()
     };
 
@@ -125,8 +145,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       record: updatedRecord,
+      status: finalStatus,
       workDurationMinutes: netWorkMinutes,
       overtimeMinutes,
+      punchOutAddress,
       message: `Checked out at ${nowTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (Total Work: ${workHoursFormatted})`
     });
 

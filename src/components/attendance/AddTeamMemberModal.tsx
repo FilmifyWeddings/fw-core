@@ -54,6 +54,10 @@ export default function AddTeamMemberModal({
         primary_role: form.primary_role,
         phone_number: form.phone_number.trim(),
         email: form.email.trim() || null,
+        default_geofence_id: form.default_geofence_id || null,
+        shift_id: form.shift_id || null,
+        daily_rate: parseFloat(form.daily_rate) || 0,
+        base_salary: parseFloat(form.base_salary) || 0,
         created_at: new Date().toISOString()
       };
 
@@ -63,14 +67,32 @@ export default function AddTeamMemberModal({
         .select('*')
         .single();
 
-      if (mErr) throw mErr;
+      if (mErr) {
+        // Retry insert without extended columns if schema strictness
+        const fallbackPayload = {
+          user_id: workspaceId,
+          name: form.name.trim(),
+          primary_role: form.primary_role,
+          phone_number: form.phone_number.trim(),
+          email: form.email.trim() || null,
+          created_at: new Date().toISOString()
+        };
+        const { data: fbMember, error: fbErr } = await supabase
+          .from('fw_team_members')
+          .insert([fallbackPayload])
+          .select('*')
+          .single();
+        if (fbErr) throw fbErr;
+      }
+
+      const memberId = member?.id;
 
       // 2. Generate secure token & insert attendance_member_links
-      const secureToken = `att_${(member?.id || 'emp').slice(0, 6)}_${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+      const secureToken = `att_${(memberId || 'emp').slice(0, 6)}_${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
       await supabase.from('attendance_member_links').insert([{
         user_id: workspaceId,
         workspace_id: workspaceId,
-        member_id: member.id,
+        member_id: memberId,
         secure_token: secureToken,
         is_active: true,
         created_at: new Date().toISOString()
@@ -175,11 +197,11 @@ export default function AddTeamMemberModal({
               </div>
 
               <div>
-                <label className="text-xs font-bold text-[#746E67] block mb-1">Base Studio / Geofence</label>
+                <label className="text-xs font-bold text-[#746E67] block mb-1">Assigned Geofence / Studio</label>
                 <select
                   value={form.default_geofence_id}
                   onChange={(e) => setForm({ ...form, default_geofence_id: e.target.value })}
-                  className="w-full px-3 py-2 text-xs bg-[#FAF8F3] border border-[#E9DFD2] rounded-xl focus:outline-none font-semibold"
+                  className="w-full px-3.5 py-2 text-xs bg-[#FAF8F3] border border-[#E9DFD2] rounded-xl focus:outline-none font-semibold"
                 >
                   {locations.map(loc => (
                     <option key={loc.id} value={loc.id}>{loc.name} ({loc.radius_meters}m)</option>

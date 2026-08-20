@@ -290,9 +290,12 @@ export default function MemberKundaliModal({
                               No selfie photo
                             </div>
                           )}
-                          <div className="text-[10px] text-white/50 flex items-center gap-1">
-                            <MapPin className="w-3 h-3 text-[#C89435]" />
-                            <span>GPS: {rec.check_in_lat?.toFixed(4) || '—'}, {rec.check_in_lng?.toFixed(4) || '—'}</span>
+                          <div className="text-[10px] text-white/50 flex flex-col gap-0.5">
+                            <div className="flex items-center gap-1">
+                              <MapPin className="w-3 h-3 text-[#C89435]" />
+                              <span>GPS: {rec.check_in_lat?.toFixed(4) || '—'}, {rec.check_in_lng?.toFixed(4) || '—'}</span>
+                            </div>
+                            {rec.notes && <span className="text-[9.5px] text-white/40 truncate">{rec.notes}</span>}
                           </div>
                         </div>
 

@@ -117,3 +117,45 @@ export function validateCoordinatesAgainstGeofences(
     message
   };
 }
+
+/**
+ * Reverse geocodes coordinates (lat, lng) to a human-readable address with fallbacks.
+ */
+export async function reverseGeocodeAddress(lat: number, lng: number): Promise<string> {
+  if (!lat || !lng) return 'Unknown Location';
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
+
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
+      {
+        headers: {
+          'User-Agent': 'StudioCore-Attendance-Engine/1.0'
+        },
+        signal: controller.signal
+      }
+    );
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.display_name) {
+        // Return clean short address (e.g. "Bandra West, Mumbai")
+        const addr = data.address || {};
+        const parts = [
+          addr.suburb || addr.neighbourhood || addr.road,
+          addr.city || addr.town || addr.state_district,
+          addr.state
+        ].filter(Boolean);
+
+        return parts.length > 0 ? parts.join(', ') : data.display_name.split(',').slice(0, 3).join(',');
+      }
+    }
+  } catch (_) {
+    // Fallback gracefully to coordinate string
+  }
+
+  return `Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}`;
+}

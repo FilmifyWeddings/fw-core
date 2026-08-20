@@ -7,7 +7,7 @@ import {
   Clock, MapPin, Camera, CheckCircle2, AlertCircle, Coffee, 
   LogOut, RefreshCw, ShieldCheck, Sparkles, AlertTriangle, Wifi, WifiOff, X,
   Calendar, Send, ChevronRight, Check, History, Plane, DollarSign, Award,
-  Compass, ArrowUpRight, TrendingUp
+  Compass, ArrowUpRight, TrendingUp, Navigation
 } from 'lucide-react';
 import type { AttendanceRecord, AttendanceBreak, AttendanceLocation } from '@/types';
 import { validateCoordinatesAgainstGeofences, GeofenceValidationResult } from '@/lib/attendance/geo-fence';
@@ -188,6 +188,7 @@ export default function PersonalAttendancePage() {
     setCameraActive(false);
   };
 
+  // Strict High Accuracy GPS Acquisition with Fallback Options
   const acquireGPS = () => {
     setGpsError(null);
     if (!navigator.geolocation) {
@@ -195,32 +196,55 @@ export default function PersonalAttendancePage() {
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const coords = {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-          accuracy: Math.round(position.coords.accuracy)
-        };
-        setGpsLocation(coords);
+    const handlePositionSuccess = (position: GeolocationPosition) => {
+      const coords = {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+        accuracy: Math.round(position.coords.accuracy)
+      };
+      setGpsLocation(coords);
 
-        const res = validateCoordinatesAgainstGeofences(
-          { latitude: coords.lat, longitude: coords.lng },
-          locations
+      const res = validateCoordinatesAgainstGeofences(
+        { latitude: coords.lat, longitude: coords.lng },
+        locations
+      );
+      setGeofenceResult(res);
+    };
+
+    const handlePositionError = (err: GeolocationPositionError) => {
+      console.warn('GPS error code:', err.code, err.message);
+      if (err.code === 1) {
+        setGpsError('Location permission denied. Please allow location access in your browser settings.');
+      } else if (err.code === 2) {
+        setGpsError('Location unavailable. Please ensure GPS / Location is turned ON.');
+      } else {
+        setGpsError('GPS acquisition timed out. Retrying with standard accuracy...');
+        // Retry with relaxed options
+        navigator.geolocation.getCurrentPosition(
+          handlePositionSuccess,
+          () => setGpsError('Unable to acquire GPS coordinates. Please check device location settings.'),
+          { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
         );
-        setGeofenceResult(res);
-      },
-      (err) => {
-        console.warn('GPS position error:', err);
-        setGpsError('Unable to acquire precise GPS. Please enable high accuracy location.');
-      },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+      }
+    };
+
+    navigator.geolocation.getCurrentPosition(
+      handlePositionSuccess,
+      handlePositionError,
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   };
 
   // Submit Punch (Check-In or Check-Out)
   const handleExecutePunch = async () => {
     if (!showVerifyModal) return;
+
+    // Strict client-side Geofence blocker
+    if (geofenceResult && !geofenceResult.isWithinGeofence) {
+      setErrorMessage(`You are outside the punch zone (${geofenceResult.distanceMeters}m away). Allowed radius: ${geofenceResult.allowedRadiusMeters}m.`);
+      return;
+    }
+
     setVerifying(true);
     setErrorMessage(null);
 
@@ -274,6 +298,10 @@ export default function PersonalAttendancePage() {
       const data = await res.json();
 
       if (res.ok) {
+        // Immediate optimistic UI update
+        if (data.record) {
+          setTodayRecord(data.record);
+        }
         setSuccessAnimation(data.message || (showVerifyModal === 'check_in' ? 'Checked In Successfully!' : 'Checked Out Successfully!'));
         stopCamera();
         setShowVerifyModal(null);
@@ -343,18 +371,18 @@ export default function PersonalAttendancePage() {
   // Monthly Report Calculations
   const monthlyStats = useMemo(() => {
     const records = monthlyHistory.filter(r => (r.date || '').startsWith(selectedMonth));
-    const presentCount = records.filter(r => r.status === 'present' || r.status === 'late').length;
-    const lateCount = records.filter(r => r.status === 'late' || (r.late_minutes && r.late_minutes > 0)).length;
+    const presentCount = records.filter(r => r.status === 'present' || r.status === 'late');
+    const lateCount = records.filter(r => r.status === 'late' || (r.late_minutes && r.late_minutes > 0));
     const totalWorkMins = records.reduce((acc, r) => acc + (r.work_duration_minutes || 0), 0);
     const totalOTMins = records.reduce((acc, r) => acc + (r.overtime_minutes || 0), 0);
 
-    const dailyRate = 3500; // Standard daily benchmark or from member
-    const estimatedPayout = presentCount * dailyRate;
+    const dailyRate = 3500;
+    const estimatedPayout = presentCount.length * dailyRate;
 
     return {
       totalLoggedDays: records.length,
-      presentCount,
-      lateCount,
+      presentCount: presentCount.length,
+      lateCount: lateCount.length,
       totalHours: Math.round((totalWorkMins / 60) * 10) / 10,
       totalOTHours: Math.round((totalOTMins / 60) * 10) / 10,
       estimatedPayout,
@@ -375,6 +403,7 @@ export default function PersonalAttendancePage() {
 
   const isCheckedIn = Boolean(todayRecord?.check_in_time && !todayRecord?.check_out_time);
   const isCheckedOut = Boolean(todayRecord?.check_out_time);
+  const isPunchBlockedByGeofence = Boolean(geofenceResult && !geofenceResult.isWithinGeofence);
 
   return (
     <div className="min-h-screen bg-[#FDFBF7] text-[#211B17] flex flex-col justify-between max-w-md mx-auto relative shadow-2xl overflow-hidden border-x border-[#EFE8DC]">
@@ -527,6 +556,21 @@ export default function PersonalAttendancePage() {
                   ) : null}
                 </div>
               </div>
+
+              {/* Persistent Selfie Preview if Punched In */}
+              {todayRecord?.check_in_photo_path && (
+                <div className="mt-3 pt-3 border-t border-[#F7F2EA] flex items-center gap-3">
+                  <img
+                    src={todayRecord.check_in_photo_path}
+                    alt="Punch In Selfie"
+                    className="w-12 h-12 rounded-xl object-cover border border-[#E9DFD2] shadow-2xs"
+                  />
+                  <div className="text-[11px] text-[#746E67]">
+                    <span className="font-bold text-[#211B17] block">Selfie Verified</span>
+                    <span className="text-[10px] text-[#99928A]">{todayRecord.notes || 'Recorded on duty'}</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Primary Action Button (Big Mobile Punch Button) */}
@@ -624,12 +668,17 @@ export default function PersonalAttendancePage() {
                 <div className="space-y-2">
                   {monthlyStats.records.map(rec => (
                     <div key={rec.id} className="p-3 bg-white rounded-[14px] border border-[#F0E8DC] flex items-center justify-between shadow-2xs">
-                      <div>
-                        <div className="font-bold text-xs text-[#211B17]">
-                          {new Date(rec.date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}
-                        </div>
-                        <div className="text-[10.5px] text-[#746E67] mt-0.5">
-                          In: {rec.check_in_time ? new Date(rec.check_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--'} | Out: {rec.check_out_time ? new Date(rec.check_out_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--'}
+                      <div className="flex items-center gap-3">
+                        {rec.check_in_photo_path ? (
+                          <img src={rec.check_in_photo_path} alt="Selfie" className="w-10 h-10 rounded-lg object-cover border border-[#E9DFD2]" />
+                        ) : null}
+                        <div>
+                          <div className="font-bold text-xs text-[#211B17]">
+                            {new Date(rec.date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}
+                          </div>
+                          <div className="text-[10.5px] text-[#746E67] mt-0.5">
+                            In: {rec.check_in_time ? new Date(rec.check_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--'} | Out: {rec.check_out_time ? new Date(rec.check_out_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--'}
+                          </div>
                         </div>
                       </div>
 
@@ -724,10 +773,20 @@ export default function PersonalAttendancePage() {
 
             {/* Real-time GPS Radar Status Badge */}
             <div className="bg-white/10 backdrop-blur-md rounded-[16px] p-3 text-white text-xs mb-3 border border-white/15">
-              <div className="flex items-center gap-2 mb-1">
-                <Compass className="w-4 h-4 text-[#4CAF50] flex-shrink-0" />
-                <span className="font-semibold">Live GPS Radar</span>
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <Compass className="w-4 h-4 text-[#4CAF50] flex-shrink-0" />
+                  <span className="font-semibold">Live GPS Radar</span>
+                </div>
+                <button
+                  onClick={acquireGPS}
+                  className="text-[10px] font-bold text-[#E5B55D] flex items-center gap-1 hover:underline"
+                >
+                  <RefreshCw className="w-2.5 h-2.5" />
+                  Refresh GPS
+                </button>
               </div>
+
               {gpsLocation ? (
                 <div>
                   <div className="flex items-center gap-1.5 text-[11px] text-white/90">
@@ -735,7 +794,7 @@ export default function PersonalAttendancePage() {
                     <span>Accuracy: ±{gpsLocation.accuracy}m</span>
                   </div>
                   {geofenceResult && (
-                    <div className={`mt-1 text-[11px] font-medium ${geofenceResult.isWithinGeofence ? 'text-[#81C784]' : 'text-[#FF8A80]'}`}>
+                    <div className={`mt-1 text-[11px] font-medium ${geofenceResult.isWithinGeofence ? 'text-[#81C784]' : 'text-[#FF8A80] font-bold'}`}>
                       {geofenceResult.message}
                     </div>
                   )}
@@ -743,7 +802,7 @@ export default function PersonalAttendancePage() {
               ) : (
                 <div className="flex items-center gap-1.5 text-white/70 text-[11px]">
                   <RefreshCw className="w-3 h-3 animate-spin" />
-                  <span>Acquiring GPS coordinates...</span>
+                  <span>Acquiring high accuracy GPS coordinates...</span>
                 </div>
               )}
               {gpsError && <p className="text-[10.5px] text-[#FF8A80] mt-1">{gpsError}</p>}
@@ -756,20 +815,27 @@ export default function PersonalAttendancePage() {
               </div>
             )}
 
-            {/* Confirm & Punch Button */}
+            {/* Confirm & Punch Button (Disabled strictly when outside radius) */}
             <button
-              disabled={verifying}
+              disabled={verifying || isPunchBlockedByGeofence}
               onClick={handleExecutePunch}
-              className={`w-full py-3.5 rounded-[16px] text-sm font-black uppercase tracking-wider text-white shadow-lg flex items-center justify-center gap-2 ${
-                showVerifyModal === 'check_in'
-                  ? 'bg-gradient-to-r from-[#2E7D32] to-[#43A047]'
-                  : 'bg-gradient-to-r from-[#C62828] to-[#E53935]'
+              className={`w-full py-3.5 rounded-[16px] text-sm font-black uppercase tracking-wider text-white shadow-lg flex items-center justify-center gap-2 transition-all ${
+                isPunchBlockedByGeofence
+                  ? 'bg-slate-600 cursor-not-allowed opacity-60'
+                  : showVerifyModal === 'check_in'
+                  ? 'bg-gradient-to-r from-[#2E7D32] to-[#43A047] active:scale-[0.98]'
+                  : 'bg-gradient-to-r from-[#C62828] to-[#E53935] active:scale-[0.98]'
               }`}
             >
               {verifying ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
                   <span>Verifying Biometrics & Geo...</span>
+                </>
+              ) : isPunchBlockedByGeofence ? (
+                <>
+                  <AlertTriangle className="w-4 h-4" />
+                  <span>Outside Geofence Zone</span>
                 </>
               ) : (
                 <>
