@@ -38,10 +38,6 @@ const nextConfig: any = {
     },
   },
 
-  outputFileTracingIncludes: {
-    '/api/quotations/export-pdf': ['./node_modules/**'],
-  },
-
   turbopack: {},
 };
 
