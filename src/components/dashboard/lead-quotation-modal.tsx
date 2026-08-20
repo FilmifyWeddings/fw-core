@@ -46,6 +46,33 @@ interface LeadQuotationModalProps {
   lead: Lead | null;
 }
 
+function safeSessionSet(key: string, data: any) {
+  try {
+    sessionStorage.setItem(key, JSON.stringify(data));
+  } catch (err) {
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const k = sessionStorage.key(i);
+        if (k && (k.startsWith('lead_quotes_cache_') || k.startsWith('studio_templates_cache_'))) {
+          keysToRemove.push(k);
+        }
+      }
+      keysToRemove.forEach(k => sessionStorage.removeItem(k));
+      sessionStorage.setItem(key, JSON.stringify(data));
+    } catch (_) {}
+  }
+}
+
+function safeSessionGet(key: string) {
+  try {
+    const raw = sessionStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModalProps) {
   const router = useRouter();
   const [quotations, setQuotations] = useState<QuotationVersionItem[]>([]);
@@ -96,16 +123,11 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
       const token = session?.access_token || '';
 
       const cacheKey = currentUserId ? `studio_templates_cache_${currentUserId}` : 'studio_templates_cache';
-      const cached = sessionStorage.getItem(cacheKey);
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setAvailableTemplates(parsed);
-            const activeDefault = parsed.find((t: StudioTemplateItem) => t.is_default) || parsed[0];
-            if (activeDefault) setSelectedTemplateId(activeDefault.id);
-          }
-        } catch (e) {}
+      const cached = safeSessionGet(cacheKey);
+      if (cached && Array.isArray(cached) && cached.length > 0) {
+        setAvailableTemplates(cached);
+        const activeDefault = cached.find((t: StudioTemplateItem) => t.is_default) || cached[0];
+        if (activeDefault) setSelectedTemplateId(activeDefault.id);
       }
 
       const headers: Record<string, string> = {};
@@ -123,7 +145,7 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
 
       if (json.success && Array.isArray(json.templates) && json.templates.length > 0) {
         setAvailableTemplates(json.templates);
-        sessionStorage.setItem(cacheKey, JSON.stringify(json.templates));
+        safeSessionSet(cacheKey, json.templates);
 
         const activeDefault = json.templates.find((t: StudioTemplateItem) => t.is_default) || json.templates[0];
         if (activeDefault) {
@@ -153,15 +175,10 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
     setErrorMsg(null);
 
     const cacheKey = `lead_quotes_cache_${lead.id}`;
-    const cachedData = sessionStorage.getItem(cacheKey);
-    if (cachedData) {
-      try {
-        const parsed = JSON.parse(cachedData);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setQuotations(parsed);
-          setLoading(false);
-        }
-      } catch (e) {}
+    const cachedData = safeSessionGet(cacheKey);
+    if (cachedData && Array.isArray(cachedData) && cachedData.length > 0) {
+      setQuotations(cachedData);
+      setLoading(false);
     } else {
       setLoading(true);
     }
@@ -186,7 +203,7 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
 
       if (json.success && Array.isArray(json.quotations)) {
         setQuotations(json.quotations);
-        sessionStorage.setItem(cacheKey, JSON.stringify(json.quotations));
+        safeSessionSet(cacheKey, json.quotations);
 
         json.quotations.forEach((q: QuotationVersionItem) => {
           if (q.template_id) router.prefetch(`/workspace/quotations/builder/templet/${q.template_id}`);
@@ -237,7 +254,7 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
             is_final: item.template_id === q.template_id
           }));
           const cacheKey = `lead_quotes_cache_${lead.id}`;
-          sessionStorage.setItem(cacheKey, JSON.stringify(updated));
+          safeSessionSet(cacheKey, updated);
           return updated;
         });
       } else {
