@@ -152,11 +152,16 @@ export default function FinancePage() {
           .order('created_at', { ascending: false });
 
         if (quoteDocs && quoteDocs.length > 0) {
+          const leadGroups = new Map<string, any[]>();
           for (const doc of quoteDocs) {
-            if (!quoteDocMap.has(doc.lead_id)) {
-              quoteDocMap.set(doc.lead_id, doc);
-            }
+            if (!leadGroups.has(doc.lead_id)) leadGroups.set(doc.lead_id, []);
+            leadGroups.get(doc.lead_id)!.push(doc);
           }
+
+          leadGroups.forEach((docs, leadId) => {
+            const finalDoc = docs.find(d => d.content_json?.is_final === true || d.is_final === true);
+            quoteDocMap.set(leadId, finalDoc || docs[0]);
+          });
         }
       }
 

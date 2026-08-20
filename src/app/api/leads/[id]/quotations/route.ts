@@ -370,6 +370,13 @@ export async function GET(
 
       const responseBadge = versionResponses[0] || null;
 
+      const isFinal = !!(
+        content.is_final === true || 
+        doc.is_final === true || 
+        (effectiveLead as any).final_quotation_id === doc.template_id ||
+        (effectiveLead as any).final_quotation_id === doc.id
+      );
+
       return {
         id: doc.id,
         template_id: doc.template_id,
@@ -378,6 +385,7 @@ export async function GET(
         version_label: `V${leadVer}`,
         title,
         content_json: content,
+        is_final: isFinal,
         updated_at: doc.updated_at || doc.created_at || new Date().toISOString(),
         created_at: doc.created_at || new Date().toISOString(),
         public_token: matchingQuote?.public_token || null,
