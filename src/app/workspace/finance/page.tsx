@@ -13,7 +13,7 @@ import { supabase } from '@/lib/supabase';
 import { extractFinancialsFromQuotation } from '@/lib/quotation-finance-sync';
 import { LeadQuotationModal } from '@/components/dashboard/lead-quotation-modal';
 import type { 
-  WorkspaceClient, ClientFinanceRecord, FinanceMilestoneItem, FinanceExpenseItem, Lead
+  WorkspaceClient, ClientFinanceRecord, FinanceMilestoneItem, FinanceExpenseItem, Lead, LeadStatus, LeadScore
 } from '@/types';
 
 // Default expense categories
@@ -105,18 +105,16 @@ export default function FinancePage() {
       name: record.client?.name || 'Client',
       phone: record.client?.phone || '',
       email: record.client?.email || '',
-      event_date: record.client?.event_date || null,
-      event_type: record.client?.event_type || 'Wedding Photography',
       workspace_id: record.workspace_id,
-      status: 'booked',
+      status: 'closed' as LeadStatus,
       source: 'Manual',
-      score: 'Hot 🔥',
+      score: 'High-Value 🔥' as LeadScore,
       score_reason: 'Booked Client in Finance',
       raw_payload: {
         event_date: record.client?.event_date,
         event_type: record.client?.event_type,
-        city: record.client?.city,
-        venue: record.client?.venue,
+        city: (record.client as any)?.city,
+        venue: (record.client as any)?.venue,
         client_id: record.client_id
       },
       created_at: record.created_at || new Date().toISOString(),

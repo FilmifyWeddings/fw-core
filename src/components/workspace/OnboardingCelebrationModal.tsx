@@ -27,6 +27,7 @@ interface OnboardingCelebrationModalProps {
   onClose: () => void;
   userName?: string;
   initialStudioName?: string;
+  workspaceName?: string;
   userEmail?: string;
   userId?: string;
   onProfileUpdated?: (updatedData: any) => void;
@@ -36,18 +37,20 @@ export default function OnboardingCelebrationModal({
   isOpen,
   onClose,
   userName = 'Studio Owner',
-  initialStudioName = 'My Studio',
+  initialStudioName,
+  workspaceName,
   userEmail = '',
   userId = '',
   onProfileUpdated,
 }: OnboardingCelebrationModalProps) {
+  const effectiveStudioName = initialStudioName || workspaceName || 'My Studio';
   // Modal Stages: 'welcome' (Step 1) -> 'profile-setup' (Step 2)
   const [stage, setStage] = useState<'welcome' | 'profile-setup'>('welcome');
 
   // Profile Form States
   const [avatarUrl, setAvatarUrl] = useState<string>('');
   const [logoUrl, setLogoUrl] = useState<string>('');
-  const [studioName, setStudioName] = useState<string>(initialStudioName);
+  const [studioName, setStudioName] = useState<string>(effectiveStudioName);
   const [instagram, setInstagram] = useState<string>('');
   const [address, setAddress] = useState<string>('');
   const [isSaving, setIsSaving] = useState<boolean>(false);
@@ -60,10 +63,10 @@ export default function OnboardingCelebrationModal({
 
   // Sync initial studio name if passed
   useEffect(() => {
-    if (initialStudioName && initialStudioName !== 'My Studio') {
-      setStudioName(initialStudioName);
+    if (effectiveStudioName && effectiveStudioName !== 'My Studio') {
+      setStudioName(effectiveStudioName);
     }
-  }, [initialStudioName]);
+  }, [effectiveStudioName]);
 
   // Dual-Cannon Confetti blast from Left & Right sides
   const fireDualConfetti = () => {

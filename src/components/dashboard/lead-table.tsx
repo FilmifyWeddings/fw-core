@@ -1734,7 +1734,7 @@ export function LeadTable({
   return (
     <div className="flex-1 min-h-0 min-w-0 w-full flex flex-col relative overflow-hidden">
       {/* Fixed Non-Scrolling Top Header Controls Bar (Constrained to Screen Viewport) */}
-      <div className="shrink-0 w-full max-w-full overflow-hidden border-b border-[#E8E5DF] dark:border-[#2C2926] bg-white dark:bg-[#0c0c0e] z-30">
+      <div className="shrink-0 w-full max-w-full overflow-visible relative border-b border-[#E8E5DF] dark:border-[#2C2926] bg-white dark:bg-[#0c0c0e] z-50">
         {renderHeader && (
           <div className="bg-[#FAF8F5] dark:bg-[#070708] px-3 sm:px-4 md:px-6 pt-3 sm:pt-4 pb-2">
             {renderHeader()}
@@ -2113,7 +2113,7 @@ export function LeadTable({
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
                       transition={{ duration: 0.15 }}
-                      className="absolute right-0 mt-2.5 w-72 max-h-[420px] overflow-y-auto z-50 rounded-2xl bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] p-4 shadow-xl dark:shadow-2xl backdrop-blur-md space-y-4 text-[#1A1A1A] dark:text-[#F5F5F5]"
+                      className="absolute right-0 mt-2.5 w-72 max-h-[420px] overflow-y-auto z-[999999] rounded-2xl bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] p-4 shadow-xl dark:shadow-2xl backdrop-blur-md space-y-4 text-[#1A1A1A] dark:text-[#F5F5F5]"
                     >
                       {/* Contact subtext layout config */}
                       <div className="space-y-1.5 pb-2 border-b border-[#E8E5DF] dark:border-[#2C2926]">

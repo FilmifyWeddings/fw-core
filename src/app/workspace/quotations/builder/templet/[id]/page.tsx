@@ -273,11 +273,13 @@ interface PageImageConfig {
 }
 
 interface PaymentTermStep {
-  id: string;
-  date: string;
-  stepName: string;
+  id?: string;
+  name?: string;
+  stepName?: string;
+  date?: string;
+  pct?: string;
   amount: number;
-  status: 'Completed' | 'Pending';
+  status?: 'Completed' | 'Pending' | string;
 }
 
 interface AddOnItem {
@@ -2012,6 +2014,7 @@ function StudioCoreAiryBuilderContent() {
   const searchParams = useSearchParams();
   const params = useParams();
   const templateId = (params?.id as string) || '';
+  const routeId = templateId;
 
   const mainContainerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -6914,7 +6917,8 @@ function StudioCoreAiryBuilderContent() {
               } catch (e) {}
               return merged;
             });
-            setSaved(true);
+            setAutoSaveStatus('Auto-saved to cloud');
+            setHasUnsavedChanges(false);
             triggerRevisionSave();
           }
         }}

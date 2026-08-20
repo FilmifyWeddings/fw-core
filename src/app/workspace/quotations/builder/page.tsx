@@ -267,11 +267,13 @@ interface PageImageConfig {
 }
 
 export interface PaymentTermStep {
-  id: string;
-  date: string;
-  stepName: string;
+  id?: string;
+  name?: string;
+  stepName?: string;
+  date?: string;
+  pct?: string;
   amount: number;
-  status: 'Completed' | 'Pending';
+  status?: 'Completed' | 'Pending' | string;
 }
 
 export interface AddOnItem {
@@ -2688,7 +2690,7 @@ function StudioCoreAiryBuilderContent() {
           },
           body: JSON.stringify({
             workspace_id: userId || 'demo_user',
-            title: data.designName || data.title || `${data.cover?.coupleName || (data.cover?.groomName ? `${data.cover.groomName} & ${data.cover.brideName}` : 'Client')} - ${data.cover?.eventType || 'Wedding'} Quotation`,
+            title: data.designName || (data as any).title || `${data.cover?.coupleName || (data.cover?.groomName ? `${data.cover.groomName} & ${data.cover.brideName}` : 'Client')} - ${data.cover?.eventType || 'Wedding'} Quotation`,
             client_name: data.cover?.coupleName || `${data.cover?.groomName || 'Rahul'} & ${data.cover?.brideName || 'Neha'}`,
             content_json: data,
             financials: { total_amount: grandTotal, subtotal, gst_rate: calc.gstPct },
@@ -2829,7 +2831,7 @@ function StudioCoreAiryBuilderContent() {
         },
         body: JSON.stringify({
           workspace_id: userId || 'demo_user',
-          title: data.designName || data.title || `${data.cover?.coupleName || (data.cover?.groomName ? `${data.cover.groomName} & ${data.cover.brideName}` : 'Client')} - ${data.cover?.eventType || 'Wedding'} Quotation`,
+          title: data.designName || (data as any).title || `${data.cover?.coupleName || (data.cover?.groomName ? `${data.cover.groomName} & ${data.cover.brideName}` : 'Client')} - ${data.cover?.eventType || 'Wedding'} Quotation`,
           client_name: data.cover?.coupleName || `${data.cover?.groomName || 'Rahul'} & ${data.cover?.brideName || 'Neha'}`,
           content_json: data,
           financials: { total_amount: grandTotal, subtotal, gst_rate: calc.gstPct },

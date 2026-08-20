@@ -18,6 +18,7 @@ export interface GeofenceTarget {
 export interface GeofenceValidationResult {
   isWithinGeofence: boolean;
   closestLocation: GeofenceTarget | null;
+  nearestLocationName?: string;
   distanceMeters: number;
   allowedRadiusMeters: number;
   message: string;
@@ -112,6 +113,7 @@ export function validateCoordinatesAgainstGeofences(
   return {
     isWithinGeofence: isWithin,
     closestLocation: closestLoc,
+    nearestLocationName: closestLoc.name,
     distanceMeters: minDistance,
     allowedRadiusMeters: allowedRadius,
     message

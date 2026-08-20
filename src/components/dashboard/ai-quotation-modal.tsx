@@ -136,9 +136,9 @@ OUTPUT FORMAT:
 Respond ONLY with valid JSON matching the schema below (No Markdown formatting around JSON, just pure JSON or standard JSON block):
 {
   "cover": {
-    "coupleName": "${lead.name || 'Client Name'}",
-    "groomName": "${lead.name?.split('&')[0]?.trim() || 'Groom'}",
-    "brideName": "${lead.name?.split('&')[1]?.trim() || 'Bride'}",
+    "coupleName": "${lead?.name || 'Client Name'}",
+    "groomName": "${lead?.name?.split('&')[0]?.trim() || 'Groom'}",
+    "brideName": "${lead?.name?.split('&')[1]?.trim() || 'Bride'}",
     "eventType": "Wedding",
     "locationName": ""
   },
@@ -401,7 +401,7 @@ LEAD & CLIENT CONTEXT:
 
                   <div className="text-sm font-extrabold text-zinc-900 dark:text-white flex items-center gap-2">
                     <Users className="w-4 h-4 text-amber-500" />
-                    <span>{lead.name || 'Valued Client'}</span>
+                    <span>{lead?.name || 'Valued Client'}</span>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 text-xs font-medium text-zinc-600 dark:text-zinc-400 pt-1">

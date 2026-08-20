@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Database, RefreshCw, Settings, Bell, Check, ArrowLeft, Globe, X } from 'lucide-react';
+import { Database, RefreshCw, Settings, Bell, Check, ArrowLeft, Globe, X, AlertTriangle } from 'lucide-react';
 import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { LeadTable } from '@/components/dashboard/lead-table';

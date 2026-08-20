@@ -326,6 +326,7 @@ export default function AttendancePage() {
         start_time: `${shiftForm.start_time}:00`,
         end_time: `${shiftForm.end_time}:00`,
         grace_period_minutes: parseInt(shiftForm.grace_period_minutes) || 15,
+        is_overnight: false,
         is_active: true
       };
 
@@ -1084,7 +1085,7 @@ export default function AttendancePage() {
                   isEditable={true}
                   height="450px"
                   onCoordinatesChange={(lat, lng, address, placeName) => handleUpdateGeofenceOnMap(lat, lng, address, placeName)}
-                  onRadiusChange={(r) => handleUpdateGeofenceOnMap(selectedLocation.latitude, selectedLocation.longitude, selectedLocation.address, selectedLocation.name, r)}
+                  onRadiusChange={(r) => handleUpdateGeofenceOnMap(selectedLocation.latitude, selectedLocation.longitude, selectedLocation.address || undefined, selectedLocation.name, r)}
                 />
               </div>
             )}

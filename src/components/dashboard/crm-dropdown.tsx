@@ -190,7 +190,7 @@ export function CRMDropdown({
   return (
     <div
       ref={containerRef}
-      className={`relative inline-block ${className}`}
+      className={`relative inline-block ${open ? 'z-50' : ''} ${className}`}
       onClick={e => e.stopPropagation()}
     >
       {/* Premium Badge Trigger Button */}
