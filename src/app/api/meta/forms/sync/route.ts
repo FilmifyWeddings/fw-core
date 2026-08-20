@@ -39,16 +39,17 @@ export async function POST(req: NextRequest) {
 
   const workspaceId = authResult.workspaceId;
 
-  // ── Resolve page access token ─────────────────────────────────────────────
+  // ── Resolve page access token with Multi-Level Fallback ───────────────────
   let pageToken: string | null = null;
   let pageName = 'Facebook Page';
 
+  // Level 1: Check fb_page_configs for current workspace
   const { data: pageRow } = await supabaseAdmin
     .from('fb_page_configs')
     .select('page_name, page_access_token')
+    .eq('workspace_id', workspaceId)
     .eq('page_id', page_id)
     .not('page_access_token', 'is', null)
-    .limit(1)
     .maybeSingle();
 
   if (pageRow?.page_access_token) {
@@ -56,6 +57,37 @@ export async function POST(req: NextRequest) {
     pageName  = pageRow.page_name || 'Facebook Page';
   }
 
+  // Level 2: Fallback to fb_page_configs by page_id (latest updated)
+  if (!pageToken) {
+    const { data: fallbackPage } = await supabaseAdmin
+      .from('fb_page_configs')
+      .select('page_name, page_access_token')
+      .eq('page_id', page_id)
+      .not('page_access_token', 'is', null)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (fallbackPage?.page_access_token) {
+      pageToken = fallbackPage.page_access_token;
+      pageName = fallbackPage.page_name || pageName;
+    }
+  }
+
+  // Level 3: Fallback to integration_credentials (Meta)
+  if (!pageToken) {
+    const { data: creds } = await supabaseAdmin
+      .from('integration_credentials')
+      .select('access_token')
+      .eq('user_id', workspaceId)
+      .eq('provider', 'meta')
+      .maybeSingle();
+    if (creds?.access_token) {
+      pageToken = creds.access_token;
+    }
+  }
+
+  // Level 4: Fallback to profiles.meta_access_token
   if (!pageToken) {
     const { data: profile } = await supabaseAdmin
       .from('profiles')
@@ -75,7 +107,7 @@ export async function POST(req: NextRequest) {
     .select('form_name, is_enabled')
     .eq('workspace_id', workspaceId)
     .eq('form_id', form_id)
-    .single();
+    .maybeSingle();
 
   const formName = formRow?.form_name || `Form ${form_id}`;
 
@@ -113,16 +145,51 @@ export async function POST(req: NextRequest) {
       let errorMessage: string | null = null;
 
       try {
+        // ── Helper to execute Graph API with token fallback ──────────────────
+        async function fetchGraphWithFallback(endpointUrl: string): Promise<any> {
+          let res = await fetch(endpointUrl);
+          let json = await res.json().catch(() => ({}));
+
+          if (json?.error && (json.error.code === 190 || json.error.code === 102)) {
+            // Try fetching fallback user token from integration_credentials
+            const { data: altCreds } = await supabaseAdmin
+              .from('integration_credentials')
+              .select('access_token')
+              .eq('user_id', workspaceId)
+              .eq('provider', 'meta')
+              .maybeSingle();
+
+            if (altCreds?.access_token && altCreds.access_token !== pageToken) {
+              const fallbackUrl = endpointUrl.replace(/access_token=[^&]+/, `access_token=${altCreds.access_token}`);
+              const fallbackRes = await fetch(fallbackUrl);
+              const fallbackJson = await fallbackRes.json().catch(() => ({}));
+              if (!fallbackJson?.error) {
+                // Update page config with working token
+                pageToken = altCreds.access_token;
+                await supabaseAdmin
+                  .from('fb_page_configs')
+                  .upsert({
+                    workspace_id: workspaceId,
+                    page_id,
+                    page_access_token: pageToken,
+                    updated_at: new Date().toISOString(),
+                  }, { onConflict: 'page_id' });
+                return fallbackJson;
+              }
+            }
+          }
+          return json;
+        }
+
         // ── Step 1: Fetch ALL leads with pagination ──────────────────────────
         const allLeads: any[] = [];
         let nextCursor: string | null = null;
         let pageNum = 0;
 
-        // First, get total count
-        const countRes = await fetch(
+        // First, test connection & get total count
+        const countData = await fetchGraphWithFallback(
           `https://graph.facebook.com/v20.0/${form_id}/leads?fields=id&limit=1&access_token=${pageToken}`
         );
-        const countData = await countRes.json();
 
         if (countData.error) {
           controller.enqueue(sseEvent({ type: 'error', message: countData.error.message, graph_error: countData.error }));
@@ -147,8 +214,7 @@ export async function POST(req: NextRequest) {
             url += `&after=${nextCursor}`;
           }
 
-          const leadsRes = await fetch(url);
-          const leadsData = await leadsRes.json();
+          const leadsData = await fetchGraphWithFallback(url);
 
           if (leadsData.error) {
             throw new Error(`Graph API Error: ${leadsData.error.message} (Code: ${leadsData.error.code})`);
@@ -232,13 +298,22 @@ export async function POST(req: NextRequest) {
             fieldData['work_email'] ||
             '';
 
-          // ── Determine assigned Lead Owner via Round-Robin ─────────────────
+          // ── Determine assigned Lead Owner & WhatsApp Group ───────────────
           let assignedLeadOwner: string | null = null;
           try {
             assignedLeadOwner = await getNextDistributedLeadOwner(workspaceId, form_id);
           } catch (distErr: any) {
             console.error('[Forms Sync Distribution Error]:', distErr?.message);
           }
+
+          const { data: formMapping } = await supabaseAdmin
+            .from('fb_form_mappings')
+            .select('contact_group_id')
+            .eq('workspace_id', workspaceId)
+            .eq('form_id', form_id)
+            .maybeSingle();
+
+          const contactGroupId = formMapping?.contact_group_id || null;
 
           // ── Insert lead into CRM ───────────────────────────────────────────
           const { error: insertErr } = await supabaseAdmin
@@ -251,12 +326,16 @@ export async function POST(req: NextRequest) {
               email,
               source: 'Facebook Lead Ads',
               status: 'new',
+              source_form_id: form_id,
+              form_tag: formName,
+              whatsapp_group_id: contactGroupId,
               created_at: lead.created_time
                 ? new Date(lead.created_time).toISOString()
                 : new Date().toISOString(),
               raw_payload: {
                 leadgen_id,
                 form_id,
+                form_name: formName,
                 page_id,
                 page_name: pageName,
                 campaign_name: lead.campaign_name || '',
@@ -265,6 +344,7 @@ export async function POST(req: NextRequest) {
                 field_data: lead.field_data || [],
                 lead_owner: assignedLeadOwner || 'Unassigned',
                 synced_manually: true,
+                ...fieldData,
               },
             });
 

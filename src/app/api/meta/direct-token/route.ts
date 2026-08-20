@@ -338,7 +338,7 @@ export async function POST(req: NextRequest) {
           page_access_token: pageObj.access_token,
           is_active: true,
           updated_at: now,
-        }, { onConflict: 'workspace_id,page_id' })
+        }, { onConflict: 'page_id' })
         .select('*')
         .single();
       if (savedP) savedPages.push(savedP);

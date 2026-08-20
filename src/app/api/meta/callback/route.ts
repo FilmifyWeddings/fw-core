@@ -326,7 +326,7 @@ export async function GET(req: NextRequest) {
           page_access_token: page.page_access_token,
           is_active: true,
           updated_at: new Date().toISOString(),
-        }, { onConflict: 'workspace_id,page_id' })
+        }, { onConflict: 'page_id' })
         .select('*');
 
       console.log(`[Supabase DB Write Audit] fb_page_configs upsert result for ${page.page_id}:\n`, JSON.stringify(pageResult, null, 2));

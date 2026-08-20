@@ -179,8 +179,9 @@ export async function POST(req: NextRequest) {
           // ── 1. PAGE MAPPING & WORKSPACE OWNERSHIP VALIDATION ────────────
           const { data: pageConfigs, error: pageConfigErr } = await supabaseAdmin
             .from('fb_page_configs')
-            .select('workspace_id, page_access_token, page_name, is_active')
-            .eq('page_id', page_id);
+            .select('workspace_id, page_access_token, page_name, is_active, updated_at')
+            .eq('page_id', page_id)
+            .order('updated_at', { ascending: false });
 
           if (pageConfigErr || !pageConfigs || pageConfigs.length === 0) {
             const errReason = `Unmapped Page ID ${page_id}. No fb_page_configs record found for any workspace.`;
@@ -211,40 +212,8 @@ export async function POST(req: NextRequest) {
             continue; // REJECT LEAD - DO NOT GUESS
           }
 
-          // Check if multiple active workspaces have claimed the exact same page_id
+          // Pick the most recently updated active workspace configuration for this page
           const activeConfigs = pageConfigs.filter((c: any) => c.is_active !== false && !!c.workspace_id);
-          const distinctWorkspaces = Array.from(new Set(activeConfigs.map((c: any) => c.workspace_id)));
-
-          if (distinctWorkspaces.length > 1) {
-            const ambigReason = `Ambiguous page ownership: Page ${page_id} is claimed by multiple active workspaces (${distinctWorkspaces.join(', ')}). Rejecting to prevent cross-tenant leak.`;
-            console.error(`[CRITICAL SECURITY ALERT] ${ambigReason}`);
-
-            await triggerAlert({
-              alert_type: 'INVALID_PAGE_MAPPING',
-              severity: 'CRITICAL',
-              title: 'Ambiguous Multi-Tenant Page Claim',
-              message: ambigReason,
-              resolution_hint: 'Ensure each Facebook page is associated with only one active StudioCore workspace.',
-              metadata: { page_id, leadgen_id, distinctWorkspaces },
-            });
-
-            await logWebhookRequest({
-              request_id: requestId,
-              page_id,
-              form_id,
-              leadgen_id,
-              event_type: 'leadgen_security_rejected',
-              http_method: 'POST',
-              client_ip: clientIp,
-              duration_ms: performance.now() - startTime,
-              status: 'FAILED',
-              error_message: ambigReason,
-              raw_payload: payload,
-            });
-
-            continue; // REJECT LEAD
-          }
-
           const pageConfig = activeConfigs[0] || pageConfigs[0];
 
           if (pageConfig.is_active === false) {
@@ -376,8 +345,58 @@ export async function POST(req: NextRequest) {
               const graphRes = await fetch(graphUrl);
               const graphDuration = performance.now() - graphStart;
 
+              let graphData: any = null;
               if (graphRes.ok) {
-                const graphData = await graphRes.json();
+                graphData = await graphRes.json();
+              } else {
+                const errData = await graphRes.json().catch(() => ({}));
+                // Check if we can fallback to workspace user token from integration_credentials
+                const { data: altCreds } = await supabaseAdmin
+                  .from('integration_credentials')
+                  .select('access_token')
+                  .eq('user_id', targetWorkspaceId)
+                  .eq('provider', 'meta')
+                  .maybeSingle();
+
+                if (altCreds?.access_token && altCreds.access_token !== pageAccessToken) {
+                  const retryUrl = `https://graph.facebook.com/v20.0/${leadgen_id}?fields=id,created_time,field_data,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,form_id&access_token=${altCreds.access_token}`;
+                  const retryRes = await fetch(retryUrl);
+                  if (retryRes.ok) {
+                    graphData = await retryRes.json();
+                  }
+                }
+
+                if (!graphData) {
+                  const errCode = errData?.error?.code;
+                  const errSubcode = errData?.error?.error_subcode;
+                  const errMessage = errData?.error?.message || `HTTP ${graphRes.status}`;
+
+                  await logGraphApiCall({
+                    request_id: requestId,
+                    leadgen_id,
+                    endpoint: `/${leadgen_id}`,
+                    http_status: graphRes.status,
+                    duration_ms: graphDuration,
+                    error_code: errCode,
+                    error_message: errMessage,
+                  });
+
+                  if (errCode === 190 || errCode === 102 || errCode === 10 || errSubcode === 463) {
+                    await markTokenNeedsReconnect(targetWorkspaceId, page_id, errMessage);
+                  }
+
+                  await enqueueRetry({
+                    workspace_id: targetWorkspaceId,
+                    page_id,
+                    form_id,
+                    leadgen_id,
+                    payload: change.value,
+                    error_reason: `Graph API Error ${errCode}: ${errMessage}`,
+                  });
+                }
+              }
+
+              if (graphData) {
                 if (graphData.campaign_name) campaignName = graphData.campaign_name;
                 if (graphData.adset_name) adsetName = graphData.adset_name;
                 if (graphData.ad_name) adName = graphData.ad_name;
@@ -412,36 +431,8 @@ export async function POST(req: NextRequest) {
                   request_id: requestId,
                   leadgen_id,
                   endpoint: `/${leadgen_id}`,
-                  http_status: graphRes.status,
+                  http_status: 200,
                   duration_ms: graphDuration,
-                });
-              } else {
-                const errData = await graphRes.json().catch(() => ({}));
-                const errCode = errData?.error?.code;
-                const errSubcode = errData?.error?.error_subcode;
-                const errMessage = errData?.error?.message || `HTTP ${graphRes.status}`;
-
-                await logGraphApiCall({
-                  request_id: requestId,
-                  leadgen_id,
-                  endpoint: `/${leadgen_id}`,
-                  http_status: graphRes.status,
-                  duration_ms: graphDuration,
-                  error_code: errCode,
-                  error_message: errMessage,
-                });
-
-                if (errCode === 190 || errCode === 102 || errCode === 10 || errSubcode === 463) {
-                  await markTokenNeedsReconnect(targetWorkspaceId, page_id, errMessage);
-                }
-
-                await enqueueRetry({
-                  workspace_id: targetWorkspaceId,
-                  page_id,
-                  form_id,
-                  leadgen_id,
-                  payload: change.value,
-                  error_reason: `Graph API Error ${errCode}: ${errMessage}`,
                 });
               }
             } catch (err: any) {

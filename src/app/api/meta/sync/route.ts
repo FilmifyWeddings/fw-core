@@ -33,6 +33,15 @@ export async function POST(req: NextRequest) {
 
       if (page?.page_access_token) {
         pageToken = page.page_access_token;
+      } else {
+        const { data: fbPage } = await supabaseAdmin
+          .from('fb_page_configs')
+          .select('page_access_token')
+          .eq('page_id', page_id)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (fbPage?.page_access_token) pageToken = fbPage.page_access_token;
       }
     }
 

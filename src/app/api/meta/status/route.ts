@@ -121,7 +121,7 @@ export async function GET(req: NextRequest) {
                   page_access_token: p.access_token || conn.access_token,
                   is_active: true,
                   updated_at: new Date().toISOString(),
-                }, { onConflict: 'workspace_id,page_id' })
+                }, { onConflict: 'page_id' })
                 .select('*')
                 .maybeSingle();
 
