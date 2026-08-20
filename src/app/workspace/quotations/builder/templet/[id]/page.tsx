@@ -1278,6 +1278,16 @@ function ThreeDCurvedMultiSelect({
     }
   };
 
+  // Combine and sort so all selected items are always at the TOP!
+  const combinedOptions = Array.from(new Set([...selectedItems, ...availableOptions])).filter(Boolean);
+  const sortedOptions = [...combinedOptions].sort((a, b) => {
+    const aSelected = selectedItems.includes(a);
+    const bSelected = selectedItems.includes(b);
+    if (aSelected && !bSelected) return -1;
+    if (!aSelected && bSelected) return 1;
+    return 0;
+  });
+
   return (
     <div className="rounded-2xl border border-amber-200/80 bg-gradient-to-b from-amber-50/50 via-amber-50/20 to-white shadow-md p-3 space-y-2.5 transition-all">
       <div className="flex items-center justify-between">
@@ -1295,10 +1305,10 @@ function ThreeDCurvedMultiSelect({
       </div>
 
       <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
-        {availableOptions.length === 0 ? (
+        {sortedOptions.length === 0 ? (
           <div className="text-[11px] text-zinc-400 italic p-2 text-center">No options available. Click + Add to create one.</div>
         ) : (
-          availableOptions.map((item: any) => {
+          sortedOptions.map((item: any) => {
             const isSelected = selectedItems.includes(item);
             return (
               <div
@@ -1511,7 +1521,6 @@ function ThreeDCurvedFunctionEditor({
       </div>
 
       <div className="rounded-2xl border border-amber-200/80 bg-gradient-to-b from-amber-50/50 via-amber-50/20 to-white shadow-md p-3.5 space-y-3 relative transition-all">
-
         {/* Multi-Select Event Names Dropdown (Curved 3D UI) */}
         <div className="space-y-2 pt-1">
           <div className="flex items-center justify-between">
@@ -1528,83 +1537,94 @@ function ThreeDCurvedFunctionEditor({
           </div>
 
           <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-            {availableFunctionNames.map((evtName) => {
-              const isSelected = selectedEventNames.includes(evtName);
-              return (
-                <div
-                  key={evtName}
-                  className={`flex items-center gap-2 p-2 rounded-xl border text-xs font-semibold transition-all group ${
-                    isSelected
-                      ? 'bg-amber-50/90 border-amber-300 text-amber-950 shadow-2xs font-bold'
-                      : 'bg-zinc-50/80 border-zinc-200/80 text-zinc-600 hover:bg-zinc-100'
-                  }`}
-                >
-                  {/* 1. Checkbox at the START */}
-                  <button
-                    type="button"
-                    onClick={() => toggleEventName(evtName)}
-                    className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 transition-all cursor-pointer ${
+            {(() => {
+              const combinedEventNames = Array.from(new Set([...selectedEventNames, ...availableFunctionNames])).filter(Boolean);
+              const sortedEventNames = [...combinedEventNames].sort((a, b) => {
+                const aSel = selectedEventNames.includes(a);
+                const bSel = selectedEventNames.includes(b);
+                if (aSel && !bSel) return -1;
+                if (!aSel && bSel) return 1;
+                return 0;
+              });
+
+              return sortedEventNames.map((evtName) => {
+                const isSelected = selectedEventNames.includes(evtName);
+                return (
+                  <div
+                    key={evtName}
+                    className={`flex items-center gap-2 p-2 rounded-xl border text-xs font-semibold transition-all group ${
                       isSelected
-                        ? 'border-amber-600 bg-amber-600 text-white'
-                        : 'border-zinc-300 bg-white hover:border-amber-400'
+                        ? 'bg-amber-50/90 border-amber-300 text-amber-950 shadow-2xs font-bold'
+                        : 'bg-zinc-50/80 border-zinc-200/80 text-zinc-600 hover:bg-zinc-100'
                     }`}
                   >
-                    {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
-                  </button>
-
-                  {/* 2. Event Name Text */}
-                  <span 
-                    onClick={() => toggleEventName(evtName)}
-                    className="flex-1 cursor-pointer select-none leading-tight truncate"
-                  >
-                    {evtName}
-                  </span>
-
-                  {/* 3. Action Buttons: Edit (✏️) + Delete (🗑️) */}
-                  <div className="flex items-center gap-0.5 shrink-0">
+                    {/* 1. Checkbox at the START */}
                     <button
                       type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const edited = prompt('Edit Event Name:', evtName);
-                        if (edited && edited.trim() && edited.trim() !== evtName) {
-                          const trimmed = edited.trim();
-                          if (onEditCustomFunctionName) {
-                            onEditCustomFunctionName(evtName, trimmed);
-                          }
-                          if (selectedEventNames.includes(evtName)) {
-                            const updated = selectedEventNames.map((n: any) => n === evtName ? trimmed : n);
-                            onUpdate({ ...func, name: updated.join(' + ') });
-                          }
-                        }
-                      }}
-                      className="p-1 text-zinc-400 hover:text-amber-700 hover:bg-amber-100 rounded-md transition-all cursor-pointer"
-                      title={`Edit ${evtName}`}
+                      onClick={() => toggleEventName(evtName)}
+                      className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 transition-all cursor-pointer ${
+                        isSelected
+                          ? 'border-amber-600 bg-amber-600 text-white'
+                          : 'border-zinc-300 bg-white hover:border-amber-400'
+                      }`}
                     >
-                      <Edit3 className="w-3.5 h-3.5" />
+                      {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
                     </button>
 
-                    {onDeleteCustomFunctionName && (
+                    {/* 2. Event Name Text */}
+                    <span 
+                      onClick={() => toggleEventName(evtName)} 
+                      className="flex-1 cursor-pointer select-none leading-tight truncate"
+                    >
+                      {evtName}
+                    </span>
+
+                    {/* 3. Action Buttons: Edit (✏️) + Delete (🗑️) */}
+                    <div className="flex items-center gap-0.5 shrink-0">
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          onDeleteCustomFunctionName(evtName);
-                          if (selectedEventNames.includes(evtName)) {
-                            const updated = selectedEventNames.filter((n: any) => n !== evtName);
-                            onUpdate({ ...func, name: updated.length > 0 ? updated.join(' + ') : 'Event' });
+                          const edited = prompt('Edit Event Name:', evtName);
+                          if (edited && edited.trim() && edited.trim() !== evtName) {
+                            const trimmed = edited.trim();
+                            if (onEditCustomFunctionName) {
+                              onEditCustomFunctionName(evtName, trimmed);
+                            }
+                            if (selectedEventNames.includes(evtName)) {
+                              const updated = selectedEventNames.map((n: any) => n === evtName ? trimmed : n);
+                              onUpdate({ ...func, name: updated.join(' + ') });
+                            }
                           }
                         }}
-                        className="p-1 text-zinc-400 hover:text-rose-600 hover:bg-rose-100 rounded-md transition-all cursor-pointer"
-                        title={`Delete ${evtName}`}
+                        className="p-1 text-zinc-400 hover:text-amber-700 hover:bg-amber-100 rounded-md transition-all cursor-pointer"
+                        title={`Edit ${evtName}`}
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Edit3 className="w-3.5 h-3.5" />
                       </button>
-                    )}
+
+                      {onDeleteCustomFunctionName && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteCustomFunctionName(evtName);
+                            if (selectedEventNames.includes(evtName)) {
+                              const updated = selectedEventNames.filter((n: any) => n !== evtName);
+                              onUpdate({ ...func, name: updated.length > 0 ? updated.join(' + ') : 'Event' });
+                            }
+                          }}
+                          className="p-1 text-zinc-400 hover:text-rose-600 hover:bg-rose-100 rounded-md transition-all cursor-pointer"
+                          title={`Delete ${evtName}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              });
+            })()}
           </div>
         </div>
 
@@ -1688,100 +1708,114 @@ function ThreeDCurvedFunctionEditor({
           </div>
 
           <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-            {availableRequirements.map((reqName) => {
-              const reqObj = safeRequirements.find(r => r.name === reqName);
-              const isSelected = !!reqObj;
-              return (
-                <div
-                  key={reqName}
-                  className={`flex items-center gap-2 p-2 rounded-xl border text-xs font-semibold transition-all group ${
-                    isSelected
-                      ? 'bg-amber-50/90 border-amber-300 text-amber-950 shadow-2xs font-bold'
-                      : 'bg-zinc-50/80 border-zinc-200/80 text-zinc-600 hover:bg-zinc-100'
-                  }`}
-                >
-                  {/* 1. Checkbox at START */}
-                  <button
-                    type="button"
-                    onClick={() => toggleRequirement(reqName)}
-                    className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 transition-all cursor-pointer ${
+            {(() => {
+              const combinedRequirements = Array.from(new Set([
+                ...safeRequirements.map((r: any) => r.name),
+                ...availableRequirements
+              ])).filter(Boolean);
+              const sortedRequirements = [...combinedRequirements].sort((a, b) => {
+                const aSel = safeRequirements.some((r: any) => r.name === a);
+                const bSel = safeRequirements.some((r: any) => r.name === b);
+                if (aSel && !bSel) return -1;
+                if (!aSel && bSel) return 1;
+                return 0;
+              });
+
+              return sortedRequirements.map((reqName) => {
+                const reqObj = safeRequirements.find(r => r.name === reqName);
+                const isSelected = !!reqObj;
+                return (
+                  <div
+                    key={reqName}
+                    className={`flex items-center gap-2 p-2 rounded-xl border text-xs font-semibold transition-all group ${
                       isSelected
-                        ? 'border-amber-600 bg-amber-600 text-white'
-                        : 'border-zinc-300 bg-white hover:border-amber-400'
+                        ? 'bg-amber-50/90 border-amber-300 text-amber-950 shadow-2xs font-bold'
+                        : 'bg-zinc-50/80 border-zinc-200/80 text-zinc-600 hover:bg-zinc-100'
                     }`}
                   >
-                    {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
-                  </button>
-
-                  {/* 2. Requirement Name */}
-                  <span 
-                    onClick={() => toggleRequirement(reqName)}
-                    className="flex-1 cursor-pointer select-none leading-tight truncate"
-                  >
-                    {reqName}
-                  </span>
-
-                  {/* 3. Quantity Selector (when selected) */}
-                  {isSelected && (
-                    <div className="flex items-center gap-1 shrink-0">
-                      <span className="text-[10px] font-bold text-amber-800">Qty:</span>
-                      <select
-                        value={reqObj?.qty || 1}
-                        onChange={(e) => changeRequirementQty(reqName, Number(e.target.value) || 1)}
-                        className="p-1 rounded-lg bg-white border border-amber-300 text-amber-950 font-bold text-[11px]"
-                      >
-                        {[1,2,3,4,5,6,7,8,9,10].map((num: any) => (
-                          <option key={num} value={num}>{num}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  {/* 4. Edit & Delete Buttons */}
-                  <div className="flex items-center gap-0.5 shrink-0">
+                    {/* 1. Checkbox at START */}
                     <button
                       type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const edited = prompt('Edit Requirement item:', reqName);
-                        if (edited && edited.trim() && edited.trim() !== reqName) {
-                          const trimmed = edited.trim();
-                          if (onEditCustomRequirement) {
-                            onEditCustomRequirement(reqName, trimmed);
-                          }
-                          if (isSelected) {
-                            const updated = safeRequirements.map((r: any) => r.name === reqName ? { ...r, name: trimmed } : r);
-                            onUpdate({ ...func, requirements: updated });
-                          }
-                        }
-                      }}
-                      className="p-1 text-zinc-400 hover:text-amber-700 hover:bg-amber-100 rounded-md transition-all cursor-pointer"
-                      title={`Edit ${reqName}`}
+                      onClick={() => toggleRequirement(reqName)}
+                      className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 transition-all cursor-pointer ${
+                        isSelected
+                          ? 'border-amber-600 bg-amber-600 text-white'
+                          : 'border-zinc-300 bg-white hover:border-amber-400'
+                      }`}
                     >
-                      <Edit3 className="w-3.5 h-3.5" />
+                      {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
                     </button>
 
-                    {onDeleteCustomRequirement && (
+                    {/* 2. Requirement Name */}
+                    <span 
+                      onClick={() => toggleRequirement(reqName)}
+                      className="flex-1 cursor-pointer select-none leading-tight truncate"
+                    >
+                      {reqName}
+                    </span>
+
+                    {/* 3. Quantity Selector (when selected) */}
+                    {isSelected && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-[10px] font-bold text-amber-800">Qty:</span>
+                        <select
+                          value={reqObj?.qty || 1}
+                          onChange={(e) => changeRequirementQty(reqName, Number(e.target.value) || 1)}
+                          className="p-1 rounded-lg bg-white border border-amber-300 text-amber-950 font-bold text-[11px]"
+                        >
+                          {[1,2,3,4,5,6,7,8,9,10].map((num: any) => (
+                            <option key={num} value={num}>{num}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* 4. Edit & Delete Buttons */}
+                    <div className="flex items-center gap-0.5 shrink-0">
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          onDeleteCustomRequirement(reqName);
-                          if (isSelected) {
-                            const updated = safeRequirements.filter((r: any) => r.name !== reqName);
-                            onUpdate({ ...func, requirements: updated });
+                          const edited = prompt('Edit Requirement item:', reqName);
+                          if (edited && edited.trim() && edited.trim() !== reqName) {
+                            const trimmed = edited.trim();
+                            if (onEditCustomRequirement) {
+                              onEditCustomRequirement(reqName, trimmed);
+                            }
+                            if (isSelected) {
+                              const updatedReqs = safeRequirements.map(r => r.name === reqName ? { ...r, name: trimmed } : r);
+                              onUpdate({ ...func, requirements: updatedReqs });
+                            }
                           }
                         }}
-                        className="p-1 text-zinc-400 hover:text-rose-600 hover:bg-rose-100 rounded-md transition-all cursor-pointer"
-                        title={`Delete ${reqName}`}
+                        className="p-1 text-zinc-400 hover:text-amber-700 hover:bg-amber-100 rounded-md transition-all cursor-pointer"
+                        title={`Edit ${reqName}`}
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Edit3 className="w-3.5 h-3.5" />
                       </button>
-                    )}
+
+                      {onDeleteCustomRequirement && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteCustomRequirement(reqName);
+                            if (isSelected) {
+                              const updatedReqs = safeRequirements.filter(r => r.name !== reqName);
+                              onUpdate({ ...func, requirements: updatedReqs });
+                            }
+                          }}
+                          className="p-1 text-zinc-400 hover:text-rose-600 hover:bg-rose-100 rounded-md transition-all cursor-pointer"
+                          title={`Delete ${reqName}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              });
+            })()}
           </div>
         </div>
 
@@ -1929,6 +1963,47 @@ function calculatePaymentTermsSummary(steps: PaymentTermStep[], totalProjectAmou
     .reduce((sum, s) => sum + Number(s?.amount || 0), 0);
   const pendingAmount = Math.max(0, fixedAmount - receivedAmount);
   return { fixedAmount, receivedAmount, pendingAmount };
+}
+
+function syncPaymentTermsWithPricing(pricingPage: any, currentPaymentTerms: any) {
+  const calc = calculatePricingTotals(pricingPage);
+  const totalAmount = calc.netTotal;
+  const oldSteps: PaymentTermStep[] = Array.isArray(currentPaymentTerms?.steps) && currentPaymentTerms.steps.length > 0
+    ? currentPaymentTerms.steps
+    : DEFAULT_AIRY_PROPOSAL.paymentTermsPage.steps;
+
+  const totalOldStepsAmount = oldSteps.reduce((s: number, st: any) => s + (Number(st?.amount) || 0), 0);
+  
+  let updatedSteps: PaymentTermStep[];
+  if (totalOldStepsAmount > 0 && oldSteps.length > 0) {
+    let allocatedSum = 0;
+    updatedSteps = oldSteps.map((step: any, idx: number) => {
+      if (idx === oldSteps.length - 1) {
+        const lastAmount = Math.max(0, totalAmount - allocatedSum);
+        return { ...step, amount: lastAmount };
+      }
+      const ratio = (Number(step?.amount) || 0) / totalOldStepsAmount;
+      const stepAmount = Math.round(totalAmount * ratio);
+      allocatedSum += stepAmount;
+      return { ...step, amount: stepAmount };
+    });
+  } else {
+    const tokenAmt = Math.round(totalAmount * 0.25);
+    const eventAmt = Math.round(totalAmount * 0.65);
+    const deliveryAmt = Math.max(0, totalAmount - tokenAmt - eventAmt);
+    updatedSteps = [
+      { id: 'pt-1', stepName: 'Token Advance Amount', name: 'Token Advance Amount', amount: tokenAmt, status: 'Completed', date: 'Booking Date' },
+      { id: 'pt-2', stepName: 'Main Event Day Amount', name: 'Main Event Day Amount', amount: eventAmt, status: 'Pending', date: 'Event Day' },
+      { id: 'pt-3', stepName: 'Final Delivery Amount', name: 'Final Delivery Amount', amount: deliveryAmt, status: 'Pending', date: 'Deliverables Handover' },
+    ];
+  }
+
+  return {
+    ...(currentPaymentTerms || DEFAULT_AIRY_PROPOSAL.paymentTermsPage),
+    steps: updatedSteps,
+    fixedAmount: totalAmount,
+    totalAmount: totalAmount
+  };
 }
 
 function StudioCoreAiryBuilderContent() {
@@ -3750,7 +3825,9 @@ function StudioCoreAiryBuilderContent() {
                     value={data.pricingPage?.basePrice ?? 0}
                     onChange={(e) => {
                       const currentObj = data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage;
-                      setData({ ...data, pricingPage: { ...currentObj, basePrice: Number(e.target.value) || 0 } });
+                      const updatedPricing = { ...currentObj, basePrice: Number(e.target.value) || 0 };
+                      const syncedPaymentTerms = syncPaymentTermsWithPricing(updatedPricing, data.paymentTermsPage);
+                      setData({ ...data, pricingPage: updatedPricing, paymentTermsPage: syncedPaymentTerms });
                     }}
                     className="w-full p-2 pl-7 rounded-xl border border-amber-200/80 bg-zinc-50 text-zinc-900 font-bold text-xs"
                   />
@@ -3765,7 +3842,9 @@ function StudioCoreAiryBuilderContent() {
                     value={data.pricingPage?.discountAmount ?? 0}
                     onChange={(e) => {
                       const currentObj = data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage;
-                      setData({ ...data, pricingPage: { ...currentObj, discountAmount: Number(e.target.value) || 0 } });
+                      const updatedPricing = { ...currentObj, discountAmount: Number(e.target.value) || 0 };
+                      const syncedPaymentTerms = syncPaymentTermsWithPricing(updatedPricing, data.paymentTermsPage);
+                      setData({ ...data, pricingPage: updatedPricing, paymentTermsPage: syncedPaymentTerms });
                     }}
                     className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
                   />
@@ -3777,7 +3856,9 @@ function StudioCoreAiryBuilderContent() {
                     value={data.pricingPage?.gstPct ?? 18}
                     onChange={(e) => {
                       const currentObj = data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage;
-                      setData({ ...data, pricingPage: { ...currentObj, gstPct: Number(e.target.value) || 0 } });
+                      const updatedPricing = { ...currentObj, gstPct: Number(e.target.value) || 0 };
+                      const syncedPaymentTerms = syncPaymentTermsWithPricing(updatedPricing, data.paymentTermsPage);
+                      setData({ ...data, pricingPage: updatedPricing, paymentTermsPage: syncedPaymentTerms });
                     }}
                     className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
                   />
@@ -3792,7 +3873,9 @@ function StudioCoreAiryBuilderContent() {
                     value={data.pricingPage?.accommodationCharges ?? 0}
                     onChange={(e) => {
                       const currentObj = data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage;
-                      setData({ ...data, pricingPage: { ...currentObj, accommodationCharges: Number(e.target.value) || 0 } });
+                      const updatedPricing = { ...currentObj, accommodationCharges: Number(e.target.value) || 0 };
+                      const syncedPaymentTerms = syncPaymentTermsWithPricing(updatedPricing, data.paymentTermsPage);
+                      setData({ ...data, pricingPage: updatedPricing, paymentTermsPage: syncedPaymentTerms });
                     }}
                     className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
                   />
@@ -3804,7 +3887,9 @@ function StudioCoreAiryBuilderContent() {
                     value={data.pricingPage?.travelCharges ?? 0}
                     onChange={(e) => {
                       const currentObj = data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage;
-                      setData({ ...data, pricingPage: { ...currentObj, travelCharges: Number(e.target.value) || 0 } });
+                      const updatedPricing = { ...currentObj, travelCharges: Number(e.target.value) || 0 };
+                      const syncedPaymentTerms = syncPaymentTermsWithPricing(updatedPricing, data.paymentTermsPage);
+                      setData({ ...data, pricingPage: updatedPricing, paymentTermsPage: syncedPaymentTerms });
                     }}
                     className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
                   />
@@ -3816,7 +3901,9 @@ function StudioCoreAiryBuilderContent() {
                     value={data.pricingPage?.additionalCharges ?? 0}
                     onChange={(e) => {
                       const currentObj = data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage;
-                      setData({ ...data, pricingPage: { ...currentObj, additionalCharges: Number(e.target.value) || 0 } });
+                      const updatedPricing = { ...currentObj, additionalCharges: Number(e.target.value) || 0 };
+                      const syncedPaymentTerms = syncPaymentTermsWithPricing(updatedPricing, data.paymentTermsPage);
+                      setData({ ...data, pricingPage: updatedPricing, paymentTermsPage: syncedPaymentTerms });
                     }}
                     className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
                   />
@@ -3842,13 +3929,12 @@ function StudioCoreAiryBuilderContent() {
                           amount: 0
                         };
                         const currentObj = data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage;
-                        setData({
-                          ...data,
-                          pricingPage: {
-                            ...currentObj,
-                            additionalChargesList: [...currentList, newCharge]
-                          }
-                        });
+                        const updatedPricing = {
+                          ...currentObj,
+                          additionalChargesList: [...currentList, newCharge]
+                        };
+                        const syncedPaymentTerms = syncPaymentTermsWithPricing(updatedPricing, data.paymentTermsPage);
+                        setData({ ...data, pricingPage: updatedPricing, paymentTermsPage: syncedPaymentTerms });
                       }
                     }}
                     className="px-2.5 py-1 text-[10px] font-extrabold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-full shadow-2xs cursor-pointer transition-all flex items-center gap-1"
@@ -3870,7 +3956,8 @@ function StudioCoreAiryBuilderContent() {
                             const updated = [...(data.pricingPage?.additionalChargesList || [])];
                             updated[cIdx] = { ...updated[cIdx], name: e.target.value };
                             const currentObj = data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage;
-                            setData({ ...data, pricingPage: { ...currentObj, additionalChargesList: updated } });
+                            const updatedPricing = { ...currentObj, additionalChargesList: updated };
+                            setData({ ...data, pricingPage: updatedPricing });
                           }}
                           className="flex-1 text-xs font-bold text-zinc-900 bg-transparent focus:outline-none"
                         />
@@ -3884,7 +3971,9 @@ function StudioCoreAiryBuilderContent() {
                               const updated = [...(data.pricingPage?.additionalChargesList || [])];
                               updated[cIdx] = { ...updated[cIdx], amount: Number(e.target.value) || 0 };
                               const currentObj = data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage;
-                              setData({ ...data, pricingPage: { ...currentObj, additionalChargesList: updated } });
+                              const updatedPricing = { ...currentObj, additionalChargesList: updated };
+                              const syncedPaymentTerms = syncPaymentTermsWithPricing(updatedPricing, data.paymentTermsPage);
+                              setData({ ...data, pricingPage: updatedPricing, paymentTermsPage: syncedPaymentTerms });
                             }}
                             className="w-full p-1 pl-5 text-right rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold text-zinc-900 focus:outline-none"
                           />
@@ -3894,7 +3983,9 @@ function StudioCoreAiryBuilderContent() {
                           onClick={() => {
                             const updated = (data.pricingPage?.additionalChargesList || []).filter((_: any, idx: number) => idx !== cIdx);
                             const currentObj = data.pricingPage || DEFAULT_AIRY_PROPOSAL.pricingPage;
-                            setData({ ...data, pricingPage: { ...currentObj, additionalChargesList: updated } });
+                            const updatedPricing = { ...currentObj, additionalChargesList: updated };
+                            const syncedPaymentTerms = syncPaymentTermsWithPricing(updatedPricing, data.paymentTermsPage);
+                            setData({ ...data, pricingPage: updatedPricing, paymentTermsPage: syncedPaymentTerms });
                           }}
                           className="p-1 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
                           title="Delete Charge"
@@ -3962,13 +4053,92 @@ function StudioCoreAiryBuilderContent() {
                   placeholder="Add optional note at bottom of page..."
                 />
               </div>
-
-              {/* Photo controls removed for Pricing Details - purely text/table based */}
             </div>
           )}
 
           {pageItem.type === 'paymentTermsPage' && (
                     <div className="space-y-3">
+
+              {/* Total Net Investment Live Banner (Synced with Pricing Details) */}
+              <div className="p-3 rounded-2xl bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 border border-amber-400/50 shadow-2xs space-y-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-extrabold text-amber-950 uppercase tracking-wider">Total Net Investment:</span>
+                  <span className="font-black text-amber-700 text-sm font-sans">₹{pricingCalculated.netTotal.toLocaleString('en-IN')}</span>
+                </div>
+                <div className="flex items-center justify-between text-[10px] text-zinc-500 font-bold border-t border-amber-200/60 pt-1 mt-1">
+                  <span>Scheduled Sum: ₹{(data.paymentTermsPage?.steps || []).reduce((s: number, st: any) => s + (Number(st?.amount) || 0), 0).toLocaleString('en-IN')}</span>
+                  <span className={((data.paymentTermsPage?.steps || []).reduce((s: number, st: any) => s + (Number(st?.amount) || 0), 0) === pricingCalculated.netTotal) ? 'text-emerald-600 font-black' : 'text-amber-600 font-black'}>
+                    {((data.paymentTermsPage?.steps || []).reduce((s: number, st: any) => s + (Number(st?.amount) || 0), 0) === pricingCalculated.netTotal) ? '✓ 100% Synced' : '⚠ Diff: ₹' + (pricingCalculated.netTotal - (data.paymentTermsPage?.steps || []).reduce((s: number, st: any) => s + (Number(st?.amount) || 0), 0)).toLocaleString('en-IN')}
+                  </span>
+                </div>
+              </div>
+
+              {/* Quick Split Presets Bar */}
+              <div className="space-y-1">
+                <label className="text-[9px] uppercase font-black text-amber-900 tracking-wider block">Auto-Split Installments Presets:</label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const total = pricingCalculated.netTotal;
+                      const s1 = Math.round(total * 0.25);
+                      const s2 = Math.round(total * 0.65);
+                      const s3 = Math.max(0, total - s1 - s2);
+                      const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
+                      const oldSteps = currentObj.steps || [];
+                      const updated = [
+                        { ...oldSteps[0], id: oldSteps[0]?.id || 'pt-1', stepName: oldSteps[0]?.stepName || 'Token Advance Amount', amount: s1, status: oldSteps[0]?.status || 'Completed', date: oldSteps[0]?.date || 'Booking Date' },
+                        { ...oldSteps[1], id: oldSteps[1]?.id || 'pt-2', stepName: oldSteps[1]?.stepName || 'Main Event Day Amount', amount: s2, status: oldSteps[1]?.status || 'Pending', date: oldSteps[1]?.date || 'Event Day' },
+                        { ...oldSteps[2], id: oldSteps[2]?.id || 'pt-3', stepName: oldSteps[2]?.stepName || 'Final Delivery Amount', amount: s3, status: oldSteps[2]?.status || 'Pending', date: oldSteps[2]?.date || 'Deliverables Handover' },
+                      ];
+                      setData({ ...data, paymentTermsPage: { ...currentObj, steps: updated } });
+                    }}
+                    className="py-1 px-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold text-center transition-all cursor-pointer shadow-2xs"
+                  >
+                    25% • 65% • 10%
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const total = pricingCalculated.netTotal;
+                      const s1 = Math.round(total * 0.30);
+                      const s2 = Math.round(total * 0.50);
+                      const s3 = Math.max(0, total - s1 - s2);
+                      const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
+                      const oldSteps = currentObj.steps || [];
+                      const updated = [
+                        { ...oldSteps[0], id: oldSteps[0]?.id || 'pt-1', stepName: oldSteps[0]?.stepName || 'Booking Token Amount', amount: s1, status: oldSteps[0]?.status || 'Completed', date: oldSteps[0]?.date || 'Booking Date' },
+                        { ...oldSteps[1], id: oldSteps[1]?.id || 'pt-2', stepName: oldSteps[1]?.stepName || 'Event Stage Amount', amount: s2, status: oldSteps[1]?.status || 'Pending', date: oldSteps[1]?.date || 'Event Day' },
+                        { ...oldSteps[2], id: oldSteps[2]?.id || 'pt-3', stepName: oldSteps[2]?.stepName || 'Final Delivery Amount', amount: s3, status: oldSteps[2]?.status || 'Pending', date: oldSteps[2]?.date || 'Deliverables Handover' },
+                      ];
+                      setData({ ...data, paymentTermsPage: { ...currentObj, steps: updated } });
+                    }}
+                    className="py-1 px-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold text-center transition-all cursor-pointer shadow-2xs"
+                  >
+                    30% • 50% • 20%
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const total = pricingCalculated.netTotal;
+                      const s1 = Math.round(total * 0.50);
+                      const s2 = Math.max(0, total - s1);
+                      const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
+                      const oldSteps = currentObj.steps || [];
+                      const updated = [
+                        { ...oldSteps[0], id: oldSteps[0]?.id || 'pt-1', stepName: oldSteps[0]?.stepName || 'Advance Booking Amount', amount: s1, status: oldSteps[0]?.status || 'Completed', date: oldSteps[0]?.date || 'Booking Date' },
+                        { ...oldSteps[1], id: oldSteps[1]?.id || 'pt-2', stepName: oldSteps[1]?.stepName || 'Final Settlement Amount', amount: s2, status: oldSteps[1]?.status || 'Pending', date: oldSteps[1]?.date || 'Deliverables Handover' },
+                      ];
+                      setData({ ...data, paymentTermsPage: { ...currentObj, steps: updated } });
+                    }}
+                    className="py-1 px-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold text-center transition-all cursor-pointer shadow-2xs"
+                  >
+                    50% • 50%
+                  </button>
+                </div>
+              </div>
                       
               <div className="space-y-2">
                 {(data.paymentTermsPage?.steps || DEFAULT_AIRY_PROPOSAL.paymentTermsPage.steps).map((step: any, idx: number) => (
