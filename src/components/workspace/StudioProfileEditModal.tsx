@@ -179,13 +179,20 @@ export default function StudioProfileEditModal({
 
       if (res.ok && json.success) {
         setSavedSuccess(true);
+        if (typeof window !== 'undefined') {
+          if (payload.studioName) localStorage.setItem('sc_studio_name', payload.studioName);
+          if (payload.avatarUrl) localStorage.setItem('sc_avatar_url', payload.avatarUrl);
+          if (payload.logoUrl) localStorage.setItem('sc_logo_url', payload.logoUrl);
+          if (payload.fullName) localStorage.setItem('sc_user_name', payload.fullName);
+          window.dispatchEvent(new CustomEvent('sc_profile_updated', { detail: payload }));
+        }
         if (onProfileSaved) {
           onProfileSaved(payload);
         }
         setTimeout(() => {
           setSavedSuccess(false);
           onClose();
-        }, 1000);
+        }, 800);
       } else {
         throw new Error(json.error || 'Failed to save changes');
       }

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -9,7 +9,7 @@ import {
   Film, IndianRupee, Clock, Layers, BarChart3, Settings, 
   Headphones, LogOut, ChevronDown, ChevronRight, ChevronLeft, 
   Menu, X, Sparkles, UserCheck, Archive, UserX, CheckCircle2, 
-  ArrowUpRight, Search, Bell, MoreVertical, ShieldCheck, Crown
+  ArrowUpRight, Bell, ShieldCheck, Crown
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import StudioProfileEditModal from '@/components/workspace/StudioProfileEditModal';
@@ -18,6 +18,14 @@ import OnboardingCelebrationModal from '@/components/workspace/OnboardingCelebra
 interface SidebarLayoutProps {
   children: React.ReactNode;
 }
+
+// Crisp, Modern StudioCore SC Brand Emblem
+export const StudioCoreBrandIcon = ({ className = "w-8 h-8", isCollapsed = false }: { className?: string; isCollapsed?: boolean }) => (
+  <div className={`${className} rounded-xl bg-gradient-to-br from-[#D9822B] via-[#C8751F] to-[#A05A12] text-white flex items-center justify-center font-black tracking-wider shadow-sm border border-[#F5C78E]/40 shrink-0 select-none relative overflow-hidden group`}>
+    <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/20 to-transparent opacity-70 pointer-events-none" />
+    <span className="relative z-10 text-[13px] font-black tracking-tight drop-shadow-xs">SC</span>
+  </div>
+);
 
 export function SidebarLayout({ children }: SidebarLayoutProps) {
   const router = useRouter();
@@ -40,23 +48,89 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
 
   const [collapsed, setCollapsed] = useState(false);
   const [userEmail, setUserEmail] = useState<string>('user@studiocore.in');
-  const [userName, setUserName] = useState<string>('Sushant Sharma');
-  const [workspaceName, setWorkspaceName] = useState<string>('StudioCore Workspace');
+  const [userName, setUserName] = useState<string>('Studio Owner');
+  const [workspaceName, setWorkspaceName] = useState<string>('StudioCore');
   const [userAvatarUrl, setUserAvatarUrl] = useState<string>('');
   const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
   const [showOnboardingCelebration, setShowOnboardingCelebration] = useState<boolean>(false);
   const [leadsSubmenuOpen, setLeadsSubmenuOpen] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [userId, setUserId] = useState<string>('');
-  const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Load user profile & collapsed preference
+  const fetchUserProfile = useCallback(async () => {
+    // 1. Initial fast hydration from localStorage
+    if (typeof window !== 'undefined') {
+      const cachedStudioName = localStorage.getItem('sc_studio_name');
+      const cachedAvatar = localStorage.getItem('sc_avatar_url');
+      const cachedLogo = localStorage.getItem('sc_logo_url');
+      const cachedUserName = localStorage.getItem('sc_user_name');
+
+      if (cachedStudioName) setWorkspaceName(cachedStudioName);
+      if (cachedAvatar || cachedLogo) setUserAvatarUrl(cachedAvatar || cachedLogo || '');
+      if (cachedUserName) setUserName(cachedUserName);
+    }
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        setUserEmail(session.user.email || 'user@studiocore.in');
+        setUserId(session.user.id);
+
+        // Fetch authoritative profile from API (bypassing client RLS)
+        const token = session.access_token;
+        const headers: Record<string, string> = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const res = await fetch('/api/user/profile-setup', { headers });
+        if (res.ok) {
+          const json = await res.json();
+          if (json?.profile) {
+            const p = json.profile;
+            const finalStudio = p.studioName || session.user.user_metadata?.workspace_name || 'My Studio';
+            const finalName = p.fullName || session.user.user_metadata?.full_name || session.user.user_metadata?.name || 'Studio Owner';
+            const finalAvatar = p.avatarUrl || p.logoUrl || session.user.user_metadata?.avatar_url || '';
+
+            setWorkspaceName(finalStudio);
+            setUserName(finalName);
+            setUserAvatarUrl(finalAvatar);
+
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('sc_studio_name', finalStudio);
+              localStorage.setItem('sc_user_name', finalName);
+              if (finalAvatar) localStorage.setItem('sc_avatar_url', finalAvatar);
+            }
+            return;
+          }
+        }
+
+        // Direct Supabase fallback
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('workspace_name, avatar_url, logo_url, full_name')
+          .eq('id', session.user.id)
+          .maybeSingle();
+
+        const name = profile?.full_name || session.user.user_metadata?.full_name || session.user.user_metadata?.name || 'Studio Owner';
+        setUserName(name);
+
+        const avatar = profile?.avatar_url || profile?.logo_url || session.user.user_metadata?.avatar_url || '';
+        setUserAvatarUrl(avatar);
+
+        const studio = profile?.workspace_name || session.user.user_metadata?.workspace_name || 'My Studio';
+        setWorkspaceName(studio);
+      }
+    } catch (err) {
+      console.error('Error loading user profile in sidebar:', err);
+    }
+  }, []);
+
   useEffect(() => {
     const savedCollapsed = localStorage.getItem('sidebar_collapsed');
     if (savedCollapsed !== null) {
       setCollapsed(savedCollapsed === 'true');
     } else {
-      setCollapsed(false); // Expanded by default on first visit
+      setCollapsed(false);
     }
 
     if (typeof window !== 'undefined') {
@@ -87,44 +161,24 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       }
     }
 
-    const fetchUserProfile = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          setUserEmail(session.user.email || 'user@studiocore.in');
-          setUserId(session.user.id);
+    fetchUserProfile();
 
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('workspace_name, avatar_url, logo_url, full_name')
-            .eq('id', session.user.id)
-            .maybeSingle();
-
-          const name = profile?.full_name || session.user.user_metadata?.full_name || session.user.user_metadata?.name || 'Sushant Sharma';
-          setUserName(name);
-
-          if (profile?.avatar_url) {
-            setUserAvatarUrl(profile.avatar_url);
-          } else if (session.user.user_metadata?.avatar_url) {
-            setUserAvatarUrl(session.user.user_metadata.avatar_url);
-          }
-
-          if (profile?.workspace_name) {
-            setWorkspaceName(profile.workspace_name);
-          } else if (session.user.user_metadata?.workspace_name) {
-            setWorkspaceName(session.user.user_metadata.workspace_name);
-          } else {
-            const defaultName = session.user.email ? `${session.user.email.split('@')[0]}'s Studio` : 'My StudioCore';
-            setWorkspaceName(defaultName);
-          }
-        }
-      } catch (err) {
-        console.error('Error loading user profile in sidebar:', err);
+    // Listen for custom profile update events
+    const handleProfileUpdate = (e: any) => {
+      const p = e.detail;
+      if (p) {
+        if (p.studioName) setWorkspaceName(p.studioName);
+        if (p.fullName) setUserName(p.fullName);
+        if (p.avatarUrl || p.logoUrl) setUserAvatarUrl(p.avatarUrl || p.logoUrl);
       }
+      fetchUserProfile();
     };
 
-    fetchUserProfile();
-  }, [searchParams]);
+    window.addEventListener('sc_profile_updated', handleProfileUpdate);
+    return () => {
+      window.removeEventListener('sc_profile_updated', handleProfileUpdate);
+    };
+  }, [fetchUserProfile, searchParams]);
 
   useEffect(() => {
     localStorage.setItem('sidebar_collapsed', String(collapsed));
@@ -147,16 +201,13 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     }
   };
 
-  // ─────────────────────────────────────────────────────────────
-  // NAVIGATION MENU ITEMS IN EXACT REFERENCE SEQUENCE
-  // ─────────────────────────────────────────────────────────────
   const menuItems = [
     {
       id: 'dashboard',
-      name: 'Dashboard',
+      name: 'Workspace Home',
       path: '/workspace',
       icon: LayoutDashboard,
-      iconBg: 'bg-[#FEF3C7] text-[#D97706]',
+      iconBg: 'bg-[#E0F2FE] text-[#0369A1]',
     },
     {
       id: 'leads',
@@ -164,11 +215,11 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       path: '/leads',
       icon: Target,
       iconBg: 'bg-[#E6F4EA] text-[#137333]',
-      hasSubmenu: true,
       subItems: [
-        { name: 'All Active Leads', path: '/leads', icon: Layers },
+        { name: 'All Leads', path: '/leads', icon: Target },
+        { name: 'Qualified', path: '/leads?stage=qualified', icon: UserCheck },
         { name: 'Lost Leads', path: '/leads?stage=lost', icon: UserX },
-        { name: 'Archived Leads', path: '/leads?stage=archived', icon: Archive },
+        { name: 'Archived', path: '/leads?stage=archived', icon: Archive },
       ]
     },
     {
@@ -187,7 +238,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     },
     {
       id: 'bookings',
-      name: 'Bookings',
+      name: 'Bookings & Events',
       path: '/team-manager',
       icon: Calendar,
       iconBg: 'bg-[#E0F2FE] text-[#0284C7]',
@@ -215,28 +266,21 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     },
     {
       id: 'attendance',
-      name: 'Attendance',
+      name: 'Smart Attendance',
       path: '/workspace/attendance',
       icon: Clock,
       iconBg: 'bg-[#DCFCE7] text-[#15803D]',
     },
     {
       id: 'integrations',
-      name: 'Integrations',
+      name: 'Integrations Hub',
       path: '/workspace/integrations',
       icon: Layers,
-      iconBg: 'bg-[#E0F2FE] text-[#0369A1]',
-    },
-    {
-      id: 'reports',
-      name: 'Reports',
-      path: '/workspace/finance',
-      icon: BarChart3,
-      iconBg: 'bg-[#F1F5F9] text-[#475569]',
+      iconBg: 'bg-[#E0E7FF] text-[#4338CA]',
     },
     {
       id: 'settings',
-      name: 'Settings',
+      name: 'Studio Settings',
       path: '/workspace/settings',
       icon: Settings,
       iconBg: 'bg-[#F4F4F5] text-[#52525B]',
@@ -282,27 +326,24 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       >
         {/* Top Brand Logo Header */}
         <div className="h-16 px-4 border-b border-[#F0ECE4] flex items-center justify-between shrink-0">
-          <Link href="/workspace" className="flex items-center gap-2.5 overflow-hidden group">
-            {!collapsed ? (
+          <Link href="/workspace" className="flex items-center gap-3 overflow-hidden group">
+            <StudioCoreBrandIcon className="w-9 h-9" isCollapsed={collapsed} />
+            {!collapsed && (
               <div className="overflow-hidden">
                 <div className="flex items-center gap-1">
-                  <span className="text-lg font-black text-zinc-900 tracking-tight">StudioCore</span>
-                  <span className="text-amber-600 font-black text-sm">✦</span>
+                  <span className="text-[17px] font-black text-zinc-900 tracking-tight leading-none">StudioCore</span>
+                  <span className="text-amber-600 font-black text-xs">✦</span>
                 </div>
-                <p className="text-[10px] font-bold text-zinc-400 tracking-tight">
-                  All-in-One Studio Management
+                <p className="text-[10px] font-bold text-zinc-400 tracking-tight truncate mt-0.5 max-w-[135px]">
+                  {workspaceName || 'All-in-One Studio'}
                 </p>
-              </div>
-            ) : (
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 text-white font-black text-xs flex items-center justify-center shadow-xs">
-                SC
               </div>
             )}
           </Link>
 
           <button
             onClick={() => setCollapsed(prev => !prev)}
-            className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-800 hover:bg-zinc-100 transition shrink-0"
+            className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-800 hover:bg-zinc-100 transition shrink-0 cursor-pointer"
             title={collapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
           >
             {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
@@ -328,53 +369,51 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                   href={item.path}
                   className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition-all duration-200 ${
                     isActive
-                      ? 'bg-[#FDF6EC] text-[#92400E] font-extrabold border border-[#F5E6CC] shadow-2xs'
-                      : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50 border border-transparent'
-                  } ${collapsed ? 'justify-center px-2' : ''}`}
+                      ? 'bg-[#FDF6EC] text-[#92400E] border border-[#F5E6CC] shadow-2xs'
+                      : 'text-zinc-600 hover:text-zinc-900 hover:bg-[#F9F8F5]'
+                  } ${collapsed ? 'justify-center px-0 py-2.5' : ''}`}
+                  title={collapsed ? item.name : undefined}
                 >
-                  <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${item.iconBg} ${isActive ? 'text-[#B45309]' : ''}`}>
+                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 ${item.iconBg}`}>
                     <Icon className="w-3.5 h-3.5" />
                   </div>
 
                   {!collapsed && (
-                    <span className="truncate flex-1 text-left tracking-tight">
-                      {item.name}
-                    </span>
-                  )}
-
-                  {!collapsed && isLeads && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setLeadsSubmenuOpen(prev => !prev);
-                      }}
-                      className="p-1 rounded-md text-zinc-400 hover:text-zinc-700 hover:bg-zinc-200/50 transition"
-                    >
-                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${leadsSubmenuOpen ? 'rotate-180' : ''}`} />
-                    </button>
+                    <div className="flex items-center justify-between flex-1 min-w-0">
+                      <span className="truncate">{item.name}</span>
+                      {isLeads && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setLeadsSubmenuOpen(prev => !prev);
+                          }}
+                          className="p-1 hover:bg-black/5 rounded-md text-zinc-400"
+                        >
+                          <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${leadsSubmenuOpen ? 'rotate-180' : ''}`} />
+                        </button>
+                      )}
+                    </div>
                   )}
                 </Link>
 
-                {/* Submenu for Leads */}
-                {!collapsed && isLeads && leadsSubmenuOpen && (
-                  <div className="pl-9 pr-2 py-1 space-y-1">
+                {/* Leads Nested Submenu */}
+                {isLeads && !collapsed && leadsSubmenuOpen && (
+                  <div className="pl-9 pr-2 py-1 space-y-0.5 mt-0.5 border-l-2 border-amber-200 ml-4.5">
                     {item.subItems?.map((sub) => {
-                      const SubIcon = sub.icon;
                       const isSubActive = checkIsSubActive(sub.path);
-
                       return (
                         <Link
                           key={sub.name}
                           href={sub.path}
-                          className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition ${
+                          className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${
                             isSubActive
-                              ? 'bg-amber-500/15 text-amber-950 font-extrabold border border-amber-300'
+                              ? 'bg-amber-100/70 text-amber-900 font-bold'
                               : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100'
                           }`}
                         >
-                          <SubIcon className={`w-3 h-3 ${isSubActive ? 'text-amber-600' : 'text-zinc-400'}`} />
+                          <span className={`w-1.5 h-1.5 rounded-full ${isSubActive ? 'bg-amber-600' : 'bg-zinc-300'}`} />
                           <span>{sub.name}</span>
                         </Link>
                       );
@@ -386,89 +425,97 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
           })}
         </nav>
 
-        {/* "Grow Your Studio" Card */}
-        {!collapsed && (
-          <div className="p-3 mx-3 mb-2 rounded-2xl bg-gradient-to-br from-[#FFFBF2] to-[#FFF5E6] border border-[#FDE8CA] space-y-2">
-            <div className="flex items-center gap-2 text-zinc-900 font-extrabold text-xs">
-              <Sparkles className="w-4 h-4 text-amber-600" />
-              <span>Grow Your Studio</span>
-            </div>
-            <p className="text-[10px] text-zinc-500 leading-tight">
-              Discover tools and insights that help you grow faster.
-            </p>
-            <Link
-              href="/workspace/settings"
-              className="block w-full py-1.5 px-3 rounded-xl bg-gradient-to-r from-[#D9822B] to-[#C2721C] text-white font-extrabold text-[11px] text-center shadow-xs hover:brightness-105 transition"
-            >
-              Upgrade Now
-            </Link>
-          </div>
-        )}
-
-        {/* Bottom User Profile Card */}
-        <div className="p-3 border-t border-[#F0ECE4] shrink-0 bg-[#FAF9F6]">
-          <div
-            onClick={() => setShowProfileModal(true)}
-            className={`flex items-center rounded-xl p-2 cursor-pointer hover:bg-white transition ${
-              collapsed ? 'justify-center' : 'justify-between border border-zinc-200/60 shadow-2xs'
-            }`}
-            title="Studio Profile & Settings"
-          >
-            <div className="flex items-center gap-2.5 overflow-hidden">
-              {userAvatarUrl ? (
-                <img
-                  src={userAvatarUrl}
-                  alt="Avatar"
-                  className="w-8 h-8 rounded-full object-cover border border-amber-400 shrink-0"
-                />
-              ) : (
-                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-400 to-orange-400 text-zinc-900 font-black text-xs flex items-center justify-center shrink-0">
-                  {userName.slice(0, 2).toUpperCase()}
-                </div>
-              )}
-
-              {!collapsed && (
-                <div className="overflow-hidden text-left">
-                  <h4 className="text-xs font-black text-zinc-900 truncate max-w-[110px]">
-                    {userName}
-                  </h4>
-                  <p className="text-[10px] text-zinc-400 font-medium truncate">
-                    Studio Owner
+        {/* Bottom Profile & Plan Card */}
+        <div className="p-3 border-t border-[#F0ECE4] shrink-0 bg-[#FCFBF9]">
+          {!collapsed ? (
+            <div className="space-y-2">
+              <div 
+                onClick={() => setShowProfileModal(true)}
+                className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-zinc-100 transition cursor-pointer group"
+              >
+                {userAvatarUrl ? (
+                  <img
+                    src={userAvatarUrl}
+                    alt="Studio Avatar"
+                    className="w-9 h-9 rounded-full object-cover border-2 border-amber-400 shadow-2xs group-hover:scale-105 transition-transform"
+                  />
+                ) : (
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-amber-400 via-amber-500 to-[#F36F21] text-white font-black text-xs flex items-center justify-center shadow-2xs">
+                    {(workspaceName || userName || 'SC').slice(0, 2).toUpperCase()}
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1">
+                    <h4 className="text-xs font-black text-zinc-900 truncate group-hover:text-amber-700 transition-colors">
+                      {workspaceName || 'My Studio'}
+                    </h4>
+                    <Crown className="w-3 h-3 text-amber-600 shrink-0" />
+                  </div>
+                  <p className="text-[10px] text-zinc-400 truncate">
+                    {userName || userEmail}
                   </p>
                 </div>
-              )}
-            </div>
+              </div>
 
-            {!collapsed && (
+              <div className="flex items-center justify-between px-2 pt-1">
+                <button
+                  onClick={() => setShowProfileModal(true)}
+                  className="text-[10.5px] font-bold text-amber-700 hover:text-amber-800 flex items-center gap-1 cursor-pointer"
+                >
+                  <Settings className="w-3 h-3" />
+                  <span>Edit Profile</span>
+                </button>
+
+                <button
+                  onClick={handleSignOut}
+                  className="text-[10.5px] font-bold text-rose-600 hover:text-rose-700 flex items-center gap-1 cursor-pointer"
+                >
+                  <LogOut className="w-3 h-3" />
+                  <span>Sign Out</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-2">
               <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleSignOut();
-                }}
-                className="p-1 text-zinc-400 hover:text-rose-600 transition"
-                title="Sign out"
+                onClick={() => setShowProfileModal(true)}
+                className="w-9 h-9 rounded-full cursor-pointer hover:ring-2 hover:ring-amber-400 transition"
+                title="Edit Studio Profile"
               >
-                <LogOut className="w-3.5 h-3.5" />
+                {userAvatarUrl ? (
+                  <img src={userAvatarUrl} alt="Avatar" className="w-full h-full rounded-full object-cover" />
+                ) : (
+                  <div className="w-full h-full rounded-full bg-gradient-to-tr from-amber-400 via-amber-500 to-[#F36F21] text-white font-black text-xs flex items-center justify-center">
+                    {(workspaceName || userName || 'SC').slice(0, 2).toUpperCase()}
+                  </div>
+                )}
               </button>
-            )}
-          </div>
+
+              <button
+                onClick={handleSignOut}
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                title="Sign Out"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          )}
         </div>
       </aside>
 
       {/* ─────────────────────────────────────────────────────────────
-          2. MAIN CONTENT WRAPPER (HEADER + CONTENT) WITH PERFECT ALIGNMENT
+          2. MAIN CONTENT WRAPPER & CLEAN TOPBAR (NO SEARCH BAR)
       ───────────────────────────────────────────────────────────── */}
       <div
-        className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ease-in-out ${
+        className={`flex-1 flex flex-col transition-all duration-300 ease-in-out ${
           collapsed ? 'lg:pl-20' : 'lg:pl-64'
         }`}
       >
-        {/* Top Header Bar */}
-        <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-[#EBE7DF] h-16 flex items-center justify-between px-4 sm:px-6 lg:px-8 shrink-0">
+        {/* Top Floating App Bar (Clean Header without search bar) */}
+        <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-[#EBE7DF] h-16 flex items-center justify-between px-4 sm:px-6 lg:px-8 shrink-0 shadow-2xs">
           
-          {/* Left Side: Mobile Drawer / Collapse Toggle + Search Bar */}
-          <div className="flex items-center gap-3 sm:gap-4 flex-1 max-w-lg">
+          {/* Left Side: Mobile Drawer / Collapse Toggle + Studio Brand Badge */}
+          <div className="flex items-center gap-3 sm:gap-4">
             <button
               onClick={() => {
                 if (window.innerWidth < 1024) {
@@ -477,37 +524,30 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                   setCollapsed(prev => !prev);
                 }
               }}
-              className="p-2 rounded-xl text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 transition"
+              className="p-2 rounded-xl text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 transition cursor-pointer"
               aria-label="Toggle Menu"
             >
               <Menu className="w-5 h-5" />
             </button>
 
-            {/* Search Box */}
-            <div className="relative flex-1">
-              <div className="flex items-center gap-2 px-3.5 py-2 rounded-full bg-[#F4F2EC] hover:bg-[#EFECE5] border border-[#E5E1D8] text-xs transition-colors">
-                <Search className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                <input
-                  type="text"
-                  placeholder="Search anything..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="bg-transparent border-none outline-hidden text-xs text-zinc-800 placeholder:text-zinc-400 w-full"
-                />
-                <kbd className="hidden sm:inline-flex px-1.5 py-0.5 rounded bg-white text-zinc-400 text-[10px] font-mono font-bold border border-zinc-200 shadow-2xs">
-                  ⌘K
-                </kbd>
-              </div>
+            {/* Studio Badge on Left */}
+            <div className="flex items-center gap-2">
+              <span className="text-sm sm:text-base font-black text-zinc-900 tracking-tight">
+                {workspaceName || 'StudioCore'}
+              </span>
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#FAF3E6] text-[#8C6D33] border border-[#E9DFD2]">
+                Pro Studio
+              </span>
             </div>
           </div>
 
-          {/* Right Side: Notifications, Calendar & Profile */}
+          {/* Right Side: Notifications, Calendar & Studio Profile */}
           <div className="flex items-center gap-3 sm:gap-4">
             
             {/* Notifications Bell */}
             <button
               type="button"
-              className="relative p-2 rounded-xl text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 transition"
+              className="relative p-2 rounded-xl text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 transition cursor-pointer"
               title="Notifications"
             >
               <Bell className="w-4 h-4" />
@@ -525,7 +565,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
               <Calendar className="w-4 h-4" />
             </Link>
 
-            {/* Topbar User Profile */}
+            {/* Topbar Studio Profile (Shows Studio Name & Photo/Logo) */}
             <div
               onClick={() => setShowProfileModal(true)}
               className="flex items-center gap-2.5 pl-2 sm:pl-3 border-l border-zinc-200 cursor-pointer group"
@@ -533,21 +573,21 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
               {userAvatarUrl ? (
                 <img
                   src={userAvatarUrl}
-                  alt="Avatar"
-                  className="w-8 h-8 rounded-full object-cover border border-amber-400 shadow-2xs group-hover:scale-105 transition-transform"
+                  alt="Studio Logo"
+                  className="w-8 h-8 rounded-full object-cover border-2 border-amber-400 shadow-2xs group-hover:scale-105 transition-transform"
                 />
               ) : (
-                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-400 to-orange-400 text-zinc-900 font-black text-xs flex items-center justify-center shadow-2xs">
-                  {userName.slice(0, 2).toUpperCase()}
+                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-400 via-amber-500 to-[#F36F21] text-white font-black text-xs flex items-center justify-center shadow-2xs">
+                  {(workspaceName || userName || 'SC').slice(0, 2).toUpperCase()}
                 </div>
               )}
 
               <div className="hidden sm:block text-left">
-                <h4 className="text-xs font-black text-zinc-900 group-hover:text-amber-700 transition-colors leading-tight">
-                  {userName}
+                <h4 className="text-xs font-black text-zinc-900 group-hover:text-amber-700 transition-colors leading-tight truncate max-w-[160px]">
+                  {workspaceName || 'My Studio'}
                 </h4>
-                <p className="text-[10px] text-zinc-400 font-medium">
-                  Studio Owner
+                <p className="text-[10px] text-zinc-400 font-medium truncate">
+                  {userName || 'Studio Owner'}
                 </p>
               </div>
             </div>
@@ -583,13 +623,16 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
               className="relative w-4/5 max-w-xs bg-white h-full shadow-2xl flex flex-col justify-between z-10"
             >
               <div className="h-16 px-4 border-b border-zinc-100 flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-base font-black text-zinc-900">StudioCore</span>
-                  <span className="text-amber-600 font-black">✦</span>
+                <div className="flex items-center gap-2">
+                  <StudioCoreBrandIcon className="w-8 h-8" />
+                  <div className="flex items-center gap-1">
+                    <span className="text-base font-black text-zinc-900">StudioCore</span>
+                    <span className="text-amber-600 font-black text-xs">✦</span>
+                  </div>
                 </div>
                 <button
                   onClick={() => setMobileDrawerOpen(false)}
-                  className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100"
+                  className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -621,61 +664,58 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                 })}
               </div>
 
-              <div className="p-4 border-t border-zinc-100 bg-zinc-50">
-                <div className="flex items-center justify-between">
-                  <div
-                    onClick={() => {
-                      setMobileDrawerOpen(false);
-                      setShowProfileModal(true);
-                    }}
-                    className="flex items-center gap-2.5 cursor-pointer"
-                  >
-                    <div className="w-8 h-8 rounded-full bg-amber-400 text-zinc-900 font-black text-xs flex items-center justify-center">
-                      {userName.slice(0, 2).toUpperCase()}
+              <div className="p-3 border-t border-zinc-100 bg-zinc-50 flex items-center justify-between">
+                <div 
+                  onClick={() => {
+                    setMobileDrawerOpen(false);
+                    setShowProfileModal(true);
+                  }}
+                  className="flex items-center gap-2 cursor-pointer"
+                >
+                  {userAvatarUrl ? (
+                    <img src={userAvatarUrl} alt="Avatar" className="w-8 h-8 rounded-full object-cover border border-amber-400" />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-400 to-orange-400 text-zinc-900 font-black text-xs flex items-center justify-center">
+                      {(workspaceName || userName || 'SC').slice(0, 2).toUpperCase()}
                     </div>
-                    <div>
-                      <p className="text-xs font-black text-zinc-900">{userName}</p>
-                      <p className="text-[10px] text-zinc-400">Studio Owner</p>
-                    </div>
+                  )}
+                  <div className="text-left">
+                    <p className="text-xs font-bold text-zinc-900 truncate max-w-[120px]">{workspaceName || 'My Studio'}</p>
+                    <p className="text-[10px] text-zinc-400 truncate">{userName || 'Studio Owner'}</p>
                   </div>
-
-                  <button
-                    onClick={handleSignOut}
-                    className="p-2 text-zinc-400 hover:text-rose-600 transition"
-                    title="Sign Out"
-                  >
-                    <LogOut className="w-4 h-4" />
-                  </button>
                 </div>
+
+                <button
+                  onClick={handleSignOut}
+                  className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg"
+                  title="Sign Out"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
               </div>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
 
-      {/* Profile & Onboarding Modals */}
+      {/* Profile Edit Modal */}
       <StudioProfileEditModal
         isOpen={showProfileModal}
         onClose={() => setShowProfileModal(false)}
-        onProfileSaved={(p) => {
-          if (p.studioName) setWorkspaceName(p.studioName);
-          if (p.avatarUrl !== undefined) setUserAvatarUrl(p.avatarUrl);
+        onProfileSaved={(updated) => {
+          if (updated?.studioName) setWorkspaceName(updated.studioName);
+          if (updated?.fullName) setUserName(updated.fullName);
+          if (updated?.avatarUrl || updated?.logoUrl) setUserAvatarUrl(updated.avatarUrl || updated.logoUrl);
+          fetchUserProfile();
         }}
       />
 
+      {/* Onboarding Celebration Modal */}
       <OnboardingCelebrationModal
         isOpen={showOnboardingCelebration}
         onClose={() => setShowOnboardingCelebration(false)}
-        userName={userName}
-        initialStudioName={workspaceName}
-        userEmail={userEmail}
-        userId={userId}
-        onProfileUpdated={(p) => {
-          if (p.studioName) setWorkspaceName(p.studioName);
-          if (p.avatarUrl !== undefined) setUserAvatarUrl(p.avatarUrl);
-        }}
+        workspaceName={workspaceName}
       />
-
     </div>
   );
 }
