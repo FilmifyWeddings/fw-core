@@ -93,6 +93,37 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // ── Auto-Renew Meta Token silently if < 30 days remaining ──
+    if (conn?.access_token && remainingDays < 30) {
+      try {
+        const appId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || process.env.FACEBOOK_APP_ID || '1279608780825934';
+        const appSecret = process.env.FACEBOOK_APP_SECRET || '4da60a4bc30f64db3570ffde1508b2b6';
+        const refreshRes = await fetch(
+          `https://graph.facebook.com/v20.0/oauth/access_token?` +
+          `grant_type=fb_exchange_token&client_id=${appId}&` +
+          `client_secret=${appSecret}&fb_exchange_token=${encodeURIComponent(conn.access_token)}`
+        );
+        if (refreshRes.ok) {
+          const refreshJson = await refreshRes.json();
+          if (refreshJson.access_token) {
+            conn.access_token = refreshJson.access_token;
+            await supabaseAdmin
+              .from('integration_credentials')
+              .update({
+                access_token: refreshJson.access_token,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('user_id', effectiveWorkspaceId)
+              .eq('provider', 'meta');
+            tokenStatus = 'ACTIVE';
+            remainingDays = 60;
+          }
+        }
+      } catch (refreshErr) {
+        console.warn('[Silent Token Auto-Renewal Error]:', refreshErr);
+      }
+    }
+
     // 3. Query pages for workspace (with multi-source auto-healing)
     let { data: pagesData } = await supabaseAdmin
       .from('fb_page_configs')
