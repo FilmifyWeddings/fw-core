@@ -738,6 +738,11 @@ export default function LeadsPage() {
     }
   };
 
+  const isValidUUID = (str?: string | null): boolean => {
+    if (!str) return false;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+  };
+
   const handleLeadUpdate = async (leadId: string, updatedFields: Partial<Lead>) => {
     // Optimistic UI Update
     const currentLead = leads.find(l => l.id === leadId);
@@ -745,10 +750,36 @@ export default function LeadsPage() {
 
     if (!isDemoMode) {
       try {
-        await supabase
+        const sanitizedFields: any = { ...updatedFields, updated_at: new Date().toISOString() };
+        
+        // Ensure stage_id is either a valid UUID or set to null if invalid syntax
+        if ('stage_id' in sanitizedFields) {
+          if (!isValidUUID(sanitizedFields.stage_id)) {
+            const matched = stages.find(s => s.id === sanitizedFields.stage_id || s.name === sanitizedFields.stage_id || s.name === sanitizedFields.status);
+            if (matched && isValidUUID(matched.id)) {
+              sanitizedFields.stage_id = matched.id;
+            } else {
+              sanitizedFields.stage_id = null;
+            }
+          }
+        }
+
+        // 1. Direct Supabase Client update
+        const { error: dbErr } = await supabase
           .from('leads')
-          .update({ ...updatedFields, updated_at: new Date().toISOString() })
+          .update(sanitizedFields)
           .eq('id', leadId);
+
+        if (dbErr) {
+          console.warn('[handleLeadUpdate] Supabase client update warning, using API fallback:', dbErr.message);
+        }
+
+        // 2. Reliable Backend API fallback with supabaseAdmin
+        fetch(`/api/leads/${leadId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(sanitizedFields)
+        }).catch(err => console.error('[handleLeadUpdate API error]:', err));
 
         // AUTO-CONVERT TO CLIENT WHEN STAGE IS "BOOKED"
         const isBooked = 

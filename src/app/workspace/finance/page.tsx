@@ -267,28 +267,49 @@ export default function FinancePage() {
       const leadIds = clientList.filter(c => c.lead_id).map(c => c.lead_id);
       const quoteDocMap = new Map<string, any>();
       const allLeadQuotesMap = new Map<string, any[]>();
+      const leadMap = new Map<string, any>();
 
       if (leadIds.length > 0) {
-        const { data: quoteDocs } = await supabase
-          .from('quotation_documents')
-          .select('id, template_id, lead_id, version, lead_version, content_json, created_at, updated_at')
-          .in('lead_id', leadIds)
-          .order('created_at', { ascending: false });
+        try {
+          const [docsRes, leadsRes] = await Promise.all([
+            supabase
+              .from('quotation_documents')
+              .select('id, template_id, lead_id, version, lead_version, content_json, created_at, updated_at')
+              .in('lead_id', leadIds)
+              .order('created_at', { ascending: false }),
+            supabase
+              .from('leads')
+              .select('id, name, final_quotation_id, quotation_id')
+              .in('id', leadIds)
+          ]);
 
-        if (quoteDocs && quoteDocs.length > 0) {
-          const leadGroups = new Map<string, any[]>();
-          for (const doc of quoteDocs) {
-            if (!leadGroups.has(doc.lead_id)) leadGroups.set(doc.lead_id, []);
-            leadGroups.get(doc.lead_id)!.push(doc);
+          if (leadsRes.data) {
+            leadsRes.data.forEach(l => leadMap.set(l.id, l));
           }
 
-          leadGroups.forEach((docs, leadId) => {
-            allLeadQuotesMap.set(leadId, docs);
-            const finalDoc = docs.find(d => d.content_json?.is_final === true || d.is_final === true);
-            if (finalDoc) {
-              quoteDocMap.set(leadId, finalDoc);
+          const quoteDocs = docsRes.data;
+          if (quoteDocs && quoteDocs.length > 0) {
+            const leadGroups = new Map<string, any[]>();
+            for (const doc of quoteDocs) {
+              if (!leadGroups.has(doc.lead_id)) leadGroups.set(doc.lead_id, []);
+              leadGroups.get(doc.lead_id)!.push(doc);
             }
-          });
+
+            leadGroups.forEach((docs, leadId) => {
+              allLeadQuotesMap.set(leadId, docs);
+              const leadObj = leadMap.get(leadId);
+              const finalDoc = docs.find(d => 
+                d.content_json?.is_final === true || 
+                d.is_final === true || 
+                (leadObj?.final_quotation_id && (d.template_id === leadObj.final_quotation_id || d.id === leadObj.final_quotation_id))
+              );
+              if (finalDoc) {
+                quoteDocMap.set(leadId, finalDoc);
+              }
+            });
+          }
+        } catch (err) {
+          console.warn('[Finance] Error fetching quotation documents:', err);
         }
       }
 
@@ -298,23 +319,42 @@ export default function FinancePage() {
 
       for (const c of clientList) {
         const existing = financeMap.get(c.id);
+        const leadObj = c.lead_id ? leadMap.get(c.lead_id) : null;
         const leadDocs = c.lead_id ? (allLeadQuotesMap.get(c.lead_id) || []) : [];
         const availableQuotes = leadDocs.map(d => {
           const v = Number(d.lead_version || d.version || 1);
           const f = d.content_json ? extractFinancialsFromQuotation(d.content_json, c.event_date) : null;
           const couple = d.content_json?.cover?.coupleName || d.content_json?.cover?.groomName || '';
+          const isFinal = d.content_json?.is_final === true || 
+            d.is_final === true || 
+            (leadObj?.final_quotation_id && (d.template_id === leadObj.final_quotation_id || d.id === leadObj.final_quotation_id));
           return {
             template_id: d.template_id,
             version: v,
             title: couple ? `${couple} (V${v})` : `Quotation Version ${v}`,
-            is_final: d.content_json?.is_final === true || d.is_final === true,
+            is_final: Boolean(isFinal),
             created_at: d.created_at,
             financials: f
           };
         });
 
-        const linkedFinalQuote = c.lead_id ? quoteDocMap.get(c.lead_id) : null;
-        const hasFinalQuotation = Boolean(linkedFinalQuote);
+        let linkedFinalQuote = c.lead_id ? quoteDocMap.get(c.lead_id) : null;
+        if (!linkedFinalQuote && leadDocs.length > 0) {
+          linkedFinalQuote = leadDocs.find(d => 
+            d.content_json?.is_final === true || 
+            d.is_final === true || 
+            (leadObj?.final_quotation_id && (d.template_id === leadObj.final_quotation_id || d.id === leadObj.final_quotation_id))
+          );
+        }
+        if (!linkedFinalQuote && leadObj?.final_quotation_id && leadDocs.length > 0) {
+          linkedFinalQuote = leadDocs.find(d => d.template_id === leadObj.final_quotation_id || d.id === leadObj.final_quotation_id) || leadDocs[0];
+        }
+
+        const hasFinalQuotation = Boolean(linkedFinalQuote || leadObj?.final_quotation_id);
+        if (!linkedFinalQuote && hasFinalQuotation && leadDocs.length > 0) {
+          linkedFinalQuote = leadDocs[0];
+        }
+
         const finalVersion = linkedFinalQuote ? Number(linkedFinalQuote.lead_version || linkedFinalQuote.version || 1) : undefined;
         const qFinancials = linkedFinalQuote && linkedFinalQuote.content_json
           ? extractFinancialsFromQuotation(linkedFinalQuote.content_json, c.event_date)
@@ -794,6 +834,21 @@ export default function FinancePage() {
           return m;
         });
 
+        const updated = { ...rec, milestones: updatedMilestones };
+        updateFinanceRecordInDB(updated);
+        return updated;
+      }
+      return rec;
+    }));
+  };
+
+  // Handle Deleting a Milestone Step
+  const handleDeleteMilestone = (recordId: string, milestoneId: string) => {
+    if (!confirm('Are you sure you want to delete this payment milestone step?')) return;
+
+    setFinanceRecords(prev => prev.map(rec => {
+      if (rec.id === recordId) {
+        const updatedMilestones = (rec.milestones || []).filter(m => m.id !== milestoneId);
         const updated = { ...rec, milestones: updatedMilestones };
         updateFinanceRecordInDB(updated);
         return updated;
@@ -1554,28 +1609,40 @@ export default function FinancePage() {
 
                                             {/* Action */}
                                             <td className="py-2.5 text-right whitespace-nowrap">
-                                              {m.status !== 'completed' ? (
+                                              <div className="flex items-center justify-end gap-1.5">
+                                                {m.status !== 'completed' ? (
+                                                  <button
+                                                    onClick={() => {
+                                                      setShowRecordPaymentModal({
+                                                        open: true,
+                                                        client: client || undefined,
+                                                        financeRecord: record,
+                                                        milestoneId: m.id
+                                                      });
+                                                      setPaymentFormData(prev => ({
+                                                        ...prev,
+                                                        amount: String(Math.round(m.amount)),
+                                                        target_milestone_id: m.id
+                                                      }));
+                                                    }}
+                                                    className="px-2.5 py-1 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition shadow-2xs cursor-pointer"
+                                                  >
+                                                    Pay
+                                                  </button>
+                                                ) : (
+                                                  <span className="text-[10px] font-bold text-emerald-600">Paid ({m.payment_mode || 'UPI'})</span>
+                                                )}
+
+                                                {/* Delete Step Button */}
                                                 <button
-                                                  onClick={() => {
-                                                    setShowRecordPaymentModal({
-                                                      open: true,
-                                                      client: client || undefined,
-                                                      financeRecord: record,
-                                                      milestoneId: m.id
-                                                    });
-                                                    setPaymentFormData(prev => ({
-                                                      ...prev,
-                                                      amount: String(Math.round(m.amount)),
-                                                      target_milestone_id: m.id
-                                                    }));
-                                                  }}
-                                                  className="px-2.5 py-1 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition shadow-2xs"
+                                                  type="button"
+                                                  onClick={() => handleDeleteMilestone(record.id, m.id)}
+                                                  className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                                  title="Delete milestone step"
                                                 >
-                                                  Pay
+                                                  <Trash2 className="w-3.5 h-3.5" />
                                                 </button>
-                                              ) : (
-                                                <span className="text-[10px] font-bold text-emerald-600">Paid ({m.payment_mode || 'UPI'})</span>
-                                              )}
+                                              </div>
                                             </td>
                                           </tr>
                                         ))}

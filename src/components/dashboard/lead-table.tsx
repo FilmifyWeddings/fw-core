@@ -2435,10 +2435,13 @@ export function LeadTable({
                       }}
                       onChange={(val) => {
                         const foundStage = stagesState.find(s => s.id === val || s.name === val);
+                        const targetStageId = foundStage?.id || val;
+                        const targetStatus = (foundStage?.name || val) as any;
+                        setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, stage_id: targetStageId, status: targetStatus } : l));
                         if (onLeadUpdate) {
                           onLeadUpdate(lead.id, {
-                            stage_id: foundStage?.id || val,
-                            status: (foundStage?.name || val) as any
+                            stage_id: targetStageId,
+                            status: targetStatus
                           });
                         }
                       }}
@@ -2875,22 +2878,16 @@ export function LeadTable({
                                             status: newStageObj.name as any
                                           });
                                         }
-                                        try {
-                                          const uId = leads[0]?.workspace_id || '00000000-0000-0000-0000-000000000000';
-                                          await supabase.from('crm_stages').insert({
-                                            workspace_id: uId,
-                                            name: newStageObj.name,
-                                            color: newStageObj.color,
-                                            position: newStageObj.position
-                                          });
-                                        } catch (_) {}
                                       }}
                                       onChange={(val) => {
                                         const foundStage = stagesState.find(s => s.id === val || s.name === val);
+                                        const targetStageId = foundStage?.id || val;
+                                        const targetStatus = (foundStage?.name || val) as any;
+                                        setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, stage_id: targetStageId, status: targetStatus } : l));
                                         if (onLeadUpdate) {
                                           onLeadUpdate(lead.id, {
-                                            stage_id: foundStage?.id || val,
-                                            status: (foundStage?.name || val) as any
+                                            stage_id: targetStageId,
+                                            status: targetStatus
                                           });
                                         }
                                       }}
