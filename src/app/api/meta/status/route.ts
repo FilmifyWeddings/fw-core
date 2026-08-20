@@ -516,7 +516,7 @@ export async function GET(req: NextRequest) {
         total_forms: forms.length,
         receiving_leads: forms.filter((f: any) => f.is_enabled !== false).length,
         disabled_forms: forms.filter((f: any) => f.is_enabled === false).length,
-        total_leads: totalLeadsCount,
+        total_leads: Math.max(totalLeadsCount, forms.reduce((acc: number, f: any) => acc + (f.leads_count || 0), 0)),
       },
       pages,
       forms,

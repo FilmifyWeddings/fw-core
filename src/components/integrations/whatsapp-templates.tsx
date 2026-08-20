@@ -758,30 +758,30 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
   return (
     <div className="space-y-6">
       {/* Top-level Section Tabs */}
-      <div className="border border-zinc-200 dark:border-zinc-900 rounded-xl bg-zinc-50 dark:bg-zinc-950/40 p-1 flex gap-1.5 max-w-md">
+      <div className="border border-zinc-200 dark:border-zinc-900 rounded-xl bg-zinc-50 dark:bg-zinc-950/40 p-1 flex gap-1.5 max-w-lg shadow-sm">
         <button
           type="button"
           onClick={() => setActiveSection('templates')}
-          className={`flex-1 py-2.5 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+          className={`flex-1 py-2.5 px-3 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
             activeSection === 'templates'
-              ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-700 shadow-sm'
+              ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-700 shadow-sm font-bold'
               : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300'
           }`}
         >
-          <FileText className="w-3.5 h-3.5" />
-          Templates
+          <FileText className="w-3.5 h-3.5 text-emerald-500" />
+          Client & Drip Templates
         </button>
         <button
           type="button"
           onClick={() => setActiveSection('group-alerts')}
-          className={`flex-1 py-2.5 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+          className={`flex-1 py-2.5 px-3 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
             activeSection === 'group-alerts'
-              ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-700 shadow-sm'
+              ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-700 shadow-sm font-bold'
               : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300'
           }`}
         >
-          <Bell className="w-3.5 h-3.5" />
-          Group Lead Alerts
+          <Users className="w-3.5 h-3.5 text-orange-500" />
+          Group Templates & Automation
         </button>
       </div>
 
@@ -1458,20 +1458,20 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════════ */}
-      {/* SECTION: Group Lead Alerts & Mapping                                  */}
+      {/* SECTION: Group Templates & Automation Hub                             */}
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {activeSection === 'group-alerts' && (
         <div className="space-y-6">
           {/* Header Card */}
-          <div className="p-5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 backdrop-blur-md">
+          <div className="p-5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 backdrop-blur-md shadow-sm">
             <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center">
-                <Bell className="w-5 h-5 text-black" />
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center shadow-md">
+                <Users className="w-5 h-5 text-black" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-zinc-900 dark:text-white">Group Lead Alerts & Mapping</h3>
+                <h3 className="text-sm font-bold text-zinc-900 dark:text-white">Group Templates & Automation Hub</h3>
                 <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
-                  Configure automatic WhatsApp group notifications when new leads arrive
+                  Design customized templates for WhatsApp Groups (Lead Alerts, Team Notifications, Couples Group Anniversary Wishes, etc.)
                 </p>
               </div>
             </div>
