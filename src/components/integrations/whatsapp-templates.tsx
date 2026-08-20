@@ -177,7 +177,8 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
       if (uploadResult.error) throw new Error(uploadResult.error);
 
       setMediaUrl(uploadResult.url);
-      setMediaMime(file.type || 'image/webp');
+      const detectedMime = file.type || (file.name.match(/\.(mp4|webm|mov|mkv)$/i) ? 'video/mp4' : (file.name.match(/\.(pdf)$/i) ? 'application/pdf' : 'image/jpeg'));
+      setMediaMime(detectedMime);
       // Instantly refresh template storage stats meter
       loadStorageStats();
     } catch (err: any) {

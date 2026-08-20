@@ -26,12 +26,21 @@ export interface UploadOptions {
 
 /**
  * Compresses an image File or Blob in the browser to WebP format.
- * Returns a compressed File object with .webp extension.
+ * If file is not an image (e.g. video, audio, document), returns original file safely without throwing.
  */
 export async function compressImageClient(
   file: File | Blob,
   options: CompressionOptions = {}
 ): Promise<File> {
+  const isImage = (file.type && file.type.startsWith('image/') && !file.type.includes('svg')) ||
+    (file instanceof File && /\.(jpg|jpeg|png|webp|bmp|heic|tiff)$/i.test(file.name));
+
+  // If not an image, bypass image compression and return original file
+  if (!isImage) {
+    if (file instanceof File) return file;
+    return new File([file], 'media', { type: file.type || 'application/octet-stream' });
+  }
+
   const maxWidth = options.maxWidth || 2400;
   const maxHeight = options.maxHeight || 2400;
   const quality = options.quality !== undefined ? options.quality : 0.90;
@@ -41,7 +50,7 @@ export async function compressImageClient(
   const baseName = originalName.replace(/\.[^/.]+$/, '');
   const webpFileName = `${baseName}.webp`;
 
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const reader = new FileReader();
 
     reader.onload = (e) => {
@@ -103,18 +112,22 @@ export async function compressImageClient(
       };
 
       img.onerror = () => {
-        reject(new Error('Failed to load image for compression.'));
+        // Graceful fallback to original file if image fails to decode
+        if (file instanceof File) resolve(file);
+        else resolve(new File([file], webpFileName, { type: file.type || 'image/jpeg' }));
       };
 
       if (e.target?.result) {
         img.src = e.target.result as string;
       } else {
-        reject(new Error('FileReader returned empty result.'));
+        if (file instanceof File) resolve(file);
+        else resolve(new File([file], webpFileName, { type: file.type || 'image/jpeg' }));
       }
     };
 
     reader.onerror = () => {
-      reject(new Error('Failed to read input file.'));
+      if (file instanceof File) resolve(file);
+      else resolve(new File([file], webpFileName, { type: file.type || 'image/jpeg' }));
     };
 
     reader.readAsDataURL(file);
@@ -122,27 +135,31 @@ export async function compressImageClient(
 }
 
 /**
- * Reads a File/Blob, compresses it to WebP (max 2048px, quality 88%),
- * and returns the Base64 Data URL string for instant client preview.
+ * Reads a File/Blob, compresses if image,
+ * and returns the Base64 Data URL string for preview/fallback.
  */
 export async function compressAndGetBase64(
   file: File | Blob,
   options?: CompressionOptions
 ): Promise<string> {
-  const compressedFile = await compressImageClient(file, options);
+  const isImage = (file.type && file.type.startsWith('image/') && !file.type.includes('svg')) ||
+    (file instanceof File && /\.(jpg|jpeg|png|webp|bmp|heic|tiff)$/i.test(file.name));
+
+  const targetFile = isImage ? await compressImageClient(file, options) : file;
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       resolve(e.target?.result as string);
     };
     reader.onerror = reject;
-    reader.readAsDataURL(compressedFile);
+    reader.readAsDataURL(targetFile);
   });
 }
 
 /**
  * Universal Supabase Storage Upload Manager with Automatic Bucket Fallbacks.
- * Automatically compresses file to WebP and attaches cacheControl: '31536000' (1 year cache).
+ * Automatically compresses images to WebP and attaches cacheControl: '31536000' (1 year cache).
+ * For non-image files (videos, audio, PDFs, docs), preserves original format and mime type without compression.
  */
 export async function uploadMasterImage(
   supabaseClient: any,
@@ -163,15 +180,33 @@ export async function uploadMasterImage(
     const upsert = options.upsert !== undefined ? options.upsert : true;
     const cacheControl = options.cacheControl || '31536000'; // 1 YEAR BROWSER CACHE ENFORCED
 
-    // Compress client side
-    const compressedFile = await compressImageClient(file, {
-      maxWidth: options.maxWidth,
-      maxHeight: options.maxHeight,
-      quality: options.quality,
-    });
+    const isImage = (file.type && file.type.startsWith('image/') && !file.type.includes('svg')) ||
+      (file instanceof File && /\.(jpg|jpeg|png|webp|bmp|heic|tiff)$/i.test(file.name));
+
+    let fileToUpload: File | Blob;
+    let fileExt: string;
+    let contentType: string;
+
+    const originalName = file instanceof File ? file.name : 'media.bin';
+    const extMatch = originalName.match(/\.([a-zA-Z0-9]+)$/);
+
+    if (isImage) {
+      // Compress image client side
+      fileToUpload = await compressImageClient(file, {
+        maxWidth: options.maxWidth,
+        maxHeight: options.maxHeight,
+        quality: options.quality,
+      });
+      fileExt = 'webp';
+      contentType = 'image/webp';
+    } else {
+      // Non-image file (Video, Audio, PDF, etc.) -> Preserve original file as-is
+      fileToUpload = file;
+      fileExt = extMatch ? extMatch[1].toLowerCase() : (file.type ? file.type.split('/')[1] : 'bin');
+      contentType = file.type || 'application/octet-stream';
+    }
 
     // Generate clean storage file path
-    const fileExt = 'webp';
     const uniqueId = Math.random().toString(36).substring(2, 9);
     const timeStamp = Date.now();
     const fileName = `${timeStamp}_${uniqueId}.${fileExt}`;
@@ -184,8 +219,8 @@ export async function uploadMasterImage(
       try {
         const { data, error } = await supabaseClient.storage
           .from(bucketName)
-          .upload(storagePath, compressedFile, {
-            contentType: 'image/webp',
+          .upload(storagePath, fileToUpload, {
+            contentType: contentType,
             cacheControl: cacheControl,
             upsert: upsert,
           });
@@ -226,7 +261,11 @@ export async function uploadMasterImage(
     };
   } catch (err: any) {
     console.error('[MasterImageManager] Unexpected Upload Failure:', err);
-    const base64Url = await compressAndGetBase64(file);
-    return { path: '', url: base64Url, error: null };
+    try {
+      const base64Url = await compressAndGetBase64(file);
+      return { path: '', url: base64Url, error: null };
+    } catch {
+      return { path: '', url: '', error: err.message || 'Upload failed' };
+    }
   }
 }
