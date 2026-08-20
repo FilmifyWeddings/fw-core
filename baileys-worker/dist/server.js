@@ -675,14 +675,16 @@ async function executeAction(action) {
                 waMessageId = await sendTemplateMessage(to, templateId, variables, targetWsId);
                 break;
             }
-            case 'group_dispatch': {
-                const { groupJid, leadData } = action.payload;
-                await dispatchGroupCard(groupJid, leadData, targetWsId);
-                break;
-            }
+            case 'group_dispatch':
             case 'group_lead_alert': {
-                const { groupId, leadData, templateStr } = action.payload;
-                waMessageId = await sendGroupAlert(groupId, leadData, templateStr, targetWsId);
+                const payload = action.payload;
+                const targetGroup = payload.groupId || payload.groupJid || '';
+                if (payload.templateStr) {
+                    waMessageId = await sendGroupAlert(targetGroup, payload.leadData || {}, payload.templateStr, targetWsId);
+                }
+                else {
+                    await dispatchGroupCard(targetGroup, payload.leadData || {}, targetWsId);
+                }
                 break;
             }
             default:

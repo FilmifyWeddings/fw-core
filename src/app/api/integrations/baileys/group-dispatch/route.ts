@@ -77,23 +77,18 @@ export async function POST(req: NextRequest) {
       }, { status: 409 });
     }
 
-    // Queue group dispatch action
-    const useTemplate = !!body.templateStr;
+    // Queue group dispatch action using standard 'group_dispatch' enum
     const { data: queueItem, error: queueError } = await supabaseAdmin
       .from('baileys_action_queue')
       .insert({
         workspace_id: user.id,
-        action_type: useTemplate ? 'group_lead_alert' : 'group_dispatch',
-        payload: useTemplate
-          ? {
-              groupId: body.groupJid,
-              leadData: body.leadData,
-              templateStr: body.templateStr,
-            }
-          : {
-              groupJid: body.groupJid,
-              leadData: body.leadData,
-            },
+        action_type: 'group_dispatch',
+        payload: {
+          groupJid: body.groupJid,
+          groupId: body.groupJid,
+          leadData: body.leadData,
+          ...(body.templateStr ? { templateStr: body.templateStr } : {})
+        },
         priority: 3,
       })
       .select('id')
@@ -106,7 +101,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       queueId: queueItem?.id,
-      message: useTemplate
+      message: body.templateStr
         ? `Group lead alert (custom template) queued for ${body.leadData.name} → ${body.groupJid}`
         : `Group dispatch queued for ${body.leadData.name} → ${body.groupJid}`,
     });

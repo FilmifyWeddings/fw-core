@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { verifyMetaAuth } from '@/lib/meta-auth';
+import { autoSyncAllMetaForms } from '@/lib/meta-auto-sync';
 
 /**
  * POST /api/meta/direct-token
@@ -368,6 +369,14 @@ export async function POST(req: NextRequest) {
         .single();
 
       if (savedForm) savedForms.push(savedForm);
+    }
+
+    // ── 7. Auto-Sync ALL Historical Leads immediately from Meta Graph API ───
+    try {
+      console.log(`[Direct Token Sync] Auto-syncing all historical leads for workspace ${workspaceId}...`);
+      await autoSyncAllMetaForms(workspaceId, page_access_token);
+    } catch (syncErr: any) {
+      console.warn('[Direct Token Auto-Sync Leads Warning]:', syncErr?.message);
     }
 
     // Audit log

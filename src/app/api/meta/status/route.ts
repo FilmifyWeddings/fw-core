@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { verifyMetaAuth } from '@/lib/meta-auth';
+import { autoSyncAllMetaForms } from '@/lib/meta-auto-sync';
 
 /**
  * GET /api/meta/status
@@ -401,6 +402,11 @@ export async function GET(req: NextRequest) {
     if (metaLeads.length > 0) {
       const sorted = [...metaLeads].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
       lastLeadTime = sorted[0].created_at;
+    }
+
+    // If leads are missing in CRM but forms exist on Meta, trigger background auto-sync
+    if (metaLeads.length === 0 && formsData.length > 0 && isConnected) {
+      autoSyncAllMetaForms(workspaceId, conn?.access_token).catch(() => {});
     }
 
     const formMap = new Map(formsData.map((f: any) => [f.form_id, f.form_name]));
