@@ -412,78 +412,78 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
         <div className="space-y-6">
           
           {/* ═══ MASTER ANALYTICS COUNTER DOCK ═══ */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5 bg-zinc-950/60 border border-zinc-900 rounded-3xl p-5 shadow-2xl relative overflow-hidden backdrop-blur-md">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-5 shadow-sm relative overflow-hidden">
             
             {/* WORKFLOWS */}
-            <div className="flex items-center gap-3.5 border-r border-zinc-900/60 pr-4 last:border-0 last:pr-0">
-              <div className="w-10 h-10 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 shrink-0">
+            <div className="flex items-center gap-3.5 border-r border-zinc-100 dark:border-zinc-800/60 pr-4 last:border-0 last:pr-0">
+              <div className="w-10 h-10 rounded-2xl bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
                 <Layers className="w-5 h-5" />
               </div>
               <div className="min-w-0">
-                <span className="text-[9px] text-zinc-550 font-bold uppercase tracking-wider block">Workflows (Count)</span>
-                <span className="text-lg font-black text-white mt-0.5 block leading-none">{metricCount}</span>
+                <span className="text-[9px] text-zinc-400 dark:text-zinc-500 font-bold uppercase tracking-wider block">Workflows (Count)</span>
+                <span className="text-lg font-black text-zinc-900 dark:text-white mt-0.5 block leading-none">{metricCount}</span>
               </div>
             </div>
 
             {/* EXEC USED */}
-            <div className="flex items-center gap-3.5 border-r border-zinc-900/60 pr-4 last:border-0 last:pr-0">
-              <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 shrink-0">
+            <div className="flex items-center gap-3.5 border-r border-zinc-100 dark:border-zinc-800/60 pr-4 last:border-0 last:pr-0">
+              <div className="w-10 h-10 rounded-2xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
                 <RotateCcw className="w-5 h-5" />
               </div>
               <div className="min-w-0">
-                <span className="text-[9px] text-zinc-550 font-bold uppercase tracking-wider block">Exec Used</span>
-                <span className="text-lg font-black text-white mt-0.5 block leading-none">{metricUsed}</span>
+                <span className="text-[9px] text-zinc-400 dark:text-zinc-500 font-bold uppercase tracking-wider block">Exec Used</span>
+                <span className="text-lg font-black text-zinc-900 dark:text-white mt-0.5 block leading-none">{metricUsed}</span>
               </div>
             </div>
 
             {/* EXEC REMAINING */}
-            <div className="flex items-center gap-3.5 border-r border-zinc-900/60 pr-4 last:border-0 last:pr-0">
-              <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
+            <div className="flex items-center gap-3.5 border-r border-zinc-100 dark:border-zinc-800/60 pr-4 last:border-0 last:pr-0">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
                 <Database className="w-5 h-5" />
               </div>
               <div className="min-w-0">
-                <span className="text-[9px] text-zinc-550 font-bold uppercase tracking-wider block">Exec Remaining</span>
-                <span className="text-lg font-black text-emerald-450 mt-0.5 block leading-none">5K</span>
+                <span className="text-[9px] text-zinc-400 dark:text-zinc-500 font-bold uppercase tracking-wider block">Exec Remaining</span>
+                <span className="text-lg font-black text-emerald-600 dark:text-emerald-400 mt-0.5 block leading-none">5K</span>
               </div>
             </div>
 
             {/* ACTIVE */}
-            <div className="flex items-center gap-3.5 border-r border-zinc-900/60 pr-4 last:border-0 last:pr-0">
-              <div className="w-10 h-10 rounded-2xl bg-green-500/10 border border-green-500/20 flex items-center justify-center text-green-400 shrink-0">
+            <div className="flex items-center gap-3.5 border-r border-zinc-100 dark:border-zinc-800/60 pr-4 last:border-0 last:pr-0">
+              <div className="w-10 h-10 rounded-2xl bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-500/20 flex items-center justify-center text-green-600 dark:text-green-400 shrink-0">
                 <PlayCircle className="w-5 h-5" />
               </div>
               <div className="min-w-0">
-                <span className="text-[9px] text-zinc-550 font-bold uppercase tracking-wider block">Active</span>
-                <span className="text-lg font-black text-white mt-0.5 block leading-none">{metricActive}</span>
+                <span className="text-[9px] text-zinc-400 dark:text-zinc-500 font-bold uppercase tracking-wider block">Active</span>
+                <span className="text-lg font-black text-zinc-900 dark:text-white mt-0.5 block leading-none">{metricActive}</span>
               </div>
             </div>
 
             {/* INACTIVE */}
             <div className="flex items-center gap-3.5 pr-4 last:border-0 last:pr-0">
-              <div className="w-10 h-10 rounded-2xl bg-zinc-800/40 border border-zinc-800 flex items-center justify-center text-zinc-500 shrink-0">
+              <div className="w-10 h-10 rounded-2xl bg-zinc-100 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-800 flex items-center justify-center text-zinc-400 shrink-0">
                 <PauseCircle className="w-5 h-5" />
               </div>
               <div className="min-w-0">
-                <span className="text-[9px] text-zinc-550 font-bold uppercase tracking-wider block">Inactive</span>
-                <span className="text-lg font-black text-white mt-0.5 block leading-none">{metricInactive}</span>
+                <span className="text-[9px] text-zinc-400 dark:text-zinc-500 font-bold uppercase tracking-wider block">Inactive</span>
+                <span className="text-lg font-black text-zinc-900 dark:text-white mt-0.5 block leading-none">{metricInactive}</span>
               </div>
             </div>
 
           </div>
 
           {/* ═══ FILTER & ACTION SECTION ═══ */}
-          <div className="flex flex-col sm:flex-row gap-3 items-center justify-between pb-2 border-b border-zinc-900/40">
+          <div className="flex flex-col sm:flex-row gap-3 items-center justify-between pb-2 border-b border-zinc-200 dark:border-zinc-800/40">
             <div className="relative w-full sm:w-80">
-              <Search className="absolute left-3.5 top-3 w-4 h-4 text-zinc-500" />
+              <Search className="absolute left-3.5 top-3 w-4 h-4 text-zinc-400" />
               <input
                 type="text"
                 placeholder="Search workflows by name..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-emerald-500/40 transition-colors"
+                className="w-full pl-10 pr-4 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs text-zinc-900 dark:text-zinc-200 placeholder-zinc-400 focus:outline-none focus:border-emerald-500/60 shadow-sm transition-colors"
               />
               {searchQuery && (
-                <button onClick={() => setSearchQuery('')} className="absolute right-3.5 top-3 text-zinc-550 hover:text-white">
+                <button onClick={() => setSearchQuery('')} className="absolute right-3.5 top-3 text-zinc-400 hover:text-zinc-700">
                   <X className="w-3.5 h-3.5" />
                 </button>
               )}
@@ -491,17 +491,17 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
 
             <button
               onClick={handleAddNew}
-              className="w-full sm:w-auto px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-black text-xs font-extrabold rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 shrink-0 hover:scale-102"
+              className="w-full sm:w-auto px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-extrabold rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 shrink-0 hover:scale-102 cursor-pointer"
             >
               <Plus className="w-4 h-4" /> Add New Workflow
             </button>
           </div>
 
           {/* ═══ REGISTRY TABLE VIEW (UNIVERSAL RESPONSIVENESS LAW) ═══ */}
-          <div className="w-full overflow-hidden border border-zinc-900 bg-zinc-950/20 rounded-2xl shadow-xl relative">
+          <div className="w-full overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 rounded-2xl shadow-sm relative">
             <div className="overflow-x-auto scroller-thin w-full">
               
-              <table className="w-full text-left border-collapse text-zinc-350 min-w-[900px] table-fixed">
+              <table className="w-full text-left border-collapse text-zinc-700 dark:text-zinc-300 min-w-[900px] table-fixed">
                 <colgroup>
                   <col className="w-[50px]" />
                   <col className="w-[180px]" />
@@ -515,9 +515,9 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                 </colgroup>
 
                 <thead>
-                  <tr className="border-b border-zinc-900 text-[10px] font-bold uppercase tracking-wider text-zinc-500 bg-zinc-950/60 select-none">
+                  <tr className="border-b border-zinc-200 dark:border-zinc-800 text-[10px] font-bold uppercase tracking-wider text-zinc-500 bg-slate-50 dark:bg-zinc-800/60 select-none">
                     <th className="py-4 px-4 text-center">
-                      <button onClick={handleSelectAll} className="text-zinc-650 hover:text-white transition-colors">
+                      <button onClick={handleSelectAll} className="text-zinc-400 hover:text-zinc-800 transition-colors">
                         <Users className="w-4 h-4" />
                       </button>
                     </th>
@@ -532,23 +532,23 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-zinc-900/50 text-xs font-sans">
+                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/50 text-xs font-sans">
                   {loading ? (
                     <tr>
-                      <td colSpan={9} className="py-16 text-center text-zinc-500">
+                      <td colSpan={9} className="py-16 text-center text-zinc-400">
                         <div className="flex items-center justify-center gap-2">
-                          <RefreshCw className="w-4 h-4 animate-spin text-emerald-450" />
+                          <RefreshCw className="w-4 h-4 animate-spin text-emerald-500" />
                           <span>Polling active workflows...</span>
                         </div>
                       </td>
                     </tr>
                   ) : paginatedWorkflows.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="py-20 text-center text-zinc-500">
+                      <td colSpan={9} className="py-20 text-center text-zinc-400">
                         <div className="flex flex-col items-center gap-2">
-                          <Layers className="w-8 h-8 text-zinc-700" />
-                          <p className="font-semibold text-zinc-400">No automation workflows configured</p>
-                          <p className="text-[10px] text-zinc-600 max-w-xs">Define a trigger workflow above to begin dispatching automated notifications.</p>
+                          <Layers className="w-8 h-8 text-zinc-300" />
+                          <p className="font-semibold text-zinc-700 dark:text-zinc-300">No automation workflows configured</p>
+                          <p className="text-[10px] text-zinc-500 max-w-xs">Define a trigger workflow above to begin dispatching automated notifications.</p>
                         </div>
                       </td>
                     </tr>
@@ -564,14 +564,14 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                       return (
                         <tr
                           key={wf.id}
-                          className={`hover:bg-zinc-900/20 transition-colors border-b border-zinc-900/60 ${
-                            isSelected ? 'bg-zinc-900/10' : ''
+                          className={`hover:bg-slate-50 dark:hover:bg-zinc-800/20 transition-colors border-b border-zinc-100 dark:border-zinc-800/60 ${
+                            isSelected ? 'bg-slate-50/80 dark:bg-zinc-800/10' : ''
                           }`}
                         >
                           {/* Selector */}
                           <td className="px-4 text-center py-3" onClick={() => handleSelectRow(wf.id)}>
                             <div className={`w-3.5 h-3.5 rounded border mx-auto flex items-center justify-center cursor-pointer transition-colors ${
-                              isSelected ? 'bg-emerald-500 border-emerald-600 text-black' : 'border-zinc-800 hover:border-zinc-700'
+                              isSelected ? 'bg-emerald-500 border-emerald-600 text-white' : 'border-zinc-300 hover:border-zinc-400'
                             }`}>
                               {isSelected && <span className="text-[9px] font-bold">✓</span>}
                             </div>
@@ -579,13 +579,13 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
 
                           {/* Name */}
                           <td className={`px-4 font-black truncate py-3 ${dense ? 'py-1.5' : 'py-3'}`}>
-                            <span className="text-white hover:text-emerald-400 cursor-pointer block truncate" onClick={() => handleEditClick(wf)}>
+                            <span className="text-zinc-900 dark:text-white hover:text-emerald-600 cursor-pointer block truncate" onClick={() => handleEditClick(wf)}>
                               {wf.workflow_name}
                             </span>
                           </td>
 
                           {/* Device / Agent Context */}
-                          <td className="px-4 text-zinc-400 font-medium py-3">
+                          <td className="px-4 text-zinc-500 font-medium py-3">
                             <span className="truncate block">Gateway</span>
                           </td>
 
@@ -595,8 +595,8 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                               onClick={() => handleToggleStatus(wf)}
                               className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase border transition-colors ${
                                 isActive 
-                                  ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20' 
-                                  : 'bg-zinc-900 border-zinc-800 text-zinc-550 hover:bg-zinc-850'
+                                  ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100' 
+                                  : 'bg-zinc-100 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 hover:bg-zinc-200'
                               }`}
                             >
                               {isActive ? 'Active' : 'Inactive'}
@@ -605,23 +605,23 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
 
                           {/* Trigger */}
                           <td className="px-4 font-mono text-[10px] text-zinc-500 py-3">
-                            <span className="bg-zinc-900/50 px-2 py-0.5 rounded border border-zinc-850">
+                            <span className="bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 rounded border border-slate-200 dark:border-zinc-700">
                               {targetGroupObj ? 'GROUP_MEMBER_ADDED' : 'LEAD_INGESTED'}
                             </span>
                           </td>
 
                           {/* Next Run */}
-                          <td className="px-4 text-center text-zinc-650 font-mono text-[11px] py-3">
+                          <td className="px-4 text-center text-zinc-400 font-mono text-[11px] py-3">
                             -
                           </td>
 
                           {/* Execution / Actions count */}
-                          <td className="px-4 text-center font-bold text-zinc-300 py-3">
+                          <td className="px-4 text-center font-bold text-zinc-700 dark:text-zinc-300 py-3">
                             {wf.execution_count}
                           </td>
 
                           {/* Last Modified */}
-                          <td className="px-4 text-zinc-500 font-mono text-[11px] py-3">
+                          <td className="px-4 text-zinc-400 font-mono text-[11px] py-3">
                             {modifiedDate}
                           </td>
 
@@ -629,7 +629,7 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                           <td className="px-4 text-right relative py-3" onClick={e => e.stopPropagation()}>
                             <button
                               onClick={() => setActiveMenuId(activeMenuId === wf.id ? null : wf.id)}
-                              className="p-1.5 hover:bg-zinc-850 rounded-lg text-zinc-550 hover:text-white"
+                              className="p-1.5 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-white cursor-pointer"
                             >
                               <MoreVertical className="w-4 h-4" />
                             </button>
@@ -637,49 +637,49 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                             {activeMenuId === wf.id && (
                               <div
                                 ref={menuRef}
-                                className="absolute right-4 top-11 mt-1 w-44 bg-zinc-950 border border-zinc-850 rounded-2xl p-1.5 shadow-2xl flex flex-col gap-1 z-40 text-left"
+                                className="absolute right-4 top-11 mt-1 w-44 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-1.5 shadow-2xl flex flex-col gap-1 z-40 text-left"
                               >
                                 <button
                                   onClick={() => handleEditClick(wf)}
-                                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-900 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white transition-colors"
+                                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-zinc-900 rounded-xl text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer"
                                 >
-                                  <Edit className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                                  <Edit className="w-3.5 h-3.5 text-blue-500 shrink-0" />
                                   Edit Node Flow
                                 </button>
                                 
                                 <button
                                   onClick={() => handleDuplicate(wf)}
-                                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-900 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white transition-colors"
+                                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-zinc-900 rounded-xl text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer"
                                 >
-                                  <Copy className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                  <Copy className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                                   Duplicate Flow
                                 </button>
 
                                 <button
                                   onClick={() => handleExecute(wf)}
                                   disabled={executingId === wf.id}
-                                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-900 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white transition-colors"
+                                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-zinc-900 rounded-xl text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer"
                                 >
-                                  <PlayCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                  <PlayCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                                   {executingId === wf.id ? 'Running...' : 'Execute Sequence'}
                                 </button>
                                  
-                                 <button
-                                   onClick={() => {
-                                     setActiveMenuId(null);
-                                     router.push(`/dashboard/integrations/whatsapp-web/workflows/analytics?workflowId=${wf.id}`);
-                                   }}
-                                   className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-900 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white transition-colors"
-                                 >
-                                   <BarChart3 className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                                   View Analytics
-                                 </button>
+                                <button
+                                  onClick={() => {
+                                    setActiveMenuId(null);
+                                    router.push(`/dashboard/integrations/whatsapp-web/workflows/analytics?workflowId=${wf.id}`);
+                                  }}
+                                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-zinc-900 rounded-xl text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer"
+                                >
+                                  <BarChart3 className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                                  View Analytics
+                                </button>
 
-                                <div className="h-[1px] bg-zinc-900 my-0.5" />
+                                <div className="h-[1px] bg-zinc-100 dark:bg-zinc-900 my-0.5" />
 
                                 <button
                                   onClick={() => handleDelete(wf.id)}
-                                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-rose-500/10 rounded-xl text-xs font-semibold text-zinc-500 hover:text-rose-450 transition-colors"
+                                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-xl text-xs font-semibold text-rose-600 dark:text-rose-400 transition-colors cursor-pointer"
                                 >
                                   <Trash2 className="w-3.5 h-3.5 text-rose-500 shrink-0" />
                                   Delete Workflow
@@ -698,21 +698,21 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
           </div>
 
           {/* ═══ BOTTOM CONTROLS & PAGINATION ═══ */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-zinc-500 border-t border-zinc-900/60 pt-4">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-zinc-500 border-t border-zinc-200 dark:border-zinc-800/60 pt-4">
             
             {/* Dense toggle on the left */}
             <div className="flex items-center gap-2.5">
               <button
                 onClick={() => setDense(!dense)}
                 className={`relative w-8.5 h-5 rounded-full p-0.5 transition-colors cursor-pointer ${
-                  dense ? 'bg-emerald-500' : 'bg-zinc-800'
+                  dense ? 'bg-emerald-500' : 'bg-zinc-300 dark:bg-zinc-800'
                 }`}
               >
-                <div className={`w-4 h-4 rounded-full bg-black shadow-md transition-transform ${
+                <div className={`w-4 h-4 rounded-full bg-white dark:bg-black shadow-md transition-transform ${
                   dense ? 'translate-x-3.5' : 'translate-x-0'
                 }`} />
               </button>
-              <span className="font-semibold text-zinc-400">Dense Row Padding</span>
+              <span className="font-semibold text-zinc-600 dark:text-zinc-400">Dense Row Padding</span>
             </div>
 
             {/* Pagination controls on the right */}
@@ -725,7 +725,7 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                     setRowsPerPage(parseInt(e.target.value));
                     setCurrentPage(1);
                   }}
-                  className="bg-zinc-900 border border-zinc-800 rounded-lg p-1 text-xs text-zinc-300 focus:outline-none cursor-pointer"
+                  className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-1 text-xs text-zinc-700 dark:text-zinc-300 focus:outline-none cursor-pointer"
                 >
                   <option value={10}>10</option>
                   <option value={25}>25</option>
@@ -742,14 +742,14 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                 <button
                   disabled={currentPage === 1}
                   onClick={() => setCurrentPage(prev => prev - 1)}
-                  className="p-1.5 bg-zinc-900 border border-zinc-800 hover:text-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  className="p-1.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:text-zinc-900 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
                 </button>
                 <button
                   disabled={currentPage === totalPages}
                   onClick={() => setCurrentPage(prev => prev + 1)}
-                  className="p-1.5 bg-zinc-900 border border-zinc-800 hover:text-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  className="p-1.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:text-zinc-900 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   <ChevronRightIcon className="w-3.5 h-3.5" />
                 </button>
@@ -760,35 +760,35 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
 
         </div>
       ) : (
-        /* ═══ 3D GLASSMORPHISM DRIP BUILDER CONSOLE ═══ */
+        /* ═══ DRIP BUILDER CONSOLE (LIGHT THEME) ═══ */
         <motion.div
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
-          className="p-6 rounded-3xl border border-zinc-800 bg-zinc-950/40 backdrop-blur-md space-y-6 relative overflow-hidden shadow-2xl"
+          className="p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shadow-xl space-y-6 relative overflow-hidden"
         >
           {/* Decorative ambient background glows */}
           <div className="absolute top-0 right-1/4 w-80 h-80 bg-emerald-500/5 rounded-full blur-[100px] pointer-events-none" />
           <div className="absolute bottom-0 left-1/4 w-80 h-80 bg-blue-500/5 rounded-full blur-[100px] pointer-events-none" />
 
           {/* Builder Header */}
-          <div className="flex justify-between items-center pb-4 border-b border-zinc-900 relative z-10">
+          <div className="flex justify-between items-center pb-4 border-b border-zinc-200 dark:border-zinc-800 relative z-10">
             <div>
-              <span className="text-[10px] text-zinc-500 font-mono uppercase tracking-widest block mb-0.5">3D Drip Automation Node Console</span>
-              <h2 className="text-base font-extrabold text-white">
+              <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-mono uppercase tracking-widest block mb-0.5">Drip Automation Sequence Console</span>
+              <h2 className="text-base font-extrabold text-zinc-900 dark:text-white">
                 {editId ? `Modify Sequence: ${name}` : 'Construct New Drip Flow'}
               </h2>
             </div>
             
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-zinc-350">
-                <span className="text-[9px] uppercase font-bold text-zinc-500">Status</span>
+              <div className="flex items-center gap-2 bg-slate-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-zinc-600 dark:text-zinc-350">
+                <span className="text-[9px] uppercase font-bold text-zinc-400 dark:text-zinc-500">Status</span>
                 <button
                   type="button"
                   onClick={() => setWorkflowStatus(prev => prev === 'Active' ? 'Inactive' : 'Active')}
                   className={`relative w-22 h-7 rounded-full p-1 transition-all duration-300 flex items-center cursor-pointer border ${
                     workflowStatus === 'Active'
-                      ? 'bg-emerald-950/60 border-emerald-500/30'
-                      : 'bg-zinc-900 border-zinc-800'
+                      ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-500/30'
+                      : 'bg-slate-100 dark:bg-zinc-900 border-zinc-300 dark:border-zinc-800'
                   }`}
                 >
                   {/* Sliding circle */}
@@ -796,14 +796,14 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                     animate={{ x: workflowStatus === 'Active' ? 56 : 0 }}
                     transition={{ type: 'spring', stiffness: 400, damping: 25 }}
                     className={`w-5 h-5 rounded-full ${
-                      workflowStatus === 'Active' ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]' : 'bg-zinc-650'
+                      workflowStatus === 'Active' ? 'bg-emerald-500 shadow-sm' : 'bg-zinc-400'
                     }`}
                   />
                   {/* Active / Inactive Text */}
                   <span className={`absolute text-[8.5px] font-black uppercase tracking-wider select-none transition-colors duration-300 ${
                     workflowStatus === 'Active' 
-                      ? 'left-2.5 text-emerald-400' 
-                      : 'right-2.5 text-zinc-550'
+                      ? 'left-2.5 text-emerald-600 dark:text-emerald-400' 
+                      : 'right-2.5 text-zinc-500'
                   }`}>
                     {workflowStatus}
                   </span>
@@ -813,7 +813,7 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
               <button
                 type="button"
                 onClick={() => setShowBuilder(false)}
-                className="px-3.5 py-1.5 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-xs font-bold text-zinc-400 hover:text-white rounded-xl transition-all"
+                className="px-3.5 py-1.5 bg-slate-100 dark:bg-zinc-900 hover:bg-slate-200 dark:hover:bg-zinc-850 border border-zinc-200 dark:border-zinc-800 text-xs font-bold text-zinc-700 dark:text-zinc-300 rounded-xl transition-all cursor-pointer"
               >
                 Cancel Editor
               </button>
@@ -825,24 +825,24 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
             {/* Meta Details */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Workflow Name</label>
+                <label className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider block">Workflow Name</label>
                 <input
                   type="text"
                   required
                   placeholder="e.g. Wedding Inbound Automated Welcome"
                   value={name}
                   onChange={e => setName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-zinc-900/60 border border-zinc-800 rounded-xl text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-emerald-500/40"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs text-zinc-900 dark:text-zinc-200 placeholder-zinc-400 focus:outline-none focus:border-emerald-500/60 shadow-sm"
                 />
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Target Contact Group Trigger</label>
+                <label className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider block">Target Contact Group Trigger</label>
                 <select
                   value={targetGroup}
                   required
                   onChange={e => setTargetGroup(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-zinc-900/60 border border-zinc-800 rounded-xl text-xs text-zinc-300 focus:outline-none focus:border-emerald-500/40 cursor-pointer"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs text-zinc-900 dark:text-zinc-300 focus:outline-none focus:border-emerald-500/60 cursor-pointer shadow-sm"
                 >
                   {groups.length === 0 ? (
                     <option value="">No Contact Groups Found - Create One First</option>
@@ -861,13 +861,13 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
             {/* Workflow Card Nodes Stack */}
             <div className="space-y-5">
               
-              <div className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-widest flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-emerald-400" /> Sequence Drip Nodes
+              <div className="text-[10px] font-mono font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-widest flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-emerald-500" /> Sequence Drip Nodes
               </div>
 
               {steps.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 border border-dashed border-zinc-800 rounded-2xl bg-zinc-900/10 text-zinc-550 text-xs">
-                  <Layers className="w-7 h-7 text-zinc-800 mb-2" />
+                <div className="flex flex-col items-center justify-center py-12 border border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl bg-slate-50/50 dark:bg-zinc-900/10 text-zinc-400 text-xs">
+                  <Layers className="w-7 h-7 text-zinc-300 dark:text-zinc-700 mb-2" />
                   No step nodes configured. Add your first step below.
                 </div>
               ) : (
@@ -875,30 +875,30 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                   {steps.map((step, index) => (
                     <React.Fragment key={index}>
 
-                      {/* 3D Glassmorphic Drip Node with delay inside */}
+                      {/* Drip Node with delay inside */}
                       <div
                         draggable
                         onDragStart={() => handleDragStart(index)}
                         onDragEnter={() => handleDragEnter(index)}
                         onDragEnd={handleDragEnd}
                         onDragOver={(e) => e.preventDefault()}
-                        className="p-5 rounded-2xl backdrop-blur-md bg-white/5 border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.3)] hover:bg-white/10 flex flex-col md:flex-row items-center gap-4 transition-all relative group"
+                        className="p-5 rounded-2xl bg-slate-50/80 dark:bg-white/5 border border-zinc-200 dark:border-white/10 shadow-sm hover:border-zinc-300 dark:hover:bg-white/10 flex flex-col md:flex-row items-center gap-4 transition-all relative group"
                       >
                         {/* Drag Handle & Node Index */}
-                        <div className="flex items-center gap-1.5 cursor-grab active:cursor-grabbing text-zinc-550 hover:text-white transition-colors shrink-0">
+                        <div className="flex items-center gap-1.5 cursor-grab active:cursor-grabbing text-zinc-400 hover:text-zinc-800 transition-colors shrink-0">
                           <GripVertical className="w-4 h-4" />
-                          <span className="text-[10px] font-mono font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-md">
+                          <span className="text-[10px] font-mono font-black text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 px-2 py-0.5 rounded-md">
                             NODE #{index + 1}
                           </span>
                         </div>
 
                         {/* Select Template */}
                         <div className="flex-1 w-full space-y-1">
-                          <label className="text-[9px] font-bold text-zinc-450 uppercase tracking-wider block">Message Template</label>
+                          <label className="text-[9px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider block">Message Template</label>
                           <select
                             value={step.template_name}
                             onChange={(e) => handleUpdateStep(index, 'template_name', e.target.value)}
-                            className="w-full px-3 py-2 bg-zinc-950/80 border border-zinc-800 rounded-lg text-xs text-zinc-300 focus:outline-none focus:border-emerald-500/40"
+                            className="w-full px-3 py-2 bg-white dark:bg-zinc-950/80 border border-zinc-200 dark:border-zinc-800 rounded-lg text-xs text-zinc-800 dark:text-zinc-300 focus:outline-none focus:border-emerald-500/60 shadow-sm"
                           >
                             <option value="">Select Template</option>
                             {templates.map(t => (
@@ -909,8 +909,8 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
 
                         {/* Custom Delay Matrix: Number + Unit */}
                         <div className="w-full md:w-64 space-y-1">
-                          <label className="text-[9px] font-bold text-zinc-455 uppercase tracking-wider flex items-center gap-1">
-                            Delay Cooldown <span className="text-[8px] text-zinc-650 font-mono font-normal">(Relative to Ingestion)</span>
+                          <label className="text-[9px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider flex items-center gap-1">
+                            Delay Cooldown <span className="text-[8px] text-zinc-400 font-mono font-normal">(Relative to Ingestion)</span>
                           </label>
                           <div className="flex gap-2">
                             <input
@@ -920,18 +920,18 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                               placeholder="30"
                               value={step.delay_value}
                               onChange={(e) => handleUpdateStep(index, 'delay_value', parseInt(e.target.value) || 0)}
-                              className="w-20 px-3 py-2 bg-zinc-950/80 border border-zinc-800 rounded-lg text-xs text-zinc-200 placeholder-zinc-650 focus:outline-none text-center focus:border-emerald-500/40"
+                              className="w-20 px-3 py-2 bg-white dark:bg-zinc-950/80 border border-zinc-200 dark:border-zinc-800 rounded-lg text-xs text-zinc-800 dark:text-zinc-200 placeholder-zinc-400 focus:outline-none text-center focus:border-emerald-500/60 shadow-sm"
                             />
                             <select
                               value={step.delay_unit}
                               onChange={(e) => handleUpdateStep(index, 'delay_unit', e.target.value)}
-                              className="flex-1 px-3 py-2 bg-zinc-950/80 border border-zinc-800 rounded-lg text-xs text-zinc-300 focus:outline-none cursor-pointer focus:border-emerald-500/40"
+                              className="flex-1 px-3 py-2 bg-white dark:bg-zinc-950/80 border border-zinc-200 dark:border-zinc-800 rounded-lg text-xs text-zinc-800 dark:text-zinc-300 focus:outline-none cursor-pointer focus:border-emerald-500/60 shadow-sm"
                             >
                               <option value="seconds">Seconds</option>
                               <option value="hours">Hours</option>
                             </select>
                           </div>
-                          <span className="text-[8.5px] text-zinc-550 block font-sans leading-none pt-1">
+                          <span className="text-[8.5px] text-zinc-400 block font-sans leading-none pt-1">
                             Runs exactly {step.delay_value} {step.delay_unit} after lead creation.
                           </span>
                         </div>
@@ -940,19 +940,19 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                         <button
                           type="button"
                           onClick={() => handleDeleteStep(index)}
-                          className="p-2 text-zinc-650 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all shrink-0 md:self-end"
+                          className="p-2 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition-all shrink-0 md:self-end cursor-pointer"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
 
-                      {/* Glowing vertical linking line featuring a fluid animated gradient pulse */}
+                      {/* Linking line */}
                       {index < steps.length - 1 && (
                         <div className="flex flex-col items-center py-2 select-none">
                           <div className="w-[2px] h-8 bg-gradient-to-b from-emerald-500 via-emerald-400 to-transparent relative animate-pulse shadow-[0_0_8px_#10b981]">
                             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
                           </div>
-                          <span className="text-[8px] text-zinc-600 font-mono tracking-widest uppercase my-0.5">drip execution delay flow</span>
+                          <span className="text-[8px] text-zinc-400 font-mono tracking-widest uppercase my-0.5">drip execution delay flow</span>
                         </div>
                       )}
 
@@ -961,25 +961,25 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                 </div>
               )}
 
-              {/* Add Step Button natively placed EXACTLY at bottom of cards stack */}
+              {/* Add Step Button */}
               <div className="pt-3 flex justify-center">
                 <button
                   type="button"
                   onClick={handleAddStep}
-                  className="px-4 py-2 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-zinc-700 text-xs font-bold text-zinc-300 hover:text-white rounded-xl transition-all flex items-center gap-1.5 shadow-sm"
+                  className="px-4 py-2 bg-white dark:bg-zinc-900 hover:bg-slate-50 dark:hover:bg-zinc-850 border border-zinc-200 dark:border-zinc-800 text-xs font-bold text-zinc-700 dark:text-zinc-300 rounded-xl transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
                 >
-                  <Plus className="w-4 h-4 text-emerald-400" /> Add Workflow Node Step
+                  <Plus className="w-4 h-4 text-emerald-500" /> Add Workflow Node Step
                 </button>
               </div>
 
             </div>
 
             {/* Form Save Button */}
-            <div className="pt-5 border-t border-zinc-900 flex justify-end gap-3">
+            <div className="pt-5 border-t border-zinc-200 dark:border-zinc-900 flex justify-end gap-3">
               <button
                 type="submit"
                 disabled={saving}
-                className="px-5 py-2.5 bg-emerald-500 text-black hover:bg-emerald-600 font-extrabold text-xs rounded-xl shadow-md transition-all flex items-center gap-2"
+                className="px-5 py-2.5 bg-emerald-500 text-white hover:bg-emerald-600 font-extrabold text-xs rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer"
               >
                 {saving ? (
                   <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Saving Workflow...</>

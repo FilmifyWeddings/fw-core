@@ -546,17 +546,37 @@ async function sendTemplateMessage(
   }
 
   // ── POLL TEMPLATE ────────────────────────────────────────────────────────
-  if (tpl.tpl_type === 'poll' || (tpl.tpl_payload && tpl.tpl_payload.pollOptions)) {
-    const pollOpts = tpl.tpl_payload.pollOptions || [];
-    const allowMultiple = tpl.tpl_payload.allowMultipleChoice ?? false;
-    const result = await targetSock.sendMessage(to, {
-      poll: {
-        name: body || 'Poll',
-        values: pollOpts,
-        selectableCount: allowMultiple ? pollOpts.length : 1,
-      }
-    });
-    return result?.key?.id ?? null;
+  if (tpl.tpl_type === 'poll' || (tpl.tpl_payload && (tpl.tpl_payload.pollOptions || tpl.tpl_payload.options))) {
+    const rawOpts = tpl.tpl_payload.pollOptions || tpl.tpl_payload.options || [];
+    const cleanOpts: string[] = (Array.isArray(rawOpts) ? rawOpts : [])
+      .map((o: any) => typeof o === 'string' ? o.trim() : (o?.text || o?.value || o?.option || '').trim())
+      .filter((s: string) => s.length > 0);
+
+    if (cleanOpts.length < 2) {
+      if (cleanOpts.length === 1) cleanOpts.push('No / Other');
+      else cleanOpts.push('Yes', 'No');
+    }
+
+    const allowMultiple = tpl.tpl_payload.allowMultipleChoice ?? tpl.tpl_payload.allowMultiple ?? false;
+    const safeSelectableCount = allowMultiple
+      ? cleanOpts.length
+      : Math.min(1, cleanOpts.length);
+
+    try {
+      const result = await targetSock.sendMessage(to, {
+        poll: {
+          name: body || 'Poll',
+          values: cleanOpts,
+          selectableCount: safeSelectableCount,
+        }
+      });
+      return result?.key?.id ?? null;
+    } catch (pollErr: any) {
+      logger.warn({ err: pollErr?.message }, '⚠️ Poll dispatch failed, falling back to clean text dispatch');
+      const textPoll = `${body || 'Poll'}\n\n` + cleanOpts.map((opt, i) => `${i + 1}. ${opt}`).join('\n');
+      const result = await targetSock.sendMessage(to, { text: textPoll });
+      return result?.key?.id ?? null;
+    }
   }
 
   // ── ACTION LINKS (URL / Phone — text-formatted for reliable delivery) ────
@@ -1485,17 +1505,40 @@ function startHealthServer(): http.Server {
             if (!mediaUrl || !mimeType) throw new Error('Missing: mediaUrl, mimeType');
             waMessageId = await sendMediaMessage(jid, mediaUrl, caption ?? '', mimeType, targetWsId);
             break;
-          case 'poll':
+          case 'poll': {
             if (!text) throw new Error('Missing: text (poll name)');
-            const pollResult = await targetSock.sendMessage(jid, {
-              poll: {
-                name: text,
-                values: pollOptions || [],
-                selectableCount: pollSelectableCount ?? 1
-              }
-            });
-            waMessageId = pollResult?.key?.id ?? null;
+            const rawOpts = pollOptions || payload.options || [];
+            const cleanOpts: string[] = (Array.isArray(rawOpts) ? rawOpts : [])
+              .map((o: any) => typeof o === 'string' ? o.trim() : (o?.text || o?.value || o?.option || '').trim())
+              .filter((s: string) => s.length > 0);
+
+            if (cleanOpts.length < 2) {
+              if (cleanOpts.length === 1) cleanOpts.push('No / Other');
+              else cleanOpts.push('Yes', 'No');
+            }
+
+            const safeSelectableCount = Math.min(
+              Math.max(1, pollSelectableCount || 1),
+              cleanOpts.length
+            );
+
+            try {
+              const pollResult = await targetSock.sendMessage(jid, {
+                poll: {
+                  name: text,
+                  values: cleanOpts,
+                  selectableCount: safeSelectableCount
+                }
+              });
+              waMessageId = pollResult?.key?.id ?? null;
+            } catch (pollErr: any) {
+              logger.warn({ err: pollErr?.message }, '⚠️ /send Poll dispatch failed, falling back to clean text dispatch');
+              const textPoll = `${text}\n\n` + cleanOpts.map((opt, i) => `${i + 1}. ${opt}`).join('\n');
+              const textRes = await targetSock.sendMessage(jid, { text: textPoll });
+              waMessageId = textRes?.key?.id ?? null;
+            }
             break;
+          }
           case 'buttons': {
             const { rawButtons, buttons: payloadButtons } = payload as any;
             const targetButtons = payloadButtons || rawButtons || [];

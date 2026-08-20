@@ -65,6 +65,8 @@ interface StepLog {
 
 interface ExecutionRow {
   leadId: string;
+  workflowId?: string;
+  workflowName?: string;
   name: string;
   phone: string;
   status: 'completed' | 'running' | 'failed' | 'not_started';
@@ -249,23 +251,27 @@ function WorkflowAnalyticsInner() {
       setWorkflows(wfList);
 
       let currentWorkflow = selectedWorkflow;
-      if (wfList.length > 0 && !selectedWorkflow) {
-        const matched = urlWorkflowId ? wfList.find(w => w.id === urlWorkflowId) : null;
-        currentWorkflow = matched || wfList[0];
+      if (!selectedWorkflow) {
+        if (urlWorkflowId && urlWorkflowId !== 'all') {
+          const matched = wfList.find(w => w.id === urlWorkflowId);
+          currentWorkflow = matched || { id: 'all', workflow_name: 'All Workflows', target_group_id: null, workflow_steps: [], execution_count: 0, status: 'Active' };
+        } else {
+          currentWorkflow = { id: 'all', workflow_name: 'All Workflows', target_group_id: null, workflow_steps: [], execution_count: 0, status: 'Active' };
+        }
         setSelectedWorkflow(currentWorkflow);
       }
 
-      if (!currentWorkflow) { setExecutions([]); return; }
+      const wfParam = currentWorkflow?.id || 'all';
 
       // 2. Fetch server-calculated executions telemetry
-      const resp = await fetch(`/api/integrations/whatsapp/workflows/execution?tenant_id=${tenantId}&workflow_id=${currentWorkflow.id}`);
+      const resp = await fetch(`/api/integrations/whatsapp/workflows/execution?tenant_id=${tenantId}&workflow_id=${wfParam}`);
       const data = await resp.json();
       if (data.success) {
         setExecutions(data.executions || []);
         
         // Also update selected execution details if open
         if (selectedExecution) {
-          const updated = (data.executions || []).find((r: any) => r.leadId === selectedExecution.leadId);
+          const updated = (data.executions || []).find((r: any) => r.leadId === selectedExecution.leadId && (!r.workflowId || r.workflowId === selectedExecution.workflowId));
           if (updated) setSelectedExecution(updated);
         }
       } else {
@@ -301,12 +307,16 @@ function WorkflowAnalyticsInner() {
 
   // Workflow switch handler
   const handleWorkflowChange = (wfId: string) => {
-    const wf = workflows.find(w => w.id === wfId);
-    if (wf) {
-      setSelectedWorkflow(wf);
-      setExecutions([]);
-      setLoading(true);
+    if (wfId === 'all') {
+      setSelectedWorkflow({ id: 'all', workflow_name: 'All Workflows', target_group_id: null, workflow_steps: [], execution_count: 0, status: 'Active' });
+    } else {
+      const wf = workflows.find(w => w.id === wfId);
+      if (wf) {
+        setSelectedWorkflow(wf);
+      }
     }
+    setExecutions([]);
+    setLoading(true);
   };
 
   useEffect(() => {
@@ -553,11 +563,11 @@ function WorkflowAnalyticsInner() {
           {/* Workflow selector */}
           <div className="relative">
             <select
-              value={selectedWorkflow?.id || ''}
+              value={selectedWorkflow?.id || 'all'}
               onChange={e => handleWorkflowChange(e.target.value)}
-              className="appearance-none pl-3 pr-8 py-2 bg-zinc-100 dark:bg-zinc-900/80 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs text-zinc-900 dark:text-zinc-200 focus:outline-none focus:border-amber-500/40 cursor-pointer"
+              className="appearance-none pl-3 pr-8 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs font-semibold text-zinc-900 dark:text-zinc-200 focus:outline-none focus:border-amber-500/40 cursor-pointer shadow-sm"
             >
-              {workflows.length === 0 && <option value="">No workflows</option>}
+              <option value="all">🌟 All Workflows (Track All)</option>
               {workflows.map(wf => (
                 <option key={wf.id} value={wf.id}>{wf.workflow_name}</option>
               ))}
@@ -712,7 +722,14 @@ function WorkflowAnalyticsInner() {
                       <div className="w-7 h-7 rounded-full bg-zinc-200 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 flex items-center justify-center text-[10px] font-black text-amber-500 dark:text-amber-400 shrink-0">
                         {row.name.charAt(0).toUpperCase()}
                       </div>
-                      <span className="font-semibold text-zinc-900 dark:text-zinc-200 truncate max-w-[120px]">{row.name}</span>
+                      <div className="min-w-0">
+                        <span className="font-semibold text-zinc-900 dark:text-zinc-200 truncate max-w-[140px] block">{row.name}</span>
+                        {row.workflowName && (
+                          <span className="inline-block mt-0.5 text-[9px] px-1.5 py-0.2 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 font-bold">
+                            {row.workflowName}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </td>
 
