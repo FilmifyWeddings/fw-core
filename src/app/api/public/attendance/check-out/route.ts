@@ -35,6 +35,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No active check-in found for today' }, { status: 404 });
     }
 
+    if (record.check_out_time) {
+      return NextResponse.json({ error: 'Already checked out for today', record }, { status: 409 });
+    }
+
     // 3. Close open break if any
     const nowTime = new Date();
     await supabaseAdmin
@@ -80,12 +84,17 @@ export async function POST(request: NextRequest) {
         const filename = `${link.workspace_id}/${link.member_id}/${nowTime.getFullYear()}/${String(nowTime.getMonth() + 1).padStart(2, '0')}/${String(nowTime.getDate()).padStart(2, '0')}/out_${Date.now()}.webp`;
 
         const { data: uploadData } = await supabaseAdmin.storage
-          .from('attendance_selfies')
+          .from('attendance-selfies')
           .upload(filename, buffer, { contentType: 'image/webp', upsert: true });
 
-        if (uploadData) photoPath = uploadData.path;
+        if (uploadData) {
+          const { data: urlData } = supabaseAdmin.storage
+            .from('attendance-selfies')
+            .getPublicUrl(uploadData.path);
+          photoPath = urlData.publicUrl || uploadData.path;
+        }
       } catch (ex) {
-        console.error('Checkout photo upload ex:', ex);
+        console.error('Checkout photo upload exception:', ex);
       }
     }
 
@@ -102,39 +111,27 @@ export async function POST(request: NextRequest) {
       updated_at: nowTime.toISOString()
     };
 
-    const { data: updated, error: updateErr } = await supabaseAdmin
+    const { data: updatedRecord, error: updErr } = await supabaseAdmin
       .from('attendance_records')
       .update(updatePayload)
       .eq('id', record.id)
-      .select()
+      .select('*')
       .single();
 
-    if (updateErr) {
-      return NextResponse.json({ error: updateErr.message }, { status: 500 });
-    }
+    if (updErr) throw updErr;
 
-    // Audit Log
-    await supabaseAdmin.from('attendance_audit_logs').insert([{
-      user_id: link.user_id,
-      workspace_id: link.workspace_id,
-      action: 'CHECK_OUT',
-      entity_type: 'attendance_record',
-      entity_id: record.id,
-      performed_by: link.member_id,
-      new_value: updatePayload,
-      reason: 'Mobile check-out'
-    }]);
+    const workHoursFormatted = `${Math.floor(netWorkMinutes / 60)}h ${netWorkMinutes % 60}m`;
 
     return NextResponse.json({
       success: true,
-      record: updated,
-      netWorkMinutes,
-      totalBreakMinutes,
-      overtimeMinutes
+      record: updatedRecord,
+      workDurationMinutes: netWorkMinutes,
+      overtimeMinutes,
+      message: `Checked out at ${nowTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (Total Work: ${workHoursFormatted})`
     });
 
   } catch (err: any) {
     console.error('Check-out error:', err);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    return NextResponse.json({ error: err.message || 'Internal Server Error' }, { status: 500 });
   }
 }

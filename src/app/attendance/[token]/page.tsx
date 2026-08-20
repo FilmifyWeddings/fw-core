@@ -5,9 +5,13 @@ import { useParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Clock, MapPin, Camera, CheckCircle2, AlertCircle, Coffee, 
-  LogOut, RefreshCw, ShieldCheck, Sparkles, AlertTriangle, Wifi, WifiOff, X
+  LogOut, RefreshCw, ShieldCheck, Sparkles, AlertTriangle, Wifi, WifiOff, X,
+  Calendar, Send, ChevronRight, Check, History, Plane
 } from 'lucide-react';
 import type { AttendanceRecord, AttendanceBreak, AttendanceLocation } from '@/types';
+import { validateCoordinatesAgainstGeofences, GeofenceValidationResult } from '@/lib/attendance/geo-fence';
+import { captureAndCompressVideoFrame } from '@/lib/attendance/image-compression';
+import { saveOfflinePunch, getOfflinePunches, removeOfflinePunch } from '@/lib/attendance/offline-store';
 
 export default function PersonalAttendancePage() {
   const params = useParams();
@@ -18,8 +22,12 @@ export default function PersonalAttendancePage() {
   const [todayRecord, setTodayRecord] = useState<AttendanceRecord | null>(null);
   const [activeBreak, setActiveBreak] = useState<AttendanceBreak | null>(null);
   const [locations, setLocations] = useState<AttendanceLocation[]>([]);
+  const [shifts, setShifts] = useState<any[]>([]);
+  const [monthlyHistory, setMonthlyHistory] = useState<any[]>([]);
+  const [recentLeaves, setRecentLeaves] = useState<any[]>([]);
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
   const [isOnline, setIsOnline] = useState<boolean>(true);
+  const [offlineQueueCount, setOfflineQueueCount] = useState<number>(0);
 
   // Verification modal state
   const [showVerifyModal, setShowVerifyModal] = useState<'check_in' | 'check_out' | null>(null);
@@ -27,8 +35,22 @@ export default function PersonalAttendancePage() {
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [gpsLocation, setGpsLocation] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
   const [gpsError, setGpsError] = useState<string | null>(null);
+  const [geofenceResult, setGeofenceResult] = useState<GeofenceValidationResult | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [successAnimation, setSuccessAnimation] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Modals state
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [leaveSubmitting, setLeaveSubmitting] = useState(false);
+  const [leaveForm, setLeaveForm] = useState({
+    leave_type: 'casual',
+    start_date: new Date().toISOString().split('T')[0],
+    end_date: new Date().toISOString().split('T')[0],
+    reason: ''
+  });
+
+  const [showCalendarModal, setShowCalendarModal] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -50,11 +72,20 @@ export default function PersonalAttendancePage() {
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    checkOfflineQueueCount();
+
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
+
+  const checkOfflineQueueCount = async () => {
+    try {
+      const items = await getOfflinePunches();
+      setOfflineQueueCount(items.length);
+    } catch (_) {}
+  };
 
   // Fetch Attendance Session
   useEffect(() => {
@@ -72,8 +103,12 @@ export default function PersonalAttendancePage() {
         setTodayRecord(data.todayRecord);
         setActiveBreak(data.activeBreak);
         setLocations(data.locations || []);
+        setShifts(data.shifts || []);
+        setMonthlyHistory(data.monthlyHistory || []);
+        setRecentLeaves(data.recentLeaves || []);
       } else {
         console.error('Session error:', data.error);
+        setErrorMessage(data.error || 'Failed to load session');
       }
     } catch (e) {
       console.error('Fetch session failed:', e);
@@ -84,22 +119,21 @@ export default function PersonalAttendancePage() {
 
   // Sync Offline Queue
   const syncOfflineQueue = async () => {
-    const queueStr = localStorage.getItem('fw_offline_attendance');
-    if (!queueStr) return;
-
     try {
-      const queue = JSON.parse(queueStr);
-      if (Array.isArray(queue) && queue.length > 0) {
-        for (const item of queue) {
-          if (item.action === 'check_in') {
-            await fetch('/api/public/attendance/check-in', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(item.payload)
-            });
-          }
+      const punches = await getOfflinePunches();
+      if (punches.length === 0) return;
+
+      const res = await fetch('/api/public/attendance/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ punches })
+      });
+
+      if (res.ok) {
+        for (const p of punches) {
+          await removeOfflinePunch(p.id);
         }
-        localStorage.removeItem('fw_offline_attendance');
+        setOfflineQueueCount(0);
         fetchSession();
       }
     } catch (_) {}
@@ -118,19 +152,28 @@ export default function PersonalAttendancePage() {
   const startCamera = async () => {
     setCameraError(null);
     try {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 640 } },
+        video: {
+          facingMode: 'user',
+          width: { ideal: 640 },
+          height: { ideal: 480 }
+        },
         audio: false
       });
+
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play();
       }
       setCameraActive(true);
     } catch (err: any) {
       console.error('Camera access error:', err);
-      setCameraError('Camera permission denied or camera not found.');
+      setCameraError('Camera access denied or unavailable. Please enable camera permission.');
+      setCameraActive(false);
     }
   };
 
@@ -145,501 +188,676 @@ export default function PersonalAttendancePage() {
   const acquireGPS = () => {
     setGpsError(null);
     if (!navigator.geolocation) {
-      setGpsError('Geolocation is not supported by your browser.');
+      setGpsError('Geolocation is not supported on this browser.');
       return;
     }
 
     navigator.geolocation.getCurrentPosition(
-      pos => {
-        setGpsLocation({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          accuracy: Math.round(pos.coords.accuracy)
-        });
+      (position) => {
+        const coords = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          accuracy: Math.round(position.coords.accuracy)
+        };
+        setGpsLocation(coords);
+
+        // Validate against geofences
+        const res = validateCoordinatesAgainstGeofences(
+          { latitude: coords.lat, longitude: coords.lng },
+          locations
+        );
+        setGeofenceResult(res);
       },
-      err => {
-        console.warn('GPS error:', err.message);
-        setGpsError('GPS location permission required for geofence validation.');
+      (err) => {
+        console.warn('GPS position error:', err);
+        setGpsError('Unable to acquire precise GPS. Please enable high accuracy location.');
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
     );
   };
 
-  // Capture Selfie Canvas to Base64 WebP
-  const captureSelfieBase64 = (): string | null => {
-    if (!videoRef.current) return null;
-    try {
-      const canvas = document.createElement('canvas');
-      canvas.width = 480;
-      canvas.height = 480;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return null;
-
-      // Center crop square
-      const video = videoRef.current;
-      const minDim = Math.min(video.videoWidth, video.videoHeight);
-      const startX = (video.videoWidth - minDim) / 2;
-      const startY = (video.videoHeight - minDim) / 2;
-
-      ctx.drawImage(video, startX, startY, minDim, minDim, 0, 0, 480, 480);
-      return canvas.toDataURL('image/webp', 0.8);
-    } catch (e) {
-      console.error('Capture frame error:', e);
-      return null;
-    }
-  };
-
-  // Submit Check-In
-  const handleVerifyCheckIn = async () => {
+  // Submit Punch (Check-In or Check-Out)
+  const handleExecutePunch = async () => {
+    if (!showVerifyModal) return;
     setVerifying(true);
-    const photoBase64 = captureSelfieBase64();
+    setErrorMessage(null);
 
-    const payload = {
-      token,
-      lat: gpsLocation?.lat || null,
-      lng: gpsLocation?.lng || null,
-      accuracy: gpsLocation?.accuracy || null,
-      photoBase64,
-      deviceInfo: {
-        userAgent: navigator.userAgent,
-        screen: `${window.innerWidth}x${window.innerHeight}`
+    try {
+      let compressedSelfie = '';
+      if (videoRef.current && cameraActive) {
+        try {
+          const comp = await captureAndCompressVideoFrame(videoRef.current, 600, 0.55);
+          compressedSelfie = comp.base64;
+        } catch (e) {
+          console.warn('Selfie compression fallback:', e);
+        }
       }
-    };
 
-    if (!navigator.onLine) {
-      // Store in offline queue
-      const existing = JSON.parse(localStorage.getItem('fw_offline_attendance') || '[]');
-      existing.push({ action: 'check_in', payload, timestamp: new Date().toISOString() });
-      localStorage.setItem('fw_offline_attendance', JSON.stringify(existing));
+      // Check Offline mode
+      if (!navigator.onLine) {
+        await saveOfflinePunch({
+          token,
+          action: showVerifyModal,
+          timestamp: new Date().toISOString(),
+          latitude: gpsLocation?.lat || 0,
+          longitude: gpsLocation?.lng || 0,
+          accuracy: gpsLocation?.accuracy || 0,
+          selfieBase64: compressedSelfie
+        });
 
-      setSuccessAnimation('Saved Offline! Will sync automatically.');
-      setTimeout(() => {
+        setOfflineQueueCount(prev => prev + 1);
+        setSuccessAnimation(showVerifyModal === 'check_in' ? 'Punch-In Saved (Offline)' : 'Punch-Out Saved (Offline)');
+        stopCamera();
         setShowVerifyModal(null);
         setVerifying(false);
-        setSuccessAnimation(null);
-      }, 2000);
-      return;
-    }
-
-    try {
-      const res = await fetch('/api/public/attendance/check-in', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json();
-
-      if (res.ok) {
-        setTodayRecord(data.record);
-        setSuccessAnimation(data.geofenceStatus === 'outside_geofence' ? 'Checked in (Outside Geofence)' : 'Check-In Verified!');
-        setTimeout(() => {
-          setShowVerifyModal(null);
-          setVerifying(false);
-          setSuccessAnimation(null);
-        }, 1800);
-      } else {
-        alert(data.error || 'Failed to verify check-in');
-        setVerifying(false);
+        return;
       }
-    } catch (e) {
-      console.error('Check-in error:', e);
-      alert('Network error during check-in');
-      setVerifying(false);
-    }
-  };
 
-  // Submit Check-Out
-  const handleVerifyCheckOut = async () => {
-    setVerifying(true);
-    const photoBase64 = captureSelfieBase64();
-
-    try {
-      const res = await fetch('/api/public/attendance/check-out', {
+      const endpoint = showVerifyModal === 'check_in' ? '/api/public/attendance/check-in' : '/api/public/attendance/check-out';
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           token,
-          lat: gpsLocation?.lat || null,
-          lng: gpsLocation?.lng || null,
-          accuracy: gpsLocation?.accuracy || null,
-          photoBase64
+          lat: gpsLocation?.lat,
+          lng: gpsLocation?.lng,
+          accuracy: gpsLocation?.accuracy,
+          photoBase64: compressedSelfie,
+          deviceInfo: {
+            userAgent: navigator.userAgent,
+            platform: navigator.platform
+          }
         })
       });
+
       const data = await res.json();
 
       if (res.ok) {
-        setTodayRecord(data.record);
-        setSuccessAnimation(`Checked Out! Worked: ${Math.floor((data.netWorkMinutes || 0) / 60)}h ${(data.netWorkMinutes || 0) % 60}m`);
-        setTimeout(() => {
-          setShowVerifyModal(null);
-          setVerifying(false);
-          setSuccessAnimation(null);
-        }, 2200);
+        setSuccessAnimation(data.message || (showVerifyModal === 'check_in' ? 'Checked In Successfully!' : 'Checked Out Successfully!'));
+        stopCamera();
+        setShowVerifyModal(null);
+        fetchSession();
       } else {
-        alert(data.error || 'Failed to check-out');
-        setVerifying(false);
+        setErrorMessage(data.error || 'Failed to submit punch');
       }
-    } catch (e) {
-      alert('Network error during checkout');
+    } catch (err: any) {
+      console.error('Punch execution error:', err);
+      setErrorMessage(err.message || 'Network error occurred');
+    } finally {
       setVerifying(false);
     }
   };
 
-  // Break Toggle
-  const handleToggleBreak = async () => {
-    const action = activeBreak ? 'end' : 'start';
+  // Submit Leave Request
+  const handleApplyLeave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!leaveForm.reason.trim()) return;
+    setLeaveSubmitting(true);
+
     try {
-      const res = await fetch('/api/public/attendance/break', {
+      const res = await fetch('/api/public/attendance/leave', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, action, breakType: 'lunch' })
+        body: JSON.stringify({
+          token,
+          leave_type: leaveForm.leave_type,
+          start_date: leaveForm.start_date,
+          end_date: leaveForm.end_date,
+          reason: leaveForm.reason
+        })
       });
+
       const data = await res.json();
       if (res.ok) {
-        setActiveBreak(action === 'start' ? data.activeBreak : null);
+        setShowLeaveModal(false);
+        setLeaveForm({
+          leave_type: 'casual',
+          start_date: new Date().toISOString().split('T')[0],
+          end_date: new Date().toISOString().split('T')[0],
+          reason: ''
+        });
+        setSuccessAnimation('Leave Application Submitted for Review!');
+        fetchSession();
       } else {
-        alert(data.error || 'Failed to update break status');
+        alert(data.error || 'Failed to apply leave');
       }
-    } catch (_) {
-      alert('Network error');
+    } catch (e: any) {
+      alert(e.message || 'Error applying leave');
+    } finally {
+      setLeaveSubmitting(false);
     }
   };
 
-  // Dynamic Greeting based on time of day
-  const hour = currentTime.getHours();
-  const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
-
-  // Calculate elapsed working timer
-  const getElapsedTimeString = () => {
-    if (!todayRecord?.check_in_time) return '00h 00m';
-    const start = new Date(todayRecord.check_in_time).getTime();
-    const end = todayRecord.check_out_time ? new Date(todayRecord.check_out_time).getTime() : currentTime.getTime();
-    const diffMin = Math.max(0, Math.floor((end - start) / 60000));
-    const h = Math.floor(diffMin / 60);
-    const m = diffMin % 60;
-    return `${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m`;
+  // Calculate live working duration
+  const getLiveDurationString = () => {
+    if (!todayRecord || !todayRecord.check_in_time) return '0h 00m';
+    const startMs = new Date(todayRecord.check_in_time).getTime();
+    const endMs = todayRecord.check_out_time ? new Date(todayRecord.check_out_time).getTime() : currentTime.getTime();
+    const diffMin = Math.max(0, Math.floor((endMs - startMs) / 60000) - (todayRecord.break_duration_minutes || 0));
+    const hrs = Math.floor(diffMin / 60);
+    const mins = diffMin % 60;
+    return `${hrs}h ${mins < 10 ? '0' : ''}${mins}m`;
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#FDFCF7] flex items-center justify-center p-4">
-        <div className="text-center space-y-3">
-          <RefreshCw className="w-8 h-8 text-amber-600 animate-spin mx-auto" />
-          <p className="text-sm font-bold text-slate-700">Loading Workforce Portal...</p>
+      <div className="min-h-screen bg-[#FDFBF7] flex items-center justify-center p-4">
+        <div className="text-center">
+          <RefreshCw className="w-8 h-8 text-[#C89435] animate-spin mx-auto mb-3" />
+          <p className="text-sm font-medium text-[#746E67]">Authenticating attendance portal...</p>
         </div>
       </div>
     );
   }
 
-  if (!member) {
-    return (
-      <div className="min-h-screen bg-[#FDFCF7] flex items-center justify-center p-4">
-        <div className="bg-white p-6 rounded-2xl border border-rose-200 text-center max-w-sm w-full space-y-3 shadow-lg">
-          <AlertCircle className="w-10 h-10 text-rose-500 mx-auto" />
-          <h3 className="text-lg font-black text-slate-900">Invalid Attendance Link</h3>
-          <p className="text-xs text-slate-500">
-            This personal attendance link has expired or is disabled. Please contact your studio manager.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  const isCheckedIn = !!todayRecord?.check_in_time;
-  const isCheckedOut = !!todayRecord?.check_out_time;
+  const isCheckedIn = Boolean(todayRecord?.check_in_time && !todayRecord?.check_out_time);
+  const isCheckedOut = Boolean(todayRecord?.check_out_time);
 
   return (
-    <div className="min-h-screen bg-[#FDFCF7] text-slate-900 flex flex-col justify-between font-sans selection:bg-amber-100">
-      
-      {/* ─────────────────────────────────────────────────────────────
-          TOP MOBILE CONTAINER (MAX 440PX)
-      ───────────────────────────────────────────────────────────── */}
-      <div className="w-full max-w-md mx-auto p-5 space-y-5">
-
-        {/* Studio Branding & Offline Pill */}
+    <div className="min-h-screen bg-[#FDFBF7] text-[#211B17] flex flex-col justify-between max-w-md mx-auto relative shadow-2xl overflow-hidden border-x border-[#EFE8DC]">
+      {/* Top App Bar */}
+      <header className="px-5 pt-6 pb-4 bg-white border-b border-[#F0E8DC] sticky top-0 z-30">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-500 to-yellow-500 flex items-center justify-center text-white shadow-xs">
-              <Sparkles className="w-4 h-4" />
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[#C89435] to-[#8C6D33] text-white font-bold flex items-center justify-center shadow-md text-base">
+              {member?.name ? member.name.charAt(0).toUpperCase() : 'U'}
             </div>
-            <span className="text-xs font-black tracking-wider uppercase text-slate-800">Filmify Workforce</span>
+            <div>
+              <h1 className="text-[15px] font-bold text-[#211B17] leading-tight flex items-center gap-1.5">
+                <span>{member?.name || 'Team Member'}</span>
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9.5px] font-semibold bg-[#FAF3E6] text-[#8C6D33] border border-[#E9DFD2]">
+                  {member?.primary_role || 'Staff'}
+                </span>
+              </h1>
+              <div className="text-[11px] text-[#8C847B] flex items-center gap-1 mt-0.5">
+                <Clock className="w-3 h-3 text-[#C89435]" />
+                <span>{currentTime.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
+              </div>
+            </div>
           </div>
 
-          {!isOnline ? (
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 flex items-center gap-1 border border-rose-200">
-              <WifiOff className="w-3 h-3" /> Offline
-            </span>
+          <div className="flex items-center gap-2">
+            {isOnline ? (
+              <span className="flex items-center gap-1 px-2 py-1 rounded-full bg-[#E8F5E9] text-[#2E7D32] text-[10px] font-semibold border border-[#C8E6C9]">
+                <Wifi className="w-2.5 h-2.5" />
+                <span>Online</span>
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 px-2 py-1 rounded-full bg-[#FFEBEE] text-[#C62828] text-[10px] font-semibold border border-[#FFCDD2] animate-pulse">
+                <WifiOff className="w-2.5 h-2.5" />
+                <span>Offline</span>
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Offline Queue Notification Pill */}
+        {offlineQueueCount > 0 && (
+          <div className="mt-3 p-2 bg-[#FFF8E1] border border-[#FFE082] rounded-[10px] text-[11px] text-[#F57F17] flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>{offlineQueueCount} offline punch(es) pending auto-sync</span>
+            </div>
+            {isOnline && (
+              <button 
+                onClick={syncOfflineQueue}
+                className="text-[10.5px] font-bold text-[#E65100] underline"
+              >
+                Sync Now
+              </button>
+            )}
+          </div>
+        )}
+      </header>
+
+      {/* Main Body Stage */}
+      <main className="flex-1 p-5 flex flex-col justify-between">
+        {/* Live Clock & Shift Badge */}
+        <div className="text-center my-2">
+          <div className="text-[44px] font-black tracking-tight text-[#211B17] font-mono leading-none">
+            {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+          </div>
+          <p className="text-[12px] text-[#8C847B] font-medium mt-1">
+            {shifts[0]?.name ? `${shifts[0].name} (${shifts[0].start_time.substring(0, 5)} - ${shifts[0].end_time.substring(0, 5)})` : 'Standard Studio Shift (09:30 AM - 06:30 PM)'}
+          </p>
+        </div>
+
+        {/* Status Card & Geofence Indicator */}
+        <div className="bg-white rounded-[20px] p-4 border border-[#F0E8DC] shadow-sm mb-4">
+          <div className="flex items-center justify-between mb-3 pb-3 border-b border-[#F7F2EA]">
+            <div>
+              <span className="text-[10.5px] uppercase font-bold tracking-wider text-[#99928A] block">Today's Status</span>
+              <div className="flex items-center gap-2 mt-0.5">
+                {isCheckedOut ? (
+                  <span className="px-2.5 py-0.5 rounded-full text-[12px] font-bold bg-[#ECEFF1] text-[#455A64]">
+                    Checked Out
+                  </span>
+                ) : isCheckedIn ? (
+                  <span className="px-2.5 py-0.5 rounded-full text-[12px] font-bold bg-[#E8F5E9] text-[#2E7D32] flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-[#2E7D32] animate-ping" />
+                    On Duty ({todayRecord?.status.toUpperCase()})
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-0.5 rounded-full text-[12px] font-bold bg-[#FFF3E0] text-[#E65100]">
+                    Not Punched In
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="text-right">
+              <span className="text-[10.5px] uppercase font-bold tracking-wider text-[#99928A] block">Working Duration</span>
+              <span className="text-[16px] font-bold text-[#211B17] font-mono">
+                {getLiveDurationString()}
+              </span>
+            </div>
+          </div>
+
+          {/* Today Timeline Points */}
+          <div className="grid grid-cols-2 gap-2 text-[11.5px]">
+            <div className="bg-[#FAF8F3] p-2.5 rounded-[12px] border border-[#F2ECE2]">
+              <span className="text-[#8C847B] text-[10px] block">Punch In</span>
+              <span className="font-semibold text-[#211B17]">
+                {todayRecord?.check_in_time ? new Date(todayRecord.check_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
+              </span>
+              {todayRecord?.late_minutes ? (
+                <span className="text-[9.5px] text-[#C62828] block">({todayRecord.late_minutes}m late)</span>
+              ) : null}
+            </div>
+
+            <div className="bg-[#FAF8F3] p-2.5 rounded-[12px] border border-[#F2ECE2]">
+              <span className="text-[#8C847B] text-[10px] block">Punch Out</span>
+              <span className="font-semibold text-[#211B17]">
+                {todayRecord?.check_out_time ? new Date(todayRecord.check_out_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
+              </span>
+              {todayRecord?.overtime_minutes ? (
+                <span className="text-[9.5px] text-[#2E7D32] block">(+{todayRecord.overtime_minutes}m OT)</span>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        {/* Primary Action Button (Big Mobile Punch Button) */}
+        <div className="my-3 flex flex-col items-center">
+          {!isCheckedIn ? (
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setShowVerifyModal('check_in')}
+              className="w-44 h-44 rounded-full bg-gradient-to-tr from-[#2E7D32] via-[#388E3C] to-[#4CAF50] text-white font-bold flex flex-col items-center justify-center shadow-[0_12px_36px_rgba(46,125,50,0.38)] border-4 border-white active:shadow-inner"
+            >
+              <Camera className="w-10 h-10 mb-1" />
+              <span className="text-[17px] tracking-wide uppercase font-black">PUNCH IN</span>
+              <span className="text-[10px] text-white/80 font-medium">Selfie + Geo-Verify</span>
+            </motion.button>
+          ) : !isCheckedOut ? (
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setShowVerifyModal('check_out')}
+              className="w-44 h-44 rounded-full bg-gradient-to-tr from-[#D32F2F] via-[#E53935] to-[#EF5350] text-white font-bold flex flex-col items-center justify-center shadow-[0_12px_36px_rgba(211,47,47,0.38)] border-4 border-white active:shadow-inner"
+            >
+              <LogOut className="w-10 h-10 mb-1" />
+              <span className="text-[17px] tracking-wide uppercase font-black">PUNCH OUT</span>
+              <span className="text-[10px] text-white/80 font-medium">End Daily Shift</span>
+            </motion.button>
           ) : (
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 flex items-center gap-1 border border-emerald-200">
-              <Wifi className="w-3 h-3" /> Online
-            </span>
+            <div className="w-44 h-44 rounded-full bg-[#ECEFF1] text-[#546E7A] font-bold flex flex-col items-center justify-center border-4 border-white shadow-md">
+              <CheckCircle2 className="w-10 h-10 mb-1 text-[#2E7D32]" />
+              <span className="text-[15px] font-black">COMPLETED</span>
+              <span className="text-[10px] text-[#78909C]">Shift finished for today</span>
+            </div>
           )}
         </div>
 
-        {/* Personalized Employee Greeting Card */}
-        <div className="bg-white p-5 rounded-3xl border border-amber-200/80 shadow-sm space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-extrabold text-amber-700 uppercase tracking-wider">{greeting},</p>
-              <h2 className="text-2xl font-black text-slate-900 tracking-tight">{member.name}</h2>
-              <span className="inline-block mt-0.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">
-                {member.primary_role || 'Crew Member'}
-              </span>
-            </div>
+        {/* Action Shortcuts Bar */}
+        <div className="grid grid-cols-2 gap-3 mt-4">
+          <button
+            onClick={() => setShowLeaveModal(true)}
+            className="flex items-center justify-center gap-2 py-3 px-4 bg-white border border-[#E9DFD2] rounded-[14px] text-[12px] font-semibold text-[#211B17] shadow-xs hover:border-[#C89435] transition-all"
+          >
+            <Plane className="w-4 h-4 text-[#C89435]" />
+            <span>Apply Leave</span>
+          </button>
 
-            {/* Avatar */}
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-200 to-yellow-100 border-2 border-amber-300 flex items-center justify-center text-amber-900 font-black text-xl shadow-xs overflow-hidden">
-              {member.avatar_url ? (
-                <img src={member.avatar_url} alt={member.name} className="w-full h-full object-cover" />
-              ) : (
-                member.name.slice(0, 2).toUpperCase()
-              )}
-            </div>
-          </div>
-
-          {/* Date & Live Clock */}
-          <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-            <span className="font-semibold text-slate-500">
-              {currentTime.toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'short', year: 'numeric' })}
-            </span>
-            <span className="font-black text-slate-900 font-mono tracking-wide text-sm bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200">
-              {currentTime.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-            </span>
-          </div>
+          <button
+            onClick={() => setShowCalendarModal(true)}
+            className="flex items-center justify-center gap-2 py-3 px-4 bg-white border border-[#E9DFD2] rounded-[14px] text-[12px] font-semibold text-[#211B17] shadow-xs hover:border-[#C89435] transition-all"
+          >
+            <Calendar className="w-4 h-4 text-[#1976D2]" />
+            <span>My Attendance</span>
+          </button>
         </div>
+      </main>
 
-        {/* ─────────────────────────────────────────────────────────────
-            MAIN INTERACTIVE WORKFORCE STATE AREA
-        ───────────────────────────────────────────────────────────── */}
-        {!isCheckedIn ? (
-          /* ── 1. PRE-CHECK IN: BIG CHECK IN BUTTON ── */
-          <div className="bg-white p-6 rounded-3xl border border-amber-200/90 shadow-sm text-center space-y-6">
-            <div className="space-y-1">
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Today's Shift: 09:30 AM → 06:30 PM</p>
-              <h3 className="text-lg font-black text-slate-900">Ready to start your workday?</h3>
-            </div>
+      {/* Footer Branding */}
+      <footer className="py-3 text-center border-t border-[#F0E8DC] bg-white/60 text-[10.5px] text-[#99928A]">
+        StudioCore Enterprise Smart Geo-Attendance & Workforce
+      </footer>
 
-            {/* Giant Glowing Check In Button */}
-            <motion.button
-              whileTap={{ scale: 0.96 }}
-              whileHover={{ scale: 1.02 }}
-              onClick={() => setShowVerifyModal('check_in')}
-              className="w-full py-6 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-lg tracking-wider uppercase shadow-xl shadow-emerald-500/25 border border-emerald-400 flex flex-col items-center justify-center gap-1 transition"
-            >
-              <Camera className="w-8 h-8 stroke-[2.5]" />
-              <span>[ CHECK IN ]</span>
-              <span className="text-[10px] font-bold tracking-normal opacity-90">Selfie & GPS Verification</span>
-            </motion.button>
-
-            {/* Geofence & Camera Indicators */}
-            <div className="flex items-center justify-center gap-4 text-xs font-bold text-slate-500">
-              <span className="flex items-center gap-1 text-emerald-700">
-                <MapPin className="w-3.5 h-3.5" /> GPS Geofence
-              </span>
-              <span>•</span>
-              <span className="flex items-center gap-1 text-emerald-700">
-                <Camera className="w-3.5 h-3.5" /> Face Camera
-              </span>
-            </div>
-          </div>
-        ) : isCheckedOut ? (
-          /* ── 2. POST CHECK-OUT SUMMARY ── */
-          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm text-center space-y-4">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 mx-auto flex items-center justify-center border border-emerald-200">
-              <CheckCircle2 className="w-6 h-6 stroke-[2.5]" />
-            </div>
-            <div>
-              <h3 className="text-lg font-black text-slate-900">Workday Completed!</h3>
-              <p className="text-xs text-slate-500 mt-0.5">Your attendance record has been finalized.</p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-200 text-xs">
-              <div>
-                <span className="text-[10px] font-extrabold text-slate-400 uppercase">Check In</span>
-                <p className="font-black text-slate-800 font-mono mt-0.5">
-                  {todayRecord?.check_in_time ? new Date(todayRecord.check_in_time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—'}
-                </p>
-              </div>
-              <div>
-                <span className="text-[10px] font-extrabold text-slate-400 uppercase">Check Out</span>
-                <p className="font-black text-slate-800 font-mono mt-0.5">
-                  {todayRecord?.check_out_time ? new Date(todayRecord.check_out_time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—'}
-                </p>
-              </div>
-            </div>
-
-            <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-200 flex items-center justify-between text-xs font-extrabold">
-              <span className="text-emerald-800">Total Net Hours:</span>
-              <span className="text-emerald-900 font-mono text-sm">
-                {Math.floor((todayRecord?.work_duration_minutes || 0) / 60)}h {(todayRecord?.work_duration_minutes || 0) % 60}m
-              </span>
-            </div>
-          </div>
-        ) : (
-          /* ── 3. ACTIVELY WORKING STATE ── */
-          <div className="bg-white p-6 rounded-3xl border border-emerald-200/90 shadow-sm text-center space-y-5 relative overflow-hidden">
-            <div className="flex items-center justify-between">
-              <span className="px-3 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1.5 animate-pulse">
-                <span className="w-2 h-2 rounded-full bg-emerald-600" />
-                {activeBreak ? 'On Break' : 'You are Working'}
-              </span>
-
-              <span className="text-xs font-bold text-slate-500 font-mono">
-                In: {todayRecord?.check_in_time ? new Date(todayRecord.check_in_time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—'}
-              </span>
-            </div>
-
-            {/* Live Stopwatch Elapsed Working Timer */}
-            <div className="py-3 bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl shadow-inner space-y-1">
-              <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Active Working Time</p>
-              <h4 className="text-3xl font-black font-mono tracking-wider text-emerald-400">
-                {getElapsedTimeString()}
-              </h4>
-            </div>
-
-            {/* Break & Check Out Action Buttons */}
-            <div className="grid grid-cols-2 gap-3 pt-2">
-              <button
-                onClick={handleToggleBreak}
-                className={`py-3 px-4 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 border shadow-2xs ${
-                  activeBreak
-                    ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600'
-                    : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300'
-                }`}
-              >
-                <Coffee className="w-4 h-4" />
-                {activeBreak ? 'End Break' : 'Take Break'}
-              </button>
-
-              <button
-                onClick={() => setShowVerifyModal('check_out')}
-                className="py-3 px-4 rounded-xl text-xs font-black text-white bg-rose-600 hover:bg-rose-700 border border-rose-700 transition flex items-center justify-center gap-1.5 shadow-2xs"
-              >
-                <LogOut className="w-4 h-4" />
-                Check Out
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Location & Guidelines Mini Card */}
-        <div className="p-4 bg-amber-50/60 rounded-2xl border border-amber-200/60 text-xs space-y-1.5">
-          <p className="font-extrabold text-slate-800 flex items-center gap-1">
-            <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
-            Attendance Guidelines:
-          </p>
-          <p className="text-slate-500 text-[11px] leading-relaxed">
-            Attendance captures a live verification selfie and GPS coordinate. Ensure you are within your designated studio or event venue radius.
-          </p>
-        </div>
-
-      </div>
-
-      {/* ─────────────────────────────────────────────────────────────
-          FULL-SCREEN MOBILE CAMERA & GPS VERIFICATION MODAL
-      ───────────────────────────────────────────────────────────── */}
+      {/* ========================================================= */}
+      {/* 1. CAMERA & BIOMETRIC VERIFICATION MODAL */}
+      {/* ========================================================= */}
       <AnimatePresence>
         {showVerifyModal && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-slate-950 text-white flex flex-col justify-between p-5"
+            className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex flex-col justify-between p-4 max-w-md mx-auto"
           >
             {/* Modal Header */}
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-[10px] font-black uppercase text-amber-400 tracking-wider">Attendance Verification</span>
-                <h3 className="text-lg font-black text-white">
-                  {showVerifyModal === 'check_in' ? 'Check-In Selfie Scan' : 'Check-Out Verification'}
+            <div className="flex items-center justify-between text-white pt-2">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-[#4CAF50]" />
+                <h3 className="text-base font-bold">
+                  {showVerifyModal === 'check_in' ? 'Selfie Punch In' : 'Selfie Punch Out'}
                 </h3>
               </div>
               <button
                 onClick={() => setShowVerifyModal(null)}
-                className="p-2 rounded-full bg-white/10 text-slate-300 hover:text-white"
+                className="w-8 h-8 rounded-full bg-white/10 text-white flex items-center justify-center"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Center: Live Camera Feed with Animated Face Scanner Frame */}
-            <div className="relative w-full max-w-xs mx-auto aspect-square rounded-3xl overflow-hidden bg-slate-900 border-2 border-amber-400 shadow-2xl flex items-center justify-center">
-              {cameraError ? (
-                <div className="p-4 text-center space-y-2 text-xs text-rose-400">
-                  <AlertTriangle className="w-8 h-8 mx-auto text-rose-500" />
-                  <p>{cameraError}</p>
+            {/* Live Camera Viewport with Oval Biometric Face Guide */}
+            <div className="relative w-full aspect-[3/4] bg-black rounded-[24px] overflow-hidden border-2 border-white/20 my-auto flex items-center justify-center">
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-full object-cover transform -scale-x-100"
+              />
+
+              {/* Biometric Oval Overlay */}
+              <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                <div className="w-[62%] h-[72%] rounded-[50%] border-2 border-dashed border-[#C89435]/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.4)] flex flex-col items-center justify-between p-4">
+                  <span className="text-[10.5px] text-white/90 bg-black/60 px-2 py-0.5 rounded-full">
+                    Align Face in Oval
+                  </span>
+                  <Sparkles className="w-5 h-5 text-[#C89435] animate-spin" />
+                  <span className="text-[10px] text-white/70">
+                    Auto-Compressing WebP &lt; 40KB
+                  </span>
                 </div>
-              ) : (
-                <>
-                  <video
-                    ref={videoRef}
-                    playsInline
-                    muted
-                    autoPlay
-                    className="w-full h-full object-cover"
-                  />
-
-                  {/* Circular Face Alignment Overlay */}
-                  <div className="absolute inset-0 border-4 border-dashed border-amber-400/70 rounded-full m-6 pointer-events-none animate-pulse" />
-
-                  {/* Scanning HUD line animation */}
-                  <motion.div
-                    animate={{ y: [-120, 120, -120] }}
-                    transition={{ repeat: Infinity, duration: 2.5, ease: 'linear' }}
-                    className="absolute left-0 right-0 h-1 bg-gradient-to-r from-transparent via-amber-400 to-transparent shadow-lg shadow-amber-400"
-                  />
-                </>
-              )}
-
-              {/* Success Overlay Animation */}
-              {successAnimation && (
-                <motion.div
-                  initial={{ scale: 0.8, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  className="absolute inset-0 bg-emerald-600/95 flex flex-col items-center justify-center p-4 text-center space-y-2 z-20"
-                >
-                  <CheckCircle2 className="w-14 h-14 text-white stroke-[2.5] animate-bounce" />
-                  <h4 className="text-xl font-black text-white">{successAnimation}</h4>
-                </motion.div>
-              )}
-            </div>
-
-            {/* Bottom: GPS Status & Capture Button */}
-            <div className="w-full max-w-xs mx-auto space-y-3">
-              {/* GPS Status Pill */}
-              <div className="p-2.5 bg-white/10 backdrop-blur-md rounded-xl text-center text-xs flex items-center justify-center gap-2">
-                <MapPin className={`w-4 h-4 ${gpsLocation ? 'text-emerald-400' : 'text-amber-400 animate-pulse'}`} />
-                <span className="font-semibold text-slate-200">
-                  {gpsLocation
-                    ? `GPS Ready (±${gpsLocation.accuracy}m)`
-                    : gpsError || 'Acquiring GPS location...'}
-                </span>
               </div>
 
-              {/* Confirm Button */}
-              <button
-                disabled={verifying || !!successAnimation}
-                onClick={showVerifyModal === 'check_in' ? handleVerifyCheckIn : handleVerifyCheckOut}
-                className="w-full py-4 rounded-2xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-base tracking-wide uppercase shadow-xl transition flex items-center justify-center gap-2 disabled:opacity-50"
-              >
-                {verifying ? (
-                  <>
-                    <RefreshCw className="w-5 h-5 animate-spin" />
-                    <span>Verifying...</span>
-                  </>
-                ) : (
-                  <>
-                    <Camera className="w-5 h-5" />
-                    <span>{showVerifyModal === 'check_in' ? 'Capture & Check In' : 'Confirm Check Out'}</span>
-                  </>
-                )}
-              </button>
+              {cameraError && (
+                <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center p-6 text-center text-white">
+                  <AlertCircle className="w-8 h-8 text-[#FF5252] mb-2" />
+                  <p className="text-xs text-white/90">{cameraError}</p>
+                  <button
+                    onClick={startCamera}
+                    className="mt-3 px-4 py-1.5 bg-[#C89435] text-white rounded-full text-xs font-semibold"
+                  >
+                    Retry Camera
+                  </button>
+                </div>
+              )}
             </div>
 
+            {/* Real-time GPS Status Badge */}
+            <div className="bg-white/10 backdrop-blur-md rounded-[16px] p-3 text-white text-xs mb-3 border border-white/15">
+              <div className="flex items-center gap-2 mb-1">
+                <MapPin className="w-4 h-4 text-[#4CAF50] flex-shrink-0" />
+                <span className="font-semibold">Live GPS Location</span>
+              </div>
+              {gpsLocation ? (
+                <div>
+                  <div className="flex items-center gap-1.5 text-[11px] text-white/90">
+                    <span className="w-2 h-2 rounded-full bg-[#4CAF50]" />
+                    <span>Accuracy: ±{gpsLocation.accuracy}m</span>
+                  </div>
+                  {geofenceResult && (
+                    <div className={`mt-1 text-[11px] font-medium ${geofenceResult.isWithinGeofence ? 'text-[#81C784]' : 'text-[#FF8A80]'}`}>
+                      {geofenceResult.message}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 text-white/70 text-[11px]">
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                  <span>Acquiring high accuracy GPS coordinates...</span>
+                </div>
+              )}
+              {gpsError && <p className="text-[10.5px] text-[#FF8A80] mt-1">{gpsError}</p>}
+            </div>
+
+            {/* Error banner if rejected */}
+            {errorMessage && (
+              <div className="p-2.5 bg-[#FFCDD2] text-[#C62828] rounded-[10px] text-xs font-medium mb-3">
+                {errorMessage}
+              </div>
+            )}
+
+            {/* Confirm & Punch Button */}
+            <button
+              disabled={verifying}
+              onClick={handleExecutePunch}
+              className={`w-full py-3.5 rounded-[16px] text-sm font-black uppercase tracking-wider text-white shadow-lg flex items-center justify-center gap-2 ${
+                showVerifyModal === 'check_in'
+                  ? 'bg-gradient-to-r from-[#2E7D32] to-[#43A047]'
+                  : 'bg-gradient-to-r from-[#C62828] to-[#E53935]'
+              }`}
+            >
+              {verifying ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>Verifying Biometrics & Geo...</span>
+                </>
+              ) : (
+                <>
+                  <Check className="w-4 h-4" />
+                  <span>Confirm & {showVerifyModal === 'check_in' ? 'Punch In' : 'Punch Out'}</span>
+                </>
+              )}
+            </button>
           </motion.div>
         )}
       </AnimatePresence>
 
+      {/* ========================================================= */}
+      {/* 2. APPLY LEAVE MODAL */}
+      {/* ========================================================= */}
+      <AnimatePresence>
+        {showLeaveModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+          >
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              className="bg-white w-full max-w-md rounded-t-[24px] sm:rounded-[24px] p-6 max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-[#F0E8DC] mb-4">
+                <div className="flex items-center gap-2">
+                  <Plane className="w-5 h-5 text-[#C89435]" />
+                  <h3 className="text-base font-bold text-[#211B17]">Apply for Leave</h3>
+                </div>
+                <button
+                  onClick={() => setShowLeaveModal(false)}
+                  className="w-7 h-7 rounded-full bg-[#FAF8F3] text-[#746E67] flex items-center justify-center"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleApplyLeave} className="space-y-3.5">
+                <div>
+                  <label className="text-[11.5px] font-bold text-[#746E67] block mb-1">Leave Type</label>
+                  <select
+                    value={leaveForm.leave_type}
+                    onChange={(e) => setLeaveForm({ ...leaveForm, leave_type: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-[#FAF8F3] border border-[#E9DFD2] rounded-[12px] text-xs font-semibold"
+                  >
+                    <option value="casual">Casual Leave (CL)</option>
+                    <option value="sick">Sick Leave (SL)</option>
+                    <option value="paid">Paid Privilege Leave (PL)</option>
+                    <option value="comp_off">Compensatory Off (Comp-Off)</option>
+                    <option value="unpaid">Unpaid Leave</option>
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11.5px] font-bold text-[#746E67] block mb-1">Start Date</label>
+                    <input
+                      type="date"
+                      value={leaveForm.start_date}
+                      onChange={(e) => setLeaveForm({ ...leaveForm, start_date: e.target.value })}
+                      className="w-full px-3 py-2 bg-[#FAF8F3] border border-[#E9DFD2] rounded-[12px] text-xs font-semibold"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11.5px] font-bold text-[#746E67] block mb-1">End Date</label>
+                    <input
+                      type="date"
+                      value={leaveForm.end_date}
+                      onChange={(e) => setLeaveForm({ ...leaveForm, end_date: e.target.value })}
+                      className="w-full px-3 py-2 bg-[#FAF8F3] border border-[#E9DFD2] rounded-[12px] text-xs font-semibold"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[11.5px] font-bold text-[#746E67] block mb-1">Reason for Leave</label>
+                  <textarea
+                    value={leaveForm.reason}
+                    onChange={(e) => setLeaveForm({ ...leaveForm, reason: e.target.value })}
+                    placeholder="E.g., Attending family function, medical appointment..."
+                    rows={3}
+                    className="w-full px-3.5 py-2 bg-[#FAF8F3] border border-[#E9DFD2] rounded-[12px] text-xs font-medium resize-none"
+                    required
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={leaveSubmitting}
+                  className="w-full py-3 bg-[#C89435] hover:bg-[#B3802B] text-white rounded-[14px] text-xs font-bold shadow-md flex items-center justify-center gap-1.5"
+                >
+                  {leaveSubmitting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  <span>Submit Leave Request</span>
+                </button>
+              </form>
+
+              {/* Recent Leaves History */}
+              {recentLeaves.length > 0 && (
+                <div className="mt-5 pt-4 border-t border-[#F0E8DC]">
+                  <h4 className="text-[11px] font-bold uppercase tracking-wider text-[#99928A] mb-2">
+                    Recent Requests
+                  </h4>
+                  <div className="space-y-1.5">
+                    {recentLeaves.map((l) => (
+                      <div key={l.id} className="flex items-center justify-between p-2 rounded-[10px] bg-[#FAF8F3] text-[11px]">
+                        <div>
+                          <span className="font-semibold capitalize text-[#211B17]">{l.leave_type} Leave</span>
+                          <span className="text-[#8C847B] block text-[10px]">{l.start_date} to {l.end_date}</span>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded-full text-[9.5px] font-bold ${
+                          l.status === 'approved' ? 'bg-[#E8F5E9] text-[#2E7D32]' :
+                          l.status === 'rejected' ? 'bg-[#FFEBEE] text-[#C62828]' : 'bg-[#FFF8E1] text-[#F57F17]'
+                        }`}>
+                          {l.status.toUpperCase()}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ========================================================= */}
+      {/* 3. MONTHLY ATTENDANCE CALENDAR MODAL */}
+      {/* ========================================================= */}
+      <AnimatePresence>
+        {showCalendarModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+          >
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              className="bg-white w-full max-w-md rounded-t-[24px] sm:rounded-[24px] p-6 max-h-[85vh] overflow-y-auto"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-[#F0E8DC] mb-4">
+                <div className="flex items-center gap-2">
+                  <History className="w-5 h-5 text-[#1976D2]" />
+                  <h3 className="text-base font-bold text-[#211B17]">My Attendance History</h3>
+                </div>
+                <button
+                  onClick={() => setShowCalendarModal(false)}
+                  className="w-7 h-7 rounded-full bg-[#FAF8F3] text-[#746E67] flex items-center justify-center"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {monthlyHistory.length === 0 ? (
+                <p className="text-center text-xs text-[#8C847B] py-8">No attendance records for this month yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {monthlyHistory.map((rec) => (
+                    <div key={rec.id} className="p-3 bg-[#FAF8F3] rounded-[14px] border border-[#F0E8DC] flex items-center justify-between">
+                      <div>
+                        <div className="font-bold text-xs text-[#211B17]">
+                          {new Date(rec.date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}
+                        </div>
+                        <div className="text-[10.5px] text-[#746E67] mt-0.5">
+                          In: {rec.check_in_time ? new Date(rec.check_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--'} | Out: {rec.check_out_time ? new Date(rec.check_out_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--'}
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          rec.status === 'present' ? 'bg-[#E8F5E9] text-[#2E7D32]' :
+                          rec.status === 'late' ? 'bg-[#FFF3E0] text-[#E65100]' :
+                          rec.status === 'half_day' ? 'bg-[#EDE7F6] text-[#5E35B1]' : 'bg-[#FFEBEE] text-[#C62828]'
+                        }`}>
+                          {rec.status.toUpperCase()}
+                        </span>
+                        <div className="text-[10px] font-medium text-[#8C847B] mt-0.5 font-mono">
+                          {Math.floor((rec.work_duration_minutes || 0) / 60)}h {(rec.work_duration_minutes || 0) % 60}m
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {successAnimation && (
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 30 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-[#211B17] text-white px-5 py-3 rounded-full shadow-2xl z-50 text-xs font-semibold flex items-center gap-2"
+          >
+            <CheckCircle2 className="w-4 h-4 text-[#4CAF50]" />
+            <span>{successAnimation}</span>
+            <button onClick={() => setSuccessAnimation(null)} className="ml-2 text-white/60">✕</button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
