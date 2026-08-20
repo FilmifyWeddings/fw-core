@@ -9,14 +9,14 @@ import {
   Sparkles, Link2, Copy, Check, ShieldCheck, FileText, ChevronRight, 
   ChevronDown, Edit3, Trash2, X, ExternalLink, ArrowRight, UserCheck,
   Send, MessageCircle, Printer, Sliders, Globe, Camera, Award, Eye,
-  UserPlus, Compass
+  UserPlus, Compass, Star
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import type { 
   FWTeamMember, AttendanceRecord, AttendanceLocation, 
   AttendanceShift, AttendanceLeaveRequest, AttendanceMemberLink, AttendanceHoliday
 } from '@/types';
-import GeofenceRadarMap from '@/components/attendance/GeofenceRadarMap';
+import GooglePlacesGeofenceMap from '@/components/attendance/GooglePlacesGeofenceMap';
 import MemberKundaliModal from '@/components/attendance/MemberKundaliModal';
 import AddTeamMemberModal from '@/components/attendance/AddTeamMemberModal';
 
@@ -32,7 +32,6 @@ export default function AttendancePage() {
   const [shifts, setShifts] = useState<AttendanceShift[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<AttendanceLeaveRequest[]>([]);
   const [memberLinks, setMemberLinks] = useState<AttendanceMemberLink[]>([]);
-  const [holidays, setHolidays] = useState<AttendanceHoliday[]>([]);
 
   // Filter states
   const [searchQuery, setSearchQuery] = useState('');
@@ -237,7 +236,7 @@ export default function AttendancePage() {
     window.open(`https://wa.me/${phone}?text=${text}`, '_blank');
   };
 
-  // Save / Update Geofence Location
+  // Save New Geofence Location
   const handleSaveLocation = async () => {
     if (!locationForm.name.trim()) {
       alert('Please enter location name');
@@ -274,12 +273,13 @@ export default function AttendancePage() {
   };
 
   // Update existing Geofence coordinates or radius
-  const handleUpdateGeofenceOnMap = async (lat: number, lng: number, radius?: number) => {
+  const handleUpdateGeofenceOnMap = async (lat: number, lng: number, address?: string, radius?: number) => {
     if (!selectedLocation) return;
     const updated = {
       ...selectedLocation,
       latitude: lat,
       longitude: lng,
+      address: address || selectedLocation.address,
       radius_meters: radius ?? selectedLocation.radius_meters
     };
 
@@ -292,10 +292,23 @@ export default function AttendancePage() {
         .update({
           latitude: lat,
           longitude: lng,
+          address: address || selectedLocation.address,
           radius_meters: radius ?? selectedLocation.radius_meters,
           updated_at: new Date().toISOString()
         })
         .eq('id', selectedLocation.id);
+    } catch (_) {}
+  };
+
+  // Delete Geofence
+  const handleDeleteGeofence = async (locId: string) => {
+    if (!confirm('Are you sure you want to delete this geofence venue?')) return;
+    setLocations(prev => prev.filter(l => l.id !== locId));
+    if (selectedLocation?.id === locId) {
+      setSelectedLocation(locations.find(l => l.id !== locId) || null);
+    }
+    try {
+      await supabase.from('attendance_locations').delete().eq('id', locId);
     } catch (_) {}
   };
 
@@ -437,7 +450,7 @@ export default function AttendancePage() {
   const handleExportCSV = () => {
     if (teamMembers.length === 0) return;
 
-    const headers = ['Employee Name', 'Role', 'Date', 'Status', 'Check In', 'Check Out', 'Work Duration (Mins)', 'Late (Mins)', 'Overtime (Mins)'];
+    const headers = ['Employee Name', 'Role', 'Date', 'Status', 'Check In (IST)', 'Check Out (IST)', 'Active Duration (Mins)', 'Late (Mins)', 'Overtime (Mins)'];
     const rows = teamMembers.map(member => {
       const rec = records.find(r => r.member_id === member.id);
       return [
@@ -445,8 +458,8 @@ export default function AttendancePage() {
         member.primary_role || 'Crew',
         selectedDate,
         rec?.status || 'absent',
-        rec?.check_in_time ? new Date(rec.check_in_time).toLocaleTimeString() : '',
-        rec?.check_out_time ? new Date(rec.check_out_time).toLocaleTimeString() : '',
+        rec?.check_in_time ? new Date(rec.check_in_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '',
+        rec?.check_out_time ? new Date(rec.check_out_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '',
         rec?.work_duration_minutes || 0,
         rec?.late_minutes || 0,
         rec?.overtime_minutes || 0
@@ -500,11 +513,11 @@ export default function AttendancePage() {
               <div className="flex items-center gap-2.5">
                 <h1 className="text-2xl font-black tracking-tight text-slate-900">Workforce & Smart Attendance</h1>
                 <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-[#FAF3E6] text-[#8C6D33] border border-[#E9DFD2]">
-                  Enterprise Intelligence
+                  IST Timezone &amp; Google Places
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Radar geofence editor, staff Kundali analytics, mobile magic links & automatic payroll timesheet.
+                Google Maps Places radar editor, live geofence heartbeat auto-checkout &amp; staff Kundali analytics.
               </p>
             </div>
           </div>
@@ -650,7 +663,7 @@ export default function AttendancePage() {
                 {locations.length}
               </h3>
               <p className="text-[10px] font-semibold text-teal-600 mt-0.5">
-                Studio & Event Venues
+                Studio &amp; Event Venues
               </p>
             </div>
             <div className="h-1 w-full bg-teal-500 rounded-full" />
@@ -663,11 +676,11 @@ export default function AttendancePage() {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-2">
           <div className="flex items-center gap-1.5 overflow-x-auto">
             {[
-              { id: 'roster', label: 'Daily Roster', icon: Clock },
+              { id: 'roster', label: 'Daily Roster (IST)', icon: Clock },
               { id: 'live', label: 'Live Floor View', icon: Users },
               { id: 'matrix', label: 'Monthly Matrix & Payroll', icon: Calendar },
               { id: 'leaves', label: 'Leaves & Approvals', icon: Coffee },
-              { id: 'locations', label: 'Visual Radar Map', icon: Globe },
+              { id: 'locations', label: 'Google Places Geofence', icon: Globe },
               { id: 'shifts', label: 'Shift Timings', icon: Sliders },
               { id: 'links', label: 'Employee Mobile Links', icon: Link2 },
             ].map(tab => {
@@ -692,7 +705,7 @@ export default function AttendancePage() {
         </div>
 
         {/* ─────────────────────────────────────────────────────────────
-            TAB 1: DAILY ROSTER (WITH KUNDALI DRILLDOWN)
+            TAB 1: DAILY ROSTER (WITH KUNDALI DRILLDOWN & IST)
         ───────────────────────────────────────────────────────────── */}
         {activeTab === 'roster' && (
           <div className="space-y-4">
@@ -703,9 +716,9 @@ export default function AttendancePage() {
                     <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase text-slate-500 tracking-wider">
                       <th className="py-3 px-4">Employee</th>
                       <th className="py-3 px-4">Status</th>
-                      <th className="py-3 px-4">Check In</th>
-                      <th className="py-3 px-4">Check Out</th>
-                      <th className="py-3 px-4">Work Hours</th>
+                      <th className="py-3 px-4">Check In (IST)</th>
+                      <th className="py-3 px-4">Check Out (IST)</th>
+                      <th className="py-3 px-4">Active Work Hours</th>
                       <th className="py-3 px-4">Location / GPS</th>
                       <th className="py-3 px-4">Selfie Evidence</th>
                       <th className="py-3 px-4 text-right">Actions</th>
@@ -753,18 +766,18 @@ export default function AttendancePage() {
                           </td>
 
                           <td className="py-3 px-4 font-bold text-slate-800 font-mono">
-                            {record?.check_in_time ? new Date(record.check_in_time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                            {record?.check_in_time ? new Date(record.check_in_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
                           </td>
 
                           <td className="py-3 px-4 font-bold text-slate-800 font-mono">
-                            {record?.check_out_time ? new Date(record.check_out_time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                            {record?.check_out_time ? new Date(record.check_out_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
                           </td>
 
                           <td className="py-3 px-4 font-extrabold text-slate-900 font-mono">
                             {record?.work_duration_minutes ? (
                               `${Math.floor(record.work_duration_minutes / 60)}h ${record.work_duration_minutes % 60}m`
                             ) : isPresent ? (
-                              <span className="text-emerald-600 animate-pulse">Working...</span>
+                              <span className="text-emerald-600 animate-pulse">Working in-zone...</span>
                             ) : '—'}
                           </td>
 
@@ -775,7 +788,7 @@ export default function AttendancePage() {
                               </span>
                             ) : record?.check_in_geofence_status === 'outside_geofence' ? (
                               <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-orange-50 text-orange-700 border border-orange-200 flex items-center gap-1 w-max">
-                                <AlertTriangle className="w-3 h-3" /> Outside Area
+                                <AlertTriangle className="w-3 h-3" /> Outside Perimeter
                               </span>
                             ) : (
                               <span className="text-slate-400 text-[10px]">No GPS</span>
@@ -872,9 +885,9 @@ export default function AttendancePage() {
 
                     <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs flex justify-between">
                       <div>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase">Started At</span>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase">Started At (IST)</span>
                         <p className="font-mono font-bold text-slate-800">
-                          {new Date(rec.check_in_time!).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                          {new Date(rec.check_in_time!).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })}
                         </p>
                       </div>
                       <div className="text-right">
@@ -896,7 +909,7 @@ export default function AttendancePage() {
           <div className="space-y-4">
             <div className="bg-white p-5 rounded-2xl border border-[#E9DFD2] shadow-sm flex items-center justify-between">
               <div>
-                <h3 className="text-base font-black text-slate-900">Monthly Timesheet Matrix & Payroll Summary</h3>
+                <h3 className="text-base font-black text-slate-900">Monthly Timesheet Matrix &amp; Payroll Summary</h3>
                 <p className="text-xs text-slate-500">Comprehensive attendance breakdown for salary calculation, overtime, and leave deductions.</p>
               </div>
               <button
@@ -950,7 +963,7 @@ export default function AttendancePage() {
           <div className="space-y-4">
             <div className="bg-white p-5 rounded-2xl border border-sky-200 shadow-sm flex items-center justify-between">
               <div>
-                <h3 className="text-base font-black text-slate-900">Leave Requests & Approvals Inbox</h3>
+                <h3 className="text-base font-black text-slate-900">Leave Requests &amp; Approvals Inbox</h3>
                 <p className="text-xs text-slate-500">Approve or reject leave requests with 1-click WhatsApp employee notification.</p>
               </div>
               <button
@@ -1036,58 +1049,101 @@ export default function AttendancePage() {
         )}
 
         {/* ─────────────────────────────────────────────────────────────
-            TAB 5: VISUAL RADAR MAP & GEOFENCE EDITOR
+            TAB 5: GOOGLE PLACES GEOFENCE & SAVED LOCATIONS CRUD
         ───────────────────────────────────────────────────────────── */}
         {activeTab === 'locations' && (
-          <div className="space-y-4">
+          <div className="space-y-6">
             <div className="bg-white p-5 rounded-2xl border border-emerald-200 shadow-sm flex items-center justify-between">
               <div>
-                <h3 className="text-base font-black text-slate-900">Visual Geofence Radar Map</h3>
-                <p className="text-xs text-slate-500">Interactive dark-mode radar map with dynamic 10m–1000m radius sliders and OpenStreetMap address search.</p>
+                <h3 className="text-base font-black text-slate-900">Google Places Geofence Manager</h3>
+                <p className="text-xs text-slate-500">Google Maps Places Autocomplete search, draggable pin, and dynamic radius perimeter (20m to 1000m).</p>
               </div>
               <button
                 onClick={() => setShowAddLocationModal(true)}
                 className="px-3.5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs transition flex items-center gap-1.5"
               >
                 <Plus className="w-3.5 h-3.5" />
-                + Add Geofence Venue
+                + Add Venue / Branch
               </button>
             </div>
 
-            {/* Location Selector Tabs */}
-            {locations.length > 0 && (
-              <div className="flex items-center gap-2 overflow-x-auto pb-1">
-                {locations.map(loc => (
-                  <button
-                    key={loc.id}
-                    onClick={() => setSelectedLocation(loc)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
-                      selectedLocation?.id === loc.id
-                        ? 'bg-slate-900 text-white shadow-xs'
-                        : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
-                    }`}
-                  >
-                    <MapPin className="w-3 h-3 text-[#C89435]" />
-                    <span>{loc.name}</span>
-                    <span className="text-[10px] text-slate-400 font-mono">({loc.radius_meters}m)</span>
-                  </button>
-                ))}
+            {/* Interactive Map Editor */}
+            {selectedLocation && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full bg-[#C89435]" />
+                    <h4 className="font-bold text-sm text-slate-900">{selectedLocation.name}</h4>
+                    <span className="text-xs text-slate-400 font-mono">({selectedLocation.radius_meters}m allowed radius)</span>
+                  </div>
+                  {selectedLocation.address && (
+                    <span className="text-xs text-slate-500 truncate max-w-md">{selectedLocation.address}</span>
+                  )}
+                </div>
+
+                <GooglePlacesGeofenceMap
+                  latitude={selectedLocation.latitude}
+                  longitude={selectedLocation.longitude}
+                  radiusMeters={selectedLocation.radius_meters}
+                  locationName={selectedLocation.name}
+                  isEditable={true}
+                  height="450px"
+                  onCoordinatesChange={(lat, lng, address) => handleUpdateGeofenceOnMap(lat, lng, address)}
+                  onRadiusChange={(r) => handleUpdateGeofenceOnMap(selectedLocation.latitude, selectedLocation.longitude, selectedLocation.address, r)}
+                />
               </div>
             )}
 
-            {/* Interactive Leaflet Radar Map Component */}
-            {selectedLocation && (
-              <GeofenceRadarMap
-                latitude={selectedLocation.latitude}
-                longitude={selectedLocation.longitude}
-                radiusMeters={selectedLocation.radius_meters}
-                locationName={selectedLocation.name}
-                isEditable={true}
-                height="450px"
-                onCoordinatesChange={(lat, lng) => handleUpdateGeofenceOnMap(lat, lng)}
-                onRadiusChange={(r) => handleUpdateGeofenceOnMap(selectedLocation.latitude, selectedLocation.longitude, r)}
-              />
-            )}
+            {/* Saved Locations List Table */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden space-y-2">
+              <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                <h4 className="font-bold text-xs uppercase tracking-wider text-slate-600">Saved Geofence Venues ({locations.length})</h4>
+              </div>
+
+              <div className="divide-y divide-slate-100">
+                {locations.map(loc => (
+                  <div key={loc.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center">
+                        <MapPin className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h5 className="font-bold text-slate-900 text-xs">{loc.name}</h5>
+                          {selectedLocation?.id === loc.id && (
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-[#FAF3E6] text-[#8C6D33] border border-[#E9DFD2]">
+                              Active on Map
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-0.5">{loc.address || `Lat: ${loc.latitude.toFixed(4)}, Lng: ${loc.longitude.toFixed(4)}`}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-mono font-bold">
+                        {loc.radius_meters}m
+                      </span>
+
+                      <button
+                        onClick={() => setSelectedLocation(loc)}
+                        className="px-3 py-1 text-xs font-bold text-[#8C6D33] bg-[#FAF3E6] hover:bg-[#F2E5CC] rounded-lg transition"
+                      >
+                        Edit on Map
+                      </button>
+
+                      <button
+                        onClick={() => handleDeleteGeofence(loc.id)}
+                        className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition"
+                        title="Delete Geofence"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
@@ -1098,7 +1154,7 @@ export default function AttendancePage() {
           <div className="space-y-4">
             <div className="bg-white p-5 rounded-2xl border border-[#E9DFD2] shadow-sm flex items-center justify-between">
               <div>
-                <h3 className="text-base font-black text-slate-900">Work Shifts & Timings</h3>
+                <h3 className="text-base font-black text-slate-900">Work Shifts &amp; Timings</h3>
                 <p className="text-xs text-slate-500">Configure studio work timings, grace periods for late punches, and overtime thresholds.</p>
               </div>
               <button
@@ -1126,7 +1182,7 @@ export default function AttendancePage() {
                   </div>
 
                   <div className="p-3 bg-slate-50 rounded-xl text-xs space-y-1 font-mono text-slate-600">
-                    <p>Start: {sh.start_time.substring(0, 5)} • End: {sh.end_time.substring(0, 5)}</p>
+                    <p>Start: {sh.start_time.substring(0, 5)} • End: {sh.end_time.substring(0, 5)} (IST)</p>
                     <p className="text-[11px] font-sans text-slate-500">Grace Period: {sh.grace_period_minutes} mins</p>
                   </div>
                 </div>
@@ -1552,7 +1608,7 @@ export default function AttendancePage() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-bold text-slate-700">Check In Time</label>
+                    <label className="text-xs font-bold text-slate-700">Check In Time (IST)</label>
                     <input
                       type="time"
                       value={overrideCheckIn}
@@ -1562,7 +1618,7 @@ export default function AttendancePage() {
                   </div>
 
                   <div>
-                    <label className="text-xs font-bold text-slate-700">Check Out Time</label>
+                    <label className="text-xs font-bold text-slate-700">Check Out Time (IST)</label>
                     <input
                       type="time"
                       value={overrideCheckOut}

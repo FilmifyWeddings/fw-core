@@ -7,7 +7,7 @@ import {
   Clock, MapPin, Camera, CheckCircle2, AlertCircle, Coffee, 
   LogOut, RefreshCw, ShieldCheck, Sparkles, AlertTriangle, Wifi, WifiOff, X,
   Calendar, Send, ChevronRight, Check, History, Plane, DollarSign, Award,
-  Compass, ArrowUpRight, TrendingUp, Navigation
+  Compass, ArrowUpRight, TrendingUp, Navigation, Pause, Play
 } from 'lucide-react';
 import type { AttendanceRecord, AttendanceBreak, AttendanceLocation } from '@/types';
 import { validateCoordinatesAgainstGeofences, GeofenceValidationResult } from '@/lib/attendance/geo-fence';
@@ -34,6 +34,10 @@ export default function PersonalAttendancePage() {
   const [offlineQueueCount, setOfflineQueueCount] = useState<number>(0);
   const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().substring(0, 7));
 
+  // Live Geofence Heartbeat & In-Zone Active State
+  const [isInsideGeofence, setIsInsideGeofence] = useState<boolean>(true);
+  const [consecutiveOutsideCount, setConsecutiveOutsideCount] = useState<number>(0);
+
   // Verification modal state
   const [showVerifyModal, setShowVerifyModal] = useState<'check_in' | 'check_out' | null>(null);
   const [cameraActive, setCameraActive] = useState(false);
@@ -58,7 +62,7 @@ export default function PersonalAttendancePage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // Live timer tick
+  // Live clock tick
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
@@ -119,6 +123,55 @@ export default function PersonalAttendancePage() {
       setLoading(false);
     }
   };
+
+  // -------------------------------------------------------------
+  // LIVE GEOFENCE HEARTBEAT ENGINE (Every 60s when on duty)
+  // -------------------------------------------------------------
+  useEffect(() => {
+    if (!todayRecord || !todayRecord.check_in_time || todayRecord.check_out_time) return;
+
+    const performHeartbeat = () => {
+      if (!navigator.geolocation) return;
+
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          const accuracy = Math.round(position.coords.accuracy);
+
+          // Client-side quick check
+          const validation = validateCoordinatesAgainstGeofences({ latitude: lat, longitude: lng }, locations);
+          setIsInsideGeofence(validation.isWithinGeofence);
+
+          try {
+            const res = await fetch('/api/public/attendance/heartbeat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ token, lat, lng, accuracy })
+            });
+
+            if (res.ok) {
+              const data = await res.json();
+              if (data.record) {
+                setTodayRecord(data.record);
+              }
+              if (data.autoCheckoutTriggered) {
+                setSuccessAnimation('Shift Auto-Ended: Exited studio geofence perimeter.');
+              }
+            }
+          } catch (_) {}
+        },
+        () => {},
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    };
+
+    // Initial ping & recurring 60s interval
+    performHeartbeat();
+    const heartbeatInterval = setInterval(performHeartbeat, 60000);
+
+    return () => clearInterval(heartbeatInterval);
+  }, [todayRecord?.check_in_time, todayRecord?.check_out_time, locations, token]);
 
   // Sync Offline Queue
   const syncOfflineQueue = async () => {
@@ -209,6 +262,7 @@ export default function PersonalAttendancePage() {
         locations
       );
       setGeofenceResult(res);
+      setIsInsideGeofence(res.isWithinGeofence);
     };
 
     const handlePositionError = (err: GeolocationPositionError) => {
@@ -216,14 +270,13 @@ export default function PersonalAttendancePage() {
       if (err.code === 1) {
         setGpsError('Location permission denied. Please allow location access in your browser settings.');
       } else if (err.code === 2) {
-        setGpsError('Location unavailable. Please ensure GPS / Location is turned ON.');
+        setGpsError('Location unavailable. Please ensure device Location / GPS is turned ON.');
       } else {
-        setGpsError('GPS acquisition timed out. Retrying with standard accuracy...');
-        // Retry with relaxed options
+        setGpsError('GPS acquisition timed out. Retrying...');
         navigator.geolocation.getCurrentPosition(
           handlePositionSuccess,
           () => setGpsError('Unable to acquire GPS coordinates. Please check device location settings.'),
-          { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+          { enableHighAccuracy: false, timeout: 10000, maximumAge: 30000 }
         );
       }
     };
@@ -231,7 +284,7 @@ export default function PersonalAttendancePage() {
     navigator.geolocation.getCurrentPosition(
       handlePositionSuccess,
       handlePositionError,
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   };
 
@@ -241,7 +294,7 @@ export default function PersonalAttendancePage() {
 
     // Strict client-side Geofence blocker
     if (geofenceResult && !geofenceResult.isWithinGeofence) {
-      setErrorMessage(`You are outside the punch zone (${geofenceResult.distanceMeters}m away). Allowed radius: ${geofenceResult.allowedRadiusMeters}m.`);
+      setErrorMessage(`Outside Geofence (${geofenceResult.distanceMeters}m away). Check-in allowed only inside studio/venue perimeter (${geofenceResult.allowedRadiusMeters}m).`);
       return;
     }
 
@@ -298,7 +351,6 @@ export default function PersonalAttendancePage() {
       const data = await res.json();
 
       if (res.ok) {
-        // Immediate optimistic UI update
         if (data.record) {
           setTodayRecord(data.record);
         }
@@ -357,7 +409,7 @@ export default function PersonalAttendancePage() {
     }
   };
 
-  // Calculate live working duration
+  // Calculate live working duration in IST
   const getLiveDurationString = () => {
     if (!todayRecord || !todayRecord.check_in_time) return '0h 00m';
     const startMs = new Date(todayRecord.check_in_time).getTime();
@@ -423,7 +475,7 @@ export default function PersonalAttendancePage() {
               </h1>
               <div className="text-[11px] text-[#8C847B] flex items-center gap-1 mt-0.5">
                 <Clock className="w-3 h-3 text-[#C89435]" />
-                <span>{currentTime.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
+                <span>{currentTime.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short' })} (IST)</span>
               </div>
             </div>
           </div>
@@ -487,16 +539,44 @@ export default function PersonalAttendancePage() {
             )}
           </div>
         )}
+
+        {/* Live Auto-Pause / In-Zone Heartbeat Banner */}
+        {isCheckedIn && !isCheckedOut && (
+          <div className={`mt-2.5 p-2 rounded-[10px] text-[11px] flex items-center justify-between border ${
+            isInsideGeofence 
+              ? 'bg-[#E8F5E9] text-[#2E7D32] border-[#C8E6C9]'
+              : 'bg-[#FFF3E0] text-[#E65100] border-[#FFE0B2] animate-pulse'
+          }`}>
+            <div className="flex items-center gap-1.5">
+              {isInsideGeofence ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-[#2E7D32] animate-ping" />
+                  <span className="font-bold">In-Zone Active</span>
+                  <span className="text-[10px] opacity-80">(Shift timer running)</span>
+                </>
+              ) : (
+                <>
+                  <Pause className="w-3.5 h-3.5 text-[#E65100]" />
+                  <span className="font-bold">Auto-Paused</span>
+                  <span className="text-[10px] opacity-90">(Outside studio radius)</span>
+                </>
+              )}
+            </div>
+            <span className="text-[10px] font-mono font-bold">
+              {todayRecord?.break_duration_minutes ? `Paused: ${todayRecord.break_duration_minutes}m` : '60s Radar'}
+            </span>
+          </div>
+        )}
       </header>
 
       {/* Main Body Stage */}
       <main className="flex-1 p-5 flex flex-col justify-between overflow-y-auto">
         {activeTab === 'punch' ? (
           <>
-            {/* Live Clock & Shift Badge */}
+            {/* Live Clock & Shift Badge (IST) */}
             <div className="text-center my-2">
               <div className="text-[44px] font-black tracking-tight text-[#211B17] font-mono leading-none">
-                {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                {currentTime.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
               </div>
               <p className="text-[12px] text-[#8C847B] font-medium mt-1">
                 {shifts[0]?.name ? `${shifts[0].name} (${shifts[0].start_time.substring(0, 5)} - ${shifts[0].end_time.substring(0, 5)})` : 'Standard Studio Shift (09:30 AM - 06:30 PM)'}
@@ -514,9 +594,13 @@ export default function PersonalAttendancePage() {
                         Checked Out
                       </span>
                     ) : isCheckedIn ? (
-                      <span className="px-2.5 py-0.5 rounded-full text-[12px] font-bold bg-[#E8F5E9] text-[#2E7D32] flex items-center gap-1">
-                        <span className="w-2 h-2 rounded-full bg-[#2E7D32] animate-ping" />
-                        On Duty ({todayRecord?.status.toUpperCase()})
+                      <span className={`px-2.5 py-0.5 rounded-full text-[12px] font-bold ${
+                        todayRecord?.status === 'late'
+                          ? 'bg-[#FFF3E0] text-[#E65100] border border-[#FFE0B2]'
+                          : 'bg-[#E8F5E9] text-[#2E7D32] border border-[#C8E6C9]'
+                      } flex items-center gap-1`}>
+                        <span className="w-2 h-2 rounded-full bg-current animate-ping" />
+                        {todayRecord?.status === 'late' ? `Late (${todayRecord?.late_minutes}m)` : 'On Duty (Present)'}
                       </span>
                     ) : (
                       <span className="px-2.5 py-0.5 rounded-full text-[12px] font-bold bg-[#FFF3E0] text-[#E65100]">
@@ -527,7 +611,7 @@ export default function PersonalAttendancePage() {
                 </div>
 
                 <div className="text-right">
-                  <span className="text-[10.5px] uppercase font-bold tracking-wider text-[#99928A] block">Working Duration</span>
+                  <span className="text-[10.5px] uppercase font-bold tracking-wider text-[#99928A] block">Active Work Time</span>
                   <span className="text-[16px] font-bold text-[#211B17] font-mono">
                     {getLiveDurationString()}
                   </span>
@@ -539,17 +623,17 @@ export default function PersonalAttendancePage() {
                 <div className="bg-[#FAF8F3] p-2.5 rounded-[12px] border border-[#F2ECE2]">
                   <span className="text-[#8C847B] text-[10px] block">Punch In</span>
                   <span className="font-semibold text-[#211B17]">
-                    {todayRecord?.check_in_time ? new Date(todayRecord.check_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
+                    {todayRecord?.check_in_time ? new Date(todayRecord.check_in_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '--:--'}
                   </span>
                   {todayRecord?.late_minutes ? (
-                    <span className="text-[9.5px] text-[#C62828] block">({todayRecord.late_minutes}m late)</span>
+                    <span className="text-[9.5px] text-[#C62828] block">({todayRecord.late_minutes}m late arrival)</span>
                   ) : null}
                 </div>
 
                 <div className="bg-[#FAF8F3] p-2.5 rounded-[12px] border border-[#F2ECE2]">
                   <span className="text-[#8C847B] text-[10px] block">Punch Out</span>
                   <span className="font-semibold text-[#211B17]">
-                    {todayRecord?.check_out_time ? new Date(todayRecord.check_out_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
+                    {todayRecord?.check_out_time ? new Date(todayRecord.check_out_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '--:--'}
                   </span>
                   {todayRecord?.overtime_minutes ? (
                     <span className="text-[9.5px] text-[#2E7D32] block">(+{todayRecord.overtime_minutes}m OT)</span>
@@ -677,7 +761,7 @@ export default function PersonalAttendancePage() {
                             {new Date(rec.date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}
                           </div>
                           <div className="text-[10.5px] text-[#746E67] mt-0.5">
-                            In: {rec.check_in_time ? new Date(rec.check_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--'} | Out: {rec.check_out_time ? new Date(rec.check_out_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--'}
+                            In: {rec.check_in_time ? new Date(rec.check_in_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '--'} | Out: {rec.check_out_time ? new Date(rec.check_out_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '--'}
                           </div>
                         </div>
                       </div>

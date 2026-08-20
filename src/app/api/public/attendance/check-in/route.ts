@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
         if (settings?.require_geofence !== false) {
           const distStr = minDistance >= 1000 ? `${(minDistance / 1000).toFixed(1)} km` : `${minDistance}m`;
           return NextResponse.json({
-            error: `You are outside the punch zone (${distStr} away from ${closestLocationName}). Allowed radius: ${allowedRadius}m.`,
+            error: `Outside Geofence (${distStr} away from ${closestLocationName}). Check-in allowed only inside studio/venue perimeter (${allowedRadius}m).`,
             distanceMeters: minDistance,
             allowedRadiusMeters: allowedRadius
           }, { status: 403 });
@@ -144,11 +144,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 7. Automated Attendance Status Evaluation
+    // 7. Automated Attendance Status Evaluation in IST (Asia/Kolkata)
     const nowTime = new Date();
-    const currentHour = nowTime.getHours();
-    const currentMin = nowTime.getMinutes();
-    const currentTotalMinutes = currentHour * 60 + currentMin;
+    const istTimeStr = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: false
+    }).format(nowTime);
+
+    const [istHour, istMin] = istTimeStr.split(':').map(Number);
+    const currentTotalMinutes = istHour * 60 + istMin;
 
     const shiftStart = settings?.default_shift_start || '09:30:00';
     const [sHour, sMin] = shiftStart.split(':').map(Number);
@@ -169,6 +175,13 @@ export async function POST(request: NextRequest) {
       status = 'half_day';
     }
 
+    const formattedIstTime = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    }).format(nowTime);
+
     // 8. Insert/Update Daily Attendance Record
     const recordPayload = {
       user_id: link.user_id,
@@ -180,12 +193,17 @@ export async function POST(request: NextRequest) {
       check_in_lat: lat ? Number(lat) : null,
       check_in_lng: lng ? Number(lng) : null,
       check_in_accuracy: accuracy ? Number(accuracy) : null,
-      check_in_photo_path: photoPath || photoBase64, // fallback base64 so image is never lost
+      check_in_photo_path: photoPath || photoBase64,
       check_in_location_id: matchedLocationId,
       check_in_verified: true,
       check_in_geofence_status: geofenceStatus,
       late_minutes: lateMinutes,
-      device_info: deviceInfo || {},
+      device_info: {
+        ...(deviceInfo || {}),
+        check_in_ist: formattedIstTime,
+        last_heartbeat_at: nowTime.toISOString(),
+        last_heartbeat_inside: true
+      },
       notes: punchAddress ? `Punch In at: ${punchAddress}` : null,
       updated_at: nowTime.toISOString()
     };
@@ -220,8 +238,8 @@ export async function POST(request: NextRequest) {
       geofenceStatus,
       punchAddress,
       message: status === 'late' 
-        ? `Checked in at ${nowTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (${lateMinutes} min late)`
-        : `Checked in successfully on time at ${nowTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+        ? `Checked in at ${formattedIstTime} IST (${lateMinutes} minutes late)`
+        : `Checked in on-time at ${formattedIstTime} IST`
     });
 
   } catch (err: any) {
