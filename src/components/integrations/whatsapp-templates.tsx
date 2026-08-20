@@ -881,17 +881,30 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     setPollOptions(prev => prev.filter(o => o.id !== id));
   };
 
-  // Filter templates by query
-  const filteredTemplates = templates.filter(t => 
+  // Helper to distinguish Group Templates from Client Templates
+  const isGroupTemplate = (t: TemplateRow) => {
+    const cat = (t.category || '').toLowerCase();
+    const nm = (t.name || '').toLowerCase();
+    return cat === 'group_alert' || cat === 'group_workflow' || cat === 'group' || nm.startsWith('group_') || nm.includes('group_alert');
+  };
+
+  // Client Templates (Tab 1) — Excludes Group Templates
+  const clientTemplates = templates.filter(t => !isGroupTemplate(t));
+
+  // Filter templates by query for Client tab
+  const filteredClientTemplates = clientTemplates.filter(t => 
     t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     t.category.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Statistics calculation
-  const approvedCount = templates.filter(t => t.status === 'approved').length;
-  const pendingCount = templates.filter(t => t.status === 'pending').length;
-  const rejectedCount = templates.filter(t => t.status === 'rejected').length;
-  const totalCount = templates.length;
+  // Group Templates (Tab 2) — Only Group Templates
+  const groupTemplates = templates.filter(t => isGroupTemplate(t));
+
+  // Statistics calculation for Client tab
+  const approvedCount = clientTemplates.filter(t => t.status === 'approved').length;
+  const pendingCount = clientTemplates.filter(t => t.status === 'pending').length;
+  const rejectedCount = clientTemplates.filter(t => t.status === 'rejected').length;
+  const totalCount = clientTemplates.length;
 
   return (
     <div className="space-y-6">
@@ -1042,14 +1055,14 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
               </tr>
             </thead>
             <tbody>
-              {filteredTemplates.length === 0 ? (
+              {filteredClientTemplates.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-8 text-center text-zinc-500">
-                    No templates found matching filters or criteria.
+                    No client templates found matching filters or criteria.
                   </td>
                 </tr>
               ) : (
-                filteredTemplates.map((template) => (
+                filteredClientTemplates.map((template) => (
                   <tr key={template.id} className="border-b border-zinc-100 dark:border-zinc-900/40 hover:bg-zinc-50 dark:hover:bg-zinc-900/10 transition-colors">
                     <td className="py-4 px-5">
                       <input type="checkbox" className="rounded bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-orange-500 focus:ring-0" />
@@ -1122,6 +1135,8 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
           </table>
         </div>
       </div>
+      </>
+      )}
 
       {/* 4. Template Builder Modal */}
       <AnimatePresence>
@@ -1606,8 +1621,6 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
           </div>
         )}
       </AnimatePresence>
-      </>
-      )}
 
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {/* SECTION: Group Templates & Automation Hub                             */}
@@ -1666,14 +1679,14 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100 dark:divide-zinc-900">
-                  {templates.filter(t => t.category === 'group_alert' || t.category === 'group_workflow' || t.category === 'group' || t.name.toLowerCase().includes('group') || t.name.toLowerCase().includes('alert')).length === 0 ? (
+                  {groupTemplates.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="py-8 text-center text-zinc-400 text-xs font-mono">
                         No custom group templates created yet. Click "+ Add New Group Template" to create one.
                       </td>
                     </tr>
                   ) : (
-                    templates.filter(t => t.category === 'group_alert' || t.category === 'group_workflow' || t.category === 'group' || t.name.toLowerCase().includes('group') || t.name.toLowerCase().includes('alert')).map((t) => (
+                    groupTemplates.map((t) => (
                       <tr key={t.id} className="hover:bg-slate-50/80 dark:hover:bg-zinc-900/40 transition-colors">
                         <td className="py-3 px-4">
                           <div className="font-bold text-zinc-900 dark:text-white flex items-center gap-2">
