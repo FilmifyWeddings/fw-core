@@ -475,6 +475,36 @@ function fallbackHeuristicExtractor(contextData: any) {
   }
   const finalBudget = budget || 150000;
 
+  // Extract custom times and location from notes
+  let customStartTime = '';
+  let customEndTime = '';
+  const startMatch = userNotes.match(/(?:startTime|start_time|start|from|timing)[:\s]+["']?([0-9]{1,2}(?::[0-9]{2})?\s*(?:AM|PM|am|pm)?)["']?/i);
+  if (startMatch) customStartTime = startMatch[1].trim();
+
+  const endMatch = userNotes.match(/(?:endTime|end_time|end|to)[:\s]+["']?([0-9]{1,2}(?::[0-9]{2})?\s*(?:AM|PM|am|pm)?)["']?/i);
+  if (endMatch) customEndTime = endMatch[1].trim();
+
+  const locMatch2 = userNotes.match(/(?:location|venue)[:\s]+["']?([^"\n,}]+)["']?/i);
+  if (locMatch2 && !location) {
+    location = locMatch2[1].trim();
+  }
+
+  // Extract requirements from notes if specified
+  const parsedRequirements: any[] = [];
+  const reqMatches = [...userNotes.matchAll(/(?:name|role)?[:\s]*["']?([A-Za-z\s]+(?:Photographer|Videographer|Cinematographer|Drone|Pilot|Assistant|Creator|Person))["']?/gi)];
+  if (reqMatches.length > 0) {
+    reqMatches.forEach((m) => {
+      const normalized = normalizeCrewRoleName(m[1]);
+      if (normalized && !parsedRequirements.some(r => r.name === normalized)) {
+        parsedRequirements.push({ name: normalized, qty: 1 });
+      }
+    });
+  }
+  const defaultRequirements = parsedRequirements.length > 0 ? parsedRequirements : [
+    { name: 'Candid Photographer', qty: 1 },
+    { name: 'Cinematographer', qty: 1 }
+  ];
+
   // 6. Functions & Coverage Extraction
   const functions: any[] = [];
   const knownEvents = [
@@ -498,14 +528,10 @@ function fallbackHeuristicExtractor(contextData: any) {
       name: 'Haldi + Sangeet',
       date: weddingDate || 'Date Not Fixed',
       dateNotFixed: isDateNotFixed,
-      startTime: '',
-      endTime: '',
+      startTime: customStartTime,
+      endTime: customEndTime,
       location: location || '',
-      requirements: [
-        { name: 'Candid Photographer', qty: 1 },
-        { name: 'Cinematographer', qty: 1 },
-        { name: 'Traditional Photographer', qty: 1 }
-      ],
+      requirements: defaultRequirements,
       notes: ''
     });
     remainingText = remainingText.replace(/haldi/g, '').replace(/sangeet/g, '');
@@ -518,13 +544,10 @@ function fallbackHeuristicExtractor(contextData: any) {
         name: evt.name,
         date: weddingDate || 'Date Not Fixed',
         dateNotFixed: isDateNotFixed,
-        startTime: '',
-        endTime: '',
+        startTime: customStartTime,
+        endTime: customEndTime,
         location: location || '',
-        requirements: [
-          { name: 'Candid Photographer', qty: 1 },
-          { name: 'Cinematographer', qty: 1 }
-        ],
+        requirements: defaultRequirements,
         notes: ''
       });
     }
@@ -536,13 +559,10 @@ function fallbackHeuristicExtractor(contextData: any) {
       name: 'Wedding Ceremony',
       date: weddingDate || 'Date Not Fixed',
       dateNotFixed: isDateNotFixed,
-      startTime: '',
-      endTime: '',
+      startTime: customStartTime,
+      endTime: customEndTime,
       location: location || '',
-      requirements: [
-        { name: 'Candid Photographer', qty: 1 },
-        { name: 'Cinematographer', qty: 1 }
-      ],
+      requirements: defaultRequirements,
       notes: ''
     });
   }

@@ -234,7 +234,14 @@ LEAD & CLIENT CONTEXT:
         })
       });
 
-      const json = await res.json();
+      const text = await res.text();
+      let json: any = {};
+      try {
+        json = text ? JSON.parse(text) : {};
+      } catch (parseErr) {
+        throw new Error('AI Quotation server is initializing. Please click Generate Quotation again in a moment.');
+      }
+
       if (!res.ok || !json.success) {
         throw new Error(json.error || 'AI could not generate quotation.');
       }
@@ -275,7 +282,11 @@ LEAD & CLIENT CONTEXT:
             explicitTemplateId: selectedTemplateId || undefined
           })
         });
-        const createJson = await createRes.json();
+        const createText = await createRes.text();
+        let createJson: any = {};
+        try {
+          createJson = createText ? JSON.parse(createText) : {};
+        } catch (_) {}
         if (!createRes.ok || !createJson.success) {
           throw new Error(createJson.error || 'Failed to initialize quotation draft for lead');
         }
@@ -296,7 +307,11 @@ LEAD & CLIENT CONTEXT:
           })
         });
 
-        const applyJson = await applyRes.json();
+        const applyText = await applyRes.text();
+        let applyJson: any = {};
+        try {
+          applyJson = applyText ? JSON.parse(applyText) : {};
+        } catch (_) {}
         if (!applyRes.ok || !applyJson.success) {
           throw new Error(applyJson.error || 'Failed to apply AI data to quotation');
         }
