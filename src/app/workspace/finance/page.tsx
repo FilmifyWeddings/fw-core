@@ -11,8 +11,9 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { extractFinancialsFromQuotation } from '@/lib/quotation-finance-sync';
+import { LeadQuotationModal } from '@/components/dashboard/lead-quotation-modal';
 import type { 
-  WorkspaceClient, ClientFinanceRecord, FinanceMilestoneItem, FinanceExpenseItem 
+  WorkspaceClient, ClientFinanceRecord, FinanceMilestoneItem, FinanceExpenseItem, Lead
 } from '@/types';
 
 // Default expense categories
@@ -92,6 +93,39 @@ export default function FinancePage() {
     client?: WorkspaceClient;
     financeRecord?: ClientFinanceRecord;
   }>({ open: false });
+
+  // Lead Quotation Version Modal state
+  const [quotationModalLead, setQuotationModalLead] = useState<Lead | null>(null);
+  const [isQuotationModalOpen, setIsQuotationModalOpen] = useState(false);
+
+  const handleOpenQuotationModalForRecord = (record: ClientFinanceRecord) => {
+    const leadId = record.client?.lead_id || record.client_id;
+    const constructedLead: Lead = {
+      id: leadId,
+      name: record.client?.name || 'Client',
+      phone: record.client?.phone || '',
+      email: record.client?.email || '',
+      event_date: record.client?.event_date || null,
+      event_type: record.client?.event_type || 'Wedding Photography',
+      workspace_id: record.workspace_id,
+      status: 'booked',
+      source: 'Manual',
+      score: 'Hot 🔥',
+      score_reason: 'Booked Client in Finance',
+      raw_payload: {
+        event_date: record.client?.event_date,
+        event_type: record.client?.event_type,
+        city: record.client?.city,
+        venue: record.client?.venue,
+        client_id: record.client_id
+      },
+      created_at: record.created_at || new Date().toISOString(),
+      updated_at: record.updated_at || new Date().toISOString()
+    };
+
+    setQuotationModalLead(constructedLead);
+    setIsQuotationModalOpen(true);
+  };
 
   // Final Quotation sync state
   const [settingFinalLoadingId, setSettingFinalLoadingId] = useState<string | null>(null);
@@ -1226,15 +1260,25 @@ export default function FinancePage() {
 
                             {/* Final Quotation Status Badge */}
                             {record.has_final_quotation ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-gradient-to-r from-amber-500 to-[#F36F21] text-white border border-amber-400 shadow-2xs">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenQuotationModalForRecord(record)}
+                                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-gradient-to-r from-amber-500 to-[#F36F21] text-white border border-amber-400 shadow-2xs hover:brightness-110 active:scale-95 transition cursor-pointer"
+                                title="Click to view quotation versions or switch final version"
+                              >
                                 <Crown className="w-3.5 h-3.5 text-amber-100" />
                                 <span>Final Quotation (V{record.final_quotation_version || 1})</span>
-                              </span>
+                              </button>
                             ) : (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-100 text-amber-900 border border-amber-300">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenQuotationModalForRecord(record)}
+                                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200 active:scale-95 transition cursor-pointer"
+                                title="Click to select final quotation version"
+                              >
                                 <AlertTriangle className="w-3.5 h-3.5 text-amber-600 animate-bounce" />
                                 <span>Final Quotation Not Selected</span>
-                              </span>
+                              </button>
                             )}
                           </div>
 
@@ -1316,83 +1360,32 @@ export default function FinancePage() {
 
                       {/* ── FINAL QUOTATION SELECTION BANNER (IF NOT FINALIZED) ── */}
                       {!record.has_final_quotation && (
-                        <div className="mx-5 sm:mx-6 my-4 p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 border-2 border-dashed border-amber-400/80 space-y-3 shadow-2xs">
-                          <div className="flex items-start sm:items-center justify-between gap-2">
-                            <div className="flex items-center gap-2.5">
-                              <div className="p-2 rounded-xl bg-amber-500 text-white shadow-xs shrink-0">
-                                <Crown className="w-4 h-4" />
-                              </div>
-                              <div>
-                                <h4 className="text-xs sm:text-sm font-black text-slate-900 tracking-tight flex flex-wrap items-center gap-1.5">
-                                  <span>Final Quotation Select Nahi Hua Hai</span>
-                                  <span className="text-[9px] px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 font-extrabold uppercase tracking-wider">
-                                    Action Required
-                                  </span>
-                                </h4>
-                                <p className="text-[11px] text-slate-600 font-medium mt-0.5">
-                                  Yeh client booked status me hai. Finance aur Payment Schedule me kaun sa Quotation Version sync karna hai, use neeche select karein:
-                                </p>
-                              </div>
+                        <div className="mx-5 sm:mx-6 my-4 p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 border-2 border-dashed border-amber-400/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-2xs">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2.5 rounded-xl bg-amber-500 text-white shadow-xs shrink-0">
+                              <Crown className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-black text-slate-900 tracking-tight flex flex-wrap items-center gap-2">
+                                <span>आपने इस लीड का कोई कोटेशन फाइनल नहीं किया है</span>
+                                <span className="text-[9px] px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 font-extrabold uppercase tracking-wider">
+                                  Action Required
+                                </span>
+                              </h4>
+                              <p className="text-xs text-slate-600 font-medium mt-0.5">
+                                Finance & Payment Schedule me wahi details match hongi jisko aap Final Quotation banayenge.
+                              </p>
                             </div>
                           </div>
 
-                          {record.available_quotations && record.available_quotations.length > 0 ? (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
-                              {record.available_quotations.map((q) => {
-                                const isSettingThis = settingFinalLoadingId === q.template_id;
-                                return (
-                                  <div
-                                    key={q.template_id}
-                                    className="p-3 bg-white rounded-xl border border-amber-200 hover:border-amber-400 shadow-2xs flex flex-col justify-between gap-2.5 transition group"
-                                  >
-                                    <div>
-                                      <div className="flex items-center justify-between">
-                                        <span className="text-xs font-black text-slate-900 group-hover:text-amber-800 transition">
-                                          Version {q.version}
-                                        </span>
-                                        <span className="text-xs font-mono font-black text-amber-700">
-                                          ₹{(q.financials?.final_total_amount || 0).toLocaleString('en-IN')}
-                                        </span>
-                                      </div>
-                                      <p className="text-[10px] text-slate-500 truncate mt-0.5">
-                                        {q.title || 'Quotation Proposal'}
-                                      </p>
-                                      {q.financials?.base_package_price ? (
-                                        <p className="text-[9px] text-slate-400 font-medium mt-0.5">
-                                          Base: ₹{q.financials.base_package_price.toLocaleString('en-IN')} {q.financials.discount_amount > 0 ? `• Disc: ₹${q.financials.discount_amount.toLocaleString('en-IN')}` : ''}
-                                        </p>
-                                      ) : null}
-                                    </div>
-
-                                    <button
-                                      type="button"
-                                      onClick={() => handleSetFinalFromFinance(record.client?.lead_id || '', q.template_id, record.client_id)}
-                                      disabled={isSettingThis || settingFinalLoadingId !== null}
-                                      className="w-full py-2 px-3 rounded-lg bg-gradient-to-r from-amber-500 to-[#F36F21] hover:from-amber-600 hover:to-[#E05E10] active:scale-95 text-white text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
-                                    >
-                                      {isSettingThis ? (
-                                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                                      ) : (
-                                        <CheckCircle2 className="w-3.5 h-3.5" />
-                                      )}
-                                      <span>{isSettingThis ? 'Syncing...' : 'Set as Final Quotation'}</span>
-                                    </button>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ) : (
-                            <div className="p-3 bg-white/90 rounded-xl border border-amber-200 flex flex-wrap items-center justify-between gap-2 text-xs">
-                              <span className="text-slate-600 font-medium">Is lead ke liye abhi koi Quotation nahi banaya gaya hai.</span>
-                              <Link
-                                href={record.client?.lead_id ? `/workspace/quotations` : `/leads`}
-                                className="px-3 py-1.5 bg-slate-900 hover:bg-black text-white rounded-lg font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
-                              >
-                                <Plus className="w-3.5 h-3.5 text-amber-400" />
-                                <span>Create Quotation</span>
-                              </Link>
-                            </div>
-                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenQuotationModalForRecord(record)}
+                            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-[#F36F21] hover:from-amber-600 hover:to-[#E05E10] text-white text-xs font-black shadow-md hover:shadow-lg active:scale-95 transition flex items-center justify-center gap-2 shrink-0 cursor-pointer"
+                          >
+                            <Crown className="w-4 h-4 text-amber-100" />
+                            <span>Select Final Quotation (वर्जन्स देखें)</span>
+                          </button>
                         </div>
                       )}
 
@@ -2190,6 +2183,24 @@ export default function FinancePage() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* ─────────────────────────────────────────────────────────────
+          MODAL: LEAD QUOTATION VERSION SELECTOR MODAL
+      ───────────────────────────────────────────────────────────── */}
+      {isQuotationModalOpen && quotationModalLead && (
+        <LeadQuotationModal
+          isOpen={isQuotationModalOpen}
+          onClose={() => {
+            setIsQuotationModalOpen(false);
+            setQuotationModalLead(null);
+            fetchFinanceData();
+          }}
+          lead={quotationModalLead}
+          onFinalSet={async () => {
+            await fetchFinanceData();
+          }}
+        />
+      )}
 
     </div>
   );

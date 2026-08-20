@@ -44,6 +44,7 @@ interface LeadQuotationModalProps {
   isOpen: boolean;
   onClose: () => void;
   lead: Lead | null;
+  onFinalSet?: (quotation: QuotationVersionItem) => void;
 }
 
 function safeSessionSet(key: string, data: any) {
@@ -73,7 +74,7 @@ function safeSessionGet(key: string) {
   }
 }
 
-export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModalProps) {
+export function LeadQuotationModal({ isOpen, onClose, lead, onFinalSet }: LeadQuotationModalProps) {
   const router = useRouter();
   const [quotations, setQuotations] = useState<QuotationVersionItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -257,6 +258,9 @@ export function LeadQuotationModal({ isOpen, onClose, lead }: LeadQuotationModal
           safeSessionSet(cacheKey, updated);
           return updated;
         });
+        if (onFinalSet) {
+          onFinalSet(q);
+        }
       } else {
         setErrorMsg(json.error || 'Failed to set final quotation.');
       }
