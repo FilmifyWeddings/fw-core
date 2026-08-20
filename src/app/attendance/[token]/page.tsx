@@ -10,7 +10,7 @@ import {
   Compass, ArrowUpRight, TrendingUp, Navigation, Pause, Play
 } from 'lucide-react';
 import type { AttendanceRecord, AttendanceBreak, AttendanceLocation } from '@/types';
-import { validateCoordinatesAgainstGeofences, GeofenceValidationResult } from '@/lib/attendance/geo-fence';
+import { validateCoordinatesAgainstGeofences, GeofenceValidationResult, calculateHaversineDistanceMeters } from '@/lib/attendance/geo-fence';
 import { captureAndCompressVideoFrame } from '@/lib/attendance/image-compression';
 import { saveOfflinePunch, getOfflinePunches, removeOfflinePunch } from '@/lib/attendance/offline-store';
 
@@ -36,7 +36,9 @@ export default function PersonalAttendancePage() {
 
   // Live Geofence Heartbeat & In-Zone Active State
   const [isInsideGeofence, setIsInsideGeofence] = useState<boolean>(true);
-  const [consecutiveOutsideCount, setConsecutiveOutsideCount] = useState<number>(0);
+  const [currentDistanceMeters, setCurrentDistanceMeters] = useState<number>(0);
+  const [currentAllowedRadius, setCurrentAllowedRadius] = useState<number>(50);
+  const [lastExitTime, setLastExitTime] = useState<string | null>(null);
 
   // Verification modal state
   const [showVerifyModal, setShowVerifyModal] = useState<'check_in' | 'check_out' | null>(null);
@@ -61,6 +63,7 @@ export default function PersonalAttendancePage() {
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const watchIdRef = useRef<number | null>(null);
 
   // Live clock tick
   useEffect(() => {
@@ -125,53 +128,83 @@ export default function PersonalAttendancePage() {
   };
 
   // -------------------------------------------------------------
-  // LIVE GEOFENCE HEARTBEAT ENGINE (Every 60s when on duty)
+  // REAL-TIME GEOFENCE WATCHER (watchPosition + 60s Heartbeat)
   // -------------------------------------------------------------
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+
+    const handlePos = (position: GeolocationPosition) => {
+      const lat = position.coords.latitude;
+      const lng = position.coords.longitude;
+      const accuracy = Math.round(position.coords.accuracy);
+
+      setGpsLocation({ lat, lng, accuracy });
+
+      const validation = validateCoordinatesAgainstGeofences(
+        { latitude: lat, longitude: lng },
+        locations
+      );
+
+      setGeofenceResult(validation);
+      setCurrentDistanceMeters(validation.distanceMeters);
+      setCurrentAllowedRadius(validation.allowedRadiusMeters);
+
+      if (validation.isWithinGeofence) {
+        setIsInsideGeofence(true);
+        setLastExitTime(null);
+      } else {
+        setIsInsideGeofence(false);
+        setLastExitTime(prev => prev || new Date().toISOString());
+      }
+    };
+
+    const watchId = navigator.geolocation.watchPosition(
+      handlePos,
+      () => {},
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+    watchIdRef.current = watchId;
+
+    return () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+      }
+    };
+  }, [locations]);
+
+  // Periodic Heartbeat Sync (every 60s when clocked in)
   useEffect(() => {
     if (!todayRecord || !todayRecord.check_in_time || todayRecord.check_out_time) return;
 
-    const performHeartbeat = () => {
-      if (!navigator.geolocation) return;
+    const sendHeartbeat = async () => {
+      if (!gpsLocation) return;
+      try {
+        const res = await fetch('/api/public/attendance/heartbeat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            token,
+            lat: gpsLocation.lat,
+            lng: gpsLocation.lng,
+            accuracy: gpsLocation.accuracy,
+            lastExitTime,
+            isPausedClient: !isInsideGeofence
+          })
+        });
 
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          const lat = position.coords.latitude;
-          const lng = position.coords.longitude;
-          const accuracy = Math.round(position.coords.accuracy);
-
-          // Client-side quick check
-          const validation = validateCoordinatesAgainstGeofences({ latitude: lat, longitude: lng }, locations);
-          setIsInsideGeofence(validation.isWithinGeofence);
-
-          try {
-            const res = await fetch('/api/public/attendance/heartbeat', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ token, lat, lng, accuracy })
-            });
-
-            if (res.ok) {
-              const data = await res.json();
-              if (data.record) {
-                setTodayRecord(data.record);
-              }
-              if (data.autoCheckoutTriggered) {
-                setSuccessAnimation('Shift Auto-Ended: Exited studio geofence perimeter.');
-              }
-            }
-          } catch (_) {}
-        },
-        () => {},
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      );
+        if (res.ok) {
+          const data = await res.json();
+          if (data.record) setTodayRecord(data.record);
+          if (data.autoCheckoutTriggered) {
+            setSuccessAnimation('Shift Auto-Ended: Exited studio geofence perimeter.');
+          }
+        }
+      } catch (_) {}
     };
 
-    // Initial ping & recurring 60s interval
-    performHeartbeat();
-    const heartbeatInterval = setInterval(performHeartbeat, 60000);
-
+    const heartbeatInterval = setInterval(sendHeartbeat, 60000);
     return () => clearInterval(heartbeatInterval);
-  }, [todayRecord?.check_in_time, todayRecord?.check_out_time, locations, token]);
+  }, [todayRecord?.check_in_time, todayRecord?.check_out_time, gpsLocation, isInsideGeofence, lastExitTime, token]);
 
   // Sync Offline Queue
   const syncOfflineQueue = async () => {
@@ -241,7 +274,7 @@ export default function PersonalAttendancePage() {
     setCameraActive(false);
   };
 
-  // Strict High Accuracy GPS Acquisition with Fallback Options
+  // GPS Acquisition Helper
   const acquireGPS = () => {
     setGpsError(null);
     if (!navigator.geolocation) {
@@ -249,41 +282,34 @@ export default function PersonalAttendancePage() {
       return;
     }
 
-    const handlePositionSuccess = (position: GeolocationPosition) => {
-      const coords = {
-        lat: position.coords.latitude,
-        lng: position.coords.longitude,
-        accuracy: Math.round(position.coords.accuracy)
-      };
-      setGpsLocation(coords);
-
-      const res = validateCoordinatesAgainstGeofences(
-        { latitude: coords.lat, longitude: coords.lng },
-        locations
-      );
-      setGeofenceResult(res);
-      setIsInsideGeofence(res.isWithinGeofence);
-    };
-
-    const handlePositionError = (err: GeolocationPositionError) => {
-      console.warn('GPS error code:', err.code, err.message);
-      if (err.code === 1) {
-        setGpsError('Location permission denied. Please allow location access in your browser settings.');
-      } else if (err.code === 2) {
-        setGpsError('Location unavailable. Please ensure device Location / GPS is turned ON.');
-      } else {
-        setGpsError('GPS acquisition timed out. Retrying...');
-        navigator.geolocation.getCurrentPosition(
-          handlePositionSuccess,
-          () => setGpsError('Unable to acquire GPS coordinates. Please check device location settings.'),
-          { enableHighAccuracy: false, timeout: 10000, maximumAge: 30000 }
-        );
-      }
-    };
-
     navigator.geolocation.getCurrentPosition(
-      handlePositionSuccess,
-      handlePositionError,
+      (position) => {
+        const coords = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          accuracy: Math.round(position.coords.accuracy)
+        };
+        setGpsLocation(coords);
+
+        const res = validateCoordinatesAgainstGeofences(
+          { latitude: coords.lat, longitude: coords.lng },
+          locations
+        );
+        setGeofenceResult(res);
+        setIsInsideGeofence(res.isWithinGeofence);
+        setCurrentDistanceMeters(res.distanceMeters);
+        setCurrentAllowedRadius(res.allowedRadiusMeters);
+      },
+      (err) => {
+        console.warn('GPS error code:', err.code, err.message);
+        if (err.code === 1) {
+          setGpsError('Location permission denied. Please allow location access in your browser settings.');
+        } else if (err.code === 2) {
+          setGpsError('Location unavailable. Please ensure device Location / GPS is turned ON.');
+        } else {
+          setGpsError('GPS acquisition timed out. Retrying...');
+        }
+      },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   };
@@ -409,7 +435,7 @@ export default function PersonalAttendancePage() {
     }
   };
 
-  // Calculate live working duration in IST
+  // Calculate live working duration in IST (Respecting real-time pauses)
   const getLiveDurationString = () => {
     if (!todayRecord || !todayRecord.check_in_time) return '0h 00m';
     const startMs = new Date(todayRecord.check_in_time).getTime();
@@ -540,30 +566,34 @@ export default function PersonalAttendancePage() {
           </div>
         )}
 
-        {/* Live Auto-Pause / In-Zone Heartbeat Banner */}
+        {/* Real-Time Out-of-Radius Auto-Pause Alert Banner */}
         {isCheckedIn && !isCheckedOut && (
-          <div className={`mt-2.5 p-2 rounded-[10px] text-[11px] flex items-center justify-between border ${
+          <div className={`mt-2.5 p-2.5 rounded-[12px] text-xs flex items-center justify-between border transition-all ${
             isInsideGeofence 
               ? 'bg-[#E8F5E9] text-[#2E7D32] border-[#C8E6C9]'
-              : 'bg-[#FFF3E0] text-[#E65100] border-[#FFE0B2] animate-pulse'
+              : 'bg-[#FFEBEE] text-[#C62828] border-[#FFCDD2] shadow-sm animate-pulse'
           }`}>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-2">
               {isInsideGeofence ? (
                 <>
-                  <span className="w-2 h-2 rounded-full bg-[#2E7D32] animate-ping" />
-                  <span className="font-bold">In-Zone Active</span>
-                  <span className="text-[10px] opacity-80">(Shift timer running)</span>
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#2E7D32] animate-ping" />
+                  <span className="font-bold">🟢 Active in Zone</span>
+                  <span className="text-[10.5px] opacity-80">({currentDistanceMeters}m from studio)</span>
                 </>
               ) : (
                 <>
-                  <Pause className="w-3.5 h-3.5 text-[#E65100]" />
-                  <span className="font-bold">Auto-Paused</span>
-                  <span className="text-[10px] opacity-90">(Outside studio radius)</span>
+                  <Pause className="w-4 h-4 text-[#C62828] flex-shrink-0" />
+                  <div>
+                    <span className="font-black block">⚠️ Timer Paused</span>
+                    <span className="text-[10px] opacity-90">
+                      You are {currentDistanceMeters}m outside allowed radius ({currentAllowedRadius}m). Return to zone to resume.
+                    </span>
+                  </div>
                 </>
               )}
             </div>
-            <span className="text-[10px] font-mono font-bold">
-              {todayRecord?.break_duration_minutes ? `Paused: ${todayRecord.break_duration_minutes}m` : '60s Radar'}
+            <span className="text-[10.5px] font-mono font-bold whitespace-nowrap pl-2">
+              {todayRecord?.break_duration_minutes ? `Paused: ${todayRecord.break_duration_minutes}m` : 'Live GPS'}
             </span>
           </div>
         )}
@@ -919,7 +949,7 @@ export default function PersonalAttendancePage() {
               ) : isPunchBlockedByGeofence ? (
                 <>
                   <AlertTriangle className="w-4 h-4" />
-                  <span>Outside Geofence Zone</span>
+                  <span>Outside Geofence Zone ({currentDistanceMeters}m)</span>
                 </>
               ) : (
                 <>

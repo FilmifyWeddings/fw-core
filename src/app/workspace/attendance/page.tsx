@@ -273,10 +273,11 @@ export default function AttendancePage() {
   };
 
   // Update existing Geofence coordinates or radius
-  const handleUpdateGeofenceOnMap = async (lat: number, lng: number, address?: string, radius?: number) => {
+  const handleUpdateGeofenceOnMap = async (lat: number, lng: number, address?: string, placeName?: string, radius?: number) => {
     if (!selectedLocation) return;
     const updated = {
       ...selectedLocation,
+      name: placeName || selectedLocation.name,
       latitude: lat,
       longitude: lng,
       address: address || selectedLocation.address,
@@ -290,6 +291,7 @@ export default function AttendancePage() {
       await supabase
         .from('attendance_locations')
         .update({
+          name: placeName || selectedLocation.name,
           latitude: lat,
           longitude: lng,
           address: address || selectedLocation.address,
@@ -1088,8 +1090,8 @@ export default function AttendancePage() {
                   locationName={selectedLocation.name}
                   isEditable={true}
                   height="450px"
-                  onCoordinatesChange={(lat, lng, address) => handleUpdateGeofenceOnMap(lat, lng, address)}
-                  onRadiusChange={(r) => handleUpdateGeofenceOnMap(selectedLocation.latitude, selectedLocation.longitude, selectedLocation.address, r)}
+                  onCoordinatesChange={(lat, lng, address, placeName) => handleUpdateGeofenceOnMap(lat, lng, address, placeName)}
+                  onRadiusChange={(r) => handleUpdateGeofenceOnMap(selectedLocation.latitude, selectedLocation.longitude, selectedLocation.address, selectedLocation.name, r)}
                 />
               </div>
             )}

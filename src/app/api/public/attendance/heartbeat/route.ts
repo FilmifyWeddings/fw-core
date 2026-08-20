@@ -5,7 +5,7 @@ import { calculateHaversineDistanceMeters, reverseGeocodeAddress } from '@/lib/a
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { token, lat, lng, accuracy } = body;
+    const { token, lat, lng, accuracy, lastExitTime, isPausedClient } = body;
 
     if (!token || !token.trim()) {
       return NextResponse.json({ error: 'Attendance token is required' }, { status: 400 });
@@ -47,6 +47,12 @@ export async function POST(request: NextRequest) {
       .eq('id', link.member_id)
       .single();
 
+    const { data: settings } = await supabaseAdmin
+      .from('attendance_settings')
+      .select('*')
+      .eq('user_id', link.user_id)
+      .maybeSingle();
+
     let locationsQuery = supabaseAdmin
       .from('attendance_locations')
       .select('id, name, latitude, longitude, radius_meters')
@@ -66,7 +72,7 @@ export async function POST(request: NextRequest) {
     // 4. Calculate Distance & In-Zone Status
     let isInside = false;
     let minDistance = Infinity;
-    let allowedRadius = 150;
+    let allowedRadius = 50;
     let matchedLocationName = '';
 
     if (locations.length > 0 && lat && lng) {
@@ -81,16 +87,16 @@ export async function POST(request: NextRequest) {
         if (dist < minDistance) {
           minDistance = dist;
           matchedLocationName = loc.name;
-          allowedRadius = Number(loc.radius_meters || 150);
+          allowedRadius = Number(loc.radius_meters || 50);
         }
 
-        if (dist <= Number(loc.radius_meters || 150)) {
+        if (dist <= Number(loc.radius_meters || 50)) {
           isInside = true;
           break;
         }
       }
     } else {
-      isInside = true; // Default to inside if no geofence enforced
+      isInside = true;
     }
 
     const now = new Date();
@@ -103,13 +109,30 @@ export async function POST(request: NextRequest) {
       consecutiveOutsidePings += 1;
     }
 
-    // Auto-Checkout Trigger: If employee is outside for >= 15 consecutive heartbeat pings (approx 15 mins)
+    // Check if current time is past shift end in IST
+    const istTimeStr = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: false
+    }).format(now);
+    const [istH, istM] = istTimeStr.split(':').map(Number);
+    const currentIstMinutes = istH * 60 + istM;
+
+    const shiftEnd = settings?.default_shift_end || '18:30:00';
+    const [eH, eM] = shiftEnd.split(':').map(Number);
+    const shiftEndMinutes = eH * 60 + eM;
+
+    // Auto-Checkout Trigger:
+    // 1) Employee is outside and consecutive outside pings >= 15 (approx 15 mins)
+    // 2) OR current time is past shift end AND employee is outside
     let autoCheckoutTriggered = false;
     let finalCheckOutTime = null;
 
-    if (consecutiveOutsidePings >= 15) {
+    if (!isInside && (consecutiveOutsidePings >= 15 || currentIstMinutes >= shiftEndMinutes)) {
       autoCheckoutTriggered = true;
-      finalCheckOutTime = now.toISOString();
+      // Stamp checkout at exact exit timestamp if available, otherwise current time
+      finalCheckOutTime = lastExitTime || deviceInfo.last_exit_time || now.toISOString();
     }
 
     // 5. Update Record State
@@ -125,6 +148,7 @@ export async function POST(request: NextRequest) {
       last_heartbeat_inside: isInside,
       last_heartbeat_distance_meters: minDistance,
       consecutive_outside_pings: consecutiveOutsidePings,
+      last_exit_time: !isInside ? (lastExitTime || deviceInfo.last_exit_time || now.toISOString()) : null,
       auto_checkout_triggered: autoCheckoutTriggered
     };
 
@@ -140,7 +164,7 @@ export async function POST(request: NextRequest) {
       updatePayload.check_out_lat = lat ? Number(lat) : null;
       updatePayload.check_out_lng = lng ? Number(lng) : null;
       updatePayload.check_out_verified = true;
-      updatePayload.notes = [record.notes, `Auto-Checked Out (Exited geofence radius)`].filter(Boolean).join(' | ');
+      updatePayload.notes = [record.notes, `Auto-Checked Out at exit time: ${finalCheckOutTime}`].filter(Boolean).join(' | ');
     }
 
     const { data: updatedRecord } = await supabaseAdmin

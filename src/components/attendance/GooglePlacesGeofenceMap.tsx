@@ -12,7 +12,7 @@ interface GooglePlacesGeofenceMapProps {
   isEditable?: boolean;
   height?: string;
   className?: string;
-  onCoordinatesChange?: (lat: number, lng: number, address?: string) => void;
+  onCoordinatesChange?: (lat: number, lng: number, address?: string, placeName?: string) => void;
   onRadiusChange?: (radius: number) => void;
 }
 
@@ -171,7 +171,7 @@ export default function GooglePlacesGeofenceMap({
       fillOpacity: 0.22,
       map,
       center,
-      radius: radiusMeters || 150
+      radius: radiusMeters || 50
     });
     googleCircleRef.current = circle;
 
@@ -202,10 +202,12 @@ export default function GooglePlacesGeofenceMap({
       });
     }
 
-    // Google Places Autocomplete
+    // Google Places Autocomplete (Businesses, Shops, Landmarks & Addresses)
     if (searchInputRef.current && window.google.maps.places) {
       const autocomplete = new window.google.maps.places.Autocomplete(searchInputRef.current, {
-        fields: ['geometry', 'formatted_address', 'name']
+        fields: ['geometry', 'formatted_address', 'name', 'place_id'],
+        types: ['establishment', 'geocode'],
+        componentRestrictions: { country: 'in' }
       });
       googleAutocompleteRef.current = autocomplete;
 
@@ -220,10 +222,11 @@ export default function GooglePlacesGeofenceMap({
 
           const newLat = Number(loc.lat().toFixed(6));
           const newLng = Number(loc.lng().toFixed(6));
+          const placeName = place.name || '';
           const addr = place.formatted_address || (await reverseGeocodeAddress(newLat, newLng));
           setCurrentAddress(addr);
-          setSearchQuery(place.name || addr);
-          if (onCoordinatesChange) onCoordinatesChange(newLat, newLng, addr);
+          setSearchQuery(placeName ? `${placeName}, ${addr}` : addr);
+          if (onCoordinatesChange) onCoordinatesChange(newLat, newLng, addr, placeName);
         }
       });
     }
@@ -281,7 +284,7 @@ export default function GooglePlacesGeofenceMap({
     leafletMarkerRef.current = marker;
 
     const circle = L.circle([latitude || 19.0596, longitude || 72.8295], {
-      radius: radiusMeters || 150,
+      radius: radiusMeters || 50,
       color: '#C89435',
       weight: 2,
       fillColor: '#C89435',
@@ -313,7 +316,7 @@ export default function GooglePlacesGeofenceMap({
     }
   };
 
-  // Update Circle Radius when slider changes
+  // Update Circle Radius when slider changes (1m to 1000m precision)
   useEffect(() => {
     if (googleCircleRef.current) {
       googleCircleRef.current.setRadius(radiusMeters);
@@ -336,7 +339,7 @@ export default function GooglePlacesGeofenceMap({
     }
   }, [latitude, longitude]);
 
-  // Fallback Nominatim search when not using Google Places Autocomplete
+  // Fallback Nominatim search (with business / namedetails tags)
   const handleSearchNominatim = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchQuery.trim()) return;
@@ -344,7 +347,7 @@ export default function GooglePlacesGeofenceMap({
     setSearching(true);
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&limit=5&addressdetails=1`
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&limit=6&addressdetails=1&namedetails=1&extratags=1&countrycodes=in`
       );
       const data = await res.json();
       setSearchResults(data || []);
@@ -357,6 +360,7 @@ export default function GooglePlacesGeofenceMap({
   const handleSelectNominatimResult = (item: any) => {
     const lat = parseFloat(item.lat);
     const lon = parseFloat(item.lon);
+    const placeName = item.namedetails?.name || item.display_name.split(',')[0];
 
     if (leafletMapRef.current) {
       leafletMapRef.current.flyTo([lat, lon], 17);
@@ -371,11 +375,11 @@ export default function GooglePlacesGeofenceMap({
     }
 
     setSearchResults([]);
-    setSearchQuery(item.display_name.split(',')[0]);
+    setSearchQuery(item.display_name);
     setCurrentAddress(item.display_name);
 
     if (onCoordinatesChange) {
-      onCoordinatesChange(Number(lat.toFixed(6)), Number(lon.toFixed(6)), item.display_name);
+      onCoordinatesChange(Number(lat.toFixed(6)), Number(lon.toFixed(6)), item.display_name, placeName);
     }
   };
 
@@ -389,7 +393,7 @@ export default function GooglePlacesGeofenceMap({
             <input
               ref={searchInputRef}
               type="text"
-              placeholder="Search studio address, landmark, or venue..."
+              placeholder="Search studio name, business, shop, landmark, or venue..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-9 pr-24 py-2.5 bg-white/95 backdrop-blur-md border border-[#E9DFD2] rounded-xl text-xs font-semibold text-[#211B17] placeholder:text-[#99928A] shadow-md focus:outline-none focus:ring-2 focus:ring-[#C89435]"
@@ -425,22 +429,22 @@ export default function GooglePlacesGeofenceMap({
       {/* Map Viewport Container */}
       <div ref={mapContainerRef} style={{ height }} className="w-full bg-[#1A1816] z-0" />
 
-      {/* Bottom Radius Slider Control Bar */}
+      {/* Bottom Radius Slider Control Bar (1m to 1000m precision) */}
       {isEditable && (
         <div className="absolute bottom-3 left-3 right-3 z-[1000] bg-white/95 backdrop-blur-md p-3 rounded-xl border border-[#E9DFD2] shadow-lg flex items-center justify-between gap-4 pointer-events-auto">
           <div className="flex items-center gap-2 text-xs font-bold text-[#211B17] whitespace-nowrap">
             <Compass className="w-4 h-4 text-[#C89435]" />
-            <span>Radar Radius:</span>
-            <span className="px-2 py-0.5 rounded-full bg-[#FAF3E6] text-[#8C6D33] text-[11px] font-mono">
+            <span>Radius:</span>
+            <span className="px-2 py-0.5 rounded-full bg-[#FAF3E6] text-[#8C6D33] text-[11px] font-mono font-bold">
               {radiusMeters}m
             </span>
           </div>
 
           <input
             type="range"
-            min="20"
+            min="1"
             max="1000"
-            step="10"
+            step="1"
             value={radiusMeters}
             onChange={(e) => onRadiusChange && onRadiusChange(Number(e.target.value))}
             className="w-full accent-[#C89435] cursor-pointer"
