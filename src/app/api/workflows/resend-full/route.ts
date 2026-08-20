@@ -69,8 +69,12 @@ export async function POST(req: NextRequest) {
     for (const step of workflowSteps) {
       if (step.delay_unit === 'seconds' && step.delay_value > 0) {
         driftTime = new Date(driftTime.getTime() + step.delay_value * 1000);
+      } else if (step.delay_unit === 'minutes' && step.delay_value > 0) {
+        driftTime = new Date(driftTime.getTime() + step.delay_value * 60 * 1000);
       } else if (step.delay_unit === 'hours' && step.delay_value > 0) {
         driftTime = new Date(driftTime.getTime() + step.delay_value * 3600 * 1000);
+      } else if (step.delay_unit === 'days' && step.delay_value > 0) {
+        driftTime = new Date(driftTime.getTime() + step.delay_value * 24 * 3600 * 1000);
       }
       stepScheduleMap.set(step.sort_index, driftTime.toISOString());
     }

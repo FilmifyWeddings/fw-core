@@ -47,7 +47,7 @@ interface WorkflowStep {
   template_id: string;
   template_name: string;
   delay_value: number;
-  delay_unit: 'seconds' | 'hours';
+  delay_unit: 'seconds' | 'minutes' | 'hours' | 'days';
   sort_index: number;
 }
 

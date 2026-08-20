@@ -183,20 +183,25 @@ export async function GET(req: NextRequest) {
         }
         const groupJoinTimeFormatted = formatIST(groupJoinDate);
 
+        let runningSentAtDate = new Date(groupJoinDate.getTime());
+
         const stepsLogs = (workflow.workflow_steps || []).map((step: any) => {
           const matchedLog = leadLogs.find(l => l.step_index === step.sort_index);
           let stepStatus = 'unsent';
           let errorMsg = null;
-          let sentAtDate = new Date(groupJoinDate.getTime());
 
-          if (step.delay_unit === 'seconds') {
-            sentAtDate.setSeconds(sentAtDate.getSeconds() + step.delay_value);
-          } else if (step.delay_unit === 'hours') {
-            sentAtDate.setHours(sentAtDate.getHours() + step.delay_value);
+          if (step.delay_unit === 'seconds' && step.delay_value > 0) {
+            runningSentAtDate.setSeconds(runningSentAtDate.getSeconds() + step.delay_value);
+          } else if (step.delay_unit === 'minutes' && step.delay_value > 0) {
+            runningSentAtDate.setMinutes(runningSentAtDate.getMinutes() + step.delay_value);
+          } else if (step.delay_unit === 'hours' && step.delay_value > 0) {
+            runningSentAtDate.setHours(runningSentAtDate.getHours() + step.delay_value);
+          } else if (step.delay_unit === 'days' && step.delay_value > 0) {
+            runningSentAtDate.setDate(runningSentAtDate.getDate() + step.delay_value);
           }
 
-          let sentAtIso = sentAtDate.toISOString();
-          let sentAtFormatted = `Scheduled to send on: ${formatIST(sentAtDate)}`;
+          let sentAtIso = runningSentAtDate.toISOString();
+          let sentAtFormatted = `Scheduled to send on: ${formatIST(runningSentAtDate)}`;
           let updatedAtFormatted = '—';
 
           if (matchedLog) {

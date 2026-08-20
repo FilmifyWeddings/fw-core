@@ -103,8 +103,12 @@ BEGIN
       -- Accumulate delay ON TOP of previous step's time (not fresh NOW())
       IF r_step.delay_unit = 'seconds' AND r_step.delay_value > 0 THEN
         v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' seconds')::INTERVAL;
+      ELSIF r_step.delay_unit = 'minutes' AND r_step.delay_value > 0 THEN
+        v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' minutes')::INTERVAL;
       ELSIF r_step.delay_unit = 'hours' AND r_step.delay_value > 0 THEN
         v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' hours')::INTERVAL;
+      ELSIF r_step.delay_unit = 'days' AND r_step.delay_value > 0 THEN
+        v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' days')::INTERVAL;
       END IF;
 
       v_log_id := gen_random_uuid();
@@ -207,8 +211,12 @@ BEGIN
       -- Accumulate delay on top of previous step's scheduled_at
       IF r_step.delay_unit = 'seconds' AND r_step.delay_value > 0 THEN
         v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' seconds')::INTERVAL;
+      ELSIF r_step.delay_unit = 'minutes' AND r_step.delay_value > 0 THEN
+        v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' minutes')::INTERVAL;
       ELSIF r_step.delay_unit = 'hours' AND r_step.delay_value > 0 THEN
         v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' hours')::INTERVAL;
+      ELSIF r_step.delay_unit = 'days' AND r_step.delay_value > 0 THEN
+        v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' days')::INTERVAL;
       END IF;
 
       -- Skip already-enrolled steps
