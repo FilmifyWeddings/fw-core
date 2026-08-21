@@ -8,22 +8,119 @@ import {
   ExternalLink, User, Calendar, Plus, Search, Filter, Layers, 
   ChevronDown, ChevronUp, Edit3, MessageSquare, ArrowLeft, RefreshCw, 
   Play, Sparkles, Check, X, ShieldAlert, AlertCircle, Trash2, FolderPlus,
-  Bell, Send, UserPlus, FileText, CheckSquare, MoreVertical, Link2
+  Bell, Send, UserPlus, FileText, CheckSquare, MoreVertical, Link2,
+  Mic, Palette, Tag
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import AiMicButton from '@/components/AiMicButton';
 import type { 
   PostProductionProject, DeliverableItem, DeliverableCategory, DeliverableStatus, WorkspaceClient, DeliverableComment 
 } from '@/types';
 
-// Category metadata helper
-const CATEGORY_META = {
-  photos: { label: 'Photos', icon: Camera, color: 'text-indigo-600', bg: 'bg-indigo-50 border-indigo-200' },
-  videos: { label: 'Videos', icon: Video, color: 'text-rose-600', bg: 'bg-rose-50 border-rose-200' },
-  albums: { label: 'Albums', icon: BookOpen, color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200' },
-  teaser: { label: 'Teaser Film', icon: Play, color: 'text-cyan-600', bg: 'bg-cyan-50 border-cyan-200' },
-  film: { label: 'Full Film', icon: Video, color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200' },
-  reels: { label: 'Reels', icon: Film, color: 'text-pink-600', bg: 'bg-pink-50 border-pink-200' },
-  album: { label: 'Print Album', icon: BookOpen, color: 'text-purple-600', bg: 'bg-purple-50 border-purple-200' },
+// Color Palette Themes for Categories
+export type CategoryColorTheme = 'indigo' | 'rose' | 'amber' | 'emerald' | 'purple' | 'cyan' | 'pink' | 'orange';
+
+export interface CategoryDefinition {
+  key: string;
+  label: string;
+  colorTheme: CategoryColorTheme;
+  iconName?: string;
+}
+
+// Pre-defined / default categories
+const DEFAULT_CATEGORY_DEFS: Record<string, { label: string; colorTheme: CategoryColorTheme }> = {
+  photos: { label: 'Photos', colorTheme: 'indigo' },
+  videos: { label: 'Videos', colorTheme: 'rose' },
+  albums: { label: 'Albums', colorTheme: 'amber' },
+  reels: { label: 'Reels & Shorts', colorTheme: 'emerald' },
+  teasers: { label: 'Teasers & Promos', colorTheme: 'cyan' },
+  raw_dump: { label: 'Raw Dumps & Drives', colorTheme: 'purple' },
+  drone: { label: 'Drone Footage', colorTheme: 'orange' },
+  social: { label: 'Social Media Edits', colorTheme: 'pink' },
+};
+
+// Theme classes mapping for cards
+const COLOR_THEME_CLASSES: Record<CategoryColorTheme, {
+  bg: string;
+  border: string;
+  text: string;
+  badgeBg: string;
+  badgeBorder: string;
+  iconBg: string;
+  buttonBg: string;
+}> = {
+  indigo: {
+    bg: 'bg-indigo-50/70',
+    border: 'border-indigo-200/90',
+    text: 'text-indigo-700',
+    badgeBg: 'bg-indigo-100/90',
+    badgeBorder: 'border-indigo-200',
+    iconBg: 'bg-indigo-100 text-indigo-600',
+    buttonBg: 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-indigo-200'
+  },
+  rose: {
+    bg: 'bg-rose-50/70',
+    border: 'border-rose-200/90',
+    text: 'text-rose-700',
+    badgeBg: 'bg-rose-100/90',
+    badgeBorder: 'border-rose-200',
+    iconBg: 'bg-rose-100 text-rose-600',
+    buttonBg: 'bg-rose-50 text-rose-700 hover:bg-rose-100 border-rose-200'
+  },
+  amber: {
+    bg: 'bg-amber-50/70',
+    border: 'border-amber-200/90',
+    text: 'text-amber-800',
+    badgeBg: 'bg-amber-100/90',
+    badgeBorder: 'border-amber-200',
+    iconBg: 'bg-amber-100 text-amber-700',
+    buttonBg: 'bg-amber-50 text-amber-800 hover:bg-amber-100 border-amber-200'
+  },
+  emerald: {
+    bg: 'bg-emerald-50/70',
+    border: 'border-emerald-200/90',
+    text: 'text-emerald-700',
+    badgeBg: 'bg-emerald-100/90',
+    badgeBorder: 'border-emerald-200',
+    iconBg: 'bg-emerald-100 text-emerald-600',
+    buttonBg: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border-emerald-200'
+  },
+  purple: {
+    bg: 'bg-purple-50/70',
+    border: 'border-purple-200/90',
+    text: 'text-purple-700',
+    badgeBg: 'bg-purple-100/90',
+    badgeBorder: 'border-purple-200',
+    iconBg: 'bg-purple-100 text-purple-600',
+    buttonBg: 'bg-purple-50 text-purple-700 hover:bg-purple-100 border-purple-200'
+  },
+  cyan: {
+    bg: 'bg-cyan-50/70',
+    border: 'border-cyan-200/90',
+    text: 'text-cyan-700',
+    badgeBg: 'bg-cyan-100/90',
+    badgeBorder: 'border-cyan-200',
+    iconBg: 'bg-cyan-100 text-cyan-600',
+    buttonBg: 'bg-cyan-50 text-cyan-700 hover:bg-cyan-100 border-cyan-200'
+  },
+  pink: {
+    bg: 'bg-pink-50/70',
+    border: 'border-pink-200/90',
+    text: 'text-pink-700',
+    badgeBg: 'bg-pink-100/90',
+    badgeBorder: 'border-pink-200',
+    iconBg: 'bg-pink-100 text-pink-600',
+    buttonBg: 'bg-pink-50 text-pink-700 hover:bg-pink-100 border-pink-200'
+  },
+  orange: {
+    bg: 'bg-orange-50/70',
+    border: 'border-orange-200/90',
+    text: 'text-orange-700',
+    badgeBg: 'bg-orange-100/90',
+    badgeBorder: 'border-orange-200',
+    iconBg: 'bg-orange-100 text-orange-600',
+    buttonBg: 'bg-orange-50 text-orange-700 hover:bg-orange-100 border-orange-200'
+  },
 };
 
 // Stage / Status options with Light Theme Badges
@@ -74,6 +171,11 @@ export default function PostProductionPage() {
   
   const [showAddEditorModal, setShowAddEditorModal] = useState<{ open: boolean; projectId?: string; deliverableId?: string }>({ open: false });
   const [newEditorName, setNewEditorName] = useState('');
+
+  // Add Dynamic Category Modal state
+  const [showAddCategoryModal, setShowAddCategoryModal] = useState<{ open: boolean; projectId?: string }>({ open: false });
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [newCategoryColor, setNewCategoryColor] = useState<CategoryColorTheme>('emerald');
 
   // Comment Modal state
   const [activeCommentModal, setActiveCommentModal] = useState<{
@@ -472,28 +574,65 @@ export default function PostProductionPage() {
     }));
   };
 
-  // Add Custom Deliverable into a specific category (Photos, Videos, Albums)
-  const handleAddDeliverable = (projectId: string, category: 'photos' | 'videos' | 'albums') => {
-    const titlePrompt = prompt(`Enter title for new ${category === 'photos' ? 'Photo' : category === 'videos' ? 'Video' : 'Album'} deliverable:`);
+  // Add Deliverable into any category
+  const handleAddDeliverable = (projectId: string, categoryKey: string, customCategoryName?: string, customColor?: CategoryColorTheme) => {
+    const titlePrompt = prompt(`Enter title for deliverable under "${customCategoryName || categoryKey}":`);
     if (!titlePrompt || !titlePrompt.trim()) return;
 
-    const countPrompt = prompt(`Enter count / specifications (e.g. 500 Photos, 3 Reels, 40 Pages):`, category === 'photos' ? '100 Photos' : category === 'videos' ? '1 Video' : '30 Pages');
+    const countPrompt = prompt(`Enter count / specifications (e.g. 500 Photos, 3 Reels, 40 Pages, 1 Drive):`, '1 Item');
 
     const newDeliverable: DeliverableItem = {
-      id: `deliv_${category}_${Date.now()}`,
+      id: `deliv_${categoryKey}_${Date.now()}`,
       title: titlePrompt.trim(),
-      category: category,
+      category: categoryKey as any,
       count: countPrompt || '',
-      assigned_to: category === 'photos' ? 'Vikram (Photo Retoucher)' : category === 'videos' ? 'Amit (Senior Video Editor)' : 'Rohan (Album Designer)',
+      assigned_to: 'Amit (Senior Video Editor)',
       deadline: '',
       status: 'pending',
       drive_link: '',
       comments: []
     };
 
+    // If custom color/name is passed, attach to deliverable
+    if (customCategoryName) (newDeliverable as any).category_name = customCategoryName;
+    if (customColor) (newDeliverable as any).category_color = customColor;
+
     setProjects(prev => prev.map(p => {
       if (p.id === projectId) {
         const updatedDeliverables = [...p.deliverables, newDeliverable];
+        updateProjectInDB(projectId, p.client_id, { deliverables: updatedDeliverables });
+        return { ...p, deliverables: updatedDeliverables };
+      }
+      return p;
+    }));
+  };
+
+  // Add a whole new dynamic category card to a project
+  const handleCreateCategoryCard = (projectId: string, categoryName: string, colorTheme: CategoryColorTheme) => {
+    if (!categoryName.trim()) return;
+
+    const slug = categoryName.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+    const categoryKey = `cat_${slug}_${Date.now()}`;
+
+    // Add first initial item to this new category
+    const initialItem: DeliverableItem = {
+      id: `deliv_${categoryKey}_1_${Date.now()}`,
+      title: `${categoryName.trim()} Item 1`,
+      category: categoryKey as any,
+      count: '1 Unit',
+      assigned_to: 'Amit (Senior Video Editor)',
+      deadline: '',
+      status: 'pending',
+      drive_link: '',
+      comments: []
+    };
+
+    (initialItem as any).category_name = categoryName.trim();
+    (initialItem as any).category_color = colorTheme;
+
+    setProjects(prev => prev.map(p => {
+      if (p.id === projectId) {
+        const updatedDeliverables = [...p.deliverables, initialItem];
         updateProjectInDB(projectId, p.client_id, { deliverables: updatedDeliverables });
         return { ...p, deliverables: updatedDeliverables };
       }
@@ -508,6 +647,20 @@ export default function PostProductionPage() {
     setProjects(prev => prev.map(p => {
       if (p.id === projectId) {
         const updatedDeliverables = p.deliverables.filter(d => d.id !== deliverableId);
+        updateProjectInDB(projectId, p.client_id, { deliverables: updatedDeliverables });
+        return { ...p, deliverables: updatedDeliverables };
+      }
+      return p;
+    }));
+  };
+
+  // Delete entire category card
+  const handleDeleteCategory = (projectId: string, categoryKey: string, categoryTitle: string) => {
+    if (!confirm(`Are you sure you want to delete the entire "${categoryTitle}" category card and all its items?`)) return;
+
+    setProjects(prev => prev.map(p => {
+      if (p.id === projectId) {
+        const updatedDeliverables = p.deliverables.filter(d => d.category !== categoryKey);
         updateProjectInDB(projectId, p.client_id, { deliverables: updatedDeliverables });
         return { ...p, deliverables: updatedDeliverables };
       }
@@ -589,26 +742,26 @@ export default function PostProductionPage() {
   const overallPercentage = totalDeliverablesCount > 0 ? Math.round((completedDeliverablesCount / totalDeliverablesCount) * 100) : 0;
 
   return (
-    <div className="min-h-screen bg-[#F8F9FD] text-slate-900 pb-20 pt-2 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-[#FAF9F5] text-slate-900 pb-20 pt-2 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto space-y-6">
 
           {/* ─────────────────────────────────────────────────────────────
-              HEADER & TOP CONTROLS (LIGHT THEME)
+              HEADER & TOP CONTROLS (LUXURY CREAMY & LIGHT YELLOW)
           ───────────────────────────────────────────────────────────── */}
-          <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="bg-[#FFFDF9] rounded-2xl p-6 border border-[#EAE5DA] shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-rose-500 flex items-center justify-center shadow-md text-white">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500 via-yellow-500 to-amber-600 flex items-center justify-center shadow-md text-white font-bold">
                 <Film className="w-6 h-6" />
               </div>
               <div>
                 <div className="flex items-center gap-2.5">
-                  <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Post-Production Tracking</h1>
-                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                    Light Suite
+                  <h1 className="text-2xl font-black tracking-tight text-slate-900">Post-Production Tracking</h1>
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-amber-50 text-amber-800 border border-amber-200">
+                    Studio Suite
                   </span>
                 </div>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Deliverables engine with 3-category tracking (Photos, Videos, Albums), interactive PMs, editors, and deadline countdowns.
+                <p className="text-xs text-slate-600 mt-0.5 font-medium">
+                  Deliverables engine with dynamic category cards (Photos, Videos, Albums, Custom Cards), AI Voice notes, and deadline countdowns.
                 </p>
               </div>
             </div>
@@ -616,14 +769,14 @@ export default function PostProductionPage() {
             <div className="flex items-center gap-3">
               <Link
                 href="/workspace/clients"
-                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition flex items-center gap-2"
+                className="px-4 py-2 text-xs font-bold text-slate-700 bg-amber-50/60 hover:bg-amber-100/80 border border-amber-200/80 rounded-xl transition flex items-center gap-2 shadow-2xs"
               >
-                <User className="w-4 h-4" />
+                <User className="w-4 h-4 text-amber-700" />
                 Client Directory
               </Link>
               <button
                 onClick={fetchPostProductionData}
-                className="p-2 text-slate-500 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition"
+                className="p-2 text-slate-600 hover:text-slate-900 bg-amber-50/60 hover:bg-amber-100/80 border border-amber-200/80 rounded-xl transition shadow-2xs cursor-pointer"
                 title="Refresh Data"
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -632,43 +785,43 @@ export default function PostProductionPage() {
           </div>
 
           {/* ─────────────────────────────────────────────────────────────
-              METRICS DASHBOARD (CLEAN LIGHT CARDS)
+              METRICS DASHBOARD (WARM LUXURY CREAM & GOLD CARDS)
           ───────────────────────────────────────────────────────────── */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
+            <div className="bg-[#FFFDF9] p-5 rounded-2xl border border-[#EAE5DA] shadow-xs flex items-center justify-between hover:border-amber-300/80 transition-all">
               <div>
-                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Studio Projects</p>
-                <h3 className="text-2xl font-black text-slate-900 mt-1">{totalProjects} <span className="text-xs font-semibold text-slate-500 font-normal">Projects</span></h3>
+                <p className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">Total Studio Projects</p>
+                <h3 className="text-2xl font-black text-slate-900 mt-1">{totalProjects} <span className="text-xs font-bold text-slate-500">Projects</span></h3>
               </div>
-              <div className="w-11 h-11 rounded-xl bg-purple-50 text-purple-600 border border-purple-200 flex items-center justify-center">
+              <div className="w-11 h-11 rounded-xl bg-amber-50 text-amber-700 border border-amber-200 flex items-center justify-center">
                 <Layers className="w-5 h-5" />
               </div>
             </div>
 
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
+            <div className="bg-[#FFFDF9] p-5 rounded-2xl border border-[#EAE5DA] shadow-xs flex items-center justify-between hover:border-amber-300/80 transition-all">
               <div>
-                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Overall Deliverables Done</p>
-                <h3 className="text-2xl font-black text-emerald-600 mt-1">{overallPercentage}% <span className="text-xs font-semibold text-slate-500 font-normal">({completedDeliverablesCount}/{totalDeliverablesCount})</span></h3>
+                <p className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">Overall Deliverables Done</p>
+                <h3 className="text-2xl font-black text-emerald-600 mt-1">{overallPercentage}% <span className="text-xs font-bold text-slate-500">({completedDeliverablesCount}/{totalDeliverablesCount})</span></h3>
               </div>
               <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center">
                 <CheckCircle2 className="w-5 h-5" />
               </div>
             </div>
 
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
+            <div className="bg-[#FFFDF9] p-5 rounded-2xl border border-[#EAE5DA] shadow-xs flex items-center justify-between hover:border-amber-300/80 transition-all">
               <div>
-                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Active Pipeline</p>
-                <h3 className="text-2xl font-black text-blue-600 mt-1">{activeProjects} <span className="text-xs font-semibold text-slate-500 font-normal">Active</span></h3>
+                <p className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">Active Pipeline</p>
+                <h3 className="text-2xl font-black text-blue-600 mt-1">{activeProjects} <span className="text-xs font-bold text-slate-500">Active</span></h3>
               </div>
               <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 border border-blue-200 flex items-center justify-center">
                 <Clock className="w-5 h-5" />
               </div>
             </div>
 
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
+            <div className="bg-[#FFFDF9] p-5 rounded-2xl border border-[#EAE5DA] shadow-xs flex items-center justify-between hover:border-rose-300/80 transition-all">
               <div>
-                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Delayed / Overdue Projects</p>
-                <h3 className="text-2xl font-black text-rose-600 mt-1">{delayedProjects} <span className="text-xs font-semibold text-slate-500 font-normal">Delayed</span></h3>
+                <p className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">Delayed / Overdue</p>
+                <h3 className="text-2xl font-black text-rose-600 mt-1">{delayedProjects} <span className="text-xs font-bold text-slate-500">Delayed</span></h3>
               </div>
               <div className="w-11 h-11 rounded-xl bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center">
                 <AlertTriangle className="w-5 h-5" />
@@ -679,7 +832,7 @@ export default function PostProductionPage() {
           {/* ─────────────────────────────────────────────────────────────
               SEARCH & FILTER CONTROLS
           ───────────────────────────────────────────────────────────── */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="bg-[#FFFDF9] p-4 rounded-2xl border border-[#EAE5DA] shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="relative w-full md:w-96">
               <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
@@ -687,18 +840,18 @@ export default function PostProductionPage() {
                 placeholder="Search by client, manager, or event type..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-slate-900 placeholder:text-slate-400 font-medium"
+                className="w-full pl-10 pr-4 py-2 text-xs bg-white border border-[#EAE5DA] rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 text-slate-900 placeholder:text-slate-400 font-medium"
               />
             </div>
 
             <div className="flex items-center gap-3 w-full md:w-auto">
               <div className="flex items-center gap-2">
                 <Filter className="w-4 h-4 text-slate-400" />
-                <span className="text-xs font-semibold text-slate-600">Status:</span>
+                <span className="text-xs font-bold text-slate-700">Status:</span>
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value as any)}
-                  className="px-3 py-1.5 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-800"
+                  className="px-3 py-1.5 text-xs font-bold bg-white border border-[#EAE5DA] rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-800 cursor-pointer"
                 >
                   <option value="all">All Statuses</option>
                   <option value="active">Active</option>
@@ -713,24 +866,24 @@ export default function PostProductionPage() {
               CLIENT POST-PRODUCTION CARDS LIST
           ───────────────────────────────────────────────────────────── */}
           {loading ? (
-            <div className="bg-white p-12 rounded-2xl border border-slate-200 text-center space-y-3 shadow-sm">
-              <RefreshCw className="w-8 h-8 mx-auto animate-spin text-indigo-600" />
-              <p className="text-sm font-semibold text-slate-600">Loading Post-Production Projects...</p>
+            <div className="bg-[#FFFDF9] p-12 rounded-2xl border border-[#EAE5DA] text-center space-y-3 shadow-xs">
+              <RefreshCw className="w-8 h-8 mx-auto animate-spin text-amber-600" />
+              <p className="text-sm font-bold text-slate-700">Loading Post-Production Projects...</p>
             </div>
           ) : filteredProjects.length === 0 ? (
-            <div className="bg-white p-12 rounded-2xl border border-dashed border-slate-300 text-center space-y-4 shadow-sm">
-              <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-600 mx-auto flex items-center justify-center">
+            <div className="bg-[#FFFDF9] p-12 rounded-2xl border border-dashed border-amber-300/80 text-center space-y-4 shadow-xs">
+              <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-700 mx-auto flex items-center justify-center">
                 <Film className="w-7 h-7" />
               </div>
               <div>
                 <h3 className="text-base font-bold text-slate-900">No Post-Production Projects Found</h3>
-                <p className="text-xs text-slate-500 max-w-md mx-auto mt-1">
+                <p className="text-xs text-slate-600 max-w-md mx-auto mt-1">
                   Mark any lead as &quot;Booked&quot; in the CRM or add a client from the Client Directory to automatically start post-production tracking.
                 </p>
               </div>
               <Link
                 href="/leads"
-                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md transition"
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-slate-900 bg-amber-400 hover:bg-amber-500 rounded-xl shadow-xs transition"
               >
                 Go to Leads CRM
               </Link>
@@ -742,19 +895,21 @@ export default function PostProductionPage() {
                 const progress = calculateProgress(project.deliverables);
                 const deliverables = project.deliverables || [];
 
-                // Categorize deliverables into 3 groups
-                const photoDeliverables = deliverables.filter(d => d.category === 'photos');
-                const videoDeliverables = deliverables.filter(d => d.category === 'videos' || d.category === 'film' || d.category === 'teaser' || d.category === 'reels');
-                const albumDeliverables = deliverables.filter(d => d.category === 'albums' || d.category === 'album');
+                // Extract all unique categories present in this project
+                const categoryKeys = Array.from(new Set(deliverables.map(d => d.category)));
+
+                // Always ensure standard 3 categories are visible if empty or present
+                const standardKeys = ['photos', 'videos', 'albums'];
+                const allKeysToRender = Array.from(new Set([...standardKeys, ...categoryKeys]));
 
                 return (
                   <motion.div
                     key={project.id}
                     layout
-                    className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all hover:border-slate-300"
+                    className="bg-[#FFFDF9] rounded-2xl border border-[#EAE5DA] shadow-xs overflow-hidden transition-all hover:border-amber-300/80"
                   >
                     {/* ── CARD HEADER ── */}
-                    <div className="p-5 sm:p-6 bg-gradient-to-r from-slate-50/70 via-white to-slate-50/40 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    <div className="p-5 sm:p-6 bg-gradient-to-r from-amber-50/40 via-[#FFFDF9] to-amber-50/20 border-b border-[#EAE5DA] flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                       <div className="space-y-2">
                         <div className="flex flex-wrap items-center gap-3">
                           <h2 className="text-xl font-black text-slate-900 tracking-tight">
@@ -775,14 +930,14 @@ export default function PostProductionPage() {
 
                         {/* Event Details & PM Dropdown */}
                         <div className="flex flex-wrap items-center gap-y-2 gap-x-4 text-xs text-slate-600 font-medium">
-                          <span className="flex items-center gap-1.5 text-slate-800 font-semibold">
+                          <span className="flex items-center gap-1.5 text-slate-800 font-bold">
                             <Sparkles className="w-3.5 h-3.5 text-amber-500" />
                             {project.client?.event_type || 'Wedding & Reception'}
                           </span>
 
                           <span className="text-slate-300">•</span>
 
-                          <span className="flex items-center gap-1.5 text-slate-700">
+                          <span className="flex items-center gap-1.5 text-slate-700 font-semibold">
                             <Calendar className="w-3.5 h-3.5 text-slate-400" />
                             Event Date: {project.client?.event_date ? new Date(project.client.event_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '2026-11-18'}
                           </span>
@@ -791,32 +946,34 @@ export default function PostProductionPage() {
 
                           {/* Project Manager Dropdown with Add Option */}
                           <div className="flex items-center gap-1.5">
-                            <User className="w-3.5 h-3.5 text-indigo-500" />
-                            <span className="text-slate-500">PM:</span>
+                            <User className="w-3.5 h-3.5 text-amber-700" />
+                            <span className="text-slate-500 font-bold">PM:</span>
                             <select
                               value={project.project_manager_name || 'Sushant (Lead Manager)'}
                               onChange={(e) => handlePMChange(project.id, e.target.value)}
-                              className="px-2 py-1 text-xs font-bold text-indigo-700 bg-indigo-50/70 border border-indigo-200/80 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 cursor-pointer"
+                              className="px-2 py-1 text-xs font-bold text-amber-900 bg-amber-50/90 border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 cursor-pointer"
                             >
                               {pmList.map(pm => (
                                 <option key={pm} value={pm}>{pm}</option>
                               ))}
-                              <option value="__ADD_NEW__" className="font-bold text-indigo-600">+ Add New PM</option>
+                              <option value="__ADD_NEW__" className="font-bold text-amber-800">+ Add New Project Manager</option>
                             </select>
                           </div>
                         </div>
                       </div>
 
-                      {/* Right: Progress Bar & Toggle Button */}
-                      <div className="flex items-center gap-6">
-                        <div className="w-48 space-y-1.5">
-                          <div className="flex items-center justify-between text-xs font-bold">
+                      {/* Right: Progress Bar & Toggle View Button */}
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                        <div className="space-y-1.5 min-w-[160px]">
+                          <div className="flex items-center justify-between text-xs font-extrabold">
                             <span className="text-slate-500">Progress</span>
-                            <span className="text-indigo-600">{progress}%</span>
+                            <span className="text-amber-800 font-black">{progress}%</span>
                           </div>
-                          <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200/60">
+                          <div className="w-full bg-slate-200/80 rounded-full h-2 overflow-hidden">
                             <div 
-                              className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 rounded-full transition-all duration-500"
+                              className={`h-full transition-all duration-500 ${
+                                progress === 100 ? 'bg-emerald-500' : 'bg-gradient-to-r from-amber-400 to-yellow-500'
+                              }`}
                               style={{ width: `${progress}%` }}
                             />
                           </div>
@@ -824,10 +981,10 @@ export default function PostProductionPage() {
 
                         <button
                           onClick={() => toggleCardExpansion(project.id)}
-                          className={`px-4 py-2 text-xs font-bold rounded-xl border transition-all flex items-center gap-2 ${
+                          className={`px-4 py-2 text-xs font-bold rounded-xl border transition-all flex items-center gap-2 cursor-pointer ${
                             isExpanded 
-                              ? 'bg-slate-100 text-slate-800 border-slate-300 hover:bg-slate-200' 
-                              : 'bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700 shadow-sm'
+                              ? 'bg-amber-100/70 text-amber-900 border-amber-300 hover:bg-amber-200/70' 
+                              : 'bg-amber-500 text-white border-amber-500 hover:bg-amber-600 shadow-2xs'
                           }`}
                         >
                           {isExpanded ? (
@@ -845,7 +1002,7 @@ export default function PostProductionPage() {
                       </div>
                     </div>
 
-                    {/* ── EXPANDED DELIVERABLES ACCORDION (3 CATEGORIES) ── */}
+                    {/* ── EXPANDED DELIVERABLES ACCORDION (MULTI-CATEGORY CARDS) ── */}
                     <AnimatePresence>
                       {isExpanded && (
                         <motion.div
@@ -853,100 +1010,82 @@ export default function PostProductionPage() {
                           animate={{ opacity: 1, height: 'auto' }}
                           exit={{ opacity: 0, height: 0 }}
                           transition={{ duration: 0.25 }}
-                          className="p-5 sm:p-6 space-y-6 bg-slate-50/40"
+                          className="p-5 sm:p-6 space-y-6 bg-[#FCFAF6]"
                         >
-                          {/* 1. 📸 PHOTOS SECTION */}
-                          <DeliverableCategorySection
-                            categoryTitle="Photos"
-                            categoryKey="photos"
-                            icon={Camera}
-                            accentColor="indigo"
-                            badgeText={`${photoDeliverables.filter(d => d.status === 'completed' || d.status === 'done').length}/${photoDeliverables.length} Done`}
-                            items={photoDeliverables}
-                            projectId={project.id}
-                            editorList={editorList}
-                            onUpdate={handleDeliverableUpdate}
-                            onAdd={() => handleAddDeliverable(project.id, 'photos')}
-                            onDelete={handleDeleteDeliverable}
-                            onOpenComment={(item) => setActiveCommentModal({
-                              open: true,
-                              projectId: project.id,
-                              deliverableId: item.id,
-                              deliverableTitle: item.title
-                            })}
-                            onOpenDrive={(item) => {
-                              setActiveDriveModal({
-                                open: true,
-                                projectId: project.id,
-                                deliverableId: item.id,
-                                currentLink: item.drive_link || ''
-                              });
-                              setDriveInputLink(item.drive_link || '');
-                            }}
-                            getDeadlineStatus={getDeadlineStatus}
-                          />
+                          {/* Deliverable Category Sections List */}
+                          {allKeysToRender.map((catKey) => {
+                            const catItems = deliverables.filter(d => d.category === catKey);
+                            const firstItem = catItems[0] as any;
 
-                          {/* 2. 🎬 VIDEOS SECTION */}
-                          <DeliverableCategorySection
-                            categoryTitle="Videos"
-                            categoryKey="videos"
-                            icon={Video}
-                            accentColor="rose"
-                            badgeText={`${videoDeliverables.filter(d => d.status === 'completed' || d.status === 'done').length}/${videoDeliverables.length} Done`}
-                            items={videoDeliverables}
-                            projectId={project.id}
-                            editorList={editorList}
-                            onUpdate={handleDeliverableUpdate}
-                            onAdd={() => handleAddDeliverable(project.id, 'videos')}
-                            onDelete={handleDeleteDeliverable}
-                            onOpenComment={(item) => setActiveCommentModal({
-                              open: true,
-                              projectId: project.id,
-                              deliverableId: item.id,
-                              deliverableTitle: item.title
-                            })}
-                            onOpenDrive={(item) => {
-                              setActiveDriveModal({
-                                open: true,
-                                projectId: project.id,
-                                deliverableId: item.id,
-                                currentLink: item.drive_link || ''
-                              });
-                              setDriveInputLink(item.drive_link || '');
-                            }}
-                            getDeadlineStatus={getDeadlineStatus}
-                          />
+                            // Resolve category meta
+                            const def = DEFAULT_CATEGORY_DEFS[catKey];
+                            const categoryTitle = firstItem?.category_name || def?.label || catKey.charAt(0).toUpperCase() + catKey.slice(1);
+                            const colorTheme: CategoryColorTheme = firstItem?.category_color || def?.colorTheme || 'indigo';
 
-                          {/* 3. 📖 ALBUMS SECTION */}
-                          <DeliverableCategorySection
-                            categoryTitle="Albums"
-                            categoryKey="albums"
-                            icon={BookOpen}
-                            accentColor="amber"
-                            badgeText={`${albumDeliverables.filter(d => d.status === 'completed' || d.status === 'done').length}/${albumDeliverables.length} Done`}
-                            items={albumDeliverables}
-                            projectId={project.id}
-                            editorList={editorList}
-                            onUpdate={handleDeliverableUpdate}
-                            onAdd={() => handleAddDeliverable(project.id, 'albums')}
-                            onDelete={handleDeleteDeliverable}
-                            onOpenComment={(item) => setActiveCommentModal({
-                              open: true,
-                              projectId: project.id,
-                              deliverableId: item.id,
-                              deliverableTitle: item.title
-                            })}
-                            onOpenDrive={(item) => {
-                              setActiveDriveModal({
-                                open: true,
-                                projectId: project.id,
-                                deliverableId: item.id,
-                                currentLink: item.drive_link || ''
-                              });
-                              setDriveInputLink(item.drive_link || '');
-                            }}
-                            getDeadlineStatus={getDeadlineStatus}
-                          />
+                            // Standard icon resolver
+                            const getIcon = () => {
+                              if (catKey === 'photos') return Camera;
+                              if (catKey === 'videos') return Video;
+                              if (catKey === 'albums') return BookOpen;
+                              if (catKey === 'reels') return Film;
+                              if (catKey === 'teasers') return Play;
+                              if (catKey === 'raw_dump') return Layers;
+                              return Sparkles;
+                            };
+
+                            const doneCount = catItems.filter(d => d.status === 'completed' || d.status === 'done').length;
+                            const badgeText = `${doneCount}/${catItems.length} Done`;
+
+                            return (
+                              <DeliverableCategorySection
+                                key={catKey}
+                                categoryTitle={categoryTitle}
+                                categoryKey={catKey}
+                                icon={getIcon()}
+                                colorTheme={colorTheme}
+                                badgeText={badgeText}
+                                items={catItems}
+                                projectId={project.id}
+                                editorList={editorList}
+                                isStandard={['photos', 'videos', 'albums'].includes(catKey)}
+                                onUpdate={handleDeliverableUpdate}
+                                onAdd={() => handleAddDeliverable(project.id, catKey, categoryTitle, colorTheme)}
+                                onDeleteItem={handleDeleteDeliverable}
+                                onDeleteCategory={() => handleDeleteCategory(project.id, catKey, categoryTitle)}
+                                onOpenComment={(item) => setActiveCommentModal({
+                                  open: true,
+                                  projectId: project.id,
+                                  deliverableId: item.id,
+                                  deliverableTitle: item.title
+                                })}
+                                onOpenDrive={(item) => {
+                                  setActiveDriveModal({
+                                    open: true,
+                                    projectId: project.id,
+                                    deliverableId: item.id,
+                                    currentLink: item.drive_link || ''
+                                  });
+                                  setDriveInputLink(item.drive_link || '');
+                                }}
+                                getDeadlineStatus={getDeadlineStatus}
+                              />
+                            );
+                          })}
+
+                          {/* ── CREATE NEW CUSTOM CATEGORY CARD BUTTON ── */}
+                          <div className="pt-2 flex justify-center">
+                            <button
+                              type="button"
+                              onClick={() => setShowAddCategoryModal({ open: true, projectId: project.id })}
+                              className="px-5 py-2.5 bg-gradient-to-r from-amber-50 to-yellow-50 hover:from-amber-100 hover:to-yellow-100 border border-amber-300/80 rounded-2xl text-xs font-bold text-amber-900 transition flex items-center gap-2 shadow-2xs cursor-pointer group"
+                            >
+                              <div className="w-5 h-5 rounded-lg bg-amber-400 text-slate-900 flex items-center justify-center font-bold">
+                                <Plus className="w-3.5 h-3.5 group-hover:rotate-90 transition-transform" />
+                              </div>
+                              + Add New Category / Deliverable Card (Reels, Teasers, Custom Card)
+                            </button>
+                          </div>
+
                         </motion.div>
                       )}
                     </AnimatePresence>
@@ -959,6 +1098,100 @@ export default function PostProductionPage() {
         </div>
 
       {/* ─────────────────────────────────────────────────────────────
+          MODAL: ADD DYNAMIC CUSTOM CATEGORY CARD
+      ───────────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showAddCategoryModal.open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-[#FFFDF9] rounded-2xl p-6 max-w-md w-full border border-[#EAE5DA] shadow-2xl space-y-4"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
+                    <FolderPlus className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900">Add New Category Card</h3>
+                    <p className="text-[11px] text-slate-500 font-medium">Create a custom deliverable tracking card</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowAddCategoryModal({ open: false })}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Category Card Name</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Reels & Shorts, Raw Footage Drive, Teasers..."
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                    className="w-full px-3.5 py-2 text-xs bg-white border border-[#EAE5DA] rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-900 font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1.5">Card Color Palette</label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {(['emerald', 'purple', 'cyan', 'pink', 'orange', 'indigo', 'rose', 'amber'] as CategoryColorTheme[]).map((col) => (
+                      <button
+                        key={col}
+                        type="button"
+                        onClick={() => setNewCategoryColor(col)}
+                        className={`p-2 rounded-xl border text-xs font-bold capitalize flex items-center justify-center gap-1 cursor-pointer transition ${
+                          newCategoryColor === col 
+                            ? 'ring-2 ring-amber-500 font-black ' + COLOR_THEME_CLASSES[col].bg + ' ' + COLOR_THEME_CLASSES[col].text + ' ' + COLOR_THEME_CLASSES[col].border
+                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span className={`w-2.5 h-2.5 rounded-full ${COLOR_THEME_CLASSES[col].bg.replace('50/70', '500')}`} />
+                        {col}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-[#EAE5DA]">
+                <button
+                  onClick={() => setShowAddCategoryModal({ open: false })}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (newCategoryName.trim() && showAddCategoryModal.projectId) {
+                      handleCreateCategoryCard(
+                        showAddCategoryModal.projectId,
+                        newCategoryName.trim(),
+                        newCategoryColor
+                      );
+                      setNewCategoryName('');
+                      setShowAddCategoryModal({ open: false });
+                    }
+                  }}
+                  disabled={!newCategoryName.trim()}
+                  className="px-4 py-2 text-xs font-black text-slate-900 bg-amber-400 hover:bg-amber-500 disabled:opacity-50 rounded-xl shadow-xs transition"
+                >
+                  Create Card
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ─────────────────────────────────────────────────────────────
           MODAL: ADD NEW PROJECT MANAGER
       ───────────────────────────────────────────────────────────── */}
       <AnimatePresence>
@@ -968,14 +1201,14 @@ export default function PostProductionPage() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl p-6 max-w-md w-full border border-slate-200 shadow-2xl space-y-4"
+              className="bg-[#FFFDF9] rounded-2xl p-6 max-w-md w-full border border-[#EAE5DA] shadow-2xl space-y-4"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center">
                     <UserPlus className="w-4 h-4" />
                   </div>
-                  <h3 className="text-base font-bold text-slate-900">Add New Project Manager</h3>
+                  <h3 className="text-base font-black text-slate-900">Add New Project Manager</h3>
                 </div>
                 <button 
                   onClick={() => setShowAddPMModal({ open: false })}
@@ -986,20 +1219,20 @@ export default function PostProductionPage() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-600">Project Manager Name</label>
+                <label className="text-xs font-bold text-slate-700">Project Manager Name</label>
                 <input
                   type="text"
                   placeholder="e.g. Rahul Sharma (Lead Manager)"
                   value={newPMName}
                   onChange={(e) => setNewPMName(e.target.value)}
-                  className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900"
+                  className="w-full px-3.5 py-2 text-xs bg-white border border-[#EAE5DA] rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-900 font-bold"
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-2 border-t border-[#EAE5DA]">
                 <button
                   onClick={() => setShowAddPMModal({ open: false })}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition"
+                  className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition"
                 >
                   Cancel
                 </button>
@@ -1015,7 +1248,7 @@ export default function PostProductionPage() {
                       setShowAddPMModal({ open: false });
                     }
                   }}
-                  className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md transition"
+                  className="px-4 py-2 text-xs font-black text-slate-900 bg-amber-400 hover:bg-amber-500 rounded-xl shadow-xs transition"
                 >
                   Save Project Manager
                 </button>
@@ -1035,14 +1268,14 @@ export default function PostProductionPage() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl p-6 max-w-md w-full border border-slate-200 shadow-2xl space-y-4"
+              className="bg-[#FFFDF9] rounded-2xl p-6 max-w-md w-full border border-[#EAE5DA] shadow-2xl space-y-4"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center">
                     <UserPlus className="w-4 h-4" />
                   </div>
-                  <h3 className="text-base font-bold text-slate-900">Add New Editor / Artist</h3>
+                  <h3 className="text-base font-black text-slate-900">Add New Editor / Artist</h3>
                 </div>
                 <button 
                   onClick={() => setShowAddEditorModal({ open: false })}
@@ -1053,20 +1286,20 @@ export default function PostProductionPage() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-600">Editor Name & Role</label>
+                <label className="text-xs font-bold text-slate-700">Editor Name & Role</label>
                 <input
                   type="text"
                   placeholder="e.g. Vikas (Colorist & Editor)"
                   value={newEditorName}
                   onChange={(e) => setNewEditorName(e.target.value)}
-                  className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900"
+                  className="w-full px-3.5 py-2 text-xs bg-white border border-[#EAE5DA] rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-900 font-bold"
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-2 border-t border-[#EAE5DA]">
                 <button
                   onClick={() => setShowAddEditorModal({ open: false })}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition"
+                  className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition"
                 >
                   Cancel
                 </button>
@@ -1087,7 +1320,7 @@ export default function PostProductionPage() {
                       setShowAddEditorModal({ open: false });
                     }
                   }}
-                  className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md transition"
+                  className="px-4 py-2 text-xs font-black text-slate-900 bg-amber-400 hover:bg-amber-500 rounded-xl shadow-xs transition"
                 >
                   Save Editor
                 </button>
@@ -1098,7 +1331,7 @@ export default function PostProductionPage() {
       </AnimatePresence>
 
       {/* ─────────────────────────────────────────────────────────────
-          MODAL: COMMENTS & REMINDER DRAWER
+          MODAL: COMMENTS & REVISION LOG WITH AI VOICE RECORDER
       ───────────────────────────────────────────────────────────── */}
       <AnimatePresence>
         {activeCommentModal?.open && (
@@ -1107,22 +1340,22 @@ export default function PostProductionPage() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl max-w-lg w-full border border-slate-200 shadow-2xl flex flex-col max-h-[85vh] overflow-hidden"
+              className="bg-[#FFFDF9] rounded-2xl max-w-lg w-full border border-[#EAE5DA] shadow-2xl flex flex-col max-h-[85vh] overflow-hidden"
             >
               {/* Modal Header */}
-              <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div className="p-5 border-b border-[#EAE5DA] flex items-center justify-between bg-amber-50/40">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
                     <MessageSquare className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-slate-900">{activeCommentModal.deliverableTitle}</h3>
-                    <p className="text-[11px] text-slate-500 font-medium">Activity logs, client revisions & follow-up reminders</p>
+                    <h3 className="text-sm font-black text-slate-900">{activeCommentModal.deliverableTitle}</h3>
+                    <p className="text-[11px] text-slate-600 font-medium">Activity logs, client revisions, AI voice notes & follow-ups</p>
                   </div>
                 </div>
                 <button 
                   onClick={() => setActiveCommentModal(null)}
-                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -1139,22 +1372,22 @@ export default function PostProductionPage() {
                     return (
                       <div className="py-8 text-center text-slate-400 space-y-1">
                         <MessageSquare className="w-6 h-6 mx-auto stroke-1" />
-                        <p className="text-xs font-semibold">No comments or reminders logged yet.</p>
+                        <p className="text-xs font-bold text-slate-500">No comments or voice notes logged yet.</p>
                       </div>
                     );
                   }
 
                   return comments.map(comm => (
-                    <div key={comm.id} className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl space-y-1.5">
+                    <div key={comm.id} className="p-3 bg-white border border-[#EAE5DA] rounded-xl space-y-1.5 shadow-2xs">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-800">{comm.authorName || 'Lead Editor'}</span>
+                        <span className="text-xs font-extrabold text-slate-800">{comm.authorName || 'Lead Editor'}</span>
                         <span className="text-[10px] text-slate-400 font-medium">
                           {new Date(comm.createdAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                         </span>
                       </div>
-                      <p className="text-xs text-slate-700 leading-relaxed font-normal">{comm.text}</p>
+                      <p className="text-xs text-slate-700 leading-relaxed font-medium">{comm.text}</p>
                       {comm.alert_flag && comm.followup_at && (
-                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 w-fit">
+                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 w-fit">
                           <Bell className="w-3 h-3" />
                           Reminder Set: {new Date(comm.followup_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                         </div>
@@ -1164,15 +1397,27 @@ export default function PostProductionPage() {
                 })()}
               </div>
 
-              {/* Add Comment Input Footer */}
-              <div className="p-4 border-t border-slate-200 bg-slate-50 space-y-3">
-                <textarea
-                  rows={2}
-                  placeholder="Type editor revision note or task update..."
-                  value={commentText}
-                  onChange={(e) => setCommentText(e.target.value)}
-                  className="w-full px-3.5 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 resize-none font-medium placeholder:text-slate-400"
-                />
+              {/* Add Comment Input Footer with AI Voice Mic Button */}
+              <div className="p-4 border-t border-[#EAE5DA] bg-amber-50/30 space-y-3">
+                <div className="relative">
+                  <textarea
+                    rows={2}
+                    placeholder="Type revision note or click Voice AI to speak..."
+                    value={commentText}
+                    onChange={(e) => setCommentText(e.target.value)}
+                    className="w-full px-3.5 py-2.5 text-xs bg-white border border-[#EAE5DA] rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-900 resize-none font-medium placeholder:text-slate-400 pr-24"
+                  />
+                  {/* Embedded Voice AI Mic Button */}
+                  <div className="absolute right-2 bottom-2">
+                    <AiMicButton
+                      size="sm"
+                      buttonText="Voice AI"
+                      onInsertComment={(cleanedText) => {
+                        setCommentText((prev) => (prev ? `${prev} ${cleanedText}` : cleanedText));
+                      }}
+                    />
+                  </div>
+                </div>
 
                 {/* Reminder Checkbox & Date Picker */}
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1181,9 +1426,9 @@ export default function PostProductionPage() {
                       type="checkbox"
                       checked={commentAlertFlag}
                       onChange={(e) => setCommentAlertFlag(e.target.checked)}
-                      className="rounded text-indigo-600 focus:ring-indigo-500"
+                      className="rounded text-amber-600 focus:ring-amber-500 cursor-pointer"
                     />
-                    <Bell className="w-3.5 h-3.5 text-amber-500" />
+                    <Bell className="w-3.5 h-3.5 text-amber-600" />
                     Set Follow-up Reminder
                   </label>
 
@@ -1192,14 +1437,14 @@ export default function PostProductionPage() {
                       type="datetime-local"
                       value={commentFollowupDate}
                       onChange={(e) => setCommentFollowupDate(e.target.value)}
-                      className="px-2.5 py-1 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 font-medium"
+                      className="px-2.5 py-1 text-xs bg-white border border-[#EAE5DA] rounded-lg text-slate-800 font-medium"
                     />
                   )}
 
                   <button
                     onClick={handleSaveComment}
                     disabled={!commentText.trim()}
-                    className="px-4 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-xl shadow-sm transition flex items-center gap-1.5"
+                    className="px-4 py-1.5 text-xs font-black text-slate-900 bg-amber-400 hover:bg-amber-500 disabled:opacity-50 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer ml-auto"
                   >
                     <Send className="w-3.5 h-3.5" />
                     Post Log
@@ -1221,14 +1466,14 @@ export default function PostProductionPage() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl p-6 max-w-md w-full border border-slate-200 shadow-2xl space-y-4"
+              className="bg-[#FFFDF9] rounded-2xl p-6 max-w-md w-full border border-[#EAE5DA] shadow-2xl space-y-4"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center">
                     <Link2 className="w-4 h-4" />
                   </div>
-                  <h3 className="text-base font-bold text-slate-900">Google Drive Delivery Link</h3>
+                  <h3 className="text-base font-black text-slate-900">Google Drive Delivery Link</h3>
                 </div>
                 <button 
                   onClick={() => setActiveDriveModal(null)}
@@ -1239,17 +1484,17 @@ export default function PostProductionPage() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-600">Drive Folder URL</label>
+                <label className="text-xs font-bold text-slate-700">Drive Folder URL</label>
                 <input
                   type="url"
                   placeholder="https://drive.google.com/drive/folders/..."
                   value={driveInputLink}
                   onChange={(e) => setDriveInputLink(e.target.value)}
-                  className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 font-mono"
+                  className="w-full px-3.5 py-2 text-xs bg-white border border-[#EAE5DA] rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-900 font-mono"
                 />
               </div>
 
-              <div className="flex justify-between items-center pt-2">
+              <div className="flex justify-between items-center pt-2 border-t border-[#EAE5DA]">
                 {driveInputLink.trim() && (
                   <a
                     href={driveInputLink.trim()}
@@ -1263,13 +1508,13 @@ export default function PostProductionPage() {
                 <div className="flex gap-2 ml-auto">
                   <button
                     onClick={() => setActiveDriveModal(null)}
-                    className="px-4 py-2 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition"
+                    className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleSaveDriveLink}
-                    className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md transition"
+                    className="px-4 py-2 text-xs font-black text-slate-900 bg-amber-400 hover:bg-amber-500 rounded-xl shadow-xs transition"
                   >
                     Save Link
                   </button>
@@ -1285,20 +1530,22 @@ export default function PostProductionPage() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// DELIVERABLE CATEGORY SUB-SECTION COMPONENT
+// DELIVERABLE CATEGORY SUB-SECTION COMPONENT (MULTI-CARD)
 // ─────────────────────────────────────────────────────────────
 interface DeliverableCategorySectionProps {
   categoryTitle: string;
-  categoryKey: 'photos' | 'videos' | 'albums';
+  categoryKey: string;
   icon: React.ElementType;
-  accentColor: 'indigo' | 'rose' | 'amber';
+  colorTheme: CategoryColorTheme;
   badgeText: string;
   items: DeliverableItem[];
   projectId: string;
   editorList: string[];
+  isStandard?: boolean;
   onUpdate: (projectId: string, deliverableId: string, field: keyof DeliverableItem, value: any) => void;
   onAdd: () => void;
-  onDelete: (projectId: string, deliverableId: string) => void;
+  onDeleteItem: (projectId: string, deliverableId: string) => void;
+  onDeleteCategory?: () => void;
   onOpenComment: (item: DeliverableItem) => void;
   onOpenDrive: (item: DeliverableItem) => void;
   getDeadlineStatus: (deadlineStr?: string | null, status?: DeliverableStatus) => any;
@@ -1308,70 +1555,63 @@ function DeliverableCategorySection({
   categoryTitle,
   categoryKey,
   icon: Icon,
-  accentColor,
+  colorTheme,
   badgeText,
   items,
   projectId,
   editorList,
+  isStandard = true,
   onUpdate,
   onAdd,
-  onDelete,
+  onDeleteItem,
+  onDeleteCategory,
   onOpenComment,
   onOpenDrive,
   getDeadlineStatus
 }: DeliverableCategorySectionProps) {
-  const accentClasses = {
-    indigo: {
-      bg: 'bg-indigo-50/60',
-      border: 'border-indigo-100',
-      text: 'text-indigo-700',
-      iconBg: 'bg-indigo-100 text-indigo-600',
-      buttonBg: 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-indigo-200'
-    },
-    rose: {
-      bg: 'bg-rose-50/60',
-      border: 'border-rose-100',
-      text: 'text-rose-700',
-      iconBg: 'bg-rose-100 text-rose-600',
-      buttonBg: 'bg-rose-50 text-rose-700 hover:bg-rose-100 border-rose-200'
-    },
-    amber: {
-      bg: 'bg-amber-50/60',
-      border: 'border-amber-100',
-      text: 'text-amber-700',
-      iconBg: 'bg-amber-100 text-amber-600',
-      buttonBg: 'bg-amber-50 text-amber-700 hover:bg-amber-100 border-amber-200'
-    }
-  }[accentColor];
+  const theme = COLOR_THEME_CLASSES[colorTheme] || COLOR_THEME_CLASSES.indigo;
 
   return (
-    <div className={`p-4 rounded-2xl border ${accentClasses.border} ${accentClasses.bg} space-y-3`}>
+    <div className={`p-4 rounded-2xl border ${theme.border} ${theme.bg} space-y-3 shadow-2xs`}>
       {/* Category Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className={`w-7 h-7 rounded-lg ${accentClasses.iconBg} flex items-center justify-center font-bold`}>
+          <div className={`w-7 h-7 rounded-lg ${theme.iconBg} flex items-center justify-center font-bold`}>
             <Icon className="w-4 h-4" />
           </div>
-          <h3 className="text-sm font-extrabold text-slate-900 tracking-tight">{categoryTitle}</h3>
-          <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold border bg-white ${accentClasses.text} ${accentClasses.border}`}>
+          <h3 className="text-sm font-black text-slate-900 tracking-tight">{categoryTitle}</h3>
+          <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold border ${theme.badgeBg} ${theme.text} ${theme.badgeBorder}`}>
             {badgeText}
           </span>
         </div>
 
-        <button
-          onClick={onAdd}
-          className={`px-3 py-1 text-xs font-bold rounded-lg border ${accentClasses.buttonBg} transition flex items-center gap-1.5 shadow-2xs`}
-        >
-          <Plus className="w-3.5 h-3.5" />
-          + Add {categoryTitle.slice(0, -1)}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onAdd}
+            className={`px-3 py-1 text-xs font-bold rounded-lg border ${theme.buttonBg} transition flex items-center gap-1.5 shadow-2xs cursor-pointer`}
+          >
+            <Plus className="w-3.5 h-3.5" />
+            + Add {categoryTitle.replace(/s$/, '')}
+          </button>
+
+          {/* Delete entire custom category if not standard */}
+          {!isStandard && onDeleteCategory && (
+            <button
+              onClick={onDeleteCategory}
+              className="p-1.5 text-rose-600 hover:text-rose-700 bg-rose-50/80 hover:bg-rose-100 border border-rose-200 rounded-lg transition shadow-2xs cursor-pointer"
+              title="Delete Category Card"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Deliverable Items List */}
       <div className="space-y-2">
         {items.length === 0 ? (
-          <div className="p-4 bg-white rounded-xl border border-slate-200 text-center text-xs text-slate-400 font-medium">
-            No {categoryTitle.toLowerCase()} deliverables added yet. Click &quot;+ Add {categoryTitle.slice(0, -1)}&quot; to add one.
+          <div className="p-4 bg-white/80 rounded-xl border border-slate-200/60 text-center text-xs text-slate-500 font-medium">
+            No items in {categoryTitle.toLowerCase()} yet. Click &quot;+ Add {categoryTitle.replace(/s$/, '')}&quot; to add one.
           </div>
         ) : (
           items.map(item => {
@@ -1387,13 +1627,13 @@ function DeliverableCategorySection({
                 <div className="flex items-center gap-3 min-w-[240px]">
                   <div className="w-2 h-2 rounded-full bg-slate-300" />
                   <div className="space-y-1">
-                    <span className="text-xs font-extrabold text-slate-900 block">{item.title}</span>
+                    <span className="text-xs font-black text-slate-900 block">{item.title}</span>
                     <input
                       type="text"
                       value={item.count || ''}
                       placeholder="Count (e.g. 500 Photos)"
                       onChange={(e) => onUpdate(projectId, item.id, 'count', e.target.value)}
-                      className="px-2 py-0.5 text-[11px] font-semibold bg-slate-50 border border-slate-200 rounded-md text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-36"
+                      className="px-2 py-0.5 text-[11px] font-semibold bg-slate-50 border border-slate-200 rounded-md text-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-500 w-36"
                     />
                   </div>
                 </div>
@@ -1407,7 +1647,7 @@ function DeliverableCategorySection({
                       type="date"
                       value={item.deadline || ''}
                       onChange={(e) => onUpdate(projectId, item.id, 'deadline', e.target.value)}
-                      className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 font-medium focus:outline-none focus:ring-1 focus:ring-amber-500"
                     />
                   </div>
 
@@ -1417,13 +1657,13 @@ function DeliverableCategorySection({
                     <select
                       value={item.assigned_to || ''}
                       onChange={(e) => onUpdate(projectId, item.id, 'assigned_to', e.target.value)}
-                      className="px-2 py-1 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      className="px-2 py-1 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer"
                     >
                       <option value="">Unassigned</option>
                       {editorList.map(ed => (
                         <option key={ed} value={ed}>{ed}</option>
                       ))}
-                      <option value="__ADD_NEW__" className="font-bold text-indigo-600">+ Add New Editor</option>
+                      <option value="__ADD_NEW__" className="font-bold text-amber-800">+ Add New Editor</option>
                     </select>
                   </div>
 
@@ -1431,7 +1671,7 @@ function DeliverableCategorySection({
                   <select
                     value={item.status || 'pending'}
                     onChange={(e) => onUpdate(projectId, item.id, 'status', e.target.value)}
-                    className="px-2.5 py-1 text-xs font-bold bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-800"
+                    className="px-2.5 py-1 text-xs font-bold bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-800 cursor-pointer"
                   >
                     {STATUS_OPTIONS.map(opt => (
                       <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -1444,22 +1684,22 @@ function DeliverableCategorySection({
                   </span>
                 </div>
 
-                {/* Right: Drive Link, Comments/Reminders & Delete */}
+                {/* Right: Drive Link, Comments/Reminders & Light Red Delete Button */}
                 <div className="flex items-center gap-1.5 ml-auto">
                   {/* Comments / Activity Button with count badge */}
                   <button
                     onClick={() => onOpenComment(item)}
-                    className="px-2 py-1 text-xs font-bold text-slate-600 hover:text-indigo-600 bg-slate-50 hover:bg-indigo-50 border border-slate-200 rounded-lg transition flex items-center gap-1"
-                    title="View comments & reminders"
+                    className="px-2 py-1 text-xs font-bold text-slate-700 hover:text-amber-800 bg-amber-50/70 hover:bg-amber-100 border border-amber-200 rounded-lg transition flex items-center gap-1 cursor-pointer"
+                    title="View comments, revision logs & AI voice recorder"
                   >
                     <MessageSquare className="w-3.5 h-3.5" />
-                    {commentsCount > 0 && <span>{commentsCount}</span>}
+                    {commentsCount > 0 && <span className="font-black text-amber-800">{commentsCount}</span>}
                   </button>
 
                   {/* Drive Link Button */}
                   <button
                     onClick={() => onOpenDrive(item)}
-                    className={`p-1.5 rounded-lg border transition ${
+                    className={`p-1.5 rounded-lg border transition cursor-pointer ${
                       item.drive_link 
                         ? 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100' 
                         : 'bg-slate-50 text-slate-400 border-slate-200 hover:text-slate-600'
@@ -1469,10 +1709,10 @@ function DeliverableCategorySection({
                     <ExternalLink className="w-3.5 h-3.5" />
                   </button>
 
-                  {/* Delete Item Button */}
+                  {/* Soft Light Red Delete Button */}
                   <button
-                    onClick={() => onDelete(projectId, item.id)}
-                    className="p-1.5 text-slate-400 hover:text-rose-600 bg-slate-50 hover:bg-rose-50 border border-slate-200 rounded-lg transition"
+                    onClick={() => onDeleteItem(projectId, item.id)}
+                    className="p-1.5 text-rose-500 hover:text-rose-700 bg-rose-50/80 hover:bg-rose-100 border border-rose-200/80 rounded-lg transition shadow-2xs cursor-pointer"
                     title="Delete item"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
