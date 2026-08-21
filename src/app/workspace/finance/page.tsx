@@ -1211,96 +1211,163 @@ function computeFinanceTotals(
         </div>
 
         {/* ─────────────────────────────────────────────────────────────
-            3D-STYLED FINANCIAL COMMAND CENTER (CHAMPAGNE / GOLD METRICS)
+            FINANCIAL METRIC CARDS (EXACT REPLICA OF USER DESIGN WITH SPARKLINES)
         ───────────────────────────────────────────────────────────── */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-          {/* 1. Total Invoiced */}
-          <div className="bg-[#FFFDF9] p-5 rounded-3xl border border-[#EBE3D5] shadow-[0_4px_20px_-4px_rgba(200,165,110,0.06)] hover:border-[#D4AF37]/60 hover:shadow-[0_8px_25px_-4px_rgba(200,165,110,0.12)] transition-all flex flex-col justify-between space-y-3 relative overflow-hidden group">
-            <div className="flex items-center justify-between">
-              <p className="text-[11px] font-black text-[#8C7654] uppercase tracking-wider">Gross Invoiced</p>
-              <div className="w-8 h-8 rounded-xl bg-[#FAF3E0] text-[#9E7B2B] border border-[#ECD9A8] flex items-center justify-center shadow-2xs">
-                <FileText className="w-4 h-4" />
+          {/* 1. Gross Invoiced */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between relative overflow-hidden group hover:shadow-md transition-all">
+            <div className="flex items-start gap-3.5">
+              <div className="w-11 h-11 rounded-2xl bg-orange-50/90 text-orange-500 border border-orange-100 flex items-center justify-center shrink-0 shadow-2xs">
+                <FileText className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">GROSS INVOICED</p>
+                <h3 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight font-sans tabular-nums mt-0.5">
+                  ₹{totalInvoiced.toLocaleString('en-IN')}
+                </h3>
+                <p className="text-[11px] text-slate-400 font-medium mt-0.5">{financeRecords.length} Active Contracts</p>
               </div>
             </div>
-            <div>
-              <h3 className="text-2xl font-black text-[#241D12] tracking-tight font-sans tabular-nums">
-                ₹{totalInvoiced.toLocaleString('en-IN')}
-              </h3>
-              <p className="text-[10px] font-semibold text-[#8C7654] mt-0.5">{financeRecords.length} Active Contracts</p>
+
+            {/* Sparkline Graph */}
+            <div className="mt-3 -mx-5 -mb-5">
+              <svg className="w-full h-10" viewBox="0 0 100 28" fill="none" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="grad-invoiced" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#F97316" stopOpacity="0.25" />
+                    <stop offset="100%" stopColor="#F97316" stopOpacity="0.0" />
+                  </linearGradient>
+                </defs>
+                <path d="M0,22 Q12,24 25,18 T50,20 T75,13 T100,5 L100,28 L0,28 Z" fill="url(#grad-invoiced)" />
+                <path d="M0,22 Q12,24 25,18 T50,20 T75,13 T100,5" stroke="#F97316" strokeWidth="2" strokeLinecap="round" />
+              </svg>
             </div>
-            <div className="h-1 w-full bg-[#D4AF37] rounded-full" />
           </div>
 
-          {/* 2. Total Cash Received */}
-          <div className="bg-[#FFFDF9] p-5 rounded-3xl border border-[#BCE7CB]/60 shadow-[0_4px_20px_-4px_rgba(46,155,89,0.06)] hover:border-[#2E9B59]/60 hover:shadow-[0_8px_25px_-4px_rgba(46,155,89,0.12)] transition-all flex flex-col justify-between space-y-3 relative overflow-hidden group">
-            <div className="flex items-center justify-between">
-              <p className="text-[11px] font-black text-[#2E9B59] uppercase tracking-wider">Cash Received</p>
-              <div className="w-8 h-8 rounded-xl bg-[#EAF7EE] text-[#1E7E45] border border-[#BCE7CB] flex items-center justify-center shadow-2xs">
-                <CheckCircle2 className="w-4 h-4" />
+          {/* 2. Cash Received */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between relative overflow-hidden group hover:shadow-md transition-all">
+            <div className="flex items-start gap-3.5">
+              <div className="w-11 h-11 rounded-2xl bg-emerald-50/90 text-emerald-600 border border-emerald-100 flex items-center justify-center shrink-0 shadow-2xs">
+                <Wallet className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">CASH RECEIVED</p>
+                <h3 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight font-sans tabular-nums mt-0.5">
+                  ₹{totalReceived.toLocaleString('en-IN')}
+                </h3>
+                <p className="text-[11px] text-slate-400 font-medium mt-0.5 flex items-center gap-1">
+                  <span>{totalInvoiced > 0 ? Math.round((totalReceived / totalInvoiced) * 100) : 0}% Realized</span>
+                  <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                </p>
               </div>
             </div>
-            <div>
-              <h3 className="text-2xl font-black text-[#1E7E45] tracking-tight font-sans tabular-nums">
-                ₹{totalReceived.toLocaleString('en-IN')}
-              </h3>
-              <p className="text-[10px] font-semibold text-[#2E9B59] mt-0.5">
-                {totalInvoiced > 0 ? Math.round((totalReceived / totalInvoiced) * 100) : 0}% Realized
-              </p>
+
+            {/* Sparkline Graph */}
+            <div className="mt-3 -mx-5 -mb-5">
+              <svg className="w-full h-10" viewBox="0 0 100 28" fill="none" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="grad-received" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#10B981" stopOpacity="0.25" />
+                    <stop offset="100%" stopColor="#10B981" stopOpacity="0.0" />
+                  </linearGradient>
+                </defs>
+                <path d="M0,23 Q18,24 35,17 T65,19 T85,9 T100,4 L100,28 L0,28 Z" fill="url(#grad-received)" />
+                <path d="M0,23 Q18,24 35,17 T65,19 T85,9 T100,4" stroke="#10B981" strokeWidth="2" strokeLinecap="round" />
+              </svg>
             </div>
-            <div className="h-1 w-full bg-[#2E9B59] rounded-full" />
           </div>
 
-          {/* 3. Outstanding Receivables */}
-          <div className="bg-[#FFFDF9] p-5 rounded-3xl border border-[#FCD2B3]/60 shadow-[0_4px_20px_-4px_rgba(230,126,34,0.06)] hover:border-[#E67E22]/60 hover:shadow-[0_8px_25px_-4px_rgba(230,126,34,0.12)] transition-all flex flex-col justify-between space-y-3 relative overflow-hidden group">
-            <div className="flex items-center justify-between">
-              <p className="text-[11px] font-black text-[#C4611A] uppercase tracking-wider">Pending Receivables</p>
-              <div className="w-8 h-8 rounded-xl bg-[#FFF1E3] text-[#C4611A] border border-[#FCD2B3] flex items-center justify-center shadow-2xs">
-                <Clock className="w-4 h-4" />
+          {/* 3. Pending Receivables */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between relative overflow-hidden group hover:shadow-md transition-all">
+            <div className="flex items-start gap-3.5">
+              <div className="w-11 h-11 rounded-2xl bg-amber-50/90 text-amber-600 border border-amber-100 flex items-center justify-center shrink-0 shadow-2xs">
+                <Clock className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">PENDING RECEIVABLES</p>
+                <h3 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight font-sans tabular-nums mt-0.5">
+                  ₹{totalPending.toLocaleString('en-IN')}
+                </h3>
+                <p className="text-[11px] text-slate-400 font-medium mt-0.5">Scheduled Milestones</p>
               </div>
             </div>
-            <div>
-              <h3 className="text-2xl font-black text-[#C4611A] tracking-tight font-sans tabular-nums">
-                ₹{totalPending.toLocaleString('en-IN')}
-              </h3>
-              <p className="text-[10px] font-semibold text-[#D97732] mt-0.5">Scheduled Milestones</p>
+
+            {/* Sparkline Graph */}
+            <div className="mt-3 -mx-5 -mb-5">
+              <svg className="w-full h-10" viewBox="0 0 100 28" fill="none" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="grad-pending" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#F59E0B" stopOpacity="0.25" />
+                    <stop offset="100%" stopColor="#F59E0B" stopOpacity="0.0" />
+                  </linearGradient>
+                </defs>
+                <path d="M0,22 Q20,24 40,20 T70,16 T90,12 T100,7 L100,28 L0,28 Z" fill="url(#grad-pending)" />
+                <path d="M0,22 Q20,24 40,20 T70,16 T90,12 T100,7" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" />
+              </svg>
             </div>
-            <div className="h-1 w-full bg-[#E67E22] rounded-full" />
           </div>
 
-          {/* 4. Total Expenses & Payouts */}
-          <div className="bg-[#FFFDF9] p-5 rounded-3xl border border-[#F8C8C4]/60 shadow-[0_4px_20px_-4px_rgba(231,76,60,0.06)] hover:border-[#E74C3C]/60 hover:shadow-[0_8px_25px_-4px_rgba(231,76,60,0.12)] transition-all flex flex-col justify-between space-y-3 relative overflow-hidden group">
-            <div className="flex items-center justify-between">
-              <p className="text-[11px] font-black text-[#C0392B] uppercase tracking-wider">Team & Expenses</p>
-              <div className="w-8 h-8 rounded-xl bg-[#FDEEED] text-[#C0392B] border border-[#F8C8C4] flex items-center justify-center shadow-2xs">
-                <CreditCard className="w-4 h-4" />
+          {/* 4. Team & Expenses */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between relative overflow-hidden group hover:shadow-md transition-all">
+            <div className="flex items-start gap-3.5">
+              <div className="w-11 h-11 rounded-2xl bg-rose-50/90 text-rose-500 border border-rose-100 flex items-center justify-center shrink-0 shadow-2xs">
+                <CreditCard className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">TEAM & EXPENSES</p>
+                <h3 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight font-sans tabular-nums mt-0.5">
+                  ₹{totalExpensesAmount.toLocaleString('en-IN')}
+                </h3>
+                <p className="text-[11px] text-slate-400 font-medium mt-0.5">{expenses.length} Logged Payouts</p>
               </div>
             </div>
-            <div>
-              <h3 className="text-2xl font-black text-[#C0392B] tracking-tight font-sans tabular-nums">
-                ₹{totalExpensesAmount.toLocaleString('en-IN')}
-              </h3>
-              <p className="text-[10px] font-semibold text-[#D65446] mt-0.5">{expenses.length} Logged Payouts</p>
+
+            {/* Sparkline Graph */}
+            <div className="mt-3 -mx-5 -mb-5">
+              <svg className="w-full h-10" viewBox="0 0 100 28" fill="none" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="grad-expense" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#F43F5E" stopOpacity="0.25" />
+                    <stop offset="100%" stopColor="#F43F5E" stopOpacity="0.0" />
+                  </linearGradient>
+                </defs>
+                <path d="M0,23 Q25,24 45,21 T75,18 T90,12 T100,5 L100,28 L0,28 Z" fill="url(#grad-expense)" />
+                <path d="M0,23 Q25,24 45,21 T75,18 T90,12 T100,5" stroke="#F43F5E" strokeWidth="2" strokeLinecap="round" />
+              </svg>
             </div>
-            <div className="h-1 w-full bg-[#E74C3C] rounded-full" />
           </div>
 
-          {/* 5. Net Studio Profit (Luxury Gold Feature Card) */}
-          <div className="bg-gradient-to-br from-[#E2B857] via-[#D4AF37] to-[#B38728] p-5 rounded-3xl border border-[#F3DE9C] shadow-[0_6px_25px_-4px_rgba(212,175,55,0.35)] text-white flex flex-col justify-between space-y-3 relative overflow-hidden">
-            <div className="flex items-center justify-between">
-              <p className="text-[11px] font-black text-[#FFF5D6] uppercase tracking-wider">Net Studio Profit</p>
-              <div className="w-8 h-8 rounded-xl bg-white/20 backdrop-blur-sm text-white flex items-center justify-center shadow-2xs">
-                <TrendingUp className="w-4 h-4 stroke-[2.5]" />
+          {/* 5. Net Studio Profit */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between relative overflow-hidden group hover:shadow-md transition-all">
+            <div className="flex items-start gap-3.5">
+              <div className="w-11 h-11 rounded-2xl bg-purple-50/90 text-purple-600 border border-purple-100 flex items-center justify-center shrink-0 shadow-2xs">
+                <TrendingUp className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">NET STUDIO PROFIT</p>
+                <h3 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight font-sans tabular-nums mt-0.5">
+                  ₹{netProfit.toLocaleString('en-IN')}
+                </h3>
+                <p className="text-[11px] text-slate-400 font-medium mt-0.5 flex items-center gap-1">
+                  <span>{profitMargin}% Profit Margin</span>
+                  <Sparkles className="w-3 h-3 text-purple-500" />
+                </p>
               </div>
             </div>
-            <div>
-              <h3 className="text-2xl font-black tracking-tight font-sans tabular-nums">
-                ₹{netProfit.toLocaleString('en-IN')}
-              </h3>
-              <p className="text-[11px] font-bold text-[#FFF5D6] mt-0.5">
-                {profitMargin}% Profit Margin 🔥
-              </p>
+
+            {/* Sparkline Graph */}
+            <div className="mt-3 -mx-5 -mb-5">
+              <svg className="w-full h-10" viewBox="0 0 100 28" fill="none" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="grad-profit" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#8B5CF6" stopOpacity="0.25" />
+                    <stop offset="100%" stopColor="#8B5CF6" stopOpacity="0.0" />
+                  </linearGradient>
+                </defs>
+                <path d="M0,23 Q20,24 40,20 T70,17 T88,10 T100,4 L100,28 L0,28 Z" fill="url(#grad-profit)" />
+                <path d="M0,23 Q20,24 40,20 T70,17 T88,10 T100,4" stroke="#8B5CF6" strokeWidth="2" strokeLinecap="round" />
+              </svg>
             </div>
-            <div className="h-1 w-full bg-white/40 rounded-full" />
           </div>
         </div>
 
