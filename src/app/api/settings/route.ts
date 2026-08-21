@@ -110,30 +110,20 @@ export async function GET(req: NextRequest) {
       profile = p;
     } catch (_) {}
 
-    // 1. Try fetching from Supabase auth user_metadata (Built-in to Supabase Auth)
+    // 1. Try profiles table first (Clean SQL storage)
     let dbConfig: any = null;
     try {
-      const { data: u } = await supabaseAdmin.auth.admin.getUserById(workspaceId);
-      if (u?.user?.user_metadata?.workspace_settings) {
-        dbConfig = u.user.user_metadata.workspace_settings;
+      const { data: pData } = await supabaseAdmin
+        .from('profiles')
+        .select('leads_table_preferences')
+        .eq('id', workspaceId)
+        .maybeSingle();
+      if (pData?.leads_table_preferences && typeof pData.leads_table_preferences === 'object') {
+        dbConfig = pData.leads_table_preferences;
       }
     } catch (_) {}
 
-    // 2. Try profiles table if user_metadata is empty
-    if (!dbConfig) {
-      try {
-        const { data: pData } = await supabaseAdmin
-          .from('profiles')
-          .select('leads_table_preferences')
-          .eq('id', workspaceId)
-          .maybeSingle();
-        if (pData?.leads_table_preferences && typeof pData.leads_table_preferences === 'object') {
-          dbConfig = pData.leads_table_preferences;
-        }
-      } catch (_) {}
-    }
-
-    // 3. Try workspace_settings table if still empty
+    // 2. Try workspace_settings table
     if (!dbConfig) {
       try {
         const { data: dbSettings } = await supabaseAdmin
@@ -142,6 +132,20 @@ export async function GET(req: NextRequest) {
           .eq('workspace_id', workspaceId)
           .maybeSingle();
         if (dbSettings?.config) dbConfig = dbSettings.config;
+      } catch (_) {}
+    }
+
+    // 3. Fallback: Check if user_metadata has legacy settings, migrate and clean it
+    if (!dbConfig) {
+      try {
+        const { data: u } = await supabaseAdmin.auth.admin.getUserById(workspaceId);
+        if (u?.user?.user_metadata?.workspace_settings) {
+          dbConfig = u.user.user_metadata.workspace_settings;
+          // Clean user_metadata so JWT shrinks
+          const cleanedMeta = { ...(u.user.user_metadata || {}) };
+          delete cleanedMeta.workspace_settings;
+          await supabaseAdmin.auth.admin.updateUserById(workspaceId, { user_metadata: cleanedMeta });
+        }
       } catch (_) {}
     }
 
@@ -222,20 +226,7 @@ export async function POST(req: NextRequest) {
 
     let savedSuccessfully = false;
 
-    // Persistence Tier 1: Save to Supabase Auth user_metadata (100% Guaranteed Native Supabase Feature)
-    try {
-      const { data: userData, error: uErr } = await supabaseAdmin.auth.admin.getUserById(workspaceId);
-      const existingMeta = userData?.user?.user_metadata || {};
-      const { error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(workspaceId, {
-        user_metadata: {
-          ...existingMeta,
-          workspace_settings: updatedConfig
-        }
-      });
-      if (!updateErr) savedSuccessfully = true;
-    } catch (_) {}
-
-    // Persistence Tier 2: Try profiles table if column exists
+    // Persistence Tier 1: Save to profiles table (Clean SQL storage with ZERO cookie footprint)
     try {
       const { error: pErr } = await supabaseAdmin
         .from('profiles')
@@ -246,7 +237,7 @@ export async function POST(req: NextRequest) {
       if (!pErr) savedSuccessfully = true;
     } catch (_) {}
 
-    // Persistence Tier 3: Try workspace_settings table if table exists
+    // Persistence Tier 2: Try workspace_settings table
     try {
       const { error: upsertErr } = await supabaseAdmin
         .from('workspace_settings')
@@ -256,6 +247,18 @@ export async function POST(req: NextRequest) {
           updated_at: new Date().toISOString(),
         }, { onConflict: 'workspace_id' });
       if (!upsertErr) savedSuccessfully = true;
+    } catch (_) {}
+
+    // Ensure user_metadata stays clean so JWT tokens stay under 1KB (prevents cookie chunk bloat)
+    try {
+      const { data: userData } = await supabaseAdmin.auth.admin.getUserById(workspaceId);
+      if (userData?.user?.user_metadata?.workspace_settings) {
+        const cleanedMeta = { ...(userData.user.user_metadata || {}) };
+        delete cleanedMeta.workspace_settings;
+        await supabaseAdmin.auth.admin.updateUserById(workspaceId, {
+          user_metadata: cleanedMeta
+        });
+      }
     } catch (_) {}
 
     // Sync lead_stages to crm_stages table in Supabase
