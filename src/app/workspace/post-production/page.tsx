@@ -9,7 +9,7 @@ import {
   ChevronDown, ChevronUp, Edit3, MessageSquare, ArrowLeft, RefreshCw, 
   Play, Sparkles, Check, X, ShieldAlert, AlertCircle, Trash2, FolderPlus,
   Bell, Send, UserPlus, FileText, CheckSquare, MoreVertical, Link2,
-  Mic, Palette, Tag
+  Mic, Palette, Tag, Hash
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import AiMicButton from '@/components/AiMicButton';
@@ -176,6 +176,19 @@ export default function PostProductionPage() {
   const [showAddCategoryModal, setShowAddCategoryModal] = useState<{ open: boolean; projectId?: string }>({ open: false });
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategoryColor, setNewCategoryColor] = useState<CategoryColorTheme>('emerald');
+
+  // Unified Add Deliverable Item UI Modal state (Title + Count + Editor + Deadline in ONE Modal)
+  const [showAddDeliverableModal, setShowAddDeliverableModal] = useState<{
+    open: boolean;
+    projectId?: string;
+    categoryKey?: string;
+    categoryTitle?: string;
+    colorTheme?: CategoryColorTheme;
+  }>({ open: false });
+  const [newDeliverableTitle, setNewDeliverableTitle] = useState('');
+  const [newDeliverableCount, setNewDeliverableCount] = useState('');
+  const [newDeliverableAssignee, setNewDeliverableAssignee] = useState('');
+  const [newDeliverableDeadline, setNewDeliverableDeadline] = useState('');
 
   // Comment Modal state
   const [activeCommentModal, setActiveCommentModal] = useState<{
@@ -574,28 +587,55 @@ export default function PostProductionPage() {
     }));
   };
 
-  // Add Deliverable into any category
-  const handleAddDeliverable = (projectId: string, categoryKey: string, customCategoryName?: string, customColor?: CategoryColorTheme) => {
-    const titlePrompt = prompt(`Enter title for deliverable under "${customCategoryName || categoryKey}":`);
-    if (!titlePrompt || !titlePrompt.trim()) return;
+  // Open the Unified Add Deliverable UI Modal
+  const openAddDeliverableModal = (
+    projectId: string, 
+    categoryKey: string, 
+    categoryTitle: string, 
+    colorTheme?: CategoryColorTheme
+  ) => {
+    setNewDeliverableTitle('');
+    setNewDeliverableCount(
+      categoryKey === 'photos' ? '500 Photos' :
+      categoryKey === 'videos' ? '25 Mins' :
+      categoryKey === 'albums' ? '40 Pages' :
+      categoryKey === 'reels' ? '3 Reels' :
+      categoryKey === 'teasers' ? '1 Min' : '1 Item'
+    );
+    setNewDeliverableAssignee(
+      categoryKey === 'photos' ? 'Vikram (Photo Retoucher)' :
+      categoryKey === 'albums' ? 'Rohan (Album Designer)' : 'Amit (Senior Video Editor)'
+    );
+    setNewDeliverableDeadline('');
+    setShowAddDeliverableModal({
+      open: true,
+      projectId,
+      categoryKey,
+      categoryTitle,
+      colorTheme: colorTheme || 'indigo',
+    });
+  };
 
-    const countPrompt = prompt(`Enter count / specifications (e.g. 500 Photos, 3 Reels, 40 Pages, 1 Drive):`, '1 Item');
+  // Confirm Add Deliverable Item from UI Modal
+  const handleConfirmAddDeliverable = () => {
+    if (!newDeliverableTitle.trim() || !showAddDeliverableModal.projectId || !showAddDeliverableModal.categoryKey) return;
+
+    const { projectId, categoryKey, categoryTitle, colorTheme } = showAddDeliverableModal;
 
     const newDeliverable: DeliverableItem = {
       id: `deliv_${categoryKey}_${Date.now()}`,
-      title: titlePrompt.trim(),
+      title: newDeliverableTitle.trim(),
       category: categoryKey as any,
-      count: countPrompt || '',
-      assigned_to: 'Amit (Senior Video Editor)',
-      deadline: '',
+      count: newDeliverableCount.trim() || '1 Item',
+      assigned_to: newDeliverableAssignee || 'Amit (Senior Video Editor)',
+      deadline: newDeliverableDeadline || '',
       status: 'pending',
       drive_link: '',
       comments: []
     };
 
-    // If custom color/name is passed, attach to deliverable
-    if (customCategoryName) (newDeliverable as any).category_name = customCategoryName;
-    if (customColor) (newDeliverable as any).category_color = customColor;
+    if (categoryTitle) (newDeliverable as any).category_name = categoryTitle;
+    if (colorTheme) (newDeliverable as any).category_color = colorTheme;
 
     setProjects(prev => prev.map(p => {
       if (p.id === projectId) {
@@ -605,6 +645,8 @@ export default function PostProductionPage() {
       }
       return p;
     }));
+
+    setShowAddDeliverableModal({ open: false });
   };
 
   // Add a whole new dynamic category card to a project
@@ -1049,7 +1091,7 @@ export default function PostProductionPage() {
                                 editorList={editorList}
                                 isStandard={['photos', 'videos', 'albums'].includes(catKey)}
                                 onUpdate={handleDeliverableUpdate}
-                                onAdd={() => handleAddDeliverable(project.id, catKey, categoryTitle, colorTheme)}
+                                onAdd={() => openAddDeliverableModal(project.id, catKey, categoryTitle, colorTheme)}
                                 onDeleteItem={handleDeleteDeliverable}
                                 onDeleteCategory={() => handleDeleteCategory(project.id, catKey, categoryTitle)}
                                 onOpenComment={(item) => setActiveCommentModal({
@@ -1096,6 +1138,122 @@ export default function PostProductionPage() {
           )}
 
         </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          MODAL: ADD DELIVERABLE ITEM (UNIFIED BEAUTIFUL UI DIALOG)
+      ───────────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showAddDeliverableModal.open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-[#FFFDF9] rounded-2xl p-6 max-w-lg w-full border border-[#EAE5DA] shadow-2xl space-y-4"
+            >
+              <div className="flex items-center justify-between border-b border-[#EAE5DA] pb-3.5">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
+                    <Plus className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900">
+                      Add New {showAddDeliverableModal.categoryTitle} Deliverable
+                    </h3>
+                    <p className="text-[11px] text-slate-500 font-medium">Create a deliverable task with title, quantity, artist & deadline</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowAddDeliverableModal({ open: false })}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-3.5 pt-1">
+                {/* 1. Deliverable Title */}
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    Deliverable Name / Title <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    autoFocus
+                    placeholder="e.g. Candid Wedding Photos, Cinematic Highlight Film, 40 Page Album..."
+                    value={newDeliverableTitle}
+                    onChange={(e) => setNewDeliverableTitle(e.target.value)}
+                    className="w-full px-3.5 py-2.5 text-xs bg-white border border-[#EAE5DA] rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-900 font-bold placeholder:text-slate-400"
+                  />
+                </div>
+
+                {/* 2. Count / Specifications */}
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    Quantity / Specifications
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 500 Photos, 25 Mins, 40 Pages, 3 Reels, 1 Hard Drive..."
+                    value={newDeliverableCount}
+                    onChange={(e) => setNewDeliverableCount(e.target.value)}
+                    className="w-full px-3.5 py-2.5 text-xs bg-white border border-[#EAE5DA] rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-900 font-semibold placeholder:text-slate-400"
+                  />
+                </div>
+
+                {/* 3. Assigned Editor & Deadline Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">
+                      Assigned Editor / Artist
+                    </label>
+                    <select
+                      value={newDeliverableAssignee}
+                      onChange={(e) => setNewDeliverableAssignee(e.target.value)}
+                      className="w-full px-3.5 py-2.5 text-xs bg-white border border-[#EAE5DA] rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-900 font-bold cursor-pointer"
+                    >
+                      <option value="">Unassigned</option>
+                      {editorList.map(ed => (
+                        <option key={ed} value={ed}>{ed}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">
+                      Target Delivery Deadline
+                    </label>
+                    <input
+                      type="date"
+                      value={newDeliverableDeadline}
+                      onChange={(e) => setNewDeliverableDeadline(e.target.value)}
+                      className="w-full px-3.5 py-2.5 text-xs bg-white border border-[#EAE5DA] rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-900 font-bold cursor-pointer"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="flex justify-end gap-2 pt-3 border-t border-[#EAE5DA]">
+                <button
+                  onClick={() => setShowAddDeliverableModal({ open: false })}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmAddDeliverable}
+                  disabled={!newDeliverableTitle.trim()}
+                  className="px-5 py-2 text-xs font-black text-slate-900 bg-amber-400 hover:bg-amber-500 disabled:opacity-50 rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <Plus className="w-4 h-4" />
+                  Save Deliverable Item
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* ─────────────────────────────────────────────────────────────
           MODAL: ADD DYNAMIC CUSTOM CATEGORY CARD
