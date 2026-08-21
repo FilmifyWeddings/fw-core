@@ -1961,10 +1961,69 @@ function calculatePaymentTermsSummary(steps: PaymentTermStep[], totalProjectAmou
   const fixedAmount = Number(totalProjectAmount || 0);
   const stepList = Array.isArray(steps) ? steps : [];
   const receivedAmount = stepList
-    .filter((s: any) => s && s.status === 'Completed')
-    .reduce((sum, s) => sum + Number(s?.amount || 0), 0);
+    .filter((s: any) => s && (s.status === 'Completed' || s.status === 'PAID' || s.status === 'COMPLETED'))
+    .reduce((sum, s) => sum + (Number(s?.amount) || 0), 0);
   const pendingAmount = Math.max(0, fixedAmount - receivedAmount);
-  return { fixedAmount, receivedAmount, pendingAmount };
+  const scheduledSum = stepList.reduce((sum, s) => sum + (Number(s?.amount) || 0), 0);
+  const diff = fixedAmount - scheduledSum;
+  return { fixedAmount, receivedAmount, pendingAmount, scheduledSum, diff };
+}
+
+function autoBalanceInstallmentSteps(steps: PaymentTermStep[], totalAmount: number): PaymentTermStep[] {
+  if (!Array.isArray(steps) || steps.length === 0) {
+    return [{
+      id: `pt_${Date.now()}`,
+      stepName: 'Total Project Amount',
+      name: 'Total Project Amount',
+      amount: totalAmount,
+      status: 'Pending',
+      date: 'Booking Date'
+    }];
+  }
+
+  const completedSteps = steps.filter((s: any) => s.status === 'Completed' || s.status === 'PAID' || s.status === 'COMPLETED');
+  const completedSum = completedSteps.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+  const pendingBalance = Math.max(0, totalAmount - completedSum);
+  const pendingIndices = steps
+    .map((s: any, idx) => (s.status !== 'Completed' && s.status !== 'PAID' && s.status !== 'COMPLETED') ? idx : -1)
+    .filter(idx => idx !== -1);
+
+  if (pendingIndices.length === 1) {
+    return steps.map((s, idx) => idx === pendingIndices[0] ? { ...s, amount: pendingBalance } : s);
+  }
+
+  if (pendingIndices.length > 1) {
+    const oldPendingSum = pendingIndices.reduce((sum, idx) => sum + (Number(steps[idx].amount) || 0), 0);
+    let allocated = 0;
+    return steps.map((s, idx) => {
+      const pPos = pendingIndices.indexOf(idx);
+      if (pPos === -1) return s; // Completed steps remain untouched
+      if (pPos === pendingIndices.length - 1) {
+        return { ...s, amount: Math.max(0, pendingBalance - allocated) };
+      }
+      const ratio = oldPendingSum > 0 ? (Number(s.amount) || 0) / oldPendingSum : 1 / pendingIndices.length;
+      const amt = Math.round(pendingBalance * ratio);
+      allocated += amt;
+      return { ...s, amount: amt };
+    });
+  }
+
+  // If all remaining steps are completed and completedSum < totalAmount, append a pending step for the balance
+  if (completedSum < totalAmount) {
+    return [
+      ...steps,
+      {
+        id: `pt_${Date.now()}`,
+        stepName: 'Final Settlement Amount',
+        name: 'Final Settlement Amount',
+        amount: totalAmount - completedSum,
+        status: 'Pending',
+        date: 'Deliverables Handover'
+      }
+    ];
+  }
+
+  return steps;
 }
 
 function syncPaymentTermsWithPricing(pricingPage: any, currentPaymentTerms: any) {
@@ -1974,37 +2033,16 @@ function syncPaymentTermsWithPricing(pricingPage: any, currentPaymentTerms: any)
     ? currentPaymentTerms.steps
     : DEFAULT_AIRY_PROPOSAL.paymentTermsPage.steps;
 
-  const totalOldStepsAmount = oldSteps.reduce((s: number, st: any) => s + (Number(st?.amount) || 0), 0);
-  
-  let updatedSteps: PaymentTermStep[];
-  if (totalOldStepsAmount > 0 && oldSteps.length > 0) {
-    let allocatedSum = 0;
-    updatedSteps = oldSteps.map((step: any, idx: number) => {
-      if (idx === oldSteps.length - 1) {
-        const lastAmount = Math.max(0, totalAmount - allocatedSum);
-        return { ...step, amount: lastAmount };
-      }
-      const ratio = (Number(step?.amount) || 0) / totalOldStepsAmount;
-      const stepAmount = Math.round(totalAmount * ratio);
-      allocatedSum += stepAmount;
-      return { ...step, amount: stepAmount };
-    });
-  } else {
-    const tokenAmt = Math.round(totalAmount * 0.25);
-    const eventAmt = Math.round(totalAmount * 0.65);
-    const deliveryAmt = Math.max(0, totalAmount - tokenAmt - eventAmt);
-    updatedSteps = [
-      { id: 'pt-1', stepName: 'Token Advance Amount', name: 'Token Advance Amount', amount: tokenAmt, status: 'Completed', date: 'Booking Date' },
-      { id: 'pt-2', stepName: 'Main Event Day Amount', name: 'Main Event Day Amount', amount: eventAmt, status: 'Pending', date: 'Event Day' },
-      { id: 'pt-3', stepName: 'Final Delivery Amount', name: 'Final Delivery Amount', amount: deliveryAmt, status: 'Pending', date: 'Deliverables Handover' },
-    ];
-  }
+  const balancedSteps = autoBalanceInstallmentSteps(oldSteps, totalAmount);
+  const summary = calculatePaymentTermsSummary(balancedSteps, totalAmount);
 
   return {
     ...(currentPaymentTerms || DEFAULT_AIRY_PROPOSAL.paymentTermsPage),
-    steps: updatedSteps,
+    steps: balancedSteps,
     fixedAmount: totalAmount,
-    totalAmount: totalAmount
+    totalAmount: totalAmount,
+    receivedAmount: summary.receivedAmount,
+    pendingAmount: summary.pendingAmount
   };
 }
 
@@ -4060,7 +4098,7 @@ function StudioCoreAiryBuilderContent() {
           )}
 
           {pageItem.type === 'paymentTermsPage' && (
-                    <div className="space-y-3">
+            <div className="space-y-3">
 
               {/* Total Net Investment Live Banner (Synced with Pricing Details) */}
               <div className="p-3 rounded-2xl bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 border border-amber-400/50 shadow-2xs space-y-1">
@@ -4069,10 +4107,38 @@ function StudioCoreAiryBuilderContent() {
                   <span className="font-black text-amber-700 text-sm font-sans">₹{pricingCalculated.netTotal.toLocaleString('en-IN')}</span>
                 </div>
                 <div className="flex items-center justify-between text-[10px] text-zinc-500 font-bold border-t border-amber-200/60 pt-1 mt-1">
-                  <span>Scheduled Sum: ₹{(data.paymentTermsPage?.steps || []).reduce((s: number, st: any) => s + (Number(st?.amount) || 0), 0).toLocaleString('en-IN')}</span>
-                  <span className={((data.paymentTermsPage?.steps || []).reduce((s: number, st: any) => s + (Number(st?.amount) || 0), 0) === pricingCalculated.netTotal) ? 'text-emerald-600 font-black' : 'text-amber-600 font-black'}>
-                    {((data.paymentTermsPage?.steps || []).reduce((s: number, st: any) => s + (Number(st?.amount) || 0), 0) === pricingCalculated.netTotal) ? '✓ 100% Synced' : '⚠ Diff: ₹' + (pricingCalculated.netTotal - (data.paymentTermsPage?.steps || []).reduce((s: number, st: any) => s + (Number(st?.amount) || 0), 0)).toLocaleString('en-IN')}
-                  </span>
+                  <span>Scheduled Sum: ₹{paymentTermsCalculated.scheduledSum.toLocaleString('en-IN')}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className={paymentTermsCalculated.diff === 0 ? 'text-emerald-600 font-black' : 'text-amber-600 font-black'}>
+                      {paymentTermsCalculated.diff === 0 ? '✓ 100% Synced' : `⚠ Diff: ₹${paymentTermsCalculated.diff.toLocaleString('en-IN')}`}
+                    </span>
+                    {paymentTermsCalculated.diff !== 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const currentSteps = data.paymentTermsPage?.steps || [];
+                          const total = pricingCalculated.netTotal;
+                          const balanced = autoBalanceInstallmentSteps(currentSteps, total);
+                          const summary = calculatePaymentTermsSummary(balanced, total);
+                          const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
+                          setData({
+                            ...data,
+                            paymentTermsPage: {
+                              ...currentObj,
+                              steps: balanced,
+                              fixedAmount: summary.fixedAmount,
+                              receivedAmount: summary.receivedAmount,
+                              pendingAmount: summary.pendingAmount
+                            }
+                          });
+                        }}
+                        className="px-2 py-0.5 rounded-md bg-amber-500 hover:bg-amber-600 text-white text-[9px] font-black uppercase tracking-wider cursor-pointer shadow-xs transition-all"
+                        title="Auto-balance remaining pending installment to match Total Net Investment"
+                      >
+                        ⚡ Auto-Balance
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -4090,11 +4156,21 @@ function StudioCoreAiryBuilderContent() {
                       const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
                       const oldSteps = currentObj.steps || [];
                       const updated = [
-                        { ...oldSteps[0], id: oldSteps[0]?.id || 'pt-1', stepName: oldSteps[0]?.stepName || 'Token Advance Amount', amount: s1, status: oldSteps[0]?.status || 'Completed', date: oldSteps[0]?.date || 'Booking Date' },
-                        { ...oldSteps[1], id: oldSteps[1]?.id || 'pt-2', stepName: oldSteps[1]?.stepName || 'Main Event Day Amount', amount: s2, status: oldSteps[1]?.status || 'Pending', date: oldSteps[1]?.date || 'Event Day' },
-                        { ...oldSteps[2], id: oldSteps[2]?.id || 'pt-3', stepName: oldSteps[2]?.stepName || 'Final Delivery Amount', amount: s3, status: oldSteps[2]?.status || 'Pending', date: oldSteps[2]?.date || 'Deliverables Handover' },
+                        { ...oldSteps[0], id: oldSteps[0]?.id || 'pt-1', stepName: oldSteps[0]?.stepName || 'Token Advance Amount', name: oldSteps[0]?.name || 'Token Advance Amount', amount: s1, status: 'Completed', date: oldSteps[0]?.date || 'Booking Date' },
+                        { ...oldSteps[1], id: oldSteps[1]?.id || 'pt-2', stepName: oldSteps[1]?.stepName || 'Main Event Day Amount', name: oldSteps[1]?.name || 'Main Event Day Amount', amount: s2, status: 'Pending', date: oldSteps[1]?.date || 'Event Day' },
+                        { ...oldSteps[2], id: oldSteps[2]?.id || 'pt-3', stepName: oldSteps[2]?.stepName || 'Final Delivery Amount', name: oldSteps[2]?.name || 'Final Delivery Amount', amount: s3, status: 'Pending', date: oldSteps[2]?.date || 'Deliverables Handover' },
                       ];
-                      setData({ ...data, paymentTermsPage: { ...currentObj, steps: updated } });
+                      const summary = calculatePaymentTermsSummary(updated, total);
+                      setData({
+                        ...data,
+                        paymentTermsPage: {
+                          ...currentObj,
+                          steps: updated,
+                          fixedAmount: summary.fixedAmount,
+                          receivedAmount: summary.receivedAmount,
+                          pendingAmount: summary.pendingAmount
+                        }
+                      });
                     }}
                     className="py-1 px-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold text-center transition-all cursor-pointer shadow-2xs"
                   >
@@ -4111,11 +4187,21 @@ function StudioCoreAiryBuilderContent() {
                       const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
                       const oldSteps = currentObj.steps || [];
                       const updated = [
-                        { ...oldSteps[0], id: oldSteps[0]?.id || 'pt-1', stepName: oldSteps[0]?.stepName || 'Booking Token Amount', amount: s1, status: oldSteps[0]?.status || 'Completed', date: oldSteps[0]?.date || 'Booking Date' },
-                        { ...oldSteps[1], id: oldSteps[1]?.id || 'pt-2', stepName: oldSteps[1]?.stepName || 'Event Stage Amount', amount: s2, status: oldSteps[1]?.status || 'Pending', date: oldSteps[1]?.date || 'Event Day' },
-                        { ...oldSteps[2], id: oldSteps[2]?.id || 'pt-3', stepName: oldSteps[2]?.stepName || 'Final Delivery Amount', amount: s3, status: oldSteps[2]?.status || 'Pending', date: oldSteps[2]?.date || 'Deliverables Handover' },
+                        { ...oldSteps[0], id: oldSteps[0]?.id || 'pt-1', stepName: oldSteps[0]?.stepName || 'Booking Token Amount', name: oldSteps[0]?.name || 'Booking Token Amount', amount: s1, status: 'Completed', date: oldSteps[0]?.date || 'Booking Date' },
+                        { ...oldSteps[1], id: oldSteps[1]?.id || 'pt-2', stepName: oldSteps[1]?.stepName || 'Event Stage Amount', name: oldSteps[1]?.name || 'Event Stage Amount', amount: s2, status: 'Pending', date: oldSteps[1]?.date || 'Event Day' },
+                        { ...oldSteps[2], id: oldSteps[2]?.id || 'pt-3', stepName: oldSteps[2]?.stepName || 'Final Delivery Amount', name: oldSteps[2]?.name || 'Final Delivery Amount', amount: s3, status: 'Pending', date: oldSteps[2]?.date || 'Deliverables Handover' },
                       ];
-                      setData({ ...data, paymentTermsPage: { ...currentObj, steps: updated } });
+                      const summary = calculatePaymentTermsSummary(updated, total);
+                      setData({
+                        ...data,
+                        paymentTermsPage: {
+                          ...currentObj,
+                          steps: updated,
+                          fixedAmount: summary.fixedAmount,
+                          receivedAmount: summary.receivedAmount,
+                          pendingAmount: summary.pendingAmount
+                        }
+                      });
                     }}
                     className="py-1 px-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold text-center transition-all cursor-pointer shadow-2xs"
                   >
@@ -4131,10 +4217,20 @@ function StudioCoreAiryBuilderContent() {
                       const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
                       const oldSteps = currentObj.steps || [];
                       const updated = [
-                        { ...oldSteps[0], id: oldSteps[0]?.id || 'pt-1', stepName: oldSteps[0]?.stepName || 'Advance Booking Amount', amount: s1, status: oldSteps[0]?.status || 'Completed', date: oldSteps[0]?.date || 'Booking Date' },
-                        { ...oldSteps[1], id: oldSteps[1]?.id || 'pt-2', stepName: oldSteps[1]?.stepName || 'Final Settlement Amount', amount: s2, status: oldSteps[1]?.status || 'Pending', date: oldSteps[1]?.date || 'Deliverables Handover' },
+                        { ...oldSteps[0], id: oldSteps[0]?.id || 'pt-1', stepName: oldSteps[0]?.stepName || 'Advance Booking Amount', name: oldSteps[0]?.name || 'Advance Booking Amount', amount: s1, status: 'Completed', date: oldSteps[0]?.date || 'Booking Date' },
+                        { ...oldSteps[1], id: oldSteps[1]?.id || 'pt-2', stepName: oldSteps[1]?.stepName || 'Final Settlement Amount', name: oldSteps[1]?.name || 'Final Settlement Amount', amount: s2, status: 'Pending', date: oldSteps[1]?.date || 'Deliverables Handover' },
                       ];
-                      setData({ ...data, paymentTermsPage: { ...currentObj, steps: updated } });
+                      const summary = calculatePaymentTermsSummary(updated, total);
+                      setData({
+                        ...data,
+                        paymentTermsPage: {
+                          ...currentObj,
+                          steps: updated,
+                          fixedAmount: summary.fixedAmount,
+                          receivedAmount: summary.receivedAmount,
+                          pendingAmount: summary.pendingAmount
+                        }
+                      });
                     }}
                     className="py-1 px-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold text-center transition-all cursor-pointer shadow-2xs"
                   >
@@ -4152,11 +4248,24 @@ function StudioCoreAiryBuilderContent() {
                         type="button"
                         onClick={() => {
                           const steps = data.paymentTermsPage?.steps || [];
-                          const updated = steps.filter((_: any, sIdx: number) => sIdx !== idx);
+                          const filtered = steps.filter((_: any, sIdx: number) => sIdx !== idx);
+                          const total = pricingCalculated.netTotal;
+                          const balanced = autoBalanceInstallmentSteps(filtered, total);
+                          const summary = calculatePaymentTermsSummary(balanced, total);
                           const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
-                          setData({ ...data, paymentTermsPage: { ...currentObj, steps: updated } });
+                          setData({
+                            ...data,
+                            paymentTermsPage: {
+                              ...currentObj,
+                              steps: balanced,
+                              fixedAmount: summary.fixedAmount,
+                              receivedAmount: summary.receivedAmount,
+                              pendingAmount: summary.pendingAmount
+                            }
+                          });
                         }}
-                        className="p-1 text-rose-600 hover:bg-rose-50 rounded-lg border border-rose-200"
+                        className="p-1 text-rose-600 hover:bg-rose-50 rounded-lg border border-rose-200 cursor-pointer transition-all"
+                        title="Delete Installment Step & Auto-Balance Remaining"
                       >
                         <Trash2 className="w-3 h-3" />
                       </button>
@@ -4198,10 +4307,22 @@ function StudioCoreAiryBuilderContent() {
                           type="number"
                           value={step?.amount ?? 0}
                           onChange={(e) => {
+                            const val = Number(e.target.value) || 0;
                             const steps = data.paymentTermsPage?.steps || [];
-                            const updated = steps.map((s: any, sIdx: number) => sIdx === idx ? { ...s, amount: Number(e.target.value) || 0 } : s);
+                            const updated = steps.map((s: any, sIdx: number) => sIdx === idx ? { ...s, amount: val } : s);
+                            const total = pricingCalculated.netTotal;
+                            const summary = calculatePaymentTermsSummary(updated, total);
                             const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
-                            setData({ ...data, paymentTermsPage: { ...currentObj, steps: updated } });
+                            setData({
+                              ...data,
+                              paymentTermsPage: {
+                                ...currentObj,
+                                steps: updated,
+                                fixedAmount: summary.fixedAmount,
+                                receivedAmount: summary.receivedAmount,
+                                pendingAmount: summary.pendingAmount
+                              }
+                            });
                           }}
                           className="w-full p-2 rounded-xl bg-white border border-zinc-200 text-zinc-900 font-bold text-xs"
                         />
@@ -4217,8 +4338,19 @@ function StudioCoreAiryBuilderContent() {
                           onChange={(val) => {
                             const steps = data.paymentTermsPage?.steps || [];
                             const updated = steps.map((s: any, sIdx: number) => sIdx === idx ? { ...s, status: val as 'Completed' | 'Pending' } : s);
+                            const total = pricingCalculated.netTotal;
+                            const summary = calculatePaymentTermsSummary(updated, total);
                             const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
-                            setData({ ...data, paymentTermsPage: { ...currentObj, steps: updated } });
+                            setData({
+                              ...data,
+                              paymentTermsPage: {
+                                ...currentObj,
+                                steps: updated,
+                                fixedAmount: summary.fixedAmount,
+                                receivedAmount: summary.receivedAmount,
+                                pendingAmount: summary.pendingAmount
+                              }
+                            });
                           }}
                         />
                       </div>
@@ -4229,20 +4361,64 @@ function StudioCoreAiryBuilderContent() {
                 <button
                   type="button"
                   onClick={() => {
-                    const steps = data.paymentTermsPage?.steps || [];
-                    const newStep: PaymentTermStep = {
-                      id: `pt_${Date.now()}`,
-                      date: '10 MAR 26',
-                      stepName: 'Stage Payment',
-                      amount: 25000,
-                      status: 'Pending'
-                    };
+                    const currentSteps = data.paymentTermsPage?.steps || DEFAULT_AIRY_PROPOSAL.paymentTermsPage.steps || [];
+                    const total = pricingCalculated.netTotal;
+                    const currentSum = currentSteps.reduce((s: number, st: any) => s + (Number(st?.amount) || 0), 0);
+                    const remaining = total - currentSum;
+
+                    let newSteps: PaymentTermStep[] = [];
+                    if (remaining > 0) {
+                      newSteps = [
+                        ...currentSteps,
+                        {
+                          id: `pt_${Date.now()}`,
+                          date: '10 MAR 26',
+                          stepName: `Installment #${currentSteps.length + 1}`,
+                          name: `Installment #${currentSteps.length + 1}`,
+                          amount: remaining,
+                          status: 'Pending'
+                        }
+                      ];
+                    } else {
+                      const lastPendingIdx = currentSteps.map((s: any) => s.status).lastIndexOf('Pending');
+                      if (lastPendingIdx !== -1 && (Number(currentSteps[lastPendingIdx]?.amount) || 0) > 1000) {
+                        const existingAmt = Number(currentSteps[lastPendingIdx].amount);
+                        const half1 = Math.round(existingAmt / 2);
+                        const half2 = existingAmt - half1;
+                        newSteps = currentSteps.map((s: any, i: number) => i === lastPendingIdx ? { ...s, amount: half1 } : s);
+                        newSteps.push({
+                          id: `pt_${Date.now()}`,
+                          date: '10 MAR 26',
+                          stepName: `Installment #${currentSteps.length + 1}`,
+                          name: `Installment #${currentSteps.length + 1}`,
+                          amount: half2,
+                          status: 'Pending'
+                        });
+                      } else {
+                        newSteps = [
+                          ...currentSteps,
+                          {
+                            id: `pt_${Date.now()}`,
+                            date: '10 MAR 26',
+                            stepName: `Installment #${currentSteps.length + 1}`,
+                            name: `Installment #${currentSteps.length + 1}`,
+                            amount: 0,
+                            status: 'Pending'
+                          }
+                        ];
+                      }
+                    }
+
+                    const summary = calculatePaymentTermsSummary(newSteps, total);
                     const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
                     setData({
                       ...data,
                       paymentTermsPage: {
                         ...currentObj,
-                        steps: [...steps, newStep]
+                        steps: newSteps,
+                        fixedAmount: summary.fixedAmount,
+                        receivedAmount: summary.receivedAmount,
+                        pendingAmount: summary.pendingAmount
                       }
                     });
                   }}

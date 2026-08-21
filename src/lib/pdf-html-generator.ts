@@ -312,7 +312,7 @@ function calculatePaymentTermsSummary(steps: any[], totalProjectAmount: number) 
   const fixedAmount = Number(totalProjectAmount || 0);
   const stepList = Array.isArray(steps) ? steps : [];
   const receivedAmount = stepList
-    .filter(s => s && (s.status === 'Completed' || s.status === 'COMPLETED'))
+    .filter(s => s && (s.status === 'Completed' || s.status === 'COMPLETED' || s.status === 'PAID' || s.status === 'Paid'))
     .reduce((sum, s) => sum + Number(s?.amount || 0), 0);
   const pendingAmount = Math.max(0, fixedAmount - receivedAmount);
   return { fixedAmount, receivedAmount, pendingAmount };
