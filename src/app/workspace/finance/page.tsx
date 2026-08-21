@@ -7,7 +7,7 @@ import {
   DollarSign, TrendingUp, CreditCard, Receipt, Users, Plus, Search, Filter, 
   Calendar, CheckCircle2, Clock, AlertTriangle, ArrowUpRight, ArrowDownRight, 
   FileText, Download, Printer, ExternalLink, ChevronDown, ChevronUp, Edit3, 
-  Trash2, X, RefreshCw, Sparkles, Tag, PieChart, Wallet, ArrowRight, Bell, Send, Check, Crown
+  Trash2, X, RefreshCw, Sparkles, Phone, Calculator, Tag, PieChart, Wallet, ArrowRight, Bell, Send, Check, Crown
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { extractFinancialsFromQuotation } from '@/lib/quotation-finance-sync';
@@ -1392,7 +1392,7 @@ function computeFinanceTotals(
                   </Link>
                 </div>
               ) : (
-                filteredRecords.map((record) => {
+                                filteredRecords.map((record) => {
                   const isExpanded = expandedCards.has(record.id);
                   const client = record.client;
                   const milestones = record.milestones || [];
@@ -1400,88 +1400,109 @@ function computeFinanceTotals(
                     ? Math.min(100, Math.round((record.received_amount / record.final_total_amount) * 100)) 
                     : 0;
 
+                  const clientInitials = client?.name 
+                    ? client.name.trim().split(' ').map(n => n[0]).filter(Boolean).slice(0, 2).join('').toUpperCase() 
+                    : 'CL';
+
                   return (
                     <motion.div
                       key={record.id}
                       layout
-                      className="bg-white rounded-2xl border border-amber-200/90 shadow-sm overflow-hidden transition-all hover:border-amber-300"
+                      className="bg-white rounded-2xl border border-amber-200/70 shadow-[0_4px_20px_-4px_rgba(245,158,11,0.06)] overflow-hidden transition-all duration-300 hover:border-amber-300 hover:shadow-[0_8px_30px_-6px_rgba(245,158,11,0.12)]"
                     >
-                      {/* ── CLIENT CARD HEADER ── */}
-                      <div className="p-5 sm:p-6 bg-gradient-to-r from-amber-50/50 via-white to-amber-50/30 border-b border-amber-100 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                        <div className="space-y-2">
-                          <div className="flex flex-wrap items-center gap-3">
-                            <h2 className="text-xl font-black text-slate-900 tracking-tight">
-                              {client?.name || 'Vinu Bhad & Neha'}
-                            </h2>
-
-                            {/* Payment Status Badge */}
-                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-extrabold border ${
-                              record.payment_status === 'paid'
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : record.payment_status === 'partially_paid'
-                                ? 'bg-amber-100 text-amber-900 border-amber-300 font-black'
-                                : 'bg-orange-50 text-orange-700 border-orange-200'
-                            }`}>
-                              {record.payment_status === 'paid' ? 'Fully Paid' : record.payment_status === 'partially_paid' ? 'Partially Paid' : 'Pending'}
-                            </span>
-
-                            {/* Final Quotation Status Badge */}
-                            {record.has_final_quotation ? (
-                              <button
-                                type="button"
-                                onClick={() => handleOpenQuotationModalForRecord(record)}
-                                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-gradient-to-r from-amber-500 to-[#F36F21] text-white border border-amber-400 shadow-2xs hover:brightness-110 active:scale-95 transition cursor-pointer"
-                                title="Click to view quotation versions or switch final version"
-                              >
-                                <Crown className="w-3.5 h-3.5 text-amber-100" />
-                                <span>Final Quotation (V{record.final_quotation_version || 1})</span>
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => handleOpenQuotationModalForRecord(record)}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 active:scale-95 transition cursor-pointer shadow-2xs"
-                                title="Click to select final quotation version"
-                              >
-                                <Plus className="w-3.5 h-3.5 text-amber-700 stroke-[3]" />
-                                <span>Select Final Quotation</span>
-                              </button>
-                            )}
+                      {/* ── CLIENT CARD HEADER (LUXURY LIGHT CREAM / LIGHT YELLOW THEME) ── */}
+                      <div className="p-5 sm:p-6 bg-gradient-to-r from-[#FFFDF9] via-[#FAF6ED] to-[#FFFDF9] border-b border-amber-100/80 flex flex-col xl:flex-row xl:items-center justify-between gap-5">
+                        <div className="flex items-start sm:items-center gap-3.5">
+                          {/* Client Monogram Avatar */}
+                          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-400 via-amber-500 to-[#F36F21] text-white font-black text-sm flex items-center justify-center shadow-xs shrink-0 tracking-wider">
+                            {clientInitials}
                           </div>
 
-                          {/* Event details & Contact */}
-                          <div className="flex flex-wrap items-center gap-y-2 gap-x-4 text-xs text-slate-600 font-medium">
-                            <span className="flex items-center gap-1.5 text-slate-800 font-semibold">
-                              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                              {client?.event_type || 'Wedding & Reception'}
-                            </span>
-                            <span className="text-slate-300">•</span>
-                            <span className="flex items-center gap-1.5 text-slate-700">
-                              <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                              Event Date: {client?.event_date ? new Date(client.event_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '2026-11-18'}
-                            </span>
-                            <span className="text-slate-300">•</span>
-                            <span className="text-slate-500 font-mono">
-                              Phone: {client?.phone || '+919876543210'}
-                            </span>
+                          <div className="space-y-1.5">
+                            <div className="flex flex-wrap items-center gap-2.5">
+                              <h2 className="text-xl font-black text-slate-900 tracking-tight">
+                                {client?.name || 'Client Name'}
+                              </h2>
+
+                              {/* Payment Status Badge */}
+                              <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-extrabold border shadow-2xs ${
+                                record.payment_status === 'paid'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : record.payment_status === 'partially_paid'
+                                  ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                  : 'bg-orange-50 text-orange-700 border-orange-200'
+                              }`}>
+                                {record.payment_status === 'paid' ? 'Fully Paid' : record.payment_status === 'partially_paid' ? 'Partially Paid' : 'Pending'}
+                              </span>
+
+                              {/* Final Quotation Status Badge */}
+                              {record.has_final_quotation ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenQuotationModalForRecord(record)}
+                                  className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-black bg-gradient-to-r from-amber-500 to-[#F36F21] text-white border border-amber-400 shadow-2xs hover:brightness-105 active:scale-95 transition cursor-pointer"
+                                  title="Click to view quotation versions or switch final version"
+                                >
+                                  <Crown className="w-3.5 h-3.5 text-amber-100" />
+                                  <span>Final Quotation (V{record.final_quotation_version || 1})</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenQuotationModalForRecord(record)}
+                                  className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-bold bg-white hover:bg-amber-50 text-amber-900 border border-amber-300 shadow-2xs active:scale-95 transition cursor-pointer"
+                                  title="Click to select final quotation version"
+                                >
+                                  <Plus className="w-3.5 h-3.5 text-amber-700 stroke-[3]" />
+                                  <span>Select Final Quotation</span>
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Event details & Contact */}
+                            <div className="flex flex-wrap items-center gap-y-1.5 gap-x-3.5 text-xs text-slate-600 font-medium">
+                              <span className="flex items-center gap-1.5 text-slate-800 font-semibold bg-amber-50/80 px-2 py-0.5 rounded-md border border-amber-100/80">
+                                <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                                {client?.event_type || 'Wedding Photography'}
+                              </span>
+                              <span className="flex items-center gap-1.5 text-slate-600">
+                                <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                                Event Date: {client?.event_date ? new Date(client.event_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Not Scheduled'}
+                              </span>
+                              {client?.phone && (
+                                <span className="flex items-center gap-1.5 text-slate-500 font-mono">
+                                  <Phone className="w-3 h-3 text-slate-400" />
+                                  {client.phone}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
 
-                        {/* Right: Amounts, Quick Actions & Toggle */}
-                        <div className="flex flex-wrap items-center gap-4">
-                          {/* Received vs Pending Progress Mini Widget */}
-                          <div className="space-y-1 text-right min-w-[170px]">
-                            <div className="flex items-center justify-between text-xs font-extrabold tabular-nums">
-                              <span className="text-emerald-700">Rec: ₹{record.received_amount.toLocaleString('en-IN')}</span>
-                              <span className="text-orange-700">Pend: ₹{record.pending_amount.toLocaleString('en-IN')}</span>
+                        {/* Right: Amounts Capsule, Quick Actions & Toggle */}
+                        <div className="flex flex-wrap items-center gap-3.5">
+                          {/* Received vs Pending Progress Mini Capsule */}
+                          <div className="bg-white/90 backdrop-blur-sm border border-amber-200/80 p-2.5 px-3.5 rounded-xl shadow-2xs flex flex-col justify-center min-w-[200px] space-y-1.5">
+                            <div className="flex items-center justify-between text-xs font-black tabular-nums">
+                              <span className="text-emerald-700 flex items-center gap-1">
+                                <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                                Rec: ₹{record.received_amount.toLocaleString('en-IN')}
+                              </span>
+                              <span className="text-orange-700 flex items-center gap-1">
+                                <span className="w-2 h-2 rounded-full bg-orange-400" />
+                                Pend: ₹{record.pending_amount.toLocaleString('en-IN')}
+                              </span>
                             </div>
-                            <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+                            <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200/70">
                               <div 
-                                className="h-full bg-gradient-to-r from-emerald-500 to-amber-500 rounded-full transition-all duration-500"
+                                className="h-full bg-gradient-to-r from-emerald-500 via-amber-400 to-amber-500 rounded-full transition-all duration-500"
                                 style={{ width: `${progressPct}%` }}
                               />
                             </div>
-                            <p className="text-[10px] font-bold text-slate-400 tabular-nums">Total: ₹{record.final_total_amount.toLocaleString('en-IN')}</p>
+                            <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 tabular-nums">
+                              <span>Total: ₹{record.final_total_amount.toLocaleString('en-IN')}</span>
+                              <span className="text-amber-800 font-extrabold">{progressPct}% Paid</span>
+                            </div>
                           </div>
 
                           {/* Quick Record Payment Button */}
@@ -1493,7 +1514,7 @@ function computeFinanceTotals(
                                 financeRecord: record
                               });
                             }}
-                            className="px-3.5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs transition flex items-center gap-1.5"
+                            className="px-4 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-95 rounded-xl shadow-sm hover:shadow transition flex items-center gap-1.5 cursor-pointer"
                           >
                             <CreditCard className="w-3.5 h-3.5" />
                             Record Payment
@@ -1508,19 +1529,19 @@ function computeFinanceTotals(
                                 financeRecord: record
                               });
                             }}
-                            className="px-3.5 py-2 text-xs font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-xl shadow-xs transition flex items-center gap-1.5"
+                            className="px-3.5 py-2.5 text-xs font-bold text-amber-950 bg-[#FAF7EE] hover:bg-amber-100 border border-amber-300 active:scale-95 rounded-xl shadow-2xs transition flex items-center gap-1.5 cursor-pointer"
                           >
-                            <FileText className="w-3.5 h-3.5" />
+                            <FileText className="w-3.5 h-3.5 text-amber-700" />
                             Tax Invoice
                           </button>
 
                           {/* Expand / Collapse Button */}
                           <button
                             onClick={() => toggleCard(record.id)}
-                            className="p-2 text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition"
+                            className="p-2.5 text-amber-900 bg-amber-100/70 hover:bg-amber-200 active:scale-95 rounded-xl transition cursor-pointer"
                             title={isExpanded ? 'Hide Pricing & Milestones' : 'View Pricing & Milestones'}
                           >
-                            {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                           </button>
                         </div>
                       </div>
@@ -1533,109 +1554,132 @@ function computeFinanceTotals(
                             animate={{ opacity: 1, height: 'auto' }}
                             exit={{ opacity: 0, height: 0 }}
                             transition={{ duration: 0.25 }}
-                            className="p-5 sm:p-6 space-y-6 bg-amber-50/20 border-t border-amber-100"
+                            className="p-5 sm:p-7 space-y-6 bg-[#FAF8F2] border-t border-amber-100/80"
                           >
                             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
-                              {/* ── LEFT: PRICING DETAILS (EXACT IMAGE 1 REPLICA) ── */}
-                              <div className="lg:col-span-5 bg-[#F9F7F1] p-5 rounded-2xl border border-amber-200/90 shadow-2xs space-y-4">
-                                <div className="text-center pb-2 border-b border-amber-200/60">
-                                  <p className="text-[10px] font-black uppercase tracking-widest text-amber-800">Investment & Breakdown</p>
-                                  <h3 className="text-lg font-black text-slate-900 tracking-wider uppercase font-serif mt-0.5">Pricing Details</h3>
-                                </div>
-
-                                <div className="space-y-2 text-xs">
-                                  {/* Base Package Price */}
-                                  <div className="flex items-center justify-between p-1.5 hover:bg-white rounded-lg transition">
-                                    <span className="font-bold text-slate-700">Base Package Price</span>
-                                    <input
-                                      type="number"
-                                      value={record.base_package_price || 0}
-                                      onChange={(e) => handleBreakdownChange(record.id, 'base_package_price', parseFloat(e.target.value) || 0)}
-                                      className="w-28 text-right font-bold text-slate-900 bg-white border border-slate-200 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-amber-500 font-sans tabular-nums"
-                                    />
+                              {/* ── LEFT: PRICING DETAILS (STREAMLINED LUXURY STUDIO UI) ── */}
+                              <div className="lg:col-span-5 bg-white rounded-2xl border border-amber-200/80 p-5 sm:p-6 shadow-sm flex flex-col justify-between space-y-4">
+                                <div>
+                                  <div className="flex items-center justify-between pb-3 border-b border-amber-100">
+                                    <div>
+                                      <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200/60">
+                                        <Calculator className="w-3 h-3 text-amber-600" /> PRICING BREAKDOWN
+                                      </span>
+                                      <h3 className="text-base font-black text-slate-900 tracking-tight mt-1">Package & Charges</h3>
+                                    </div>
                                   </div>
 
-                                  {/* Discount (Complimentary) */}
-                                  <div className="flex items-center justify-between p-1.5 hover:bg-white rounded-lg transition">
-                                    <span className="font-bold text-rose-600">Discount (Complimentary)</span>
-                                    <input
-                                      type="number"
-                                      value={record.discount_amount || 0}
-                                      onChange={(e) => handleBreakdownChange(record.id, 'discount_amount', parseFloat(e.target.value) || 0)}
-                                      className="w-28 text-right font-bold text-rose-600 bg-white border border-slate-200 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-amber-500 font-sans tabular-nums"
-                                    />
-                                  </div>
+                                  <div className="space-y-2.5 text-xs mt-3.5">
+                                    {/* Base Package Price */}
+                                    <div className="flex items-center justify-between p-2.5 bg-[#FCFAF6] hover:bg-amber-50/40 rounded-xl border border-amber-100 transition">
+                                      <span className="font-bold text-slate-700">Base Package Price</span>
+                                      <div className="relative inline-flex items-center">
+                                        <span className="absolute left-2 text-slate-400 font-bold text-xs">₹</span>
+                                        <input
+                                          type="number"
+                                          value={record.base_package_price || 0}
+                                          onChange={(e) => handleBreakdownChange(record.id, 'base_package_price', parseFloat(e.target.value) || 0)}
+                                          className="w-28 pl-5 pr-2 py-1 text-right font-bold text-slate-900 bg-white border border-slate-200/90 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 font-sans tabular-nums shadow-2xs"
+                                        />
+                                      </div>
+                                    </div>
 
-                                  {/* Accommodation Charges */}
-                                  <div className="flex items-center justify-between p-1.5 hover:bg-white rounded-lg transition">
-                                    <span className="font-medium text-slate-600">Accommodation Charges</span>
-                                    <input
-                                      type="number"
-                                      value={record.accommodation_charges || 0}
-                                      onChange={(e) => handleBreakdownChange(record.id, 'accommodation_charges', parseFloat(e.target.value) || 0)}
-                                      className="w-28 text-right font-bold text-slate-800 bg-white border border-slate-200 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-amber-500 font-sans tabular-nums"
-                                    />
-                                  </div>
+                                    {/* Discount (Complimentary) */}
+                                    <div className="flex items-center justify-between p-2.5 bg-rose-50/30 hover:bg-rose-50/60 rounded-xl border border-rose-100 transition">
+                                      <span className="font-bold text-rose-600">Discount (Complimentary)</span>
+                                      <div className="relative inline-flex items-center">
+                                        <span className="absolute left-2 text-rose-400 font-bold text-xs">₹</span>
+                                        <input
+                                          type="number"
+                                          value={record.discount_amount || 0}
+                                          onChange={(e) => handleBreakdownChange(record.id, 'discount_amount', parseFloat(e.target.value) || 0)}
+                                          className="w-28 pl-5 pr-2 py-1 text-right font-bold text-rose-600 bg-white border border-slate-200/90 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 font-sans tabular-nums shadow-2xs"
+                                        />
+                                      </div>
+                                    </div>
 
-                                  {/* Travel Charges */}
-                                  <div className="flex items-center justify-between p-1.5 hover:bg-white rounded-lg transition">
-                                    <span className="font-medium text-slate-600">Travel Charges</span>
-                                    <input
-                                      type="number"
-                                      value={record.travel_charges || 0}
-                                      onChange={(e) => handleBreakdownChange(record.id, 'travel_charges', parseFloat(e.target.value) || 0)}
-                                      className="w-28 text-right font-bold text-slate-800 bg-white border border-slate-200 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-amber-500 font-sans tabular-nums"
-                                    />
-                                  </div>
+                                    {/* Accommodation Charges */}
+                                    <div className="flex items-center justify-between p-2.5 bg-[#FCFAF6] hover:bg-slate-50 rounded-xl border border-slate-200/60 transition">
+                                      <span className="font-medium text-slate-600">Accommodation Charges</span>
+                                      <div className="relative inline-flex items-center">
+                                        <span className="absolute left-2 text-slate-400 font-bold text-xs">₹</span>
+                                        <input
+                                          type="number"
+                                          value={record.accommodation_charges || 0}
+                                          onChange={(e) => handleBreakdownChange(record.id, 'accommodation_charges', parseFloat(e.target.value) || 0)}
+                                          className="w-28 pl-5 pr-2 py-1 text-right font-bold text-slate-800 bg-white border border-slate-200/90 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 font-sans tabular-nums shadow-2xs"
+                                        />
+                                      </div>
+                                    </div>
 
-                                  {/* Additional Charges */}
-                                  <div className="flex items-center justify-between p-1.5 hover:bg-white rounded-lg transition">
-                                    <span className="font-medium text-slate-600">Additional Charges</span>
-                                    <input
-                                      type="number"
-                                      value={record.additional_charges || 0}
-                                      onChange={(e) => handleBreakdownChange(record.id, 'additional_charges', parseFloat(e.target.value) || 0)}
-                                      className="w-28 text-right font-bold text-slate-800 bg-white border border-slate-200 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-amber-500 font-sans tabular-nums"
-                                    />
-                                  </div>
+                                    {/* Travel Charges */}
+                                    <div className="flex items-center justify-between p-2.5 bg-[#FCFAF6] hover:bg-slate-50 rounded-xl border border-slate-200/60 transition">
+                                      <span className="font-medium text-slate-600">Travel Charges</span>
+                                      <div className="relative inline-flex items-center">
+                                        <span className="absolute left-2 text-slate-400 font-bold text-xs">₹</span>
+                                        <input
+                                          type="number"
+                                          value={record.travel_charges || 0}
+                                          onChange={(e) => handleBreakdownChange(record.id, 'travel_charges', parseFloat(e.target.value) || 0)}
+                                          className="w-28 pl-5 pr-2 py-1 text-right font-bold text-slate-800 bg-white border border-slate-200/90 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 font-sans tabular-nums shadow-2xs"
+                                        />
+                                      </div>
+                                    </div>
 
-                                  {/* Subtotal (Gross Total) */}
-                                  <div className="flex items-center justify-between pt-2 border-t border-amber-200/80 font-black text-slate-900 px-1.5">
-                                    <span>SUBTOTAL (GROSS TOTAL)</span>
-                                    <span className="text-sm font-black font-sans tabular-nums">₹{record.subtotal_amount.toLocaleString('en-IN')}</span>
-                                  </div>
+                                    {/* Additional Charges */}
+                                    <div className="flex items-center justify-between p-2.5 bg-[#FCFAF6] hover:bg-slate-50 rounded-xl border border-slate-200/60 transition">
+                                      <span className="font-medium text-slate-600">Additional Charges</span>
+                                      <div className="relative inline-flex items-center">
+                                        <span className="absolute left-2 text-slate-400 font-bold text-xs">₹</span>
+                                        <input
+                                          type="number"
+                                          value={record.additional_charges || 0}
+                                          onChange={(e) => handleBreakdownChange(record.id, 'additional_charges', parseFloat(e.target.value) || 0)}
+                                          className="w-28 pl-5 pr-2 py-1 text-right font-bold text-slate-800 bg-white border border-slate-200/90 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 font-sans tabular-nums shadow-2xs"
+                                        />
+                                      </div>
+                                    </div>
 
-                                  {/* GST (18%) */}
-                                  <div className="flex items-center justify-between px-1.5 text-slate-600 font-bold">
-                                    <span>GST ({record.gst_rate}%)</span>
-                                    <span className="font-sans tabular-nums">₹{record.gst_amount.toLocaleString('en-IN')}</span>
+                                    {/* Subtotal & GST */}
+                                    <div className="pt-3 border-t border-amber-100/90 space-y-1.5 px-1">
+                                      <div className="flex items-center justify-between font-black text-slate-900">
+                                        <span>SUBTOTAL (GROSS TOTAL)</span>
+                                        <span className="text-sm font-black font-sans tabular-nums">₹{record.subtotal_amount.toLocaleString('en-IN')}</span>
+                                      </div>
+                                      <div className="flex items-center justify-between text-slate-500 font-bold">
+                                        <span>GST ({record.gst_rate}%)</span>
+                                        <span className="font-sans tabular-nums">₹{record.gst_amount.toLocaleString('en-IN')}</span>
+                                      </div>
+                                    </div>
                                   </div>
                                 </div>
 
                                 {/* Final Net Investment Box */}
-                                <div className="p-3.5 bg-amber-100/70 border border-amber-300 rounded-xl flex items-center justify-between shadow-2xs">
+                                <div className="p-4 bg-gradient-to-r from-amber-500/15 via-amber-400/20 to-orange-500/15 border border-amber-300 rounded-xl flex items-center justify-between shadow-2xs mt-4">
                                   <div>
-                                    <p className="text-[10px] font-black uppercase text-amber-900 tracking-wider">Final Net Investment</p>
-                                    <p className="text-[9px] font-medium text-slate-500">Inclusive of all Taxes & Fees</p>
+                                    <p className="text-[10px] font-black uppercase text-amber-950 tracking-wider">Final Net Investment</p>
+                                    <p className="text-[10px] font-medium text-amber-800">Inclusive of all Taxes & Fees</p>
                                   </div>
-                                  <h4 className="text-xl font-black text-slate-900 font-sans tabular-nums tracking-tight">
+                                  <h4 className="text-xl sm:text-2xl font-black text-slate-900 font-sans tabular-nums tracking-tight">
                                     ₹{record.final_total_amount.toLocaleString('en-IN')}
                                   </h4>
                                 </div>
                               </div>
 
-                              {/* ── RIGHT: PAYMENT TERMS & SCHEDULE (EXACT IMAGE 2 REPLICA) ── */}
-                              <div className="lg:col-span-7 bg-[#F9F7F1] p-5 rounded-2xl border border-amber-200/90 shadow-2xs space-y-4 flex flex-col justify-between">
+                              {/* ── RIGHT: PAYMENT TERMS & SCHEDULE (STREAMLINED LUXURY STUDIO UI) ── */}
+                              <div className="lg:col-span-7 bg-white rounded-2xl border border-amber-200/80 p-5 sm:p-6 shadow-sm flex flex-col justify-between space-y-5">
                                 <div>
-                                  <div className="flex items-center justify-between pb-2 border-b border-amber-200/60">
+                                  <div className="flex items-center justify-between pb-3 border-b border-amber-100">
                                     <div>
-                                      <p className="text-[10px] font-black uppercase tracking-widest text-amber-800">Schedule</p>
-                                      <h3 className="text-lg font-black text-slate-900 tracking-wider uppercase font-serif">Payment Terms & Schedule</h3>
+                                      <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200/60">
+                                        <Calendar className="w-3 h-3 text-amber-600" /> SCHEDULE & MILESTONES
+                                      </span>
+                                      <h3 className="text-base font-black text-slate-900 tracking-tight mt-1">Payment Installments</h3>
                                     </div>
                                     <button
                                       onClick={() => setShowAddStepModal({ open: true, recordId: record.id })}
-                                      className="px-3 py-1 text-xs font-bold text-amber-900 bg-amber-200 hover:bg-amber-300 rounded-lg transition shadow-2xs flex items-center gap-1"
+                                      className="px-3.5 py-1.5 text-xs font-black text-amber-950 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-xl transition shadow-2xs flex items-center gap-1.5 cursor-pointer active:scale-95"
                                     >
                                       <Plus className="w-3.5 h-3.5" />
                                       Add Step
@@ -1643,62 +1687,62 @@ function computeFinanceTotals(
                                   </div>
 
                                   {/* Milestones Table */}
-                                  <div className="mt-3 overflow-x-auto">
+                                  <div className="mt-3.5 overflow-x-auto rounded-xl border border-amber-100">
                                     <table className="w-full text-left text-xs">
                                       <thead>
-                                        <tr className="border-b border-amber-200/80 text-[10px] font-black uppercase text-slate-400 tracking-wider">
-                                          <th className="pb-2 font-black">Date</th>
-                                          <th className="pb-2 font-black">Steps</th>
-                                          <th className="pb-2 text-right font-black">Amount</th>
-                                          <th className="pb-2 text-center font-black">Status</th>
-                                          <th className="pb-2 text-right font-black">Action</th>
+                                        <tr className="bg-[#FAF7EE] border-b border-amber-100 text-[10px] font-black uppercase text-amber-900/80 tracking-wider">
+                                          <th className="py-2.5 px-3 font-black">Date</th>
+                                          <th className="py-2.5 px-2 font-black">Step Name</th>
+                                          <th className="py-2.5 px-2 text-right font-black">Amount</th>
+                                          <th className="py-2.5 px-2 text-center font-black">Status</th>
+                                          <th className="py-2.5 px-3 text-right font-black">Action</th>
                                         </tr>
                                       </thead>
-                                      <tbody className="divide-y divide-amber-100">
+                                      <tbody className="divide-y divide-amber-50/80 bg-white">
                                         {milestones.map((m) => (
-                                          <tr key={m.id} className="hover:bg-white/60 transition">
+                                          <tr key={m.id} className="hover:bg-[#FAF8F2] transition">
                                             {/* Editable Date Picker */}
-                                            <td className="py-2.5 whitespace-nowrap">
+                                            <td className="py-2.5 px-3 whitespace-nowrap">
                                               <input
                                                 type="date"
                                                 value={m.due_date ? m.due_date.split('T')[0] : ''}
                                                 onChange={(e) => handleMilestoneDateChange(record.id, m.id, e.target.value)}
-                                                className="px-2 py-1 text-xs font-bold text-slate-800 bg-white border border-slate-200 rounded-lg hover:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer shadow-2xs font-sans"
+                                                className="px-2.5 py-1 text-xs font-bold text-slate-800 bg-[#FCFAF6] border border-slate-200/90 rounded-lg hover:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 cursor-pointer shadow-2xs font-sans"
                                               />
                                             </td>
 
                                             {/* Step Name */}
-                                            <td className="py-2.5 pr-2 font-black text-slate-900 min-w-[130px]">
+                                            <td className="py-2.5 px-2 font-black text-slate-900 min-w-[130px]">
                                               <input
                                                 type="text"
                                                 value={m.step_name}
                                                 onChange={(e) => handleMilestoneNameChange(record.id, m.id, e.target.value)}
-                                                className="w-full px-2 py-1 text-xs font-bold text-slate-900 bg-white border border-slate-200 rounded-lg hover:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-500 shadow-2xs font-sans"
+                                                className="w-full px-2.5 py-1 text-xs font-bold text-slate-900 bg-[#FCFAF6] border border-slate-200/90 rounded-lg hover:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 shadow-2xs font-sans"
                                               />
                                             </td>
 
                                             {/* Amount with clean sans-serif font */}
-                                            <td className="py-2.5 px-1 text-right font-black font-sans tabular-nums text-slate-900 whitespace-nowrap min-w-[110px]">
+                                            <td className="py-2.5 px-2 text-right font-black font-sans tabular-nums text-slate-900 whitespace-nowrap min-w-[110px]">
                                               <div className="relative inline-flex items-center">
                                                 <span className="absolute left-2 text-slate-400 font-bold text-xs">₹</span>
                                                 <input
                                                   type="number"
                                                   value={Math.round(m.amount) || 0}
                                                   onChange={(e) => handleMilestoneAmountChange(record.id, m.id, parseFloat(e.target.value) || 0)}
-                                                  className="w-24 pl-5 pr-1.5 py-1 text-right text-xs font-black text-slate-900 bg-white border border-slate-200 rounded-lg hover:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-500 shadow-2xs font-sans tabular-nums"
+                                                  className="w-24 pl-5 pr-1.5 py-1 text-right text-xs font-black text-slate-900 bg-[#FCFAF6] border border-slate-200/90 rounded-lg hover:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 shadow-2xs font-sans tabular-nums"
                                                 />
                                               </div>
                                             </td>
 
                                             {/* Status Badge */}
-                                            <td className="py-2.5 text-center">
+                                            <td className="py-2.5 px-2 text-center whitespace-nowrap">
                                               <button
                                                 type="button"
                                                 onClick={() => handleMilestoneStatusToggle(record.id, m.id, m.status === 'completed' ? 'pending' : 'completed')}
-                                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border cursor-pointer transition ${
+                                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border cursor-pointer transition shadow-2xs ${
                                                   m.status === 'completed'
                                                     ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
-                                                    : 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200'
+                                                    : 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
                                                 }`}
                                                 title="Click to toggle Completed / Pending"
                                               >
@@ -1707,8 +1751,8 @@ function computeFinanceTotals(
                                             </td>
 
                                             {/* Action */}
-                                            <td className="py-2.5 text-right whitespace-nowrap">
-                                              <div className="flex items-center justify-end gap-1.5">
+                                            <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                                              <div className="flex items-center justify-end gap-2">
                                                 {m.status !== 'completed' ? (
                                                   <button
                                                     onClick={() => {
@@ -1724,12 +1768,14 @@ function computeFinanceTotals(
                                                         target_milestone_id: m.id
                                                       }));
                                                     }}
-                                                    className="px-2.5 py-1 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition shadow-2xs cursor-pointer"
+                                                    className="px-3 py-1 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-95 rounded-lg transition shadow-2xs cursor-pointer"
                                                   >
                                                     Pay
                                                   </button>
                                                 ) : (
-                                                  <span className="text-[10px] font-bold text-emerald-600">Paid ({m.payment_mode || 'UPI'})</span>
+                                                  <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                                                    Paid ({m.payment_mode || 'UPI'})
+                                                  </span>
                                                 )}
 
                                                 {/* Delete Step Button */}
@@ -1751,27 +1797,27 @@ function computeFinanceTotals(
                                 </div>
 
                                 {/* Bottom Summary 3 Badges (Fixed, Received, Pending) */}
-                                <div className="grid grid-cols-3 gap-2.5 pt-3 border-t border-amber-200/80">
+                                <div className="grid grid-cols-3 gap-3 pt-4 border-t border-amber-100">
                                   {/* Fixed Amount */}
-                                  <div className="p-2.5 bg-white rounded-xl border border-slate-200 text-center shadow-2xs">
-                                    <p className="text-[9px] font-black uppercase text-slate-400">Fixed Amount</p>
-                                    <h5 className="text-sm font-black text-slate-900 font-sans tabular-nums mt-0.5">
+                                  <div className="p-3 bg-[#FAF7EE] rounded-xl border border-amber-200/80 text-center shadow-2xs">
+                                    <p className="text-[10px] font-black uppercase text-amber-900/70 tracking-wider">Fixed Amount</p>
+                                    <h5 className="text-base font-black text-slate-900 font-sans tabular-nums mt-0.5">
                                       ₹{record.final_total_amount.toLocaleString('en-IN')}
                                     </h5>
                                   </div>
 
                                   {/* Received Amount */}
-                                  <div className="p-2.5 bg-emerald-50 rounded-xl border border-emerald-200 text-center shadow-2xs">
-                                    <p className="text-[9px] font-black uppercase text-emerald-700">Received Amount</p>
-                                    <h5 className="text-sm font-black text-emerald-800 font-sans tabular-nums mt-0.5">
+                                  <div className="p-3 bg-emerald-50/90 rounded-xl border border-emerald-200 text-center shadow-2xs">
+                                    <p className="text-[10px] font-black uppercase text-emerald-800 tracking-wider">Received Amount</p>
+                                    <h5 className="text-base font-black text-emerald-900 font-sans tabular-nums mt-0.5">
                                       ₹{record.received_amount.toLocaleString('en-IN')}
                                     </h5>
                                   </div>
 
                                   {/* Pending Amount */}
-                                  <div className="p-2.5 bg-amber-100/80 rounded-xl border border-amber-300 text-center shadow-2xs">
-                                    <p className="text-[9px] font-black uppercase text-amber-900">Pending Amount</p>
-                                    <h5 className="text-sm font-black text-amber-950 font-sans tabular-nums mt-0.5">
+                                  <div className="p-3 bg-amber-100/90 rounded-xl border border-amber-300 text-center shadow-2xs">
+                                    <p className="text-[10px] font-black uppercase text-amber-950 tracking-wider">Pending Amount</p>
+                                    <h5 className="text-base font-black text-amber-950 font-sans tabular-nums mt-0.5">
                                       ₹{record.pending_amount.toLocaleString('en-IN')}
                                     </h5>
                                   </div>
