@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import { 
   Settings as SettingsIcon, RefreshCw, Check, Save, ArrowLeft, Target,
   FileText, Coins, Clock, Globe, Users, Plus, Trash2, Phone, Mail, MessageSquare, Send,
-  UserCheck, AlertCircle, ChevronDown, GripVertical, CheckCircle2, Table, ArrowUp, ArrowDown
+  UserCheck, AlertCircle, ChevronDown, GripVertical, CheckCircle2, Table, ArrowUp, ArrowDown,
+  QrCode, Sparkles, Upload, Image as ImageIcon, Building2, CreditCard
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -118,6 +119,7 @@ export default function SettingsPage() {
   const [invoiceTerms, setInvoiceTerms] = useState('1. Advance payment is non-refundable upon client cancellation.\n2. Final deliverables delivered post clearance of balance.');
   const [invoiceFooterNote, setInvoiceFooterNote] = useState('Thank you for choosing Filmify Weddings! This is a computer-generated invoice.');
   const [invoiceFont, setInvoiceFont] = useState('Cormorant Garamond');
+  const [invoiceThemePalette, setInvoiceThemePalette] = useState('auto');
   const [invoiceQrImageUrl, setInvoiceQrImageUrl] = useState('');
   const [projectPrefix, setProjectPrefix] = useState('PRJ-2026-');
   const [gstPercent, setGstPercent] = useState(18);
@@ -203,6 +205,7 @@ export default function SettingsPage() {
         logoUrl: '',
         qrCodeImageUrl: settingsObj.invoice_qr_image_url || invoiceQrImageUrl,
         fontFamily: settingsObj.invoice_font || invoiceFont,
+        themePreset: settingsObj.invoice_theme_palette || invoiceThemePalette,
         themeColor: '#D4AF37',
       }));
     } catch (_) {}
@@ -298,6 +301,7 @@ export default function SettingsPage() {
           if (s.invoice_terms) setInvoiceTerms(s.invoice_terms);
           if (s.invoice_footer_note) setInvoiceFooterNote(s.invoice_footer_note);
           if (s.invoice_font) setInvoiceFont(s.invoice_font);
+          if (s.invoice_theme_palette) setInvoiceThemePalette(s.invoice_theme_palette);
           if (s.invoice_qr_image_url) setInvoiceQrImageUrl(s.invoice_qr_image_url);
           setProjectPrefix(s.sequence_projects_prefix || 'PRJ-2026-');
           setGstPercent(s.invoice_gst_percent ?? 18);
@@ -371,6 +375,7 @@ export default function SettingsPage() {
         invoice_terms: invoiceTerms,
         invoice_footer_note: invoiceFooterNote,
         invoice_font: invoiceFont,
+        invoice_theme_palette: invoiceThemePalette,
         invoice_qr_image_url: invoiceQrImageUrl,
         sequence_projects_prefix: projectPrefix,
         invoice_gst_percent: gstPercent,
@@ -1032,7 +1037,7 @@ export default function SettingsPage() {
                 </div>
 
                 {/* Invoice Number Prefix & Font Theme */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-slate-100">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 pt-4 border-t border-slate-100">
                   <div>
                     <label className="text-xs font-bold text-slate-700 block mb-1">Invoice ID Prefix</label>
                     <input
@@ -1052,18 +1057,47 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">Invoice Color Palette (Quotation Themes)</label>
+                    <select
+                      value={invoiceThemePalette}
+                      onChange={e => setInvoiceThemePalette(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58] cursor-pointer"
+                    >
+                      <option value="auto">⚡ Auto-Sync with Default Quotation Theme</option>
+                      <option value="cyprus-sand-dune">Cyprus & Sand Dune (#004643 / #F0EDE5)</option>
+                      <option value="sand-dune-cyprus">Sand Dune & Cyprus (#F0EDE5 / #004643)</option>
+                      <option value="cherry-red-cream">Cherry Red & Cream (#750505 / #FBFCEB)</option>
+                      <option value="cream-cherry-red">Cream & Cherry Red (#FBFCEB / #750505)</option>
+                      <option value="plum-milk">Plum & Milk (#381932 / #FFF3E6)</option>
+                      <option value="milk-plum">Milk & Plum (#FFF3E6 / #381932)</option>
+                      <option value="sand-chocolate">Sand & Chocolate (#3E000C / #FFECD1)</option>
+                      <option value="chocolate-sand">Chocolate & Sand (#FFECD1 / #3E000C)</option>
+                      <option value="feldgrau-wheat">Feldgrau & Wheat (#3A4B41 / #E6CFA7)</option>
+                      <option value="wheat-feldgrau">Wheat & Feldgrau (#E6CFA7 / #3A4B41)</option>
+                      <option value="noctis-marigold">Noctis & Marigold (#1F2235 / #E3A419)</option>
+                      <option value="marigold-noctis">Marigold & Noctis (#E3A419 / #1F2235)</option>
+                      <option value="champagne-obsidian">Champagne & Obsidian (#111111 / #F7F4EF)</option>
+                      <option value="royal-gold">Royal Gold & Luxury Sand (#D4AF37 / #FAF7F2)</option>
+                      <option value="minimal-charcoal">Minimal Charcoal & White (#262626 / #FFFFFF)</option>
+                    </select>
+                  </div>
+                  <div>
                     <label className="text-xs font-bold text-slate-700 block mb-1">Invoice Typography / Font</label>
                     <select
                       value={invoiceFont}
                       onChange={e => setInvoiceFont(e.target.value)}
-                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58]"
+                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58] cursor-pointer"
                     >
-                      <option value="Cormorant Garamond">Cormorant Garamond (Luxury Serif)</option>
+                      <option value="auto">⚡ Auto-Sync with Default Quotation Font</option>
+                      <option value="Cormorant Garamond">Cormorant Garamond (Quotation Luxury Serif)</option>
                       <option value="Cinzel">Cinzel (Royal Classical)</option>
-                      <option value="Playfair Display">Playfair Display (Editorial)</option>
-                      <option value="Plus Jakarta Sans">Plus Jakarta Sans (Modern Clean)</option>
-                      <option value="Inter">Inter (SaaS Minimal)</option>
+                      <option value="Playfair Display">Playfair Display (Editorial Serif)</option>
+                      <option value="Plus Jakarta Sans">Plus Jakarta Sans (Modern Clean Sans)</option>
                       <option value="Montserrat">Montserrat (Geometric Sans)</option>
+                      <option value="Inter">Inter (SaaS Minimal)</option>
+                      <option value="Outfit">Outfit (Contemporary Clean)</option>
+                      <option value="Prata">Prata (Romantic Editorial)</option>
+                      <option value="Bodoni Moda">Bodoni Moda (High Fashion)</option>
                     </select>
                   </div>
                 </div>

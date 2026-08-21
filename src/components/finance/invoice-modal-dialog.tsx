@@ -300,8 +300,27 @@ export function InvoiceModalDialog({
     : 0;
 
   // Active theme tokens
-  const activeFont = config.fontFamily || resolvedQuotationTheme?.primaryFont || 'Cormorant Garamond';
-  const activeAccentColor = config.themeColor || resolvedQuotationTheme?.themeObj?.primary || '#D4AF37';
+  const activeThemeObj = React.useMemo(() => {
+    if (config.themePreset && config.themePreset !== 'auto' && COLOR_THEMES[config.themePreset]) {
+      return COLOR_THEMES[config.themePreset];
+    }
+    return resolvedQuotationTheme?.themeObj || COLOR_THEMES['cyprus-sand-dune'] || {
+      primary: '#004643',
+      background: '#F0EDE5',
+      text: '#004643',
+      kicker: '#004643',
+      borderColor: 'rgba(0, 70, 67, 0.2)',
+      boxBgColor: 'rgba(0, 70, 67, 0.06)',
+    };
+  }, [config.themePreset, resolvedQuotationTheme]);
+
+  const activeFont = (config.fontFamily && config.fontFamily !== 'auto') 
+    ? config.fontFamily 
+    : (resolvedQuotationTheme?.primaryFont || 'Cormorant Garamond');
+
+  const activeAccentColor = activeThemeObj?.primary || config.themeColor || '#D4AF37';
+  const activeBoxBg = activeThemeObj?.boxBgColor || '#FAF7F2';
+  const activeBorder = activeThemeObj?.borderColor || '#EDE4D5';
 
   // Dynamic UPI URL if no custom QR image uploaded
   const upiPayUrl = config.upiId && financeRecord.pending_amount > 0
@@ -884,23 +903,53 @@ export function InvoiceModalDialog({
                   {/* Typography & Quotation Theme Match */}
                   <div className="space-y-3 pt-4 border-t border-slate-100">
                     <h5 className="font-black text-slate-900 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-[#D4AF37]" /> Typography & Quotation Theme Sync
+                      <Sparkles className="w-3.5 h-3.5 text-[#D4AF37]" /> Quotation Color Palette & Typography Match
                     </h5>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="font-bold text-slate-700 block mb-1">Quotation Color Palette</label>
+                        <select
+                          value={config.themePreset || 'auto'}
+                          onChange={(e) => setConfig(prev => ({ ...prev, themePreset: e.target.value }))}
+                          className="w-full px-3 py-2 bg-[#FAF7F2] border border-[#EDE4D5] rounded-xl focus:outline-none font-bold text-slate-800 cursor-pointer text-xs"
+                        >
+                          <option value="auto">⚡ Auto-Sync Default Quotation</option>
+                          <option value="cyprus-sand-dune">Cyprus & Sand Dune (#004643)</option>
+                          <option value="sand-dune-cyprus">Sand Dune & Cyprus (#F0EDE5)</option>
+                          <option value="cherry-red-cream">Cherry Red & Cream (#750505)</option>
+                          <option value="cream-cherry-red">Cream & Cherry Red (#FBFCEB)</option>
+                          <option value="plum-milk">Plum & Milk (#381932)</option>
+                          <option value="milk-plum">Milk & Plum (#FFF3E6)</option>
+                          <option value="sand-chocolate">Sand & Chocolate (#3E000C)</option>
+                          <option value="chocolate-sand">Chocolate & Sand (#FFECD1)</option>
+                          <option value="feldgrau-wheat">Feldgrau & Wheat (#3A4B41)</option>
+                          <option value="wheat-feldgrau">Wheat & Feldgrau (#E6CFA7)</option>
+                          <option value="noctis-marigold">Noctis & Marigold (#1F2235)</option>
+                          <option value="marigold-noctis">Marigold & Noctis (#E3A419)</option>
+                          <option value="champagne-obsidian">Champagne & Obsidian (#111111)</option>
+                          <option value="royal-gold">Royal Gold & Sand (#D4AF37)</option>
+                          <option value="minimal-charcoal">Minimal Charcoal (#262626)</option>
+                        </select>
+                      </div>
+
                       <div>
                         <label className="font-bold text-slate-700 block mb-1">Invoice Font Family</label>
                         <select
                           value={config.fontFamily}
                           onChange={(e) => setConfig(prev => ({ ...prev, fontFamily: e.target.value }))}
-                          className="w-full px-3 py-2 bg-[#FAF7F2] border border-[#EDE4D5] rounded-xl focus:outline-none font-bold text-slate-800 cursor-pointer"
+                          className="w-full px-3 py-2 bg-[#FAF7F2] border border-[#EDE4D5] rounded-xl focus:outline-none font-bold text-slate-800 cursor-pointer text-xs"
                         >
+                          <option value="auto">⚡ Auto-Sync Default Font</option>
                           <option value="Cormorant Garamond">Cormorant Garamond (Quotation Luxury Serif)</option>
                           <option value="Cinzel">Cinzel (Royal Classical)</option>
-                          <option value="Playfair Display">Playfair Display (Editorial)</option>
+                          <option value="Playfair Display">Playfair Display (Editorial Serif)</option>
                           <option value="Plus Jakarta Sans">Plus Jakarta Sans (Modern Clean)</option>
-                          <option value="Inter">Inter (SaaS Minimal)</option>
                           <option value="Montserrat">Montserrat (Geometric Sans)</option>
+                          <option value="Inter">Inter (SaaS Minimal)</option>
+                          <option value="Outfit">Outfit (Contemporary Clean)</option>
+                          <option value="Prata">Prata (Romantic Editorial)</option>
+                          <option value="Bodoni Moda">Bodoni Moda (High Fashion)</option>
                         </select>
                       </div>
 
@@ -910,7 +959,7 @@ export function InvoiceModalDialog({
                           type="text"
                           value={config.prefix}
                           onChange={(e) => setConfig(prev => ({ ...prev, prefix: e.target.value }))}
-                          className="w-full px-3 py-2 bg-[#FAF7F2] border border-[#EDE4D5] rounded-xl focus:outline-none text-slate-900 font-mono font-bold"
+                          className="w-full px-3 py-2 bg-[#FAF7F2] border border-[#EDE4D5] rounded-xl focus:outline-none text-slate-900 font-mono font-bold text-xs"
                         />
                       </div>
                     </div>

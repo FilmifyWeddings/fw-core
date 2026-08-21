@@ -64,6 +64,7 @@ const DEFAULT_SETTINGS = {
   invoice_terms: '1. Advance payment is non-refundable upon client cancellation.\n2. Final deliverables delivered post clearance of balance.',
   invoice_footer_note: 'Thank you for choosing Filmify Weddings! This is a computer-generated invoice.',
   invoice_font: 'Cormorant Garamond',
+  invoice_theme_palette: 'auto',
   invoice_theme_color: '#D4AF37',
   invoice_qr_image_url: '',
   expense_categories: ['Marketing', 'Crew Travel', 'Equipment', 'Editor Pay', 'Misc'],
