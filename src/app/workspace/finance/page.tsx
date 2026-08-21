@@ -12,6 +12,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { extractFinancialsFromQuotation } from '@/lib/quotation-finance-sync';
 import { LeadQuotationModal } from '@/components/dashboard/lead-quotation-modal';
+import { InvoiceModalDialog } from '@/components/finance/invoice-modal-dialog';
 import type { 
   WorkspaceClient, ClientFinanceRecord, FinanceMilestoneItem, FinanceExpenseItem, Lead, LeadStatus, LeadScore
 } from '@/types';
@@ -97,6 +98,7 @@ export default function FinancePage() {
   // Lead Quotation Version Modal state
   const [quotationModalLead, setQuotationModalLead] = useState<Lead | null>(null);
   const [isQuotationModalOpen, setIsQuotationModalOpen] = useState(false);
+  const [defaultQuotationTemplate, setDefaultQuotationTemplate] = useState<any>(null);
 
 function computeFinanceTotals(
   rec: ClientFinanceRecord, 
@@ -1599,7 +1601,7 @@ function computeFinanceTotals(
                           className="px-3.5 py-2.5 text-xs font-bold text-[#503E1A] bg-[#FAF3E0] hover:bg-[#F5EBD0] border border-[#E3D3AC] active:scale-95 rounded-xl shadow-2xs transition flex items-center gap-1.5 cursor-pointer"
                         >
                           <FileText className="w-3.5 h-3.5 text-[#8C6D28]" />
-                          Tax Invoice
+                          Invoice
                         </button>
 
                         {/* Expand / Collapse Button */}
@@ -2325,143 +2327,15 @@ function computeFinanceTotals(
       </AnimatePresence>
 
       {/* ─────────────────────────────────────────────────────────────
-          MODAL: TAX INVOICE & RECEIPT GENERATOR (PRINT READY)
+          MODAL: ENTERPRISE INVOICE & TEMPLATE CUSTOMIZER
       ───────────────────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {showInvoiceModal.open && showInvoiceModal.client && showInvoiceModal.financeRecord && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm overflow-y-auto font-sans">
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-[#FFFDF9] rounded-3xl max-w-2xl w-full border border-[#EBE3D5] shadow-2xl p-6 sm:p-8 space-y-6 my-8"
-            >
-              {/* Header with Print button */}
-              <div className="flex items-center justify-between pb-4 border-b border-slate-200 print:hidden">
-                <div className="flex items-center gap-2">
-                  <Receipt className="w-5 h-5 text-amber-600" />
-                  <span className="text-sm font-bold text-slate-900">Tax Invoice & Payment Receipt</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => window.print()}
-                    className="px-4 py-1.5 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-xl flex items-center gap-1.5 shadow-sm"
-                  >
-                    <Printer className="w-3.5 h-3.5" />
-                    Print / Save PDF
-                  </button>
-                  <button
-                    onClick={() => setShowInvoiceModal({ open: false })}
-                    className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Invoice Printable Document */}
-              <div className="space-y-6 text-slate-900">
-                {/* Brand & Invoice Title */}
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h2 className="text-2xl font-black tracking-tight font-serif text-slate-900">FILMIFY WEDDINGS</h2>
-                    <p className="text-xs text-slate-500 font-medium mt-0.5">Luxury Wedding Photography & Cinematography</p>
-                    <p className="text-[11px] text-slate-400 mt-1">GSTIN: 27AABCF1234F1ZP • Mumbai, India</p>
-                  </div>
-                  <div className="text-right">
-                    <span className="px-3 py-1 bg-amber-100 text-amber-900 font-black text-xs rounded-lg uppercase tracking-wider">
-                      Tax Invoice
-                    </span>
-                    <p className="text-xs font-bold font-sans tabular-nums text-slate-800 mt-2">INV-{showInvoiceModal.financeRecord.id.slice(0, 8).toUpperCase()}</p>
-                    <p className="text-[11px] text-slate-500">Date: {new Date().toLocaleDateString('en-IN')}</p>
-                  </div>
-                </div>
-
-                {/* Billed To */}
-                <div className="p-4 bg-slate-50 rounded-xl border border-slate-200/80 flex justify-between items-start text-xs">
-                  <div>
-                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Billed To</p>
-                    <h4 className="text-sm font-black text-slate-900 mt-0.5">{showInvoiceModal.client.name}</h4>
-                    <p className="text-slate-600">{showInvoiceModal.client.phone} • {showInvoiceModal.client.email || 'client@studio.com'}</p>
-                    <p className="text-slate-600 font-medium mt-0.5">{showInvoiceModal.client.event_type} ({showInvoiceModal.client.event_date || '2026-11-18'})</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Payment Status</p>
-                    <span className="inline-block mt-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
-                      {showInvoiceModal.financeRecord.payment_status === 'paid' ? 'Fully Paid' : 'Partially Paid'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Itemized Table */}
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-[10px] font-black uppercase text-slate-500">
-                      <th className="pb-2 font-black">Description / Service</th>
-                      <th className="pb-2 text-right font-black">Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    <tr>
-                      <td className="py-2 font-bold text-slate-800">Base Wedding Coverage Package</td>
-                      <td className="py-2 text-right font-bold font-sans tabular-nums">₹{showInvoiceModal.financeRecord.base_package_price.toLocaleString('en-IN')}</td>
-                    </tr>
-                    {showInvoiceModal.financeRecord.discount_amount > 0 && (
-                      <tr>
-                        <td className="py-2 font-bold text-rose-600">Discount (Complimentary)</td>
-                        <td className="py-2 text-right font-bold font-sans tabular-nums text-rose-600">-₹{showInvoiceModal.financeRecord.discount_amount.toLocaleString('en-IN')}</td>
-                      </tr>
-                    )}
-                    {showInvoiceModal.financeRecord.accommodation_charges > 0 && (
-                      <tr>
-                        <td className="py-2 text-slate-600 font-medium">Accommodation Charges</td>
-                        <td className="py-2 text-right font-bold font-sans tabular-nums">₹{showInvoiceModal.financeRecord.accommodation_charges.toLocaleString('en-IN')}</td>
-                      </tr>
-                    )}
-                    {showInvoiceModal.financeRecord.travel_charges > 0 && (
-                      <tr>
-                        <td className="py-2 text-slate-600 font-medium">Travel Charges</td>
-                        <td className="py-2 text-right font-bold font-sans tabular-nums">₹{showInvoiceModal.financeRecord.travel_charges.toLocaleString('en-IN')}</td>
-                      </tr>
-                    )}
-                    <tr className="border-t border-slate-200 font-black">
-                      <td className="py-2">SUBTOTAL</td>
-                      <td className="py-2 text-right font-sans tabular-nums font-black">₹{showInvoiceModal.financeRecord.subtotal_amount.toLocaleString('en-IN')}</td>
-                    </tr>
-                    <tr className="text-slate-600">
-                      <td className="py-2">GST ({showInvoiceModal.financeRecord.gst_rate}%)</td>
-                      <td className="py-2 text-right font-sans tabular-nums">₹{showInvoiceModal.financeRecord.gst_amount.toLocaleString('en-IN')}</td>
-                    </tr>
-                    <tr className="border-t-2 border-slate-900 font-black text-sm">
-                      <td className="py-3 text-slate-900">GRAND TOTAL</td>
-                      <td className="py-3 text-right font-sans tabular-nums font-black text-slate-900">₹{showInvoiceModal.financeRecord.final_total_amount.toLocaleString('en-IN')}</td>
-                    </tr>
-                  </tbody>
-                </table>
-
-                {/* Received vs Pending Box */}
-                <div className="grid grid-cols-2 gap-4 p-4 bg-amber-50 rounded-xl border border-amber-200 text-xs">
-                  <div>
-                    <span className="font-bold text-emerald-800 block">Total Amount Received:</span>
-                    <span className="text-base font-black font-sans tabular-nums text-emerald-700">₹{showInvoiceModal.financeRecord.received_amount.toLocaleString('en-IN')}</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="font-bold text-amber-900 block">Balance Pending:</span>
-                    <span className="text-base font-black font-sans tabular-nums text-amber-950">₹{showInvoiceModal.financeRecord.pending_amount.toLocaleString('en-IN')}</span>
-                  </div>
-                </div>
-
-                {/* Footer Notes & Bank */}
-                <div className="pt-4 border-t border-slate-200 text-[11px] text-slate-500 space-y-1">
-                  <p className="font-bold text-slate-700">Bank Details for Payment:</p>
-                  <p>HDFC Bank • A/C: 50200012345678 • IFSC: HDFC0001234 • UPI: filmifyweddings@hdfcbank</p>
-                  <p className="italic text-[10px] text-slate-400 mt-2">Thank you for choosing Filmify Weddings! This is a computer-generated tax invoice.</p>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      <InvoiceModalDialog
+        isOpen={showInvoiceModal.open}
+        onClose={() => setShowInvoiceModal({ open: false })}
+        client={showInvoiceModal.client || null}
+        financeRecord={showInvoiceModal.financeRecord || null}
+        defaultQuotationTemplate={defaultQuotationTemplate}
+      />
 
       {/* ─────────────────────────────────────────────────────────────
           MODAL: LEAD QUOTATION VERSION SELECTOR MODAL

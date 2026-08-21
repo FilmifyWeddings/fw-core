@@ -249,6 +249,19 @@ export default function SettingsPage() {
 
           // Finance
           setInvoicePrefix(s.sequence_invoices_prefix || 'INV-2026-');
+          if (s.invoice_company_name) setInvoiceCompanyName(s.invoice_company_name);
+          if (s.invoice_tagline) setInvoiceTagline(s.invoice_tagline);
+          if (s.invoice_gstin) setInvoiceGstin(s.invoice_gstin);
+          if (s.invoice_address) setInvoiceAddress(s.invoice_address);
+          if (s.invoice_phone) setInvoicePhone(s.invoice_phone);
+          if (s.invoice_email) setInvoiceEmail(s.invoice_email);
+          if (s.invoice_bank_name) setInvoiceBankName(s.invoice_bank_name);
+          if (s.invoice_account_no) setInvoiceAccountNo(s.invoice_account_no);
+          if (s.invoice_ifsc) setInvoiceIfsc(s.invoice_ifsc);
+          if (s.invoice_account_holder) setInvoiceAccountHolder(s.invoice_account_holder);
+          if (s.invoice_terms) setInvoiceTerms(s.invoice_terms);
+          if (s.invoice_footer_note) setInvoiceFooterNote(s.invoice_footer_note);
+          if (s.invoice_font) setInvoiceFont(s.invoice_font);
           setProjectPrefix(s.sequence_projects_prefix || 'PRJ-2026-');
           setGstPercent(s.invoice_gst_percent ?? 18);
           setPaymentTerms(s.invoice_payment_terms || '');
@@ -308,6 +321,19 @@ export default function SettingsPage() {
         contract_clauses: contractClauses,
 
         sequence_invoices_prefix: invoicePrefix,
+        invoice_company_name: invoiceCompanyName,
+        invoice_tagline: invoiceTagline,
+        invoice_gstin: invoiceGstin,
+        invoice_address: invoiceAddress,
+        invoice_phone: invoicePhone,
+        invoice_email: invoiceEmail,
+        invoice_bank_name: invoiceBankName,
+        invoice_account_no: invoiceAccountNo,
+        invoice_ifsc: invoiceIfsc,
+        invoice_account_holder: invoiceAccountHolder,
+        invoice_terms: invoiceTerms,
+        invoice_footer_note: invoiceFooterNote,
+        invoice_font: invoiceFont,
         sequence_projects_prefix: projectPrefix,
         invoice_gst_percent: gstPercent,
         invoice_payment_terms: paymentTerms,
@@ -805,62 +831,190 @@ export default function SettingsPage() {
                   </div>
                   <div>
                     <h2 className="text-lg font-extrabold text-slate-900">Finance & Invoices Settings (`/workspace/finance`)</h2>
-                    <p className="text-xs font-medium text-slate-500">Configure Invoice prefixes, GST %, Bank & UPI Details, and Expense Categories</p>
+                    <p className="text-xs font-medium text-slate-500">Configure Invoice branding, GSTIN, Bank Transfer credentials, and Expense Categories</p>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {/* Invoice Prefix */}
+                {/* Studio & Brand Identity on Invoices */}
+                <div className="space-y-4">
+                  <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">🏢 Studio Identity & Header on Invoices</h3>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">Company / Studio Name</label>
+                      <input
+                        type="text"
+                        value={invoiceCompanyName}
+                        onChange={e => setInvoiceCompanyName(e.target.value)}
+                        className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58]"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">Tagline / Subtitle</label>
+                      <input
+                        type="text"
+                        value={invoiceTagline}
+                        onChange={e => setInvoiceTagline(e.target.value)}
+                        className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#0F9D58]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">GSTIN Number</label>
+                      <input
+                        type="text"
+                        value={invoiceGstin}
+                        onChange={e => setInvoiceGstin(e.target.value)}
+                        className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:border-[#0F9D58]"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">Phone Number</label>
+                      <input
+                        type="text"
+                        value={invoicePhone}
+                        onChange={e => setInvoicePhone(e.target.value)}
+                        className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:border-[#0F9D58]"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">Email Address</label>
+                      <input
+                        type="email"
+                        value={invoiceEmail}
+                        onChange={e => setInvoiceEmail(e.target.value)}
+                        className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#0F9D58]"
+                      />
+                    </div>
+                  </div>
+
                   <div>
-                    <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
-                      Invoice ID Prefix
-                    </label>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">Studio Physical Address</label>
+                    <input
+                      type="text"
+                      value={invoiceAddress}
+                      onChange={e => setInvoiceAddress(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#0F9D58]"
+                    />
+                  </div>
+                </div>
+
+                {/* Bank Transfer & UPI Details */}
+                <div className="space-y-4 pt-4 border-t border-slate-100">
+                  <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">💳 Bank Account & UPI Payment Details</h3>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">Bank Name</label>
+                      <input
+                        type="text"
+                        value={invoiceBankName}
+                        onChange={e => setInvoiceBankName(e.target.value)}
+                        className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#0F9D58]"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">Account Holder Name</label>
+                      <input
+                        type="text"
+                        value={invoiceAccountHolder}
+                        onChange={e => setInvoiceAccountHolder(e.target.value)}
+                        className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#0F9D58]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">Account Number</label>
+                      <input
+                        type="text"
+                        value={invoiceAccountNo}
+                        onChange={e => setInvoiceAccountNo(e.target.value)}
+                        className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:border-[#0F9D58]"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">IFSC Code</label>
+                      <input
+                        type="text"
+                        value={invoiceIfsc}
+                        onChange={e => setInvoiceIfsc(e.target.value)}
+                        className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:border-[#0F9D58]"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">UPI ID (e.g. name@bank)</label>
+                      <input
+                        type="text"
+                        value={upiId}
+                        onChange={e => setUpiId(e.target.value)}
+                        className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58]"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Invoice Number Prefix & Font Theme */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-slate-100">
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">Invoice ID Prefix</label>
                     <input
                       type="text"
                       value={invoicePrefix}
                       onChange={e => setInvoicePrefix(e.target.value)}
-                      className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58]"
+                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58]"
                     />
                   </div>
-
-                  {/* GST % */}
                   <div>
-                    <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
-                      Default GST / Tax Rate (%)
-                    </label>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">Default GST Rate (%)</label>
                     <input
                       type="number"
                       value={gstPercent}
                       onChange={e => setGstPercent(Number(e.target.value))}
-                      className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58]"
+                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58]"
                     />
                   </div>
-
-                  {/* UPI ID */}
                   <div>
-                    <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
-                      Studio UPI ID
-                    </label>
-                    <input
-                      type="text"
-                      value={upiId}
-                      onChange={e => setUpiId(e.target.value)}
-                      className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58]"
-                    />
+                    <label className="text-xs font-bold text-slate-700 block mb-1">Invoice Typography / Font</label>
+                    <select
+                      value={invoiceFont}
+                      onChange={e => setInvoiceFont(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58]"
+                    >
+                      <option value="Cormorant Garamond">Cormorant Garamond (Luxury Serif)</option>
+                      <option value="Cinzel">Cinzel (Royal Classical)</option>
+                      <option value="Playfair Display">Playfair Display (Editorial)</option>
+                      <option value="Plus Jakarta Sans">Plus Jakarta Sans (Modern Clean)</option>
+                      <option value="Inter">Inter (SaaS Minimal)</option>
+                      <option value="Montserrat">Montserrat (Geometric Sans)</option>
+                    </select>
                   </div>
                 </div>
 
-                {/* Bank Details */}
-                <div>
-                  <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
-                    Bank Account Transfer Details
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={bankDetails}
-                    onChange={e => setBankDetails(e.target.value)}
-                    className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-[#0F9D58]"
-                  />
+                {/* Terms & Conditions */}
+                <div className="space-y-4 pt-4 border-t border-slate-100">
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">Standard Invoice Terms & Conditions</label>
+                    <textarea
+                      rows={2}
+                      value={invoiceTerms}
+                      onChange={e => setInvoiceTerms(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#0F9D58]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">Footer Note / Disclaimer</label>
+                    <input
+                      type="text"
+                      value={invoiceFooterNote}
+                      onChange={e => setInvoiceFooterNote(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#0F9D58]"
+                    />
+                  </div>
                 </div>
 
                 {/* Expense Categories Google Sheets Option Builder */}
