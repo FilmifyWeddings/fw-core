@@ -133,12 +133,10 @@ BEGIN
       -- Check if step targets a WhatsApp Group or Client Direct Phone
       IF r_step.target_type = 'group' OR (r_step.target_group_jid IS NOT NULL AND r_step.target_group_jid <> '') THEN
         INSERT INTO public.baileys_action_queue (
-          workspace_id, action_type, recipient, scheduled_at, payload, status, next_retry_at, priority
+          workspace_id, action_type, payload, status, next_retry_at, priority
         ) VALUES (
           v_workspace_id,
           'group_dispatch',
-          r_step.target_group_jid,
-          v_scheduled_at,
           jsonb_build_object(
             'groupJid',        r_step.target_group_jid,
             'targetGroupName', r_step.target_group_name,
@@ -151,12 +149,10 @@ BEGIN
         );
       ELSE
         INSERT INTO public.baileys_action_queue (
-          workspace_id, action_type, recipient, scheduled_at, payload, status, next_retry_at, priority
+          workspace_id, action_type, payload, status, next_retry_at, priority
         ) VALUES (
           v_workspace_id,
           'send_template',
-          clean_phone || '@s.whatsapp.net',
-          v_scheduled_at,
           jsonb_build_object(
             'to',            clean_phone || '@s.whatsapp.net',
             'templateId',    r_step.template_id,
