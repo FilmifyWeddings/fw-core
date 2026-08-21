@@ -98,6 +98,57 @@ export default function FinancePage() {
   const [quotationModalLead, setQuotationModalLead] = useState<Lead | null>(null);
   const [isQuotationModalOpen, setIsQuotationModalOpen] = useState(false);
 
+function computeFinanceTotals(
+  rec: ClientFinanceRecord, 
+  customMilestones?: FinanceMilestoneItem[], 
+  overrideReceived?: number
+): ClientFinanceRecord {
+  const miles = customMilestones !== undefined ? customMilestones : (rec.milestones || []);
+  
+  // 1. Calculate pricing totals
+  const base = Math.max(0, Math.round(Number(rec.base_package_price || 0)));
+  const discount = Math.max(0, Math.round(Number(rec.discount_amount || 0)));
+  const accom = Math.max(0, Math.round(Number(rec.accommodation_charges || 0)));
+  const travel = Math.max(0, Math.round(Number(rec.travel_charges || 0)));
+  const addl = Math.max(0, Math.round(Number(rec.additional_charges || 0)));
+  const subtotal = Math.max(0, base - discount + accom + travel + addl);
+  const gstRate = Number(rec.gst_rate ?? 18);
+  const gstAmount = Math.round((subtotal * gstRate) / 100);
+  const finalTotal = subtotal + gstAmount;
+
+  // 2. Calculate received amount from completed milestones if milestones exist
+  let received = 0;
+  if (overrideReceived !== undefined) {
+    received = Math.round(overrideReceived);
+  } else if (miles.length > 0) {
+    received = miles
+      .filter(m => m && (m.status === 'completed' || (m as any).status === 'Completed' || (m as any).status === 'PAID'))
+      .reduce((sum, m) => sum + Math.round(Number(m.amount || 0)), 0);
+  } else {
+    received = Math.round(Number(rec.received_amount || 0));
+  }
+
+  const pending = Math.max(0, finalTotal - received);
+  const paymentStatus = pending === 0 && finalTotal > 0 ? 'paid' : (received > 0 ? 'partially_paid' : 'pending');
+
+  return {
+    ...rec,
+    base_package_price: base,
+    discount_amount: discount,
+    accommodation_charges: accom,
+    travel_charges: travel,
+    additional_charges: addl,
+    subtotal_amount: subtotal,
+    gst_rate: gstRate,
+    gst_amount: gstAmount,
+    final_total_amount: finalTotal,
+    received_amount: received,
+    pending_amount: pending,
+    payment_status: paymentStatus,
+    milestones: miles
+  };
+}
+
   const handleOpenQuotationModalForRecord = (record: ClientFinanceRecord) => {
     const leadId = record.client?.lead_id || record.client_id;
     const constructedLead: Lead = {
@@ -110,6 +161,7 @@ export default function FinancePage() {
       source: 'Manual',
       score: 'High-Value 🔥' as LeadScore,
       score_reason: 'Booked Client in Finance',
+      final_quotation_id: record.final_quotation_id || (record.client as any)?.final_quotation_id || undefined,
       raw_payload: {
         event_date: record.client?.event_date,
         event_type: record.client?.event_type,
@@ -269,11 +321,12 @@ export default function FinancePage() {
 
       if (leadIds.length > 0) {
         try {
+          const leadShortFilters = leadIds.map(id => `template_id.ilike.%${id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8)}%`);
           const [docsRes, leadsRes] = await Promise.all([
             supabase
               .from('quotation_documents')
               .select('id, template_id, lead_id, version, lead_version, content_json, created_at, updated_at')
-              .in('lead_id', leadIds)
+              .or(`lead_id.in.(${leadIds.join(',')}),${leadShortFilters.join(',')}`)
               .order('created_at', { ascending: false }),
             supabase
               .from('leads')
@@ -289,8 +342,11 @@ export default function FinancePage() {
           if (quoteDocs && quoteDocs.length > 0) {
             const leadGroups = new Map<string, any[]>();
             for (const doc of quoteDocs) {
-              if (!leadGroups.has(doc.lead_id)) leadGroups.set(doc.lead_id, []);
-              leadGroups.get(doc.lead_id)!.push(doc);
+              const matchedLeadId = doc.lead_id || leadIds.find(lid => doc.template_id?.includes(lid.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8)));
+              if (matchedLeadId) {
+                if (!leadGroups.has(matchedLeadId)) leadGroups.set(matchedLeadId, []);
+                leadGroups.get(matchedLeadId)!.push(doc);
+              }
             }
 
             leadGroups.forEach((docs, leadId) => {
@@ -437,7 +493,9 @@ export default function FinancePage() {
           finalRecords.push({
             ...existing,
             client: c,
-            has_final_quotation: false,
+            has_final_quotation: hasFinalQuotation,
+            final_quotation_version: finalVersion,
+            final_quotation_id: linkedFinalQuote?.template_id || leadObj?.final_quotation_id || undefined,
             available_quotations: availableQuotes,
             base_package_price: rawBase,
             discount_amount: discount,
@@ -473,7 +531,9 @@ export default function FinancePage() {
             workspace_id: workspaceId,
             client_id: c.id,
             client: c,
-            has_final_quotation: false,
+            has_final_quotation: hasFinalQuotation,
+            final_quotation_version: finalVersion,
+            final_quotation_id: linkedFinalQuote?.template_id || leadObj?.final_quotation_id || undefined,
             available_quotations: availableQuotes,
             base_package_price: basePkg,
             discount_amount: discount,
@@ -790,32 +850,67 @@ export default function FinancePage() {
     setFinanceRecords(prev => prev.map(rec => {
       if (rec.id === recordId) {
         const updated = { ...rec, [field]: Math.round(val || 0) };
-        
-        // Recalculate Subtotal
-        const subtotal = Math.round(
-          Number(updated.base_package_price || 0) - 
-          Number(updated.discount_amount || 0) + 
-          Number(updated.accommodation_charges || 0) + 
-          Number(updated.travel_charges || 0) + 
-          Number(updated.additional_charges || 0)
-        );
-
-        const gstRate = Number(updated.gst_rate || 18);
-        const gstAmount = Math.round((subtotal * gstRate) / 100);
-        const finalTotal = subtotal + gstAmount;
-        const pending = Math.max(0, finalTotal - Math.round(Number(updated.received_amount || 0)));
-
-        const finalUpdated: ClientFinanceRecord = {
-          ...updated,
-          subtotal_amount: subtotal,
-          gst_amount: gstAmount,
-          final_total_amount: finalTotal,
-          pending_amount: pending,
-          payment_status: pending === 0 ? 'paid' : updated.received_amount > 0 ? 'partially_paid' : 'pending'
-        };
-
+        const finalUpdated = computeFinanceTotals(updated);
         updateFinanceRecordInDB(finalUpdated);
         return finalUpdated;
+      }
+      return rec;
+    }));
+  };
+
+  // Handle Milestone Step Name Change
+  const handleMilestoneNameChange = (recordId: string, milestoneId: string, newName: string) => {
+    setFinanceRecords(prev => prev.map(rec => {
+      if (rec.id === recordId) {
+        const updatedMilestones = (rec.milestones || []).map(m => {
+          if (m.id === milestoneId) {
+            return { ...m, step_name: newName };
+          }
+          return m;
+        });
+        const updated = computeFinanceTotals(rec, updatedMilestones);
+        updateFinanceRecordInDB(updated);
+        return updated;
+      }
+      return rec;
+    }));
+  };
+
+  // Handle Milestone Amount Change
+  const handleMilestoneAmountChange = (recordId: string, milestoneId: string, newAmount: number) => {
+    setFinanceRecords(prev => prev.map(rec => {
+      if (rec.id === recordId) {
+        const updatedMilestones = (rec.milestones || []).map(m => {
+          if (m.id === milestoneId) {
+            return { ...m, amount: Math.max(0, Math.round(newAmount || 0)) };
+          }
+          return m;
+        });
+        const updated = computeFinanceTotals(rec, updatedMilestones);
+        updateFinanceRecordInDB(updated);
+        return updated;
+      }
+      return rec;
+    }));
+  };
+
+  // Handle Milestone Status Toggle
+  const handleMilestoneStatusToggle = (recordId: string, milestoneId: string, newStatus: 'completed' | 'pending') => {
+    setFinanceRecords(prev => prev.map(rec => {
+      if (rec.id === recordId) {
+        const updatedMilestones = (rec.milestones || []).map(m => {
+          if (m.id === milestoneId) {
+            return {
+              ...m,
+              status: newStatus,
+              paid_date: newStatus === 'completed' ? (m.paid_date || new Date().toISOString().split('T')[0]) : undefined
+            };
+          }
+          return m;
+        });
+        const updated = computeFinanceTotals(rec, updatedMilestones);
+        updateFinanceRecordInDB(updated);
+        return updated;
       }
       return rec;
     }));
@@ -825,14 +920,14 @@ export default function FinancePage() {
   const handleMilestoneDateChange = (recordId: string, milestoneId: string, newDate: string) => {
     setFinanceRecords(prev => prev.map(rec => {
       if (rec.id === recordId) {
-        const updatedMilestones = rec.milestones.map(m => {
+        const updatedMilestones = (rec.milestones || []).map(m => {
           if (m.id === milestoneId) {
             return { ...m, due_date: newDate };
           }
           return m;
         });
 
-        const updated = { ...rec, milestones: updatedMilestones };
+        const updated = computeFinanceTotals(rec, updatedMilestones);
         updateFinanceRecordInDB(updated);
         return updated;
       }
@@ -847,7 +942,7 @@ export default function FinancePage() {
     setFinanceRecords(prev => prev.map(rec => {
       if (rec.id === recordId) {
         const updatedMilestones = (rec.milestones || []).filter(m => m.id !== milestoneId);
-        const updated = { ...rec, milestones: updatedMilestones };
+        const updated = computeFinanceTotals(rec, updatedMilestones);
         updateFinanceRecordInDB(updated);
         return updated;
       }
@@ -855,7 +950,7 @@ export default function FinancePage() {
     }));
   };
 
-  // Handle Recording a Milestone Payment
+  // Handle Recording a Milestone Payment from Modal
   const handleSaveRecordedPayment = () => {
     if (!showRecordPaymentModal.financeRecord) return;
     const rec = showRecordPaymentModal.financeRecord;
@@ -865,35 +960,54 @@ export default function FinancePage() {
       return;
     }
 
-    const newReceived = Math.round(rec.received_amount + paidAmt);
-    const newPending = Math.max(0, rec.final_total_amount - newReceived);
-    const newStatus = newPending === 0 ? 'paid' : 'partially_paid';
-
-    // Update milestones status
-    let updatedMilestones = [...rec.milestones];
+    let updatedMilestones = Array.isArray(rec.milestones) ? [...rec.milestones] : [];
+    
     if (paymentFormData.target_milestone_id) {
+      // User clicked "Pay" on a specific milestone
       updatedMilestones = updatedMilestones.map(m => {
         if (m.id === paymentFormData.target_milestone_id) {
           return {
             ...m,
+            amount: paidAmt,
             status: 'completed' as const,
-            paid_date: paymentFormData.payment_date,
-            payment_mode: paymentFormData.payment_mode,
+            paid_date: paymentFormData.payment_date || new Date().toISOString().split('T')[0],
+            payment_mode: paymentFormData.payment_mode || 'UPI',
             reference_id: paymentFormData.reference_id || null,
             notes: paymentFormData.notes || null
           };
         }
         return m;
       });
+    } else {
+      // General "Record Payment" button at top of card
+      const firstPendingIdx = updatedMilestones.findIndex(m => m.status !== 'completed');
+      if (firstPendingIdx !== -1) {
+        updatedMilestones[firstPendingIdx] = {
+          ...updatedMilestones[firstPendingIdx],
+          amount: paidAmt,
+          status: 'completed' as const,
+          paid_date: paymentFormData.payment_date || new Date().toISOString().split('T')[0],
+          payment_mode: paymentFormData.payment_mode || 'UPI',
+          reference_id: paymentFormData.reference_id || null,
+          notes: paymentFormData.notes || null
+        };
+      } else {
+        // Add a new completed milestone for this payment
+        updatedMilestones.push({
+          id: `m_pay_${Date.now()}`,
+          step_name: `Payment (${paymentFormData.payment_mode || 'UPI'})`,
+          due_date: paymentFormData.payment_date || new Date().toISOString().split('T')[0],
+          paid_date: paymentFormData.payment_date || new Date().toISOString().split('T')[0],
+          amount: paidAmt,
+          status: 'completed',
+          payment_mode: paymentFormData.payment_mode || 'UPI',
+          reference_id: paymentFormData.reference_id || null,
+          notes: paymentFormData.notes || null
+        });
+      }
     }
 
-    const updatedRecord: ClientFinanceRecord = {
-      ...rec,
-      received_amount: newReceived,
-      pending_amount: newPending,
-      payment_status: newStatus,
-      milestones: updatedMilestones
-    };
+    const updatedRecord = computeFinanceTotals(rec, updatedMilestones);
 
     setFinanceRecords(prev => prev.map(r => r.id === rec.id ? updatedRecord : r));
     updateFinanceRecordInDB(updatedRecord);
@@ -928,8 +1042,8 @@ export default function FinancePage() {
 
     setFinanceRecords(prev => prev.map(rec => {
       if (rec.id === showAddStepModal.recordId) {
-        const updatedMilestones = [...rec.milestones, newMilestone];
-        const updated = { ...rec, milestones: updatedMilestones };
+        const updatedMilestones = [...(rec.milestones || []), newMilestone];
+        const updated = computeFinanceTotals(rec, updatedMilestones);
         updateFinanceRecordInDB(updated);
         return updated;
       }
@@ -1326,11 +1440,11 @@ export default function FinancePage() {
                               <button
                                 type="button"
                                 onClick={() => handleOpenQuotationModalForRecord(record)}
-                                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200 active:scale-95 transition cursor-pointer"
+                                className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 active:scale-95 transition cursor-pointer shadow-2xs"
                                 title="Click to select final quotation version"
                               >
-                                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 animate-bounce" />
-                                <span>Final Quotation Not Selected</span>
+                                <Plus className="w-3.5 h-3.5 text-amber-700 stroke-[3]" />
+                                <span>Select Final Quotation</span>
                               </button>
                             )}
                           </div>
@@ -1410,37 +1524,6 @@ export default function FinancePage() {
                           </button>
                         </div>
                       </div>
-
-                      {/* ── FINAL QUOTATION SELECTION BANNER (IF NOT FINALIZED) ── */}
-                      {!record.has_final_quotation && (
-                        <div className="mx-5 sm:mx-6 my-4 p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 border-2 border-dashed border-amber-400/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-2xs">
-                          <div className="flex items-center gap-3">
-                            <div className="p-2.5 rounded-xl bg-amber-500 text-white shadow-xs shrink-0">
-                              <Crown className="w-5 h-5" />
-                            </div>
-                            <div>
-                              <h4 className="text-sm font-black text-slate-900 tracking-tight flex flex-wrap items-center gap-2">
-                                <span>आपने इस लीड का कोई कोटेशन फाइनल नहीं किया है</span>
-                                <span className="text-[9px] px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 font-extrabold uppercase tracking-wider">
-                                  Action Required
-                                </span>
-                              </h4>
-                              <p className="text-xs text-slate-600 font-medium mt-0.5">
-                                Finance & Payment Schedule me wahi details match hongi jisko aap Final Quotation banayenge.
-                              </p>
-                            </div>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => handleOpenQuotationModalForRecord(record)}
-                            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-[#F36F21] hover:from-amber-600 hover:to-[#E05E10] text-white text-xs font-black shadow-md hover:shadow-lg active:scale-95 transition flex items-center justify-center gap-2 shrink-0 cursor-pointer"
-                          >
-                            <Crown className="w-4 h-4 text-amber-100" />
-                            <span>Select Final Quotation (वर्जन्स देखें)</span>
-                          </button>
-                        </div>
-                      )}
 
                       {/* ── EXPANDED PRICING BREAKDOWN & PAYMENT SCHEDULE ── */}
                       <AnimatePresence>
@@ -1585,24 +1668,42 @@ export default function FinancePage() {
                                             </td>
 
                                             {/* Step Name */}
-                                            <td className="py-2.5 font-black text-slate-900">
-                                              {m.step_name}
+                                            <td className="py-2.5 pr-2 font-black text-slate-900 min-w-[130px]">
+                                              <input
+                                                type="text"
+                                                value={m.step_name}
+                                                onChange={(e) => handleMilestoneNameChange(record.id, m.id, e.target.value)}
+                                                className="w-full px-2 py-1 text-xs font-bold text-slate-900 bg-white border border-slate-200 rounded-lg hover:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-500 shadow-2xs font-sans"
+                                              />
                                             </td>
 
                                             {/* Amount with clean sans-serif font */}
-                                            <td className="py-2.5 text-right font-black font-sans tabular-nums text-slate-900 whitespace-nowrap">
-                                              ₹{Math.round(m.amount).toLocaleString('en-IN')}
+                                            <td className="py-2.5 px-1 text-right font-black font-sans tabular-nums text-slate-900 whitespace-nowrap min-w-[110px]">
+                                              <div className="relative inline-flex items-center">
+                                                <span className="absolute left-2 text-slate-400 font-bold text-xs">₹</span>
+                                                <input
+                                                  type="number"
+                                                  value={Math.round(m.amount) || 0}
+                                                  onChange={(e) => handleMilestoneAmountChange(record.id, m.id, parseFloat(e.target.value) || 0)}
+                                                  className="w-24 pl-5 pr-1.5 py-1 text-right text-xs font-black text-slate-900 bg-white border border-slate-200 rounded-lg hover:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-500 shadow-2xs font-sans tabular-nums"
+                                                />
+                                              </div>
                                             </td>
 
                                             {/* Status Badge */}
                                             <td className="py-2.5 text-center">
-                                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border ${
-                                                m.status === 'completed'
-                                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
-                                                  : 'bg-amber-100 text-amber-800 border-amber-300'
-                                              }`}>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleMilestoneStatusToggle(record.id, m.id, m.status === 'completed' ? 'pending' : 'completed')}
+                                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border cursor-pointer transition ${
+                                                  m.status === 'completed'
+                                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+                                                    : 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200'
+                                                }`}
+                                                title="Click to toggle Completed / Pending"
+                                              >
                                                 {m.status === 'completed' ? '✓ Completed' : 'Pending'}
-                                              </span>
+                                              </button>
                                             </td>
 
                                             {/* Action */}

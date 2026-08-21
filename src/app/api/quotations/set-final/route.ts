@@ -22,12 +22,23 @@ export async function POST(req: NextRequest) {
 
     const now = new Date().toISOString();
 
-    // 1. Fetch all quotation documents for this lead
+    // 1. Fetch all quotation documents for this lead or matching target quotationId
     const leadShortId = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
-    const { data: allDocs } = await supabaseAdmin
+    let { data: allDocs } = await supabaseAdmin
       .from('quotation_documents')
       .select('id, template_id, lead_id, version, lead_version, content_json')
-      .or(`lead_id.eq.${leadId},template_id.ilike.%${leadShortId}%`);
+      .or(`lead_id.eq.${leadId},template_id.ilike.%${leadShortId}%,template_id.eq.${quotationId},id.eq.${quotationId}`);
+
+    if (!allDocs || allDocs.length === 0) {
+      const { data: directDoc } = await supabaseAdmin
+        .from('quotation_documents')
+        .select('id, template_id, lead_id, version, lead_version, content_json')
+        .or(`template_id.eq.${quotationId},id.eq.${quotationId}`)
+        .maybeSingle();
+      if (directDoc) {
+        allDocs = [directDoc];
+      }
+    }
 
     let finalDoc: any = null;
 
@@ -36,9 +47,9 @@ export async function POST(req: NextRequest) {
         const isTarget = doc.template_id === quotationId || doc.id === quotationId;
         const updatedContent = { ...(doc.content_json || {}) };
         updatedContent.is_final = isTarget;
-
         if (isTarget) {
-          finalDoc = { ...doc, content_json: updatedContent };
+          updatedContent.lead_id = leadId;
+          finalDoc = { ...doc, lead_id: leadId, content_json: updatedContent };
         }
 
         // Update each document in Supabase
@@ -46,6 +57,7 @@ export async function POST(req: NextRequest) {
           .from('quotation_documents')
           .update({
             content_json: updatedContent,
+            lead_id: leadId,
             updated_at: now
           })
           .eq('id', doc.id);
