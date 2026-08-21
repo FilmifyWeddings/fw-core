@@ -359,70 +359,151 @@ export default function PublicClientPortalPage() {
         )}
 
         {/* ── TAB 2: DELIVERABLES & GOOGLE DRIVE ACCESS ── */}
-        {portalTab === 'deliverables' && (
-          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-            <div>
-              <h3 className="text-base font-black text-slate-900">Photos, Films & Deliverables</h3>
-              <p className="text-xs text-slate-500 font-medium">Access your wedding memory links and track edit progress</p>
-            </div>
+        {portalTab === 'deliverables' && (() => {
+          const photoDeliverables = postProd?.deliverables.filter(d => d.category === 'photos') || [];
+          const videoDeliverables = postProd?.deliverables.filter(d => d.category === 'videos') || [];
+          const albumDeliverables = postProd?.deliverables.filter(d => d.category === 'albums') || [];
+          const customDeliverables = postProd?.deliverables.filter(d => !['photos', 'videos', 'albums'].includes(d.category)) || [];
 
-            {!postProd || postProd.deliverables.length === 0 ? (
-              <div className="p-8 text-center bg-white rounded-2xl border border-dashed border-[#EAE5DA] space-y-3">
-                <Film className="w-8 h-8 mx-auto text-amber-500" />
-                <h4 className="text-sm font-bold text-slate-800">Deliverables in preparation</h4>
-                <p className="text-xs text-slate-500">Your edited photos and cinematic films will be attached here once ready.</p>
+          return (
+            <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
+              <div>
+                <h3 className="text-base font-black text-slate-900">Photos, Films & Deliverables</h3>
+                <p className="text-xs text-slate-500 font-medium">Access your wedding memory links and download high-resolution masters</p>
               </div>
-            ) : (
-              <div className="space-y-3">
-                {postProd.deliverables.map(item => {
-                  const isDone = item.status === 'completed' || item.status === 'done';
-                  return (
-                    <div
-                      key={item.id}
-                      className="p-4 bg-white rounded-2xl border border-[#EAE5DA] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs ${
-                          item.category === 'photos' ? 'bg-indigo-100 text-indigo-700' :
-                          item.category === 'videos' ? 'bg-rose-100 text-rose-700' :
-                          'bg-amber-100 text-amber-700'
-                        }`}>
-                          {item.category === 'photos' ? <Camera className="w-5 h-5" /> :
-                           item.category === 'videos' ? <Film className="w-5 h-5" /> :
-                           <BookOpen className="w-5 h-5" />}
+
+              {!postProd || postProd.deliverables.length === 0 ? (
+                <div className="p-10 text-center bg-white rounded-3xl border border-dashed border-[#EAE5DA] space-y-3">
+                  <Film className="w-10 h-10 mx-auto text-amber-500" />
+                  <h4 className="text-sm font-bold text-slate-800">Deliverables in post-production</h4>
+                  <p className="text-xs text-slate-500">Your edited photos and cinematic films will be attached here once ready.</p>
+                </div>
+              ) : (
+                <div className="space-y-5">
+                  {/* 1. PHOTOS CARD */}
+                  {photoDeliverables.length > 0 && (
+                    <div className="p-5 rounded-3xl border border-indigo-200 bg-indigo-50/70 space-y-3 shadow-2xs">
+                      <div className="flex items-center justify-between border-b border-indigo-100 pb-2.5">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
+                            <Camera className="w-4 h-4" />
+                          </div>
+                          <h4 className="text-sm font-black text-slate-900">Photos Deliverables</h4>
                         </div>
-                        <div>
-                          <h4 className="text-xs font-black text-slate-900">{item.title}</h4>
-                          <p className="text-[11px] text-slate-500 font-medium">
-                            {item.count || 'Deliverable Item'} • Status: <span className="font-bold text-slate-800">{isDone ? 'Ready for Download' : 'In Post-Production Editing'}</span>
-                          </p>
-                        </div>
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-white text-indigo-700 border border-indigo-200">
+                          {photoDeliverables.filter(d => d.status === 'completed' || d.status === 'done').length}/{photoDeliverables.length} Ready
+                        </span>
                       </div>
 
-                      <div className="flex items-center gap-2 ml-auto">
-                        {item.drive_link ? (
-                          <a
-                            href={item.drive_link}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                            Open Google Drive
-                          </a>
-                        ) : (
-                          <span className="px-3 py-1 bg-slate-100 text-slate-500 font-bold text-xs rounded-lg">
-                            Editing in progress
-                          </span>
-                        )}
+                      <div className="space-y-2">
+                        {photoDeliverables.map(item => {
+                          const isDone = item.status === 'completed' || item.status === 'done';
+                          return (
+                            <div key={item.id} className="p-3.5 bg-white rounded-2xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                              <div className="space-y-0.5">
+                                <h5 className="text-xs font-black text-slate-900">{item.title}</h5>
+                                <p className="text-[11px] text-slate-500 font-medium">{item.count || 'High-res batch'} • Status: <span className="font-bold text-slate-800">{isDone ? 'Ready for Download' : 'Editing in progress'}</span></p>
+                              </div>
+                              <div className="flex items-center gap-2 ml-auto">
+                                {item.drive_link ? (
+                                  <a href={item.drive_link} target="_blank" rel="noreferrer" className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5">
+                                    <ExternalLink className="w-3.5 h-3.5" /> Download Drive
+                                  </a>
+                                ) : (
+                                  <span className="px-3 py-1 bg-slate-100 text-slate-500 font-bold text-xs rounded-lg">Color Grading</span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </motion.div>
-        )}
+                  )}
+
+                  {/* 2. VIDEOS CARD */}
+                  {videoDeliverables.length > 0 && (
+                    <div className="p-5 rounded-3xl border border-rose-200 bg-rose-50/70 space-y-3 shadow-2xs">
+                      <div className="flex items-center justify-between border-b border-rose-100 pb-2.5">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center font-bold">
+                            <Film className="w-4 h-4" />
+                          </div>
+                          <h4 className="text-sm font-black text-slate-900">Videos & Films Deliverables</h4>
+                        </div>
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-white text-rose-700 border border-rose-200">
+                          {videoDeliverables.filter(d => d.status === 'completed' || d.status === 'done').length}/{videoDeliverables.length} Ready
+                        </span>
+                      </div>
+
+                      <div className="space-y-2">
+                        {videoDeliverables.map(item => {
+                          const isDone = item.status === 'completed' || item.status === 'done';
+                          return (
+                            <div key={item.id} className="p-3.5 bg-white rounded-2xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                              <div className="space-y-0.5">
+                                <h5 className="text-xs font-black text-slate-900">{item.title}</h5>
+                                <p className="text-[11px] text-slate-500 font-medium">{item.count || 'Cinematic cut'} • Status: <span className="font-bold text-slate-800">{isDone ? 'Ready for Download' : 'Editing in progress'}</span></p>
+                              </div>
+                              <div className="flex items-center gap-2 ml-auto">
+                                {item.drive_link ? (
+                                  <a href={item.drive_link} target="_blank" rel="noreferrer" className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5">
+                                    <ExternalLink className="w-3.5 h-3.5" /> Watch / Download
+                                  </a>
+                                ) : (
+                                  <span className="px-3 py-1 bg-slate-100 text-slate-500 font-bold text-xs rounded-lg">Video Edit Cut</span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 3. ALBUMS CARD */}
+                  {albumDeliverables.length > 0 && (
+                    <div className="p-5 rounded-3xl border border-amber-200 bg-amber-50/70 space-y-3 shadow-2xs">
+                      <div className="flex items-center justify-between border-b border-amber-100 pb-2.5">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
+                            <BookOpen className="w-4 h-4" />
+                          </div>
+                          <h4 className="text-sm font-black text-slate-900">Albums & Prints</h4>
+                        </div>
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-white text-amber-800 border border-amber-200">
+                          {albumDeliverables.filter(d => d.status === 'completed' || d.status === 'done').length}/{albumDeliverables.length} Ready
+                        </span>
+                      </div>
+
+                      <div className="space-y-2">
+                        {albumDeliverables.map(item => {
+                          const isDone = item.status === 'completed' || item.status === 'done';
+                          return (
+                            <div key={item.id} className="p-3.5 bg-white rounded-2xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                              <div className="space-y-0.5">
+                                <h5 className="text-xs font-black text-slate-900">{item.title}</h5>
+                                <p className="text-[11px] text-slate-500 font-medium">{item.count || 'Album master'} • Status: <span className="font-bold text-slate-800">{isDone ? 'Delivered' : 'Layout proofing'}</span></p>
+                              </div>
+                              <div className="flex items-center gap-2 ml-auto">
+                                {item.drive_link ? (
+                                  <a href={item.drive_link} target="_blank" rel="noreferrer" className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5">
+                                    <ExternalLink className="w-3.5 h-3.5" /> View PDF Proof
+                                  </a>
+                                ) : (
+                                  <span className="px-3 py-1 bg-slate-100 text-slate-500 font-bold text-xs rounded-lg">Proofing</span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </motion.div>
+          );
+        })()}
 
         {/* ── TAB 3: PACKAGE INCLUSIONS ── */}
         {portalTab === 'package' && (
@@ -499,6 +580,35 @@ export default function PublicClientPortalPage() {
                 </h3>
               </div>
             </div>
+
+            {finance?.milestones && finance.milestones.length > 0 && (
+              <div className="space-y-2.5 pt-2">
+                <h4 className="text-xs font-black text-slate-800">Payment Schedule & Installments</h4>
+                <div className="space-y-2">
+                  {finance.milestones.map((ms, idx) => {
+                    const isPaid = ms.status === 'completed' || ms.status === 'paid';
+                    return (
+                      <div key={ms.id || idx} className="p-4 bg-white rounded-2xl border border-[#EAE5DA] shadow-xs flex items-center justify-between gap-3">
+                        <div>
+                          <h5 className="text-xs font-black text-slate-900">{ms.step_name || ms.title || `Milestone ${idx + 1}`}</h5>
+                          <p className="text-[11px] text-slate-500 font-medium">
+                            {isPaid && ms.paid_date ? `Paid on ${new Date(ms.paid_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}` : `Due: ${ms.due_date ? new Date(ms.due_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Milestone completion'}`}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="font-mono font-black text-xs text-slate-900">₹{(Number(ms.amount) || 0).toLocaleString('en-IN')}</span>
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-black border ${
+                            isPaid ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'
+                          }`}>
+                            {isPaid ? 'PAID' : 'DUE / PENDING'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </motion.div>
         )}
 

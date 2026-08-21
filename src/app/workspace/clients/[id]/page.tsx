@@ -10,7 +10,7 @@ import {
   Trash2, Edit3, MessageSquare, Send, Bell, Film, BookOpen, 
   Camera, Layers, Lock, ShieldCheck, Sparkles, MapPin, Users as UsersIcon,
   FileText, Download, Printer, RefreshCw, Key, MessageCircle, Link2,
-  ArrowLeft, CheckSquare, Play, ChevronRight
+  ArrowLeft, CheckSquare, Play, ChevronRight, Crown, Eye, Pencil, CheckCheck
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import AiMicButton from '@/components/AiMicButton';
@@ -29,6 +29,24 @@ function getClientInitials(name: string): string {
   const parts = clean.split(/\s+/).filter(Boolean);
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+interface QuotationVersionItem {
+  id?: string;
+  template_id: string;
+  lead_id?: string;
+  version: number;
+  version_label?: string;
+  title: string;
+  is_final?: boolean;
+  updated_at: string;
+  created_at: string;
+  public_token?: string;
+  total_amount?: number;
+  financials?: {
+    total_amount?: number;
+  };
+  content_json?: any;
 }
 
 export default function ClientWorkspaceDetailPage() {
@@ -66,11 +84,14 @@ export default function ClientWorkspaceDetailPage() {
   const [copiedLink, setCopiedLink] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
 
-  // Tab 2: Quotations & Versions
-  const [quotationDocs, setQuotationDocs] = useState<any[]>([]);
+  // Tab 2: Quotations & Versions (Synced with Leads CRM)
+  const [quotationDocs, setQuotationDocs] = useState<QuotationVersionItem[]>([]);
   const [loadingQuotes, setLoadingQuotes] = useState(false);
+  const [settingFinalId, setSettingFinalId] = useState<string | null>(null);
+  const [downloadingPdf, setDownloadingPdf] = useState<string | null>(null);
+  const [generatingLink, setGeneratingLink] = useState<string | null>(null);
 
-  // Tab 3: Events
+  // Tab 3: Events & Bookings
   const [showAddEventModal, setShowAddEventModal] = useState(false);
   const [newEventName, setNewEventName] = useState('Sangeet & Cocktail');
   const [newEventDate, setNewEventDate] = useState('');
@@ -83,16 +104,8 @@ export default function ClientWorkspaceDetailPage() {
   // Tab 4: Post-Production
   const [postProductionProject, setPostProductionProject] = useState<PostProductionProject | null>(null);
   const [loadingPostProd, setLoadingPostProd] = useState(false);
-  const [activeCommentModal, setActiveCommentModal] = useState<{
-    open: boolean;
-    deliverableId: string;
-    deliverableTitle: string;
-  } | null>(null);
-  const [commentText, setCommentText] = useState('');
-  const [commentAlertFlag, setCommentAlertFlag] = useState(false);
-  const [commentFollowupDate, setCommentFollowupDate] = useState('');
 
-  // Tab 5: Finance
+  // Tab 5: Finance & Milestones
   const [financeRecord, setFinanceRecord] = useState<ClientFinanceRecord | null>(null);
   const [loadingFinance, setLoadingFinance] = useState(false);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
@@ -160,11 +173,11 @@ export default function ClientWorkspaceDetailPage() {
       setEventDate(foundClient.event_date || '');
       setStatus(foundClient.status || 'active');
 
-      // Fetch Tab Data
+      // Fetch All Tabs Data
       await Promise.all([
-        fetchQuotations(foundClient),
+        fetchLeadQuotationVersions(foundClient),
         fetchPostProduction(foundClient),
-        fetchFinance(foundClient)
+        fetchFinanceAndSyncMilestones(foundClient)
       ]);
 
     } catch (e) {
@@ -175,27 +188,147 @@ export default function ClientWorkspaceDetailPage() {
     }
   };
 
-  // 1. Fetch Quotations & Versions
-  const fetchQuotations = async (c: WorkspaceClient) => {
+  // ─────────────────────────────────────────────────────────────
+  // 1. FETCH QUOTATION VERSIONS (SYNCED WITH LEADS CRM)
+  // ─────────────────────────────────────────────────────────────
+  const fetchLeadQuotationVersions = async (c: WorkspaceClient) => {
     setLoadingQuotes(true);
     try {
-      let query = supabase.from('quotations').select('*').order('created_at', { ascending: false });
-      if (c.lead_id) {
-        query = query.or(`client_id.eq.${c.lead_id},client_id.eq.${c.id}`);
-      } else {
-        query = query.eq('client_id', c.id);
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+
+      const targetLeadId = c.lead_id;
+
+      if (targetLeadId) {
+        // Fetch through identical Leads CRM endpoint
+        const res = await fetch(`/api/leads/${targetLeadId}/quotations`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const text = await res.text();
+        const json = text ? JSON.parse(text) : {};
+
+        if (json.success && Array.isArray(json.quotations) && json.quotations.length > 0) {
+          setQuotationDocs(json.quotations);
+          setLoadingQuotes(false);
+          return;
+        }
       }
 
-      const { data: quotes } = await query;
-      setQuotationDocs(quotes || []);
+      // Fallback: Direct database query on quotation_documents & quotations
+      let docsQuery = supabase.from('quotation_documents').select('*').order('created_at', { ascending: false });
+      if (c.lead_id) {
+        docsQuery = docsQuery.or(`lead_id.eq.${c.lead_id},template_id.ilike.%${c.lead_id.slice(0, 8)}%`);
+      } else {
+        docsQuery = docsQuery.eq('client_id', c.id);
+      }
+
+      const { data: docs } = await docsQuery;
+
+      if (docs && docs.length > 0) {
+        const formatted: QuotationVersionItem[] = docs.map((d, idx) => ({
+          id: d.id,
+          template_id: d.template_id || d.id,
+          lead_id: d.lead_id,
+          version: d.version || (idx + 1),
+          version_label: `Version ${d.version || (idx + 1)}`,
+          title: d.title || d.content_json?.heroPage?.coupleNames || `Quotation Version ${idx + 1}`,
+          is_final: d.is_final || d.content_json?.is_final === true,
+          updated_at: d.updated_at || d.created_at,
+          created_at: d.created_at,
+          public_token: d.public_token || d.content_json?.public_token,
+          total_amount: d.content_json?.pricingPage?.finalAmount || d.content_json?.pricing?.finalAmount || c.total_package_amount,
+          content_json: d.content_json
+        }));
+        setQuotationDocs(formatted);
+      } else {
+        // Check quotations table
+        const { data: qRows } = await supabase.from('quotations').select('*').eq('client_id', c.id).order('created_at', { ascending: false });
+        if (qRows && qRows.length > 0) {
+          const formatted: QuotationVersionItem[] = qRows.map((q, idx) => ({
+            id: q.id,
+            template_id: q.quotation_number || q.id,
+            version: idx + 1,
+            title: q.title || `Quotation ${q.quotation_number || idx + 1}`,
+            is_final: q.status === 'accepted' || q.status === 'final',
+            updated_at: q.updated_at || q.created_at,
+            created_at: q.created_at,
+            public_token: q.public_token,
+            total_amount: q.total_amount || c.total_package_amount
+          }));
+          setQuotationDocs(formatted);
+        } else {
+          setQuotationDocs([]);
+        }
+      }
     } catch (e) {
-      console.error('Error fetching quotations:', e);
+      console.error('Error fetching quotation versions:', e);
     } finally {
       setLoadingQuotes(false);
     }
   };
 
-  // 2. Fetch Post-Production
+  // ─────────────────────────────────────────────────────────────
+  // 2. SET FINAL QUOTATION (TWO-WAY SYNC WITH LEADS CRM)
+  // ─────────────────────────────────────────────────────────────
+  const handleSetFinalQuotation = async (q: QuotationVersionItem) => {
+    if (!client || settingFinalId) return;
+    setSettingFinalId(q.template_id);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+
+      const targetLeadId = client.lead_id || client.id;
+
+      // 1. Call standard set-final API
+      await fetch('/api/quotations/set-final', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          quotationId: q.template_id,
+          leadId: targetLeadId
+        })
+      });
+
+      // 2. Direct database update for instant reactive UI
+      await supabase
+        .from('quotation_documents')
+        .update({ is_final: false })
+        .or(`lead_id.eq.${targetLeadId},template_id.ilike.%${targetLeadId.slice(0, 8)}%`);
+
+      await supabase
+        .from('quotation_documents')
+        .update({ is_final: true, updated_at: new Date().toISOString() })
+        .eq('template_id', q.template_id);
+
+      if (client.lead_id) {
+        await supabase
+          .from('leads')
+          .update({ final_quotation_id: q.template_id, updated_at: new Date().toISOString() })
+          .eq('id', client.lead_id);
+      }
+
+      // Update local state
+      setQuotationDocs(prev => prev.map(item => ({
+        ...item,
+        is_final: item.template_id === q.template_id
+      })));
+
+      // Sync finance
+      fetchFinanceAndSyncMilestones(client);
+    } catch (e) {
+      console.error('Error setting final quotation:', e);
+    } finally {
+      setSettingFinalId(null);
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────
+  // 3. FETCH POST-PRODUCTION
+  // ─────────────────────────────────────────────────────────────
   const fetchPostProduction = async (c: WorkspaceClient) => {
     setLoadingPostProd(true);
     try {
@@ -215,23 +348,179 @@ export default function ClientWorkspaceDetailPage() {
     }
   };
 
-  // 3. Fetch Finance
-  const fetchFinance = async (c: WorkspaceClient) => {
+  // ─────────────────────────────────────────────────────────────
+  // 4. FETCH FINANCE & SYNC MILESTONES (PREVENT MISMATCH)
+  // ─────────────────────────────────────────────────────────────
+  const fetchFinanceAndSyncMilestones = async (c: WorkspaceClient) => {
     setLoadingFinance(true);
     try {
-      const { data } = await supabase
+      const { data: { session } } = await supabase.auth.getSession();
+      const workspaceId = session?.user?.id || 'ws_demo';
+
+      // 1. Fetch from client_finance_records
+      let { data: finRow } = await supabase
         .from('client_finance_records')
         .select('*')
         .eq('client_id', c.id)
         .maybeSingle();
 
-      if (data) {
-        setFinanceRecord(data);
+      const totalPkg = Number(c.total_package_amount) || 150000;
+      const totalPaid = Number(c.paid_amount) || 0;
+
+      // If no finance record exists or milestones empty, generate synced default milestones
+      if (!finRow || !finRow.milestones || finRow.milestones.length === 0) {
+        const tokenAmt = Math.round(totalPkg * 0.15);
+        const advAmt = Math.round(totalPkg * 0.35);
+        const eventAmt = Math.round(totalPkg * 0.35);
+        const finalAmt = Math.max(0, totalPkg - (tokenAmt + advAmt + eventAmt));
+
+        const baseDate = c.event_date ? new Date(c.event_date) : new Date();
+        const tokenDate = new Date().toISOString().split('T')[0];
+        const preEventDate = new Date(baseDate.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const weddingDate = baseDate.toISOString().split('T')[0];
+        const deliveryDate = new Date(baseDate.getTime() + 45 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+        // Cumulative milestone calculation
+        const milestones = [
+          {
+            id: `m_1_${c.id.slice(0, 6)}`,
+            step_name: 'Token Booking Amount (15%)',
+            amount: tokenAmt,
+            due_date: tokenDate,
+            status: totalPaid >= tokenAmt ? 'completed' : 'pending',
+            payment_mode: 'UPI',
+            paid_date: totalPaid >= tokenAmt ? tokenDate : null
+          },
+          {
+            id: `m_2_${c.id.slice(0, 6)}`,
+            step_name: 'Advance Amount - Pre-Event (35%)',
+            amount: advAmt,
+            due_date: preEventDate,
+            status: totalPaid >= (tokenAmt + advAmt) ? 'completed' : 'pending',
+            payment_mode: 'Bank Transfer',
+            paid_date: totalPaid >= (tokenAmt + advAmt) ? preEventDate : null
+          },
+          {
+            id: `m_3_${c.id.slice(0, 6)}`,
+            step_name: 'On Wedding Day (35%)',
+            amount: eventAmt,
+            due_date: weddingDate,
+            status: totalPaid >= (tokenAmt + advAmt + eventAmt) ? 'completed' : 'pending',
+            payment_mode: 'UPI',
+            paid_date: totalPaid >= (tokenAmt + advAmt + eventAmt) ? weddingDate : null
+          },
+          {
+            id: `m_4_${c.id.slice(0, 6)}`,
+            step_name: 'Final Delivery & Album Handover (15%)',
+            amount: finalAmt,
+            due_date: deliveryDate,
+            status: totalPaid >= totalPkg && totalPkg > 0 ? 'completed' : 'pending',
+            payment_mode: 'Bank Transfer',
+            paid_date: totalPaid >= totalPkg && totalPkg > 0 ? deliveryDate : null
+          }
+        ];
+
+        const newRec = {
+          user_id: workspaceId,
+          workspace_id: workspaceId,
+          client_id: c.id,
+          base_package_price: totalPkg,
+          discount_amount: 0,
+          accommodation_charges: 0,
+          travel_charges: 0,
+          additional_charges: 0,
+          subtotal_amount: totalPkg,
+          gst_rate: 0,
+          gst_amount: 0,
+          final_total_amount: totalPkg,
+          received_amount: totalPaid,
+          pending_amount: Math.max(0, totalPkg - totalPaid),
+          payment_status: totalPaid >= totalPkg && totalPkg > 0 ? 'paid' : totalPaid > 0 ? 'partially_paid' : 'unpaid',
+          milestones: milestones,
+          updated_at: new Date().toISOString()
+        };
+
+        if (workspaceId !== 'ws_demo') {
+          const { data: savedRec } = await supabase
+            .from('client_finance_records')
+            .upsert([newRec], { onConflict: 'client_id' })
+            .select('*')
+            .maybeSingle();
+
+          if (savedRec) finRow = savedRec;
+          else finRow = newRec as any;
+        } else {
+          finRow = newRec as any;
+        }
       }
+
+      setFinanceRecord(finRow);
     } catch (e) {
       console.error('Error fetching finance:', e);
     } finally {
       setLoadingFinance(false);
+    }
+  };
+
+  // Toggle Milestone Paid/Pending Status
+  const handleToggleMilestone = async (milestoneId: string, currentStatus: string) => {
+    if (!client || !financeRecord) return;
+    const newStatus = currentStatus === 'completed' || currentStatus === 'paid' ? 'pending' : 'completed';
+
+    const updatedMilestones = (financeRecord.milestones || []).map(m => {
+      if (m.id === milestoneId) {
+        return {
+          ...m,
+          status: newStatus,
+          paid_date: newStatus === 'completed' ? new Date().toISOString().split('T')[0] : null
+        };
+      }
+      return m;
+    });
+
+    // Recompute total received from completed milestones
+    const totalReceived = updatedMilestones
+      .filter(m => m.status === 'completed' || m.status === 'paid')
+      .reduce((sum, m) => sum + (Number(m.amount) || 0), 0);
+
+    const totalPkg = financeRecord.final_total_amount || client.total_package_amount || 0;
+    const newPending = Math.max(0, totalPkg - totalReceived);
+    const newPaymentStatus = totalReceived >= totalPkg && totalPkg > 0 ? 'paid' : totalReceived > 0 ? 'partially_paid' : 'unpaid';
+
+    const updatedRecord = {
+      ...financeRecord,
+      received_amount: totalReceived,
+      pending_amount: newPending,
+      payment_status: newPaymentStatus,
+      milestones: updatedMilestones,
+      updated_at: new Date().toISOString()
+    };
+
+    setFinanceRecord(updatedRecord);
+    setClient(prev => prev ? ({ ...prev, paid_amount: totalReceived }) : null);
+
+    // Sync to Supabase
+    try {
+      await supabase
+        .from('client_finance_records')
+        .update({
+          received_amount: totalReceived,
+          pending_amount: newPending,
+          payment_status: newPaymentStatus,
+          milestones: updatedMilestones,
+          updated_at: new Date().toISOString()
+        })
+        .eq('client_id', client.id);
+
+      await supabase
+        .from('workspace_clients')
+        .update({
+          paid_amount: totalReceived,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', client.id);
+    } catch (e) {
+      console.error('Error updating milestone status:', e);
     }
   };
 
@@ -266,26 +555,6 @@ export default function ClientWorkspaceDetailPage() {
       alert(`Failed to save: ${e.message}`);
     } finally {
       setIsSaving(false);
-    }
-  };
-
-  // Set Quotation as Final
-  const handleSetFinalQuotation = async (quoteId: string) => {
-    if (!client) return;
-    try {
-      await supabase
-        .from('quotations')
-        .update({ status: 'sent' })
-        .eq('client_id', client.id);
-
-      await supabase
-        .from('quotations')
-        .update({ status: 'accepted' })
-        .eq('id', quoteId);
-
-      fetchQuotations(client);
-    } catch (e) {
-      console.error('Error setting final quotation:', e);
     }
   };
 
@@ -346,39 +615,6 @@ export default function ClientWorkspaceDetailPage() {
       .then();
   };
 
-  // Save Deliverable Comment
-  const handleSaveComment = () => {
-    if (!activeCommentModal || !commentText.trim() || !postProductionProject) return;
-
-    const newComment: DeliverableComment = {
-      id: `comm_${Date.now()}`,
-      text: commentText.trim(),
-      authorName: 'Lead Studio Manager',
-      createdAt: new Date().toISOString(),
-      alert_flag: commentAlertFlag,
-      followup_at: commentFollowupDate || null
-    };
-
-    const updatedDeliverables = postProductionProject.deliverables.map(d => {
-      if (d.id === activeCommentModal.deliverableId) {
-        const existing = d.comments || [];
-        return { ...d, comments: [newComment, ...existing] };
-      }
-      return d;
-    });
-
-    setPostProductionProject({ ...postProductionProject, deliverables: updatedDeliverables });
-    supabase
-      .from('post_production_projects')
-      .update({ deliverables: updatedDeliverables, updated_at: new Date().toISOString() })
-      .eq('id', postProductionProject.id)
-      .then();
-
-    setCommentText('');
-    setCommentAlertFlag(false);
-    setCommentFollowupDate('');
-  };
-
   // Record Payment
   const handleRecordPayment = async () => {
     if (!client) return;
@@ -386,7 +622,8 @@ export default function ClientWorkspaceDetailPage() {
     if (numAmt <= 0) return;
 
     const newPaid = (client.paid_amount || 0) + numAmt;
-    const newPaymentStatus = newPaid >= client.total_package_amount ? 'paid' : 'partially_paid';
+    const totalPkg = client.total_package_amount || 0;
+    const newPaymentStatus = newPaid >= totalPkg ? 'paid' : 'partially_paid';
 
     try {
       await supabase
@@ -395,13 +632,27 @@ export default function ClientWorkspaceDetailPage() {
         .eq('id', client.id);
 
       if (financeRecord) {
-        const newPending = Math.max(0, (financeRecord.final_total_amount || client.total_package_amount) - newPaid);
+        const newPending = Math.max(0, (financeRecord.final_total_amount || totalPkg) - newPaid);
+        
+        // Update milestone status based on new paid amount
+        let cumulative = 0;
+        const updatedMilestones = (financeRecord.milestones || []).map(m => {
+          cumulative += Number(m.amount) || 0;
+          const isDone = newPaid >= cumulative;
+          return {
+            ...m,
+            status: isDone ? 'completed' : m.status === 'completed' ? 'completed' : 'pending',
+            paid_date: isDone && !m.paid_date ? payDate : m.paid_date
+          };
+        });
+
         await supabase
           .from('client_finance_records')
           .update({
             received_amount: newPaid,
             pending_amount: newPending,
             payment_status: newPaymentStatus,
+            milestones: updatedMilestones,
             updated_at: new Date().toISOString()
           })
           .eq('client_id', client.id);
@@ -411,7 +662,7 @@ export default function ClientWorkspaceDetailPage() {
       setShowPaymentModal(false);
       setPayAmount('');
       setPayRef('');
-      fetchFinance(client);
+      fetchFinanceAndSyncMilestones(client);
     } catch (e) {
       console.error('Error recording payment:', e);
       alert('Error recording payment.');
@@ -768,55 +1019,48 @@ export default function ClientWorkspaceDetailPage() {
         )}
 
         {/* ─────────────────────────────────────────────────────────────
-            TAB 2: QUOTATIONS & VERSIONS (EXACT LEADS CRM VERSIONS FLOW)
+            TAB 2: QUOTATIONS & VERSIONS (TWO-WAY SYNCED WITH LEADS CRM)
         ───────────────────────────────────────────────────────────── */}
         {activeTab === 'quotations' && (
           <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-base font-black text-slate-900">Quotation Proposal Versions</h3>
-                <p className="text-xs text-slate-500 font-medium">All generated proposal versions. Final accepted quotation is highlighted in green.</p>
+                <p className="text-xs text-slate-500 font-medium">All proposal versions from CRM. The Final accepted quotation is highlighted in emerald green.</p>
               </div>
-              <Link
-                href={`/workspace/quotations/builder?clientId=${client.id}&clientName=${encodeURIComponent(name)}`}
-                className="px-4 py-2.5 text-xs font-black text-slate-900 bg-amber-400 hover:bg-amber-500 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+              <button
+                onClick={() => fetchLeadQuotationVersions(client)}
+                className="px-3.5 py-2 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-[#EAE5DA] rounded-xl transition flex items-center gap-1.5 shadow-2xs"
               >
-                <Plus className="w-4 h-4" />
-                + Create New Quotation Version
-              </Link>
+                <RefreshCw className={`w-3.5 h-3.5 ${loadingQuotes ? 'animate-spin text-amber-600' : ''}`} />
+                Sync Versions
+              </button>
             </div>
 
             {loadingQuotes ? (
               <div className="py-12 text-center text-slate-400 space-y-2">
                 <RefreshCw className="w-6 h-6 mx-auto animate-spin text-amber-600" />
-                <p className="text-xs font-bold">Loading proposal versions...</p>
+                <p className="text-xs font-bold">Loading proposal versions from CRM...</p>
               </div>
             ) : quotationDocs.length === 0 ? (
               <div className="p-10 text-center bg-[#FFFDF9] rounded-3xl border border-dashed border-[#EAE5DA] space-y-3 shadow-xs">
                 <FileText className="w-10 h-10 mx-auto text-amber-500" />
-                <h4 className="text-sm font-black text-slate-900">No Quotation Documents Generated Yet</h4>
-                <p className="text-xs text-slate-500">Create the first luxury quotation proposal for {name}.</p>
-                <Link
-                  href={`/workspace/quotations/builder?clientId=${client.id}&clientName=${encodeURIComponent(name)}`}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-amber-400 font-black text-xs text-slate-900 rounded-xl shadow-xs mt-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  Build Quotation Version 1
-                </Link>
+                <h4 className="text-sm font-black text-slate-900">No Quotations Found For This Client</h4>
+                <p className="text-xs text-slate-500">Quotations created in the Leads CRM will appear here automatically.</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-4">
                 {quotationDocs.map((doc, idx) => {
-                  const isFinal = doc.status === 'accepted' || doc.status === 'final' || doc.is_final;
-                  const qNum = doc.quotation_number || `Q-${doc.id.slice(0, 6)}`;
-                  const totalAmt = doc.financials?.total_amount || doc.content_json?.pricing?.finalAmount || doc.total_amount || client.total_package_amount || 0;
+                  const isFinal = doc.is_final;
+                  const qNum = doc.template_id || `Q-${idx + 1}`;
+                  const totalAmt = doc.total_amount || doc.financials?.total_amount || doc.content_json?.pricingPage?.finalAmount || client.total_package_amount || 0;
 
                   return (
                     <div
-                      key={doc.id}
+                      key={doc.template_id || doc.id || idx}
                       className={`p-5 rounded-3xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-5 ${
                         isFinal 
-                          ? 'bg-gradient-to-r from-emerald-50/90 via-[#FFFDF9] to-emerald-50/40 border-emerald-300 ring-2 ring-emerald-400/40 shadow-sm' 
+                          ? 'bg-gradient-to-r from-emerald-50/90 via-[#FFFDF9] to-emerald-50/50 border-emerald-400 ring-2 ring-emerald-400/50 shadow-md' 
                           : 'bg-[#FFFDF9] border-[#EAE5DA] hover:border-amber-300'
                       }`}
                     >
@@ -825,15 +1069,15 @@ export default function ClientWorkspaceDetailPage() {
                         <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-sm shadow-2xs shrink-0 ${
                           isFinal ? 'bg-emerald-500 text-white' : 'bg-amber-100 text-amber-900'
                         }`}>
-                          v{idx + 1}
+                          V{doc.version || (idx + 1)}
                         </div>
 
                         <div className="space-y-1">
                           <div className="flex items-center gap-2.5 flex-wrap">
-                            <h4 className="text-sm font-black text-slate-900">{doc.title || `Quotation ${qNum}`}</h4>
+                            <h4 className="text-sm font-black text-slate-900">{doc.title || `Quotation Version ${doc.version || (idx + 1)}`}</h4>
                             {isFinal ? (
-                              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1 shadow-2xs">
-                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              <span className="px-3 py-1 rounded-full text-xs font-black bg-emerald-500 text-white shadow-xs flex items-center gap-1.5">
+                                <Crown className="w-3.5 h-3.5 text-amber-200" />
                                 FINAL APPROVED QUOTATION
                               </span>
                             ) : (
@@ -844,39 +1088,54 @@ export default function ClientWorkspaceDetailPage() {
                           </div>
 
                           <p className="text-xs text-slate-600 font-medium">
-                            Updated: {new Date(doc.updated_at || doc.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} • Total Value: <span className="font-black text-slate-900 font-mono">₹{totalAmt.toLocaleString('en-IN')}</span>
+                            Updated: {new Date(doc.updated_at || doc.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} • Package Amount: <span className="font-black text-slate-900 font-mono">₹{totalAmt.toLocaleString('en-IN')}</span>
                           </p>
                         </div>
                       </div>
 
                       {/* Actions */}
                       <div className="flex items-center gap-2.5 ml-auto flex-wrap">
-                        {!isFinal && (
+                        {!isFinal ? (
                           <button
-                            onClick={() => handleSetFinalQuotation(doc.id)}
-                            className="px-3 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition cursor-pointer"
+                            onClick={() => handleSetFinalQuotation(doc)}
+                            disabled={settingFinalId === doc.template_id}
+                            className="px-3.5 py-2 text-xs font-black text-emerald-800 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
                           >
+                            {settingFinalId === doc.template_id ? (
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            )}
                             Set As Final
                           </button>
+                        ) : (
+                          <span className="px-3 py-1.5 text-xs font-black text-emerald-700 bg-emerald-100/80 border border-emerald-300 rounded-xl flex items-center gap-1">
+                            <CheckCheck className="w-4 h-4 text-emerald-600" /> Active Final
+                          </span>
                         )}
 
-                        {doc.public_token && (
-                          <Link
-                            href={`/p/quotation/${doc.public_token}`}
-                            target="_blank"
-                            className="px-3.5 py-2 text-xs font-bold text-slate-700 bg-white hover:bg-amber-50 border border-[#EAE5DA] rounded-xl transition flex items-center gap-1.5 shadow-2xs"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                            Client Link
-                          </Link>
-                        )}
-
-                        <Link
-                          href={`/workspace/quotations/builder/templet/${doc.quotation_number || doc.id}`}
-                          className="px-4 py-2 text-xs font-black text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-xl transition flex items-center gap-1.5 shadow-2xs"
+                        {/* Client Preview */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const clientUrl = doc.public_token 
+                              ? `/p/quotation/${doc.public_token}` 
+                              : `/workspace/quotations/builder/templet/${doc.template_id}?preview=public`;
+                            window.open(clientUrl, '_blank');
+                          }}
+                          className="px-3 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-[#EAE5DA] transition text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer"
                         >
-                          <Edit3 className="w-3.5 h-3.5" />
-                          Open in Builder
+                          <Eye className="w-3.5 h-3.5 text-amber-600" />
+                          Client Preview
+                        </button>
+
+                        {/* Edit in Builder */}
+                        <Link
+                          href={`/workspace/quotations/builder/templet/${doc.template_id}`}
+                          className="px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-900 transition text-xs font-black flex items-center gap-1.5 shadow-2xs"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          Edit Builder
                         </Link>
                       </div>
                     </div>
@@ -888,14 +1147,14 @@ export default function ClientWorkspaceDetailPage() {
         )}
 
         {/* ─────────────────────────────────────────────────────────────
-            TAB 3: EVENTS & BOOKINGS (MULTI-DAY TIMELINE & CREW)
+            TAB 3: EVENTS & BOOKINGS (MULTI-DAY ITINERARY CARDS)
         ───────────────────────────────────────────────────────────── */}
         {activeTab === 'events' && (
           <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-base font-black text-slate-900">Multi-Day Wedding Ceremonies & Crew Allocation</h3>
-                <p className="text-xs text-slate-500 font-medium">Itinerary, venues, scheduled crew allocations and deliverables expected</p>
+                <h3 className="text-base font-black text-slate-900">Multi-Day Wedding Ceremonies & Bookings</h3>
+                <p className="text-xs text-slate-500 font-medium">All ceremony cards, dates, timings, venues, and crew allocations</p>
               </div>
               <button
                 onClick={() => setShowAddEventModal(true)}
@@ -1123,7 +1382,7 @@ export default function ClientWorkspaceDetailPage() {
         )}
 
         {/* ─────────────────────────────────────────────────────────────
-            TAB 5: FINANCE & INVOICES
+            TAB 5: FINANCE & INVOICES (SYNCED PAYMENT MILESTONES)
         ───────────────────────────────────────────────────────────── */}
         {activeTab === 'finance' && (
           <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
@@ -1131,27 +1390,30 @@ export default function ClientWorkspaceDetailPage() {
               <div className="p-6 bg-[#FFFDF9] rounded-3xl border border-[#EAE5DA] shadow-xs">
                 <p className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">Total Package Amount</p>
                 <h3 className="text-2xl font-black text-slate-900 mt-1 font-mono">
-                  ₹{(client.total_package_amount || 0).toLocaleString('en-IN')}
+                  ₹{(financeRecord?.final_total_amount || client.total_package_amount || 0).toLocaleString('en-IN')}
                 </h3>
               </div>
 
               <div className="p-6 bg-[#FFFDF9] rounded-3xl border border-[#EAE5DA] shadow-xs">
                 <p className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">Total Payments Received</p>
                 <h3 className="text-2xl font-black text-emerald-600 mt-1 font-mono">
-                  ₹{(client.paid_amount || 0).toLocaleString('en-IN')}
+                  ₹{(financeRecord?.received_amount || client.paid_amount || 0).toLocaleString('en-IN')}
                 </h3>
               </div>
 
               <div className="p-6 bg-[#FFFDF9] rounded-3xl border border-[#EAE5DA] shadow-xs">
                 <p className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">Remaining Balance</p>
                 <h3 className="text-2xl font-black text-amber-800 mt-1 font-mono">
-                  ₹{Math.max(0, (client.total_package_amount || 0) - (client.paid_amount || 0)).toLocaleString('en-IN')}
+                  ₹{(financeRecord?.pending_amount ?? Math.max(0, (client.total_package_amount || 0) - (client.paid_amount || 0))).toLocaleString('en-IN')}
                 </h3>
               </div>
             </div>
 
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-black text-slate-900">Payment Milestones & Invoices</h3>
+              <div>
+                <h3 className="text-base font-black text-slate-900">Payment Milestones Schedule</h3>
+                <p className="text-xs text-slate-500 font-medium">Click on any milestone status badge to toggle Paid / Pending</p>
+              </div>
               <div className="flex gap-3">
                 <button
                   onClick={() => setShowInvoiceModal(true)}
@@ -1172,27 +1434,63 @@ export default function ClientWorkspaceDetailPage() {
 
             {financeRecord?.milestones && financeRecord.milestones.length > 0 ? (
               <div className="space-y-3">
-                {financeRecord.milestones.map(ms => (
-                  <div
-                    key={ms.id}
-                    className="p-4 bg-[#FFFDF9] rounded-2xl border border-[#EAE5DA] shadow-xs flex items-center justify-between gap-4"
-                  >
-                    <div>
-                      <h4 className="text-xs font-black text-slate-900">{ms.title}</h4>
-                      <p className="text-[11px] text-slate-500 font-medium">
-                        Due: {ms.due_date ? new Date(ms.due_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Milestone completion'}
-                      </p>
+                {financeRecord.milestones.map((ms, idx) => {
+                  const isPaid = ms.status === 'completed' || ms.status === 'paid';
+                  const isOverdue = !isPaid && ms.due_date && new Date(ms.due_date) < new Date();
+
+                  return (
+                    <div
+                      key={ms.id || idx}
+                      className={`p-4 sm:p-5 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                        isPaid 
+                          ? 'bg-emerald-50/50 border-emerald-300' 
+                          : isOverdue
+                          ? 'bg-rose-50/40 border-rose-300'
+                          : 'bg-[#FFFDF9] border-[#EAE5DA]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs shrink-0 ${
+                          isPaid ? 'bg-emerald-500 text-white' : 'bg-amber-100 text-amber-900'
+                        }`}>
+                          {idx + 1}
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-black text-slate-900">{ms.step_name || ms.title || `Milestone ${idx + 1}`}</h4>
+                          <p className="text-[11px] text-slate-500 font-medium">
+                            {isPaid && ms.paid_date ? (
+                              <span className="text-emerald-700 font-bold">Paid on: {new Date(ms.paid_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                            ) : (
+                              <span>Due Date: {ms.due_date ? new Date(ms.due_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'On completion'}</span>
+                            )}
+                            {ms.payment_mode && <span className="text-slate-400"> • Mode: {ms.payment_mode}</span>}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-4 ml-auto sm:ml-0">
+                        <span className="font-mono font-black text-sm text-slate-900">
+                          ₹{(Number(ms.amount) || 0).toLocaleString('en-IN')}
+                        </span>
+
+                        <button
+                          onClick={() => handleToggleMilestone(ms.id, ms.status)}
+                          className={`px-3 py-1.5 rounded-full text-xs font-black border transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${
+                            isPaid 
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200' 
+                              : isOverdue
+                              ? 'bg-rose-100 text-rose-800 border-rose-300 hover:bg-rose-200'
+                              : 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
+                          }`}
+                          title="Click to toggle Paid / Pending"
+                        >
+                          {isPaid ? <Check className="w-3.5 h-3.5 text-emerald-700" /> : <Clock className="w-3.5 h-3.5" />}
+                          {isPaid ? 'PAID' : isOverdue ? 'OVERDUE' : 'DUE / PENDING'}
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="font-mono font-black text-sm text-slate-900">₹{(ms.amount || 0).toLocaleString('en-IN')}</span>
-                      <span className={`px-2.5 py-1 rounded-full text-xs font-black border ${
-                        ms.status === 'paid' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'
-                      }`}>
-                        {ms.status === 'paid' ? 'PAID' : 'PENDING'}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="p-8 bg-[#FFFDF9] rounded-3xl border border-[#EAE5DA] text-center text-xs text-slate-500">
@@ -1471,8 +1769,8 @@ export default function ClientWorkspaceDetailPage() {
           onClose={() => setShowInvoiceModal(false)}
           client={client}
           financeRecord={financeRecord}
-          totalPackage={client.total_package_amount || 0}
-          paidAmount={client.paid_amount || 0}
+          totalPackage={financeRecord?.final_total_amount || client.total_package_amount || 0}
+          paidAmount={financeRecord?.received_amount || client.paid_amount || 0}
           studioSettings={null}
         />
       )}
