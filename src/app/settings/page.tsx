@@ -105,6 +105,19 @@ export default function SettingsPage() {
 
   // 3. Finance & Invoice Settings
   const [invoicePrefix, setInvoicePrefix] = useState('INV-2026-');
+  const [invoiceCompanyName, setInvoiceCompanyName] = useState('FILMIFY WEDDINGS');
+  const [invoiceTagline, setInvoiceTagline] = useState('Luxury Wedding Photography & Cinematography');
+  const [invoiceGstin, setInvoiceGstin] = useState('27AABCF1234F1ZP');
+  const [invoiceAddress, setInvoiceAddress] = useState('Mumbai, Maharashtra, India');
+  const [invoicePhone, setInvoicePhone] = useState('+91 98765 43210');
+  const [invoiceEmail, setInvoiceEmail] = useState('info@filmifyweddings.com');
+  const [invoiceBankName, setInvoiceBankName] = useState('HDFC Bank');
+  const [invoiceAccountNo, setInvoiceAccountNo] = useState('50200012345678');
+  const [invoiceIfsc, setInvoiceIfsc] = useState('HDFC0001234');
+  const [invoiceAccountHolder, setInvoiceAccountHolder] = useState('Filmify Weddings LLP');
+  const [invoiceTerms, setInvoiceTerms] = useState('1. Advance payment is non-refundable upon client cancellation.\n2. Final deliverables delivered post clearance of balance.');
+  const [invoiceFooterNote, setInvoiceFooterNote] = useState('Thank you for choosing Filmify Weddings! This is a computer-generated invoice.');
+  const [invoiceFont, setInvoiceFont] = useState('Cormorant Garamond');
   const [projectPrefix, setProjectPrefix] = useState('PRJ-2026-');
   const [gstPercent, setGstPercent] = useState(18);
   const [paymentTerms, setPaymentTerms] = useState('50% Retainer for booking lock, 50% on Event Date');
@@ -169,6 +182,27 @@ export default function SettingsPage() {
       localStorage.setItem(`settings_gst_${wId}`, String(settingsObj.invoice_gst_percent ?? gstPercent));
       localStorage.setItem(`settings_upi_${wId}`, settingsObj.invoice_upi_id || upiId);
       localStorage.setItem(`settings_geofence_${wId}`, String(settingsObj.geofence_radius_meters || geofenceRadius));
+      localStorage.setItem('studio_invoice_template_config', JSON.stringify({
+        companyName: settingsObj.invoice_company_name || invoiceCompanyName,
+        tagline: settingsObj.invoice_tagline || invoiceTagline,
+        gstin: settingsObj.invoice_gstin || invoiceGstin,
+        address: settingsObj.invoice_address || invoiceAddress,
+        phone: settingsObj.invoice_phone || invoicePhone,
+        email: settingsObj.invoice_email || invoiceEmail,
+        invoiceTitle: 'TAX INVOICE',
+        prefix: settingsObj.sequence_invoices_prefix || invoicePrefix,
+        bankName: settingsObj.invoice_bank_name || invoiceBankName,
+        accountNo: settingsObj.invoice_account_no || invoiceAccountNo,
+        ifsc: settingsObj.invoice_ifsc || invoiceIfsc,
+        accountHolder: settingsObj.invoice_account_holder || invoiceAccountHolder,
+        upiId: settingsObj.invoice_upi_id || upiId,
+        showUpiQr: true,
+        terms: settingsObj.invoice_terms || invoiceTerms,
+        footerNote: settingsObj.invoice_footer_note || invoiceFooterNote,
+        logoUrl: '',
+        fontFamily: settingsObj.invoice_font || invoiceFont,
+        themeColor: '#D4AF37',
+      }));
     } catch (_) {}
   };
 
