@@ -37,6 +37,8 @@ export async function proxy(request: NextRequest) {
     pathname === '/free-trial' ||
     pathname === '/pricing' ||
     pathname === '/features' ||
+    pathname === '/integration-showcase' ||
+    pathname.startsWith('/integration-showcase') ||
     pathname.startsWith('/p/quotation') ||
     pathname.includes('.');
 
