@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Users, UserPlus, Search, Filter, Plus, DollarSign, Calendar, Phone, Mail, 
@@ -16,6 +17,7 @@ import {
 import type { WorkspaceClient, Lead } from '@/types';
 
 export default function ClientsPage() {
+  const router = useRouter();
   const [clients, setClients] = useState<WorkspaceClient[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -294,8 +296,8 @@ export default function ClientsPage() {
         });
         setSelectedLeadId('');
 
-        // Open newly created client window
-        setSelectedClient(newClient);
+        // Open newly created client page
+        router.push(`/workspace/clients/${newClient.id}`);
       }
     } catch (e: any) {
       console.error('Error creating client:', e);
@@ -490,14 +492,13 @@ export default function ClientsPage() {
                 <motion.div
                   key={client.id}
                   layout
-                  onClick={() => setSelectedClient(client)}
+                  onClick={() => router.push(`/workspace/clients/${client.id}`)}
                   className="bg-[#FFFDF9] hover:bg-[#FFFBF2] rounded-2xl border border-[#EAE5DA] hover:border-amber-400/80 p-4 sm:p-5 shadow-2xs transition-all cursor-pointer flex flex-col lg:flex-row lg:items-center justify-between gap-4 group"
                 >
-                  {/* Left: Unique Card # + Client Name + Contacts */}
+                  {/* Left: Client Initials Avatar + Name + Contacts */}
                   <div className="flex items-center gap-4 min-w-[280px]">
-                    <div className="w-12 h-12 rounded-2xl bg-amber-100/90 text-amber-900 border border-amber-200 flex flex-col items-center justify-center font-mono font-black text-xs shrink-0 shadow-2xs group-hover:scale-105 transition-transform">
-                      <span>{ext.client_code.split('-')[1] || 'CL'}</span>
-                      <span className="text-[9px] text-amber-700">{ext.client_code.split('-')[2] || '001'}</span>
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 flex items-center justify-center font-black text-sm shrink-0 shadow-2xs group-hover:scale-105 transition-transform border border-amber-300">
+                      {client.name ? (client.name.replace(/&/g, ' ').trim().split(/\s+/).filter(Boolean).length === 1 ? client.name.slice(0, 2).toUpperCase() : (client.name.replace(/&/g, ' ').trim().split(/\s+/)[0][0] + client.name.replace(/&/g, ' ').trim().split(/\s+/).slice(-1)[0][0]).toUpperCase()) : 'CL'}
                     </div>
 
                     <div className="space-y-1">

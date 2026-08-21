@@ -308,7 +308,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     pathname === '/data-deletion' ||
     pathname.startsWith('/data-deletion') ||
     pathname.startsWith('/pdf-preview') ||
-    pathname.startsWith('/p/quotation') ||
+    pathname.startsWith('/p/') ||
     pathname.startsWith('/attendance/') ||
     pathname.startsWith('/workspace/quotations/builder') ||
     pathname.startsWith('/admin/workspace/quotations/builder');
