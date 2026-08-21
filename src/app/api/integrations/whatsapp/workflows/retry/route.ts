@@ -161,15 +161,23 @@ export async function POST(req: NextRequest) {
         if (qUpdErr) throw qUpdErr;
       } else {
         // Create a new queue item if it was somehow missing
+        const isGroupStep = step.target_type === 'group' || (step.target_group_jid && step.target_group_jid.length > 5);
+        const targetRecipient = isGroupStep ? step.target_group_jid : cleanJid;
+        const targetAction = isGroupStep ? 'group_dispatch' : 'send_template';
+
         const { error: qInsErr } = await supabaseAdmin
           .from('baileys_action_queue')
           .insert({
             workspace_id: tenantId,
-            action_type: 'send_template',
+            action_type: targetAction,
             payload: {
-              to: cleanJid,
+              to: targetRecipient,
+              groupJid: isGroupStep ? targetRecipient : undefined,
+              groupId: isGroupStep ? targetRecipient : undefined,
               templateId: step.template_id,
+              template_name: step.template_name,
               variables: v_variables,
+              leadData: v_variables,
               workflowLogId: log.id
             },
             status: 'pending',

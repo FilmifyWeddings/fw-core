@@ -511,34 +511,91 @@ async function sendTemplateMessage(
   // Replace placeholders (supports {{key}} and {key})
   let body = tpl.body_text;
   if (body) {
-    const replaceFn = (match: string, key: string) => {
-      const trimmedKey = key.trim();
-      
-      // Look up in variables (case insensitive)
-      const foundKey = Object.keys(variables).find(k => k.toLowerCase() === trimmedKey.toLowerCase());
-      if (foundKey && variables[foundKey] !== undefined && variables[foundKey] !== null) {
-        return String(variables[foundKey]);
+    const replaceFn = (match: string, rawKey: string) => {
+      const key = rawKey.trim();
+      const normalizedKey = key.toLowerCase();
+
+      // 1. Time / Date
+      if (normalizedKey === 'created_time' || normalizedKey === 'timestamp') {
+        if (variables.created_time) return String(variables.created_time);
+        if (variables.timestamp) {
+          try {
+            return new Date(variables.timestamp).toLocaleString('en-IN', {
+              timeZone: 'Asia/Kolkata',
+              day: '2-digit', month: 'short', year: 'numeric',
+              hour: '2-digit', minute: '2-digit'
+            });
+          } catch {}
+        }
+        return new Date().toLocaleString('en-IN', {
+          timeZone: 'Asia/Kolkata',
+          day: '2-digit', month: 'short', year: 'numeric',
+          hour: '2-digit', minute: '2-digit'
+        });
+      }
+      if (normalizedKey === 'current_date' || normalizedKey === 'date') {
+        return variables.current_date || new Date().toLocaleDateString('en-IN', {
+          day: '2-digit', month: '2-digit', year: 'numeric'
+        });
       }
 
-      // Also compute client info and other fields dynamically if not present in variables
-      const normalizedKey = trimmedKey.toLowerCase();
-      const leadName = variables['Name'] || variables['name'] || variables['full_name'] || variables['lead_name'] || '';
-      const leadPhone = variables['phone'] || variables['phone_number'] || '';
+      // 2. Direct property matches (case-insensitive)
+      const varKeys = Object.keys(variables);
+      const directMatch = varKeys.find(k => k.toLowerCase() === normalizedKey);
+      if (directMatch && variables[directMatch] !== undefined && variables[directMatch] !== null && String(variables[directMatch]).trim() !== '') {
+        return String(variables[directMatch]);
+      }
 
-      if (normalizedKey === 'first_name') {
-        const parts = leadName.trim().split(/\s+/);
-        return parts[0] || '';
+      // 3. Smart Semantic Aliases
+      const aliasMap: Record<string, string[]> = {
+        full_name: ['full_name', 'name', 'lead_name', 'client_name', 'Name', 'Name_1'],
+        first_name: ['first_name', 'fname'],
+        last_name: ['last_name', 'lname'],
+        phone: ['phone', 'phone_number', 'mobile', 'contact', 'whatsapp_number'],
+        email: ['email', 'email_address', 'mail'],
+        shoot_type: [
+          'shoot_type', 'kind_of_shoot', 'shoot', 'service', 'services', 'photography_services',
+          'what_photography_services_are_you_looking_for?', 'what_photography_services_are_you_looking_for'
+        ],
+        location: ['location', 'city', 'venue', 'destination', 'event_location', 'shoot_location', 'address'],
+        budget: [
+          'budget', 'max_budget', 'price', 'expected_budget',
+          'what_is_your_budget_for_photography_services?', 'what_is_your_budget_for_photography_services'
+        ],
+        source: ['source', 'lead_source', 'campaign_name', 'form_name', 'page_name', 'platform', 'ad_name'],
+        wedding_date: ['wedding_date', 'event_date', 'shoot_date', 'date_of_event'],
+      };
+
+      const aliases = aliasMap[normalizedKey] || [];
+      for (const alias of aliases) {
+        const foundKey = varKeys.find(k => k.toLowerCase() === alias.toLowerCase());
+        if (foundKey && variables[foundKey] !== undefined && variables[foundKey] !== null && String(variables[foundKey]).trim() !== '') {
+          return String(variables[foundKey]);
+        }
       }
-      if (normalizedKey === 'last_name') {
-        const parts = leadName.trim().split(/\s+/);
-        return parts.slice(1).join(' ') || '';
+
+      // 4. Nested field_data array check (Facebook / Meta Lead Ad structure)
+      if (Array.isArray((variables as any).field_data)) {
+        for (const item of (variables as any).field_data) {
+          const itemKey = (item.name || '').toLowerCase();
+          if (itemKey === normalizedKey || aliases.some(a => a.toLowerCase() === itemKey)) {
+            const val = Array.isArray(item.values) ? item.values[0] : item.values;
+            if (val) return String(val);
+          }
+        }
       }
-      if (normalizedKey === 'full_name') {
-        return leadName;
+
+      // 5. Nested raw_payload check
+      if ((variables as any).raw_payload && typeof (variables as any).raw_payload === 'object') {
+        const rawKeys = Object.keys((variables as any).raw_payload);
+        for (const alias of [normalizedKey, ...aliases]) {
+          const found = rawKeys.find(k => k.toLowerCase() === alias.toLowerCase());
+          if (found && (variables as any).raw_payload[found] != null && String((variables as any).raw_payload[found]).trim() !== '') {
+            return String((variables as any).raw_payload[found]);
+          }
+        }
       }
-      if (normalizedKey === 'phone_number') {
-        return leadPhone;
-      }
+
       return match;
     };
 
@@ -637,53 +694,70 @@ async function sendGroupAlert(
   const replaceFn = (match: string, key: string) => {
     const normalizedKey = key.trim().toLowerCase();
 
-    // Time fields
+    // 1. Time fields
     if (normalizedKey === 'created_time' || normalizedKey === 'timestamp') {
       return new Date().toLocaleString('en-IN', {
         timeZone: 'Asia/Kolkata',
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit'
       });
     }
 
-    // Client fields — check leadData properties (case-insensitive)
+    // 2. Client fields — check leadData properties (case-insensitive)
     const leadKeys = Object.keys(leadData);
     const matchedKey = leadKeys.find(k => k.toLowerCase() === normalizedKey);
-    if (matchedKey !== undefined && leadData[matchedKey] !== undefined && leadData[matchedKey] !== null) {
+    if (matchedKey !== undefined && leadData[matchedKey] !== undefined && leadData[matchedKey] !== null && String(leadData[matchedKey]).trim() !== '') {
       return String(leadData[matchedKey]);
     }
 
-    // Common alias mappings
+    // 3. Common alias mappings
     const aliasMap: Record<string, string[]> = {
-      full_name: ['name', 'full_name', 'lead_name', 'client_name'],
-      phone: ['phone', 'phone_number', 'mobile', 'contact'],
-      email: ['email', 'email_address'],
-      source: ['source', 'lead_source', 'platform'],
-      shoot_type: ['shoot_type', 'shoot', 'kind_of_shoot', 'category'],
-      location: ['location', 'city', 'address', 'area'],
-      budget: ['budget', 'max_budget', 'price', 'amount'],
+      full_name: ['full_name', 'name', 'lead_name', 'client_name', 'Name', 'Name_1'],
+      first_name: ['first_name', 'fname'],
+      last_name: ['last_name', 'lname'],
+      phone: ['phone', 'phone_number', 'mobile', 'contact', 'whatsapp_number'],
+      email: ['email', 'email_address', 'mail'],
+      shoot_type: [
+        'shoot_type', 'kind_of_shoot', 'shoot', 'service', 'services', 'photography_services',
+        'what_photography_services_are_you_looking_for?', 'what_photography_services_are_you_looking_for'
+      ],
+      location: ['location', 'city', 'venue', 'destination', 'event_location', 'shoot_location', 'address'],
+      budget: [
+        'budget', 'max_budget', 'price', 'expected_budget',
+        'what_is_your_budget_for_photography_services?', 'what_is_your_budget_for_photography_services'
+      ],
+      source: ['source', 'lead_source', 'campaign_name', 'form_name', 'page_name', 'platform', 'ad_name'],
+      wedding_date: ['wedding_date', 'event_date', 'shoot_date', 'date_of_event'],
       score: ['score', 'lead_score'],
       status: ['status', 'lead_status'],
     };
 
     const aliases = aliasMap[normalizedKey] || [normalizedKey];
     for (const alias of aliases) {
-      const found = leadKeys.find(k => k.toLowerCase() === alias);
-      if (found !== undefined && leadData[found] !== undefined && leadData[found] !== null) {
+      const found = leadKeys.find(k => k.toLowerCase() === alias.toLowerCase());
+      if (found !== undefined && leadData[found] !== undefined && leadData[found] !== null && String(leadData[found]).trim() !== '') {
         return String(leadData[found]);
       }
     }
 
-    // Check raw_payload nested object
+    // 4. Check nested field_data array
+    if (Array.isArray(leadData.field_data)) {
+      for (const item of leadData.field_data) {
+        const itemKey = (item.name || '').toLowerCase();
+        if (itemKey === normalizedKey || aliases.some(a => a.toLowerCase() === itemKey)) {
+          const val = Array.isArray(item.values) ? item.values[0] : item.values;
+          if (val) return String(val);
+        }
+      }
+    }
+
+    // 5. Check raw_payload nested object
     if (leadData.raw_payload && typeof leadData.raw_payload === 'object') {
       const rp = leadData.raw_payload;
       const rpKeys = Object.keys(rp);
-      for (const alias of aliases) {
-        const found = rpKeys.find(k => k.toLowerCase() === alias);
-        if (found !== undefined && rp[found] !== undefined && rp[found] !== null) {
+      for (const alias of [normalizedKey, ...aliases]) {
+        const found = rpKeys.find(k => k.toLowerCase() === alias.toLowerCase());
+        if (found !== undefined && rp[found] !== undefined && rp[found] !== null && String(rp[found]).trim() !== '') {
           return String(rp[found]);
         }
       }
@@ -817,11 +891,19 @@ async function executeAction(action: {
       case 'group_dispatch':
       case 'group_lead_alert': {
         const payload = action.payload as any;
-        const targetGroup = payload.groupId || payload.groupJid || '';
-        if (payload.templateStr) {
-          waMessageId = await sendGroupAlert(targetGroup, payload.leadData || {}, payload.templateStr, targetWsId);
+        const targetGroup = payload.groupId || payload.groupJid || payload.to || '';
+        const leadData = payload.leadData || payload.variables || {};
+        const templateId = payload.templateId || payload.template_id;
+
+        if (templateId) {
+          logger.info({ targetGroup, templateId, workspaceId: targetWsId }, '📤 Dispatching user-configured Group Template');
+          waMessageId = await sendTemplateMessage(targetGroup, templateId, leadData, targetWsId);
+        } else if (payload.templateStr) {
+          logger.info({ targetGroup, workspaceId: targetWsId }, '📤 Dispatching dynamic Group Alert template');
+          waMessageId = await sendGroupAlert(targetGroup, leadData, payload.templateStr, targetWsId);
         } else {
-          await dispatchGroupCard(targetGroup, payload.leadData || {}, targetWsId);
+          logger.info({ targetGroup, workspaceId: targetWsId }, '📤 Dispatching fallback lead card (no template specified)');
+          await dispatchGroupCard(targetGroup, leadData, targetWsId);
         }
         break;
       }

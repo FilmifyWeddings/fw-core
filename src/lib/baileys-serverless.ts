@@ -124,111 +124,92 @@ export function parseShortcodes(text: string, lead: any): string {
   if (!text) return '';
   if (!lead) return text;
 
-  const replaceFn = (match: string, key: string) => {
-    const normalizedKey = key.trim().toLowerCase();
+  const replaceFn = (match: string, rawKey: string) => {
+    const key = rawKey.trim();
+    const normalizedKey = key.toLowerCase();
 
-    // 1. Client Info Group
-    if (normalizedKey === 'first_name') {
-      const name = lead.name || '';
-      const parts = name.trim().split(/\s+/);
-      return parts[0] || '';
+    // 1. Time / Date
+    if (normalizedKey === 'created_time' || normalizedKey === 'timestamp') {
+      if (lead.created_time) return String(lead.created_time);
+      if (lead.timestamp) {
+        try {
+          return new Date(lead.timestamp).toLocaleString('en-IN', {
+            timeZone: 'Asia/Kolkata',
+            day: '2-digit', month: 'short', year: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+          });
+        } catch {}
+      }
+      return new Date().toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+      });
     }
-    if (normalizedKey === 'last_name') {
-      const name = lead.name || '';
-      const parts = name.trim().split(/\s+/);
-      return parts.slice(1).join(' ') || '';
-    }
-    if (normalizedKey === 'full_name' || normalizedKey === 'name') {
-      return lead.name || '';
-    }
-    if (normalizedKey === 'phone_number' || normalizedKey === 'phone') {
-      return lead.phone || '';
-    }
-    if (normalizedKey === 'email') return lead.email || '';
-    if (normalizedKey === 'source' || normalizedKey === 'lead_source') return lead.source || '';
-    if (normalizedKey === 'status') return lead.status || '';
-    if (normalizedKey === 'score') return lead.score || '';
-
-    // 2. System / Time Group
-    if (normalizedKey === 'timestamp') {
-      return new Date().toISOString();
-    }
-    if (normalizedKey === 'current_date') {
-      return new Date().toLocaleDateString('en-IN', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
+    if (normalizedKey === 'current_date' || normalizedKey === 'date') {
+      return lead.current_date || new Date().toLocaleDateString('en-IN', {
+        day: '2-digit', month: '2-digit', year: 'numeric'
       });
     }
 
-    // 3. Meta / Campaign Fields
-    if (normalizedKey === 'facebook_lead_id') {
-      if (lead.facebook_lead_id !== undefined && lead.facebook_lead_id !== null) {
-        return String(lead.facebook_lead_id);
-      }
-      if (lead.raw_payload && typeof lead.raw_payload === 'object') {
-        const val = lead.raw_payload.lead_id || lead.raw_payload.facebook_lead_id;
-        if (val !== undefined && val !== null) return String(val);
-      }
+    // 2. Direct property matches (case-insensitive)
+    const leadKeys = Object.keys(lead);
+    const directMatch = leadKeys.find(k => k.toLowerCase() === normalizedKey);
+    if (directMatch && lead[directMatch] !== undefined && lead[directMatch] !== null && String(lead[directMatch]).trim() !== '') {
+      return String(lead[directMatch]);
     }
-    if (normalizedKey === 'form_name') {
-      if (lead.form_name !== undefined && lead.form_name !== null) {
-        return String(lead.form_name);
-      }
-      if (lead.raw_payload && typeof lead.raw_payload === 'object') {
-        const val = lead.raw_payload.form_name;
-        if (val !== undefined && val !== null) return String(val);
-      }
-    }
-    if (normalizedKey === 'campaign_name') {
-      if (lead.campaign_name !== undefined && lead.campaign_name !== null) {
-        return String(lead.campaign_name);
-      }
-      if (lead.raw_payload && typeof lead.raw_payload === 'object') {
-        const val = lead.raw_payload.campaign_name;
-        if (val !== undefined && val !== null) return String(val);
-      }
-    }
-    if (normalizedKey === 'platform') {
-      if (lead.platform !== undefined && lead.platform !== null) {
-        return String(lead.platform);
-      }
-      if (lead.raw_payload && typeof lead.raw_payload === 'object') {
-        const val = lead.raw_payload.platform;
-        if (val !== undefined && val !== null) return String(val);
+
+    // 3. Smart Semantic Aliases
+    const aliasMap: Record<string, string[]> = {
+      full_name: ['full_name', 'name', 'lead_name', 'client_name', 'Name', 'Name_1'],
+      first_name: ['first_name', 'fname'],
+      last_name: ['last_name', 'lname'],
+      phone: ['phone', 'phone_number', 'mobile', 'contact', 'whatsapp_number'],
+      email: ['email', 'email_address', 'mail'],
+      shoot_type: [
+        'shoot_type', 'kind_of_shoot', 'shoot', 'service', 'services', 'photography_services',
+        'what_photography_services_are_you_looking_for?', 'what_photography_services_are_you_looking_for'
+      ],
+      location: ['location', 'city', 'venue', 'destination', 'event_location', 'shoot_location', 'address'],
+      budget: [
+        'budget', 'max_budget', 'price', 'expected_budget',
+        'what_is_your_budget_for_photography_services?', 'what_is_your_budget_for_photography_services'
+      ],
+      source: ['source', 'lead_source', 'campaign_name', 'form_name', 'page_name', 'platform', 'ad_name'],
+      wedding_date: ['wedding_date', 'event_date', 'shoot_date', 'date_of_event'],
+    };
+
+    const aliases = aliasMap[normalizedKey] || [];
+    for (const alias of aliases) {
+      const foundKey = leadKeys.find(k => k.toLowerCase() === alias.toLowerCase());
+      if (foundKey && lead[foundKey] !== undefined && lead[foundKey] !== null && String(lead[foundKey]).trim() !== '') {
+        return String(lead[foundKey]);
       }
     }
 
-    // Direct property check for any other key
-    if (lead[normalizedKey] !== undefined && lead[normalizedKey] !== null) {
-      return String(lead[normalizedKey]);
-    }
-
-    // Check inside raw_payload
-    if (lead.raw_payload && typeof lead.raw_payload === 'object') {
-      const payloadKeys = Object.keys(lead.raw_payload);
-      const matchedKey = payloadKeys.find(k => k.toLowerCase() === normalizedKey);
-      if (matchedKey) {
-        const val = lead.raw_payload[matchedKey];
-        if (val !== undefined && val !== null) {
-          // Format date if key contains "date" and it's a valid date string
-          if (normalizedKey.includes('date') && typeof val === 'string' && !isNaN(Date.parse(val))) {
-            try {
-              return new Date(val).toLocaleDateString('en-IN', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric'
-              });
-            } catch {
-              return val;
-            }
-          }
-          return String(val);
+    // 4. Nested field_data array check (Facebook / Meta Lead Ad structure)
+    if (Array.isArray(lead.field_data)) {
+      for (const item of lead.field_data) {
+        const itemKey = (item.name || '').toLowerCase();
+        if (itemKey === normalizedKey || aliases.some(a => a.toLowerCase() === itemKey)) {
+          const val = Array.isArray(item.values) ? item.values[0] : item.values;
+          if (val) return String(val);
         }
       }
     }
 
-    // Fallback gracefully
+    // 5. Nested raw_payload check
+    if (lead.raw_payload && typeof lead.raw_payload === 'object') {
+      const rawKeys = Object.keys(lead.raw_payload);
+      for (const alias of [normalizedKey, ...aliases]) {
+        const found = rawKeys.find(k => k.toLowerCase() === alias.toLowerCase());
+        if (found && lead.raw_payload[found] != null && String(lead.raw_payload[found]).trim() !== '') {
+          return String(lead.raw_payload[found]);
+        }
+      }
+    }
+
+    // Fallback: if not found, return empty string for clean replacement
     return '';
   };
 
@@ -866,9 +847,7 @@ export async function processSingleQueuedAction(
 
       let body = (tplPayload.body || tplPayload.question || '') as string;
       if (variables) {
-        for (const [key, val] of Object.entries(variables)) {
-          body = body.replaceAll(`{${key}}`, val).replaceAll(`{{${key}}}`, val);
-        }
+        body = parseShortcodes(body, variables);
       }
 
       if (tpl.type === 'poll') {
@@ -942,85 +921,119 @@ export async function processSingleQueuedAction(
       });
     }
 
-    case 'group_dispatch': {
-      const { groupJid, leadData } = payload as {
-        groupJid: string;
-        leadData: { name?: string; phone?: string; email?: string; source?: string };
-      };
+    case 'group_dispatch':
+    case 'group_lead_alert': {
+      const p = payload as any;
+      const groupJid = p.groupJid || p.groupId || p.to || '';
+      const leadData = p.leadData || p.variables || {};
+      const templateId = p.templateId || p.template_id;
+      const templateStr = p.templateStr;
+      const workflowLogId = p.workflowLogId;
 
+      if (!groupJid) {
+        return { success: false, error: 'Missing target group JID for group dispatch' };
+      }
+
+      let tpl: any = null;
+
+      // 1. Try querying tenant_whatsapp_templates first if templateId is provided
+      if (templateId) {
+        const { data: tenantTpl } = await supabaseAdmin
+          .from('tenant_whatsapp_templates')
+          .select('*')
+          .eq('id', templateId)
+          .eq('tenant_id', workspace_id)
+          .maybeSingle();
+
+        if (tenantTpl) {
+          tpl = {
+            id: tenantTpl.id,
+            name: tenantTpl.template_name,
+            type: tenantTpl.media_url_payload ? 'media' : (tenantTpl.type || 'text'),
+            payload: {
+              body: tenantTpl.body_text || '',
+              mediaUrl: tenantTpl.media_url_payload || '',
+              ...(tenantTpl.payload_json || {})
+            },
+            buttons: tenantTpl.buttons || []
+          };
+        } else {
+          // 2. Fallback to legacy whatsapp_templates
+          const { data: legacyTpl } = await supabaseAdmin
+            .from('whatsapp_templates')
+            .select('*')
+            .eq('id', templateId)
+            .eq('workspace_id', workspace_id)
+            .maybeSingle();
+
+          if (legacyTpl) {
+            tpl = legacyTpl;
+          }
+        }
+      }
+
+      // If user specified a template or templateStr, use that template ONLY
+      if (tpl || templateStr) {
+        const tplPayload = tpl?.payload || {};
+        let body = (templateStr || tplPayload.body || tplPayload.question || '') as string;
+        body = parseShortcodes(body, leadData);
+
+        // Media template
+        if (tpl && (tpl.type === 'media' || tplPayload.mediaUrl)) {
+          const mediaUrl = tplPayload.mediaUrl || tplPayload.default_send_media_url;
+          const mimeType = tplPayload.mediaMime || tplPayload.default_send_media_mime || 'image/jpeg';
+          const mediaType = mimeType.startsWith('image/') ? 'image' :
+                            mimeType.startsWith('video/') ? 'video' :
+                            mimeType.startsWith('audio/') ? 'audio' : 'document';
+
+          return sendMessageServerless(supabaseAdmin, workspace_id, {
+            to: normalizeJid(groupJid),
+            type: mediaType as any,
+            mediaUrl,
+            caption: body,
+            mimeType,
+            fileName: tplPayload.fileName || 'lead_alert',
+            workflowLogId,
+          });
+        }
+
+        // Poll template
+        if (tpl && tpl.type === 'poll') {
+          const options = (tplPayload.options || []).map((o: any) => o.text).filter(Boolean);
+          return sendMessageServerless(supabaseAdmin, workspace_id, {
+            to: normalizeJid(groupJid),
+            type: 'poll',
+            text: body,
+            pollOptions: options,
+            pollSelectableCount: tplPayload.allowMultiple ? 0 : 1,
+            workflowLogId,
+          });
+        }
+
+        // Plain Text template
+        return sendMessageServerless(supabaseAdmin, workspace_id, {
+          to: normalizeJid(groupJid),
+          type: 'text',
+          text: body,
+          workflowLogId,
+        });
+      }
+
+      // Fallback ONLY if no templateId and no templateStr was ever specified
       const card =
         `🎯 *NEW LEAD ALERT*\n\n` +
-        `👤 *Name:* ${leadData.name ?? 'Unknown'}\n` +
-        `📞 *Phone:* ${leadData.phone ?? '—'}\n` +
-        `📧 *Email:* ${leadData.email ?? '—'}\n` +
-        `🔗 *Source:* ${leadData.source ?? '—'}\n` +
+        `👤 *Name:* ${leadData.name || leadData.full_name || leadData.lead_name || 'Unknown'}\n` +
+        `📞 *Phone:* ${leadData.phone || leadData.phone_number || '—'}\n` +
+        `📧 *Email:* ${leadData.email || '—'}\n` +
+        `🔗 *Source:* ${leadData.source || leadData.campaign_name || '—'}\n` +
         `🕐 *Time:* ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}\n\n` +
         `_FW Core — Automated Lead Alert_`;
 
       return sendMessageServerless(supabaseAdmin, workspace_id, {
-        to: groupJid,
+        to: normalizeJid(groupJid),
         type: 'text',
         text: card,
-      });
-    }
-
-    case 'group_lead_alert': {
-      const { groupId, leadData, templateStr } = payload as {
-        groupId: string;
-        leadData: Record<string, any>;
-        templateStr: string;
-      };
-
-      if (!templateStr) {
-        return sendMessageServerless(supabaseAdmin, workspace_id, {
-          to: groupId,
-          type: 'text',
-          text: '⚠️ Empty alert template. Please configure your Group Lead Alert template.',
-        });
-      }
-
-      const replaceFn = (match: string, key: string) => {
-        const normalizedKey = key.trim().toLowerCase();
-        if (normalizedKey === 'created_time' || normalizedKey === 'timestamp') {
-          return new Date().toLocaleString('en-IN', {
-            timeZone: 'Asia/Kolkata',
-            day: '2-digit', month: 'short', year: 'numeric',
-            hour: '2-digit', minute: '2-digit',
-          });
-        }
-        const leadKeys = Object.keys(leadData);
-        const matched = leadKeys.find(k => k.toLowerCase() === normalizedKey);
-        if (matched !== undefined && leadData[matched] !== undefined && leadData[matched] !== null) {
-          return String(leadData[matched]);
-        }
-        const aliasMap: Record<string, string[]> = {
-          full_name: ['name', 'full_name', 'lead_name'],
-          phone: ['phone', 'phone_number', 'mobile'],
-          shoot_type: ['shoot_type', 'shoot', 'kind_of_shoot'],
-          location: ['location', 'city', 'address'],
-          budget: ['budget', 'max_budget', 'price'],
-        };
-        const aliases = aliasMap[normalizedKey] || [normalizedKey];
-        for (const alias of aliases) {
-          const found = leadKeys.find(k => k.toLowerCase() === alias);
-          if (found !== undefined && leadData[found] !== undefined && leadData[found] !== null) {
-            return String(leadData[found]);
-          }
-        }
-        if (leadData.raw_payload && typeof leadData.raw_payload === 'object') {
-          for (const alias of aliases) {
-            const found = Object.keys(leadData.raw_payload).find(k => k.toLowerCase() === alias);
-            if (found && leadData.raw_payload[found] != null) return String(leadData.raw_payload[found]);
-          }
-        }
-        return '';
-      };
-
-      const formatted = templateStr.replace(/\{\{([^{}]+)\}\}/g, replaceFn);
-      return sendMessageServerless(supabaseAdmin, workspace_id, {
-        to: groupId,
-        type: 'text',
-        text: formatted,
+        workflowLogId,
       });
     }
 

@@ -168,15 +168,24 @@ export async function POST(req: NextRequest) {
 
       if (qUpdErr) throw qUpdErr;
     } else {
+      const currentStep = workflowSteps.find(s => s.sort_index === targetLog.step_index);
+      const isGroupStep = currentStep?.target_type === 'group' || (currentStep?.target_group_jid && currentStep.target_group_jid.length > 5);
+      const targetRecipient = isGroupStep ? currentStep.target_group_jid : cleanJid;
+      const targetAction = isGroupStep ? 'group_dispatch' : 'send_template';
+
       const { error: qInsErr } = await supabaseAdmin
         .from('baileys_action_queue')
         .insert({
           workspace_id: tenantId,
-          action_type: 'send_template',
+          action_type: targetAction,
           payload: {
-            to: cleanJid,
-            templateId: workflowSteps.find(s => s.sort_index === targetLog.step_index)?.template_id,
+            to: targetRecipient,
+            groupJid: isGroupStep ? targetRecipient : undefined,
+            groupId: isGroupStep ? targetRecipient : undefined,
+            templateId: currentStep?.template_id,
+            template_name: currentStep?.template_name,
             variables: v_variables,
+            leadData: v_variables,
             workflowLogId: targetLog.id
           },
           status: 'pending',

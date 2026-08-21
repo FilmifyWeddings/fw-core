@@ -58,8 +58,14 @@ BEGIN
     'Name', COALESCE(NEW.name, 'Guest'),
     'Name_1', COALESCE(NEW.name, 'Guest'),
     'lead_name', COALESCE(NEW.name, 'Guest'),
+    'first_name', split_part(COALESCE(NEW.name, 'Guest'), ' ', 1),
+    'last_name', regexp_replace(COALESCE(NEW.name, ''), '^[^ ]+ *', ''),
+    'full_name', COALESCE(NEW.name, 'Guest'),
     'phone', COALESCE(NEW.phone, ''),
-    'email', COALESCE(NEW.email, '')
+    'phone_number', COALESCE(NEW.phone, ''),
+    'email', COALESCE(NEW.email, ''),
+    'timestamp', to_char(NOW(), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+    'current_date', to_char(NOW() AT TIME ZONE 'Asia/Kolkata', 'DD/MM/YYYY')
   );
 
   IF NEW.raw_payload IS NOT NULL AND jsonb_typeof(NEW.raw_payload) = 'object' THEN
@@ -83,16 +89,30 @@ BEGIN
     SET execution_count = execution_count + 1
     WHERE id = r_workflow.id;
 
+    v_scheduled_at := NOW();
+
     FOR r_step IN
       SELECT * FROM jsonb_to_recordset(r_workflow.workflow_steps)
-      AS steps(template_id UUID, template_name TEXT, delay_value INT, delay_unit TEXT, sort_index INT)
+      AS steps(
+        template_id UUID, 
+        template_name TEXT, 
+        delay_value INT, 
+        delay_unit TEXT, 
+        sort_index INT,
+        target_type TEXT,
+        target_group_jid TEXT,
+        target_group_name TEXT
+      )
       ORDER BY sort_index ASC
     LOOP
-      v_scheduled_at := NOW();
       IF r_step.delay_unit = 'seconds' AND r_step.delay_value > 0 THEN
         v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' seconds')::INTERVAL;
+      ELSIF r_step.delay_unit = 'minutes' AND r_step.delay_value > 0 THEN
+        v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' minutes')::INTERVAL;
       ELSIF r_step.delay_unit = 'hours' AND r_step.delay_value > 0 THEN
         v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' hours')::INTERVAL;
+      ELSIF r_step.delay_unit = 'days' AND r_step.delay_value > 0 THEN
+        v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' days')::INTERVAL;
       END IF;
 
       v_log_id := gen_random_uuid();
@@ -102,22 +122,48 @@ BEGIN
         phone_number, template_name, status, sent_at
       ) VALUES (
         v_log_id, v_workspace_id, NEW.id, r_workflow.id, r_step.sort_index,
-        clean_phone, r_step.template_name, 'pending', v_scheduled_at
+        CASE WHEN r_step.target_type = 'group' OR (r_step.target_group_jid IS NOT NULL AND r_step.target_group_jid <> '')
+          THEN r_step.target_group_jid
+          ELSE clean_phone
+        END,
+        r_step.template_name, 'pending', v_scheduled_at
       );
 
-      INSERT INTO public.baileys_action_queue (
-        workspace_id, action_type, payload, status, next_retry_at, priority
-      ) VALUES (
-        v_workspace_id,
-        'send_template',
-        jsonb_build_object(
-          'to', clean_phone || '@s.whatsapp.net',
-          'templateId', r_step.template_id,
-          'variables', v_variables,
-          'workflowLogId', v_log_id
-        ),
-        'pending', v_scheduled_at, 5
-      );
+      IF r_step.target_type = 'group' OR (r_step.target_group_jid IS NOT NULL AND r_step.target_group_jid <> '') THEN
+        INSERT INTO public.baileys_action_queue (
+          workspace_id, action_type, payload, status, next_retry_at, priority
+        ) VALUES (
+          v_workspace_id,
+          'group_dispatch',
+          jsonb_build_object(
+            'to',              r_step.target_group_jid,
+            'groupJid',        r_step.target_group_jid,
+            'groupId',         r_step.target_group_jid,
+            'targetGroupName', r_step.target_group_name,
+            'leadData',        v_variables,
+            'variables',       v_variables,
+            'template_name',   r_step.template_name,
+            'templateId',      r_step.template_id,
+            'workflowLogId',   v_log_id
+          ),
+          'pending', v_scheduled_at, 5
+        );
+      ELSE
+        INSERT INTO public.baileys_action_queue (
+          workspace_id, action_type, payload, status, next_retry_at, priority
+        ) VALUES (
+          v_workspace_id,
+          'send_template',
+          jsonb_build_object(
+            'to', clean_phone || '@s.whatsapp.net',
+            'templateId', r_step.template_id,
+            'template_name', r_step.template_name,
+            'variables', v_variables,
+            'workflowLogId', v_log_id
+          ),
+          'pending', v_scheduled_at, 5
+        );
+      END IF;
     END LOOP;
   END LOOP;
 
@@ -164,16 +210,33 @@ BEGIN
       'Name', COALESCE(r_lead.name, 'Guest'),
       'Name_1', COALESCE(r_lead.name, 'Guest'),
       'lead_name', COALESCE(r_lead.name, 'Guest'),
+      'first_name', split_part(COALESCE(r_lead.name, 'Guest'), ' ', 1),
+      'last_name', regexp_replace(COALESCE(r_lead.name, ''), '^[^ ]+ *', ''),
+      'full_name', COALESCE(r_lead.name, 'Guest'),
       'phone', COALESCE(r_lead.phone, ''),
-      'email', COALESCE(r_lead.email, '')
+      'phone_number', COALESCE(r_lead.phone, ''),
+      'email', COALESCE(r_lead.email, ''),
+      'timestamp', to_char(NOW(), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+      'current_date', to_char(NOW() AT TIME ZONE 'Asia/Kolkata', 'DD/MM/YYYY')
     );
     IF r_lead.raw_payload IS NOT NULL AND jsonb_typeof(r_lead.raw_payload) = 'object' THEN
       v_variables := v_variables || r_lead.raw_payload;
     END IF;
 
+    v_scheduled_at := NOW();
+
     FOR r_step IN
       SELECT * FROM jsonb_to_recordset(r_workflow.workflow_steps)
-      AS steps(template_id UUID, template_name TEXT, delay_value INT, delay_unit TEXT, sort_index INT)
+      AS steps(
+        template_id UUID, 
+        template_name TEXT, 
+        delay_value INT, 
+        delay_unit TEXT, 
+        sort_index INT,
+        target_type TEXT,
+        target_group_jid TEXT,
+        target_group_name TEXT
+      )
       ORDER BY sort_index ASC
     LOOP
       IF EXISTS (
@@ -184,11 +247,14 @@ BEGIN
         CONTINUE;
       END IF;
 
-      v_scheduled_at := NOW();
       IF r_step.delay_unit = 'seconds' AND r_step.delay_value > 0 THEN
         v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' seconds')::INTERVAL;
+      ELSIF r_step.delay_unit = 'minutes' AND r_step.delay_value > 0 THEN
+        v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' minutes')::INTERVAL;
       ELSIF r_step.delay_unit = 'hours' AND r_step.delay_value > 0 THEN
         v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' hours')::INTERVAL;
+      ELSIF r_step.delay_unit = 'days' AND r_step.delay_value > 0 THEN
+        v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' days')::INTERVAL;
       END IF;
 
       v_log_id := gen_random_uuid();
@@ -198,21 +264,48 @@ BEGIN
         phone_number, template_name, status, sent_at
       ) VALUES (
         v_log_id, r_workflow.tenant_id, r_lead.id, r_workflow.id, r_step.sort_index,
-        clean_phone, r_step.template_name, 'pending', v_scheduled_at
+        CASE WHEN r_step.target_type = 'group' OR (r_step.target_group_jid IS NOT NULL AND r_step.target_group_jid <> '')
+          THEN r_step.target_group_jid
+          ELSE clean_phone
+        END,
+        r_step.template_name, 'pending', v_scheduled_at
       );
 
-      INSERT INTO public.baileys_action_queue (
-        workspace_id, action_type, payload, status, next_retry_at, priority
-      ) VALUES (
-        v_workspace_id, 'send_template',
-        jsonb_build_object(
-          'to', clean_phone || '@s.whatsapp.net',
-          'templateId', r_step.template_id,
-          'variables', v_variables,
-          'workflowLogId', v_log_id
-        ),
-        'pending', v_scheduled_at, 5
-      );
+      IF r_step.target_type = 'group' OR (r_step.target_group_jid IS NOT NULL AND r_step.target_group_jid <> '') THEN
+        INSERT INTO public.baileys_action_queue (
+          workspace_id, action_type, payload, status, next_retry_at, priority
+        ) VALUES (
+          v_workspace_id,
+          'group_dispatch',
+          jsonb_build_object(
+            'to',              r_step.target_group_jid,
+            'groupJid',        r_step.target_group_jid,
+            'groupId',         r_step.target_group_jid,
+            'targetGroupName', r_step.target_group_name,
+            'leadData',        v_variables,
+            'variables',       v_variables,
+            'template_name',   r_step.template_name,
+            'templateId',      r_step.template_id,
+            'workflowLogId',   v_log_id
+          ),
+          'pending', v_scheduled_at, 5
+        );
+      ELSE
+        INSERT INTO public.baileys_action_queue (
+          workspace_id, action_type, payload, status, next_retry_at, priority
+        ) VALUES (
+          v_workspace_id,
+          'send_template',
+          jsonb_build_object(
+            'to', clean_phone || '@s.whatsapp.net',
+            'templateId', r_step.template_id,
+            'template_name', r_step.template_name,
+            'variables', v_variables,
+            'workflowLogId', v_log_id
+          ),
+          'pending', v_scheduled_at, 5
+        );
+      END IF;
 
       v_triggered_count := v_triggered_count + 1;
     END LOOP;
