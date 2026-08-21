@@ -1,111 +1,53 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Users, UserPlus, Search, Filter, Plus, DollarSign, Calendar, Phone, Mail, 
   Film, Edit3, Trash2, CheckCircle2, Clock, AlertCircle, ArrowRight, X, 
-  Sparkles, Check, ChevronRight, RefreshCw, FolderPlus
+  Sparkles, Check, ChevronRight, RefreshCw, FolderPlus, MessageCircle,
+  Share2, Key, Tag, Layers, ExternalLink
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { 
+  ClientInsiderModal, parseClientExtended, serializeClientExtended 
+} from '@/components/clients/client-insider-modal';
 import type { WorkspaceClient, Lead } from '@/types';
 
-// Demo initial fallback clients if DB table is empty
-const INITIAL_CLIENTS: WorkspaceClient[] = [
-  {
-    id: 'client_1',
-    workspace_id: 'ws_demo',
-    name: 'Vinu Bhad & Neha',
-    phone: '+919876543210',
-    email: 'vinu.wedding@gmail.com',
-    event_type: 'Wedding & Reception',
-    event_date: '2026-11-18',
-    total_package_amount: 250000,
-    paid_amount: 150000,
-    status: 'active',
-    notes: 'Premium 3-day wedding package. Teaser + Full Film + 2 Albums.',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'client_2',
-    workspace_id: 'ws_demo',
-    name: 'Mohit Agarwal & Riya',
-    phone: '+919812345678',
-    email: 'mohit.agarwal@outlook.com',
-    event_type: 'Pre-Wedding Shoot',
-    event_date: '2026-09-05',
-    total_package_amount: 75000,
-    paid_amount: 75000,
-    status: 'active',
-    notes: 'Udaipur location shoot. Cinematic Reels + 4K Teaser.',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'client_3',
-    workspace_id: 'ws_demo',
-    name: 'Pratik Oswal',
-    phone: '+919922334455',
-    email: 'pratik.oswal@gmail.com',
-    event_type: 'Destination Wedding',
-    event_date: '2026-12-02',
-    total_package_amount: 400000,
-    paid_amount: 200000,
-    status: 'active',
-    notes: 'Goa Destination Wedding. 5 Crew members assigned.',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'client_4',
-    workspace_id: 'ws_demo',
-    name: 'Ashwathi Menon',
-    phone: '+919711223344',
-    email: 'ashwathi.m@yahoo.com',
-    event_type: 'Engagement & Sangeet',
-    event_date: '2026-06-15',
-    total_package_amount: 120000,
-    paid_amount: 120000,
-    status: 'completed',
-    notes: 'All deliverables handed over. Client gave 5-star review.',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  }
-];
-
 export default function ClientsPage() {
-  const router = useRouter();
-  const [clients, setClients] = useState<WorkspaceClient[]>(INITIAL_CLIENTS);
+  const [clients, setClients] = useState<WorkspaceClient[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'completed' | 'archived'>('all');
   const [eventTypeFilter, setEventTypeFilter] = useState<string>('all');
   
-  // Modal State
+  // Selected Client for 360 Workspace Window Modal
+  const [selectedClient, setSelectedClient] = useState<WorkspaceClient | null>(null);
+
+  // Add Client Modal State
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedLeadId, setSelectedLeadId] = useState<string>('');
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
     email: '',
-    event_type: 'Wedding',
+    event_type: 'Wedding Photography',
     event_date: '',
     total_package_amount: '',
     paid_amount: '',
+    whatsapp_group_link: '',
     notes: '',
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Fetch clients & converted leads from Supabase
+  // Fetch clients & auto-sync booked leads from Supabase
   useEffect(() => {
-    fetchClientsAndLeads();
+    fetchClientsAndSyncBookedLeads();
   }, []);
 
-  const fetchClientsAndLeads = async () => {
+  const fetchClientsAndSyncBookedLeads = async () => {
     setLoading(true);
     try {
       // 1. Fetch user session
@@ -122,59 +64,164 @@ export default function ClientsPage() {
         clientQuery = clientQuery.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
       }
 
-      const { data: clientData, error: clientErr } = await clientQuery;
+      const { data: clientData } = await clientQuery;
+      let existingClientList: WorkspaceClient[] = clientData || [];
 
-      if (!clientErr && clientData && clientData.length > 0) {
-        setClients(clientData);
-      } else {
-        setClients([]);
-      }
-
-      // 3. Fetch leads for "Convert Lead" option (Scoped to workspace)
+      // 3. Fetch all leads scoped to current workspace to check for booked leads
       let leadsQuery = supabase
         .from('leads')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(100);
 
       if (workspaceId && workspaceId !== 'ws_demo') {
         leadsQuery = leadsQuery.eq('workspace_id', workspaceId);
       }
 
       const { data: leadsData } = await leadsQuery;
+      const leadList: Lead[] = leadsData || [];
+      setLeads(leadList);
 
-      if (leadsData) {
-        setLeads(leadsData);
+      // 4. Auto-Sync: For every lead with status 'booked' / 'Booked' that is NOT yet in workspace_clients, create a client record!
+      const bookedLeads = leadList.filter(l => {
+        const stage = (l.status || l.stage || '').toLowerCase();
+        return stage === 'booked' || stage === 'closed' || stage === 'converted';
+      });
+
+      const existingLeadIds = new Set(existingClientList.map(c => c.lead_id).filter(Boolean));
+      const existingClientPhones = new Set(existingClientList.map(c => c.phone?.replace(/[^0-9]/g, '')).filter(Boolean));
+
+      const newClientsToInsert: any[] = [];
+
+      for (let i = 0; i < bookedLeads.length; i++) {
+        const lead = bookedLeads[i];
+        const cleanLeadPhone = lead.phone ? lead.phone.replace(/[^0-9]/g, '') : '';
+
+        // Skip if already in clients list
+        if (existingLeadIds.has(lead.id) || (cleanLeadPhone && existingClientPhones.has(cleanLeadPhone))) {
+          continue;
+        }
+
+        const raw = lead.raw_payload || {};
+        const clientName = lead.name || (raw.groom_name && raw.bride_name ? `${raw.groom_name} & ${raw.bride_name}` : raw.groom_name || raw.bride_name || 'Booked Client');
+        const clientPhone = lead.phone || raw.phone || '';
+        const clientEmail = lead.email || raw.email || null;
+        const eventType = raw.shoot_type || raw.event_type || raw.service || 'Wedding Photography';
+        
+        let parsedDate: string | null = null;
+        if (raw.event_date || raw.wedding_date || raw.date) {
+          const d = new Date(raw.event_date || raw.wedding_date || raw.date);
+          if (!isNaN(d.getTime())) parsedDate = d.toISOString().split('T')[0];
+        }
+
+        let pkgAmt = 0;
+        if (raw.budget || raw.package_amount || raw.amount) {
+          const num = parseFloat(String(raw.budget || raw.package_amount || raw.amount).replace(/[^0-9.]/g, ''));
+          if (num > 0) pkgAmt = num;
+        }
+
+        // Generate unique client code & portal token
+        const uniqueNumber = String(existingClientList.length + newClientsToInsert.length + 1).padStart(3, '0');
+        const clientCode = `CL-2026-${uniqueNumber}`;
+        const portalPin = clientPhone ? clientPhone.replace(/[^0-9]/g, '').slice(-4) || '1234' : '1234';
+        const portalToken = `portal_${Date.now()}_${Math.random().toString(36).substring(5)}`;
+
+        const serializedNotes = serializeClientExtended({
+          client_code: clientCode,
+          portal_token: portalToken,
+          portal_pin: portalPin,
+          plain_notes: raw.notes || '',
+          events: [
+            {
+              id: `ev_init_1`,
+              name: eventType,
+              date: parsedDate || new Date().toISOString().split('T')[0],
+              time_start: '05:00 PM',
+              time_end: '11:00 PM',
+              venue: raw.location || raw.city || 'Main Venue',
+              city: raw.city || 'Mumbai',
+              assigned_crew: '2 Photographers, 2 Cinematographers'
+            }
+          ]
+        });
+
+        const newClientRecord = {
+          user_id: workspaceId,
+          workspace_id: workspaceId,
+          lead_id: lead.id,
+          name: clientName,
+          phone: clientPhone,
+          email: clientEmail,
+          event_type: eventType,
+          event_date: parsedDate,
+          total_package_amount: pkgAmt || 155000,
+          paid_amount: 0,
+          status: 'active',
+          notes: serializedNotes
+        };
+
+        newClientsToInsert.push(newClientRecord);
       }
+
+      // If new booked leads need insertion in Supabase
+      if (newClientsToInsert.length > 0 && workspaceId !== 'ws_demo') {
+        const { data: insertedData, error: insErr } = await supabase
+          .from('workspace_clients')
+          .insert(newClientsToInsert)
+          .select('*');
+
+        if (!insErr && insertedData) {
+          existingClientList = [...insertedData, ...existingClientList];
+        }
+      }
+
+      setClients(existingClientList);
     } catch (e) {
-      console.error('Error fetching clients:', e);
+      console.error('Error fetching clients and syncing leads:', e);
     } finally {
       setLoading(false);
     }
   };
 
-  // Pre-fill form when lead is selected
+  // Convert Lead / Manual Fill
   const handleLeadSelect = (leadId: string) => {
     setSelectedLeadId(leadId);
     if (!leadId) return;
 
     const lead = leads.find(l => l.id === leadId);
     if (lead) {
+      const raw = lead.raw_payload || {};
+      const coupleName = lead.name || (raw.groom_name && raw.bride_name ? `${raw.groom_name} & ${raw.bride_name}` : raw.groom_name || '');
+      
+      let parsedDate = '';
+      if (raw.event_date || raw.wedding_date || raw.date) {
+        const d = new Date(raw.event_date || raw.wedding_date || raw.date);
+        if (!isNaN(d.getTime())) parsedDate = d.toISOString().split('T')[0];
+      }
+
+      let parsedBudget = '';
+      if (raw.budget || raw.package_amount || raw.amount) {
+        const num = parseFloat(String(raw.budget || raw.package_amount || raw.amount).replace(/[^0-9.]/g, ''));
+        if (num > 0) parsedBudget = String(num);
+      }
+
       setFormData(prev => ({
         ...prev,
-        name: lead.name || '',
-        phone: lead.phone || '',
-        email: lead.email || '',
-        event_date: (lead as any).event_date || (lead.raw_payload as any)?.event_date || '',
-        notes: `Converted from Lead ID: ${lead.id}. Source: ${lead.source || 'CRM'}`,
+        name: coupleName,
+        phone: lead.phone || raw.phone || '',
+        email: lead.email || raw.email || '',
+        event_type: raw.shoot_type || raw.event_type || 'Wedding Photography',
+        event_date: parsedDate,
+        total_package_amount: parsedBudget,
       }));
     }
   };
 
+  // Handle Add New Client Form Submit
   const handleCreateClient = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.phone) {
-      alert('Please enter Client Name and Phone number.');
+      alert('Please fill in Client Name and Contact Phone.');
       return;
     }
 
@@ -183,682 +230,544 @@ export default function ClientsPage() {
       const { data: { session } } = await supabase.auth.getSession();
       const workspaceId = session?.user?.id || 'ws_demo';
 
-      const newClientData = {
+      const uniqueNumber = String(clients.length + 1).padStart(3, '0');
+      const clientCode = `CL-2026-${uniqueNumber}`;
+      const portalPin = formData.phone.replace(/[^0-9]/g, '').slice(-4) || '1234';
+      const portalToken = `portal_${Date.now()}_${Math.random().toString(36).substring(5)}`;
+
+      const serializedNotes = serializeClientExtended({
+        client_code: clientCode,
+        whatsapp_group_link: formData.whatsapp_group_link,
+        portal_token: portalToken,
+        portal_pin: portalPin,
+        plain_notes: formData.notes,
+        events: [
+          {
+            id: `ev_${Date.now()}`,
+            name: formData.event_type,
+            date: formData.event_date || new Date().toISOString().split('T')[0],
+            time_start: '05:00 PM',
+            time_end: '11:00 PM',
+            venue: 'Main Venue',
+            city: 'Mumbai',
+            assigned_crew: '2 Photographers, 2 Cinematographers'
+          }
+        ]
+      });
+
+      const clientPayload = {
         user_id: workspaceId,
         workspace_id: workspaceId,
         lead_id: selectedLeadId || null,
         name: formData.name,
         phone: formData.phone,
-        email: formData.email || null,
-        event_type: formData.event_type || 'Wedding',
+        email: formData.email.trim() || null,
+        event_type: formData.event_type,
         event_date: formData.event_date || null,
-        total_package_amount: Number(formData.total_package_amount) || 0,
-        paid_amount: Number(formData.paid_amount) || 0,
-        status: 'active' as const,
+        total_package_amount: parseFloat(formData.total_package_amount) || 0,
+        paid_amount: parseFloat(formData.paid_amount) || 0,
+        status: 'active',
+        notes: serializedNotes
       };
 
-      const { data: inserted, error } = await supabase
+      const { data: newClient, error } = await supabase
         .from('workspace_clients')
-        .insert([newClientData])
-        .select()
+        .insert([clientPayload])
+        .select('*')
         .single();
 
-      if (error) {
-        // Local state fallback if table not yet migrated
-        const fallbackClient: WorkspaceClient = {
-          id: `client_${Date.now()}`,
-          ...newClientData,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-        setClients(prev => [fallbackClient, ...prev]);
-      } else if (inserted) {
-        setClients(prev => [inserted, ...prev]);
+      if (error) throw error;
 
-        // Auto-create Post-Production Project for this client
-        const defaultDeliverables = [
-          {
-            id: `deliv_photo_1_${Date.now()}`,
-            title: 'Edited Photos',
-            category: 'photos',
-            count: '500 Photos',
-            assigned_to: 'Vikram (Photo Retoucher)',
-            deadline: formData.event_date ? new Date(new Date(formData.event_date).getTime() + 15 * 86400000).toISOString().split('T')[0] : '',
-            status: 'pending',
-            drive_link: '',
-            comments: []
-          },
-          {
-            id: `deliv_photo_2_${Date.now()}`,
-            title: 'Save the Date Photo',
-            category: 'photos',
-            count: '5 Photos',
-            assigned_to: 'Vikram (Photo Retoucher)',
-            deadline: formData.event_date ? new Date(new Date(formData.event_date).getTime() - 10 * 86400000).toISOString().split('T')[0] : '',
-            status: 'pending',
-            drive_link: '',
-            comments: []
-          },
-          {
-            id: `deliv_photo_3_${Date.now()}`,
-            title: 'Instagram Posts',
-            category: 'photos',
-            count: '10 Posts',
-            assigned_to: 'Vikram (Photo Retoucher)',
-            deadline: formData.event_date ? new Date(new Date(formData.event_date).getTime() + 5 * 86400000).toISOString().split('T')[0] : '',
-            status: 'pending',
-            drive_link: '',
-            comments: []
-          },
-          {
-            id: `deliv_video_1_${Date.now()}`,
-            title: 'Cinematic Film',
-            category: 'videos',
-            count: '25 Mins',
-            assigned_to: 'Amit (Senior Video Editor)',
-            deadline: formData.event_date ? new Date(new Date(formData.event_date).getTime() + 30 * 86400000).toISOString().split('T')[0] : '',
-            status: 'pending',
-            drive_link: '',
-            comments: []
-          },
-          {
-            id: `deliv_video_2_${Date.now()}`,
-            title: 'Cinematic Teaser',
-            category: 'videos',
-            count: '1 Min',
-            assigned_to: 'Rahul (Teaser Specialist)',
-            deadline: formData.event_date ? new Date(new Date(formData.event_date).getTime() + 7 * 86400000).toISOString().split('T')[0] : '',
-            status: 'in_progress',
-            drive_link: '',
-            comments: []
-          },
-          {
-            id: `deliv_video_3_${Date.now()}`,
-            title: 'Traditional Full Video',
-            category: 'videos',
-            count: '2 Hours',
-            assigned_to: 'Suresh (Traditional Editor)',
-            deadline: formData.event_date ? new Date(new Date(formData.event_date).getTime() + 45 * 86400000).toISOString().split('T')[0] : '',
-            status: 'pending',
-            drive_link: '',
-            comments: []
-          },
-          {
-            id: `deliv_video_4_${Date.now()}`,
-            title: 'Viral Instagram Reels',
-            category: 'videos',
-            count: '3 Reels',
-            assigned_to: 'Priya (Reels Specialist)',
-            deadline: formData.event_date ? new Date(new Date(formData.event_date).getTime() + 10 * 86400000).toISOString().split('T')[0] : '',
-            status: 'pending',
-            drive_link: '',
-            comments: []
-          },
-          {
-            id: `deliv_album_1_${Date.now()}`,
-            title: 'Main Wedding Album',
-            category: 'albums',
-            count: '40 Pages',
-            assigned_to: 'Rohan (Album Designer)',
-            deadline: formData.event_date ? new Date(new Date(formData.event_date).getTime() + 60 * 86400000).toISOString().split('T')[0] : '',
-            status: 'pending',
-            drive_link: '',
-            comments: []
-          },
-          {
-            id: `deliv_album_2_${Date.now()}`,
-            title: 'Parent / Mini Album',
-            category: 'albums',
-            count: '20 Pages',
-            assigned_to: 'Rohan (Album Designer)',
-            deadline: formData.event_date ? new Date(new Date(formData.event_date).getTime() + 60 * 86400000).toISOString().split('T')[0] : '',
-            status: 'pending',
-            drive_link: '',
-            comments: []
-          }
-        ];
+      if (newClient) {
+        setClients(prev => [newClient, ...prev]);
+        setShowAddModal(false);
+        setFormData({
+          name: '',
+          phone: '',
+          email: '',
+          event_type: 'Wedding Photography',
+          event_date: '',
+          total_package_amount: '',
+          paid_amount: '',
+          whatsapp_group_link: '',
+          notes: ''
+        });
+        setSelectedLeadId('');
 
-        try {
-          await supabase
-            .from('post_production_projects')
-            .insert([{
-              user_id: workspaceId,
-              workspace_id: workspaceId,
-              client_id: inserted.id,
-              project_manager_name: 'Sushant (Lead Manager)',
-              overall_status: 'active',
-              deliverables: defaultDeliverables
-            }]);
-        } catch (_) {}
+        // Open newly created client window
+        setSelectedClient(newClient);
       }
-
-      // If converted from a lead, automatically update CRM Lead stage to "Booked"
-      if (selectedLeadId) {
-        try {
-          await supabase
-            .from('leads')
-            .update({
-              stage_id: 'booked',
-              status: 'Booked',
-              client_id: inserted?.id || null,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', selectedLeadId);
-          console.log('[ClientsPage] CRM lead stage auto-updated to Booked for lead:', selectedLeadId);
-        } catch (leadErr) {
-          console.error('[ClientsPage] Error updating lead stage to Booked:', leadErr);
-        }
-      }
-
-      // Reset form & close modal
-      setFormData({
-        name: '', phone: '', email: '', event_type: 'Wedding',
-        event_date: '', total_package_amount: '', paid_amount: '', notes: ''
-      });
-      setSelectedLeadId('');
-      setShowAddModal(false);
-    } catch (err) {
-      console.error('Error creating client:', err);
+    } catch (e: any) {
+      console.error('Error creating client:', e);
+      alert(`Error creating client: ${e.message}`);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Quick payment recorder
-  const handleAddPayment = async (clientId: string, currentPaid: number, total: number) => {
-    const amountStr = prompt(`Enter payment amount received (Total Package: ₹${total.toLocaleString('en-IN')}, Paid: ₹${currentPaid.toLocaleString('en-IN')}):`);
-    if (!amountStr) return;
-    const addedAmount = Number(amountStr);
-    if (isNaN(addedAmount) || addedAmount <= 0) return;
+  // Filtered clients list
+  const filteredClients = useMemo(() => {
+    return clients.filter(c => {
+      const q = searchQuery.toLowerCase();
+      const ext = parseClientExtended(c);
+      const matchesSearch = 
+        c.name.toLowerCase().includes(q) ||
+        (c.phone && c.phone.includes(q)) ||
+        (c.email && c.email.toLowerCase().includes(q)) ||
+        c.event_type.toLowerCase().includes(q) ||
+        ext.client_code.toLowerCase().includes(q);
 
-    const newPaid = currentPaid + addedAmount;
+      const matchesStatus = statusFilter === 'all' || c.status === statusFilter;
+      const matchesEvent = eventTypeFilter === 'all' || c.event_type === eventTypeFilter;
 
-    try {
-      await supabase
-        .from('workspace_clients')
-        .update({ paid_amount: newPaid, updated_at: new Date().toISOString() })
-        .eq('id', clientId);
+      return matchesSearch && matchesStatus && matchesEvent;
+    });
+  }, [clients, searchQuery, statusFilter, eventTypeFilter]);
 
-      setClients(prev => prev.map(c => c.id === clientId ? { ...c, paid_amount: newPaid } : c));
-    } catch (e) {
-      setClients(prev => prev.map(c => c.id === clientId ? { ...c, paid_amount: newPaid } : c));
-    }
-  };
-
-  // Filter clients
-  const filteredClients = clients.filter(c => {
-    const matchesSearch = 
-      c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.phone.includes(searchQuery) ||
-      (c.email && c.email.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      c.event_type.toLowerCase().includes(searchQuery.toLowerCase());
-
-    const matchesStatus = statusFilter === 'all' || c.status === statusFilter;
-    const matchesType = eventTypeFilter === 'all' || c.event_type.toLowerCase().includes(eventTypeFilter.toLowerCase());
-
-    return matchesSearch && matchesStatus && matchesType;
-  });
-
-  // Calculate Metrics
-  const totalRevenue = clients.reduce((acc, c) => acc + (Number(c.total_package_amount) || 0), 0);
-  const totalPaid = clients.reduce((acc, c) => acc + (Number(c.paid_amount) || 0), 0);
-  const totalPending = totalRevenue - totalPaid;
-  const activeCount = clients.filter(c => c.status === 'active').length;
+  // Overall Financial Statistics
+  const totalBookedAmount = clients.reduce((sum, c) => sum + (Number(c.total_package_amount) || 0), 0);
+  const totalPaidAmount = clients.reduce((sum, c) => sum + (Number(c.paid_amount) || 0), 0);
+  const totalBalanceDue = Math.max(0, totalBookedAmount - totalPaidAmount);
+  const activeClientsCount = clients.filter(c => c.status === 'active').length;
 
   return (
-    <div className="min-h-screen bg-[#F8F9FD] dark:bg-[#070708] text-zinc-900 dark:text-zinc-100 p-4 sm:p-6 lg:p-8">
-        
-        {/* Top Header & Quick Actions */}
-        <div className="max-w-7xl mx-auto space-y-6">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white dark:bg-zinc-900/60 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm backdrop-blur-md">
+    <div className="min-h-screen bg-[#FAF9F5] text-slate-900 pb-20 pt-2 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto space-y-6">
+
+        {/* ─────────────────────────────────────────────────────────────
+            TOP HEADER (LUXURY CREAMY & LIGHT YELLOW)
+        ───────────────────────────────────────────────────────────── */}
+        <div className="bg-[#FFFDF9] rounded-2xl p-6 border border-[#EAE5DA] shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500 via-yellow-500 to-amber-600 flex items-center justify-center shadow-md text-white font-bold">
+              <Users className="w-6 h-6" />
+            </div>
             <div>
-              <div className="flex items-center gap-2.5 mb-1">
-                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20 text-white">
-                  <Users className="w-5 h-5" />
-                </div>
-                <h1 className="text-2xl font-black tracking-tight text-zinc-900 dark:text-white">Clients Directory</h1>
-                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
+              <div className="flex items-center gap-2.5">
+                <h1 className="text-2xl font-black tracking-tight text-slate-900">Clients Directory</h1>
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-50 text-amber-800 border border-amber-200">
                   {clients.length} Clients
                 </span>
               </div>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">
-                Manage converted wedding studio clients, billing packages, and jump directly to post-production deliverables tracking.
+              <p className="text-xs text-slate-600 mt-0.5 font-medium">
+                Client 360 Workspace: Profiles, Quotations, Multi-Day Events, Post-Production & Finance.
               </p>
             </div>
+          </div>
 
-            <div className="flex items-center gap-3 w-full sm:w-auto">
-              <Link
-                href="/workspace/post-production"
-                className="flex-1 sm:flex-none px-4 py-2.5 rounded-2xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-bold text-xs transition-all flex items-center justify-center gap-2 border border-zinc-200 dark:border-zinc-700"
-              >
-                <Film className="w-4 h-4 text-pink-500" />
-                <span>Post-Production Board</span>
-              </Link>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={fetchClientsAndSyncBookedLeads}
+              className="p-2.5 text-slate-600 hover:text-slate-900 bg-amber-50/60 hover:bg-amber-100/80 border border-amber-200/80 rounded-xl transition shadow-2xs cursor-pointer"
+              title="Refresh & Auto-Sync Booked Leads"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="px-4 py-2.5 text-xs font-black text-slate-900 bg-amber-400 hover:bg-amber-500 rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer"
+            >
+              <UserPlus className="w-4 h-4" />
+              + Add New Client
+            </button>
+          </div>
+        </div>
 
-              <button
-                onClick={() => setShowAddModal(true)}
-                className="flex-1 sm:flex-none px-5 py-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs transition-all shadow-lg shadow-indigo-500/25 flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <UserPlus className="w-4 h-4" />
-                <span>Add New Client</span>
-              </button>
+        {/* ─────────────────────────────────────────────────────────────
+            METRICS DASHBOARD (LUXURY CREAMY & WARM GOLD CARDS)
+        ───────────────────────────────────────────────────────────── */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-[#FFFDF9] p-5 rounded-2xl border border-[#EAE5DA] shadow-xs flex items-center justify-between hover:border-amber-300/80 transition-all">
+            <div>
+              <p className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">Total Booked Packages</p>
+              <h3 className="text-2xl font-black text-slate-900 mt-1 font-mono">
+                ₹{totalBookedAmount.toLocaleString('en-IN')}
+              </h3>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-amber-50 text-amber-700 border border-amber-200 flex items-center justify-center font-bold">
+              ₹
             </div>
           </div>
 
-          {/* Metric Overview Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white dark:bg-zinc-900/60 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center justify-between">
-              <div>
-                <p className="text-[11px] font-extrabold uppercase tracking-wider text-zinc-400">Total Booked Packages</p>
-                <h3 className="text-xl font-black text-zinc-900 dark:text-white mt-1">₹{totalRevenue.toLocaleString('en-IN')}</h3>
-              </div>
-              <div className="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center">
-                <DollarSign className="w-5 h-5" />
-              </div>
+          <div className="bg-[#FFFDF9] p-5 rounded-2xl border border-[#EAE5DA] shadow-xs flex items-center justify-between hover:border-amber-300/80 transition-all">
+            <div>
+              <p className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">Total Payments Received</p>
+              <h3 className="text-2xl font-black text-emerald-600 mt-1 font-mono">
+                ₹{totalPaidAmount.toLocaleString('en-IN')}
+              </h3>
             </div>
-
-            <div className="bg-white dark:bg-zinc-900/60 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center justify-between">
-              <div>
-                <p className="text-[11px] font-extrabold uppercase tracking-wider text-zinc-400">Total Payments Received</p>
-                <h3 className="text-xl font-black text-emerald-600 dark:text-emerald-400 mt-1">₹{totalPaid.toLocaleString('en-IN')}</h3>
-              </div>
-              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                <CheckCircle2 className="w-5 h-5" />
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-zinc-900/60 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center justify-between">
-              <div>
-                <p className="text-[11px] font-extrabold uppercase tracking-wider text-zinc-400">Balance Receivable</p>
-                <h3 className="text-xl font-black text-amber-600 dark:text-amber-400 mt-1">₹{totalPending.toLocaleString('en-IN')}</h3>
-              </div>
-              <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
-                <Clock className="w-5 h-5" />
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-zinc-900/60 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center justify-between">
-              <div>
-                <p className="text-[11px] font-extrabold uppercase tracking-wider text-zinc-400">Active Clients</p>
-                <h3 className="text-xl font-black text-indigo-600 dark:text-indigo-400 mt-1">{activeCount} Active</h3>
-              </div>
-              <div className="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-                <Users className="w-5 h-5" />
-              </div>
+            <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center">
+              <CheckCircle2 className="w-5 h-5" />
             </div>
           </div>
 
-          {/* Filter Controls */}
-          <div className="flex flex-col md:flex-row items-center justify-between gap-3 bg-white dark:bg-zinc-900/60 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
-            {/* Search Input */}
-            <div className="relative w-full md:w-96">
-              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
-              <input
-                type="text"
-                placeholder="Search by client name, phone, email, event..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 text-xs bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-zinc-900 dark:text-white"
-              />
+          <div className="bg-[#FFFDF9] p-5 rounded-2xl border border-[#EAE5DA] shadow-xs flex items-center justify-between hover:border-amber-300/80 transition-all">
+            <div>
+              <p className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">Balance Receivable</p>
+              <h3 className="text-2xl font-black text-amber-800 mt-1 font-mono">
+                ₹{totalBalanceDue.toLocaleString('en-IN')}
+              </h3>
             </div>
-
-            {/* Dropdown Filters */}
-            <div className="flex items-center gap-2.5 w-full md:w-auto">
-              <div className="flex items-center gap-1.5 text-xs text-zinc-500">
-                <Filter className="w-3.5 h-3.5" />
-                <span className="font-semibold hidden sm:inline">Status:</span>
-              </div>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as any)}
-                className="select-sheets text-xs font-semibold"
-              >
-                <option value="all">All Statuses</option>
-                <option value="active">Active (🟢)</option>
-                <option value="completed">Completed (🔵)</option>
-                <option value="archived">Archived (⚪)</option>
-              </select>
-
-              <select
-                value={eventTypeFilter}
-                onChange={(e) => setEventTypeFilter(e.target.value)}
-                className="select-sheets text-xs font-semibold"
-              >
-                <option value="all">All Events</option>
-                <option value="wedding">Wedding</option>
-                <option value="pre-wedding">Pre-Wedding</option>
-                <option value="reception">Reception</option>
-                <option value="destination">Destination</option>
-              </select>
-
-              <button
-                onClick={fetchClientsAndLeads}
-                className="p-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-500 hover:text-zinc-800 dark:hover:text-white transition-colors"
-                title="Refresh client list"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-              </button>
+            <div className="w-11 h-11 rounded-xl bg-amber-50 text-amber-700 border border-amber-200 flex items-center justify-center">
+              <Clock className="w-5 h-5" />
             </div>
           </div>
 
-          {/* Client Table Grid */}
-          <div className="bg-white dark:bg-zinc-900/60 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-zinc-800 dark:text-zinc-200 border-collapse">
-                <thead>
-                  <tr className="bg-zinc-50 dark:bg-zinc-800/40 border-b border-zinc-200 dark:border-zinc-800 text-[11px] uppercase tracking-wider font-extrabold text-zinc-400">
-                    <th className="py-4 px-6">Client Name</th>
-                    <th className="py-4 px-6">Contact Info</th>
-                    <th className="py-4 px-6">Event Type & Date</th>
-                    <th className="py-4 px-6">Billing Package</th>
-                    <th className="py-4 px-6">Paid & Remaining</th>
-                    <th className="py-4 px-6">Status</th>
-                    <th className="py-4 px-6 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800 font-medium">
-                  {filteredClients.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="py-16 text-center text-zinc-400">
-                        <Users className="w-10 h-10 mx-auto text-zinc-300 dark:text-zinc-700 mb-2" />
-                        <p className="font-bold text-sm">No clients match your filter criteria</p>
-                        <button
-                          onClick={() => setShowAddModal(true)}
-                          className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 text-xs font-bold"
-                        >
-                          <Plus className="w-3.5 h-3.5" /> Add First Client
-                        </button>
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredClients.map((client) => {
-                      const totalPkg = Number(client.total_package_amount) || 0;
-                      const paidPkg = Number(client.paid_amount) || 0;
-                      const pendingPkg = totalPkg - paidPkg;
-                      const isFullyPaid = pendingPkg <= 0;
-
-                      return (
-                        <tr key={client.id} className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/30 transition-colors">
-                          <td className="py-4 px-6">
-                            <div className="font-bold text-zinc-900 dark:text-white text-sm">
-                              {client.name}
-                            </div>
-                            {client.notes && (
-                              <p className="text-[10px] text-zinc-400 truncate max-w-xs mt-0.5">
-                                {client.notes}
-                              </p>
-                            )}
-                          </td>
-
-                          <td className="py-4 px-6 space-y-1">
-                            <div className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300 font-mono font-semibold">
-                              <Phone className="w-3 h-3 text-indigo-500" />
-                              <span>{client.phone}</span>
-                            </div>
-                            {client.email && (
-                              <div className="flex items-center gap-1.5 text-[11px] text-zinc-400">
-                                <Mail className="w-3 h-3 text-purple-400" />
-                                <span>{client.email}</span>
-                              </div>
-                            )}
-                          </td>
-
-                          <td className="py-4 px-6">
-                            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-semibold text-xs border border-indigo-200 dark:border-indigo-800">
-                              <span>{client.event_type}</span>
-                            </div>
-                            {client.event_date && (
-                              <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 mt-1 font-mono">
-                                <Calendar className="w-3 h-3 text-amber-500" />
-                                <span>{new Date(client.event_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-                              </div>
-                            )}
-                          </td>
-
-                          <td className="py-4 px-6 font-bold text-sm font-mono text-zinc-900 dark:text-white">
-                            ₹{totalPkg.toLocaleString('en-IN')}
-                          </td>
-
-                          <td className="py-4 px-6 space-y-1">
-                            <div className="font-bold font-mono text-emerald-600 dark:text-emerald-400">
-                              Paid: ₹{paidPkg.toLocaleString('en-IN')}
-                            </div>
-                            {isFullyPaid ? (
-                              <span className="inline-block px-2 py-0.5 rounded text-[10px] font-extrabold bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                                Paid in Full ✓
-                              </span>
-                            ) : (
-                              <div className="text-[11px] font-bold font-mono text-amber-600 dark:text-amber-400">
-                                Due: ₹{pendingPkg.toLocaleString('en-IN')}
-                              </div>
-                            )}
-                          </td>
-
-                          <td className="py-4 px-6">
-                            {client.status === 'active' && (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Active
-                              </span>
-                            )}
-                            {client.status === 'completed' && (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400 border border-blue-200 dark:border-blue-800">
-                                Completed ✓
-                              </span>
-                            )}
-                            {client.status === 'archived' && (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700">
-                                Archived
-                              </span>
-                            )}
-                          </td>
-
-                          <td className="py-4 px-6 text-right space-x-2">
-                            <button
-                              onClick={() => handleAddPayment(client.id, paidPkg, totalPkg)}
-                              className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 dark:text-emerald-300 font-bold text-[11px] border border-emerald-200 dark:border-emerald-800 transition-colors"
-                              title="Record Payment Deposit"
-                            >
-                              + Payment
-                            </button>
-
-                            <Link
-                              href={`/workspace/post-production?client_id=${client.id}`}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-pink-50 hover:bg-pink-100 text-pink-700 dark:bg-pink-950/40 dark:hover:bg-pink-900/60 dark:text-pink-300 font-bold text-[11px] border border-pink-200 dark:border-pink-800 transition-colors"
-                            >
-                              <Film className="w-3 h-3 text-pink-500" />
-                              <span>Track Post-Prod</span>
-                            </Link>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
+          <div className="bg-[#FFFDF9] p-5 rounded-2xl border border-[#EAE5DA] shadow-xs flex items-center justify-between hover:border-amber-300/80 transition-all">
+            <div>
+              <p className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">Active Clients</p>
+              <h3 className="text-2xl font-black text-blue-600 mt-1 font-mono">
+                {activeClientsCount} <span className="text-xs font-bold text-slate-500">Active</span>
+              </h3>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 border border-blue-200 flex items-center justify-center">
+              <Users className="w-5 h-5" />
             </div>
           </div>
         </div>
 
-        {/* ── Add New Client Slide-Over Modal ── */}
-        <AnimatePresence>
-          {showAddModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/50 backdrop-blur-xs p-4 sm:p-6">
-              <motion.div
-                initial={{ opacity: 0, x: 100 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 100 }}
-                className="w-full max-w-lg bg-white dark:bg-[#121824] rounded-3xl border border-zinc-200 dark:border-zinc-800 p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto"
+        {/* ─────────────────────────────────────────────────────────────
+            SEARCH & STATUS FILTER CONTROLS
+        ───────────────────────────────────────────────────────────── */}
+        <div className="bg-[#FFFDF9] p-4 rounded-2xl border border-[#EAE5DA] shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="relative w-full md:w-96">
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search client by name, card #, phone, email..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 text-xs bg-white border border-[#EAE5DA] rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-900 placeholder:text-slate-400 font-medium"
+            />
+          </div>
+
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-slate-400" />
+              <span className="text-xs font-bold text-slate-700">Status:</span>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as any)}
+                className="px-3 py-1.5 text-xs font-bold bg-white border border-[#EAE5DA] rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-800 cursor-pointer"
               >
-                <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 pb-4">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-indigo-500 text-white flex items-center justify-center">
-                      <UserPlus className="w-4 h-4" />
+                <option value="all">All Statuses</option>
+                <option value="active">Active</option>
+                <option value="completed">Completed</option>
+                <option value="archived">Archived</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* ─────────────────────────────────────────────────────────────
+            CLIENT CARDS / TABLE LIST (CLICKABLE FOR 360 WORKSPACE)
+        ───────────────────────────────────────────────────────────── */}
+        {loading ? (
+          <div className="bg-[#FFFDF9] p-12 rounded-2xl border border-[#EAE5DA] text-center space-y-3 shadow-xs">
+            <RefreshCw className="w-8 h-8 mx-auto animate-spin text-amber-600" />
+            <p className="text-sm font-bold text-slate-700">Loading Clients Directory...</p>
+          </div>
+        ) : filteredClients.length === 0 ? (
+          <div className="bg-[#FFFDF9] p-12 rounded-2xl border border-dashed border-amber-300/80 text-center space-y-4 shadow-xs">
+            <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-700 mx-auto flex items-center justify-center">
+              <Users className="w-7 h-7" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-900">No Clients Found</h3>
+              <p className="text-xs text-slate-600 max-w-md mx-auto mt-1">
+                Mark any lead as &quot;Booked&quot; in the CRM or click &quot;+ Add New Client&quot; above to create a client workspace.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filteredClients.map((client) => {
+              const ext = parseClientExtended(client);
+              const isPaidFull = (client.paid_amount || 0) >= (client.total_package_amount || 0) && client.total_package_amount > 0;
+              const dueAmount = Math.max(0, (client.total_package_amount || 0) - (client.paid_amount || 0));
+
+              return (
+                <motion.div
+                  key={client.id}
+                  layout
+                  onClick={() => setSelectedClient(client)}
+                  className="bg-[#FFFDF9] hover:bg-[#FFFBF2] rounded-2xl border border-[#EAE5DA] hover:border-amber-400/80 p-4 sm:p-5 shadow-2xs transition-all cursor-pointer flex flex-col lg:flex-row lg:items-center justify-between gap-4 group"
+                >
+                  {/* Left: Unique Card # + Client Name + Contacts */}
+                  <div className="flex items-center gap-4 min-w-[280px]">
+                    <div className="w-12 h-12 rounded-2xl bg-amber-100/90 text-amber-900 border border-amber-200 flex flex-col items-center justify-center font-mono font-black text-xs shrink-0 shadow-2xs group-hover:scale-105 transition-transform">
+                      <span>{ext.client_code.split('-')[1] || 'CL'}</span>
+                      <span className="text-[9px] text-amber-700">{ext.client_code.split('-')[2] || '001'}</span>
                     </div>
-                    <div>
-                      <h2 className="text-lg font-black text-zinc-900 dark:text-white">Add New Studio Client</h2>
-                      <p className="text-xs text-zinc-500">Convert an existing CRM lead or enter manually.</p>
+
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-base font-black text-slate-900 group-hover:text-amber-900 transition-colors">
+                          {client.name}
+                        </h3>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-50 text-amber-800 border border-amber-200">
+                          {ext.client_code}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-3 text-xs text-slate-500 font-medium">
+                        {client.phone && (
+                          <span className="flex items-center gap-1 text-slate-700 font-bold">
+                            <Phone className="w-3 h-3 text-slate-400" />
+                            {client.phone}
+                          </span>
+                        )}
+                        {client.email && (
+                          <span className="flex items-center gap-1 text-slate-500 truncate max-w-[180px]">
+                            <Mail className="w-3 h-3 text-slate-400" />
+                            {client.email}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  <button
-                    onClick={() => setShowAddModal(false)}
-                    className="p-1.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
 
-                <form onSubmit={handleCreateClient} className="space-y-4 text-xs">
-                  {/* Lead Conversion Select */}
+                  {/* Center: Event Type & Date */}
+                  <div className="flex items-center gap-4 text-xs min-w-[200px]">
+                    <div className="space-y-1">
+                      <span className="px-2.5 py-1 rounded-xl text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200 inline-block">
+                        {client.event_type}
+                      </span>
+                      <p className="flex items-center gap-1 text-slate-600 font-semibold text-[11px]">
+                        <Calendar className="w-3 h-3 text-slate-400" />
+                        {client.event_date ? new Date(client.event_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Date not set'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Right: Billing Summary & Status */}
+                  <div className="flex items-center justify-between lg:justify-end gap-6 ml-auto w-full lg:w-auto pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100">
+                    <div className="text-right space-y-0.5">
+                      <span className="font-mono font-black text-sm text-slate-900 block">
+                        ₹{(client.total_package_amount || 0).toLocaleString('en-IN')}
+                      </span>
+                      <p className="text-[11px] font-bold">
+                        {isPaidFull ? (
+                          <span className="text-emerald-600 font-extrabold flex items-center gap-1 justify-end">
+                            <Check className="w-3 h-3" /> Paid in Full
+                          </span>
+                        ) : (
+                          <span className="text-amber-800">
+                            Paid: ₹{(client.paid_amount || 0).toLocaleString('en-IN')} • Due: ₹{dueAmount.toLocaleString('en-IN')}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+
+                    {/* Status Pill */}
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-extrabold border ${
+                      client.status === 'completed'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-blue-50 text-blue-700 border-blue-200'
+                    }`}>
+                      {client.status === 'completed' ? 'Completed' : 'Active'}
+                    </span>
+
+                    {/* Open Arrow */}
+                    <div className="w-8 h-8 rounded-xl bg-amber-50 group-hover:bg-amber-400 text-amber-800 group-hover:text-slate-900 flex items-center justify-center transition-all shadow-2xs">
+                      <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+                    </div>
+                  </div>
+
+                </motion.div>
+              );
+            })}
+          </div>
+        )}
+
+      </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          CLIENT 360 WORKSPACE WINDOW (FULL FEATURED MODAL)
+      ───────────────────────────────────────────────────────────── */}
+      {selectedClient && (
+        <ClientInsiderModal
+          isOpen={!!selectedClient}
+          client={selectedClient}
+          onClose={() => setSelectedClient(null)}
+          onClientUpdate={(updated) => {
+            setClients(prev => prev.map(c => c.id === updated.id ? updated : c));
+            setSelectedClient(updated);
+          }}
+        />
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          MODAL: ADD NEW CLIENT (WITH BOOKED LEADS CONVERT DROPDOWN)
+      ───────────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showAddModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-[#FFFDF9] rounded-3xl p-6 sm:p-7 max-w-lg w-full border border-[#EAE5DA] shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex items-center justify-between border-b border-[#EAE5DA] pb-3.5">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center">
+                    <UserPlus className="w-5 h-5" />
+                  </div>
                   <div>
-                    <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-                      Convert Existing CRM Lead (Optional)
+                    <h3 className="text-base font-black text-slate-900">Add New Wedding Client</h3>
+                    <p className="text-[11px] text-slate-500 font-medium">Auto-populates unique client card & public portal link</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowAddModal(false)} className="p-1 text-slate-400 hover:text-slate-600">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateClient} className="space-y-3.5 text-xs">
+                {/* Convert Booked Lead Dropdown */}
+                {leads.length > 0 && (
+                  <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl space-y-1.5">
+                    <label className="font-black text-amber-900 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                      Quick Convert Existing Lead:
                     </label>
                     <select
                       value={selectedLeadId}
                       onChange={(e) => handleLeadSelect(e.target.value)}
-                      className="w-full p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white font-medium"
+                      className="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg font-bold text-slate-800 focus:outline-none"
                     >
-                      <option value="">-- Select a converted lead or enter manually --</option>
-                      {leads.map(lead => (
-                        <option key={lead.id} value={lead.id}>
-                          {lead.name || 'Unnamed Lead'} ({lead.phone}) - {lead.status}
+                      <option value="">-- Or Create Blank Client Manually --</option>
+                      {leads.map(l => (
+                        <option key={l.id} value={l.id}>
+                          {l.name || 'Unnamed Lead'} ({l.phone || 'No phone'}) - Stage: {l.status || 'New'}
                         </option>
                       ))}
                     </select>
                   </div>
+                )}
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-                        Client Name *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="e.g. Vinu & Neha"
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        className="w-full p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white font-medium"
-                      />
-                    </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">
+                    Client / Couple Name <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Vinu Bhad & Neha"
+                    value={formData.name}
+                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                  />
+                </div>
 
-                    <div>
-                      <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-                        Phone Number *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="+91 9876543210"
-                        value={formData.phone}
-                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                        className="w-full p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white font-medium"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-                        Email Address
-                      </label>
-                      <input
-                        type="email"
-                        placeholder="client@gmail.com"
-                        value={formData.email}
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                        className="w-full p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white font-medium"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-                        Event Type
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Destination Wedding"
-                        value={formData.event_type}
-                        onChange={(e) => setFormData({ ...formData, event_type: e.target.value })}
-                        className="w-full p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white font-medium"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div>
-                      <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-                        Event Date
-                      </label>
-                      <input
-                        type="date"
-                        value={formData.event_date}
-                        onChange={(e) => setFormData({ ...formData, event_date: e.target.value })}
-                        className="w-full p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white font-medium"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-                        Total Package (₹)
-                      </label>
-                      <input
-                        type="number"
-                        placeholder="250000"
-                        value={formData.total_package_amount}
-                        onChange={(e) => setFormData({ ...formData, total_package_amount: e.target.value })}
-                        className="w-full p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white font-medium"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-                        Deposit Paid (₹)
-                      </label>
-                      <input
-                        type="number"
-                        placeholder="100000"
-                        value={formData.paid_amount}
-                        onChange={(e) => setFormData({ ...formData, paid_amount: e.target.value })}
-                        className="w-full p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white font-medium"
-                      />
-                    </div>
-                  </div>
-
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-                      Package & Project Notes
+                    <label className="font-bold text-slate-700 block mb-1">
+                      Phone Number <span className="text-rose-500">*</span>
                     </label>
-                    <textarea
-                      rows={3}
-                      placeholder="Special requirements, album pages count, shoot dates..."
-                      value={formData.notes}
-                      onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                      className="w-full p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white font-medium resize-none"
+                    <input
+                      type="text"
+                      required
+                      placeholder="+91 98765 43210"
+                      value={formData.phone}
+                      onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
+                      className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
                     />
                   </div>
 
-                  <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-200 dark:border-zinc-800">
-                    <button
-                      type="button"
-                      onClick={() => setShowAddModal(false)}
-                      className="px-4 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-bold"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={isSubmitting}
-                      className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold shadow-lg shadow-indigo-500/20 disabled:opacity-50"
-                    >
-                      {isSubmitting ? 'Saving Client...' : 'Create Client'}
-                    </button>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Email ID</label>
+                    <input
+                      type="email"
+                      placeholder="client@gmail.com"
+                      value={formData.email}
+                      onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                      className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                    />
                   </div>
-                </form>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Event Type</label>
+                    <input
+                      type="text"
+                      placeholder="Wedding Photography"
+                      value={formData.event_type}
+                      onChange={(e) => setFormData(prev => ({ ...prev, event_type: e.target.value }))}
+                      className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Main Event Date</label>
+                    <input
+                      type="date"
+                      value={formData.event_date}
+                      onChange={(e) => setFormData(prev => ({ ...prev, event_date: e.target.value }))}
+                      className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Total Package (₹)</label>
+                    <input
+                      type="number"
+                      placeholder="150000"
+                      value={formData.total_package_amount}
+                      onChange={(e) => setFormData(prev => ({ ...prev, total_package_amount: e.target.value }))}
+                      className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Advance Received (₹)</label>
+                    <input
+                      type="number"
+                      placeholder="25000"
+                      value={formData.paid_amount}
+                      onChange={(e) => setFormData(prev => ({ ...prev, paid_amount: e.target.value }))}
+                      className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">WhatsApp Group Link (Optional)</label>
+                  <input
+                    type="url"
+                    placeholder="https://chat.whatsapp.com/..."
+                    value={formData.whatsapp_group_link}
+                    onChange={(e) => setFormData(prev => ({ ...prev, whatsapp_group_link: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-mono text-xs text-slate-900"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-3 border-t border-[#EAE5DA]">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddModal(false)}
+                    className="px-4 py-2 bg-slate-100 text-slate-600 font-bold rounded-xl"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="px-5 py-2 bg-amber-400 hover:bg-amber-500 font-black text-slate-900 rounded-xl shadow-xs disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {isSubmitting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                    Create Client Space
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
     </div>
   );
