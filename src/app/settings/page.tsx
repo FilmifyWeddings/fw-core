@@ -1013,12 +1013,31 @@ export default function SettingsPage() {
                       <input
                         type="file"
                         accept="image/*"
-                        onChange={(e) => {
+                        onChange={async (e) => {
                           const file = e.target.files?.[0];
                           if (file) {
-                            const r = new FileReader();
-                            r.onload = () => setInvoiceQrImageUrl(r.result as string);
-                            r.readAsDataURL(file);
+                            const previewUrl = URL.createObjectURL(file);
+                            setInvoiceQrImageUrl(previewUrl);
+
+                            try {
+                              const { data: { session } } = await supabase.auth.getSession();
+                              const userId = session?.user?.id || 'default_user';
+                              const ext = file.name.split('.').pop() || 'png';
+                              const filePath = `qr_codes/${userId}/invoice_qr_${Date.now()}.${ext}`;
+
+                              const { error: uploadError } = await supabase.storage
+                                .from('workspace-assets')
+                                .upload(filePath, file, { upsert: true });
+
+                              if (!uploadError) {
+                                const { data: { publicUrl } } = supabase.storage
+                                  .from('workspace-assets')
+                                  .getPublicUrl(filePath);
+                                setInvoiceQrImageUrl(publicUrl);
+                              }
+                            } catch (uploadErr) {
+                              console.warn('[Supabase Settings QR Upload Notice]:', uploadErr);
+                            }
                           }
                         }}
                         className="text-xs text-slate-600 file:mr-2 file:py-1 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#0F9D58] file:text-white hover:file:bg-[#0B8043] cursor-pointer"

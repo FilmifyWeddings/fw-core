@@ -244,8 +244,8 @@ export function InvoiceModalDialog({
     }
   };
 
-  // Handle QR image file upload
-  const handleQrFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle QR image file upload to Supabase Storage under User ID
+  const handleQrFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -254,16 +254,33 @@ export function InvoiceModalDialog({
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      setConfig(prev => ({ ...prev, qrCodeImageUrl: result }));
-    };
-    reader.readAsDataURL(file);
+    // Set immediate preview
+    const previewUrl = URL.createObjectURL(file);
+    setConfig(prev => ({ ...prev, qrCodeImageUrl: previewUrl }));
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id || 'default_user';
+      const ext = file.name.split('.').pop() || 'png';
+      const filePath = `qr_codes/${userId}/invoice_qr_${Date.now()}.${ext}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('workspace-assets')
+        .upload(filePath, file, { upsert: true });
+
+      if (!uploadError) {
+        const { data: { publicUrl } } = supabase.storage
+          .from('workspace-assets')
+          .getPublicUrl(filePath);
+        setConfig(prev => ({ ...prev, qrCodeImageUrl: publicUrl }));
+      }
+    } catch (uploadErr) {
+      console.warn('[Supabase QR Upload Notice]:', uploadErr);
+    }
   };
 
-  // Handle Logo file upload
-  const handleLogoFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle Logo file upload to Supabase Storage under User ID
+  const handleLogoFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -272,12 +289,29 @@ export function InvoiceModalDialog({
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      setConfig(prev => ({ ...prev, logoUrl: result }));
-    };
-    reader.readAsDataURL(file);
+    // Set immediate preview
+    const previewUrl = URL.createObjectURL(file);
+    setConfig(prev => ({ ...prev, logoUrl: previewUrl }));
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id || 'default_user';
+      const ext = file.name.split('.').pop() || 'png';
+      const filePath = `logos/${userId}/invoice_logo_${Date.now()}.${ext}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('workspace-assets')
+        .upload(filePath, file, { upsert: true });
+
+      if (!uploadError) {
+        const { data: { publicUrl } } = supabase.storage
+          .from('workspace-assets')
+          .getPublicUrl(filePath);
+        setConfig(prev => ({ ...prev, logoUrl: publicUrl }));
+      }
+    } catch (uploadErr) {
+      console.warn('[Supabase Logo Upload Notice]:', uploadErr);
+    }
   };
 
   const handleDownloadPdf = async () => {
