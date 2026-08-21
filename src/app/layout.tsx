@@ -7,8 +7,22 @@ import { VersionGuard } from "@/components/VersionGuard";
 import { AuthRedirectGuard } from "@/components/AuthRedirectGuard";
 
 export const metadata: Metadata = {
-  title: "FW Studio Suite - Lead Management & WhatsApp Drip Automation Platform",
-  description: "Elite multi-application suite for wedding photography studio operations. Manage leads, quotations, and team operations from a unified workspace.",
+  metadataBase: new URL('https://studiocore.in'),
+  title: {
+    default: 'Studio Core - Operating System & CRM for Creative Studios',
+    template: '%s | Studio Core',
+  },
+  description: 'Comprehensive business operating system and CRM for photography studios, cinematographers, and event management professionals. Manage leads, quotations, and team operations.',
+  alternates: {
+    canonical: 'https://studiocore.in',
+  },
+  openGraph: {
+    title: 'Studio Core - Operating System & CRM for Creative Studios',
+    description: 'Comprehensive business operating system and CRM for photography studios, cinematographers, and event management professionals.',
+    url: 'https://studiocore.in',
+    siteName: 'Studio Core',
+    type: 'website',
+  },
 };
 
 export default function RootLayout({

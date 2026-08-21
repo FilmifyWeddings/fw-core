@@ -26,7 +26,13 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith('/attendance') ||
     pathname.startsWith('/_next') ||
     pathname === '/privacy-policy' ||
+    pathname.startsWith('/privacy-policy') ||
     pathname === '/terms-of-service' ||
+    pathname.startsWith('/terms-of-service') ||
+    pathname === '/data-deletion' ||
+    pathname.startsWith('/data-deletion') ||
+    pathname === '/robots.txt' ||
+    pathname === '/sitemap.xml' ||
     pathname === '/book-demo' ||
     pathname === '/free-trial' ||
     pathname === '/pricing' ||

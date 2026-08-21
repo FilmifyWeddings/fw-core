@@ -302,7 +302,11 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     pathname === '/book-demo' ||
     pathname === '/free-trial' ||
     pathname === '/privacy-policy' ||
+    pathname.startsWith('/privacy-policy') ||
     pathname === '/terms-of-service' ||
+    pathname.startsWith('/terms-of-service') ||
+    pathname === '/data-deletion' ||
+    pathname.startsWith('/data-deletion') ||
     pathname.startsWith('/pdf-preview') ||
     pathname.startsWith('/p/quotation') ||
     pathname.startsWith('/attendance/') ||
