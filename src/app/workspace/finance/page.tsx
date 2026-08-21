@@ -321,19 +321,20 @@ function computeFinanceTotals(
       const allLeadQuotesMap = new Map<string, any[]>();
       const leadMap = new Map<string, any>();
 
-      if (leadIds.length > 0) {
+      const validLeadIds = leadIds.filter(id => id && typeof id === 'string' && id.trim().length > 0 && id.length >= 8);
+      if (validLeadIds.length > 0) {
         try {
-          const leadShortFilters = leadIds.map(id => `template_id.ilike.%${id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8)}%`);
+          const leadShortFilters = validLeadIds.map(id => `template_id.ilike.%${id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8)}%`);
           const [docsRes, leadsRes] = await Promise.all([
             supabase
               .from('quotation_documents')
               .select('id, template_id, lead_id, version, lead_version, content_json, created_at, updated_at')
-              .or(`lead_id.in.(${leadIds.join(',')}),${leadShortFilters.join(',')}`)
+              .or(`lead_id.in.(${validLeadIds.join(',')}),${leadShortFilters.join(',')}`)
               .order('created_at', { ascending: false }),
             supabase
               .from('leads')
               .select('id, name, final_quotation_id, quotation_id')
-              .in('id', leadIds)
+              .in('id', validLeadIds)
           ]);
 
           if (leadsRes.data) {

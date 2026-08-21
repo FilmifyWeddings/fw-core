@@ -104,6 +104,21 @@ export function InvoiceModalDialog({
     };
   }, [defaultQuotationTemplate]);
 
+  // 1b. Active theme object memoized before ANY early return
+  const activeThemeObj = React.useMemo(() => {
+    if (config.themePreset && config.themePreset !== 'auto' && COLOR_THEMES[config.themePreset]) {
+      return COLOR_THEMES[config.themePreset];
+    }
+    return resolvedQuotationTheme?.themeObj || COLOR_THEMES['cyprus-sand-dune'] || {
+      primary: '#004643',
+      background: '#F0EDE5',
+      text: '#004643',
+      kicker: '#004643',
+      borderColor: 'rgba(0, 70, 67, 0.2)',
+      boxBgColor: 'rgba(0, 70, 67, 0.06)',
+    };
+  }, [config.themePreset, resolvedQuotationTheme]);
+
   // 2. Load settings on open
   useEffect(() => {
     if (!isOpen) return;
@@ -300,19 +315,6 @@ export function InvoiceModalDialog({
     : 0;
 
   // Active theme tokens
-  const activeThemeObj = React.useMemo(() => {
-    if (config.themePreset && config.themePreset !== 'auto' && COLOR_THEMES[config.themePreset]) {
-      return COLOR_THEMES[config.themePreset];
-    }
-    return resolvedQuotationTheme?.themeObj || COLOR_THEMES['cyprus-sand-dune'] || {
-      primary: '#004643',
-      background: '#F0EDE5',
-      text: '#004643',
-      kicker: '#004643',
-      borderColor: 'rgba(0, 70, 67, 0.2)',
-      boxBgColor: 'rgba(0, 70, 67, 0.06)',
-    };
-  }, [config.themePreset, resolvedQuotationTheme]);
 
   const activeFont = (config.fontFamily && config.fontFamily !== 'auto') 
     ? config.fontFamily 
