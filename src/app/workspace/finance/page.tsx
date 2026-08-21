@@ -1159,768 +1159,768 @@ function computeFinanceTotals(
   }, [financeRecords, searchQuery, statusFilter]);
 
   return (
-    <div className="min-h-screen bg-[#FDFCF7] text-slate-900 pb-24 pt-2 px-4 sm:px-6 lg:px-8 font-sans">
+    <div className="min-h-screen bg-[#FAF7F2] text-[#2C2416] pb-24 pt-3 px-4 sm:px-6 lg:px-8 font-sans selection:bg-[#F5EEDC] selection:text-[#8C6D28]">
       <div className="max-w-7xl mx-auto space-y-6">
 
-          {/* ─────────────────────────────────────────────────────────────
-              HEADER & ACTION BUTTONS (WARM LIGHT GOLD THEME)
-          ───────────────────────────────────────────────────────────── */}
-          <div className="bg-white/90 backdrop-blur-md rounded-2xl p-6 border border-amber-200/70 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500 to-yellow-500 flex items-center justify-center shadow-md shadow-amber-500/20 text-white">
-                <DollarSign className="w-6 h-6 stroke-[2.5]" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2.5">
-                  <h1 className="text-2xl font-black tracking-tight text-slate-900">Finance & Payment Milestones</h1>
-                  <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-100/80 text-amber-800 border border-amber-300">
-                    Studio Suite
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Quotation pricing sync, 4-tier milestone schedules, client invoices, team payouts, and P&L tracking.
-                </p>
-              </div>
+        {/* ─────────────────────────────────────────────────────────────
+            HEADER & ACTION BUTTONS (HIGH-END LUXURY CREAM / WARM GOLD)
+        ───────────────────────────────────────────────────────────── */}
+        <div className="bg-[#FFFDF9] rounded-3xl p-6 sm:p-7 border border-[#EBE3D5] shadow-[0_4px_25px_-5px_rgba(200,165,110,0.08)] flex flex-col md:flex-row md:items-center justify-between gap-5">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#E2B857] via-[#D4AF37] to-[#B38728] flex items-center justify-center shadow-md shadow-[#D4AF37]/25 text-white shrink-0">
+              <DollarSign className="w-6 h-6 stroke-[2.5]" />
             </div>
-
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setShowAddExpenseModal(true)}
-                className="px-4 py-2 text-xs font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-xl transition flex items-center gap-1.5 shadow-2xs"
-              >
-                <Plus className="w-4 h-4" />
-                + Add Expense / Payout
-              </button>
-
-              <Link
-                href="/workspace/clients"
-                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition flex items-center gap-1.5 shadow-2xs"
-              >
-                <Users className="w-4 h-4 text-slate-500" />
-                Clients Directory
-              </Link>
-
-              <button
-                onClick={fetchFinanceData}
-                className="p-2 text-slate-500 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition shadow-2xs"
-                title="Refresh Finance Data"
-              >
-                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-              </button>
+            <div>
+              <div className="flex items-center gap-2.5">
+                <h1 className="text-2xl font-bold tracking-tight text-[#221B10]">Finance & Payment Milestones</h1>
+                <span className="px-3 py-0.5 rounded-full text-xs font-black bg-[#F5EEDC] text-[#8C6D28] border border-[#E3D3AC] tracking-wider uppercase">
+                  Studio Suite
+                </span>
+              </div>
+              <p className="text-xs text-[#7A6950] mt-1 font-medium">
+                Quotation pricing sync, 4-tier milestone schedules, client invoices, team payouts, and P&L tracking.
+              </p>
             </div>
           </div>
 
-          {/* ─────────────────────────────────────────────────────────────
-              3D-STYLED FINANCIAL COMMAND CENTER (GOLD / AMBER METRICS)
-          ───────────────────────────────────────────────────────────── */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-            {/* 1. Total Invoiced */}
-            <div className="bg-white p-5 rounded-2xl border border-amber-200/80 shadow-sm flex flex-col justify-between space-y-3 relative overflow-hidden group hover:border-amber-400 transition-all">
-              <div className="flex items-center justify-between">
-                <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">Gross Invoiced</p>
-                <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 flex items-center justify-center">
-                  <FileText className="w-4 h-4" />
-                </div>
-              </div>
-              <div>
-                <h3 className="text-2xl font-black text-slate-900 tracking-tight font-sans tabular-nums">
-                  ₹{totalInvoiced.toLocaleString('en-IN')}
-                </h3>
-                <p className="text-[10px] font-semibold text-slate-500 mt-0.5">{financeRecords.length} Active Contracts</p>
-              </div>
-              <div className="h-1 w-full bg-amber-500 rounded-full" />
-            </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => setShowAddExpenseModal(true)}
+              className="px-4 py-2.5 text-xs font-bold text-[#4E3B15] bg-[#F7EFCF] hover:bg-[#F2E5B8] border border-[#DFCFA0] rounded-xl transition flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-95"
+            >
+              <Plus className="w-4 h-4 text-[#8C6D28]" />
+              + Add Expense / Payout
+            </button>
 
-            {/* 2. Total Cash Received */}
-            <div className="bg-white p-5 rounded-2xl border border-emerald-200 shadow-sm flex flex-col justify-between space-y-3 relative overflow-hidden group hover:border-emerald-400 transition-all">
-              <div className="flex items-center justify-between">
-                <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">Cash Received</p>
-                <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center">
-                  <CheckCircle2 className="w-4 h-4" />
-                </div>
-              </div>
-              <div>
-                <h3 className="text-2xl font-black text-emerald-700 tracking-tight font-sans tabular-nums">
-                  ₹{totalReceived.toLocaleString('en-IN')}
-                </h3>
-                <p className="text-[10px] font-semibold text-emerald-600 mt-0.5">
-                  {totalInvoiced > 0 ? Math.round((totalReceived / totalInvoiced) * 100) : 0}% Realized
-                </p>
-              </div>
-              <div className="h-1 w-full bg-emerald-500 rounded-full" />
-            </div>
+            <Link
+              href="/workspace/clients"
+              className="px-4 py-2.5 text-xs font-bold text-[#554734] bg-white hover:bg-[#FAF6ED] border border-[#E5DAC8] rounded-xl transition flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-95"
+            >
+              <Users className="w-4 h-4 text-[#8C7654]" />
+              Clients Directory
+            </Link>
 
-            {/* 3. Outstanding Receivables */}
-            <div className="bg-white p-5 rounded-2xl border border-orange-200 shadow-sm flex flex-col justify-between space-y-3 relative overflow-hidden group hover:border-orange-400 transition-all">
-              <div className="flex items-center justify-between">
-                <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">Pending Receivables</p>
-                <div className="w-8 h-8 rounded-lg bg-orange-50 text-orange-700 border border-orange-200 flex items-center justify-center">
-                  <Clock className="w-4 h-4" />
-                </div>
-              </div>
-              <div>
-                <h3 className="text-2xl font-black text-orange-700 tracking-tight font-sans tabular-nums">
-                  ₹{totalPending.toLocaleString('en-IN')}
-                </h3>
-                <p className="text-[10px] font-semibold text-orange-600 mt-0.5">Scheduled Milestones</p>
-              </div>
-              <div className="h-1 w-full bg-orange-500 rounded-full" />
-            </div>
+            <button
+              onClick={fetchFinanceData}
+              className="p-2.5 text-[#7A6950] hover:text-[#221B10] bg-white hover:bg-[#FAF6ED] border border-[#E5DAC8] rounded-xl transition shadow-2xs cursor-pointer active:scale-95"
+              title="Refresh Finance Data"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#D4AF37]' : ''}`} />
+            </button>
+          </div>
+        </div>
 
-            {/* 4. Total Expenses & Payouts */}
-            <div className="bg-white p-5 rounded-2xl border border-rose-200 shadow-sm flex flex-col justify-between space-y-3 relative overflow-hidden group hover:border-rose-400 transition-all">
-              <div className="flex items-center justify-between">
-                <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">Team & Expenses</p>
-                <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 flex items-center justify-center">
-                  <CreditCard className="w-4 h-4" />
-                </div>
+        {/* ─────────────────────────────────────────────────────────────
+            3D-STYLED FINANCIAL COMMAND CENTER (CHAMPAGNE / GOLD METRICS)
+        ───────────────────────────────────────────────────────────── */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          {/* 1. Total Invoiced */}
+          <div className="bg-[#FFFDF9] p-5 rounded-3xl border border-[#EBE3D5] shadow-[0_4px_20px_-4px_rgba(200,165,110,0.06)] hover:border-[#D4AF37]/60 hover:shadow-[0_8px_25px_-4px_rgba(200,165,110,0.12)] transition-all flex flex-col justify-between space-y-3 relative overflow-hidden group">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-black text-[#8C7654] uppercase tracking-wider">Gross Invoiced</p>
+              <div className="w-8 h-8 rounded-xl bg-[#FAF3E0] text-[#9E7B2B] border border-[#ECD9A8] flex items-center justify-center shadow-2xs">
+                <FileText className="w-4 h-4" />
               </div>
-              <div>
-                <h3 className="text-2xl font-black text-rose-700 tracking-tight font-sans tabular-nums">
-                  ₹{totalExpensesAmount.toLocaleString('en-IN')}
-                </h3>
-                <p className="text-[10px] font-semibold text-rose-600 mt-0.5">{expenses.length} Logged Payouts</p>
-              </div>
-              <div className="h-1 w-full bg-rose-500 rounded-full" />
             </div>
-
-            {/* 5. Net Studio Profit */}
-            <div className="bg-gradient-to-br from-amber-500 to-yellow-500 p-5 rounded-2xl border border-amber-400 shadow-md shadow-amber-500/20 text-white flex flex-col justify-between space-y-3 relative overflow-hidden">
-              <div className="flex items-center justify-between">
-                <p className="text-[11px] font-black text-amber-100 uppercase tracking-wider">Net Studio Profit</p>
-                <div className="w-8 h-8 rounded-lg bg-white/20 backdrop-blur-sm text-white flex items-center justify-center">
-                  <TrendingUp className="w-4 h-4 stroke-[2.5]" />
-                </div>
-              </div>
-              <div>
-                <h3 className="text-2xl font-black tracking-tight font-sans tabular-nums">
-                  ₹{netProfit.toLocaleString('en-IN')}
-                </h3>
-                <p className="text-[11px] font-bold text-amber-100 mt-0.5">
-                  {profitMargin}% Profit Margin 🔥
-                </p>
-              </div>
-              <div className="h-1 w-full bg-white/40 rounded-full" />
+            <div>
+              <h3 className="text-2xl font-black text-[#241D12] tracking-tight font-sans tabular-nums">
+                ₹{totalInvoiced.toLocaleString('en-IN')}
+              </h3>
+              <p className="text-[10px] font-semibold text-[#8C7654] mt-0.5">{financeRecords.length} Active Contracts</p>
             </div>
+            <div className="h-1 w-full bg-[#D4AF37] rounded-full" />
           </div>
 
-          {/* ─────────────────────────────────────────────────────────────
-              TAB SWITCHER & SEARCH / FILTERS
-          ───────────────────────────────────────────────────────────── */}
-          <div className="bg-white p-4 rounded-2xl border border-amber-200/70 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
-            {/* Tabs */}
-            <div className="flex items-center gap-1.5 p-1 bg-amber-50/70 border border-amber-200/80 rounded-xl w-full md:w-auto">
-              <button
-                onClick={() => setActiveTab('clients')}
-                className={`flex-1 md:flex-none px-4 py-2 text-xs font-extrabold rounded-lg transition-all flex items-center gap-2 ${
-                  activeTab === 'clients'
-                    ? 'bg-amber-500 text-white shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Receipt className="w-4 h-4" />
-                Client Invoices & Milestones
-              </button>
+          {/* 2. Total Cash Received */}
+          <div className="bg-[#FFFDF9] p-5 rounded-3xl border border-[#BCE7CB]/60 shadow-[0_4px_20px_-4px_rgba(46,155,89,0.06)] hover:border-[#2E9B59]/60 hover:shadow-[0_8px_25px_-4px_rgba(46,155,89,0.12)] transition-all flex flex-col justify-between space-y-3 relative overflow-hidden group">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-black text-[#2E9B59] uppercase tracking-wider">Cash Received</p>
+              <div className="w-8 h-8 rounded-xl bg-[#EAF7EE] text-[#1E7E45] border border-[#BCE7CB] flex items-center justify-center shadow-2xs">
+                <CheckCircle2 className="w-4 h-4" />
+              </div>
+            </div>
+            <div>
+              <h3 className="text-2xl font-black text-[#1E7E45] tracking-tight font-sans tabular-nums">
+                ₹{totalReceived.toLocaleString('en-IN')}
+              </h3>
+              <p className="text-[10px] font-semibold text-[#2E9B59] mt-0.5">
+                {totalInvoiced > 0 ? Math.round((totalReceived / totalInvoiced) * 100) : 0}% Realized
+              </p>
+            </div>
+            <div className="h-1 w-full bg-[#2E9B59] rounded-full" />
+          </div>
 
-              <button
-                onClick={() => setActiveTab('expenses')}
-                className={`flex-1 md:flex-none px-4 py-2 text-xs font-extrabold rounded-lg transition-all flex items-center gap-2 ${
-                  activeTab === 'expenses'
-                    ? 'bg-amber-500 text-white shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
+          {/* 3. Outstanding Receivables */}
+          <div className="bg-[#FFFDF9] p-5 rounded-3xl border border-[#FCD2B3]/60 shadow-[0_4px_20px_-4px_rgba(230,126,34,0.06)] hover:border-[#E67E22]/60 hover:shadow-[0_8px_25px_-4px_rgba(230,126,34,0.12)] transition-all flex flex-col justify-between space-y-3 relative overflow-hidden group">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-black text-[#C4611A] uppercase tracking-wider">Pending Receivables</p>
+              <div className="w-8 h-8 rounded-xl bg-[#FFF1E3] text-[#C4611A] border border-[#FCD2B3] flex items-center justify-center shadow-2xs">
+                <Clock className="w-4 h-4" />
+              </div>
+            </div>
+            <div>
+              <h3 className="text-2xl font-black text-[#C4611A] tracking-tight font-sans tabular-nums">
+                ₹{totalPending.toLocaleString('en-IN')}
+              </h3>
+              <p className="text-[10px] font-semibold text-[#D97732] mt-0.5">Scheduled Milestones</p>
+            </div>
+            <div className="h-1 w-full bg-[#E67E22] rounded-full" />
+          </div>
+
+          {/* 4. Total Expenses & Payouts */}
+          <div className="bg-[#FFFDF9] p-5 rounded-3xl border border-[#F8C8C4]/60 shadow-[0_4px_20px_-4px_rgba(231,76,60,0.06)] hover:border-[#E74C3C]/60 hover:shadow-[0_8px_25px_-4px_rgba(231,76,60,0.12)] transition-all flex flex-col justify-between space-y-3 relative overflow-hidden group">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-black text-[#C0392B] uppercase tracking-wider">Team & Expenses</p>
+              <div className="w-8 h-8 rounded-xl bg-[#FDEEED] text-[#C0392B] border border-[#F8C8C4] flex items-center justify-center shadow-2xs">
                 <CreditCard className="w-4 h-4" />
-                Team Payouts & Expenses ({expenses.length})
-              </button>
-            </div>
-
-            {/* Search & Filter */}
-            {activeTab === 'clients' && (
-              <div className="flex items-center gap-3 w-full md:w-auto">
-                <div className="relative flex-1 md:w-64">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Search client or event..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-900 font-medium"
-                  />
-                </div>
-
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value as any)}
-                  className="px-3 py-1.5 text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl focus:outline-none text-slate-800"
-                >
-                  <option value="all">All Statuses</option>
-                  <option value="partially_paid">Partially Paid</option>
-                  <option value="paid">Fully Paid</option>
-                  <option value="pending">Pending</option>
-                </select>
               </div>
-            )}
+            </div>
+            <div>
+              <h3 className="text-2xl font-black text-[#C0392B] tracking-tight font-sans tabular-nums">
+                ₹{totalExpensesAmount.toLocaleString('en-IN')}
+              </h3>
+              <p className="text-[10px] font-semibold text-[#D65446] mt-0.5">{expenses.length} Logged Payouts</p>
+            </div>
+            <div className="h-1 w-full bg-[#E74C3C] rounded-full" />
           </div>
 
-          {/* ─────────────────────────────────────────────────────────────
-              TAB 1: CLIENT INVOICES & MILESTONES (QUOTATION SYNC)
-          ───────────────────────────────────────────────────────────── */}
+          {/* 5. Net Studio Profit (Luxury Gold Feature Card) */}
+          <div className="bg-gradient-to-br from-[#E2B857] via-[#D4AF37] to-[#B38728] p-5 rounded-3xl border border-[#F3DE9C] shadow-[0_6px_25px_-4px_rgba(212,175,55,0.35)] text-white flex flex-col justify-between space-y-3 relative overflow-hidden">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-black text-[#FFF5D6] uppercase tracking-wider">Net Studio Profit</p>
+              <div className="w-8 h-8 rounded-xl bg-white/20 backdrop-blur-sm text-white flex items-center justify-center shadow-2xs">
+                <TrendingUp className="w-4 h-4 stroke-[2.5]" />
+              </div>
+            </div>
+            <div>
+              <h3 className="text-2xl font-black tracking-tight font-sans tabular-nums">
+                ₹{netProfit.toLocaleString('en-IN')}
+              </h3>
+              <p className="text-[11px] font-bold text-[#FFF5D6] mt-0.5">
+                {profitMargin}% Profit Margin 🔥
+              </p>
+            </div>
+            <div className="h-1 w-full bg-white/40 rounded-full" />
+          </div>
+        </div>
+
+        {/* ─────────────────────────────────────────────────────────────
+            TAB SWITCHER & SEARCH / FILTERS STRIP
+        ───────────────────────────────────────────────────────────── */}
+        <div className="bg-[#FFFDF9] p-3.5 sm:p-4 rounded-3xl border border-[#EBE3D5] shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
+          {/* Tabs Capsule */}
+          <div className="flex items-center gap-1.5 p-1 bg-[#F5EEDC] border border-[#E5DAC4] rounded-2xl w-full md:w-auto">
+            <button
+              onClick={() => setActiveTab('clients')}
+              className={`flex-1 md:flex-none px-4 py-2 text-xs font-black rounded-xl transition-all flex items-center gap-2 ${
+                activeTab === 'clients'
+                  ? 'bg-white text-[#221B10] shadow-xs border border-[#E0D3BC]'
+                  : 'text-[#7A6950] hover:text-[#221B10]'
+              }`}
+            >
+              <Receipt className="w-4 h-4 text-[#D4AF37]" />
+              Client Invoices & Milestones
+            </button>
+
+            <button
+              onClick={() => setActiveTab('expenses')}
+              className={`flex-1 md:flex-none px-4 py-2 text-xs font-black rounded-xl transition-all flex items-center gap-2 ${
+                activeTab === 'expenses'
+                  ? 'bg-white text-[#221B10] shadow-xs border border-[#E0D3BC]'
+                  : 'text-[#7A6950] hover:text-[#221B10]'
+              }`}
+            >
+              <CreditCard className="w-4 h-4 text-[#D4AF37]" />
+              Team Payouts & Expenses ({expenses.length})
+            </button>
+          </div>
+
+          {/* Search & Filter */}
           {activeTab === 'clients' && (
-            <div className="space-y-6">
-              {loading ? (
-                <div className="bg-white p-12 rounded-2xl border border-amber-200 text-center space-y-3 shadow-sm">
-                  <RefreshCw className="w-8 h-8 mx-auto animate-spin text-amber-600" />
-                  <p className="text-sm font-bold text-slate-600">Loading Client Billing & Milestones...</p>
+            <div className="flex items-center gap-3 w-full md:w-auto">
+              <div className="relative flex-1 md:w-64">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#9E8E75]" />
+                <input
+                  type="text"
+                  placeholder="Search client or event..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 text-xs bg-[#FAF7F0] border border-[#E5DAC8] rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/30 text-[#221B10] font-medium placeholder-[#9E8E75]"
+                />
+              </div>
+
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as any)}
+                className="px-3 py-2 text-xs font-bold bg-[#FAF7F0] border border-[#E5DAC8] rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/30 text-[#3D311F]"
+              >
+                <option value="all">All Statuses</option>
+                <option value="partially_paid">Partially Paid</option>
+                <option value="paid">Fully Paid</option>
+                <option value="pending">Pending</option>
+              </select>
+            </div>
+          )}
+        </div>
+
+        {/* ─────────────────────────────────────────────────────────────
+            TAB 1: CLIENT INVOICES & MILESTONES (PREMIUM CREAM / GOLD CARDS)
+        ───────────────────────────────────────────────────────────── */}
+        {activeTab === 'clients' && (
+          <div className="space-y-6">
+            {loading ? (
+              <div className="bg-[#FFFDF9] p-12 rounded-3xl border border-[#EBE3D5] text-center space-y-3 shadow-sm">
+                <RefreshCw className="w-8 h-8 mx-auto animate-spin text-[#D4AF37]" />
+                <p className="text-sm font-bold text-[#6B5A40]">Loading Client Billing & Milestones...</p>
+              </div>
+            ) : filteredRecords.length === 0 ? (
+              <div className="bg-[#FFFDF9] p-12 rounded-3xl border border-dashed border-[#E0D3BC] text-center space-y-4 shadow-sm">
+                <div className="w-14 h-14 rounded-2xl bg-[#F5EEDC] text-[#8C6D28] mx-auto flex items-center justify-center">
+                  <Receipt className="w-7 h-7" />
                 </div>
-              ) : filteredRecords.length === 0 ? (
-                <div className="bg-white p-12 rounded-2xl border border-dashed border-amber-300 text-center space-y-4 shadow-sm">
-                  <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 mx-auto flex items-center justify-center">
-                    <Receipt className="w-7 h-7" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-bold text-slate-900">No Client Finance Records Found</h3>
-                    <p className="text-xs text-slate-500 max-w-md mx-auto mt-1">
-                      Convert leads in Leads CRM or add clients from Client Directory to automatically generate quotation financial breakdowns and payment schedules.
-                    </p>
-                  </div>
-                  <Link
-                    href="/leads"
-                    className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-xl shadow-md transition"
+                <div>
+                  <h3 className="text-base font-bold text-[#221B10]">No Client Finance Records Found</h3>
+                  <p className="text-xs text-[#7A6950] max-w-md mx-auto mt-1">
+                    Convert leads in Leads CRM or add clients from Client Directory to automatically generate quotation financial breakdowns and payment schedules.
+                  </p>
+                </div>
+                <Link
+                  href="/leads"
+                  className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-gradient-to-r from-[#D4AF37] to-[#B38728] hover:brightness-105 rounded-xl shadow-md transition"
+                >
+                  Go to Leads CRM
+                </Link>
+              </div>
+            ) : (
+              filteredRecords.map((record) => {
+                const isExpanded = expandedCards.has(record.id);
+                const client = record.client;
+                const milestones = record.milestones || [];
+                const progressPct = record.final_total_amount > 0 
+                  ? Math.min(100, Math.round((record.received_amount / record.final_total_amount) * 100)) 
+                  : 0;
+
+                const clientInitials = client?.name 
+                  ? client.name.trim().split(' ').map(n => n[0]).filter(Boolean).slice(0, 2).join('').toUpperCase() 
+                  : 'CL';
+
+                return (
+                  <motion.div
+                    key={record.id}
+                    layout
+                    className="bg-[#FFFDF9] rounded-3xl border border-[#EBE3D5] shadow-[0_4px_24px_-4px_rgba(200,165,110,0.08)] hover:border-[#D4AF37]/70 hover:shadow-[0_10px_35px_-6px_rgba(200,165,110,0.15)] transition-all duration-300 overflow-hidden"
                   >
-                    Go to Leads CRM
-                  </Link>
-                </div>
-              ) : (
-                                filteredRecords.map((record) => {
-                  const isExpanded = expandedCards.has(record.id);
-                  const client = record.client;
-                  const milestones = record.milestones || [];
-                  const progressPct = record.final_total_amount > 0 
-                    ? Math.min(100, Math.round((record.received_amount / record.final_total_amount) * 100)) 
-                    : 0;
-
-                  const clientInitials = client?.name 
-                    ? client.name.trim().split(' ').map(n => n[0]).filter(Boolean).slice(0, 2).join('').toUpperCase() 
-                    : 'CL';
-
-                  return (
-                    <motion.div
-                      key={record.id}
-                      layout
-                      className="bg-white rounded-2xl border border-amber-200/70 shadow-[0_4px_20px_-4px_rgba(245,158,11,0.06)] overflow-hidden transition-all duration-300 hover:border-amber-300 hover:shadow-[0_8px_30px_-6px_rgba(245,158,11,0.12)]"
-                    >
-                      {/* ── CLIENT CARD HEADER (LUXURY LIGHT CREAM / LIGHT YELLOW THEME) ── */}
-                      <div className="p-5 sm:p-6 bg-gradient-to-r from-[#FFFDF9] via-[#FAF6ED] to-[#FFFDF9] border-b border-amber-100/80 flex flex-col xl:flex-row xl:items-center justify-between gap-5">
-                        <div className="flex items-start sm:items-center gap-3.5">
-                          {/* Client Monogram Avatar */}
-                          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-400 via-amber-500 to-[#F36F21] text-white font-black text-sm flex items-center justify-center shadow-xs shrink-0 tracking-wider">
-                            {clientInitials}
-                          </div>
-
-                          <div className="space-y-1.5">
-                            <div className="flex flex-wrap items-center gap-2.5">
-                              <h2 className="text-xl font-black text-slate-900 tracking-tight">
-                                {client?.name || 'Client Name'}
-                              </h2>
-
-                              {/* Payment Status Badge */}
-                              <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-extrabold border shadow-2xs ${
-                                record.payment_status === 'paid'
-                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                  : record.payment_status === 'partially_paid'
-                                  ? 'bg-amber-100 text-amber-900 border-amber-300'
-                                  : 'bg-orange-50 text-orange-700 border-orange-200'
-                              }`}>
-                                {record.payment_status === 'paid' ? 'Fully Paid' : record.payment_status === 'partially_paid' ? 'Partially Paid' : 'Pending'}
-                              </span>
-
-                              {/* Final Quotation Status Badge */}
-                              {record.has_final_quotation ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenQuotationModalForRecord(record)}
-                                  className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-black bg-gradient-to-r from-amber-500 to-[#F36F21] text-white border border-amber-400 shadow-2xs hover:brightness-105 active:scale-95 transition cursor-pointer"
-                                  title="Click to view quotation versions or switch final version"
-                                >
-                                  <Crown className="w-3.5 h-3.5 text-amber-100" />
-                                  <span>Final Quotation (V{record.final_quotation_version || 1})</span>
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenQuotationModalForRecord(record)}
-                                  className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-bold bg-white hover:bg-amber-50 text-amber-900 border border-amber-300 shadow-2xs active:scale-95 transition cursor-pointer"
-                                  title="Click to select final quotation version"
-                                >
-                                  <Plus className="w-3.5 h-3.5 text-amber-700 stroke-[3]" />
-                                  <span>Select Final Quotation</span>
-                                </button>
-                              )}
-                            </div>
-
-                            {/* Event details & Contact */}
-                            <div className="flex flex-wrap items-center gap-y-1.5 gap-x-3.5 text-xs text-slate-600 font-medium">
-                              <span className="flex items-center gap-1.5 text-slate-800 font-semibold bg-amber-50/80 px-2 py-0.5 rounded-md border border-amber-100/80">
-                                <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                                {client?.event_type || 'Wedding Photography'}
-                              </span>
-                              <span className="flex items-center gap-1.5 text-slate-600">
-                                <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                                Event Date: {client?.event_date ? new Date(client.event_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Not Scheduled'}
-                              </span>
-                              {client?.phone && (
-                                <span className="flex items-center gap-1.5 text-slate-500 font-mono">
-                                  <Phone className="w-3 h-3 text-slate-400" />
-                                  {client.phone}
-                                </span>
-                              )}
-                            </div>
-                          </div>
+                    {/* ── CLIENT CARD HEADER ── */}
+                    <div className="p-5 sm:p-6 bg-gradient-to-r from-[#FFFDF9] via-[#FAF6ED] to-[#FFFDF9] border-b border-[#EFE8DA] flex flex-col xl:flex-row xl:items-center justify-between gap-5">
+                      <div className="flex items-start sm:items-center gap-4">
+                        {/* Monogram Avatar Badge */}
+                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#E2B857] via-[#D4AF37] to-[#B38728] text-white font-black text-sm flex items-center justify-center shadow-sm shrink-0 tracking-wider">
+                          {clientInitials}
                         </div>
 
-                        {/* Right: Amounts Capsule, Quick Actions & Toggle */}
-                        <div className="flex flex-wrap items-center gap-3.5">
-                          {/* Received vs Pending Progress Mini Capsule */}
-                          <div className="bg-white/90 backdrop-blur-sm border border-amber-200/80 p-2.5 px-3.5 rounded-xl shadow-2xs flex flex-col justify-center min-w-[200px] space-y-1.5">
-                            <div className="flex items-center justify-between text-xs font-black tabular-nums">
-                              <span className="text-emerald-700 flex items-center gap-1">
-                                <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                                Rec: ₹{record.received_amount.toLocaleString('en-IN')}
-                              </span>
-                              <span className="text-orange-700 flex items-center gap-1">
-                                <span className="w-2 h-2 rounded-full bg-orange-400" />
-                                Pend: ₹{record.pending_amount.toLocaleString('en-IN')}
-                              </span>
-                            </div>
-                            <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200/70">
-                              <div 
-                                className="h-full bg-gradient-to-r from-emerald-500 via-amber-400 to-amber-500 rounded-full transition-all duration-500"
-                                style={{ width: `${progressPct}%` }}
-                              />
-                            </div>
-                            <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 tabular-nums">
-                              <span>Total: ₹{record.final_total_amount.toLocaleString('en-IN')}</span>
-                              <span className="text-amber-800 font-extrabold">{progressPct}% Paid</span>
-                            </div>
+                        <div className="space-y-1.5">
+                          <div className="flex flex-wrap items-center gap-2.5">
+                            <h2 className="text-xl font-bold text-[#1E170E] tracking-tight">
+                              {client?.name || 'Client Name'}
+                            </h2>
+
+                            {/* Payment Status Badge */}
+                            <span className={`px-3 py-0.5 rounded-full text-[11px] font-extrabold border shadow-2xs ${
+                              record.payment_status === 'paid'
+                                ? 'bg-[#EAF7EE] text-[#1E7E45] border-[#BCE7CB]'
+                                : record.payment_status === 'partially_paid'
+                                ? 'bg-[#FDF4DC] text-[#8C6D28] border-[#E8D6A7]'
+                                : 'bg-[#FFF1E3] text-[#C4611A] border-[#FCD2B3]'
+                            }`}>
+                              {record.payment_status === 'paid' ? 'Fully Paid' : record.payment_status === 'partially_paid' ? 'Partially Paid' : 'Pending'}
+                            </span>
+
+                            {/* Final Quotation Status Badge */}
+                            {record.has_final_quotation ? (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenQuotationModalForRecord(record)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-gradient-to-r from-[#D4AF37] to-[#B38728] text-white border border-[#E6CA65] shadow-xs hover:brightness-105 active:scale-95 transition cursor-pointer"
+                                title="Click to view quotation versions or switch final version"
+                              >
+                                <Crown className="w-3.5 h-3.5 text-[#FFF5D6]" />
+                                <span>Final Quotation (V{record.final_quotation_version || 1})</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenQuotationModalForRecord(record)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-white hover:bg-[#F9F4E8] text-[#8C6D28] border border-[#E3D4B0] shadow-2xs active:scale-95 transition cursor-pointer"
+                                title="Click to select final quotation version"
+                              >
+                                <Plus className="w-3.5 h-3.5 text-[#8C6D28] stroke-[3]" />
+                                <span>Select Final Quotation</span>
+                              </button>
+                            )}
                           </div>
 
-                          {/* Quick Record Payment Button */}
-                          <button
-                            onClick={() => {
-                              setShowRecordPaymentModal({
-                                open: true,
-                                client: client || undefined,
-                                financeRecord: record
-                              });
-                            }}
-                            className="px-4 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-95 rounded-xl shadow-sm hover:shadow transition flex items-center gap-1.5 cursor-pointer"
-                          >
-                            <CreditCard className="w-3.5 h-3.5" />
-                            Record Payment
-                          </button>
-
-                          {/* Generate Tax Invoice / Receipt Button */}
-                          <button
-                            onClick={() => {
-                              setShowInvoiceModal({
-                                open: true,
-                                client: client || undefined,
-                                financeRecord: record
-                              });
-                            }}
-                            className="px-3.5 py-2.5 text-xs font-bold text-amber-950 bg-[#FAF7EE] hover:bg-amber-100 border border-amber-300 active:scale-95 rounded-xl shadow-2xs transition flex items-center gap-1.5 cursor-pointer"
-                          >
-                            <FileText className="w-3.5 h-3.5 text-amber-700" />
-                            Tax Invoice
-                          </button>
-
-                          {/* Expand / Collapse Button */}
-                          <button
-                            onClick={() => toggleCard(record.id)}
-                            className="p-2.5 text-amber-900 bg-amber-100/70 hover:bg-amber-200 active:scale-95 rounded-xl transition cursor-pointer"
-                            title={isExpanded ? 'Hide Pricing & Milestones' : 'View Pricing & Milestones'}
-                          >
-                            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                          </button>
+                          {/* Event details & Contact */}
+                          <div className="flex flex-wrap items-center gap-y-1.5 gap-x-3.5 text-xs text-[#7A6950] font-medium">
+                            <span className="flex items-center gap-1.5 text-[#634E23] font-bold bg-[#F7EEDC] px-2.5 py-0.5 rounded-lg border border-[#EADBBD]">
+                              <Sparkles className="w-3.5 h-3.5 text-[#D4AF37]" />
+                              {client?.event_type || 'Wedding Photography'}
+                            </span>
+                            <span className="flex items-center gap-1.5 text-[#7A6950]">
+                              <Calendar className="w-3.5 h-3.5 text-[#A3927B]" />
+                              Event Date: {client?.event_date ? new Date(client.event_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Not Scheduled'}
+                            </span>
+                            {client?.phone && (
+                              <span className="flex items-center gap-1.5 text-[#7A6950] font-mono">
+                                <Phone className="w-3 h-3 text-[#A3927B]" />
+                                {client.phone}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
 
-                      {/* ── EXPANDED PRICING BREAKDOWN & PAYMENT SCHEDULE ── */}
-                      <AnimatePresence>
-                        {isExpanded && (
-                          <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            exit={{ opacity: 0, height: 0 }}
-                            transition={{ duration: 0.25 }}
-                            className="p-5 sm:p-7 space-y-6 bg-[#FAF8F2] border-t border-amber-100/80"
-                          >
-                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                      {/* Right: Amounts Capsule, Quick Actions & Toggle */}
+                      <div className="flex flex-wrap items-center gap-3.5">
+                        {/* Received vs Pending Progress Mini Capsule */}
+                        <div className="bg-white/95 backdrop-blur-sm border border-[#E8DFD0] p-3 px-4 rounded-2xl shadow-2xs flex flex-col justify-center min-w-[210px] space-y-1.5">
+                          <div className="flex items-center justify-between text-xs font-black tabular-nums">
+                            <span className="text-[#1E7E45] flex items-center gap-1">
+                              <span className="w-2 h-2 rounded-full bg-[#2E9B59]" />
+                              Rec: ₹{record.received_amount.toLocaleString('en-IN')}
+                            </span>
+                            <span className="text-[#C4611A] flex items-center gap-1">
+                              <span className="w-2 h-2 rounded-full bg-[#E67E22]" />
+                              Pend: ₹{record.pending_amount.toLocaleString('en-IN')}
+                            </span>
+                          </div>
+                          <div className="w-full h-2 bg-[#EFE8DC] rounded-full overflow-hidden border border-[#E5DAC8]/60">
+                            <div 
+                              className="h-full bg-gradient-to-r from-[#2E9B59] via-[#E2B857] to-[#D4AF37] rounded-full transition-all duration-500"
+                              style={{ width: `${progressPct}%` }}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between text-[10px] font-bold text-[#8C7A60] tabular-nums">
+                            <span>Total: ₹{record.final_total_amount.toLocaleString('en-IN')}</span>
+                            <span className="text-[#8C6D28] font-black">{progressPct}% Paid</span>
+                          </div>
+                        </div>
 
-                              {/* ── LEFT: PRICING DETAILS (STREAMLINED LUXURY STUDIO UI) ── */}
-                              <div className="lg:col-span-5 bg-white rounded-2xl border border-amber-200/80 p-5 sm:p-6 shadow-sm flex flex-col justify-between space-y-4">
-                                <div>
-                                  <div className="flex items-center justify-between pb-3 border-b border-amber-100">
-                                    <div>
-                                      <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200/60">
-                                        <Calculator className="w-3 h-3 text-amber-600" /> PRICING BREAKDOWN
-                                      </span>
-                                      <h3 className="text-base font-black text-slate-900 tracking-tight mt-1">Package & Charges</h3>
-                                    </div>
-                                  </div>
+                        {/* Quick Record Payment Button */}
+                        <button
+                          onClick={() => {
+                            setShowRecordPaymentModal({
+                              open: true,
+                              client: client || undefined,
+                              financeRecord: record
+                            });
+                          }}
+                          className="px-4 py-2.5 text-xs font-bold text-white bg-[#1E7E45] hover:bg-[#166536] active:scale-95 rounded-xl shadow-xs hover:shadow transition flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <CreditCard className="w-3.5 h-3.5" />
+                          Record Payment
+                        </button>
 
-                                  <div className="space-y-2.5 text-xs mt-3.5">
-                                    {/* Base Package Price */}
-                                    <div className="flex items-center justify-between p-2.5 bg-[#FCFAF6] hover:bg-amber-50/40 rounded-xl border border-amber-100 transition">
-                                      <span className="font-bold text-slate-700">Base Package Price</span>
-                                      <div className="relative inline-flex items-center">
-                                        <span className="absolute left-2 text-slate-400 font-bold text-xs">₹</span>
-                                        <input
-                                          type="number"
-                                          value={record.base_package_price || 0}
-                                          onChange={(e) => handleBreakdownChange(record.id, 'base_package_price', parseFloat(e.target.value) || 0)}
-                                          className="w-28 pl-5 pr-2 py-1 text-right font-bold text-slate-900 bg-white border border-slate-200/90 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 font-sans tabular-nums shadow-2xs"
-                                        />
-                                      </div>
-                                    </div>
+                        {/* Generate Tax Invoice / Receipt Button */}
+                        <button
+                          onClick={() => {
+                            setShowInvoiceModal({
+                              open: true,
+                              client: client || undefined,
+                              financeRecord: record
+                            });
+                          }}
+                          className="px-3.5 py-2.5 text-xs font-bold text-[#503E1A] bg-[#FAF3E0] hover:bg-[#F5EBD0] border border-[#E3D3AC] active:scale-95 rounded-xl shadow-2xs transition flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <FileText className="w-3.5 h-3.5 text-[#8C6D28]" />
+                          Tax Invoice
+                        </button>
 
-                                    {/* Discount (Complimentary) */}
-                                    <div className="flex items-center justify-between p-2.5 bg-rose-50/30 hover:bg-rose-50/60 rounded-xl border border-rose-100 transition">
-                                      <span className="font-bold text-rose-600">Discount (Complimentary)</span>
-                                      <div className="relative inline-flex items-center">
-                                        <span className="absolute left-2 text-rose-400 font-bold text-xs">₹</span>
-                                        <input
-                                          type="number"
-                                          value={record.discount_amount || 0}
-                                          onChange={(e) => handleBreakdownChange(record.id, 'discount_amount', parseFloat(e.target.value) || 0)}
-                                          className="w-28 pl-5 pr-2 py-1 text-right font-bold text-rose-600 bg-white border border-slate-200/90 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 font-sans tabular-nums shadow-2xs"
-                                        />
-                                      </div>
-                                    </div>
+                        {/* Expand / Collapse Button */}
+                        <button
+                          onClick={() => toggleCard(record.id)}
+                          className="p-2.5 text-[#503E1A] bg-[#F5EEDC] hover:bg-[#EFE5CE] active:scale-95 rounded-xl transition cursor-pointer"
+                          title={isExpanded ? 'Hide Pricing & Milestones' : 'View Pricing & Milestones'}
+                        >
+                          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
 
-                                    {/* Accommodation Charges */}
-                                    <div className="flex items-center justify-between p-2.5 bg-[#FCFAF6] hover:bg-slate-50 rounded-xl border border-slate-200/60 transition">
-                                      <span className="font-medium text-slate-600">Accommodation Charges</span>
-                                      <div className="relative inline-flex items-center">
-                                        <span className="absolute left-2 text-slate-400 font-bold text-xs">₹</span>
-                                        <input
-                                          type="number"
-                                          value={record.accommodation_charges || 0}
-                                          onChange={(e) => handleBreakdownChange(record.id, 'accommodation_charges', parseFloat(e.target.value) || 0)}
-                                          className="w-28 pl-5 pr-2 py-1 text-right font-bold text-slate-800 bg-white border border-slate-200/90 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 font-sans tabular-nums shadow-2xs"
-                                        />
-                                      </div>
-                                    </div>
+                    {/* ── EXPANDED PRICING BREAKDOWN & PAYMENT SCHEDULE ── */}
+                    <AnimatePresence>
+                      {isExpanded && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          transition={{ duration: 0.25 }}
+                          className="p-6 sm:p-8 space-y-6 bg-[#FAF7F2] border-t border-[#EFE8DA]"
+                        >
+                          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
-                                    {/* Travel Charges */}
-                                    <div className="flex items-center justify-between p-2.5 bg-[#FCFAF6] hover:bg-slate-50 rounded-xl border border-slate-200/60 transition">
-                                      <span className="font-medium text-slate-600">Travel Charges</span>
-                                      <div className="relative inline-flex items-center">
-                                        <span className="absolute left-2 text-slate-400 font-bold text-xs">₹</span>
-                                        <input
-                                          type="number"
-                                          value={record.travel_charges || 0}
-                                          onChange={(e) => handleBreakdownChange(record.id, 'travel_charges', parseFloat(e.target.value) || 0)}
-                                          className="w-28 pl-5 pr-2 py-1 text-right font-bold text-slate-800 bg-white border border-slate-200/90 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 font-sans tabular-nums shadow-2xs"
-                                        />
-                                      </div>
-                                    </div>
-
-                                    {/* Additional Charges */}
-                                    <div className="flex items-center justify-between p-2.5 bg-[#FCFAF6] hover:bg-slate-50 rounded-xl border border-slate-200/60 transition">
-                                      <span className="font-medium text-slate-600">Additional Charges</span>
-                                      <div className="relative inline-flex items-center">
-                                        <span className="absolute left-2 text-slate-400 font-bold text-xs">₹</span>
-                                        <input
-                                          type="number"
-                                          value={record.additional_charges || 0}
-                                          onChange={(e) => handleBreakdownChange(record.id, 'additional_charges', parseFloat(e.target.value) || 0)}
-                                          className="w-28 pl-5 pr-2 py-1 text-right font-bold text-slate-800 bg-white border border-slate-200/90 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 font-sans tabular-nums shadow-2xs"
-                                        />
-                                      </div>
-                                    </div>
-
-                                    {/* Subtotal & GST */}
-                                    <div className="pt-3 border-t border-amber-100/90 space-y-1.5 px-1">
-                                      <div className="flex items-center justify-between font-black text-slate-900">
-                                        <span>SUBTOTAL (GROSS TOTAL)</span>
-                                        <span className="text-sm font-black font-sans tabular-nums">₹{record.subtotal_amount.toLocaleString('en-IN')}</span>
-                                      </div>
-                                      <div className="flex items-center justify-between text-slate-500 font-bold">
-                                        <span>GST ({record.gst_rate}%)</span>
-                                        <span className="font-sans tabular-nums">₹{record.gst_amount.toLocaleString('en-IN')}</span>
-                                      </div>
-                                    </div>
+                            {/* ── LEFT: PRICING DETAILS (WARM LUXURY STUDIO CARD) ── */}
+                            <div className="lg:col-span-5 bg-white rounded-3xl border border-[#EBE3D5] p-6 shadow-xs flex flex-col justify-between space-y-5">
+                              <div>
+                                <div className="flex items-center justify-between pb-3 border-b border-[#EFE8DA]">
+                                  <div>
+                                    <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-[#8C6D28] bg-[#F5EEDC] px-2.5 py-0.5 rounded-md border border-[#E3D3AC]">
+                                      <Calculator className="w-3 h-3 text-[#D4AF37]" /> PRICING BREAKDOWN
+                                    </span>
+                                    <h3 className="text-base font-bold text-[#1E170E] tracking-tight mt-1.5">Package & Charges</h3>
                                   </div>
                                 </div>
 
-                                {/* Final Net Investment Box */}
-                                <div className="p-4 bg-gradient-to-r from-amber-500/15 via-amber-400/20 to-orange-500/15 border border-amber-300 rounded-xl flex items-center justify-between shadow-2xs mt-4">
-                                  <div>
-                                    <p className="text-[10px] font-black uppercase text-amber-950 tracking-wider">Final Net Investment</p>
-                                    <p className="text-[10px] font-medium text-amber-800">Inclusive of all Taxes & Fees</p>
+                                <div className="space-y-2.5 text-xs mt-4">
+                                  {/* Base Package Price */}
+                                  <div className="flex items-center justify-between p-3 bg-[#FAF7F2] hover:bg-[#F6F0E6] rounded-2xl border border-[#EDE4D5] transition">
+                                    <span className="font-bold text-[#443825]">Base Package Price</span>
+                                    <div className="relative inline-flex items-center">
+                                      <span className="absolute left-2.5 text-[#9E8E75] font-bold text-xs">₹</span>
+                                      <input
+                                        type="number"
+                                        value={record.base_package_price || 0}
+                                        onChange={(e) => handleBreakdownChange(record.id, 'base_package_price', parseFloat(e.target.value) || 0)}
+                                        className="w-28 pl-6 pr-2 py-1 text-right font-bold text-[#1E170E] bg-white border border-[#E5DAC8] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/30 font-sans tabular-nums shadow-2xs"
+                                      />
+                                    </div>
                                   </div>
-                                  <h4 className="text-xl sm:text-2xl font-black text-slate-900 font-sans tabular-nums tracking-tight">
-                                    ₹{record.final_total_amount.toLocaleString('en-IN')}
-                                  </h4>
+
+                                  {/* Discount (Complimentary) */}
+                                  <div className="flex items-center justify-between p-3 bg-[#FDF2F0] hover:bg-[#FCEAE7] rounded-2xl border border-[#F6CCC7] transition">
+                                    <span className="font-bold text-[#C0392B]">Discount (Complimentary)</span>
+                                    <div className="relative inline-flex items-center">
+                                      <span className="absolute left-2.5 text-[#E74C3C] font-bold text-xs">₹</span>
+                                      <input
+                                        type="number"
+                                        value={record.discount_amount || 0}
+                                        onChange={(e) => handleBreakdownChange(record.id, 'discount_amount', parseFloat(e.target.value) || 0)}
+                                        className="w-28 pl-6 pr-2 py-1 text-right font-bold text-[#C0392B] bg-white border border-[#F6CCC7] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#E74C3C]/30 font-sans tabular-nums shadow-2xs"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  {/* Accommodation Charges */}
+                                  <div className="flex items-center justify-between p-3 bg-[#FAF7F2] hover:bg-[#F6F0E6] rounded-2xl border border-[#EDE4D5] transition">
+                                    <span className="font-medium text-[#6B5A40]">Accommodation Charges</span>
+                                    <div className="relative inline-flex items-center">
+                                      <span className="absolute left-2.5 text-[#9E8E75] font-bold text-xs">₹</span>
+                                      <input
+                                        type="number"
+                                        value={record.accommodation_charges || 0}
+                                        onChange={(e) => handleBreakdownChange(record.id, 'accommodation_charges', parseFloat(e.target.value) || 0)}
+                                        className="w-28 pl-6 pr-2 py-1 text-right font-bold text-[#443825] bg-white border border-[#E5DAC8] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/30 font-sans tabular-nums shadow-2xs"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  {/* Travel Charges */}
+                                  <div className="flex items-center justify-between p-3 bg-[#FAF7F2] hover:bg-[#F6F0E6] rounded-2xl border border-[#EDE4D5] transition">
+                                    <span className="font-medium text-[#6B5A40]">Travel Charges</span>
+                                    <div className="relative inline-flex items-center">
+                                      <span className="absolute left-2.5 text-[#9E8E75] font-bold text-xs">₹</span>
+                                      <input
+                                        type="number"
+                                        value={record.travel_charges || 0}
+                                        onChange={(e) => handleBreakdownChange(record.id, 'travel_charges', parseFloat(e.target.value) || 0)}
+                                        className="w-28 pl-6 pr-2 py-1 text-right font-bold text-[#443825] bg-white border border-[#E5DAC8] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/30 font-sans tabular-nums shadow-2xs"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  {/* Additional Charges */}
+                                  <div className="flex items-center justify-between p-3 bg-[#FAF7F2] hover:bg-[#F6F0E6] rounded-2xl border border-[#EDE4D5] transition">
+                                    <span className="font-medium text-[#6B5A40]">Additional Charges</span>
+                                    <div className="relative inline-flex items-center">
+                                      <span className="absolute left-2.5 text-[#9E8E75] font-bold text-xs">₹</span>
+                                      <input
+                                        type="number"
+                                        value={record.additional_charges || 0}
+                                        onChange={(e) => handleBreakdownChange(record.id, 'additional_charges', parseFloat(e.target.value) || 0)}
+                                        className="w-28 pl-6 pr-2 py-1 text-right font-bold text-[#443825] bg-white border border-[#E5DAC8] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/30 font-sans tabular-nums shadow-2xs"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  {/* Subtotal & GST */}
+                                  <div className="pt-3.5 border-t border-[#EFE8DA] space-y-1.5 px-1">
+                                    <div className="flex items-center justify-between font-black text-[#1E170E]">
+                                      <span>SUBTOTAL (GROSS TOTAL)</span>
+                                      <span className="text-sm font-black font-sans tabular-nums">₹{record.subtotal_amount.toLocaleString('en-IN')}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between text-[#7A6950] font-bold">
+                                      <span>GST ({record.gst_rate}%)</span>
+                                      <span className="font-sans tabular-nums">₹{record.gst_amount.toLocaleString('en-IN')}</span>
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
 
-                              {/* ── RIGHT: PAYMENT TERMS & SCHEDULE (STREAMLINED LUXURY STUDIO UI) ── */}
-                              <div className="lg:col-span-7 bg-white rounded-2xl border border-amber-200/80 p-5 sm:p-6 shadow-sm flex flex-col justify-between space-y-5">
+                              {/* Final Net Investment Box */}
+                              <div className="p-4 sm:p-5 bg-gradient-to-r from-[#F7EAC8] via-[#F3E2B8] to-[#EBD59E] border border-[#DFC885] rounded-2xl flex items-center justify-between shadow-xs mt-4">
                                 <div>
-                                  <div className="flex items-center justify-between pb-3 border-b border-amber-100">
-                                    <div>
-                                      <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200/60">
-                                        <Calendar className="w-3 h-3 text-amber-600" /> SCHEDULE & MILESTONES
-                                      </span>
-                                      <h3 className="text-base font-black text-slate-900 tracking-tight mt-1">Payment Installments</h3>
-                                    </div>
-                                    <button
-                                      onClick={() => setShowAddStepModal({ open: true, recordId: record.id })}
-                                      className="px-3.5 py-1.5 text-xs font-black text-amber-950 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-xl transition shadow-2xs flex items-center gap-1.5 cursor-pointer active:scale-95"
-                                    >
-                                      <Plus className="w-3.5 h-3.5" />
-                                      Add Step
-                                    </button>
+                                  <p className="text-[10px] font-black uppercase text-[#634E23] tracking-wider">Final Net Investment</p>
+                                  <p className="text-[10px] font-medium text-[#7A6950]">Inclusive of all Taxes & Fees</p>
+                                </div>
+                                <h4 className="text-xl sm:text-2xl font-black text-[#1E170E] font-sans tabular-nums tracking-tight">
+                                  ₹{record.final_total_amount.toLocaleString('en-IN')}
+                                </h4>
+                              </div>
+                            </div>
+
+                            {/* ── RIGHT: PAYMENT TERMS & SCHEDULE (WARM LUXURY STUDIO CARD) ── */}
+                            <div className="lg:col-span-7 bg-white rounded-3xl border border-[#EBE3D5] p-6 shadow-xs flex flex-col justify-between space-y-5">
+                              <div>
+                                <div className="flex items-center justify-between pb-3 border-b border-[#EFE8DA]">
+                                  <div>
+                                    <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-[#8C6D28] bg-[#F5EEDC] px-2.5 py-0.5 rounded-md border border-[#E3D3AC]">
+                                      <Calendar className="w-3 h-3 text-[#D4AF37]" /> SCHEDULE & MILESTONES
+                                    </span>
+                                    <h3 className="text-base font-bold text-[#1E170E] tracking-tight mt-1.5">Payment Installments</h3>
                                   </div>
+                                  <button
+                                    onClick={() => setShowAddStepModal({ open: true, recordId: record.id })}
+                                    className="px-3.5 py-1.5 text-xs font-bold text-[#4E3B15] bg-[#F7EFCF] hover:bg-[#F2E5B8] border border-[#DFCFA0] rounded-xl transition shadow-2xs flex items-center gap-1.5 cursor-pointer active:scale-95"
+                                  >
+                                    <Plus className="w-3.5 h-3.5 text-[#8C6D28]" />
+                                    Add Step
+                                  </button>
+                                </div>
 
-                                  {/* Milestones Table */}
-                                  <div className="mt-3.5 overflow-x-auto rounded-xl border border-amber-100">
-                                    <table className="w-full text-left text-xs">
-                                      <thead>
-                                        <tr className="bg-[#FAF7EE] border-b border-amber-100 text-[10px] font-black uppercase text-amber-900/80 tracking-wider">
-                                          <th className="py-2.5 px-3 font-black">Date</th>
-                                          <th className="py-2.5 px-2 font-black">Step Name</th>
-                                          <th className="py-2.5 px-2 text-right font-black">Amount</th>
-                                          <th className="py-2.5 px-2 text-center font-black">Status</th>
-                                          <th className="py-2.5 px-3 text-right font-black">Action</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-amber-50/80 bg-white">
-                                        {milestones.map((m) => (
-                                          <tr key={m.id} className="hover:bg-[#FAF8F2] transition">
-                                            {/* Editable Date Picker */}
-                                            <td className="py-2.5 px-3 whitespace-nowrap">
+                                {/* Milestones Table */}
+                                <div className="mt-4 overflow-x-auto rounded-2xl border border-[#EDE4D5]">
+                                  <table className="w-full text-left text-xs">
+                                    <thead>
+                                      <tr className="bg-[#F7EEDC] border-b border-[#EADBBD] text-[10px] font-black uppercase text-[#634E23] tracking-wider">
+                                        <th className="py-3 px-3.5 font-black">Date</th>
+                                        <th className="py-3 px-2.5 font-black">Step Name</th>
+                                        <th className="py-3 px-2.5 text-right font-black">Amount</th>
+                                        <th className="py-3 px-2.5 text-center font-black">Status</th>
+                                        <th className="py-3 px-3.5 text-right font-black">Action</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-[#EDE4D5] bg-white">
+                                      {milestones.map((m) => (
+                                        <tr key={m.id} className="hover:bg-[#FAF7F2] transition">
+                                          {/* Editable Date Picker */}
+                                          <td className="py-3 px-3.5 whitespace-nowrap">
+                                            <input
+                                              type="date"
+                                              value={m.due_date ? m.due_date.split('T')[0] : ''}
+                                              onChange={(e) => handleMilestoneDateChange(record.id, m.id, e.target.value)}
+                                              className="px-2.5 py-1.5 text-xs font-bold text-[#2A1F08] bg-[#FAF7F2] border border-[#EDE4D5] rounded-xl hover:border-[#D4AF37] focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/30 cursor-pointer shadow-2xs font-sans"
+                                            />
+                                          </td>
+
+                                          {/* Step Name */}
+                                          <td className="py-3 px-2.5 font-black text-[#1E170E] min-w-[130px]">
+                                            <input
+                                              type="text"
+                                              value={m.step_name}
+                                              onChange={(e) => handleMilestoneNameChange(record.id, m.id, e.target.value)}
+                                              className="w-full px-2.5 py-1.5 text-xs font-bold text-[#1E170E] bg-[#FAF7F2] border border-[#EDE4D5] rounded-xl hover:border-[#D4AF37] focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/30 shadow-2xs font-sans"
+                                            />
+                                          </td>
+
+                                          {/* Amount with clean sans-serif font */}
+                                          <td className="py-3 px-2.5 text-right font-black font-sans tabular-nums text-[#1E170E] whitespace-nowrap min-w-[110px]">
+                                            <div className="relative inline-flex items-center">
+                                              <span className="absolute left-2.5 text-[#9E8E75] font-bold text-xs">₹</span>
                                               <input
-                                                type="date"
-                                                value={m.due_date ? m.due_date.split('T')[0] : ''}
-                                                onChange={(e) => handleMilestoneDateChange(record.id, m.id, e.target.value)}
-                                                className="px-2.5 py-1 text-xs font-bold text-slate-800 bg-[#FCFAF6] border border-slate-200/90 rounded-lg hover:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 cursor-pointer shadow-2xs font-sans"
+                                                type="number"
+                                                value={Math.round(m.amount) || 0}
+                                                onChange={(e) => handleMilestoneAmountChange(record.id, m.id, parseFloat(e.target.value) || 0)}
+                                                className="w-24 pl-6 pr-2 py-1.5 text-right text-xs font-black text-[#1E170E] bg-[#FAF7F2] border border-[#EDE4D5] rounded-xl hover:border-[#D4AF37] focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/30 shadow-2xs font-sans tabular-nums"
                                               />
-                                            </td>
+                                            </div>
+                                          </td>
 
-                                            {/* Step Name */}
-                                            <td className="py-2.5 px-2 font-black text-slate-900 min-w-[130px]">
-                                              <input
-                                                type="text"
-                                                value={m.step_name}
-                                                onChange={(e) => handleMilestoneNameChange(record.id, m.id, e.target.value)}
-                                                className="w-full px-2.5 py-1 text-xs font-bold text-slate-900 bg-[#FCFAF6] border border-slate-200/90 rounded-lg hover:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 shadow-2xs font-sans"
-                                              />
-                                            </td>
+                                          {/* Status Badge */}
+                                          <td className="py-3 px-2.5 text-center whitespace-nowrap">
+                                            <button
+                                              type="button"
+                                              onClick={() => handleMilestoneStatusToggle(record.id, m.id, m.status === 'completed' ? 'pending' : 'completed')}
+                                              className={`px-3 py-0.5 rounded-full text-[10px] font-extrabold border cursor-pointer transition shadow-2xs ${
+                                                m.status === 'completed'
+                                                  ? 'bg-[#EAF7EE] text-[#1E7E45] border-[#BCE7CB] hover:bg-[#D8F2DE]'
+                                                  : 'bg-[#FDF4DC] text-[#8C6D28] border-[#E8D6A7] hover:bg-[#F8E7BE]'
+                                              }`}
+                                              title="Click to toggle Completed / Pending"
+                                            >
+                                              {m.status === 'completed' ? '✓ Completed' : 'Pending'}
+                                            </button>
+                                          </td>
 
-                                            {/* Amount with clean sans-serif font */}
-                                            <td className="py-2.5 px-2 text-right font-black font-sans tabular-nums text-slate-900 whitespace-nowrap min-w-[110px]">
-                                              <div className="relative inline-flex items-center">
-                                                <span className="absolute left-2 text-slate-400 font-bold text-xs">₹</span>
-                                                <input
-                                                  type="number"
-                                                  value={Math.round(m.amount) || 0}
-                                                  onChange={(e) => handleMilestoneAmountChange(record.id, m.id, parseFloat(e.target.value) || 0)}
-                                                  className="w-24 pl-5 pr-1.5 py-1 text-right text-xs font-black text-slate-900 bg-[#FCFAF6] border border-slate-200/90 rounded-lg hover:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 shadow-2xs font-sans tabular-nums"
-                                                />
-                                              </div>
-                                            </td>
+                                          {/* Action */}
+                                          <td className="py-3 px-3.5 text-right whitespace-nowrap">
+                                            <div className="flex items-center justify-end gap-2">
+                                              {m.status !== 'completed' ? (
+                                                <button
+                                                  onClick={() => {
+                                                    setShowRecordPaymentModal({
+                                                      open: true,
+                                                      client: client || undefined,
+                                                      financeRecord: record,
+                                                      milestoneId: m.id
+                                                    });
+                                                    setPaymentFormData(prev => ({
+                                                      ...prev,
+                                                      amount: String(Math.round(m.amount)),
+                                                      target_milestone_id: m.id
+                                                    }));
+                                                  }}
+                                                  className="px-3.5 py-1.5 text-[11px] font-bold text-white bg-[#1E7E45] hover:bg-[#166536] active:scale-95 rounded-xl transition shadow-2xs cursor-pointer"
+                                                >
+                                                  Pay
+                                                </button>
+                                              ) : (
+                                                <span className="text-[10px] font-bold text-[#1E7E45] bg-[#EAF7EE] px-2.5 py-0.5 rounded-lg border border-[#BCE7CB]">
+                                                  Paid ({m.payment_mode || 'UPI'})
+                                                </span>
+                                              )}
 
-                                            {/* Status Badge */}
-                                            <td className="py-2.5 px-2 text-center whitespace-nowrap">
+                                              {/* Delete Step Button */}
                                               <button
                                                 type="button"
-                                                onClick={() => handleMilestoneStatusToggle(record.id, m.id, m.status === 'completed' ? 'pending' : 'completed')}
-                                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border cursor-pointer transition shadow-2xs ${
-                                                  m.status === 'completed'
-                                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
-                                                    : 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
-                                                }`}
-                                                title="Click to toggle Completed / Pending"
+                                                onClick={() => handleDeleteMilestone(record.id, m.id)}
+                                                className="p-1.5 text-[#9E8E75] hover:text-[#C0392B] hover:bg-[#FDF2F0] rounded-xl transition cursor-pointer"
+                                                title="Delete milestone step"
                                               >
-                                                {m.status === 'completed' ? '✓ Completed' : 'Pending'}
+                                                <Trash2 className="w-3.5 h-3.5" />
                                               </button>
-                                            </td>
-
-                                            {/* Action */}
-                                            <td className="py-2.5 px-3 text-right whitespace-nowrap">
-                                              <div className="flex items-center justify-end gap-2">
-                                                {m.status !== 'completed' ? (
-                                                  <button
-                                                    onClick={() => {
-                                                      setShowRecordPaymentModal({
-                                                        open: true,
-                                                        client: client || undefined,
-                                                        financeRecord: record,
-                                                        milestoneId: m.id
-                                                      });
-                                                      setPaymentFormData(prev => ({
-                                                        ...prev,
-                                                        amount: String(Math.round(m.amount)),
-                                                        target_milestone_id: m.id
-                                                      }));
-                                                    }}
-                                                    className="px-3 py-1 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-95 rounded-lg transition shadow-2xs cursor-pointer"
-                                                  >
-                                                    Pay
-                                                  </button>
-                                                ) : (
-                                                  <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                                                    Paid ({m.payment_mode || 'UPI'})
-                                                  </span>
-                                                )}
-
-                                                {/* Delete Step Button */}
-                                                <button
-                                                  type="button"
-                                                  onClick={() => handleDeleteMilestone(record.id, m.id)}
-                                                  className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                                                  title="Delete milestone step"
-                                                >
-                                                  <Trash2 className="w-3.5 h-3.5" />
-                                                </button>
-                                              </div>
-                                            </td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                </div>
-
-                                {/* Bottom Summary 3 Badges (Fixed, Received, Pending) */}
-                                <div className="grid grid-cols-3 gap-3 pt-4 border-t border-amber-100">
-                                  {/* Fixed Amount */}
-                                  <div className="p-3 bg-[#FAF7EE] rounded-xl border border-amber-200/80 text-center shadow-2xs">
-                                    <p className="text-[10px] font-black uppercase text-amber-900/70 tracking-wider">Fixed Amount</p>
-                                    <h5 className="text-base font-black text-slate-900 font-sans tabular-nums mt-0.5">
-                                      ₹{record.final_total_amount.toLocaleString('en-IN')}
-                                    </h5>
-                                  </div>
-
-                                  {/* Received Amount */}
-                                  <div className="p-3 bg-emerald-50/90 rounded-xl border border-emerald-200 text-center shadow-2xs">
-                                    <p className="text-[10px] font-black uppercase text-emerald-800 tracking-wider">Received Amount</p>
-                                    <h5 className="text-base font-black text-emerald-900 font-sans tabular-nums mt-0.5">
-                                      ₹{record.received_amount.toLocaleString('en-IN')}
-                                    </h5>
-                                  </div>
-
-                                  {/* Pending Amount */}
-                                  <div className="p-3 bg-amber-100/90 rounded-xl border border-amber-300 text-center shadow-2xs">
-                                    <p className="text-[10px] font-black uppercase text-amber-950 tracking-wider">Pending Amount</p>
-                                    <h5 className="text-base font-black text-amber-950 font-sans tabular-nums mt-0.5">
-                                      ₹{record.pending_amount.toLocaleString('en-IN')}
-                                    </h5>
-                                  </div>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
                                 </div>
                               </div>
 
+                              {/* Bottom Summary 3 Badges (Fixed, Received, Pending) */}
+                              <div className="grid grid-cols-3 gap-3 pt-4 border-t border-[#EFE8DA]">
+                                {/* Fixed Amount */}
+                                <div className="p-3.5 bg-[#FAF7F2] rounded-2xl border border-[#EDE4D5] text-center shadow-2xs">
+                                  <p className="text-[10px] font-black uppercase text-[#8C7654] tracking-wider">Fixed Amount</p>
+                                  <h5 className="text-base font-black text-[#1E170E] font-sans tabular-nums mt-0.5">
+                                    ₹{record.final_total_amount.toLocaleString('en-IN')}
+                                  </h5>
+                                </div>
+
+                                {/* Received Amount */}
+                                <div className="p-3.5 bg-[#EAF7EE] rounded-2xl border border-[#BCE7CB] text-center shadow-2xs">
+                                  <p className="text-[10px] font-black uppercase text-[#1E7E45] tracking-wider">Received Amount</p>
+                                  <h5 className="text-base font-black text-[#1E7E45] font-sans tabular-nums mt-0.5">
+                                    ₹{record.received_amount.toLocaleString('en-IN')}
+                                  </h5>
+                                </div>
+
+                                {/* Pending Amount */}
+                                <div className="p-3.5 bg-[#FDF4DC] rounded-2xl border border-[#E8D6A7] text-center shadow-2xs">
+                                  <p className="text-[10px] font-black uppercase text-[#8C6D28] tracking-wider">Pending Amount</p>
+                                  <h5 className="text-base font-black text-[#8C6D28] font-sans tabular-nums mt-0.5">
+                                    ₹{record.pending_amount.toLocaleString('en-IN')}
+                                  </h5>
+                                </div>
+                              </div>
                             </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </motion.div>
-                  );
-                })
-              )}
-            </div>
-          )}
 
-          {/* ─────────────────────────────────────────────────────────────
-              TAB 2: TEAM PAYOUTS & STUDIO EXPENSES
-          ───────────────────────────────────────────────────────────── */}
-          {activeTab === 'expenses' && (
-            <div className="space-y-4">
-              <div className="bg-white p-5 rounded-2xl border border-amber-200/70 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-lg font-black text-slate-900">Team Payouts & Studio Expenses</h3>
-                  <p className="text-xs text-slate-500">Track photographer payouts, travel bookings, gear rentals, and custom studio expenditures.</p>
-                </div>
-                <button
-                  onClick={() => setShowAddExpenseModal(true)}
-                  className="px-4 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-xl shadow-md transition flex items-center gap-1.5"
-                >
-                  <Plus className="w-4 h-4" />
-                  + Record Expense / Payout
-                </button>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </motion.div>
+                );
+              })
+            )}
+          </div>
+        )}
+
+        {/* ─────────────────────────────────────────────────────────────
+            TAB 2: TEAM PAYOUTS & STUDIO EXPENSES
+        ───────────────────────────────────────────────────────────── */}
+        {activeTab === 'expenses' && (
+          <div className="space-y-4">
+            <div className="bg-[#FFFDF9] p-6 rounded-3xl border border-[#EBE3D5] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-bold text-[#1E170E]">Team Payouts & Studio Expenses</h3>
+                <p className="text-xs text-[#7A6950] mt-0.5">Track photographer payouts, travel bookings, gear rentals, and custom studio expenditures.</p>
               </div>
-
-              {expenses.length === 0 ? (
-                <div className="bg-white p-12 rounded-2xl border border-dashed border-slate-200 text-center text-slate-400 space-y-2">
-                  <CreditCard className="w-8 h-8 mx-auto" />
-                  <p className="text-xs font-semibold">No expenses or team payouts recorded yet.</p>
-                </div>
-              ) : (
-                <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead>
-                        <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase text-slate-500 tracking-wider">
-                          <th className="py-3 px-4 font-black">Date</th>
-                          <th className="py-3 px-4 font-black">Category</th>
-                          <th className="py-3 px-4 font-black">Title & Details</th>
-                          <th className="py-3 px-4 font-black">Linked Client</th>
-                          <th className="py-3 px-4 font-black">Paid To</th>
-                          <th className="py-3 px-4 font-black">Payment Mode</th>
-                          <th className="py-3 px-4 text-right font-black">Amount</th>
-                          <th className="py-3 px-4 text-center font-black">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {expenses.map(exp => {
-                          const linkedClient = clients.find(c => c.id === exp.client_id);
-                          return (
-                            <tr key={exp.id} className="hover:bg-amber-50/20 transition">
-                              <td className="py-3 px-4 font-bold text-slate-700 whitespace-nowrap">
-                                {new Date(exp.payment_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                              </td>
-                              <td className="py-3 px-4">
-                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                                  {exp.category}
-                                </span>
-                              </td>
-                              <td className="py-3 px-4 font-extrabold text-slate-900">
-                                {exp.title}
-                                {exp.notes && <span className="block text-[10px] font-normal text-slate-500">{exp.notes}</span>}
-                              </td>
-                              <td className="py-3 px-4 font-semibold text-slate-600">
-                                {linkedClient ? `${linkedClient.name}` : '— General'}
-                              </td>
-                              <td className="py-3 px-4 font-semibold text-slate-700">
-                                {exp.paid_to || '—'}
-                              </td>
-                              <td className="py-3 px-4 font-bold text-slate-600">
-                                {exp.payment_mode}
-                              </td>
-                              <td className="py-3 px-4 text-right font-black font-sans tabular-nums text-rose-600 text-sm whitespace-nowrap">
-                                ₹{Math.round(exp.amount).toLocaleString('en-IN')}
-                              </td>
-                              <td className="py-3 px-4 text-center">
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                  Paid
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
+              <button
+                onClick={() => setShowAddExpenseModal(true)}
+                className="px-4 py-2.5 text-xs font-bold text-[#4E3B15] bg-[#F7EFCF] hover:bg-[#F2E5B8] border border-[#DFCFA0] rounded-xl shadow-2xs transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+              >
+                <Plus className="w-4 h-4 text-[#8C6D28]" />
+                + Record Expense / Payout
+              </button>
             </div>
-          )}
 
-        </div>
+            {expenses.length === 0 ? (
+              <div className="bg-[#FFFDF9] p-12 rounded-3xl border border-dashed border-[#E0D3BC] text-center text-[#9E8E75] space-y-2 shadow-xs">
+                <CreditCard className="w-8 h-8 mx-auto text-[#D4AF37]" />
+                <p className="text-xs font-bold text-[#6B5A40]">No expenses or team payouts recorded yet.</p>
+              </div>
+            ) : (
+              <div className="bg-[#FFFDF9] rounded-3xl border border-[#EBE3D5] shadow-sm overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="bg-[#F7EEDC] border-b border-[#EADBBD] text-[10px] font-black uppercase text-[#634E23] tracking-wider">
+                        <th className="py-3.5 px-4 font-black">Date</th>
+                        <th className="py-3.5 px-4 font-black">Category</th>
+                        <th className="py-3.5 px-4 font-black">Title & Details</th>
+                        <th className="py-3.5 px-4 font-black">Linked Client</th>
+                        <th className="py-3.5 px-4 font-black">Paid To</th>
+                        <th className="py-3.5 px-4 font-black">Payment Mode</th>
+                        <th className="py-3.5 px-4 text-right font-black">Amount</th>
+                        <th className="py-3.5 px-4 text-center font-black">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#EDE4D5]">
+                      {expenses.map(exp => {
+                        const linkedClient = clients.find(c => c.id === exp.client_id);
+                        return (
+                          <tr key={exp.id} className="hover:bg-[#FAF7F2] transition">
+                            <td className="py-3.5 px-4 font-bold text-[#443825] whitespace-nowrap">
+                              {new Date(exp.payment_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            </td>
+                            <td className="py-3.5 px-4">
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#F5EEDC] text-[#8C6D28] border border-[#E3D3AC]">
+                                {exp.category}
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-4 font-bold text-[#1E170E]">
+                              {exp.title}
+                              {exp.notes && <span className="block text-[10px] font-normal text-[#8C7654]">{exp.notes}</span>}
+                            </td>
+                            <td className="py-3.5 px-4 font-semibold text-[#6B5A40]">
+                              {linkedClient ? `${linkedClient.name}` : '— General'}
+                            </td>
+                            <td className="py-3.5 px-4 font-semibold text-[#6B5A40]">
+                              {exp.paid_to || '—'}
+                            </td>
+                            <td className="py-3.5 px-4 font-bold text-[#6B5A40]">
+                              {exp.payment_mode}
+                            </td>
+                            <td className="py-3.5 px-4 text-right font-black font-sans tabular-nums text-[#C0392B] text-sm whitespace-nowrap">
+                              ₹{Math.round(exp.amount).toLocaleString('en-IN')}
+                            </td>
+                            <td className="py-3.5 px-4 text-center">
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-[#EAF7EE] text-[#1E7E45] border border-[#BCE7CB]">
+                                ✓ Completed
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+      </div>
 
       {/* ─────────────────────────────────────────────────────────────
           MODAL: ADD NEW STEP (LIGHT THEME POPUP MODAL)
@@ -1932,7 +1932,7 @@ function computeFinanceTotals(
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl p-6 max-w-md w-full border border-amber-200 shadow-2xl space-y-4 font-sans"
+              className="bg-[#FFFDF9] rounded-3xl p-6 sm:p-7 max-w-md w-full border border-[#EBE3D5] shadow-2xl space-y-5 font-sans"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
@@ -2017,7 +2017,7 @@ function computeFinanceTotals(
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl p-6 max-w-md w-full border border-amber-200 shadow-2xl space-y-4 font-sans"
+              className="bg-[#FFFDF9] rounded-3xl p-6 sm:p-7 max-w-md w-full border border-[#EBE3D5] shadow-2xl space-y-5 font-sans"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
@@ -2117,7 +2117,7 @@ function computeFinanceTotals(
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl p-6 max-w-md w-full border border-amber-200 shadow-2xl space-y-4 font-sans"
+              className="bg-[#FFFDF9] rounded-3xl p-6 sm:p-7 max-w-md w-full border border-[#EBE3D5] shadow-2xl space-y-5 font-sans"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
@@ -2267,7 +2267,7 @@ function computeFinanceTotals(
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl max-w-2xl w-full border border-slate-200 shadow-2xl p-6 sm:p-8 space-y-6 my-8"
+              className="bg-[#FFFDF9] rounded-3xl max-w-2xl w-full border border-[#EBE3D5] shadow-2xl p-6 sm:p-8 space-y-6 my-8"
             >
               {/* Header with Print button */}
               <div className="flex items-center justify-between pb-4 border-b border-slate-200 print:hidden">
