@@ -3,8 +3,10 @@ import { createClient } from '@supabase/supabase-js';
 import { NextResponse, type NextRequest } from 'next/server';
 
 /**
- * Next.js Proxy Handler (Updated Next.js convention)
+ * Next.js Proxy & Middleware Handler.
  * Preserves all route protections, Supabase auth sessions, and headers.
+ * Optimized with clean cookie parsing & orphaned chunk pruning to prevent
+ * "400 Bad Request: Request Header Or Cookie Too Large" errors.
  */
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({
@@ -89,13 +91,32 @@ export async function proxy(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet) {
+          // Track active cookie names being set
+          const newlySetNames = new Set(cookiesToSet.map(c => c.name));
+
+          // Set cookies on request
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
           response = NextResponse.next({
             request,
           });
+
+          // Set cookies on response with clean options
           cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
+            response.cookies.set(name, value, {
+              ...options,
+              sameSite: 'lax',
+              secure: process.env.NODE_ENV === 'production',
+              path: '/',
+            })
           );
+
+          // Prune orphaned/stale cookie chunks from request that are no longer in cookiesToSet
+          const existingCookies = request.cookies.getAll();
+          existingCookies.forEach((c) => {
+            if (c.name.includes('-auth-token.') && !newlySetNames.has(c.name)) {
+              response.cookies.set(c.name, '', { maxAge: 0, path: '/' });
+            }
+          });
         },
       },
     });
@@ -110,9 +131,6 @@ export async function proxy(request: NextRequest) {
   if (!user) {
     const candidateTokens: string[] = [];
 
-    const sbAccessToken = request.cookies.get('sb-access-token')?.value;
-    if (sbAccessToken) candidateTokens.push(sbAccessToken);
-
     const allCookies = request.cookies.getAll();
     const authCookies = allCookies.filter(c => c.name.includes('-auth-token'));
     for (const ac of authCookies) {
@@ -126,6 +144,9 @@ export async function proxy(request: NextRequest) {
         }
       }
     }
+
+    const sbAccessToken = request.cookies.get('sb-access-token')?.value;
+    if (sbAccessToken) candidateTokens.push(sbAccessToken);
 
     for (const tok of candidateTokens) {
       const decodedUser = parseJwt(tok);
@@ -181,13 +202,17 @@ export async function proxy(request: NextRequest) {
         );
       }
 
-      // Clear auth cookies on response to sign them out immediately
+      // Clear all auth cookies on response to sign them out immediately
       const redirectUrl = new URL('/login', request.url);
       redirectUrl.searchParams.set('error', 'unauthorized_staging');
       const signOutResponse = NextResponse.redirect(redirectUrl, { status: 307 });
       
-      signOutResponse.cookies.set('sb-access-token', '', { expires: new Date(0) });
-      signOutResponse.cookies.set('sb-refresh-token', '', { expires: new Date(0) });
+      const allCookies = request.cookies.getAll();
+      allCookies.forEach(c => {
+        if (c.name.includes('-token') || c.name.startsWith('sb-')) {
+          signOutResponse.cookies.set(c.name, '', { maxAge: 0, path: '/' });
+        }
+      });
       return signOutResponse;
     }
   }

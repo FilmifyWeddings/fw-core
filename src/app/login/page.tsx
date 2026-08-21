@@ -29,6 +29,7 @@ import {
   Star,
 } from 'lucide-react';
 import OtpModal from '@/components/auth/OtpModal';
+import { pruneClientCookies } from '@/lib/cookie-cleaner';
 
 // Comprehensive Country Code Data with ISO for Flag Images
 const COUNTRIES = [
@@ -154,6 +155,7 @@ export default function LoginPage() {
     }
 
     const checkSession = async () => {
+      pruneClientCookies();
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
         const redirectTo = searchParams.get('redirectTo') || '/workspace';
@@ -173,6 +175,7 @@ export default function LoginPage() {
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    pruneClientCookies();
 
     const cleanIdentifier = identifier.trim();
     const cleanPassword = password.trim();

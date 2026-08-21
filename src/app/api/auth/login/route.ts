@@ -105,7 +105,12 @@ export async function POST(req: NextRequest) {
       redirectUrl: '/workspace',
     });
 
-    const isHttps = req.nextUrl.protocol === 'https:' || req.headers.get('x-forwarded-proto') === 'https';
+    // Clean and prune any old/orphaned chunk cookies from request
+    req.cookies.getAll().forEach(c => {
+      if (c.name.includes('-auth-token.') || c.name.startsWith('sb-')) {
+        res.cookies.set(c.name, '', { maxAge: 0, path: '/' });
+      }
+    });
 
     // Set auth cookies directly on HTTP Response Headers
     res.cookies.set('sb-access-token', session.access_token, {
