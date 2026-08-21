@@ -120,9 +120,9 @@ export function Footer({ onNavigate }: FooterProps) {
           <div className="md:col-span-2 space-y-3">
             <div className="text-xs font-black uppercase tracking-wider text-[#1A1917] dark:text-white font-serif">Legal</div>
             <ul className="space-y-2 text-xs font-medium text-[#5A554E] dark:text-[#C5C0B8]">
-              <li><button onClick={(e) => handleNavClick('privacy-policy', e)} className="hover:text-[#B89047] transition-colors">Privacy Policy</button></li>
-              <li><button onClick={(e) => handleNavClick('terms', e)} className="hover:text-[#B89047] transition-colors">Terms of Service</button></li>
-              <li><button onClick={(e) => handleNavClick('privacy-policy', e)} className="hover:text-[#B89047] transition-colors">Security & Data</button></li>
+              <li><Link href="/privacy-policy" className="hover:text-[#B89047] transition-colors">Privacy Policy</Link></li>
+              <li><Link href="/data-deletion" className="hover:text-[#B89047] transition-colors">User Data Deletion</Link></li>
+              <li><Link href="/terms-of-service" className="hover:text-[#B89047] transition-colors">Terms of Service</Link></li>
             </ul>
           </div>
 

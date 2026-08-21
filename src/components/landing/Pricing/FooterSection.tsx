@@ -147,6 +147,7 @@ export const FooterSection: React.FC = () => {
             <h4 className="text-[13.5px] font-bold text-[#211B17] mb-3 tracking-wide">Legal</h4>
             <ul className="space-y-2 text-[12px] text-[#99928A]">
               <li><a href="/privacy-policy" className="hover:text-[#C89435] transition-colors">Privacy Policy</a></li>
+              <li><a href="/data-deletion" className="hover:text-[#C89435] transition-colors">User Data Deletion</a></li>
               <li><a href="/terms-of-service" className="hover:text-[#C89435] transition-colors">Terms of Service</a></li>
               <li><a href="/support" className="hover:text-[#C89435] transition-colors">Refund & Support Policy</a></li>
             </ul>
