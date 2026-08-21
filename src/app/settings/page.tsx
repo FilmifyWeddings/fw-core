@@ -118,6 +118,7 @@ export default function SettingsPage() {
   const [invoiceTerms, setInvoiceTerms] = useState('1. Advance payment is non-refundable upon client cancellation.\n2. Final deliverables delivered post clearance of balance.');
   const [invoiceFooterNote, setInvoiceFooterNote] = useState('Thank you for choosing Filmify Weddings! This is a computer-generated invoice.');
   const [invoiceFont, setInvoiceFont] = useState('Cormorant Garamond');
+  const [invoiceQrImageUrl, setInvoiceQrImageUrl] = useState('');
   const [projectPrefix, setProjectPrefix] = useState('PRJ-2026-');
   const [gstPercent, setGstPercent] = useState(18);
   const [paymentTerms, setPaymentTerms] = useState('50% Retainer for booking lock, 50% on Event Date');
@@ -200,6 +201,7 @@ export default function SettingsPage() {
         terms: settingsObj.invoice_terms || invoiceTerms,
         footerNote: settingsObj.invoice_footer_note || invoiceFooterNote,
         logoUrl: '',
+        qrCodeImageUrl: settingsObj.invoice_qr_image_url || invoiceQrImageUrl,
         fontFamily: settingsObj.invoice_font || invoiceFont,
         themeColor: '#D4AF37',
       }));
@@ -296,6 +298,7 @@ export default function SettingsPage() {
           if (s.invoice_terms) setInvoiceTerms(s.invoice_terms);
           if (s.invoice_footer_note) setInvoiceFooterNote(s.invoice_footer_note);
           if (s.invoice_font) setInvoiceFont(s.invoice_font);
+          if (s.invoice_qr_image_url) setInvoiceQrImageUrl(s.invoice_qr_image_url);
           setProjectPrefix(s.sequence_projects_prefix || 'PRJ-2026-');
           setGstPercent(s.invoice_gst_percent ?? 18);
           setPaymentTerms(s.invoice_payment_terms || '');
@@ -368,6 +371,7 @@ export default function SettingsPage() {
         invoice_terms: invoiceTerms,
         invoice_footer_note: invoiceFooterNote,
         invoice_font: invoiceFont,
+        invoice_qr_image_url: invoiceQrImageUrl,
         sequence_projects_prefix: projectPrefix,
         invoice_gst_percent: gstPercent,
         invoice_payment_terms: paymentTerms,
@@ -987,6 +991,42 @@ export default function SettingsPage() {
                         onChange={e => setUpiId(e.target.value)}
                         className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58]"
                       />
+                    </div>
+                  </div>
+
+                  {/* QR Code Upload Section */}
+                  <div className="pt-2">
+                    <label className="text-xs font-bold text-slate-700 block mb-1.5">Official Payment QR Code Image (Custom Upload)</label>
+                    <div className="flex flex-wrap items-center gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                      {invoiceQrImageUrl ? (
+                        <img src={invoiceQrImageUrl} alt="QR Code" className="w-12 h-12 object-contain rounded-lg border bg-white p-1" />
+                      ) : (
+                        <div className="w-12 h-12 rounded-lg bg-white border border-dashed border-slate-300 flex items-center justify-center text-slate-400">
+                          <QrCode className="w-6 h-6" />
+                        </div>
+                      )}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const r = new FileReader();
+                            r.onload = () => setInvoiceQrImageUrl(r.result as string);
+                            r.readAsDataURL(file);
+                          }
+                        }}
+                        className="text-xs text-slate-600 file:mr-2 file:py-1 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#0F9D58] file:text-white hover:file:bg-[#0B8043] cursor-pointer"
+                      />
+                      {invoiceQrImageUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setInvoiceQrImageUrl('')}
+                          className="text-xs text-rose-600 font-bold hover:underline"
+                        >
+                          Remove QR
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

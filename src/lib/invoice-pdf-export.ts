@@ -8,8 +8,9 @@ export interface InvoicePdfExportOptions {
 }
 
 /**
- * Universal Mobile + Desktop High-Resolution PDF Exporter for Invoices.
- * Uses html2canvas-pro and jsPDF to ensure pixel-perfect rendering across iOS, Android, and Desktop.
+ * Canva-grade IFrame Sandbox Universal High-Resolution PDF Exporter for Invoices.
+ * Creates an isolated 794px viewport inside a hidden iframe so that mobile browsers
+ * (iOS Safari, Android Chrome) and Desktop PCs render 100% pixel-identical A4 layouts.
  */
 export async function exportInvoiceToPDF({
   elementId = 'invoice-printable-document',
@@ -23,54 +24,173 @@ export async function exportInvoiceToPDF({
     throw new Error('Invoice document element not found');
   }
 
-  // Ensure fonts are loaded
+  // Ensure fonts are ready
   if (typeof document !== 'undefined' && document.fonts) {
     try {
       await document.fonts.ready;
     } catch {}
   }
 
-  onProgress?.('Generating high-resolution snapshot...');
+  onProgress?.('Initializing isolated 794px rendering sandbox...');
 
-  const canvas = await html2canvasPro(originalElement, {
-    scale: 2, // 2x high resolution
-    useCORS: true,
-    allowTaint: true,
-    backgroundColor: '#FFFFFF',
-    logging: false,
-  });
+  const iframe = document.createElement('iframe');
+  iframe.style.position = 'fixed';
+  iframe.style.top = '-99999px';
+  iframe.style.left = '-99999px';
+  iframe.style.width = '794px';
+  iframe.style.height = `${originalElement.scrollHeight || 1200}px`;
+  iframe.style.border = 'none';
+  iframe.style.zIndex = '-99999';
+  document.body.appendChild(iframe);
 
-  onProgress?.('Building PDF document...');
-
-  const imgData = canvas.toDataURL('image/png', 1.0);
-  
-  // A4 Standard Dimensions: 210mm x 297mm
-  const pdf = new jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: 'a4',
-  });
-
-  const pdfWidth = 210;
-  const pageHeight = 297;
-  const imgWidth = pdfWidth;
-  const imgHeight = (canvas.height * pdfWidth) / canvas.width;
-
-  let heightLeft = imgHeight;
-  let position = 0;
-
-  // First page
-  pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
-  heightLeft -= pageHeight;
-
-  // Multi-page handling if invoice overflows A4
-  while (heightLeft > 0) {
-    position = heightLeft - imgHeight;
-    pdf.addPage();
-    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
-    heightLeft -= pageHeight;
+  const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+  if (!iframeDoc) {
+    if (document.body.contains(iframe)) document.body.removeChild(iframe);
+    throw new Error('Failed to create rendering sandbox iframe');
   }
 
-  onProgress?.('Downloading invoice...');
-  pdf.save(filename);
+  iframeDoc.open();
+  iframeDoc.write(`
+    <!DOCTYPE html>
+    <html lang="en">
+      <head>
+        <meta charSet="utf-8" />
+        <meta name="viewport" content="width=794, initial-scale=1" />
+      </head>
+      <body style="margin:0;padding:0;width:794px;background:#ffffff;"></body>
+    </html>
+  `);
+  iframeDoc.close();
+
+  // Clone all head styles and external fonts into iframe
+  const headStyles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'));
+  headStyles.forEach((styleEl) => {
+    try {
+      iframeDoc.head.appendChild(styleEl.cloneNode(true));
+    } catch {}
+  });
+
+  const fixStyle = iframeDoc.createElement('style');
+  fixStyle.innerHTML = `
+    * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      word-spacing: normal !important;
+      font-variant-ligatures: none !important;
+      text-rendering: geometryPrecision !important;
+      box-sizing: border-box !important;
+    }
+    html, body {
+      margin: 0 !important;
+      padding: 0 !important;
+      width: 794px !important;
+      min-width: 794px !important;
+      max-width: 794px !important;
+      background: #ffffff !important;
+      overflow: visible !important;
+    }
+    #invoice-printable-document {
+      width: 794px !important;
+      min-width: 794px !important;
+      max-width: 794px !important;
+      margin: 0 !important;
+      padding: 36px 40px !important;
+      border: none !important;
+      border-radius: 0 !important;
+      box-shadow: none !important;
+    }
+  `;
+  iframeDoc.head.appendChild(fixStyle);
+
+  const clone = originalElement.cloneNode(true) as HTMLElement;
+  clone.style.width = '794px';
+  clone.style.minWidth = '794px';
+  clone.style.maxWidth = '794px';
+  clone.style.transform = 'none';
+  clone.style.margin = '0';
+
+  iframeDoc.body.appendChild(clone);
+
+  try {
+    if (iframeDoc.fonts) {
+      try {
+        await iframeDoc.fonts.ready;
+      } catch {}
+    }
+
+    // Wait for all images in iframe (logos, QR codes) to complete loading
+    const images = Array.from(iframeDoc.querySelectorAll('img'));
+    await Promise.all(
+      images.map((img) => {
+        if (img.complete) return Promise.resolve();
+        return new Promise((resolve) => {
+          img.onload = resolve;
+          img.onerror = resolve;
+        });
+      })
+    );
+
+    onProgress?.('Capturing high-resolution document...');
+
+    const captureTarget = iframeDoc.getElementById(elementId) || iframeDoc.body;
+
+    const canvas = await html2canvasPro(captureTarget, {
+      scale: 2.5, // 2.5x retina vector clarity
+      useCORS: true,
+      allowTaint: true,
+      backgroundColor: '#ffffff',
+      logging: false,
+      windowWidth: 794,
+    });
+
+    onProgress?.('Building standard A4 PDF document...');
+
+    const imgData = canvas.toDataURL('image/jpeg', 0.98);
+
+    const pdfWidthMm = 210; // A4 standard width
+    const pageHeightMm = 297; // A4 standard height
+    const canvasHeightPx = canvas.height;
+    const canvasWidthPx = canvas.width;
+    const totalPdfHeightMm = (canvasHeightPx / canvasWidthPx) * pdfWidthMm;
+
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
+      compress: true,
+    });
+
+    // If fits within 1 page (or slight margin), add as single A4 page
+    if (totalPdfHeightMm <= pageHeightMm) {
+      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidthMm, totalPdfHeightMm, undefined, 'FAST');
+    } else {
+      let heightLeft = totalPdfHeightMm;
+      let position = 0;
+
+      pdf.addImage(imgData, 'JPEG', 0, position, pdfWidthMm, totalPdfHeightMm, undefined, 'FAST');
+      heightLeft -= pageHeightMm;
+
+      while (heightLeft > 0) {
+        position = heightLeft - totalPdfHeightMm;
+        pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 0, position, pdfWidthMm, totalPdfHeightMm, undefined, 'FAST');
+        heightLeft -= pageHeightMm;
+      }
+    }
+
+    onProgress?.('Downloading invoice PDF...');
+    const cleanFilename = (filename || 'Invoice.pdf')
+      .replace(/–/g, '-')
+      .replace(/—/g, '-')
+      .replace(/[^ -~]/g, '-')
+      .trim();
+
+    const finalName = cleanFilename.toLowerCase().endsWith('.pdf') ? cleanFilename : `${cleanFilename}.pdf`;
+    pdf.save(finalName);
+    onProgress?.('Downloaded successfully!');
+  } finally {
+    if (document.body.contains(iframe)) {
+      document.body.removeChild(iframe);
+    }
+  }
 }

@@ -65,6 +65,7 @@ const DEFAULT_SETTINGS = {
   invoice_footer_note: 'Thank you for choosing Filmify Weddings! This is a computer-generated invoice.',
   invoice_font: 'Cormorant Garamond',
   invoice_theme_color: '#D4AF37',
+  invoice_qr_image_url: '',
   expense_categories: ['Marketing', 'Crew Travel', 'Equipment', 'Editor Pay', 'Misc'],
 
   // Attendance & Geofence
