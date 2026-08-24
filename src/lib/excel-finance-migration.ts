@@ -586,6 +586,7 @@ export async function executeBatchClientFinanceImport(
         const { data: newClient, error: clientErr } = await supabase
           .from('workspace_clients')
           .insert([{
+            user_id: targetWorkspaceId,
             workspace_id: targetWorkspaceId,
             name: row.clientName.trim(),
             phone: '',
@@ -609,6 +610,7 @@ export async function executeBatchClientFinanceImport(
 
       // 2. Upsert Client Finance Record
       const finPayload = {
+        user_id: targetWorkspaceId,
         workspace_id: targetWorkspaceId,
         client_id: targetClientId,
         base_package_price: row.fixAmount,
