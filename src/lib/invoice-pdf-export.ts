@@ -135,7 +135,7 @@ export async function exportInvoiceToPDF({
     const captureTarget = iframeDoc.getElementById(elementId) || iframeDoc.body;
 
     const canvas = await html2canvasPro(captureTarget, {
-      scale: 2.5, // 2.5x retina vector clarity
+      scale: 3.0, // 3.0x ultra-high retina vector clarity
       useCORS: true,
       allowTaint: true,
       backgroundColor: '#ffffff',
@@ -161,19 +161,19 @@ export async function exportInvoiceToPDF({
     });
 
     // If fits within 1 page (or slight margin), add as single A4 page
-    if (totalPdfHeightMm <= pageHeightMm) {
-      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidthMm, totalPdfHeightMm, undefined, 'FAST');
+    if (totalPdfHeightMm <= pageHeightMm + 2) {
+      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidthMm, Math.min(totalPdfHeightMm, pageHeightMm), undefined, 'SLOW');
     } else {
       let heightLeft = totalPdfHeightMm;
       let position = 0;
 
-      pdf.addImage(imgData, 'JPEG', 0, position, pdfWidthMm, totalPdfHeightMm, undefined, 'FAST');
+      pdf.addImage(imgData, 'JPEG', 0, position, pdfWidthMm, totalPdfHeightMm, undefined, 'SLOW');
       heightLeft -= pageHeightMm;
 
       while (heightLeft > 0) {
         position = heightLeft - totalPdfHeightMm;
         pdf.addPage();
-        pdf.addImage(imgData, 'JPEG', 0, position, pdfWidthMm, totalPdfHeightMm, undefined, 'FAST');
+        pdf.addImage(imgData, 'JPEG', 0, position, pdfWidthMm, totalPdfHeightMm, undefined, 'SLOW');
         heightLeft -= pageHeightMm;
       }
     }

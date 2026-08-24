@@ -19,6 +19,55 @@ export interface ExtractedQuotationFinancials {
 }
 
 /**
+ * Normalizes any free-text date (e.g. "10 FEB 26", "10 Feb 2026", "10/02/2026", "2026-02-10")
+ * into standard HTML-compatible ISO format "YYYY-MM-DD".
+ */
+export function normalizeToIsoDate(rawDate?: any, fallbackDate?: string | null): string {
+  const fallback = fallbackDate && fallbackDate.includes('-') ? fallbackDate.split('T')[0] : new Date().toISOString().split('T')[0];
+  if (!rawDate) return fallback;
+
+  const dateStr = String(rawDate).trim();
+  if (!dateStr || dateStr.toLowerCase() === 'dd-mm-yyyy' || dateStr.toLowerCase() === 'undefined' || dateStr.toLowerCase() === 'null') {
+    return fallback;
+  }
+
+  // Already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return dateStr;
+  }
+
+  // Timestamp format like 2026-02-10T00:00:00.000Z
+  if (dateStr.includes('T')) {
+    return dateStr.split('T')[0];
+  }
+
+  try {
+    const parts = dateStr.split(/[\s\-\/\.]+/);
+    if (parts.length === 3) {
+      // Case "10 FEB 26" -> parts: ["10", "FEB", "26"]
+      if (parts[2].length === 2) {
+        const fullYear = `20${parts[2]}`;
+        const parsed = new Date(`${parts[0]} ${parts[1]} ${fullYear}`);
+        if (!isNaN(parsed.getTime())) {
+          return parsed.toISOString().split('T')[0];
+        }
+      }
+      // Case DD/MM/YYYY
+      if (parts[2].length === 4 && !isNaN(Number(parts[0])) && !isNaN(Number(parts[1]))) {
+        return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      }
+    }
+
+    const parsed = new Date(dateStr);
+    if (!isNaN(parsed.getTime())) {
+      return parsed.toISOString().split('T')[0];
+    }
+  } catch (_) {}
+
+  return fallback;
+}
+
+/**
  * Extracts and calculates exact financial numbers and payment milestones
  * from any quotation content_json payload (Airy proposal, classic, or custom).
  */
@@ -67,7 +116,8 @@ export function extractFinancialsFromQuotation(
 
   // 2. Extract Event Date & Type from cover
   const cover = contentJson.cover || {};
-  let eventDate = cover.eventDate || cover.weddingDate || cover.wedding_date || fallbackEventDate || null;
+  let rawEventDate = cover.eventDate || cover.weddingDate || cover.wedding_date || fallbackEventDate || null;
+  const eventDate = rawEventDate ? normalizeToIsoDate(rawEventDate, fallbackEventDate) : null;
   const eventType = cover.eventType || contentJson.eventGroup || 'Wedding Photography';
 
   // 3. Extract payment schedule / milestones
@@ -79,8 +129,8 @@ export function extractFinancialsFromQuotation(
 
   if (rawSteps.length > 0) {
     milestones = rawSteps.map((step: any, idx: number) => {
-      const stepName = String(step.name || step.stepName || step.title || step.step || `Milestone ${idx + 1}`).trim();
-      let stepAmount = Number(step.amount ?? step.price ?? 0);
+      const stepName = String(step.stepName || step.name || step.title || step.step || step.label || `Milestone ${idx + 1}`).trim();
+      let stepAmount = Number(step.amount ?? step.price ?? step.val ?? 0);
 
       // If amount is 0 but percentage string is provided (e.g. "30%"), calculate from final total
       if (stepAmount === 0 && (step.pct || step.percent)) {
@@ -96,9 +146,10 @@ export function extractFinancialsFromQuotation(
       const isCompleted = statusLower === 'completed' || statusLower === 'paid' || statusLower === 'received';
       const status: 'completed' | 'pending' = isCompleted ? 'completed' : 'pending';
 
-      const dueDate = step.date || step.due_date || step.dueDate || (eventDate || new Date().toISOString().split('T')[0]);
+      const rawStepDate = step.date || step.due_date || step.dueDate || eventDate;
+      const dueDate = normalizeToIsoDate(rawStepDate, eventDate);
       const paymentMode = step.payment_mode || step.paymentMode || 'UPI';
-      const paidDate = isCompleted ? (step.paid_date || step.paidDate || dueDate) : null;
+      const paidDate = isCompleted ? normalizeToIsoDate(step.paid_date || step.paidDate || rawStepDate, dueDate) : null;
 
       if (isCompleted) {
         calculatedReceived += Math.max(0, stepAmount);
@@ -107,6 +158,7 @@ export function extractFinancialsFromQuotation(
       return {
         id: step.id || `m_${idx + 1}_${Date.now()}`,
         step_name: stepName,
+        title: stepName,
         due_date: dueDate,
         amount: stepAmount,
         status,
@@ -125,6 +177,7 @@ export function extractFinancialsFromQuotation(
       {
         id: `m_1_${Date.now()}`,
         step_name: 'Token Booking Amount',
+        title: 'Token Booking Amount',
         due_date: nowStr,
         amount: token,
         status: 'pending',
@@ -133,6 +186,7 @@ export function extractFinancialsFromQuotation(
       {
         id: `m_2_${Date.now()}`,
         step_name: 'Advance Amount (Pre-Event)',
+        title: 'Advance Amount (Pre-Event)',
         due_date: eventDate || nowStr,
         amount: advance,
         status: 'pending',
@@ -141,6 +195,7 @@ export function extractFinancialsFromQuotation(
       {
         id: `m_3_${Date.now()}`,
         step_name: 'On Wedding Day / Delivery',
+        title: 'On Wedding Day / Delivery',
         due_date: eventDate || nowStr,
         amount: finalDel,
         status: 'pending',

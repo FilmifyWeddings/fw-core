@@ -9,10 +9,11 @@ import {
   FileText, Download, Printer, ExternalLink, ChevronDown, ChevronUp, Edit3, 
   Trash2, X, RefreshCw, Sparkles, Phone, Calculator, Tag, PieChart, Wallet, 
   ArrowRight, Bell, Send, Check, Crown, Lock, Unlock, ShieldCheck, Key,
-  Eye, EyeOff, AlertCircle, CheckSquare, Square, Pencil, MoreVertical
+  Eye, EyeOff, AlertCircle, CheckSquare, Square, Pencil, MoreVertical, SlidersHorizontal,
+  MapPin, CheckCheck
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { extractFinancialsFromQuotation } from '@/lib/quotation-finance-sync';
+import { extractFinancialsFromQuotation, normalizeToIsoDate } from '@/lib/quotation-finance-sync';
 import { LeadQuotationModal } from '@/components/dashboard/lead-quotation-modal';
 import { InvoiceModalDialog } from '@/components/finance/invoice-modal-dialog';
 import type { 
@@ -55,12 +56,22 @@ export default function FinancePage() {
   const [unlockError, setUnlockError] = useState('');
 
   // ─────────────────────────────────────────────────────────────
-  // 🔍 SEARCH & FILTERS
+  // 🔍 UNIFIED ADVANCED FILTERS & SEARCH
   // ─────────────────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'partially_paid' | 'paid'>('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'partially_paid' | 'paid' | 'overdue_only'>('all');
+  const [locationFilter, setLocationFilter] = useState('all');
   const [paymentModeFilter, setPaymentModeFilter] = useState('all');
+  const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
+  const filterDropdownRef = useRef<HTMLDivElement | null>(null);
+
+  // ─────────────────────────────────────────────────────────────
+  // 📅 GLOBAL DATE RANGE FILTER & REVENUE TRACKER
+  // ─────────────────────────────────────────────────────────────
+  const [dateRangePreset, setDateRangePreset] = useState<'all' | 'this_month' | 'last_30_days' | 'this_quarter' | 'custom'>('all');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
   // Expanded client cards set
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
@@ -78,6 +89,21 @@ export default function FinancePage() {
   // 🔔 FINANCIAL NOTIFICATIONS & DUE DATE ALERTS
   // ─────────────────────────────────────────────────────────────
   const [isNotificationDropdownOpen, setIsNotificationDropdownOpen] = useState(false);
+  const notificationRef = useRef<HTMLDivElement | null>(null);
+
+  // Auto-close notification & filter popovers on outside click
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) {
+        setIsNotificationDropdownOpen(false);
+      }
+      if (filterDropdownRef.current && !filterDropdownRef.current.contains(event.target as Node)) {
+        setIsFilterDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // ─────────────────────────────────────────────────────────────
   // 📊 INTERACTIVE METRIC CARDS DRILL-DOWN MODALS
@@ -87,7 +113,43 @@ export default function FinancePage() {
   const [upcomingTimeframe, setUpcomingTimeframe] = useState<'7' | '15' | '30' | '90' | 'custom'>('30');
 
   // ─────────────────────────────────────────────────────────────
-  // 💸 RECORD PAYMENT & MILESTONES MODALS
+  // ✏️ PRICING BREAKDOWN EDIT CONFIRMATION MODAL
+  // ─────────────────────────────────────────────────────────────
+  const [showPricingEditModal, setShowPricingEditModal] = useState<{
+    open: boolean;
+    record?: ClientFinanceRecord;
+  }>({ open: false });
+
+  const [pricingEditFormData, setPricingEditFormData] = useState({
+    base_package_price: '',
+    discount_amount: '',
+    accommodation_charges: '',
+    travel_charges: '',
+    additional_charges: '',
+    gst_rate: 0
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  // 💳 COMPLETE PAYMENT / MILESTONE STATUS MODAL
+  // ─────────────────────────────────────────────────────────────
+  const [showCompletePaymentModal, setShowCompletePaymentModal] = useState<{
+    open: boolean;
+    recordId: string;
+    clientName: string;
+    milestone: FinanceMilestoneItem | null;
+  }>({ open: false, recordId: '', clientName: '', milestone: null });
+
+  const [completePaymentFormData, setCompletePaymentFormData] = useState({
+    amount: '',
+    status: 'completed' as 'completed' | 'pending',
+    payment_date: new Date().toISOString().split('T')[0],
+    payment_mode: 'UPI',
+    reference_id: '',
+    notes: ''
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  // 💸 GENERAL RECORD PAYMENT & ADD STEP MODALS
   // ─────────────────────────────────────────────────────────────
   const [showRecordPaymentModal, setShowRecordPaymentModal] = useState<{
     open: boolean;
@@ -574,6 +636,7 @@ export default function FinancePage() {
             {
               id: `m_init_${Date.now()}`,
               step_name: received >= finalTotal && finalTotal > 0 ? 'Full Payment' : 'Advance Booking',
+              title: received >= finalTotal && finalTotal > 0 ? 'Full Payment' : 'Advance Booking',
               due_date: c.created_at ? c.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
               paid_date: c.created_at ? c.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
               amount: received,
@@ -769,21 +832,121 @@ export default function FinancePage() {
     }
   };
 
-  // Handle Breakdown Line Item Changes
-  const handleBreakdownChange = (
-    recordId: string, 
-    field: keyof ClientFinanceRecord, 
-    val: number
-  ) => {
+  // ─────────────────────────────────────────────────────────────
+  // ✏️ PRICING BREAKDOWN EDIT CONFIRMATION MODAL HANDLERS
+  // ─────────────────────────────────────────────────────────────
+  const handleOpenPricingEditModal = (rec: ClientFinanceRecord) => {
+    setPricingEditFormData({
+      base_package_price: String(rec.base_package_price || 0),
+      discount_amount: String(rec.discount_amount || 0),
+      accommodation_charges: String(rec.accommodation_charges || 0),
+      travel_charges: String(rec.travel_charges || 0),
+      additional_charges: String(rec.additional_charges || 0),
+      gst_rate: Number(rec.gst_rate || 0)
+    });
+    setShowPricingEditModal({ open: true, record: rec });
+  };
+
+  const handleSavePricingBreakdown = () => {
+    if (!showPricingEditModal.record) return;
+    const rec = showPricingEditModal.record;
+
+    const base = Math.max(0, Math.round(parseFloat(pricingEditFormData.base_package_price) || 0));
+    const discount = Math.max(0, Math.round(parseFloat(pricingEditFormData.discount_amount) || 0));
+    const accom = Math.max(0, Math.round(parseFloat(pricingEditFormData.accommodation_charges) || 0));
+    const travel = Math.max(0, Math.round(parseFloat(pricingEditFormData.travel_charges) || 0));
+    const addl = Math.max(0, Math.round(parseFloat(pricingEditFormData.additional_charges) || 0));
+    const gstRate = Math.max(0, Number(pricingEditFormData.gst_rate || 0));
+
+    const updatedRecordObj: ClientFinanceRecord = {
+      ...rec,
+      base_package_price: base,
+      discount_amount: discount,
+      accommodation_charges: accom,
+      travel_charges: travel,
+      additional_charges: addl,
+      gst_rate: gstRate
+    };
+
+    const finalUpdated = computeFinanceTotals(updatedRecordObj);
+
+    setFinanceRecords(prev => prev.map(r => r.id === rec.id ? finalUpdated : r));
+    updateFinanceRecordInDB(finalUpdated);
+
+    logAudit(
+      'ADJUSTMENT',
+      finalUpdated.final_total_amount,
+      `Updated pricing breakdown for ${rec.client?.name || 'Client'}: Net Investment ₹${finalUpdated.final_total_amount.toLocaleString('en-IN')}`,
+      rec.client_id,
+      rec.client?.name
+    );
+
+    setShowPricingEditModal({ open: false });
+  };
+
+  // ─────────────────────────────────────────────────────────────
+  // 💳 COMPLETE PAYMENT / MILESTONE STATUS MODAL HANDLERS
+  // ─────────────────────────────────────────────────────────────
+  const handleOpenCompletePaymentModal = (record: ClientFinanceRecord, milestone: FinanceMilestoneItem) => {
+    const isCompleted = milestone.status === 'completed' || milestone.status === 'paid' || (milestone.status as string) === 'Completed';
+    setCompletePaymentFormData({
+      amount: String(milestone.amount || 0),
+      status: isCompleted ? 'completed' : 'completed',
+      payment_date: milestone.paid_date || new Date().toISOString().split('T')[0],
+      payment_mode: milestone.payment_mode || 'UPI',
+      reference_id: milestone.reference_id || '',
+      notes: milestone.notes || ''
+    });
+    setShowCompletePaymentModal({
+      open: true,
+      recordId: record.id,
+      clientName: record.client?.name || 'Client',
+      milestone
+    });
+  };
+
+  const handleSaveCompletePaymentModal = () => {
+    const { recordId, milestone } = showCompletePaymentModal;
+    if (!recordId || !milestone) return;
+
+    const numAmt = Math.round(parseFloat(completePaymentFormData.amount) || 0);
+    const isComp = completePaymentFormData.status === 'completed';
+
     setFinanceRecords(prev => prev.map(rec => {
       if (rec.id === recordId) {
-        const updated = { ...rec, [field]: Math.round(val || 0) };
-        const finalUpdated = computeFinanceTotals(updated);
+        const updatedMilestones = (rec.milestones || []).map(m => {
+          if (m.id === milestone.id) {
+            return {
+              ...m,
+              amount: numAmt,
+              status: (completePaymentFormData.status as any),
+              paid_date: isComp ? (completePaymentFormData.payment_date || new Date().toISOString().split('T')[0]) : undefined,
+              payment_mode: completePaymentFormData.payment_mode,
+              reference_id: completePaymentFormData.reference_id || null,
+              notes: completePaymentFormData.notes || null
+            };
+          }
+          return m;
+        });
+
+        const finalUpdated = computeFinanceTotals(rec, updatedMilestones);
         updateFinanceRecordInDB(finalUpdated);
+
+        logAudit(
+          isComp ? 'INCOME' : 'ADJUSTMENT',
+          numAmt,
+          `${isComp ? 'Recorded Payment' : 'Updated Milestone'} "${milestone.step_name || 'Milestone'}" for ${rec.client?.name || 'Client'}: ₹${numAmt.toLocaleString('en-IN')} (${completePaymentFormData.payment_mode})`,
+          rec.client_id,
+          rec.client?.name,
+          completePaymentFormData.payment_mode
+        );
+
         return finalUpdated;
       }
       return rec;
     }));
+
+    setShowCompletePaymentModal({ open: false, recordId: '', clientName: '', milestone: null });
   };
 
   // Handle Milestone Inline Editing
@@ -798,47 +961,6 @@ export default function FinancePage() {
         });
         const finalUpdated = computeFinanceTotals(rec, updatedMilestones);
         updateFinanceRecordInDB(finalUpdated);
-        return finalUpdated;
-      }
-      return rec;
-    }));
-  };
-
-  // Toggle Milestone Status (Completed / Pending)
-  const handleMilestoneStatusToggle = (recordId: string, milestoneId: string) => {
-    setFinanceRecords(prev => prev.map(rec => {
-      if (rec.id === recordId) {
-        const todayStr = new Date().toISOString().split('T')[0];
-        let changedMs: FinanceMilestoneItem | null = null;
-        const updatedMilestones = (rec.milestones || []).map(m => {
-          if (m.id === milestoneId) {
-            const isCompleted = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed';
-            const nextStatus = isCompleted ? 'pending' : 'completed';
-            changedMs = {
-              ...m,
-              status: nextStatus as any,
-              paid_date: nextStatus === 'completed' ? (m.paid_date || todayStr) : undefined
-            };
-            return changedMs;
-          }
-          return m;
-        });
-
-        const finalUpdated = computeFinanceTotals(rec, updatedMilestones);
-        updateFinanceRecordInDB(finalUpdated);
-
-        if (changedMs) {
-          const isNowPaid = (changedMs as any).status === 'completed';
-          logAudit(
-            isNowPaid ? 'INCOME' : 'ADJUSTMENT',
-            (changedMs as any).amount,
-            `Toggled installment "${(changedMs as any).step_name || 'Milestone'}" to ${isNowPaid ? 'Paid' : 'Pending'} for ${rec.client?.name || 'Client'}`,
-            rec.client_id,
-            rec.client?.name,
-            (changedMs as any).payment_mode
-          );
-        }
-
         return finalUpdated;
       }
       return rec;
@@ -1220,21 +1342,95 @@ export default function FinancePage() {
   };
 
   // ─────────────────────────────────────────────────────────────
-  // 🔍 FILTERED DATASET & METRIC RECALCULATION
+  // 🔍 DYNAMIC UNIFIED FILTERING & METRICS ENGINE
   // ─────────────────────────────────────────────────────────────
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  const uniqueCategories = useMemo(() => {
+    const cats = new Set<string>();
+    clients.forEach(c => {
+      if (c.event_type) cats.add(c.event_type);
+    });
+    return Array.from(cats);
+  }, [clients]);
+
+  const uniqueLocations = useMemo(() => {
+    const locs = new Set<string>();
+    clients.forEach(c => {
+      const loc = (c as any).city || (c as any).venue;
+      if (loc && typeof loc === 'string' && loc.trim()) locs.add(loc.trim());
+    });
+    return Array.from(locs);
+  }, [clients]);
+
+  // Check active filter count
+  const activeFiltersCount = useMemo(() => {
+    let count = 0;
+    if (categoryFilter !== 'all') count++;
+    if (statusFilter !== 'all') count++;
+    if (locationFilter !== 'all') count++;
+    if (paymentModeFilter !== 'all') count++;
+    if (dateRangePreset !== 'all' || (startDate && endDate)) count++;
+    return count;
+  }, [categoryFilter, statusFilter, locationFilter, paymentModeFilter, dateRangePreset, startDate, endDate]);
+
+  const resetAllFilters = () => {
+    setCategoryFilter('all');
+    setStatusFilter('all');
+    setLocationFilter('all');
+    setPaymentModeFilter('all');
+    setDateRangePreset('all');
+    setStartDate('');
+    setEndDate('');
+    setSearchQuery('');
+  };
+
   const filteredRecords = useMemo(() => {
     return financeRecords.filter(rec => {
-      const clientName = rec.client?.name?.toLowerCase() || '';
-      const eventType = rec.client?.event_type?.toLowerCase() || '';
-      const phone = rec.client?.phone?.toLowerCase() || '';
+      const client = rec.client;
+      const clientName = client?.name?.toLowerCase() || '';
+      const eventType = client?.event_type || '';
+      const phone = client?.phone?.toLowerCase() || '';
+      const city = ((client as any)?.city || (client as any)?.venue || '').toLowerCase();
       const query = searchQuery.toLowerCase();
 
-      const matchesSearch = !query || clientName.includes(query) || eventType.includes(query) || phone.includes(query);
-      const matchesStatus = statusFilter === 'all' || rec.payment_status === statusFilter;
+      // Search Query
+      const matchesSearch = !query || clientName.includes(query) || eventType.toLowerCase().includes(query) || phone.includes(query) || city.includes(query);
 
-      return matchesSearch && matchesStatus;
+      // Category
+      const matchesCategory = categoryFilter === 'all' || eventType === categoryFilter;
+
+      // Status
+      let matchesStatus = true;
+      if (statusFilter === 'overdue_only') {
+        const hasOverdue = (rec.milestones || []).some(m => m.due_date && m.due_date < todayStr && m.status !== 'completed' && m.status !== 'paid');
+        matchesStatus = hasOverdue;
+      } else if (statusFilter !== 'all') {
+        matchesStatus = rec.payment_status === statusFilter;
+      }
+
+      // Location
+      const matchesLocation = locationFilter === 'all' || (client as any)?.city === locationFilter || (client as any)?.venue === locationFilter;
+
+      // Payment Mode
+      let matchesMode = true;
+      if (paymentModeFilter !== 'all') {
+        matchesMode = (rec.milestones || []).some(m => m.payment_mode === paymentModeFilter);
+      }
+
+      // Date Range Match
+      let matchesDate = true;
+      if (dateRangePreset !== 'all' || (startDate && endDate)) {
+        const clientDate = client?.event_date || rec.created_at?.split('T')[0];
+        if (clientDate) {
+          if (startDate && clientDate < startDate) matchesDate = false;
+          if (endDate && clientDate > endDate) matchesDate = false;
+        }
+      }
+
+      return matchesSearch && matchesCategory && matchesStatus && matchesLocation && matchesMode && matchesDate;
     });
-  }, [financeRecords, searchQuery, statusFilter]);
+  }, [financeRecords, searchQuery, categoryFilter, statusFilter, locationFilter, paymentModeFilter, dateRangePreset, startDate, endDate, todayStr]);
 
   const filteredExpenses = useMemo(() => {
     return expenses.filter(exp => {
@@ -1243,11 +1439,19 @@ export default function FinancePage() {
       const paidTo = exp.paid_to?.toLowerCase() || '';
       const cat = exp.category?.toLowerCase() || '';
 
-      return !query || title.includes(query) || paidTo.includes(query) || cat.includes(query);
-    });
-  }, [expenses, searchQuery]);
+      const matchesSearch = !query || title.includes(query) || paidTo.includes(query) || cat.includes(query);
+      const matchesCategory = categoryFilter === 'all' || exp.category === categoryFilter;
+      const matchesMode = paymentModeFilter === 'all' || exp.payment_mode === paymentModeFilter;
 
-  // 5 Top Metric Cards calculations
+      let matchesDate = true;
+      if (startDate && exp.payment_date < startDate) matchesDate = false;
+      if (endDate && exp.payment_date > endDate) matchesDate = false;
+
+      return matchesSearch && matchesCategory && matchesMode && matchesDate;
+    });
+  }, [expenses, searchQuery, categoryFilter, paymentModeFilter, startDate, endDate]);
+
+  // 5 Top Metric Cards calculations (Dynamically calculated based on active date range & filters)
   const totalInvoiced = useMemo(() => {
     return Math.round(filteredRecords.reduce((acc, r) => acc + (Number(r.final_total_amount) || 0), 0));
   }, [filteredRecords]);
@@ -1646,7 +1850,7 @@ export default function FinancePage() {
         </div>
 
         {/* ─────────────────────────────────────────────────────────────
-            TABS & SEARCH / FILTER BAR (MATCHING SCREENSHOT)
+            TABS & ADVANCED FILTER BAR + DATE PICKER (MATCHING SCREENSHOT)
         ───────────────────────────────────────────────────────────── */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200/80 pb-3">
           
@@ -1707,10 +1911,69 @@ export default function FinancePage() {
             </button>
           </div>
 
-          {/* Right Search, Filters & Audit Trigger */}
-          <div className="flex items-center gap-3">
+          {/* Right Filters Strip (Date Range, Search, Unified Filter Dropdown, Alerts, Audit) */}
+          <div className="flex items-center gap-3 flex-wrap">
+            
+            {/* 📅 Date Range Preset Selector */}
+            <div className="relative">
+              <select
+                value={dateRangePreset}
+                onChange={(e) => {
+                  const val = e.target.value as any;
+                  setDateRangePreset(val);
+                  const now = new Date();
+                  if (val === 'this_month') {
+                    const first = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+                    const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+                    setStartDate(first);
+                    setEndDate(last);
+                  } else if (val === 'last_30_days') {
+                    const past = new Date(now.getTime() - 30 * 86400000).toISOString().split('T')[0];
+                    setStartDate(past);
+                    setEndDate(now.toISOString().split('T')[0]);
+                  } else if (val === 'this_quarter') {
+                    const qMonth = Math.floor(now.getMonth() / 3) * 3;
+                    const first = new Date(now.getFullYear(), qMonth, 1).toISOString().split('T')[0];
+                    const last = new Date(now.getFullYear(), qMonth + 3, 0).toISOString().split('T')[0];
+                    setStartDate(first);
+                    setEndDate(last);
+                  } else if (val === 'all') {
+                    setStartDate('');
+                    setEndDate('');
+                  }
+                }}
+                className="appearance-none px-3 py-1.5 pr-7 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:border-amber-500 shadow-2xs cursor-pointer"
+              >
+                <option value="all">📅 All Time</option>
+                <option value="this_month">🗓️ This Month</option>
+                <option value="last_30_days">⏳ Last 30 Days</option>
+                <option value="this_quarter">📊 This Quarter</option>
+                <option value="custom">⚙️ Custom Range</option>
+              </select>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-2.5 pointer-events-none" />
+            </div>
+
+            {/* Custom Range Date Pickers (if Custom is chosen) */}
+            {dateRangePreset === 'custom' && (
+              <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2 py-1 shadow-2xs">
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="text-xs font-bold text-slate-800 bg-transparent focus:outline-none"
+                />
+                <span className="text-slate-400 text-xs font-bold">➔</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="text-xs font-bold text-slate-800 bg-transparent focus:outline-none"
+                />
+              </div>
+            )}
+
             {/* Search Input */}
-            <div className="relative w-60 sm:w-64">
+            <div className="relative w-44 sm:w-56">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
               <input
                 type="text"
@@ -1721,24 +1984,131 @@ export default function FinancePage() {
               />
             </div>
 
-            {/* Status Dropdown */}
-            <div className="relative">
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as any)}
-                className="appearance-none px-3.5 py-1.5 pr-8 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:border-amber-500 shadow-2xs cursor-pointer"
+            {/* 🎛️ UNIFIED ADVANCED FILTERS DROPDOWN BUTTON */}
+            <div className="relative" ref={filterDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setIsFilterDropdownOpen(prev => !prev)}
+                className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer ${
+                  activeFiltersCount > 0
+                    ? 'bg-orange-50 text-orange-700 border-orange-200 font-black'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                }`}
               >
-                <option value="all">All Statuses</option>
-                <option value="pending">Pending</option>
-                <option value="partially_paid">Partially Paid</option>
-                <option value="paid">Paid Full</option>
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-2.5 pointer-events-none" />
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+                <span>Filters</span>
+                {activeFiltersCount > 0 && (
+                  <span className="w-4 h-4 rounded-full bg-orange-600 text-white text-[10px] font-black flex items-center justify-center">
+                    {activeFiltersCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Master Filters Dropdown Panel */}
+              <AnimatePresence>
+                {isFilterDropdownOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                    className="absolute right-0 mt-2 w-72 sm:w-80 bg-white rounded-2xl border border-slate-200 shadow-2xl p-4 z-40 space-y-3.5 font-sans"
+                  >
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                        <Filter className="w-3.5 h-3.5 text-orange-600" /> Filter Criteria
+                      </h4>
+                      {activeFiltersCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={resetAllFilters}
+                          className="text-[10px] font-extrabold text-rose-600 hover:underline"
+                        >
+                          Reset All
+                        </button>
+                      )}
+                    </div>
+
+                    {/* 1. Status Filter */}
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-600 block mb-1">Payment Status</label>
+                      <select
+                        value={statusFilter}
+                        onChange={(e) => setStatusFilter(e.target.value as any)}
+                        className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none"
+                      >
+                        <option value="all">⚡ All Statuses</option>
+                        <option value="overdue_only">⚠️ Overdue Dues Only</option>
+                        <option value="pending">⏳ Pending Balance</option>
+                        <option value="partially_paid">🌓 Partially Paid</option>
+                        <option value="paid">✅ 100% Paid Full</option>
+                      </select>
+                    </div>
+
+                    {/* 2. Event Category */}
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-600 block mb-1">Event Category</label>
+                      <select
+                        value={categoryFilter}
+                        onChange={(e) => setCategoryFilter(e.target.value)}
+                        className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none"
+                      >
+                        <option value="all">📂 All Event Categories</option>
+                        {uniqueCategories.map(cat => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* 3. Location / City */}
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-600 block mb-1">Location / City</label>
+                      <select
+                        value={locationFilter}
+                        onChange={(e) => setLocationFilter(e.target.value)}
+                        className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none"
+                      >
+                        <option value="all">📍 All Locations / Cities</option>
+                        {uniqueLocations.map(loc => (
+                          <option key={loc} value={loc}>{loc}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* 4. Payment Channel */}
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-600 block mb-1">Payment Mode Channel</label>
+                      <select
+                        value={paymentModeFilter}
+                        onChange={(e) => setPaymentModeFilter(e.target.value)}
+                        className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none"
+                      >
+                        <option value="all">💳 All Channels</option>
+                        <option value="UPI">UPI (GooglePay / PhonePe)</option>
+                        <option value="Bank Transfer">Bank Transfer (NEFT/IMPS)</option>
+                        <option value="Cash">Cash</option>
+                        <option value="Card">Card</option>
+                        <option value="Cheque">Cheque</option>
+                      </select>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-100 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setIsFilterDropdownOpen(false)}
+                        className="px-4 py-1.5 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs rounded-xl shadow-xs"
+                      >
+                        Apply Filters
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
-            {/* 🔔 Notifications Bell */}
-            <div className="relative">
+            {/* 🔔 Notifications Bell (WITH OUTSIDE CLICK AUTO-CLOSE) */}
+            <div className="relative" ref={notificationRef}>
               <button
+                type="button"
                 onClick={() => setIsNotificationDropdownOpen(prev => !prev)}
                 className="relative p-2 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-2xs transition cursor-pointer"
                 title="Due Date & Payment Alerts"
@@ -1809,7 +2179,7 @@ export default function FinancePage() {
                                 </a>
                               )}
                               <button
-                                onClick={() => handleMilestoneStatusToggle(item.record.id, item.milestone.id)}
+                                onClick={() => handleOpenCompletePaymentModal(item.record, item.milestone)}
                                 className="px-2.5 py-1 bg-emerald-600 text-white font-extrabold text-[10px] rounded-lg shadow-xs hover:bg-emerald-700 flex items-center gap-1"
                               >
                                 <Check className="w-2.5 h-2.5" /> Mark Paid
@@ -1826,6 +2196,7 @@ export default function FinancePage() {
 
             {/* 📜 Audit Log Trigger */}
             <button
+              type="button"
               onClick={() => setIsAuditDrawerOpen(true)}
               className="p-2 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-2xs transition cursor-pointer"
               title="Finance Audit Stream"
@@ -1851,8 +2222,16 @@ export default function FinancePage() {
                 <Receipt className="w-10 h-10 text-slate-300 mx-auto" />
                 <h3 className="text-base font-black text-slate-800">No matching client records</h3>
                 <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                  No clients match your filter criteria. Try clearing the search or status filter.
+                  No clients match your filter criteria. Try clearing search, dates, or status filters.
                 </p>
+                {activeFiltersCount > 0 && (
+                  <button
+                    onClick={resetAllFilters}
+                    className="px-4 py-2 bg-orange-500 text-white font-bold text-xs rounded-xl shadow-xs"
+                  >
+                    Clear All Filters
+                  </button>
+                )}
               </div>
             ) : (
               filteredRecords.map((record) => {
@@ -1862,6 +2241,11 @@ export default function FinancePage() {
                 const finalTotal = record.final_total_amount || 0;
                 const recAmt = record.received_amount || 0;
                 const pendAmt = record.pending_amount || 0;
+
+                // 🚨 CARD-LEVEL OVERDUE SUM
+                const clientOverdueSum = milestones
+                  .filter(m => m.due_date && m.due_date < todayStr && m.status !== 'completed' && m.status !== 'paid')
+                  .reduce((sum, m) => sum + (Number(m.amount) || 0), 0);
 
                 return (
                   <motion.div
@@ -1897,17 +2281,28 @@ export default function FinancePage() {
                               {record.payment_status === 'paid' ? 'Paid Full' : recAmt > 0 ? 'Partially Paid' : 'Pending'}
                             </span>
 
-                            {/* Quotation Button */}
+                            {/* 🚨 CARD-LEVEL OVERDUE ALERT BADGE */}
+                            {clientOverdueSum > 0 && (
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200 animate-pulse flex items-center gap-1">
+                                <AlertTriangle className="w-3 h-3 text-rose-600" />
+                                Payment Overdue: ₹{clientOverdueSum.toLocaleString('en-IN')}
+                              </span>
+                            )}
+
+                            {/* 🔄 QUOTATION VERSION BADGE & SELECTOR */}
                             {record.has_final_quotation ? (
-                              <span 
+                              <button
+                                type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleOpenQuotationModalForRecord(record);
                                 }}
-                                className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1 hover:bg-emerald-100 transition"
+                                className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100 transition flex items-center gap-1 shadow-2xs cursor-pointer"
+                                title="Click to view quotation versions"
                               >
-                                <Sparkles className="w-2.5 h-2.5 text-emerald-600" /> Quotation Synced
-                              </span>
+                                <Sparkles className="w-3 h-3 text-emerald-600" />
+                                <span>Selected Version: <strong>V{record.final_quotation_version || 1}</strong></span>
+                              </button>
                             ) : (
                               <button
                                 type="button"
@@ -1915,7 +2310,7 @@ export default function FinancePage() {
                                   e.stopPropagation();
                                   handleOpenQuotationModalForRecord(record);
                                 }}
-                                className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-orange-50 text-orange-700 hover:bg-orange-100 transition flex items-center gap-1 border border-orange-200"
+                                className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-orange-50 text-orange-700 hover:bg-orange-100 transition flex items-center gap-1 border border-orange-200 cursor-pointer"
                               >
                                 + Select Final Quotation
                               </button>
@@ -1934,6 +2329,14 @@ export default function FinancePage() {
                               <>
                                 <span>•</span>
                                 <span className="text-slate-600 font-mono font-medium">{client.phone}</span>
+                              </>
+                            )}
+                            {(client as any)?.city && (
+                              <>
+                                <span>•</span>
+                                <span className="text-slate-500 flex items-center gap-0.5">
+                                  <MapPin className="w-3 h-3 text-slate-400" /> {(client as any).city}
+                                </span>
                               </>
                             )}
                           </div>
@@ -2011,14 +2414,29 @@ export default function FinancePage() {
                           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                             
                             {/* ══════════════════════════════════════════════
-                                LEFT COLUMN: PRICING DETAILS (4 Cols)
+                                LEFT COLUMN: PRICING DETAILS (5 Cols)
                             ══════════════════════════════════════════════ */}
                             <div className="lg:col-span-5 space-y-4 border-r-0 lg:border-r border-slate-100 lg:pr-6">
-                              <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
-                                Pricing Details
-                              </h4>
+                              <div className="flex items-center justify-between">
+                                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                                  Pricing Details
+                                </h4>
 
-                              <div className="space-y-2.5 text-xs">
+                                {/* ✏️ EDIT PRICING BUTTON */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenPricingEditModal(record)}
+                                  className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-[11px] font-black flex items-center gap-1 transition cursor-pointer"
+                                >
+                                  <Pencil className="w-3 h-3 text-amber-700" /> Edit Pricing
+                                </button>
+                              </div>
+
+                              <div 
+                                onClick={() => handleOpenPricingEditModal(record)}
+                                className="space-y-2.5 text-xs cursor-pointer hover:opacity-90 transition"
+                                title="Click to edit pricing breakdown"
+                              >
                                 {/* Base Package Price */}
                                 <div className="flex items-center justify-between">
                                   <span className="text-slate-600 font-medium">Base Package Price</span>
@@ -2128,33 +2546,45 @@ export default function FinancePage() {
                                   {/* Milestone Rows */}
                                   {milestones.map((ms) => {
                                     const isPaid = ms.status === 'completed' || ms.status === 'paid' || (ms.status as string) === 'Completed';
+                                    const isOverdue = !isPaid && ms.due_date && ms.due_date < todayStr;
 
                                     return (
                                       <div
                                         key={ms.id}
-                                        className="grid grid-cols-12 gap-2 items-center p-2 rounded-2xl hover:bg-slate-50/80 transition border border-transparent hover:border-slate-200 text-xs"
+                                        className={`grid grid-cols-12 gap-2 items-center p-2.5 rounded-2xl transition border text-xs ${
+                                          isPaid
+                                            ? 'bg-emerald-50/40 border-emerald-100'
+                                            : isOverdue
+                                            ? 'bg-rose-50/40 border-rose-200'
+                                            : 'hover:bg-slate-50/80 border-slate-100'
+                                        }`}
                                       >
-                                        {/* Date Field */}
+                                        {/* Date Field (Strictly ISO normalized YYYY-MM-DD) */}
                                         <div className="col-span-3">
-                                          <div className="relative">
-                                            <input
-                                              type="date"
-                                              value={ms.due_date || ''}
-                                              onChange={(e) => handleMilestoneStepChange(record.id, ms.id, 'due_date', e.target.value)}
-                                              className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-[11px] font-medium text-slate-700 focus:outline-none focus:border-amber-500"
-                                            />
-                                          </div>
+                                          <input
+                                            type="date"
+                                            value={ms.due_date || ''}
+                                            onChange={(e) => handleMilestoneStepChange(record.id, ms.id, 'due_date', e.target.value)}
+                                            className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-xl text-[11px] font-medium text-slate-700 focus:outline-none focus:border-amber-500"
+                                          />
                                         </div>
 
-                                        {/* Step Name */}
-                                        <div className="col-span-4">
+                                        {/* Step Name & Payment Mode Badge */}
+                                        <div className="col-span-4 space-y-0.5">
                                           <input
                                             type="text"
                                             value={ms.step_name || ms.title || ''}
                                             onChange={(e) => handleMilestoneStepChange(record.id, ms.id, 'step_name', e.target.value)}
                                             placeholder="Payment Milestone"
-                                            className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-amber-500"
+                                            className="w-full px-2.5 py-1 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-amber-500"
                                           />
+                                          {ms.payment_mode && (
+                                            <span className={`inline-block text-[9px] font-black px-1.5 py-0.5 rounded-md ${
+                                              isPaid ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
+                                            }`}>
+                                              {isPaid ? `Paid (${ms.payment_mode})` : ms.payment_mode}
+                                            </span>
+                                          )}
                                         </div>
 
                                         {/* Amount */}
@@ -2163,22 +2593,31 @@ export default function FinancePage() {
                                             type="number"
                                             value={ms.amount || 0}
                                             onChange={(e) => handleMilestoneStepChange(record.id, ms.id, 'amount', Number(e.target.value))}
-                                            className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 text-right focus:outline-none focus:border-amber-500"
+                                            className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 text-right focus:outline-none focus:border-amber-500"
                                           />
                                         </div>
 
-                                        {/* Status Pill Button */}
+                                        {/* Status Pill Button ➔ OPENS COMPLETE PAYMENT MODAL */}
                                         <div className="col-span-2 flex justify-center">
                                           <button
                                             type="button"
-                                            onClick={() => handleMilestoneStatusToggle(record.id, ms.id)}
-                                            className={`px-2.5 py-1 rounded-full text-[10px] font-black border transition cursor-pointer flex items-center gap-1 ${
+                                            onClick={() => handleOpenCompletePaymentModal(record, ms)}
+                                            className={`px-2.5 py-1 rounded-full text-[10px] font-black border transition cursor-pointer flex items-center gap-1 shadow-2xs ${
                                               isPaid
                                                 ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                                                : isOverdue
+                                                ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
                                                 : 'bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100'
                                             }`}
+                                            title="Click to record/update payment status"
                                           >
-                                            {isPaid ? <><Check className="w-3 h-3" /> Completed</> : 'Pending'}
+                                            {isPaid ? (
+                                              <><Check className="w-3 h-3 text-emerald-600" /> Completed</>
+                                            ) : isOverdue ? (
+                                              '⚠️ Overdue'
+                                            ) : (
+                                              'Pending'
+                                            )}
                                           </button>
                                         </div>
 
@@ -2187,14 +2626,21 @@ export default function FinancePage() {
                                           <button
                                             type="button"
                                             onClick={() => setOpenActionMenuId(openActionMenuId === ms.id ? null : ms.id)}
-                                            className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                                            className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
                                           >
                                             <MoreVertical className="w-4 h-4" />
                                           </button>
 
                                           {/* Dropdown Menu */}
                                           {openActionMenuId === ms.id && (
-                                            <div className="absolute right-0 top-8 bg-white rounded-xl border border-slate-200 shadow-xl py-1.5 w-36 z-30 space-y-0.5 text-xs">
+                                            <div className="absolute right-0 top-8 bg-white rounded-xl border border-slate-200 shadow-xl py-1.5 w-40 z-30 space-y-0.5 text-xs">
+                                              <button
+                                                type="button"
+                                                onClick={() => handleOpenCompletePaymentModal(record, ms)}
+                                                className="w-full text-left px-3 py-1.5 hover:bg-slate-50 font-bold text-emerald-700 flex items-center gap-2"
+                                              >
+                                                <CheckCircle2 className="w-3.5 h-3.5" /> Complete Payment
+                                              </button>
                                               <button
                                                 type="button"
                                                 onClick={() => handleOpenEditMilestone(record.id, ms)}
@@ -2436,6 +2882,264 @@ export default function FinancePage() {
       </div>
 
       {/* ─────────────────────────────────────────────────────────────
+          ✏️ MODAL: PRICING BREAKDOWN EDIT CONFIRMATION MODAL
+      ───────────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showPricingEditModal.open && showPricingEditModal.record && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl p-6 sm:p-7 max-w-lg w-full border border-slate-100 shadow-2xl space-y-4 font-sans"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="text-base font-black text-slate-900">Edit Pricing Breakdown</h3>
+                  <p className="text-xs text-slate-500 font-medium">For client: {showPricingEditModal.record.client?.name}</p>
+                </div>
+                <button onClick={() => setShowPricingEditModal({ open: false })} className="p-1 text-slate-400 hover:text-slate-600">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Dynamic Subtotal & Total Preview */}
+              {(() => {
+                const b = Math.max(0, Math.round(parseFloat(pricingEditFormData.base_package_price) || 0));
+                const d = Math.max(0, Math.round(parseFloat(pricingEditFormData.discount_amount) || 0));
+                const ac = Math.max(0, Math.round(parseFloat(pricingEditFormData.accommodation_charges) || 0));
+                const tr = Math.max(0, Math.round(parseFloat(pricingEditFormData.travel_charges) || 0));
+                const ad = Math.max(0, Math.round(parseFloat(pricingEditFormData.additional_charges) || 0));
+                const sub = Math.max(0, b - d + ac + tr + ad);
+                const gst = Math.round((sub * Number(pricingEditFormData.gst_rate || 0)) / 100);
+                const tot = sub + gst;
+
+                return (
+                  <div className="space-y-3 text-xs">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="font-bold text-slate-700 block mb-1">Base Package Price (₹)</label>
+                        <input
+                          type="number"
+                          value={pricingEditFormData.base_package_price}
+                          onChange={(e) => setPricingEditFormData(prev => ({ ...prev, base_package_price: e.target.value }))}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold text-slate-900"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="font-bold text-rose-600 block mb-1">Discount / Complimentary (₹)</label>
+                        <input
+                          type="number"
+                          value={pricingEditFormData.discount_amount}
+                          onChange={(e) => setPricingEditFormData(prev => ({ ...prev, discount_amount: e.target.value }))}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold text-rose-600"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="font-bold text-slate-700 block mb-1">Accommodation Charges (₹)</label>
+                        <input
+                          type="number"
+                          value={pricingEditFormData.accommodation_charges}
+                          onChange={(e) => setPricingEditFormData(prev => ({ ...prev, accommodation_charges: e.target.value }))}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold text-slate-900"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="font-bold text-slate-700 block mb-1">Traveling Charges (₹)</label>
+                        <input
+                          type="number"
+                          value={pricingEditFormData.travel_charges}
+                          onChange={(e) => setPricingEditFormData(prev => ({ ...prev, travel_charges: e.target.value }))}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold text-slate-900"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="font-bold text-slate-700 block mb-1">Additional Charges (₹)</label>
+                        <input
+                          type="number"
+                          value={pricingEditFormData.additional_charges}
+                          onChange={(e) => setPricingEditFormData(prev => ({ ...prev, additional_charges: e.target.value }))}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold text-slate-900"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="font-bold text-slate-700 block mb-1">GST Rate (%)</label>
+                        <select
+                          value={pricingEditFormData.gst_rate}
+                          onChange={(e) => setPricingEditFormData(prev => ({ ...prev, gst_rate: Number(e.target.value) }))}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900"
+                        >
+                          <option value={0}>0% (No GST)</option>
+                          <option value={5}>5% GST</option>
+                          <option value={12}>12% GST</option>
+                          <option value={18}>18% GST (Standard)</option>
+                          <option value={28}>28% GST</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Live Calculated Highlight Card */}
+                    <div className="p-3.5 bg-orange-50/70 border border-orange-200 rounded-2xl space-y-1 mt-2">
+                      <div className="flex justify-between text-slate-600 font-bold">
+                        <span>Calculated Subtotal:</span>
+                        <span className="font-mono text-slate-900">₹{sub.toLocaleString('en-IN')}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-600 font-medium">
+                        <span>GST Amount ({pricingEditFormData.gst_rate}%):</span>
+                        <span className="font-mono text-slate-900">₹{gst.toLocaleString('en-IN')}</span>
+                      </div>
+                      <div className="flex justify-between text-orange-950 font-black text-sm pt-1 border-t border-orange-200">
+                        <span>Final Net Investment:</span>
+                        <span className="font-mono text-orange-600">₹{tot.toLocaleString('en-IN')}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                      <button
+                        onClick={() => setShowPricingEditModal({ open: false })}
+                        className="px-4 py-2 bg-slate-100 text-slate-600 font-bold rounded-xl"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleSavePricingBreakdown}
+                        className="px-4 py-2 bg-orange-500 hover:bg-orange-600 font-black text-white rounded-xl shadow-xs"
+                      >
+                        Save Pricing Changes
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ─────────────────────────────────────────────────────────────
+          💳 MODAL: RECORD PAYMENT COMPLETION (WITH PAYMENT MODE & DATE)
+      ───────────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showCompletePaymentModal.open && showCompletePaymentModal.milestone && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl p-6 sm:p-7 max-w-md w-full border border-slate-100 shadow-2xl space-y-4 font-sans"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                    <CheckCircle2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900">Record Payment Completion</h3>
+                    <p className="text-xs text-slate-500 font-medium">{showCompletePaymentModal.clientName}</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowCompletePaymentModal({ open: false, recordId: '', clientName: '', milestone: null })} className="p-1 text-slate-400 hover:text-slate-600">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 font-bold text-slate-800">
+                  Milestone: <span className="text-slate-900">{showCompletePaymentModal.milestone.step_name || showCompletePaymentModal.milestone.title}</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Amount Received (₹)</label>
+                    <input
+                      type="number"
+                      value={completePaymentFormData.amount}
+                      onChange={(e) => setCompletePaymentFormData(prev => ({ ...prev, amount: e.target.value }))}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Status</label>
+                    <select
+                      value={completePaymentFormData.status}
+                      onChange={(e) => setCompletePaymentFormData(prev => ({ ...prev, status: e.target.value as any }))}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900"
+                    >
+                      <option value="completed">Completed / Paid</option>
+                      <option value="pending">Pending / Due</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Payment Received Date</label>
+                    <input
+                      type="date"
+                      value={completePaymentFormData.payment_date}
+                      onChange={(e) => setCompletePaymentFormData(prev => ({ ...prev, payment_date: e.target.value }))}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Payment Mode Channel</label>
+                    <select
+                      value={completePaymentFormData.payment_mode}
+                      onChange={(e) => setCompletePaymentFormData(prev => ({ ...prev, payment_mode: e.target.value }))}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900"
+                    >
+                      <option value="UPI">UPI (GPay / PhonePe)</option>
+                      <option value="Bank Transfer">Bank Transfer (NEFT/IMPS)</option>
+                      <option value="Cash">Cash</option>
+                      <option value="Card">Card</option>
+                      <option value="Cheque">Cheque</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">UTR / Transaction Ref (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. UPI/2938102938"
+                    value={completePaymentFormData.reference_id}
+                    onChange={(e) => setCompletePaymentFormData(prev => ({ ...prev, reference_id: e.target.value }))}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-900"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    onClick={() => setShowCompletePaymentModal({ open: false, recordId: '', clientName: '', milestone: null })}
+                    className="px-4 py-2 bg-slate-100 text-slate-600 font-bold rounded-xl"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveCompletePaymentModal}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 font-black text-white rounded-xl shadow-xs"
+                  >
+                    Save & Update Milestone
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ─────────────────────────────────────────────────────────────
           📜 REAL-TIME AUDIT LOG DRAWER
       ───────────────────────────────────────────────────────────── */}
       <AnimatePresence>
@@ -2609,7 +3313,7 @@ export default function FinancePage() {
                           )}
 
                           <button
-                            onClick={() => handleMilestoneStatusToggle(item.record.id, item.milestone.id)}
+                            onClick={() => handleOpenCompletePaymentModal(item.record, item.milestone)}
                             className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-xs"
                           >
                             Mark Paid
