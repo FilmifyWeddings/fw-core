@@ -166,42 +166,6 @@ export function extractFinancialsFromQuotation(
         paid_date: paidDate
       };
     });
-  } else if (finalTotal > 0) {
-    // Generate standard 3-tier milestone breakdown if none specified
-    const token = Math.round(finalTotal * 0.30);
-    const advance = Math.round(finalTotal * 0.50);
-    const finalDel = Math.max(0, finalTotal - (token + advance));
-    const nowStr = new Date().toISOString().split('T')[0];
-
-    milestones = [
-      {
-        id: `m_1_${Date.now()}`,
-        step_name: 'Token Booking Amount',
-        title: 'Token Booking Amount',
-        due_date: nowStr,
-        amount: token,
-        status: 'pending',
-        payment_mode: 'UPI'
-      },
-      {
-        id: `m_2_${Date.now()}`,
-        step_name: 'Advance Amount (Pre-Event)',
-        title: 'Advance Amount (Pre-Event)',
-        due_date: eventDate || nowStr,
-        amount: advance,
-        status: 'pending',
-        payment_mode: 'Bank Transfer'
-      },
-      {
-        id: `m_3_${Date.now()}`,
-        step_name: 'On Wedding Day / Delivery',
-        title: 'On Wedding Day / Delivery',
-        due_date: eventDate || nowStr,
-        amount: finalDel,
-        status: 'pending',
-        payment_mode: 'UPI'
-      }
-    ];
   }
 
   const receivedAmount = Math.max(0, calculatedReceived);

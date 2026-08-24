@@ -10,7 +10,7 @@ import {
   Trash2, X, RefreshCw, Sparkles, Phone, Calculator, Tag, PieChart, Wallet, 
   ArrowRight, Bell, Send, Check, Crown, Lock, Unlock, ShieldCheck, Key,
   Eye, EyeOff, AlertCircle, CheckSquare, Square, Pencil, MoreVertical, SlidersHorizontal,
-  MapPin, CheckCheck
+  MapPin, CheckCheck, UserCheck, UserPlus
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { extractFinancialsFromQuotation, normalizeToIsoDate } from '@/lib/quotation-finance-sync';
@@ -37,6 +37,16 @@ const DEFAULT_EXPENSE_CATEGORIES = [
   'Miscellaneous'
 ];
 
+// Initial default team members
+const DEFAULT_TEAM_MEMBERS = [
+  'Rahul Sharma (Lead Photo)',
+  'Sneha Reddy (Lead Editor)',
+  'Amit Patel (Cinematographer)',
+  'Karan Singh (Drone Operator)',
+  'Priya Desai (Client Manager)',
+  'Sushant (Operations Head)'
+];
+
 export default function FinancePage() {
   const [activeTab, setActiveTab] = useState<'clients' | 'expenses' | 'analytics'>('clients');
   const [clients, setClients] = useState<WorkspaceClient[]>([]);
@@ -44,6 +54,14 @@ export default function FinancePage() {
   const [expenses, setExpenses] = useState<FinanceExpenseItem[]>([]);
   const [auditLogs, setAuditLogs] = useState<FinanceAuditLog[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // ─────────────────────────────────────────────────────────────
+  // 👥 TEAM MEMBERS LIST & HANDLED BY ATTRIBUTION
+  // ─────────────────────────────────────────────────────────────
+  const [teamMembersList, setTeamMembersList] = useState<string[]>(DEFAULT_TEAM_MEMBERS);
+  const [teamMemberFilter, setTeamMemberFilter] = useState('all');
+  const [addingMemberForClientId, setAddingMemberForClientId] = useState<string | null>(null);
+  const [newMemberInputName, setNewMemberInputName] = useState('');
 
   // ─────────────────────────────────────────────────────────────
   // 🔐 ADMIN SECURITY GATE & PIN VAULT
@@ -67,9 +85,9 @@ export default function FinancePage() {
   const filterDropdownRef = useRef<HTMLDivElement | null>(null);
 
   // ─────────────────────────────────────────────────────────────
-  // 📅 GLOBAL DATE RANGE FILTER & REVENUE TRACKER
+  // 📅 LEAD CRM CALENDAR DATE RANGE ENGINE
   // ─────────────────────────────────────────────────────────────
-  const [dateRangePreset, setDateRangePreset] = useState<'all' | 'this_month' | 'last_30_days' | 'this_quarter' | 'custom'>('all');
+  const [dateRangePreset, setDateRangePreset] = useState<'all' | 'today' | 'yesterday' | 'this_week' | 'this_month' | 'last_30_days' | 'this_quarter' | 'custom'>('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
@@ -404,15 +422,8 @@ export default function FinancePage() {
     setUnlockError('Incorrect 6-digit PIN or master password. Please try again.');
   };
 
-  const handleLockVaultNow = () => {
-    sessionStorage.removeItem('finance_vault_unlocked_time');
-    setIsVaultLocked(true);
-    setPinInput('');
-    setPasswordInput('');
-  };
-
   // ─────────────────────────────────────────────────────────────
-  // 📥 FETCH FINANCE DATA, AUDIT LOGS & CLIENTS
+  // 📥 FETCH FINANCE DATA, AUDIT LOGS, CLIENTS & TEAM
   // ─────────────────────────────────────────────────────────────
   const fetchFinanceData = async () => {
     setLoading(true);
@@ -449,7 +460,23 @@ export default function FinancePage() {
         financeData.forEach(f => financeMap.set(f.client_id, f));
       }
 
-      // 3. Fetch Quotation Documents
+      // 3. Fetch Team Members from profiles & projects
+      try {
+        const { data: profiles } = await supabase.from('profiles').select('id, workspace_name');
+        const memberSet = new Set<string>(DEFAULT_TEAM_MEMBERS);
+        if (profiles) {
+          profiles.forEach(p => {
+            if (p.workspace_name && p.workspace_name.trim()) memberSet.add(p.workspace_name.trim());
+          });
+        }
+        clientList.forEach(c => {
+          const handled = (c as any).handled_by || (c as any).assigned_team_member_name;
+          if (handled && typeof handled === 'string' && handled.trim()) memberSet.add(handled.trim());
+        });
+        setTeamMembersList(Array.from(memberSet));
+      } catch (_) {}
+
+      // 4. Fetch Quotation Documents
       const leadIds = clientList.map(c => c.lead_id).filter(Boolean);
       const quoteDocMap = new Map<string, any>();
       const allLeadQuotesMap = new Map<string, any[]>();
@@ -504,7 +531,7 @@ export default function FinancePage() {
         }
       }
 
-      // 4. Synthesize Records
+      // 5. Synthesize Records (ZERO DUMMY DATA GUARANTEE)
       const finalRecords: ClientFinanceRecord[] = [];
 
       for (const c of clientList) {
@@ -521,7 +548,7 @@ export default function FinancePage() {
           return {
             template_id: d.template_id,
             version: v,
-            title: couple ? `${couple} (V${v})` : `Quotation Version ${v}`,
+            title: couple ? `${couple} (v${v}.0)` : `Quotation v${v}.0`,
             is_final: Boolean(isFinal),
             created_at: d.created_at,
             financials: f
@@ -550,6 +577,9 @@ export default function FinancePage() {
           ? extractFinancialsFromQuotation(linkedFinalQuote.content_json, c.event_date)
           : null;
 
+        // Extract handled by attribution
+        const handledBy = (c as any).handled_by || (c as any).assigned_team_member_name || (existing as any)?.handled_by || 'Unassigned';
+
         if (hasFinalQuotation && qFinancials && qFinancials.final_total_amount > 0) {
           const isDbCorruptOrMissing = !existing || 
             Number(existing.final_total_amount) <= 0 || 
@@ -561,7 +591,7 @@ export default function FinancePage() {
             user_id: workspaceId,
             workspace_id: workspaceId,
             client_id: c.id,
-            client: c,
+            client: { ...c, handled_by: handledBy } as any,
             has_final_quotation: true,
             final_quotation_version: finalVersion,
             final_quotation_id: linkedFinalQuote.template_id,
@@ -605,7 +635,7 @@ export default function FinancePage() {
 
           finalRecords.push({
             ...existing,
-            client: c,
+            client: { ...c, handled_by: handledBy } as any,
             has_final_quotation: hasFinalQuotation,
             final_quotation_version: finalVersion,
             final_quotation_id: linkedFinalQuote?.template_id || leadObj?.final_quotation_id || undefined,
@@ -625,35 +655,22 @@ export default function FinancePage() {
             milestones: Array.isArray(existing.milestones) ? existing.milestones : []
           });
         } else {
-          // Client without quotation & without previous record
+          // CLEAN INITIAL STATE: STRICT ZERO DUMMY DATA FOR NEW BOOKED CLIENTS
           const basePkg = Math.max(0, Math.round(Number(c.total_package_amount) || 0));
+          const received = Math.max(0, Math.round(Number(c.paid_amount) || 0));
           const subtotal = basePkg;
           const finalTotal = subtotal;
-          const received = Math.max(0, Math.round(Number(c.paid_amount) || 0));
           const pending = Math.max(0, finalTotal - received);
-
-          const initialMilestones: FinanceMilestoneItem[] = received > 0 ? [
-            {
-              id: `m_init_${Date.now()}`,
-              step_name: received >= finalTotal && finalTotal > 0 ? 'Full Payment' : 'Advance Booking',
-              title: received >= finalTotal && finalTotal > 0 ? 'Full Payment' : 'Advance Booking',
-              due_date: c.created_at ? c.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
-              paid_date: c.created_at ? c.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
-              amount: received,
-              status: 'completed',
-              payment_mode: 'UPI'
-            }
-          ] : [];
 
           const newRecord: ClientFinanceRecord = {
             id: `fin_${c.id}`,
             user_id: workspaceId,
             workspace_id: workspaceId,
             client_id: c.id,
-            client: c,
-            has_final_quotation: hasFinalQuotation,
-            final_quotation_version: finalVersion,
-            final_quotation_id: linkedFinalQuote?.template_id || leadObj?.final_quotation_id || undefined,
+            client: { ...c, handled_by: handledBy } as any,
+            has_final_quotation: false,
+            final_quotation_version: undefined,
+            final_quotation_id: undefined,
             available_quotations: availableQuotes,
             base_package_price: basePkg,
             discount_amount: 0,
@@ -667,7 +684,7 @@ export default function FinancePage() {
             received_amount: received,
             pending_amount: pending,
             payment_status: pending === 0 && finalTotal > 0 ? 'paid' : received > 0 ? 'partially_paid' : 'pending',
-            milestones: initialMilestones,
+            milestones: [], // STRICT ZERO DUMMY STEPS
             created_at: c.created_at || new Date().toISOString(),
             updated_at: new Date().toISOString()
           };
@@ -681,7 +698,7 @@ export default function FinancePage() {
         setExpandedCards(new Set([finalRecords[0].id]));
       }
 
-      // 5. Fetch Expenses (CLEAN SLATE: 100% Zero Dummy Data Fallback)
+      // 6. Fetch Expenses
       let expenseQuery = supabase
         .from('finance_expenses')
         .select('*')
@@ -694,7 +711,7 @@ export default function FinancePage() {
       const { data: expenseData } = await expenseQuery;
       setExpenses(expenseData || []);
 
-      // 6. Fetch Audit Logs
+      // 7. Fetch Audit Logs
       try {
         let auditQuery = supabase
           .from('finance_audit_logs')
@@ -833,6 +850,62 @@ export default function FinancePage() {
   };
 
   // ─────────────────────────────────────────────────────────────
+  // 👥 TEAM ATTRIBUTION: HANDLE ASSIGN MEMBER TO CLIENT
+  // ─────────────────────────────────────────────────────────────
+  const handleAssignTeamMember = async (clientId: string, memberName: string) => {
+    if (!clientId) return;
+
+    setFinanceRecords(prev => prev.map(rec => {
+      if (rec.client_id === clientId) {
+        return {
+          ...rec,
+          client: { ...rec.client, handled_by: memberName } as any
+        };
+      }
+      return rec;
+    }));
+
+    setClients(prev => prev.map(c => {
+      if (c.id === clientId) {
+        return { ...c, handled_by: memberName } as any;
+      }
+      return c;
+    }));
+
+    try {
+      await supabase
+        .from('workspace_clients')
+        .update({
+          notes: `handled_by: ${memberName}`,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', clientId);
+
+      const targetClient = clients.find(c => c.id === clientId);
+      logAudit(
+        'ADJUSTMENT',
+        0,
+        `Assigned ${targetClient?.name || 'Client'} to team member: "${memberName}"`,
+        clientId,
+        targetClient?.name
+      );
+    } catch (err) {
+      console.warn('Error saving team member assignment:', err);
+    }
+  };
+
+  const handleAddNewTeamMember = async (clientId: string) => {
+    if (!newMemberInputName.trim()) return;
+    const cleanName = newMemberInputName.trim();
+    if (!teamMembersList.includes(cleanName)) {
+      setTeamMembersList(prev => [...prev, cleanName]);
+    }
+    await handleAssignTeamMember(clientId, cleanName);
+    setAddingMemberForClientId(null);
+    setNewMemberInputName('');
+  };
+
+  // ─────────────────────────────────────────────────────────────
   // ✏️ PRICING BREAKDOWN EDIT CONFIRMATION MODAL HANDLERS
   // ─────────────────────────────────────────────────────────────
   const handleOpenPricingEditModal = (rec: ClientFinanceRecord) => {
@@ -921,7 +994,7 @@ export default function FinancePage() {
               amount: numAmt,
               status: (completePaymentFormData.status as any),
               paid_date: isComp ? (completePaymentFormData.payment_date || new Date().toISOString().split('T')[0]) : undefined,
-              payment_mode: completePaymentFormData.payment_mode,
+              payment_mode: isComp ? completePaymentFormData.payment_mode : undefined,
               reference_id: completePaymentFormData.reference_id || null,
               notes: completePaymentFormData.notes || null
             };
@@ -1029,7 +1102,7 @@ export default function FinancePage() {
               due_date: due_date || null,
               paid_date: status === 'completed' || status === 'paid' ? (paid_date || new Date().toISOString().split('T')[0]) : null,
               status: (status as any),
-              payment_mode,
+              payment_mode: status === 'completed' || status === 'paid' ? payment_mode : undefined,
               reference_id: reference_id || null,
               notes: notes || null
             };
@@ -1149,8 +1222,7 @@ export default function FinancePage() {
       title: stepFormData.step_name.trim(),
       due_date: stepFormData.due_date,
       amount: amt,
-      status: 'pending',
-      payment_mode: 'UPI'
+      status: 'pending'
     };
 
     setFinanceRecords(prev => prev.map(rec => {
@@ -1370,15 +1442,17 @@ export default function FinancePage() {
     if (statusFilter !== 'all') count++;
     if (locationFilter !== 'all') count++;
     if (paymentModeFilter !== 'all') count++;
+    if (teamMemberFilter !== 'all') count++;
     if (dateRangePreset !== 'all' || (startDate && endDate)) count++;
     return count;
-  }, [categoryFilter, statusFilter, locationFilter, paymentModeFilter, dateRangePreset, startDate, endDate]);
+  }, [categoryFilter, statusFilter, locationFilter, paymentModeFilter, teamMemberFilter, dateRangePreset, startDate, endDate]);
 
   const resetAllFilters = () => {
     setCategoryFilter('all');
     setStatusFilter('all');
     setLocationFilter('all');
     setPaymentModeFilter('all');
+    setTeamMemberFilter('all');
     setDateRangePreset('all');
     setStartDate('');
     setEndDate('');
@@ -1392,10 +1466,11 @@ export default function FinancePage() {
       const eventType = client?.event_type || '';
       const phone = client?.phone?.toLowerCase() || '';
       const city = ((client as any)?.city || (client as any)?.venue || '').toLowerCase();
+      const handled = (client as any)?.handled_by || (client as any)?.assigned_team_member_name || 'Unassigned';
       const query = searchQuery.toLowerCase();
 
       // Search Query
-      const matchesSearch = !query || clientName.includes(query) || eventType.toLowerCase().includes(query) || phone.includes(query) || city.includes(query);
+      const matchesSearch = !query || clientName.includes(query) || eventType.toLowerCase().includes(query) || phone.includes(query) || city.includes(query) || handled.toLowerCase().includes(query);
 
       // Category
       const matchesCategory = categoryFilter === 'all' || eventType === categoryFilter;
@@ -1418,6 +1493,16 @@ export default function FinancePage() {
         matchesMode = (rec.milestones || []).some(m => m.payment_mode === paymentModeFilter);
       }
 
+      // 👥 Team Member (Handled By) Filter
+      let matchesTeam = true;
+      if (teamMemberFilter !== 'all') {
+        if (teamMemberFilter === 'unassigned') {
+          matchesTeam = !handled || handled === 'Unassigned';
+        } else {
+          matchesTeam = handled === teamMemberFilter;
+        }
+      }
+
       // Date Range Match
       let matchesDate = true;
       if (dateRangePreset !== 'all' || (startDate && endDate)) {
@@ -1428,9 +1513,9 @@ export default function FinancePage() {
         }
       }
 
-      return matchesSearch && matchesCategory && matchesStatus && matchesLocation && matchesMode && matchesDate;
+      return matchesSearch && matchesCategory && matchesStatus && matchesLocation && matchesMode && matchesTeam && matchesDate;
     });
-  }, [financeRecords, searchQuery, categoryFilter, statusFilter, locationFilter, paymentModeFilter, dateRangePreset, startDate, endDate, todayStr]);
+  }, [financeRecords, searchQuery, categoryFilter, statusFilter, locationFilter, paymentModeFilter, teamMemberFilter, dateRangePreset, startDate, endDate, todayStr]);
 
   const filteredExpenses = useMemo(() => {
     return expenses.filter(exp => {
@@ -1451,7 +1536,7 @@ export default function FinancePage() {
     });
   }, [expenses, searchQuery, categoryFilter, paymentModeFilter, startDate, endDate]);
 
-  // 5 Top Metric Cards calculations (Dynamically calculated based on active date range & filters)
+  // 5 Top Metric Cards calculations (Dynamically calculated based on active date range, team member & filters)
   const totalInvoiced = useMemo(() => {
     return Math.round(filteredRecords.reduce((acc, r) => acc + (Number(r.final_total_amount) || 0), 0));
   }, [filteredRecords]);
@@ -1508,51 +1593,6 @@ export default function FinancePage() {
     return list.sort((a, b) => b.daysOverdue - a.daysOverdue);
   }, [financeRecords]);
 
-  const upcomingMilestonesList = useMemo(() => {
-    const list: Array<{
-      milestone: FinanceMilestoneItem;
-      client: WorkspaceClient;
-      record: ClientFinanceRecord;
-      daysUntil: number;
-    }> = [];
-
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-
-    let maxDays = 30;
-    if (upcomingTimeframe === '7') maxDays = 7;
-    if (upcomingTimeframe === '15') maxDays = 15;
-    if (upcomingTimeframe === '30') maxDays = 30;
-    if (upcomingTimeframe === '90') maxDays = 90;
-
-    financeRecords.forEach(rec => {
-      if (rec.client && Array.isArray(rec.milestones)) {
-        rec.milestones.forEach(ms => {
-          const isPaid = ms.status === 'completed' || ms.status === 'paid' || (ms.status as string) === 'Completed';
-          if (!isPaid && ms.due_date) {
-            const dueDate = new Date(ms.due_date);
-            dueDate.setHours(0, 0, 0, 0);
-            const diffDays = Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-            if (diffDays >= 0 && diffDays <= maxDays) {
-              list.push({
-                milestone: ms,
-                client: rec.client!,
-                record: rec,
-                daysUntil: diffDays
-              });
-            }
-          }
-        });
-      }
-    });
-
-    return list.sort((a, b) => a.daysUntil - b.daysUntil);
-  }, [financeRecords, upcomingTimeframe]);
-
-  const totalUpcomingExpectedCashflow = useMemo(() => {
-    return upcomingMilestonesList.reduce((sum, item) => sum + (Number(item.milestone.amount) || 0), 0);
-  }, [upcomingMilestonesList]);
-
   // Quotation handler
   const handleOpenQuotationModalForRecord = (record: ClientFinanceRecord) => {
     const leadId = record.client?.lead_id || record.client_id;
@@ -1580,37 +1620,6 @@ export default function FinancePage() {
 
     setQuotationModalLead(constructedLead);
     setIsQuotationModalOpen(true);
-  };
-
-  const handleSetFinalFromFinance = async (leadId: string, quotationId: string, clientId?: string) => {
-    if (!leadId || !quotationId || settingFinalLoadingId) return;
-    setSettingFinalLoadingId(quotationId);
-
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token || '';
-
-      const res = await fetch('/api/quotations/set-final', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ quotationId, leadId })
-      });
-
-      const json = await res.json().catch(() => ({}));
-      if (res.ok && json.success) {
-        await fetchFinanceData();
-      } else {
-        alert(json.error || 'Failed to set final quotation');
-      }
-    } catch (err: any) {
-      console.error('Error setting final quotation from finance:', err);
-      alert('Failed to set final quotation.');
-    } finally {
-      setSettingFinalLoadingId(null);
-    }
   };
 
   return (
@@ -1698,10 +1707,6 @@ export default function FinancePage() {
                   Unlock Finance Suite
                 </button>
               </div>
-
-              <p className="text-[10px] text-slate-400 font-medium">
-                PIN protection is configured under Settings → Finance & Security Settings.
-              </p>
             </motion.div>
           </motion.div>
         )}
@@ -1710,7 +1715,7 @@ export default function FinancePage() {
       <div className="max-w-7xl mx-auto space-y-6">
 
         {/* ─────────────────────────────────────────────────────────────
-            TOP 5 METRIC CARDS WITH SPARKLINES (MATCHING SCREENSHOT)
+            TOP 5 METRIC CARDS WITH SPARKLINES (DYNAMIC TO FILTERS & TEAM)
         ───────────────────────────────────────────────────────────── */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           
@@ -1730,7 +1735,7 @@ export default function FinancePage() {
 
             <div className="flex items-end justify-between mt-auto">
               <span className="text-[11px] font-medium text-slate-400">
-                {filteredRecords.length} Active Contracts
+                {filteredRecords.length} Active Contracts {teamMemberFilter !== 'all' ? '(' + teamMemberFilter + ')' : ''}
               </span>
 
               {/* Orange Sparkline SVG */}
@@ -1850,7 +1855,7 @@ export default function FinancePage() {
         </div>
 
         {/* ─────────────────────────────────────────────────────────────
-            TABS & ADVANCED FILTER BAR + DATE PICKER (MATCHING SCREENSHOT)
+            CLEAN TABS & UNIFIED FILTER BAR (SINGLE RIGHT-SIDE FILTER)
         ───────────────────────────────────────────────────────────── */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200/80 pb-3">
           
@@ -1911,80 +1916,22 @@ export default function FinancePage() {
             </button>
           </div>
 
-          {/* Right Filters Strip (Date Range, Search, Unified Filter Dropdown, Alerts, Audit) */}
+          {/* Right Filters Strip (Clean Search, Single Filter Dropdown, Alerts, Audit) */}
           <div className="flex items-center gap-3 flex-wrap">
             
-            {/* 📅 Date Range Preset Selector */}
-            <div className="relative">
-              <select
-                value={dateRangePreset}
-                onChange={(e) => {
-                  const val = e.target.value as any;
-                  setDateRangePreset(val);
-                  const now = new Date();
-                  if (val === 'this_month') {
-                    const first = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-                    const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
-                    setStartDate(first);
-                    setEndDate(last);
-                  } else if (val === 'last_30_days') {
-                    const past = new Date(now.getTime() - 30 * 86400000).toISOString().split('T')[0];
-                    setStartDate(past);
-                    setEndDate(now.toISOString().split('T')[0]);
-                  } else if (val === 'this_quarter') {
-                    const qMonth = Math.floor(now.getMonth() / 3) * 3;
-                    const first = new Date(now.getFullYear(), qMonth, 1).toISOString().split('T')[0];
-                    const last = new Date(now.getFullYear(), qMonth + 3, 0).toISOString().split('T')[0];
-                    setStartDate(first);
-                    setEndDate(last);
-                  } else if (val === 'all') {
-                    setStartDate('');
-                    setEndDate('');
-                  }
-                }}
-                className="appearance-none px-3 py-1.5 pr-7 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:border-amber-500 shadow-2xs cursor-pointer"
-              >
-                <option value="all">📅 All Time</option>
-                <option value="this_month">🗓️ This Month</option>
-                <option value="last_30_days">⏳ Last 30 Days</option>
-                <option value="this_quarter">📊 This Quarter</option>
-                <option value="custom">⚙️ Custom Range</option>
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-2.5 pointer-events-none" />
-            </div>
-
-            {/* Custom Range Date Pickers (if Custom is chosen) */}
-            {dateRangePreset === 'custom' && (
-              <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2 py-1 shadow-2xs">
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="text-xs font-bold text-slate-800 bg-transparent focus:outline-none"
-                />
-                <span className="text-slate-400 text-xs font-bold">➔</span>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="text-xs font-bold text-slate-800 bg-transparent focus:outline-none"
-                />
-              </div>
-            )}
-
             {/* Search Input */}
-            <div className="relative w-44 sm:w-56">
+            <div className="relative w-52 sm:w-64">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
               <input
                 type="text"
-                placeholder="Search client or event..."
+                placeholder="Search client, member, event..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-amber-500 shadow-2xs"
               />
             </div>
 
-            {/* 🎛️ UNIFIED ADVANCED FILTERS DROPDOWN BUTTON */}
+            {/* 🎛️ MASTER ADVANCED FILTERS DROPDOWN (WITH LEAD CRM CALENDAR) */}
             <div className="relative" ref={filterDropdownRef}>
               <button
                 type="button"
@@ -2011,7 +1958,7 @@ export default function FinancePage() {
                     initial={{ opacity: 0, y: 8, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 8, scale: 0.95 }}
-                    className="absolute right-0 mt-2 w-72 sm:w-80 bg-white rounded-2xl border border-slate-200 shadow-2xl p-4 z-40 space-y-3.5 font-sans"
+                    className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl border border-slate-200 shadow-2xl p-4 z-40 space-y-3.5 font-sans"
                   >
                     <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                       <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
@@ -2023,14 +1970,126 @@ export default function FinancePage() {
                           onClick={resetAllFilters}
                           className="text-[10px] font-extrabold text-rose-600 hover:underline"
                         >
-                          Reset All
+                          Reset All ({activeFiltersCount})
                         </button>
                       )}
                     </div>
 
-                    {/* 1. Status Filter */}
+                    {/* 📅 LEAD CRM CALENDAR DATE RANGE PICKER (DIRECTLY AT TOP) */}
+                    <div className="p-3 bg-amber-50/40 rounded-2xl border border-amber-200/60 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[11px] font-black text-amber-950 uppercase tracking-wider flex items-center gap-1.5">
+                          <Calendar className="w-3.5 h-3.5 text-amber-700" /> Date Range Filter
+                        </label>
+                        {dateRangePreset !== 'all' && (
+                          <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                            Active
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Presets Selector matching Lead CRM */}
+                      <div className="grid grid-cols-3 gap-1 text-[10px] font-extrabold">
+                        {[
+                          { id: 'all', label: 'All Time' },
+                          { id: 'today', label: 'Today' },
+                          { id: 'yesterday', label: 'Yesterday' },
+                          { id: 'this_week', label: 'This Week' },
+                          { id: 'this_month', label: 'This Month' },
+                          { id: 'last_30_days', label: 'Last 30 Days' },
+                        ].map(preset => (
+                          <button
+                            key={preset.id}
+                            type="button"
+                            onClick={() => {
+                              const val = preset.id as any;
+                              setDateRangePreset(val);
+                              const now = new Date();
+                              if (val === 'today') {
+                                const str = now.toISOString().split('T')[0];
+                                setStartDate(str);
+                                setEndDate(str);
+                              } else if (val === 'yesterday') {
+                                const y = new Date(now.getTime() - 86400000).toISOString().split('T')[0];
+                                setStartDate(y);
+                                setEndDate(y);
+                              } else if (val === 'this_week') {
+                                const firstDay = new Date(now.setDate(now.getDate() - now.getDay())).toISOString().split('T')[0];
+                                const lastDay = new Date(now.setDate(now.getDate() - now.getDay() + 6)).toISOString().split('T')[0];
+                                setStartDate(firstDay);
+                                setEndDate(lastDay);
+                              } else if (val === 'this_month') {
+                                const first = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+                                const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+                                setStartDate(first);
+                                setEndDate(last);
+                              } else if (val === 'last_30_days') {
+                                const past = new Date(now.getTime() - 30 * 86400000).toISOString().split('T')[0];
+                                setStartDate(past);
+                                setEndDate(now.toISOString().split('T')[0]);
+                              } else if (val === 'all') {
+                                setStartDate('');
+                                setEndDate('');
+                              }
+                            }}
+                            className={`py-1 px-1.5 rounded-lg border text-center transition cursor-pointer ${
+                              dateRangePreset === preset.id
+                                ? 'bg-amber-600 text-white border-amber-600 font-black'
+                                : 'bg-white text-slate-700 border-amber-200 hover:bg-amber-100/50'
+                            }`}
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Custom Date Range Pickers */}
+                      <div className="pt-1">
+                        <div className="flex items-center gap-1.5 bg-white border border-amber-200 rounded-xl px-2 py-1.5 shadow-2xs">
+                          <input
+                            type="date"
+                            value={startDate}
+                            onChange={(e) => {
+                              setDateRangePreset('custom');
+                              setStartDate(e.target.value);
+                            }}
+                            className="text-xs font-bold text-slate-800 bg-transparent focus:outline-none w-full"
+                          />
+                          <span className="text-amber-600 text-xs font-bold">➔</span>
+                          <input
+                            type="date"
+                            value={endDate}
+                            onChange={(e) => {
+                              setDateRangePreset('custom');
+                              setEndDate(e.target.value);
+                            }}
+                            className="text-xs font-bold text-slate-800 bg-transparent focus:outline-none w-full"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 👥 TEAM MEMBER (HANDLED BY) FACET */}
                     <div>
-                      <label className="text-[11px] font-bold text-slate-600 block mb-1">Payment Status</label>
+                      <label className="text-[11px] font-bold text-slate-700 block mb-1 flex items-center gap-1">
+                        <Users className="w-3 h-3 text-purple-600" /> Filter by Team Member (Handled By)
+                      </label>
+                      <select
+                        value={teamMemberFilter}
+                        onChange={(e) => setTeamMemberFilter(e.target.value)}
+                        className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none"
+                      >
+                        <option value="all">👥 All Team Members</option>
+                        <option value="unassigned">👤 Unassigned Only</option>
+                        {teamMembersList.map(member => (
+                          <option key={member} value={member}>{member}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Status Filter */}
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-700 block mb-1">Payment Status</label>
                       <select
                         value={statusFilter}
                         onChange={(e) => setStatusFilter(e.target.value as any)}
@@ -2044,9 +2103,9 @@ export default function FinancePage() {
                       </select>
                     </div>
 
-                    {/* 2. Event Category */}
+                    {/* Event Category */}
                     <div>
-                      <label className="text-[11px] font-bold text-slate-600 block mb-1">Event Category</label>
+                      <label className="text-[11px] font-bold text-slate-700 block mb-1">Event Category</label>
                       <select
                         value={categoryFilter}
                         onChange={(e) => setCategoryFilter(e.target.value)}
@@ -2059,9 +2118,9 @@ export default function FinancePage() {
                       </select>
                     </div>
 
-                    {/* 3. Location / City */}
+                    {/* Location / City */}
                     <div>
-                      <label className="text-[11px] font-bold text-slate-600 block mb-1">Location / City</label>
+                      <label className="text-[11px] font-bold text-slate-700 block mb-1">Location / City</label>
                       <select
                         value={locationFilter}
                         onChange={(e) => setLocationFilter(e.target.value)}
@@ -2074,9 +2133,9 @@ export default function FinancePage() {
                       </select>
                     </div>
 
-                    {/* 4. Payment Channel */}
+                    {/* Payment Channel */}
                     <div>
-                      <label className="text-[11px] font-bold text-slate-600 block mb-1">Payment Mode Channel</label>
+                      <label className="text-[11px] font-bold text-slate-700 block mb-1">Payment Mode Channel</label>
                       <select
                         value={paymentModeFilter}
                         onChange={(e) => setPaymentModeFilter(e.target.value)}
@@ -2095,7 +2154,7 @@ export default function FinancePage() {
                       <button
                         type="button"
                         onClick={() => setIsFilterDropdownOpen(false)}
-                        className="px-4 py-1.5 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs rounded-xl shadow-xs"
+                        className="px-4 py-1.5 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer"
                       >
                         Apply Filters
                       </button>
@@ -2105,7 +2164,7 @@ export default function FinancePage() {
               </AnimatePresence>
             </div>
 
-            {/* 🔔 Notifications Bell (WITH OUTSIDE CLICK AUTO-CLOSE) */}
+            {/* 🔔 Notifications Bell */}
             <div className="relative" ref={notificationRef}>
               <button
                 type="button"
@@ -2208,7 +2267,7 @@ export default function FinancePage() {
         </div>
 
         {/* ─────────────────────────────────────────────────────────────
-            TAB 1: CLIENT INVOICES & MILESTONES (EXACT SCREENSHOT LAYOUT)
+            TAB 1: CLIENT INVOICES & MILESTONES
         ───────────────────────────────────────────────────────────── */}
         {activeTab === 'clients' && (
           <div className="space-y-4">
@@ -2222,7 +2281,7 @@ export default function FinancePage() {
                 <Receipt className="w-10 h-10 text-slate-300 mx-auto" />
                 <h3 className="text-base font-black text-slate-800">No matching client records</h3>
                 <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                  No clients match your filter criteria. Try clearing search, dates, or status filters.
+                  No clients match your filter criteria. Try clearing search, team member, or date filters.
                 </p>
                 {activeFiltersCount > 0 && (
                   <button
@@ -2241,6 +2300,7 @@ export default function FinancePage() {
                 const finalTotal = record.final_total_amount || 0;
                 const recAmt = record.received_amount || 0;
                 const pendAmt = record.pending_amount || 0;
+                const handledBy = (client as any)?.handled_by || 'Unassigned';
 
                 // 🚨 CARD-LEVEL OVERDUE SUM
                 const clientOverdueSum = milestones
@@ -2253,12 +2313,12 @@ export default function FinancePage() {
                     layout
                     className="bg-white rounded-3xl border border-slate-100 shadow-[0_2px_15px_rgba(0,0,0,0.03)] overflow-hidden transition-all"
                   >
-                    {/* ─── CLIENT HEADER ROW (EXACT SCREENSHOT DESIGN) ─── */}
+                    {/* ─── CLIENT HEADER ROW ─── */}
                     <div 
                       onClick={() => toggleCard(record.id)}
                       className="p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 cursor-pointer hover:bg-slate-50/60 transition"
                     >
-                      {/* Left: Avatar + Name + Tags + Date/Phone */}
+                      {/* Left: Avatar + Name + Tags + Handled By + Quotation Version */}
                       <div className="flex items-center gap-3.5">
                         <div className="w-11 h-11 rounded-full bg-purple-50 text-purple-600 font-bold text-sm flex items-center justify-center shrink-0 border border-purple-100">
                           {client?.name ? client.name.slice(0, 2).toUpperCase() : <Users className="w-5 h-5" />}
@@ -2289,8 +2349,8 @@ export default function FinancePage() {
                               </span>
                             )}
 
-                            {/* 🔄 QUOTATION VERSION BADGE & SELECTOR */}
-                            {record.has_final_quotation ? (
+                            {/* 🏷️ DYNAMIC SELECTED QUOTATION VERSION BADGE */}
+                            {record.has_final_quotation && record.final_quotation_version ? (
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -2298,10 +2358,10 @@ export default function FinancePage() {
                                   handleOpenQuotationModalForRecord(record);
                                 }}
                                 className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100 transition flex items-center gap-1 shadow-2xs cursor-pointer"
-                                title="Click to view quotation versions"
+                                title="Click to view or switch quotation versions"
                               >
                                 <Sparkles className="w-3 h-3 text-emerald-600" />
-                                <span>Selected Version: <strong>V{record.final_quotation_version || 1}</strong></span>
+                                <span>Version: <strong>v{record.final_quotation_version}.0 Selected</strong></span>
                               </button>
                             ) : (
                               <button
@@ -2315,6 +2375,62 @@ export default function FinancePage() {
                                 + Select Final Quotation
                               </button>
                             )}
+
+                            {/* 👥 "HANDLED BY" TEAM ATTRIBUTION SELECTOR */}
+                            <div 
+                              onClick={(e) => e.stopPropagation()}
+                              className="relative inline-block"
+                            >
+                              {addingMemberForClientId === record.client_id ? (
+                                <div className="flex items-center gap-1 bg-white border border-purple-300 rounded-xl p-1 shadow-sm">
+                                  <input
+                                    type="text"
+                                    placeholder="Enter member name..."
+                                    value={newMemberInputName}
+                                    onChange={(e) => setNewMemberInputName(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleAddNewTeamMember(record.client_id)}
+                                    className="px-2 py-0.5 text-[11px] font-bold text-purple-950 focus:outline-none w-36"
+                                    autoFocus
+                                  />
+                                  <button
+                                    onClick={() => handleAddNewTeamMember(record.client_id)}
+                                    className="p-1 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                                  >
+                                    <Check className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    onClick={() => setAddingMemberForClientId(null)}
+                                    className="p-1 text-slate-400 hover:text-slate-600"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1 bg-purple-50 hover:bg-purple-100/70 border border-purple-200 rounded-full px-2.5 py-0.5 transition">
+                                  <UserCheck className="w-3 h-3 text-purple-600" />
+                                  <span className="text-[10px] font-extrabold text-purple-900 uppercase">Handled By:</span>
+                                  <select
+                                    value={handledBy}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      if (val === '__add_new__') {
+                                        setAddingMemberForClientId(record.client_id);
+                                        setNewMemberInputName('');
+                                      } else {
+                                        handleAssignTeamMember(record.client_id, val);
+                                      }
+                                    }}
+                                    className="bg-transparent text-[11px] font-bold text-purple-950 focus:outline-none cursor-pointer pr-1"
+                                  >
+                                    <option value="Unassigned">Unassigned</option>
+                                    {teamMembersList.map(m => (
+                                      <option key={m} value={m}>{m}</option>
+                                    ))}
+                                    <option value="__add_new__">+ Add / Assign New Member</option>
+                                  </select>
+                                </div>
+                              )}
+                            </div>
                           </div>
 
                           <div className="flex items-center gap-3 text-xs text-slate-500 mt-1 flex-wrap font-medium">
@@ -2402,7 +2518,7 @@ export default function FinancePage() {
                       </div>
                     </div>
 
-                    {/* ─── EXPANDED CARD BODY: 2-COLUMN SPLIT (PRICING DETAILS vs PAYMENT TERMS & SCHEDULE) ─── */}
+                    {/* ─── EXPANDED CARD BODY: 2-COLUMN SPLIT ─── */}
                     <AnimatePresence>
                       {isExpanded && (
                         <motion.div
@@ -2530,7 +2646,7 @@ export default function FinancePage() {
                               {milestones.length === 0 ? (
                                 <div className="p-6 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-center text-xs text-slate-400 space-y-1">
                                   <p className="font-bold text-slate-600">No installments scheduled yet.</p>
-                                  <p className="text-[11px]">Click "+ Add Step" to schedule milestone payment dates.</p>
+                                  <p className="text-[11px]">Select a quotation above or click "+ Add Step" to schedule milestone payments.</p>
                                 </div>
                               ) : (
                                 <div className="space-y-2.5">
@@ -2539,7 +2655,7 @@ export default function FinancePage() {
                                     <span className="col-span-3">Date</span>
                                     <span className="col-span-4">Steps</span>
                                     <span className="col-span-2 text-right">Amount</span>
-                                    <span className="col-span-2 text-center">Status</span>
+                                    <span className="col-span-2 text-center">Status & Mode</span>
                                     <span className="col-span-1 text-right">Action</span>
                                   </div>
 
@@ -2569,8 +2685,8 @@ export default function FinancePage() {
                                           />
                                         </div>
 
-                                        {/* Step Name & Payment Mode Badge */}
-                                        <div className="col-span-4 space-y-0.5">
+                                        {/* Step Name (CLEAN: No payment mode badge beneath title) */}
+                                        <div className="col-span-4">
                                           <input
                                             type="text"
                                             value={ms.step_name || ms.title || ''}
@@ -2578,13 +2694,6 @@ export default function FinancePage() {
                                             placeholder="Payment Milestone"
                                             className="w-full px-2.5 py-1 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-amber-500"
                                           />
-                                          {ms.payment_mode && (
-                                            <span className={`inline-block text-[9px] font-black px-1.5 py-0.5 rounded-md ${
-                                              isPaid ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
-                                            }`}>
-                                              {isPaid ? `Paid (${ms.payment_mode})` : ms.payment_mode}
-                                            </span>
-                                          )}
                                         </div>
 
                                         {/* Amount */}
@@ -2597,8 +2706,8 @@ export default function FinancePage() {
                                           />
                                         </div>
 
-                                        {/* Status Pill Button ➔ OPENS COMPLETE PAYMENT MODAL */}
-                                        <div className="col-span-2 flex justify-center">
+                                        {/* 💳 STATUS & INLINE PAYMENT MODE BADGE (ONLY WHEN COMPLETED) */}
+                                        <div className="col-span-2 flex items-center justify-center gap-1.5 flex-wrap">
                                           <button
                                             type="button"
                                             onClick={() => handleOpenCompletePaymentModal(record, ms)}
@@ -2619,6 +2728,13 @@ export default function FinancePage() {
                                               'Pending'
                                             )}
                                           </button>
+
+                                          {/* Payment Mode Badge on right of Completed (Strictly hidden when Pending) */}
+                                          {isPaid && ms.payment_mode && (
+                                            <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                              {ms.payment_mode}
+                                            </span>
+                                          )}
                                         </div>
 
                                         {/* Action / 3 Dots Menu */}
@@ -2664,7 +2780,7 @@ export default function FinancePage() {
                                 </div>
                               )}
 
-                              {/* Bottom 3 Summary Cards (FIXED AMOUNT, RECEIVED AMOUNT, PENDING AMOUNT) */}
+                              {/* Bottom 3 Summary Cards */}
                               <div className="grid grid-cols-3 gap-3 pt-3">
                                 {/* Fixed Amount */}
                                 <div className="p-3 bg-slate-50/80 rounded-2xl border border-slate-200/80 text-center">
@@ -2704,7 +2820,7 @@ export default function FinancePage() {
         )}
 
         {/* ─────────────────────────────────────────────────────────────
-            TAB 2: TEAM PAYOUTS & EXPENSES (EDIT & DELETE WITH REALTIME RECALC)
+            TAB 2: TEAM PAYOUTS & EXPENSES
         ───────────────────────────────────────────────────────────── */}
         {activeTab === 'expenses' && (
           <div className="space-y-4">
@@ -2716,7 +2832,7 @@ export default function FinancePage() {
                 </div>
                 <button
                   onClick={() => setShowAddExpenseModal(true)}
-                  className="px-4 py-2 bg-orange-500 hover:bg-orange-600 font-black text-white rounded-xl text-xs shadow-xs flex items-center gap-1.5"
+                  className="px-4 py-2 bg-orange-500 hover:bg-orange-600 font-black text-white rounded-xl text-xs shadow-xs flex items-center gap-1.5 cursor-pointer"
                 >
                   <Plus className="w-4 h-4" /> Log Expense
                 </button>
@@ -3006,13 +3122,13 @@ export default function FinancePage() {
                     <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
                       <button
                         onClick={() => setShowPricingEditModal({ open: false })}
-                        className="px-4 py-2 bg-slate-100 text-slate-600 font-bold rounded-xl"
+                        className="px-4 py-2 bg-slate-100 text-slate-600 font-bold rounded-xl cursor-pointer"
                       >
                         Cancel
                       </button>
                       <button
                         onClick={handleSavePricingBreakdown}
-                        className="px-4 py-2 bg-orange-500 hover:bg-orange-600 font-black text-white rounded-xl shadow-xs"
+                        className="px-4 py-2 bg-orange-500 hover:bg-orange-600 font-black text-white rounded-xl shadow-xs cursor-pointer"
                       >
                         Save Pricing Changes
                       </button>
@@ -3026,7 +3142,7 @@ export default function FinancePage() {
       </AnimatePresence>
 
       {/* ─────────────────────────────────────────────────────────────
-          💳 MODAL: RECORD PAYMENT COMPLETION (WITH PAYMENT MODE & DATE)
+          💳 MODAL: RECORD PAYMENT COMPLETION
       ───────────────────────────────────────────────────────────── */}
       <AnimatePresence>
         {showCompletePaymentModal.open && showCompletePaymentModal.milestone && (
@@ -3122,13 +3238,13 @@ export default function FinancePage() {
                 <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
                   <button
                     onClick={() => setShowCompletePaymentModal({ open: false, recordId: '', clientName: '', milestone: null })}
-                    className="px-4 py-2 bg-slate-100 text-slate-600 font-bold rounded-xl"
+                    className="px-4 py-2 bg-slate-100 text-slate-600 font-bold rounded-xl cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleSaveCompletePaymentModal}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 font-black text-white rounded-xl shadow-xs"
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 font-black text-white rounded-xl shadow-xs cursor-pointer"
                   >
                     Save & Update Milestone
                   </button>
@@ -3314,7 +3430,7 @@ export default function FinancePage() {
 
                           <button
                             onClick={() => handleOpenCompletePaymentModal(item.record, item.milestone)}
-                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-xs"
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-xs cursor-pointer"
                           >
                             Mark Paid
                           </button>
@@ -3422,13 +3538,13 @@ export default function FinancePage() {
                 <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
                   <button
                     onClick={() => setShowEditMilestoneModal(false)}
-                    className="px-4 py-2 bg-slate-100 text-slate-600 font-bold rounded-xl"
+                    className="px-4 py-2 bg-slate-100 text-slate-600 font-bold rounded-xl cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleSaveEditedMilestone}
-                    className="px-4 py-2 bg-orange-500 hover:bg-orange-600 font-black text-white rounded-xl shadow-xs"
+                    className="px-4 py-2 bg-orange-500 hover:bg-orange-600 font-black text-white rounded-xl shadow-xs cursor-pointer"
                   >
                     Save Changes
                   </button>
@@ -3508,13 +3624,13 @@ export default function FinancePage() {
                 <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
                   <button
                     onClick={() => setShowRecordPaymentModal({ open: false })}
-                    className="px-4 py-2 bg-slate-100 text-slate-600 font-bold rounded-xl"
+                    className="px-4 py-2 bg-slate-100 text-slate-600 font-bold rounded-xl cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleSaveRecordedPayment}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 font-black text-white rounded-xl shadow-xs"
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 font-black text-white rounded-xl shadow-xs cursor-pointer"
                   >
                     Save Payment
                   </button>
@@ -3582,13 +3698,13 @@ export default function FinancePage() {
                 <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
                   <button
                     onClick={() => setShowAddStepModal({ open: false })}
-                    className="px-4 py-2 bg-slate-100 text-slate-600 font-bold rounded-xl"
+                    className="px-4 py-2 bg-slate-100 text-slate-600 font-bold rounded-xl cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleSaveNewStep}
-                    className="px-4 py-2 bg-orange-500 hover:bg-orange-600 font-black text-white rounded-xl shadow-xs"
+                    className="px-4 py-2 bg-orange-500 hover:bg-orange-600 font-black text-white rounded-xl shadow-xs cursor-pointer"
                   >
                     Save Step
                   </button>
@@ -3710,13 +3826,13 @@ export default function FinancePage() {
                 <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
                   <button
                     onClick={() => setShowAddExpenseModal(false)}
-                    className="px-4 py-2 bg-slate-100 text-slate-600 font-bold rounded-xl"
+                    className="px-4 py-2 bg-slate-100 text-slate-600 font-bold rounded-xl cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleSaveExpense}
-                    className="px-4 py-2 bg-orange-500 hover:bg-orange-600 font-black text-white rounded-xl shadow-xs"
+                    className="px-4 py-2 bg-orange-500 hover:bg-orange-600 font-black text-white rounded-xl shadow-xs cursor-pointer"
                   >
                     Save Expense
                   </button>
@@ -3821,13 +3937,13 @@ export default function FinancePage() {
                 <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
                   <button
                     onClick={() => setShowEditExpenseModal(false)}
-                    className="px-4 py-2 bg-slate-100 text-slate-600 font-bold rounded-xl"
+                    className="px-4 py-2 bg-slate-100 text-slate-600 font-bold rounded-xl cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleSaveEditedExpense}
-                    className="px-4 py-2 bg-orange-500 hover:bg-orange-600 font-black text-white rounded-xl shadow-xs"
+                    className="px-4 py-2 bg-orange-500 hover:bg-orange-600 font-black text-white rounded-xl shadow-xs cursor-pointer"
                   >
                     Save Changes
                   </button>
