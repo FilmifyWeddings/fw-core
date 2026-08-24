@@ -9,7 +9,7 @@ import {
   FileText, Download, Printer, ExternalLink, ChevronDown, ChevronUp, Edit3, 
   Trash2, X, RefreshCw, Sparkles, Phone, Calculator, Tag, PieChart, Wallet, 
   ArrowRight, Bell, Send, Check, Crown, Lock, Unlock, ShieldCheck, Key,
-  Eye, EyeOff, AlertCircle, CheckSquare, Square, Pencil
+  Eye, EyeOff, AlertCircle, CheckSquare, Square, Pencil, MoreVertical
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { extractFinancialsFromQuotation } from '@/lib/quotation-finance-sync';
@@ -55,14 +55,11 @@ export default function FinancePage() {
   const [unlockError, setUnlockError] = useState('');
 
   // ─────────────────────────────────────────────────────────────
-  // 🔍 MULTI-DIMENSIONAL ADVANCED FILTERS
+  // 🔍 SEARCH & FILTERS
   // ─────────────────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'partially_paid' | 'paid'>('all');
-  const [dateRangePreset, setDateRangePreset] = useState<'all' | 'this_month' | 'last_30_days' | 'this_quarter' | 'custom'>('all');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all');
   const [paymentModeFilter, setPaymentModeFilter] = useState('all');
 
   // Expanded client cards set
@@ -146,6 +143,9 @@ export default function FinancePage() {
     reference_id: '',
     notes: ''
   });
+
+  // Action dropdown state for milestones
+  const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
 
   // ─────────────────────────────────────────────────────────────
   // 💸 TEAM PAYOUTS & EXPENSES EDIT & CREATE MODALS
@@ -444,7 +444,6 @@ export default function FinancePage() {
 
       // 4. Synthesize Records
       const finalRecords: ClientFinanceRecord[] = [];
-      const recordsToUpsertInDB: any[] = [];
 
       for (const c of clientList) {
         const existing = financeMap.get(c.id);
@@ -561,7 +560,6 @@ export default function FinancePage() {
             received_amount: received,
             pending_amount: pending,
             payment_status: pending === 0 && finalTotal > 0 ? 'paid' : received > 0 ? 'partially_paid' : 'pending',
-            // ZERO DUMMY ROWS: Use existing milestones if present, else empty array
             milestones: Array.isArray(existing.milestones) ? existing.milestones : []
           });
         } else {
@@ -572,7 +570,6 @@ export default function FinancePage() {
           const received = Math.max(0, Math.round(Number(c.paid_amount) || 0));
           const pending = Math.max(0, finalTotal - received);
 
-          // ZERO DUMMY ROWS: Empty array if no payment was recorded!
           const initialMilestones: FinanceMilestoneItem[] = received > 0 ? [
             {
               id: `m_init_${Date.now()}`,
@@ -632,7 +629,6 @@ export default function FinancePage() {
       }
 
       const { data: expenseData } = await expenseQuery;
-      // ZERO DUMMY EXPENSES: Fresh accounts are 100% empty!
       setExpenses(expenseData || []);
 
       // 6. Fetch Audit Logs
@@ -773,14 +769,116 @@ export default function FinancePage() {
     }
   };
 
-  // ─────────────────────────────────────────────────────────────
-  // ✏️ FLEXIBLE INSTALLMENT DIRECT EDIT ACTIONS
-  // ─────────────────────────────────────────────────────────────
+  // Handle Breakdown Line Item Changes
+  const handleBreakdownChange = (
+    recordId: string, 
+    field: keyof ClientFinanceRecord, 
+    val: number
+  ) => {
+    setFinanceRecords(prev => prev.map(rec => {
+      if (rec.id === recordId) {
+        const updated = { ...rec, [field]: Math.round(val || 0) };
+        const finalUpdated = computeFinanceTotals(updated);
+        updateFinanceRecordInDB(finalUpdated);
+        return finalUpdated;
+      }
+      return rec;
+    }));
+  };
+
+  // Handle Milestone Inline Editing
+  const handleMilestoneStepChange = (recordId: string, milestoneId: string, field: keyof FinanceMilestoneItem, val: any) => {
+    setFinanceRecords(prev => prev.map(rec => {
+      if (rec.id === recordId) {
+        const updatedMilestones = (rec.milestones || []).map(m => {
+          if (m.id === milestoneId) {
+            return { ...m, [field]: val };
+          }
+          return m;
+        });
+        const finalUpdated = computeFinanceTotals(rec, updatedMilestones);
+        updateFinanceRecordInDB(finalUpdated);
+        return finalUpdated;
+      }
+      return rec;
+    }));
+  };
+
+  // Toggle Milestone Status (Completed / Pending)
+  const handleMilestoneStatusToggle = (recordId: string, milestoneId: string) => {
+    setFinanceRecords(prev => prev.map(rec => {
+      if (rec.id === recordId) {
+        const todayStr = new Date().toISOString().split('T')[0];
+        let changedMs: FinanceMilestoneItem | null = null;
+        const updatedMilestones = (rec.milestones || []).map(m => {
+          if (m.id === milestoneId) {
+            const isCompleted = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed';
+            const nextStatus = isCompleted ? 'pending' : 'completed';
+            changedMs = {
+              ...m,
+              status: nextStatus as any,
+              paid_date: nextStatus === 'completed' ? (m.paid_date || todayStr) : undefined
+            };
+            return changedMs;
+          }
+          return m;
+        });
+
+        const finalUpdated = computeFinanceTotals(rec, updatedMilestones);
+        updateFinanceRecordInDB(finalUpdated);
+
+        if (changedMs) {
+          const isNowPaid = (changedMs as any).status === 'completed';
+          logAudit(
+            isNowPaid ? 'INCOME' : 'ADJUSTMENT',
+            (changedMs as any).amount,
+            `Toggled installment "${(changedMs as any).step_name || 'Milestone'}" to ${isNowPaid ? 'Paid' : 'Pending'} for ${rec.client?.name || 'Client'}`,
+            rec.client_id,
+            rec.client?.name,
+            (changedMs as any).payment_mode
+          );
+        }
+
+        return finalUpdated;
+      }
+      return rec;
+    }));
+  };
+
+  // Handle Deleting a Milestone Step
+  const handleDeleteMilestone = (recordId: string, milestoneId: string) => {
+    if (!confirm('Are you sure you want to delete this payment milestone?')) return;
+
+    setFinanceRecords(prev => prev.map(rec => {
+      if (rec.id === recordId) {
+        const target = (rec.milestones || []).find(m => m.id === milestoneId);
+        const updatedMilestones = (rec.milestones || []).filter(m => m.id !== milestoneId);
+        const updated = computeFinanceTotals(rec, updatedMilestones);
+        updateFinanceRecordInDB(updated);
+
+        if (target) {
+          logAudit(
+            'ADJUSTMENT',
+            target.amount,
+            `Removed installment "${target.step_name || target.title}" from ${rec.client?.name || 'Client'}`,
+            rec.client_id,
+            rec.client?.name
+          );
+        }
+
+        return updated;
+      }
+      return rec;
+    }));
+    setOpenActionMenuId(null);
+  };
+
+  // Open Edit Milestone Modal
   const handleOpenEditMilestone = (recordId: string, milestone: FinanceMilestoneItem) => {
     setEditingMilestoneData({
       recordId,
       milestoneId: milestone.id,
-      step_name: milestone.step_name || milestone.title || 'Milestone',
+      step_name: milestone.step_name || milestone.title || 'Payment Milestone',
       amount: String(milestone.amount || 0),
       due_date: milestone.due_date || new Date().toISOString().split('T')[0],
       paid_date: milestone.paid_date || '',
@@ -790,6 +888,7 @@ export default function FinancePage() {
       notes: milestone.notes || ''
     });
     setShowEditMilestoneModal(true);
+    setOpenActionMenuId(null);
   };
 
   const handleSaveEditedMilestone = () => {
@@ -819,7 +918,6 @@ export default function FinancePage() {
         const updated = computeFinanceTotals(rec, updatedMilestones);
         updateFinanceRecordInDB(updated);
 
-        // Audit log
         logAudit(
           status === 'completed' || status === 'paid' ? 'INCOME' : 'ADJUSTMENT',
           numAmt,
@@ -837,38 +935,7 @@ export default function FinancePage() {
     setShowEditMilestoneModal(false);
   };
 
-  // ─────────────────────────────────────────────────────────────
-  // 💸 RECORD PAYMENT & QUICK STATUS TOGGLE
-  // ─────────────────────────────────────────────────────────────
-  const handleQuickMarkPaid = (record: ClientFinanceRecord, milestone: FinanceMilestoneItem) => {
-    const todayStr = new Date().toISOString().split('T')[0];
-    const updatedMilestones = (record.milestones || []).map(m => {
-      if (m.id === milestone.id) {
-        return {
-          ...m,
-          status: 'completed' as const,
-          paid_date: todayStr,
-          payment_mode: m.payment_mode || 'UPI'
-        };
-      }
-      return m;
-    });
-
-    const updated = computeFinanceTotals(record, updatedMilestones);
-    setFinanceRecords(prev => prev.map(r => r.id === record.id ? updated : r));
-    updateFinanceRecordInDB(updated);
-
-    logAudit(
-      'INCOME',
-      milestone.amount,
-      `Marked installment "${milestone.step_name || milestone.title}" as Paid for client ${record.client?.name || 'Client'}`,
-      record.client_id,
-      record.client?.name,
-      milestone.payment_mode || 'UPI'
-    );
-  };
-
-  // Record payment from modal
+  // Record Payment Modal Save
   const handleSaveRecordedPayment = () => {
     if (!showRecordPaymentModal.financeRecord) return;
     const rec = showRecordPaymentModal.financeRecord;
@@ -946,7 +1013,7 @@ export default function FinancePage() {
     });
   };
 
-  // Add Step from Modal
+  // Add Step Modal Save
   const handleSaveNewStep = () => {
     if (!showAddStepModal.recordId || !stepFormData.step_name.trim()) {
       alert('Please enter Step Name');
@@ -991,35 +1058,8 @@ export default function FinancePage() {
     });
   };
 
-  // Delete milestone
-  const handleDeleteMilestone = (recordId: string, milestoneId: string) => {
-    if (!confirm('Are you sure you want to delete this payment installment?')) return;
-
-    setFinanceRecords(prev => prev.map(rec => {
-      if (rec.id === recordId) {
-        const target = (rec.milestones || []).find(m => m.id === milestoneId);
-        const updatedMilestones = (rec.milestones || []).filter(m => m.id !== milestoneId);
-        const updated = computeFinanceTotals(rec, updatedMilestones);
-        updateFinanceRecordInDB(updated);
-
-        if (target) {
-          logAudit(
-            'ADJUSTMENT',
-            target.amount,
-            `Removed installment "${target.step_name || target.title}" from ${rec.client?.name || 'Client'}`,
-            rec.client_id,
-            rec.client?.name
-          );
-        }
-
-        return updated;
-      }
-      return rec;
-    }));
-  };
-
   // ─────────────────────────────────────────────────────────────
-  // 💸 EXPENSES & TEAM PAYOUTS MANAGEMENT (CREATE, EDIT, DELETE)
+  // 💸 EXPENSES & TEAM PAYOUTS MANAGEMENT
   // ─────────────────────────────────────────────────────────────
   const handleSaveExpense = async () => {
     const amt = Math.round(parseFloat(expenseFormData.amount) || 0);
@@ -1180,75 +1220,34 @@ export default function FinancePage() {
   };
 
   // ─────────────────────────────────────────────────────────────
-  // 🔍 DYNAMIC FILTERING & RECALCULATION ENGINE
+  // 🔍 FILTERED DATASET & METRIC RECALCULATION
   // ─────────────────────────────────────────────────────────────
-  const uniqueCategories = useMemo(() => {
-    const cats = new Set<string>();
-    clients.forEach(c => {
-      if (c.event_type) cats.add(c.event_type);
-    });
-    return Array.from(cats);
-  }, [clients]);
-
   const filteredRecords = useMemo(() => {
     return financeRecords.filter(rec => {
       const clientName = rec.client?.name?.toLowerCase() || '';
-      const clientPhone = rec.client?.phone?.toLowerCase() || '';
-      const eventType = rec.client?.event_type || '';
+      const eventType = rec.client?.event_type?.toLowerCase() || '';
+      const phone = rec.client?.phone?.toLowerCase() || '';
       const query = searchQuery.toLowerCase();
 
-      // Search Query Match
-      const matchesSearch = !query || clientName.includes(query) || clientPhone.includes(query) || eventType.toLowerCase().includes(query);
-
-      // Category Match
-      const matchesCategory = categoryFilter === 'all' || eventType === categoryFilter;
-
-      // Status Match
+      const matchesSearch = !query || clientName.includes(query) || eventType.includes(query) || phone.includes(query);
       const matchesStatus = statusFilter === 'all' || rec.payment_status === statusFilter;
 
-      // Date Range Match
-      let matchesDate = true;
-      if (dateRangePreset !== 'all' || (startDate && endDate)) {
-        const clientDate = rec.client?.event_date || rec.created_at?.split('T')[0];
-        if (clientDate) {
-          if (startDate && clientDate < startDate) matchesDate = false;
-          if (endDate && clientDate > endDate) matchesDate = false;
-        }
-      }
-
-      // Payment Mode Match
-      let matchesPaymentMode = true;
-      if (paymentModeFilter !== 'all') {
-        const hasMode = (rec.milestones || []).some(m => m.payment_mode === paymentModeFilter);
-        matchesPaymentMode = hasMode;
-      }
-
-      return matchesSearch && matchesCategory && matchesStatus && matchesDate && matchesPaymentMode;
+      return matchesSearch && matchesStatus;
     });
-  }, [financeRecords, searchQuery, categoryFilter, statusFilter, dateRangePreset, startDate, endDate, paymentModeFilter]);
+  }, [financeRecords, searchQuery, statusFilter]);
 
   const filteredExpenses = useMemo(() => {
     return expenses.filter(exp => {
       const query = searchQuery.toLowerCase();
       const title = exp.title?.toLowerCase() || '';
       const paidTo = exp.paid_to?.toLowerCase() || '';
-      const cat = exp.category || '';
+      const cat = exp.category?.toLowerCase() || '';
 
-      const matchesSearch = !query || title.includes(query) || paidTo.includes(query) || cat.toLowerCase().includes(query);
-      const matchesCategory = categoryFilter === 'all' || cat === categoryFilter;
-      const matchesMode = paymentModeFilter === 'all' || exp.payment_mode === paymentModeFilter;
-
-      let matchesDate = true;
-      if (startDate && exp.payment_date < startDate) matchesDate = false;
-      if (endDate && exp.payment_date > endDate) matchesDate = false;
-
-      return matchesSearch && matchesCategory && matchesMode && matchesDate;
+      return !query || title.includes(query) || paidTo.includes(query) || cat.includes(query);
     });
-  }, [expenses, searchQuery, categoryFilter, paymentModeFilter, startDate, endDate]);
+  }, [expenses, searchQuery]);
 
-  // ─────────────────────────────────────────────────────────────
-  // 🧮 DYNAMIC SUMMARY METRICS
-  // ─────────────────────────────────────────────────────────────
+  // 5 Top Metric Cards calculations
   const totalInvoiced = useMemo(() => {
     return Math.round(filteredRecords.reduce((acc, r) => acc + (Number(r.final_total_amount) || 0), 0));
   }, [filteredRecords]);
@@ -1266,13 +1265,10 @@ export default function FinancePage() {
   }, [filteredExpenses]);
 
   const netProfit = Math.round(totalReceived - totalExpensesAmount);
-  const profitMargin = totalReceived > 0 ? Math.round((netProfit / totalReceived) * 100) : 0;
+  const profitMargin = totalReceived > 0 ? Math.round((netProfit / totalReceived) * 100) : 100;
+  const realizedPercent = totalInvoiced > 0 ? Math.round((totalReceived / totalInvoiced) * 100) : 0;
 
-  // ─────────────────────────────────────────────────────────────
-  // 🔔 OVERDUE & UPCOMING PAYMENTS DETECTOR
-  // ─────────────────────────────────────────────────────────────
-  const todayStr = new Date().toISOString().split('T')[0];
-
+  // Overdue calculations
   const overdueMilestonesList = useMemo(() => {
     const list: Array<{
       milestone: FinanceMilestoneItem;
@@ -1414,7 +1410,7 @@ export default function FinancePage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2] text-[#2C2416] pb-28 pt-3 px-4 sm:px-6 lg:px-8 font-sans selection:bg-[#F5EEDC] selection:text-[#8C6D28]">
+    <div className="min-h-screen bg-[#FDFBF7] text-slate-900 pb-28 pt-4 px-4 sm:px-6 lg:px-8 font-sans selection:bg-amber-100 selection:text-amber-900">
       
       {/* ─────────────────────────────────────────────────────────────
           🔐 FROSTED-GLASS PIN VAULT SECURITY GATE
@@ -1431,7 +1427,7 @@ export default function FinancePage() {
               initial={{ scale: 0.92, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.92, opacity: 0 }}
-              className="bg-white/90 backdrop-blur-2xl rounded-3xl p-7 sm:p-9 max-w-md w-full border border-white/40 shadow-2xl space-y-6 text-center"
+              className="bg-white/95 backdrop-blur-2xl rounded-3xl p-7 sm:p-9 max-w-md w-full border border-white/40 shadow-2xl space-y-6 text-center"
             >
               <div className="w-16 h-16 rounded-3xl bg-amber-500/10 border border-amber-500/20 text-amber-600 flex items-center justify-center mx-auto shadow-inner">
                 <Lock className="w-8 h-8" />
@@ -1510,40 +1506,244 @@ export default function FinancePage() {
       <div className="max-w-7xl mx-auto space-y-6">
 
         {/* ─────────────────────────────────────────────────────────────
-            HEADER & ACTION BUTTONS (HIGH-END LUXURY CREAM / WARM GOLD)
+            TOP 5 METRIC CARDS WITH SPARKLINES (MATCHING SCREENSHOT)
         ───────────────────────────────────────────────────────────── */}
-        <div className="bg-[#FFFDF9] rounded-3xl p-6 sm:p-7 border border-[#EBE3D5] shadow-[0_4px_25px_-5px_rgba(200,165,110,0.08)] flex flex-col md:flex-row md:items-center justify-between gap-5">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#E2B857] via-[#D4AF37] to-[#B38728] flex items-center justify-center shadow-md shadow-[#D4AF37]/25 text-white shrink-0">
-              <DollarSign className="w-6 h-6 stroke-[2.5]" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2.5">
-                <h1 className="text-2xl font-bold tracking-tight text-[#221B10]">Finance & Revenue Engine</h1>
-                <span className="px-3 py-0.5 rounded-full text-xs font-black bg-[#F5EEDC] text-[#8C6D28] border border-[#E3D3AC] tracking-wider uppercase">
-                  Studio Suite
-                </span>
-                {securitySettings?.is_locked && (
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1">
-                    <ShieldCheck className="w-3 h-3 text-emerald-600" /> Vault Active
-                  </span>
-                )}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          
+          {/* Card 1: GROSS INVOICED */}
+          <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-100 shadow-[0_2px_12px_rgba(0,0,0,0.03)] relative overflow-hidden flex flex-col justify-between h-32">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-orange-50 text-orange-500 flex items-center justify-center shrink-0 border border-orange-100/60">
+                <FileText className="w-5 h-5 stroke-[2.2]" />
               </div>
-              <p className="text-xs text-[#7A6950] mt-1 font-medium">
-                Live quotation sync, payment milestones, real-time audit logs, team payouts, and cashflow drill-down.
-              </p>
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Gross Invoiced</span>
+                <p className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight font-sans">
+                  ₹{totalInvoiced.toLocaleString('en-IN')}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-end justify-between mt-auto">
+              <span className="text-[11px] font-medium text-slate-400">
+                {filteredRecords.length} Active Contracts
+              </span>
+
+              {/* Orange Sparkline SVG */}
+              <svg className="w-20 h-7 text-orange-500" viewBox="0 0 100 35" fill="none" preserveAspectRatio="none">
+                <path d="M0 30 Q 25 15, 50 25 T 100 5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" fill="none" />
+              </svg>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            {/* 🔔 DUE DATE NOTIFICATION BELL */}
+          {/* Card 2: CASH RECEIVED */}
+          <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-100 shadow-[0_2px_12px_rgba(0,0,0,0.03)] relative overflow-hidden flex flex-col justify-between h-32">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 border border-emerald-100/60">
+                <Wallet className="w-5 h-5 stroke-[2.2]" />
+              </div>
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Cash Received</span>
+                <p className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight font-sans">
+                  ₹{totalReceived.toLocaleString('en-IN')}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-end justify-between mt-auto">
+              <span className="text-[11px] font-bold text-emerald-600 flex items-center gap-1">
+                {realizedPercent}% Realized <CheckCircle2 className="w-3.5 h-3.5" />
+              </span>
+
+              {/* Green Sparkline SVG */}
+              <svg className="w-20 h-7 text-emerald-500" viewBox="0 0 100 35" fill="none" preserveAspectRatio="none">
+                <path d="M0 30 Q 25 28, 45 15 T 80 20 T 100 5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" fill="none" />
+              </svg>
+            </div>
+          </div>
+
+          {/* Card 3: PENDING RECEIVABLES (CLICKABLE DRILL-DOWN) */}
+          <div 
+            onClick={() => setShowOverdueModal(true)}
+            className="bg-white hover:bg-orange-50/20 rounded-2xl p-4 sm:p-5 border border-slate-100 shadow-[0_2px_12px_rgba(0,0,0,0.03)] relative overflow-hidden flex flex-col justify-between h-32 cursor-pointer transition"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-orange-50 text-orange-500 flex items-center justify-center shrink-0 border border-orange-100/60">
+                <Clock className="w-5 h-5 stroke-[2.2]" />
+              </div>
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Pending Receivables</span>
+                <p className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight font-sans">
+                  ₹{totalPending.toLocaleString('en-IN')}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-end justify-between mt-auto">
+              <span className="text-[11px] font-medium text-slate-400">
+                Scheduled Milestones
+              </span>
+
+              {/* Orange Sparkline SVG */}
+              <svg className="w-20 h-7 text-orange-400" viewBox="0 0 100 35" fill="none" preserveAspectRatio="none">
+                <path d="M0 25 Q 30 25, 55 32 T 100 10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" fill="none" />
+              </svg>
+            </div>
+          </div>
+
+          {/* Card 4: TEAM & EXPENSES */}
+          <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-100 shadow-[0_2px_12px_rgba(0,0,0,0.03)] relative overflow-hidden flex flex-col justify-between h-32">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-500 flex items-center justify-center shrink-0 border border-rose-100/60">
+                <CreditCard className="w-5 h-5 stroke-[2.2]" />
+              </div>
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Team & Expenses</span>
+                <p className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight font-sans">
+                  ₹{totalExpensesAmount.toLocaleString('en-IN')}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-end justify-between mt-auto">
+              <span className="text-[11px] font-medium text-slate-400">
+                {filteredExpenses.length} Logged Payouts
+              </span>
+
+              {/* Pink Sparkline SVG */}
+              <svg className="w-20 h-7 text-rose-400" viewBox="0 0 100 35" fill="none" preserveAspectRatio="none">
+                <path d="M0 32 Q 35 30, 60 22 T 100 8" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" fill="none" />
+              </svg>
+            </div>
+          </div>
+
+          {/* Card 5: NET STUDIO PROFIT */}
+          <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-100 shadow-[0_2px_12px_rgba(0,0,0,0.03)] relative overflow-hidden flex flex-col justify-between h-32">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0 border border-purple-100/60">
+                <TrendingUp className="w-5 h-5 stroke-[2.2]" />
+              </div>
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Net Studio Profit</span>
+                <p className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight font-sans">
+                  ₹{netProfit.toLocaleString('en-IN')}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-end justify-between mt-auto">
+              <span className="text-[11px] font-bold text-purple-600 flex items-center gap-1">
+                {profitMargin}% Profit Margin <CheckCircle2 className="w-3.5 h-3.5" />
+              </span>
+
+              {/* Purple Sparkline SVG */}
+              <svg className="w-20 h-7 text-purple-500" viewBox="0 0 100 35" fill="none" preserveAspectRatio="none">
+                <path d="M0 30 Q 30 25, 55 18 T 100 5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" fill="none" />
+              </svg>
+            </div>
+          </div>
+
+        </div>
+
+        {/* ─────────────────────────────────────────────────────────────
+            TABS & SEARCH / FILTER BAR (MATCHING SCREENSHOT)
+        ───────────────────────────────────────────────────────────── */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200/80 pb-3">
+          
+          {/* Left Tabs */}
+          <div className="flex items-center gap-6">
+            <button
+              onClick={() => setActiveTab('clients')}
+              className={`flex items-center gap-2 pb-3 pt-1 text-xs font-bold transition relative cursor-pointer ${
+                activeTab === 'clients'
+                  ? 'text-orange-600 font-black'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <FileText className="w-4 h-4" />
+              <span>Client Invoices & Milestones</span>
+              {activeTab === 'clients' && (
+                <motion.div 
+                  layoutId="tabUnderline" 
+                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-600 rounded-full"
+                />
+              )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab('expenses')}
+              className={`flex items-center gap-2 pb-3 pt-1 text-xs font-bold transition relative cursor-pointer ${
+                activeTab === 'expenses'
+                  ? 'text-orange-600 font-black'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <CreditCard className="w-4 h-4" />
+              <span>Team Payouts & Expenses ({filteredExpenses.length})</span>
+              {activeTab === 'expenses' && (
+                <motion.div 
+                  layoutId="tabUnderline" 
+                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-600 rounded-full"
+                />
+              )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab('analytics')}
+              className={`flex items-center gap-2 pb-3 pt-1 text-xs font-bold transition relative cursor-pointer ${
+                activeTab === 'analytics'
+                  ? 'text-orange-600 font-black'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <PieChart className="w-4 h-4" />
+              <span>Financial Analytics</span>
+              {activeTab === 'analytics' && (
+                <motion.div 
+                  layoutId="tabUnderline" 
+                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-600 rounded-full"
+                />
+              )}
+            </button>
+          </div>
+
+          {/* Right Search, Filters & Audit Trigger */}
+          <div className="flex items-center gap-3">
+            {/* Search Input */}
+            <div className="relative w-60 sm:w-64">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                placeholder="Search client or event..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-amber-500 shadow-2xs"
+              />
+            </div>
+
+            {/* Status Dropdown */}
+            <div className="relative">
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as any)}
+                className="appearance-none px-3.5 py-1.5 pr-8 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:border-amber-500 shadow-2xs cursor-pointer"
+              >
+                <option value="all">All Statuses</option>
+                <option value="pending">Pending</option>
+                <option value="partially_paid">Partially Paid</option>
+                <option value="paid">Paid Full</option>
+              </select>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-2.5 pointer-events-none" />
+            </div>
+
+            {/* 🔔 Notifications Bell */}
             <div className="relative">
               <button
                 onClick={() => setIsNotificationDropdownOpen(prev => !prev)}
-                className="relative p-2.5 rounded-2xl bg-white border border-[#EBE3D5] text-slate-700 hover:bg-[#FAF6ED] shadow-2xs transition cursor-pointer active:scale-95"
+                className="relative p-2 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-2xs transition cursor-pointer"
                 title="Due Date & Payment Alerts"
               >
-                <Bell className="w-5 h-5" />
+                <Bell className="w-4 h-4" />
                 {overdueMilestonesList.length > 0 && (
                   <span className="absolute -top-1 -right-1 px-1.5 py-0.5 rounded-full text-[9px] font-black bg-rose-500 text-white animate-pulse shadow-sm">
                     {overdueMilestonesList.length}
@@ -1558,7 +1758,7 @@ export default function FinancePage() {
                     initial={{ opacity: 0, y: 8, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 8, scale: 0.95 }}
-                    className="absolute right-0 mt-2 w-80 sm:w-96 bg-[#FFFDF9] rounded-2xl border border-[#EBE3D5] shadow-2xl p-4 z-40 space-y-3"
+                    className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl border border-slate-200 shadow-2xl p-4 z-40 space-y-3"
                   >
                     <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                       <div className="flex items-center gap-1.5">
@@ -1599,7 +1799,7 @@ export default function FinancePage() {
                               {item.client.phone && (
                                 <a
                                   href={`https://wa.me/${item.client.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
-                                    `Hello ${item.client.name}, this is a gentle reminder regarding your pending installment for ${item.milestone.step_name || 'Booking'} of ₹${(item.milestone.amount || 0).toLocaleString('en-IN')}. Please let us know once transferred. Thank you!`
+                                    `Hello ${item.client.name}, this is a reminder regarding your pending installment for ${item.milestone.step_name || 'Booking'} of ₹${(item.milestone.amount || 0).toLocaleString('en-IN')}.`
                                   )}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
@@ -1609,7 +1809,7 @@ export default function FinancePage() {
                                 </a>
                               )}
                               <button
-                                onClick={() => handleQuickMarkPaid(item.record, item.milestone)}
+                                onClick={() => handleMilestoneStatusToggle(item.record.id, item.milestone.id)}
                                 className="px-2.5 py-1 bg-emerald-600 text-white font-extrabold text-[10px] rounded-lg shadow-xs hover:bg-emerald-700 flex items-center gap-1"
                               >
                                 <Check className="w-2.5 h-2.5" /> Mark Paid
@@ -1624,363 +1824,34 @@ export default function FinancePage() {
               </AnimatePresence>
             </div>
 
-            {/* 📜 AUDIT LOG DRAWER TOGGLE */}
+            {/* 📜 Audit Log Trigger */}
             <button
               onClick={() => setIsAuditDrawerOpen(true)}
-              className="px-3.5 py-2.5 text-xs font-bold text-slate-700 bg-white hover:bg-[#FAF6ED] border border-[#EBE3D5] rounded-xl transition flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-95"
+              className="p-2 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-2xs transition cursor-pointer"
+              title="Finance Audit Stream"
             >
-              <Clock className="w-4 h-4 text-amber-600" />
-              <span>Audit Log</span>
-              {auditLogs.length > 0 && (
-                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-900">
-                  {auditLogs.length}
-                </span>
-              )}
+              <Clock className="w-4 h-4" />
             </button>
-
-            {/* + Add Expense / Payout */}
-            <button
-              onClick={() => setShowAddExpenseModal(true)}
-              className="px-4 py-2.5 text-xs font-bold text-[#4E3B15] bg-[#F7EFCF] hover:bg-[#F2E5B8] border border-[#DFCFA0] rounded-xl transition flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-95"
-            >
-              <Plus className="w-4 h-4 text-[#8C6D28]" />
-              + Add Expense / Payout
-            </button>
-
-            {/* Lock Vault Button */}
-            {securitySettings?.is_locked && (
-              <button
-                onClick={handleLockVaultNow}
-                className="p-2.5 text-xs font-bold text-slate-500 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer"
-                title="Lock Finance Vault Now"
-              >
-                <Lock className="w-4 h-4" />
-              </button>
-            )}
-
-            <Link
-              href="/workspace/clients"
-              className="px-4 py-2.5 text-xs font-bold text-[#554734] bg-white hover:bg-[#FAF6ED] border border-[#E5DAC8] rounded-xl transition flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-95"
-            >
-              <Users className="w-4 h-4 text-[#8C6D28]" />
-              Clients Directory
-            </Link>
-          </div>
-        </div>
-
-        {/* ─────────────────────────────────────────────────────────────
-            🔍 MULTI-DIMENSIONAL ADVANCED FILTERS BAR
-        ───────────────────────────────────────────────────────────── */}
-        <div className="bg-[#FFFDF9] rounded-2xl p-4 border border-[#EBE3D5] shadow-xs space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-            {/* Search Input */}
-            <div className="relative">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none" />
-              <input
-                type="text"
-                placeholder="Search clients, phones, payouts..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-amber-500"
-              />
-            </div>
-
-            {/* Event Category Filter */}
-            <div className="relative">
-              <select
-                value={categoryFilter}
-                onChange={(e) => setCategoryFilter(e.target.value)}
-                className="w-full appearance-none px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-amber-500 cursor-pointer"
-              >
-                <option value="all">📂 All Event Categories</option>
-                {uniqueCategories.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-3 pointer-events-none" />
-            </div>
-
-            {/* Date Range Preset */}
-            <div className="relative">
-              <select
-                value={dateRangePreset}
-                onChange={(e) => {
-                  const val = e.target.value as any;
-                  setDateRangePreset(val);
-                  const now = new Date();
-                  if (val === 'this_month') {
-                    const first = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-                    const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
-                    setStartDate(first);
-                    setEndDate(last);
-                  } else if (val === 'last_30_days') {
-                    const past = new Date(now.getTime() - 30 * 86400000).toISOString().split('T')[0];
-                    setStartDate(past);
-                    setEndDate(now.toISOString().split('T')[0]);
-                  } else if (val === 'this_quarter') {
-                    const qMonth = Math.floor(now.getMonth() / 3) * 3;
-                    const first = new Date(now.getFullYear(), qMonth, 1).toISOString().split('T')[0];
-                    const last = new Date(now.getFullYear(), qMonth + 3, 0).toISOString().split('T')[0];
-                    setStartDate(first);
-                    setEndDate(last);
-                  } else if (val === 'all') {
-                    setStartDate('');
-                    setEndDate('');
-                  }
-                }}
-                className="w-full appearance-none px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-amber-500 cursor-pointer"
-              >
-                <option value="all">📅 All Time (Full History)</option>
-                <option value="this_month">🗓️ This Month</option>
-                <option value="last_30_days">⏳ Last 30 Days</option>
-                <option value="this_quarter">📊 This Quarter</option>
-                <option value="custom">⚙️ Custom Date Range</option>
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-3 pointer-events-none" />
-            </div>
-
-            {/* Payment Mode Filter */}
-            <div className="relative">
-              <select
-                value={paymentModeFilter}
-                onChange={(e) => setPaymentModeFilter(e.target.value)}
-                className="w-full appearance-none px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-amber-500 cursor-pointer"
-              >
-                <option value="all">💳 All Payment Channels</option>
-                <option value="UPI">UPI / GooglePay / PhonePe</option>
-                <option value="Bank Transfer">Bank Transfer (NEFT/IMPS)</option>
-                <option value="Cash">Cash Deposit</option>
-                <option value="Card">Credit / Debit Card</option>
-                <option value="Cheque">Cheque</option>
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-3 pointer-events-none" />
-            </div>
-
-            {/* Status Filter */}
-            <div className="relative">
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as any)}
-                className="w-full appearance-none px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-amber-500 cursor-pointer"
-              >
-                <option value="all">⚡ All Payment Statuses</option>
-                <option value="pending">⏳ Pending / Due</option>
-                <option value="partially_paid">🌓 Partially Paid</option>
-                <option value="paid">✅ 100% Paid Full</option>
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-3 pointer-events-none" />
-            </div>
-          </div>
-
-          {/* Custom Date Range Pickers Row */}
-          {dateRangePreset === 'custom' && (
-            <div className="p-3 bg-amber-50/50 rounded-xl border border-amber-200/70 flex flex-wrap items-center gap-3 text-xs">
-              <span className="font-extrabold text-amber-900">Custom Date Range:</span>
-              <div className="flex items-center gap-2">
-                <label className="font-semibold text-slate-600">From:</label>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-800"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <label className="font-semibold text-slate-600">To:</label>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-800"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setStartDate('');
-                  setEndDate('');
-                  setDateRangePreset('all');
-                }}
-                className="text-rose-600 font-extrabold hover:underline ml-auto"
-              >
-                Reset Dates
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* ─────────────────────────────────────────────────────────────
-            📊 DYNAMIC SUMMARY METRIC CARDS (WITH INTERACTIVE DRILL-DOWNS)
-        ───────────────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
-          
-          {/* 1. Gross Booked Volume */}
-          <div className="bg-[#FFFDF9] rounded-2xl p-4 border border-[#EBE3D5] shadow-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-black uppercase tracking-wider text-slate-500">Gross Booked</span>
-              <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-                <Receipt className="w-3.5 h-3.5" />
-              </div>
-            </div>
-            <p className="text-xl font-mono font-black text-slate-900 mt-2">
-              ₹{totalInvoiced.toLocaleString('en-IN')}
-            </p>
-            <span className="text-[10px] text-slate-400 font-medium mt-0.5 block">
-              {filteredRecords.length} Active Clients
-            </span>
-          </div>
-
-          {/* 2. Received Revenue */}
-          <div className="bg-[#FFFDF9] rounded-2xl p-4 border border-[#EBE3D5] shadow-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-black uppercase tracking-wider text-emerald-700">Received Revenue</span>
-              <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                <TrendingUp className="w-3.5 h-3.5" />
-              </div>
-            </div>
-            <p className="text-xl font-mono font-black text-emerald-700 mt-2">
-              ₹{totalReceived.toLocaleString('en-IN')}
-            </p>
-            <span className="text-[10px] text-emerald-600 font-semibold mt-0.5 block">
-              {totalInvoiced > 0 ? Math.round((totalReceived / totalInvoiced) * 100) : 0}% Collected
-            </span>
-          </div>
-
-          {/* 3. Pending / Overdue (CLICKABLE DRILL-DOWN) */}
-          <button
-            type="button"
-            onClick={() => setShowOverdueModal(true)}
-            className="bg-[#FFFDF9] hover:bg-rose-50/40 rounded-2xl p-4 border border-rose-200/80 shadow-xs text-left transition cursor-pointer group"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-black uppercase tracking-wider text-rose-700 flex items-center gap-1">
-                Pending Dues <ArrowUpRight className="w-3 h-3 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition" />
-              </span>
-              <div className="w-7 h-7 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center">
-                <AlertTriangle className="w-3.5 h-3.5" />
-              </div>
-            </div>
-            <p className="text-xl font-mono font-black text-rose-700 mt-2">
-              ₹{totalPending.toLocaleString('en-IN')}
-            </p>
-            <span className="text-[10px] text-rose-600 font-black mt-0.5 block">
-              {overdueMilestonesList.length > 0 ? `⚠️ ${overdueMilestonesList.length} Overdue` : 'Click for Urgency List'}
-            </span>
-          </button>
-
-          {/* 4. Projected Cashflow / Upcoming (CLICKABLE DRILL-DOWN) */}
-          <button
-            type="button"
-            onClick={() => setShowUpcomingModal(true)}
-            className="bg-[#FFFDF9] hover:bg-amber-50/40 rounded-2xl p-4 border border-amber-200/80 shadow-xs text-left transition cursor-pointer group"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-black uppercase tracking-wider text-amber-800 flex items-center gap-1">
-                Cashflow 30D <ArrowUpRight className="w-3 h-3 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition" />
-              </span>
-              <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center">
-                <Calendar className="w-3.5 h-3.5" />
-              </div>
-            </div>
-            <p className="text-xl font-mono font-black text-amber-900 mt-2">
-              ₹{totalUpcomingExpectedCashflow.toLocaleString('en-IN')}
-            </p>
-            <span className="text-[10px] text-amber-700 font-black mt-0.5 block">
-              {upcomingMilestonesList.length} Inflows Expected
-            </span>
-          </button>
-
-          {/* 5. Total Expenses */}
-          <div className="bg-[#FFFDF9] rounded-2xl p-4 border border-[#EBE3D5] shadow-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-black uppercase tracking-wider text-slate-500">Expenses & Payouts</span>
-              <div className="w-7 h-7 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center">
-                <CreditCard className="w-3.5 h-3.5" />
-              </div>
-            </div>
-            <p className="text-xl font-mono font-black text-slate-800 mt-2">
-              ₹{totalExpensesAmount.toLocaleString('en-IN')}
-            </p>
-            <span className="text-[10px] text-slate-400 font-medium mt-0.5 block">
-              {filteredExpenses.length} Logged Items
-            </span>
-          </div>
-
-          {/* 6. Net Profit */}
-          <div className="bg-[#FFFDF9] rounded-2xl p-4 border border-[#EBE3D5] shadow-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-black uppercase tracking-wider text-purple-700">Net Studio Profit</span>
-              <div className="w-7 h-7 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center">
-                <PieChart className="w-3.5 h-3.5" />
-              </div>
-            </div>
-            <p className="text-xl font-mono font-black text-purple-800 mt-2">
-              ₹{netProfit.toLocaleString('en-IN')}
-            </p>
-            <span className="text-[10px] text-purple-600 font-black mt-0.5 block">
-              {profitMargin}% Margin
-            </span>
           </div>
 
         </div>
 
         {/* ─────────────────────────────────────────────────────────────
-            MAIN TABS NAVIGATION
-        ───────────────────────────────────────────────────────────── */}
-        <div className="flex border-b border-[#EBE3D5] gap-2 pt-2">
-          <button
-            onClick={() => setActiveTab('clients')}
-            className={`pb-3 px-4 font-bold text-xs flex items-center gap-2 border-b-2 transition ${
-              activeTab === 'clients'
-                ? 'border-[#D4AF37] text-[#8C6D28]'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <Users className="w-4 h-4" />
-            <span>Client Invoices & Milestones ({filteredRecords.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('expenses')}
-            className={`pb-3 px-4 font-bold text-xs flex items-center gap-2 border-b-2 transition ${
-              activeTab === 'expenses'
-                ? 'border-[#D4AF37] text-[#8C6D28]'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <CreditCard className="w-4 h-4" />
-            <span>Team Payouts & Expenses ({filteredExpenses.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('analytics')}
-            className={`pb-3 px-4 font-bold text-xs flex items-center gap-2 border-b-2 transition ${
-              activeTab === 'analytics'
-                ? 'border-[#D4AF37] text-[#8C6D28]'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <PieChart className="w-4 h-4" />
-            <span>Financial Analytics & Breakdown</span>
-          </button>
-        </div>
-
-        {/* ─────────────────────────────────────────────────────────────
-            TAB 1: CLIENT INVOICES & MILESTONES SCHEDULE
+            TAB 1: CLIENT INVOICES & MILESTONES (EXACT SCREENSHOT LAYOUT)
         ───────────────────────────────────────────────────────────── */}
         {activeTab === 'clients' && (
           <div className="space-y-4">
             {loading ? (
-              <div className="text-center py-20 bg-white rounded-3xl border border-[#EBE3D5]">
+              <div className="text-center py-20 bg-white rounded-3xl border border-slate-100">
                 <RefreshCw className="w-8 h-8 text-amber-500 animate-spin mx-auto mb-3" />
                 <p className="text-xs font-bold text-slate-500">Loading client financial records...</p>
               </div>
             ) : filteredRecords.length === 0 ? (
-              <div className="text-center py-16 bg-[#FFFDF9] rounded-3xl border border-[#EBE3D5] space-y-3">
-                <Receipt className="w-10 h-10 text-amber-600/40 mx-auto" />
-                <h3 className="text-base font-black text-slate-800">No matching client records found</h3>
+              <div className="text-center py-16 bg-white rounded-3xl border border-slate-100 space-y-3">
+                <Receipt className="w-10 h-10 text-slate-300 mx-auto" />
+                <h3 className="text-base font-black text-slate-800">No matching client records</h3>
                 <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                  No financial cards match your active filter settings. Try adjusting search or category filters.
+                  No clients match your filter criteria. Try clearing the search or status filter.
                 </p>
               </div>
             ) : (
@@ -1988,220 +1859,393 @@ export default function FinancePage() {
                 const isExpanded = expandedCards.has(record.id);
                 const client = record.client;
                 const milestones = record.milestones || [];
+                const finalTotal = record.final_total_amount || 0;
+                const recAmt = record.received_amount || 0;
+                const pendAmt = record.pending_amount || 0;
 
                 return (
                   <motion.div
                     key={record.id}
                     layout
-                    className="bg-[#FFFDF9] rounded-3xl border border-[#EBE3D5] shadow-xs overflow-hidden transition-all"
+                    className="bg-white rounded-3xl border border-slate-100 shadow-[0_2px_15px_rgba(0,0,0,0.03)] overflow-hidden transition-all"
                   >
-                    {/* Top Client Bar */}
+                    {/* ─── CLIENT HEADER ROW (EXACT SCREENSHOT DESIGN) ─── */}
                     <div 
                       onClick={() => toggleCard(record.id)}
-                      className="p-5 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer hover:bg-[#FAF6ED]/60 transition"
+                      className="p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 cursor-pointer hover:bg-slate-50/60 transition"
                     >
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-800 font-black text-sm flex items-center justify-center shrink-0 border border-amber-200">
-                          {client?.name ? client.name.slice(0, 2).toUpperCase() : 'CL'}
+                      {/* Left: Avatar + Name + Tags + Date/Phone */}
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-11 h-11 rounded-full bg-purple-50 text-purple-600 font-bold text-sm flex items-center justify-center shrink-0 border border-purple-100">
+                          {client?.name ? client.name.slice(0, 2).toUpperCase() : <Users className="w-5 h-5" />}
                         </div>
+
                         <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h3 className="text-base font-black text-slate-900">
+                          <div className="flex items-center gap-2.5 flex-wrap">
+                            <h3 className="text-base font-bold text-slate-900">
                               {client?.name || 'Unnamed Client'}
                             </h3>
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-900">
-                              {client?.event_type || 'Wedding'}
+
+                            {/* Status Badge */}
+                            <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                              record.payment_status === 'paid'
+                                ? 'bg-emerald-50 text-emerald-700'
+                                : recAmt > 0
+                                ? 'bg-orange-50 text-orange-700'
+                                : 'bg-rose-50 text-rose-700'
+                            }`}>
+                              {record.payment_status === 'paid' ? 'Paid Full' : recAmt > 0 ? 'Partially Paid' : 'Pending'}
                             </span>
-                            {record.has_final_quotation && (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 flex items-center gap-1">
-                                <Sparkles className="w-2.5 h-2.5" /> Quotation Synced
+
+                            {/* Quotation Button */}
+                            {record.has_final_quotation ? (
+                              <span 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenQuotationModalForRecord(record);
+                                }}
+                                className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1 hover:bg-emerald-100 transition"
+                              >
+                                <Sparkles className="w-2.5 h-2.5 text-emerald-600" /> Quotation Synced
                               </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenQuotationModalForRecord(record);
+                                }}
+                                className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-orange-50 text-orange-700 hover:bg-orange-100 transition flex items-center gap-1 border border-orange-200"
+                              >
+                                + Select Final Quotation
+                              </button>
                             )}
                           </div>
-                          <p className="text-xs text-slate-500 mt-0.5">
-                            {client?.phone || 'No phone'} • Event Date: {client?.event_date ? new Date(client.event_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'TBD'}
-                          </p>
+
+                          <div className="flex items-center gap-3 text-xs text-slate-500 mt-1 flex-wrap font-medium">
+                            <span className="flex items-center gap-1 text-slate-600 font-bold">
+                              🏷️ {client?.event_type || 'Wedding Photography'}
+                            </span>
+                            <span>•</span>
+                            <span>
+                              Event Date: {client?.event_date ? new Date(client.event_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'TBD'}
+                            </span>
+                            {client?.phone && (
+                              <>
+                                <span>•</span>
+                                <span className="text-slate-600 font-mono font-medium">{client.phone}</span>
+                              </>
+                            )}
+                          </div>
                         </div>
                       </div>
 
-                      {/* Right Amount & Status */}
-                      <div className="flex items-center gap-6 justify-between md:justify-end">
-                        <div className="text-right">
-                          <span className="font-mono font-black text-base text-slate-900 block">
-                            ₹{(Number(record.final_total_amount) || 0).toLocaleString('en-IN')}
-                          </span>
-                          <span className="text-[11px] font-bold text-slate-500">
-                            Paid: <span className="text-emerald-700 font-mono font-bold">₹{(Number(record.received_amount) || 0).toLocaleString('en-IN')}</span> • Due: <span className="text-rose-700 font-mono font-bold">₹{(Number(record.pending_amount) || 0).toLocaleString('en-IN')}</span>
+                      {/* Right: Dual Progress Bar + Action Buttons + Toggle */}
+                      <div className="flex items-center gap-4 justify-between lg:justify-end flex-wrap">
+                        
+                        {/* Dual Progress Bar */}
+                        <div className="w-48 text-right">
+                          <div className="flex justify-between text-[11px] font-bold mb-1">
+                            <span className="text-emerald-700 font-mono">Rec: ₹{recAmt.toLocaleString('en-IN')}</span>
+                            <span className="text-rose-600 font-mono">Pend: ₹{pendAmt.toLocaleString('en-IN')}</span>
+                          </div>
+
+                          {/* Dual colored bar */}
+                          <div className="w-full h-2 rounded-full bg-slate-100 flex overflow-hidden">
+                            <div 
+                              className="h-full bg-emerald-500 rounded-l-full"
+                              style={{ width: `${finalTotal > 0 ? (recAmt / finalTotal) * 100 : 0}%` }}
+                            />
+                            <div 
+                              className="h-full bg-rose-300 rounded-r-full"
+                              style={{ width: `${finalTotal > 0 ? (pendAmt / finalTotal) * 100 : 100}%` }}
+                            />
+                          </div>
+
+                          <span className="text-[10px] text-slate-400 font-medium block mt-0.5">
+                            Total: ₹{finalTotal.toLocaleString('en-IN')}
                           </span>
                         </div>
 
-                        <span className={`px-3 py-1 rounded-full text-xs font-black border ${
-                          record.payment_status === 'paid'
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                            : record.received_amount > 0
-                            ? 'bg-amber-50 text-amber-800 border-amber-200'
-                            : 'bg-rose-50 text-rose-700 border-rose-200'
-                        }`}>
-                          {record.payment_status === 'paid' ? 'Paid Full' : record.received_amount > 0 ? 'Partially Paid' : 'Pending'}
-                        </span>
+                        {/* Record Payment Button */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowRecordPaymentModal({ open: true, client: record.client || undefined, financeRecord: record });
+                          }}
+                          className="px-4 py-2 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition cursor-pointer active:scale-95 shadow-2xs"
+                        >
+                          Record Payment
+                        </button>
 
-                        <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-900 flex items-center justify-center">
+                        {/* Tax Invoice Button */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowInvoiceModal({ open: true, client: record.client || undefined, financeRecord: record });
+                          }}
+                          className="px-4 py-2 text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition flex items-center gap-1.5 cursor-pointer active:scale-95 shadow-2xs"
+                        >
+                          <FileText className="w-3.5 h-3.5 text-amber-700" />
+                          Tax Invoice
+                        </button>
+
+                        {/* Round Chevron Toggle */}
+                        <div className="w-8 h-8 rounded-full border border-slate-200 text-slate-400 flex items-center justify-center hover:bg-slate-50">
                           {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                         </div>
                       </div>
                     </div>
 
-                    {/* Expanded Milestones & Details Area */}
+                    {/* ─── EXPANDED CARD BODY: 2-COLUMN SPLIT (PRICING DETAILS vs PAYMENT TERMS & SCHEDULE) ─── */}
                     <AnimatePresence>
                       {isExpanded && (
                         <motion.div
                           initial={{ opacity: 0, height: 0 }}
                           animate={{ opacity: 1, height: 'auto' }}
                           exit={{ opacity: 0, height: 0 }}
-                          className="border-t border-[#EBE3D5] p-5 sm:p-6 bg-white space-y-5"
+                          className="border-t border-slate-100 p-5 sm:p-6 bg-white"
                         >
-                          {/* Action Toolbar */}
-                          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => setShowRecordPaymentModal({ open: true, client: record.client || undefined, financeRecord: record })}
-                                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 font-black text-white text-xs rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer"
-                              >
-                                <CreditCard className="w-3.5 h-3.5" />
-                                Record Payment
-                              </button>
+                          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                            
+                            {/* ══════════════════════════════════════════════
+                                LEFT COLUMN: PRICING DETAILS (4 Cols)
+                            ══════════════════════════════════════════════ */}
+                            <div className="lg:col-span-5 space-y-4 border-r-0 lg:border-r border-slate-100 lg:pr-6">
+                              <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                                Pricing Details
+                              </h4>
 
-                              <button
-                                onClick={() => setShowAddStepModal({ open: true, recordId: record.id })}
-                                className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 font-bold text-amber-900 border border-amber-300 text-xs rounded-xl flex items-center gap-1 cursor-pointer"
-                              >
-                                <Plus className="w-3.5 h-3.5" />
-                                Add Installment
-                              </button>
+                              <div className="space-y-2.5 text-xs">
+                                {/* Base Package Price */}
+                                <div className="flex items-center justify-between">
+                                  <span className="text-slate-600 font-medium">Base Package Price</span>
+                                  <span className="font-mono font-bold text-slate-900">
+                                    ₹{(Number(record.base_package_price) || 0).toLocaleString('en-IN')}
+                                  </span>
+                                </div>
+
+                                {/* Discount (Complimentary) */}
+                                <div className="flex items-center justify-between">
+                                  <span className="text-rose-500 font-bold">Discount (Complimentary)</span>
+                                  <span className="font-mono font-bold text-rose-500">
+                                    - ₹{(Number(record.discount_amount) || 0).toLocaleString('en-IN')}
+                                  </span>
+                                </div>
+
+                                {/* Accommodation Charges */}
+                                <div className="flex items-center justify-between">
+                                  <span className="text-slate-600 font-medium">Accommodation Charges</span>
+                                  <span className="font-mono font-bold text-slate-900">
+                                    ₹{(Number(record.accommodation_charges) || 0).toLocaleString('en-IN')}
+                                  </span>
+                                </div>
+
+                                {/* Travel Charges */}
+                                <div className="flex items-center justify-between">
+                                  <span className="text-slate-600 font-medium">Travel Charges</span>
+                                  <span className="font-mono font-bold text-slate-900">
+                                    ₹{(Number(record.travel_charges) || 0).toLocaleString('en-IN')}
+                                  </span>
+                                </div>
+
+                                {/* Additional Charges */}
+                                <div className="flex items-center justify-between">
+                                  <span className="text-slate-600 font-medium">Additional Charges</span>
+                                  <span className="font-mono font-bold text-slate-900">
+                                    ₹{(Number(record.additional_charges) || 0).toLocaleString('en-IN')}
+                                  </span>
+                                </div>
+
+                                <div className="border-t border-slate-100 pt-2.5 space-y-2">
+                                  {/* Subtotal (Gross Total) */}
+                                  <div className="flex items-center justify-between font-bold">
+                                    <span className="text-slate-800">Subtotal (Gross Total)</span>
+                                    <span className="font-mono text-slate-900">
+                                      ₹{(Number(record.subtotal_amount) || 0).toLocaleString('en-IN')}
+                                    </span>
+                                  </div>
+
+                                  {/* GST */}
+                                  <div className="flex items-center justify-between text-slate-500 font-medium">
+                                    <span>GST ({record.gst_rate || 0}%)</span>
+                                    <span className="font-mono">
+                                      ₹{(Number(record.gst_amount) || 0).toLocaleString('en-IN')}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Final Net Investment Box (Peach/Cream Highlight Box) */}
+                                <div className="p-3.5 bg-orange-50/70 border border-orange-200/80 rounded-2xl flex items-center justify-between mt-4">
+                                  <div>
+                                    <span className="text-xs font-bold text-orange-900 block">Final Net Investment</span>
+                                    <span className="text-[10px] text-slate-500 font-medium">Inclusive of all Taxes & Fees</span>
+                                  </div>
+                                  <span className="text-lg font-mono font-black text-orange-600">
+                                    ₹{finalTotal.toLocaleString('en-IN')}
+                                  </span>
+                                </div>
+                              </div>
                             </div>
 
-                            <div className="flex items-center gap-2">
-                              {record.client?.lead_id && (
+                            {/* ══════════════════════════════════════════════
+                                RIGHT COLUMN: PAYMENT TERMS & SCHEDULE (7 Cols)
+                            ══════════════════════════════════════════════ */}
+                            <div className="lg:col-span-7 space-y-4">
+                              <div className="flex items-center justify-between">
+                                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                                  Payment Terms & Schedule
+                                </h4>
+
                                 <button
-                                  onClick={() => handleOpenQuotationModalForRecord(record)}
-                                  className="px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 font-extrabold text-xs rounded-xl border border-blue-200 flex items-center gap-1 cursor-pointer"
+                                  type="button"
+                                  onClick={() => setShowAddStepModal({ open: true, recordId: record.id })}
+                                  className="px-3 py-1 bg-orange-50 hover:bg-orange-100 text-orange-700 text-xs font-bold rounded-xl border border-orange-200 flex items-center gap-1 cursor-pointer transition"
                                 >
-                                  <Sparkles className="w-3.5 h-3.5" />
-                                  Quotations ({record.available_quotations?.length || 0})
+                                  + Add Step
                                 </button>
+                              </div>
+
+                              {/* Milestones Schedule Table */}
+                              {milestones.length === 0 ? (
+                                <div className="p-6 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-center text-xs text-slate-400 space-y-1">
+                                  <p className="font-bold text-slate-600">No installments scheduled yet.</p>
+                                  <p className="text-[11px]">Click "+ Add Step" to schedule milestone payment dates.</p>
+                                </div>
+                              ) : (
+                                <div className="space-y-2.5">
+                                  {/* Table Column Headers */}
+                                  <div className="grid grid-cols-12 gap-2 text-[10px] font-black uppercase text-slate-400 px-2">
+                                    <span className="col-span-3">Date</span>
+                                    <span className="col-span-4">Steps</span>
+                                    <span className="col-span-2 text-right">Amount</span>
+                                    <span className="col-span-2 text-center">Status</span>
+                                    <span className="col-span-1 text-right">Action</span>
+                                  </div>
+
+                                  {/* Milestone Rows */}
+                                  {milestones.map((ms) => {
+                                    const isPaid = ms.status === 'completed' || ms.status === 'paid' || (ms.status as string) === 'Completed';
+
+                                    return (
+                                      <div
+                                        key={ms.id}
+                                        className="grid grid-cols-12 gap-2 items-center p-2 rounded-2xl hover:bg-slate-50/80 transition border border-transparent hover:border-slate-200 text-xs"
+                                      >
+                                        {/* Date Field */}
+                                        <div className="col-span-3">
+                                          <div className="relative">
+                                            <input
+                                              type="date"
+                                              value={ms.due_date || ''}
+                                              onChange={(e) => handleMilestoneStepChange(record.id, ms.id, 'due_date', e.target.value)}
+                                              className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-[11px] font-medium text-slate-700 focus:outline-none focus:border-amber-500"
+                                            />
+                                          </div>
+                                        </div>
+
+                                        {/* Step Name */}
+                                        <div className="col-span-4">
+                                          <input
+                                            type="text"
+                                            value={ms.step_name || ms.title || ''}
+                                            onChange={(e) => handleMilestoneStepChange(record.id, ms.id, 'step_name', e.target.value)}
+                                            placeholder="Payment Milestone"
+                                            className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-amber-500"
+                                          />
+                                        </div>
+
+                                        {/* Amount */}
+                                        <div className="col-span-2 text-right">
+                                          <input
+                                            type="number"
+                                            value={ms.amount || 0}
+                                            onChange={(e) => handleMilestoneStepChange(record.id, ms.id, 'amount', Number(e.target.value))}
+                                            className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 text-right focus:outline-none focus:border-amber-500"
+                                          />
+                                        </div>
+
+                                        {/* Status Pill Button */}
+                                        <div className="col-span-2 flex justify-center">
+                                          <button
+                                            type="button"
+                                            onClick={() => handleMilestoneStatusToggle(record.id, ms.id)}
+                                            className={`px-2.5 py-1 rounded-full text-[10px] font-black border transition cursor-pointer flex items-center gap-1 ${
+                                              isPaid
+                                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                                                : 'bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100'
+                                            }`}
+                                          >
+                                            {isPaid ? <><Check className="w-3 h-3" /> Completed</> : 'Pending'}
+                                          </button>
+                                        </div>
+
+                                        {/* Action / 3 Dots Menu */}
+                                        <div className="col-span-1 flex items-center justify-end relative">
+                                          <button
+                                            type="button"
+                                            onClick={() => setOpenActionMenuId(openActionMenuId === ms.id ? null : ms.id)}
+                                            className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                                          >
+                                            <MoreVertical className="w-4 h-4" />
+                                          </button>
+
+                                          {/* Dropdown Menu */}
+                                          {openActionMenuId === ms.id && (
+                                            <div className="absolute right-0 top-8 bg-white rounded-xl border border-slate-200 shadow-xl py-1.5 w-36 z-30 space-y-0.5 text-xs">
+                                              <button
+                                                type="button"
+                                                onClick={() => handleOpenEditMilestone(record.id, ms)}
+                                                className="w-full text-left px-3 py-1.5 hover:bg-slate-50 font-bold text-slate-700 flex items-center gap-2"
+                                              >
+                                                <Pencil className="w-3.5 h-3.5" /> Edit Step
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleDeleteMilestone(record.id, ms.id)}
+                                                className="w-full text-left px-3 py-1.5 hover:bg-rose-50 font-bold text-rose-600 flex items-center gap-2"
+                                              >
+                                                <Trash2 className="w-3.5 h-3.5" /> Delete
+                                              </button>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
                               )}
 
-                              <button
-                                onClick={() => setShowInvoiceModal({ open: true, client: record.client || undefined, financeRecord: record })}
-                                className="px-3.5 py-1.5 bg-slate-900 hover:bg-black font-black text-white text-xs rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer"
-                              >
-                                <Printer className="w-3.5 h-3.5" />
-                                Invoice & Print
-                              </button>
+                              {/* Bottom 3 Summary Cards (FIXED AMOUNT, RECEIVED AMOUNT, PENDING AMOUNT) */}
+                              <div className="grid grid-cols-3 gap-3 pt-3">
+                                {/* Fixed Amount */}
+                                <div className="p-3 bg-slate-50/80 rounded-2xl border border-slate-200/80 text-center">
+                                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">Fixed Amount</span>
+                                  <span className="font-mono font-bold text-sm text-slate-900 mt-0.5 block">
+                                    ₹{finalTotal.toLocaleString('en-IN')}
+                                  </span>
+                                </div>
+
+                                {/* Received Amount */}
+                                <div className="p-3 bg-emerald-50/70 rounded-2xl border border-emerald-200/80 text-center">
+                                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 block">Received Amount</span>
+                                  <span className="font-mono font-bold text-sm text-emerald-700 mt-0.5 block">
+                                    ₹{recAmt.toLocaleString('en-IN')}
+                                  </span>
+                                </div>
+
+                                {/* Pending Amount */}
+                                <div className="p-3 bg-rose-50/70 rounded-2xl border border-rose-200/80 text-center">
+                                  <span className="text-[10px] font-black uppercase tracking-wider text-rose-800 block">Pending Amount</span>
+                                  <span className="font-mono font-bold text-sm text-rose-600 mt-0.5 block">
+                                    ₹{pendAmt.toLocaleString('en-IN')}
+                                  </span>
+                                </div>
+                              </div>
                             </div>
-                          </div>
 
-                          {/* Milestones Schedule Table */}
-                          <div className="space-y-2">
-                            <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
-                              Payment Milestones Schedule ({milestones.length} installments)
-                            </h4>
-
-                            {milestones.length === 0 ? (
-                              <div className="p-4 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-center text-xs text-slate-500 space-y-1">
-                                <p className="font-bold">No installments or milestones created yet.</p>
-                                <p className="text-[11px]">Click "+ Add Installment" or "Record Payment" to register payments.</p>
-                              </div>
-                            ) : (
-                              <div className="space-y-2">
-                                {milestones.map((ms, idx) => {
-                                  const isPaid = ms.status === 'completed' || ms.status === 'paid' || (ms.status as string) === 'Completed';
-                                  const isOverdue = !isPaid && ms.due_date && new Date(ms.due_date) < new Date();
-
-                                  return (
-                                    <div
-                                      key={ms.id || idx}
-                                      className={`p-3.5 sm:p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all ${
-                                        isPaid
-                                          ? 'bg-emerald-50/50 border-emerald-200'
-                                          : isOverdue
-                                          ? 'bg-rose-50/50 border-rose-200'
-                                          : 'bg-slate-50/60 border-slate-200'
-                                      }`}
-                                    >
-                                      <div className="flex items-center gap-3">
-                                        <div className={`w-7 h-7 rounded-xl font-black text-xs flex items-center justify-center shrink-0 ${
-                                          isPaid ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-700'
-                                        }`}>
-                                          {idx + 1}
-                                        </div>
-                                        <div>
-                                          <h5 className="text-xs font-black text-slate-900">
-                                            {ms.step_name || ms.title || `Milestone ${idx + 1}`}
-                                          </h5>
-                                          <p className="text-[11px] text-slate-500">
-                                            {isPaid ? (
-                                              <span className="text-emerald-700 font-bold">
-                                                Paid on {ms.paid_date ? new Date(ms.paid_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Confirmed'}
-                                              </span>
-                                            ) : (
-                                              <span>
-                                                Due: {ms.due_date ? new Date(ms.due_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Milestone completion'}
-                                                {isOverdue && <span className="text-rose-600 font-black ml-1.5">⚠️ Overdue</span>}
-                                              </span>
-                                            )}
-                                            {ms.payment_mode && <span className="text-slate-400"> • {ms.payment_mode}</span>}
-                                          </p>
-                                        </div>
-                                      </div>
-
-                                      <div className="flex items-center gap-3 ml-auto sm:ml-0">
-                                        <span className="font-mono font-black text-xs text-slate-900">
-                                          ₹{(Number(ms.amount) || 0).toLocaleString('en-IN')}
-                                        </span>
-
-                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
-                                          isPaid
-                                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                                            : 'bg-amber-100 text-amber-900 border-amber-300'
-                                        }`}>
-                                          {isPaid ? 'PAID' : 'DUE'}
-                                        </span>
-
-                                        {/* Direct Quick Actions */}
-                                        {!isPaid && (
-                                          <button
-                                            onClick={() => handleQuickMarkPaid(record, ms)}
-                                            className="p-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded-lg transition"
-                                            title="Mark Paid"
-                                          >
-                                            <Check className="w-3.5 h-3.5" />
-                                          </button>
-                                        )}
-
-                                        {/* Flexible Direct Edit */}
-                                        <button
-                                          onClick={() => handleOpenEditMilestone(record.id, ms)}
-                                          className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition"
-                                          title="Edit Installment"
-                                        >
-                                          <Pencil className="w-3.5 h-3.5" />
-                                        </button>
-
-                                        {/* Delete Installment */}
-                                        <button
-                                          onClick={() => handleDeleteMilestone(record.id, ms.id)}
-                                          className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg transition"
-                                          title="Delete Installment"
-                                        >
-                                          <Trash2 className="w-3.5 h-3.5" />
-                                        </button>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
                           </div>
                         </motion.div>
                       )}
@@ -2218,7 +2262,7 @@ export default function FinancePage() {
         ───────────────────────────────────────────────────────────── */}
         {activeTab === 'expenses' && (
           <div className="space-y-4">
-            <div className="bg-[#FFFDF9] rounded-3xl border border-[#EBE3D5] p-5 sm:p-6 shadow-xs space-y-4">
+            <div className="bg-white rounded-3xl border border-slate-100 p-5 sm:p-6 shadow-xs space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-4">
                 <div>
                   <h3 className="text-base font-black text-slate-900">Logged Studio Expenses & Team Payouts</h3>
@@ -2226,7 +2270,7 @@ export default function FinancePage() {
                 </div>
                 <button
                   onClick={() => setShowAddExpenseModal(true)}
-                  className="px-4 py-2 bg-amber-400 hover:bg-amber-500 font-black text-slate-900 rounded-xl text-xs shadow-xs flex items-center gap-1.5"
+                  className="px-4 py-2 bg-orange-500 hover:bg-orange-600 font-black text-white rounded-xl text-xs shadow-xs flex items-center gap-1.5"
                 >
                   <Plus className="w-4 h-4" /> Log Expense
                 </button>
@@ -2236,7 +2280,7 @@ export default function FinancePage() {
                 <div className="text-center py-16 text-slate-400 text-xs space-y-2">
                   <CreditCard className="w-10 h-10 mx-auto text-slate-300" />
                   <p className="font-bold text-slate-700">No expenses or team payouts logged yet.</p>
-                  <p className="text-[11px] text-slate-400">Click "+ Log Expense" above to record production crew payouts or travel expenses.</p>
+                  <p className="text-[11px] text-slate-400">Click "+ Log Expense" above to record crew payouts or travel expenses.</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -2256,7 +2300,7 @@ export default function FinancePage() {
                       {filteredExpenses.map((exp) => (
                         <tr key={exp.id} className="hover:bg-slate-50/80 transition">
                           <td className="py-3 px-2">
-                            <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-amber-50 text-amber-800 border border-amber-200">
+                            <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-orange-50 text-orange-800 border border-orange-200">
                               {exp.category}
                             </span>
                           </td>
@@ -2302,14 +2346,14 @@ export default function FinancePage() {
         )}
 
         {/* ─────────────────────────────────────────────────────────────
-            TAB 3: ANALYTICS & PROFITABILITY BREAKDOWN
+            TAB 3: FINANCIAL ANALYTICS & BREAKDOWN
         ───────────────────────────────────────────────────────────── */}
         {activeTab === 'analytics' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {/* Income vs Expenses Card */}
-            <div className="bg-[#FFFDF9] rounded-3xl p-6 border border-[#EBE3D5] shadow-xs space-y-4">
+            <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-xs space-y-4">
               <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
-                <PieChart className="w-4 h-4 text-amber-600" />
+                <PieChart className="w-4 h-4 text-orange-600" />
                 Revenue vs Operating Expenses
               </h3>
 
@@ -2340,14 +2384,14 @@ export default function FinancePage() {
                   </div>
                 </div>
 
-                <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 flex items-center justify-between">
+                <div className="p-4 bg-orange-50 rounded-2xl border border-orange-200 flex items-center justify-between">
                   <div>
-                    <span className="text-[11px] font-black text-amber-900 uppercase">Estimated Net Profit</span>
-                    <p className="text-2xl font-mono font-black text-amber-950 mt-0.5">
+                    <span className="text-[11px] font-black text-orange-900 uppercase">Estimated Net Profit</span>
+                    <p className="text-2xl font-mono font-black text-orange-950 mt-0.5">
                       ₹{netProfit.toLocaleString('en-IN')}
                     </p>
                   </div>
-                  <span className="px-3 py-1 rounded-full text-xs font-black bg-amber-200 text-amber-900">
+                  <span className="px-3 py-1 rounded-full text-xs font-black bg-orange-200 text-orange-900">
                     {profitMargin}% Profit Margin
                   </span>
                 </div>
@@ -2355,7 +2399,7 @@ export default function FinancePage() {
             </div>
 
             {/* Category Breakdown */}
-            <div className="bg-[#FFFDF9] rounded-3xl p-6 border border-[#EBE3D5] shadow-xs space-y-4">
+            <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-xs space-y-4">
               <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
                 <Tag className="w-4 h-4 text-blue-600" />
                 Expenses by Category
@@ -2402,12 +2446,12 @@ export default function FinancePage() {
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="bg-[#FFFDF9] w-full max-w-lg h-full shadow-2xl p-6 border-l border-[#EBE3D5] flex flex-col justify-between"
+              className="bg-white w-full max-w-lg h-full shadow-2xl p-6 border-l border-slate-200 flex flex-col justify-between"
             >
               <div className="space-y-4">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                   <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center">
+                    <div className="w-8 h-8 rounded-xl bg-orange-100 text-orange-800 flex items-center justify-center">
                       <Clock className="w-4 h-4" />
                     </div>
                     <div>
@@ -2424,7 +2468,7 @@ export default function FinancePage() {
                 <div className="flex gap-2">
                   <button
                     onClick={() => setAuditLogFilter('all')}
-                    className={`px-3 py-1 text-xs font-bold rounded-lg transition ${auditLogFilter === 'all' ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-600'}`}
+                    className={`px-3 py-1 text-xs font-bold rounded-lg transition ${auditLogFilter === 'all' ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-600'}`}
                   >
                     All ({auditLogs.length})
                   </button>
@@ -2507,17 +2551,17 @@ export default function FinancePage() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-[#FFFDF9] rounded-3xl p-6 sm:p-7 max-w-2xl w-full border border-[#EBE3D5] shadow-2xl space-y-4 max-h-[85vh] flex flex-col justify-between"
+              className="bg-white rounded-3xl p-6 sm:p-7 max-w-2xl w-full border border-slate-100 shadow-2xl space-y-4 max-h-[85vh] flex flex-col justify-between"
             >
               <div className="space-y-3">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                   <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center">
-                      <AlertTriangle className="w-5 h-5" />
+                    <div className="w-9 h-9 rounded-xl bg-orange-100 text-orange-700 flex items-center justify-center">
+                      <Clock className="w-5 h-5" />
                     </div>
                     <div>
                       <h3 className="text-base font-black text-slate-900">Overdue & Pending Milestone List</h3>
-                      <p className="text-xs text-slate-500 font-medium">Sorted by urgency & days overdue</p>
+                      <p className="text-xs text-slate-500 font-medium">Sorted by urgency & scheduled due dates</p>
                     </div>
                   </div>
                   <button onClick={() => setShowOverdueModal(false)} className="p-1 text-slate-400 hover:text-slate-600">
@@ -2533,7 +2577,7 @@ export default function FinancePage() {
                     </div>
                   ) : (
                     overdueMilestonesList.map((item, idx) => (
-                      <div key={idx} className="p-3.5 bg-white rounded-2xl border border-rose-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div key={idx} className="p-3.5 bg-white rounded-2xl border border-orange-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div>
                           <div className="flex items-center gap-2">
                             <span className="font-black text-slate-900 text-xs">{item.client.name}</span>
@@ -2565,7 +2609,7 @@ export default function FinancePage() {
                           )}
 
                           <button
-                            onClick={() => handleQuickMarkPaid(item.record, item.milestone)}
+                            onClick={() => handleMilestoneStatusToggle(item.record.id, item.milestone.id)}
                             className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-xs"
                           >
                             Mark Paid
@@ -2591,86 +2635,6 @@ export default function FinancePage() {
       </AnimatePresence>
 
       {/* ─────────────────────────────────────────────────────────────
-          📊 MODAL: UPCOMING PAYMENTS CASHFLOW DRILL-DOWN
-      ───────────────────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {showUpcomingModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-[#FFFDF9] rounded-3xl p-6 sm:p-7 max-w-2xl w-full border border-[#EBE3D5] shadow-2xl space-y-4 max-h-[85vh] flex flex-col justify-between"
-            >
-              <div className="space-y-3">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center">
-                      <Calendar className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h3 className="text-base font-black text-slate-900">Projected Cashflow Preview</h3>
-                      <p className="text-xs text-slate-500 font-medium">Expected installment inflows by timeline</p>
-                    </div>
-                  </div>
-                  <button onClick={() => setShowUpcomingModal(false)} className="p-1 text-slate-400 hover:text-slate-600">
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-
-                {/* Timeframe Presets */}
-                <div className="flex gap-2">
-                  {(['7', '15', '30', '90'] as const).map(days => (
-                    <button
-                      key={days}
-                      onClick={() => setUpcomingTimeframe(days)}
-                      className={`px-3 py-1 text-xs font-bold rounded-lg transition ${upcomingTimeframe === days ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-600'}`}
-                    >
-                      Next {days} Days
-                    </button>
-                  ))}
-                </div>
-
-                <div className="max-h-[50vh] overflow-y-auto space-y-2 pr-1">
-                  {upcomingMilestonesList.length === 0 ? (
-                    <div className="text-center py-10 text-slate-400 text-xs">
-                      No upcoming milestone payments scheduled in this timeframe.
-                    </div>
-                  ) : (
-                    upcomingMilestonesList.map((item, idx) => (
-                      <div key={idx} className="p-3 bg-white rounded-2xl border border-amber-200 flex items-center justify-between">
-                        <div>
-                          <h5 className="text-xs font-black text-slate-900">{item.client.name}</h5>
-                          <p className="text-[11px] text-slate-500">
-                            {item.milestone.step_name || item.milestone.title} • Due in {item.daysUntil} days ({item.milestone.due_date})
-                          </p>
-                        </div>
-                        <span className="font-mono font-black text-sm text-slate-900">
-                          ₹{(Number(item.milestone.amount) || 0).toLocaleString('en-IN')}
-                        </span>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-600">
-                  Total Expected: <strong className="font-mono text-slate-900 text-sm">₹{totalUpcomingExpectedCashflow.toLocaleString('en-IN')}</strong>
-                </span>
-                <button
-                  onClick={() => setShowUpcomingModal(false)}
-                  className="px-5 py-2 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl"
-                >
-                  Close
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* ─────────────────────────────────────────────────────────────
           ✏️ MODAL: FLEXIBLE INSTALLMENT QUICK EDIT
       ───────────────────────────────────────────────────────────── */}
       <AnimatePresence>
@@ -2680,10 +2644,10 @@ export default function FinancePage() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-[#FFFDF9] rounded-3xl p-6 sm:p-7 max-w-md w-full border border-[#EBE3D5] shadow-2xl space-y-4 font-sans"
+              className="bg-white rounded-3xl p-6 sm:p-7 max-w-md w-full border border-slate-100 shadow-2xl space-y-4 font-sans"
             >
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <h3 className="text-base font-black text-slate-900">Edit Payment Installment</h3>
+                <h3 className="text-base font-black text-slate-900">Edit Payment Milestone</h3>
                 <button onClick={() => setShowEditMilestoneModal(false)} className="p-1 text-slate-400 hover:text-slate-600">
                   <X className="w-5 h-5" />
                 </button>
@@ -2691,7 +2655,7 @@ export default function FinancePage() {
 
               <div className="space-y-3 text-xs">
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">Installment Title</label>
+                  <label className="font-bold text-slate-700 block mb-1">Step Name</label>
                   <input
                     type="text"
                     value={editingMilestoneData.step_name}
@@ -2718,8 +2682,8 @@ export default function FinancePage() {
                       onChange={(e) => setEditingMilestoneData(prev => ({ ...prev, status: e.target.value }))}
                       className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-900"
                     >
-                      <option value="pending">Pending / Due</option>
-                      <option value="completed">Completed / Paid</option>
+                      <option value="pending">Pending</option>
+                      <option value="completed">Completed</option>
                     </select>
                   </div>
                 </div>
@@ -2760,7 +2724,7 @@ export default function FinancePage() {
                   </button>
                   <button
                     onClick={handleSaveEditedMilestone}
-                    className="px-4 py-2 bg-amber-400 hover:bg-amber-500 font-black text-slate-900 rounded-xl shadow-xs"
+                    className="px-4 py-2 bg-orange-500 hover:bg-orange-600 font-black text-white rounded-xl shadow-xs"
                   >
                     Save Changes
                   </button>
@@ -2781,7 +2745,7 @@ export default function FinancePage() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-[#FFFDF9] rounded-3xl p-6 sm:p-7 max-w-md w-full border border-[#EBE3D5] shadow-2xl space-y-4 font-sans"
+              className="bg-white rounded-3xl p-6 sm:p-7 max-w-md w-full border border-slate-100 shadow-2xl space-y-4 font-sans"
             >
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2.5">
@@ -2867,7 +2831,7 @@ export default function FinancePage() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-[#FFFDF9] rounded-3xl p-6 sm:p-7 max-w-md w-full border border-[#EBE3D5] shadow-2xl space-y-4 font-sans"
+              className="bg-white rounded-3xl p-6 sm:p-7 max-w-md w-full border border-slate-100 shadow-2xl space-y-4 font-sans"
             >
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <h3 className="text-base font-black text-slate-900">Add Installment Step</h3>
@@ -2920,7 +2884,7 @@ export default function FinancePage() {
                   </button>
                   <button
                     onClick={handleSaveNewStep}
-                    className="px-4 py-2 bg-amber-400 hover:bg-amber-500 font-black text-slate-900 rounded-xl shadow-xs"
+                    className="px-4 py-2 bg-orange-500 hover:bg-orange-600 font-black text-white rounded-xl shadow-xs"
                   >
                     Save Step
                   </button>
@@ -2941,7 +2905,7 @@ export default function FinancePage() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-[#FFFDF9] rounded-3xl p-6 sm:p-7 max-w-md w-full border border-[#EBE3D5] shadow-2xl space-y-4 font-sans"
+              className="bg-white rounded-3xl p-6 sm:p-7 max-w-md w-full border border-slate-100 shadow-2xl space-y-4 font-sans"
             >
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <h3 className="text-base font-black text-slate-900">Record Team Payout / Expense</h3>
@@ -3048,7 +3012,7 @@ export default function FinancePage() {
                   </button>
                   <button
                     onClick={handleSaveExpense}
-                    className="px-4 py-2 bg-amber-400 hover:bg-amber-500 font-black text-slate-900 rounded-xl shadow-xs"
+                    className="px-4 py-2 bg-orange-500 hover:bg-orange-600 font-black text-white rounded-xl shadow-xs"
                   >
                     Save Expense
                   </button>
@@ -3069,7 +3033,7 @@ export default function FinancePage() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-[#FFFDF9] rounded-3xl p-6 sm:p-7 max-w-md w-full border border-[#EBE3D5] shadow-2xl space-y-4 font-sans"
+              className="bg-white rounded-3xl p-6 sm:p-7 max-w-md w-full border border-slate-100 shadow-2xl space-y-4 font-sans"
             >
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <h3 className="text-base font-black text-slate-900">Edit Logged Expense</h3>
@@ -3159,7 +3123,7 @@ export default function FinancePage() {
                   </button>
                   <button
                     onClick={handleSaveEditedExpense}
-                    className="px-4 py-2 bg-amber-400 hover:bg-amber-500 font-black text-slate-900 rounded-xl shadow-xs"
+                    className="px-4 py-2 bg-orange-500 hover:bg-orange-600 font-black text-white rounded-xl shadow-xs"
                   >
                     Save Changes
                   </button>
@@ -3180,7 +3144,7 @@ export default function FinancePage() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-[#FFFDF9] rounded-3xl p-6 max-w-sm w-full border border-[#EBE3D5] shadow-2xl space-y-4 text-center font-sans"
+              className="bg-white rounded-3xl p-6 max-w-sm w-full border border-slate-100 shadow-2xl space-y-4 text-center font-sans"
             >
               <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
                 <Trash2 className="w-6 h-6" />
@@ -3229,10 +3193,11 @@ export default function FinancePage() {
           onClose={() => {
             setIsQuotationModalOpen(false);
             setQuotationModalLead(null);
+            fetchFinanceData();
           }}
           lead={quotationModalLead}
-          onFinalSet={(quote) => {
-            handleSetFinalFromFinance(quotationModalLead.id, quote.template_id || quote.id || '', (quotationModalLead as any).raw_payload?.client_id);
+          onFinalSet={async () => {
+            await fetchFinanceData();
           }}
         />
       )}
