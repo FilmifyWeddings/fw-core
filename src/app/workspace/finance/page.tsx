@@ -51,6 +51,7 @@ const DEFAULT_TEAM_MEMBERS = [
 
 export default function FinancePage() {
   const [activeTab, setActiveTab] = useState<'clients' | 'expenses' | 'analytics'>('clients');
+  const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string>('');
   const [clients, setClients] = useState<WorkspaceClient[]>([]);
   const [financeRecords, setFinanceRecords] = useState<ClientFinanceRecord[]>([]);
   const [expenses, setExpenses] = useState<FinanceExpenseItem[]>([]);
@@ -433,6 +434,9 @@ export default function FinancePage() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const workspaceId = session?.user?.id || 'ws_demo';
+      if (session?.user?.id) {
+        setCurrentWorkspaceId(session.user.id);
+      }
 
       // 1. Fetch Clients
       let clientQuery = supabase
@@ -4034,7 +4038,7 @@ export default function FinancePage() {
       <ExcelMigrationModal
         isOpen={isExcelMigrationModalOpen}
         onClose={() => setIsExcelMigrationModalOpen(false)}
-        workspaceId={typeof window !== 'undefined' ? (sessionStorage.getItem('workspace_id') || 'ws_demo') : 'ws_demo'}
+        workspaceId={currentWorkspaceId || (typeof window !== 'undefined' ? (sessionStorage.getItem('workspace_id') || '00000000-0000-0000-0000-000000000000') : '00000000-0000-0000-0000-000000000000')}
         onSuccess={async () => {
           await fetchFinanceData();
         }}

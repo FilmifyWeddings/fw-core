@@ -517,6 +517,39 @@ export async function executeBatchClientFinanceImport(
   let errorCount = 0;
   const errors: string[] = [];
 
+  // 1. Resolve a valid UUID for targetWorkspaceId (PostgreSQL requires UUID syntax)
+  let targetWorkspaceId = workspaceId;
+  const isValidUuid = (id?: string | null) => id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+  if (!isValidUuid(targetWorkspaceId)) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (isValidUuid(session?.user?.id)) {
+        targetWorkspaceId = session!.user.id;
+      }
+    } catch (_) {}
+  }
+
+  if (!isValidUuid(targetWorkspaceId)) {
+    try {
+      const { data: prof } = await supabase.from('profiles').select('id').limit(1).maybeSingle();
+      const profId = (prof as any)?.id;
+      if (isValidUuid(profId)) {
+        targetWorkspaceId = profId;
+      } else {
+        const { data: cl } = await supabase.from('workspace_clients').select('workspace_id').limit(1).maybeSingle();
+        const clWsId = (cl as any)?.workspace_id;
+        if (isValidUuid(clWsId)) {
+          targetWorkspaceId = clWsId;
+        } else {
+          targetWorkspaceId = '00000000-0000-0000-0000-000000000000';
+        }
+      }
+    } catch (_) {
+      targetWorkspaceId = '00000000-0000-0000-0000-000000000000';
+    }
+  }
+
   for (const row of parsedRows) {
     if (!row.isValid) {
       errorCount++;
@@ -530,7 +563,7 @@ export async function executeBatchClientFinanceImport(
       const { data: existingClients } = await supabase
         .from('workspace_clients')
         .select('id, name')
-        .eq('workspace_id', workspaceId)
+        .eq('workspace_id', targetWorkspaceId)
         .ilike('name', row.clientName.trim());
 
       if (existingClients && existingClients.length > 0) {
@@ -553,8 +586,7 @@ export async function executeBatchClientFinanceImport(
         const { data: newClient, error: clientErr } = await supabase
           .from('workspace_clients')
           .insert([{
-            user_id: workspaceId,
-            workspace_id: workspaceId,
+            workspace_id: targetWorkspaceId,
             name: row.clientName.trim(),
             phone: '',
             event_type: row.eventType,
@@ -577,8 +609,7 @@ export async function executeBatchClientFinanceImport(
 
       // 2. Upsert Client Finance Record
       const finPayload = {
-        user_id: workspaceId,
-        workspace_id: workspaceId,
+        workspace_id: targetWorkspaceId,
         client_id: targetClientId,
         base_package_price: row.fixAmount,
         discount_amount: 0,
@@ -625,8 +656,8 @@ export async function executeBatchClientFinanceImport(
     const actorName = 'Excel Importer';
     await supabase.from('finance_audit_logs').insert([{
       id: `log_import_${Date.now()}`,
-      workspace_id: workspaceId,
-      user_id: workspaceId,
+      workspace_id: targetWorkspaceId,
+      user_id: targetWorkspaceId,
       log_type: 'ADJUSTMENT',
       amount: parsedRows.reduce((sum, r) => sum + r.calculatedTotal, 0),
       actor_name: actorName,
