@@ -6,7 +6,7 @@ import {
   Settings as SettingsIcon, RefreshCw, Check, Save, ArrowLeft, Target,
   FileText, Coins, Clock, Globe, Users, Plus, Trash2, Phone, Mail, MessageSquare, Send,
   UserCheck, AlertCircle, ChevronDown, GripVertical, CheckCircle2, Table, ArrowUp, ArrowDown,
-  QrCode, Sparkles, Upload, Image as ImageIcon, Building2, CreditCard
+  QrCode, Sparkles, Upload, Image as ImageIcon, Building2, CreditCard, Lock, Unlock, ShieldCheck, Key
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -132,6 +132,13 @@ export default function SettingsPage() {
     { id: 'e3', name: 'Equipment', color: '#8b5cf6' },
     { id: 'e4', name: 'Editor Pay', color: '#10b981' },
   ]);
+
+  // 3.1 Finance Vault & PIN Security Settings
+  const [financePinLocked, setFinancePinLocked] = useState(false);
+  const [financePinCode, setFinancePinCode] = useState('123456');
+  const [financeAdminEmail, setFinanceAdminEmail] = useState('');
+  const [financeMasterPassword, setFinanceMasterPassword] = useState('');
+  const [financeTimeoutMins, setFinanceTimeoutMins] = useState(60);
 
   // 4. Attendance Settings
   const [geofenceRadius, setGeofenceRadius] = useState(100);
@@ -298,6 +305,23 @@ export default function SettingsPage() {
           if (s.invoice_account_no) setInvoiceAccountNo(s.invoice_account_no);
           if (s.invoice_ifsc) setInvoiceIfsc(s.invoice_ifsc);
           if (s.invoice_account_holder) setInvoiceAccountHolder(s.invoice_account_holder);
+
+          // Load Finance Vault Security Settings
+          try {
+            const { data: secData } = await supabase
+              .from('finance_security_settings')
+              .select('*')
+              .eq('workspace_id', wId)
+              .maybeSingle();
+
+            if (secData) {
+              setFinancePinLocked(Boolean(secData.is_locked));
+              if (secData.pin_hash) setFinancePinCode(secData.pin_hash);
+              if (secData.admin_email) setFinanceAdminEmail(secData.admin_email);
+              if (secData.master_password_hash) setFinanceMasterPassword(secData.master_password_hash);
+              if (secData.session_timeout_minutes) setFinanceTimeoutMins(secData.session_timeout_minutes);
+            }
+          } catch (_) {}
           if (s.invoice_terms) setInvoiceTerms(s.invoice_terms);
           if (s.invoice_footer_note) setInvoiceFooterNote(s.invoice_footer_note);
           if (s.invoice_font) setInvoiceFont(s.invoice_font);
@@ -406,6 +430,24 @@ export default function SettingsPage() {
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new Event('settings_updated'));
         }
+        // Save Finance Vault Security Settings
+        try {
+          await supabase
+            .from('finance_security_settings')
+            .upsert([{
+              workspace_id: wId,
+              user_id: wId,
+              is_locked: financePinLocked,
+              pin_hash: financePinCode || '123456',
+              admin_email: financeAdminEmail || '',
+              master_password_hash: financeMasterPassword || '',
+              session_timeout_minutes: Number(financeTimeoutMins) || 60,
+              updated_at: new Date().toISOString()
+            }], { onConflict: 'workspace_id' });
+        } catch (secSaveErr) {
+          console.warn('Finance vault save note:', secSaveErr);
+        }
+
         setSaveToast('Settings saved & synchronized live across all pages! ✓');
         setTimeout(() => setSaveToast(null), 3500);
       } else {
@@ -1142,6 +1184,103 @@ export default function SettingsPage() {
                       className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#0F9D58]"
                     />
                   </div>
+                </div>
+
+                {/* 🔐 FINANCE VAULT SECURITY & PIN PROTECTION */}
+                <div className="pt-5 border-t border-slate-100 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
+                        <Lock className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
+                          Finance Vault Security & PIN Gate
+                        </h3>
+                        <p className="text-[11px] text-slate-500 font-medium">
+                          Protect financial figures, quotations revenue, and payouts behind a 6-digit PIN screen
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Toggle */}
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={financePinLocked}
+                        onChange={e => setFinancePinLocked(e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+                    </label>
+                  </div>
+
+                  {financePinLocked && (
+                    <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-2xl space-y-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div>
+                          <label className="text-xs font-bold text-slate-700 block mb-1">
+                            6-Digit Master PIN <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="password"
+                            maxLength={6}
+                            value={financePinCode}
+                            onChange={e => setFinancePinCode(e.target.value.replace(/[^0-9]/g, ''))}
+                            placeholder="123456"
+                            className="w-full px-3.5 py-2 bg-white border border-amber-300 rounded-xl text-center text-base font-black tracking-widest text-slate-900 focus:outline-none font-mono"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-xs font-bold text-slate-700 block mb-1">
+                            Auto-Lock Session Timeout
+                          </label>
+                          <select
+                            value={financeTimeoutMins}
+                            onChange={e => setFinanceTimeoutMins(Number(e.target.value))}
+                            className="w-full px-3.5 py-2 bg-white border border-amber-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none"
+                          >
+                            <option value={15}>15 Minutes</option>
+                            <option value={30}>30 Minutes</option>
+                            <option value={60}>1 Hour (Standard)</option>
+                            <option value={240}>4 Hours</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="text-xs font-bold text-slate-700 block mb-1">
+                            Admin Recovery Email
+                          </label>
+                          <input
+                            type="email"
+                            value={financeAdminEmail}
+                            onChange={e => setFinanceAdminEmail(e.target.value)}
+                            placeholder="admin@studio.com"
+                            className="w-full px-3.5 py-2 bg-white border border-amber-300 rounded-xl text-xs font-medium text-slate-900 focus:outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-xs font-bold text-slate-700 block mb-1">
+                            Master Admin Password
+                          </label>
+                          <input
+                            type="password"
+                            value={financeMasterPassword}
+                            onChange={e => setFinanceMasterPassword(e.target.value)}
+                            placeholder="••••••••••••"
+                            className="w-full px-3.5 py-2 bg-white border border-amber-300 rounded-xl text-xs font-medium text-slate-900 focus:outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 text-amber-900 text-xs font-bold">
+                        <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>Once enabled, anyone navigating to <code>/workspace/finance</code> must enter the PIN to unlock metrics.</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Expense Categories Google Sheets Option Builder */}

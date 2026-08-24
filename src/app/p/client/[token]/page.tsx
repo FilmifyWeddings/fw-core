@@ -586,7 +586,7 @@ export default function PublicClientPortalPage() {
                 <h4 className="text-xs font-black text-slate-800">Payment Schedule & Installments</h4>
                 <div className="space-y-2">
                   {finance.milestones.map((ms, idx) => {
-                    const isPaid = ms.status === 'completed' || ms.status === 'paid';
+                    const isPaid = (ms.status as string) === 'completed' || (ms.status as string) === 'paid' || (ms.status as string) === 'Completed';
                     return (
                       <div key={ms.id || idx} className="p-4 bg-white rounded-2xl border border-[#EAE5DA] shadow-xs flex items-center justify-between gap-3">
                         <div>

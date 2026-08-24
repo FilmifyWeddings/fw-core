@@ -87,6 +87,7 @@ export async function POST(req: NextRequest) {
     const session = signInData.session;
     // 30 days if rememberMe, otherwise 7 days
     const maxAge = rememberMe ? 60 * 60 * 24 * 30 : 60 * 60 * 24 * 7;
+    const isHttps = process.env.NODE_ENV === 'production' || req.nextUrl.protocol === 'https:';
 
     const res = NextResponse.json({
       success: true,

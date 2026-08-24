@@ -60,12 +60,15 @@ const DEFAULT_INVOICE_CONFIG: InvoiceTemplateConfig = {
   themeColor: '#D4AF37',
 };
 
-interface InvoiceModalDialogProps {
+export interface InvoiceModalDialogProps {
   isOpen: boolean;
   onClose: () => void;
   client: WorkspaceClient | null;
   financeRecord: ClientFinanceRecord | null;
   defaultQuotationTemplate?: any;
+  totalPackage?: number;
+  paidAmount?: number;
+  studioSettings?: any;
 }
 
 export function InvoiceModalDialog({

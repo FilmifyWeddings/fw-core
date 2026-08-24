@@ -39,8 +39,16 @@ export interface Lead {
   wgl_dispatched?: boolean;
   followup_timeline?: any;
   stage_id?: string | null;
+  stage?: string;
   stage_position?: number;
   whatsapp_group_id?: string | null;
+  final_quotation_id?: string | null;
+  client_name?: string | null;
+  location?: string | null;
+  city?: string | null;
+  event_date?: string | null;
+  event_type?: string | null;
+  user_id?: string;
   // Meta Facebook Ads fields
   source_form_id?: string | null;
   form_tag?: string | null;
@@ -659,14 +667,53 @@ export interface AttendanceHoliday {
 
 export interface FinanceMilestoneItem {
   id: string;
-  step_name: string; // e.g. "Token Booking Amount", "Advance Amount (Pre-Event)", "On Wedding Day", "Final Delivery Amount"
-  due_date: string; // e.g. "2026-02-10"
+  step_name?: string; // e.g. "Token Booking Amount", "Advance Amount (Pre-Event)", "On Wedding Day", "Final Delivery Amount"
+  title?: string; // alias for step_name
+  due_date?: string | null; // e.g. "2026-02-10"
   amount: number; // e.g. 25000
-  status: 'pending' | 'completed' | 'partial';
+  status: 'pending' | 'completed' | 'partial' | 'paid' | string;
   paid_date?: string | null;
   payment_mode?: 'UPI' | 'Bank Transfer' | 'Cash' | 'Card' | 'Cheque' | string;
   reference_id?: string | null;
   notes?: string | null;
+}
+
+export interface FinanceAuditLog {
+  id: string;
+  workspace_id: string;
+  user_id?: string;
+  client_id?: string | null;
+  client_name?: string | null;
+  log_type: 'INCOME' | 'EXPENSE' | 'ADJUSTMENT' | 'SECURITY';
+  amount: number;
+  actor_name: string;
+  description: string;
+  payment_mode?: string | null;
+  reference_id?: string | null;
+  created_at: string;
+}
+
+export interface FinanceSecuritySettings {
+  id?: string;
+  workspace_id: string;
+  user_id?: string;
+  is_locked: boolean;
+  pin_hash?: string | null;
+  admin_email?: string | null;
+  master_password_hash?: string | null;
+  session_timeout_minutes?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface EventTypeItem {
+  id: string;
+  workspace_id: string;
+  name: string;
+  color?: string;
+  is_default?: boolean;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface ClientFinanceRecord {
@@ -686,7 +733,7 @@ export interface ClientFinanceRecord {
   final_total_amount: number;
   received_amount: number;
   pending_amount: number;
-  payment_status: 'pending' | 'partially_paid' | 'paid' | 'overdue';
+  payment_status: 'pending' | 'partially_paid' | 'paid' | 'overdue' | string;
   milestones: FinanceMilestoneItem[];
   notes?: string | null;
   has_final_quotation?: boolean;

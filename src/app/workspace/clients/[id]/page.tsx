@@ -1435,7 +1435,7 @@ export default function ClientWorkspaceDetailPage() {
             {financeRecord?.milestones && financeRecord.milestones.length > 0 ? (
               <div className="space-y-3">
                 {financeRecord.milestones.map((ms, idx) => {
-                  const isPaid = ms.status === 'completed' || ms.status === 'paid';
+                  const isPaid = (ms.status as string) === 'completed' || (ms.status as string) === 'paid' || (ms.status as string) === 'Completed';
                   const isOverdue = !isPaid && ms.due_date && new Date(ms.due_date) < new Date();
 
                   return (

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -8,13 +8,26 @@ import {
   Users, UserPlus, Search, Filter, Plus, DollarSign, Calendar, Phone, Mail, 
   Film, Edit3, Trash2, CheckCircle2, Clock, AlertCircle, ArrowRight, X, 
   Sparkles, Check, ChevronRight, RefreshCw, FolderPlus, MessageCircle,
-  Share2, Key, Tag, Layers, ExternalLink
+  Share2, Key, Tag, Layers, ExternalLink, ChevronDown, CreditCard, ShieldCheck,
+  CheckSquare, Square
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { 
   ClientInsiderModal, parseClientExtended, serializeClientExtended 
 } from '@/components/clients/client-insider-modal';
 import type { WorkspaceClient, Lead } from '@/types';
+
+const DEFAULT_EVENT_TYPES = [
+  'Wedding Photography',
+  'Pre-Wedding Shoot',
+  'Engagement & Roka',
+  'Reception & Dinner',
+  'Haldi & Mehndi',
+  'Sangeet & Cocktail',
+  'Corporate & Commercial',
+  'Birthday & Anniversary',
+  'Maternity & Baby Shower'
+];
 
 export default function ClientsPage() {
   const router = useRouter();
@@ -25,6 +38,14 @@ export default function ClientsPage() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'completed' | 'archived'>('all');
   const [eventTypeFilter, setEventTypeFilter] = useState<string>('all');
   
+  // Event Types & Searchable Dropdown State
+  const [eventTypes, setEventTypes] = useState<string[]>(DEFAULT_EVENT_TYPES);
+  const [isEventTypeDropdownOpen, setIsEventTypeDropdownOpen] = useState(false);
+  const [eventTypeSearch, setEventTypeSearch] = useState('');
+  const [showCustomEventInput, setShowCustomEventInput] = useState(false);
+  const [newCustomEventType, setNewCustomEventType] = useState('');
+  const eventTypeDropdownRef = useRef<HTMLDivElement | null>(null);
+
   // Selected Client for 360 Workspace Window Modal
   const [selectedClient, setSelectedClient] = useState<WorkspaceClient | null>(null);
 
@@ -38,7 +59,11 @@ export default function ClientsPage() {
     event_type: 'Wedding Photography',
     event_date: '',
     total_package_amount: '',
-    paid_amount: '',
+    is_full_payment_received: false,
+    advance_amount: '',
+    is_advance_received: false,
+    payment_date: new Date().toISOString().split('T')[0],
+    payment_mode: 'UPI',
     whatsapp_group_link: '',
     notes: '',
   });
@@ -177,12 +202,59 @@ export default function ClientsPage() {
         }
       }
 
+      // 5. Fetch custom event types from Supabase
+      try {
+        let evQuery = supabase.from('event_types').select('name').order('created_at', { ascending: true });
+        if (workspaceId && workspaceId !== 'ws_demo') {
+          evQuery = evQuery.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
+        }
+        const { data: customEvents } = await evQuery;
+        if (customEvents && customEvents.length > 0) {
+          const merged = Array.from(new Set([...DEFAULT_EVENT_TYPES, ...customEvents.map(e => e.name)]));
+          setEventTypes(merged);
+        }
+      } catch (_) {}
+
       setClients(existingClientList);
     } catch (e) {
       console.error('Error fetching clients and syncing leads:', e);
     } finally {
       setLoading(false);
     }
+  };
+
+  // Register Custom Event Type
+  const handleAddNewEventType = async () => {
+    const trimmed = newCustomEventType.trim();
+    if (!trimmed) return;
+
+    if (!eventTypes.includes(trimmed)) {
+      const updated = [trimmed, ...eventTypes];
+      setEventTypes(updated);
+      setFormData(prev => ({ ...prev, event_type: trimmed }));
+
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const workspaceId = session?.user?.id || 'ws_demo';
+        if (workspaceId !== 'ws_demo') {
+          await supabase.from('event_types').insert([{
+            workspace_id: workspaceId,
+            user_id: workspaceId,
+            name: trimmed,
+            color: '#f59e0b',
+            is_default: false
+          }]);
+        }
+      } catch (err) {
+        console.warn('Error saving custom event type:', err);
+      }
+    } else {
+      setFormData(prev => ({ ...prev, event_type: trimmed }));
+    }
+
+    setNewCustomEventType('');
+    setShowCustomEventInput(false);
+    setIsEventTypeDropdownOpen(false);
   };
 
   // Convert Lead / Manual Fill
@@ -207,12 +279,17 @@ export default function ClientsPage() {
         if (num > 0) parsedBudget = String(num);
       }
 
+      const evType = raw.shoot_type || raw.event_type || 'Wedding Photography';
+      if (!eventTypes.includes(evType)) {
+        setEventTypes(prev => [evType, ...prev]);
+      }
+
       setFormData(prev => ({
         ...prev,
         name: coupleName,
         phone: lead.phone || raw.phone || '',
         email: lead.email || raw.email || '',
-        event_type: raw.shoot_type || raw.event_type || 'Wedding Photography',
+        event_type: evType,
         event_date: parsedDate,
         total_package_amount: parsedBudget,
       }));
@@ -236,6 +313,51 @@ export default function ClientsPage() {
       const clientCode = `CL-2026-${uniqueNumber}`;
       const portalPin = formData.phone.replace(/[^0-9]/g, '').slice(-4) || '1234';
       const portalToken = `portal_${Date.now()}_${Math.random().toString(36).substring(5)}`;
+
+      const totalPackage = parseFloat(formData.total_package_amount) || 0;
+      const advanceAmt = parseFloat(formData.advance_amount) || 0;
+
+      let finalPaidAmount = 0;
+      if (formData.is_full_payment_received && totalPackage > 0) {
+        finalPaidAmount = totalPackage;
+      } else if (formData.is_advance_received && advanceAmt > 0) {
+        finalPaidAmount = advanceAmt;
+      }
+
+      // Generate milestones strictly adhering to Zero Dummy Data rule
+      let initialMilestones: any[] = [];
+      const paymentDate = formData.payment_date || new Date().toISOString().split('T')[0];
+
+      if (formData.is_full_payment_received && totalPackage > 0) {
+        initialMilestones = [
+          {
+            id: `m_full_${Date.now()}`,
+            step_name: 'Full Payment',
+            title: 'Full Payment',
+            due_date: paymentDate,
+            paid_date: paymentDate,
+            amount: totalPackage,
+            status: 'completed',
+            payment_mode: formData.payment_mode || 'UPI'
+          }
+        ];
+      } else if (advanceAmt > 0) {
+        initialMilestones = [
+          {
+            id: `m_adv_${Date.now()}`,
+            step_name: 'Advance Booking',
+            title: 'Advance Booking',
+            due_date: paymentDate,
+            paid_date: formData.is_advance_received ? paymentDate : null,
+            amount: advanceAmt,
+            status: formData.is_advance_received ? 'completed' : 'pending',
+            payment_mode: formData.payment_mode || 'UPI'
+          }
+        ];
+      } else {
+        // Zero advance/token provided -> EMPTY array, ZERO dummy rows!
+        initialMilestones = [];
+      }
 
       const serializedNotes = serializeClientExtended({
         client_code: clientCode,
@@ -266,9 +388,9 @@ export default function ClientsPage() {
         email: formData.email.trim() || null,
         event_type: formData.event_type,
         event_date: formData.event_date || null,
-        total_package_amount: parseFloat(formData.total_package_amount) || 0,
-        paid_amount: parseFloat(formData.paid_amount) || 0,
-        status: 'active',
+        total_package_amount: totalPackage,
+        paid_amount: finalPaidAmount,
+        status: finalPaidAmount >= totalPackage && totalPackage > 0 ? 'completed' : 'active',
         notes: serializedNotes
       };
 
@@ -281,6 +403,57 @@ export default function ClientsPage() {
       if (error) throw error;
 
       if (newClient) {
+        // 1. Sync Finance Record with 0 Dummy Rows
+        const pendingAmt = Math.max(0, totalPackage - finalPaidAmount);
+        const finStatus = pendingAmt === 0 && totalPackage > 0 ? 'paid' : (finalPaidAmount > 0 ? 'partially_paid' : 'pending');
+
+        try {
+          await supabase.from('client_finance_records').upsert([{
+            user_id: workspaceId,
+            workspace_id: workspaceId,
+            client_id: newClient.id,
+            base_package_price: totalPackage,
+            discount_amount: 0,
+            accommodation_charges: 0,
+            travel_charges: 0,
+            additional_charges: 0,
+            subtotal_amount: totalPackage,
+            gst_rate: 0,
+            gst_amount: 0,
+            final_total_amount: totalPackage,
+            received_amount: finalPaidAmount,
+            pending_amount: pendingAmt,
+            payment_status: finStatus,
+            milestones: initialMilestones,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }], { onConflict: 'client_id' });
+        } catch (finErr) {
+          console.warn('Finance record sync notice:', finErr);
+        }
+
+        // 2. If Payment was recorded, log into finance_audit_logs
+        if (finalPaidAmount > 0) {
+          try {
+            await supabase.from('finance_audit_logs').insert([{
+              workspace_id: workspaceId,
+              user_id: workspaceId,
+              client_id: newClient.id,
+              client_name: newClient.name,
+              log_type: 'INCOME',
+              amount: finalPaidAmount,
+              actor_name: session?.user?.user_metadata?.full_name || 'Admin',
+              description: formData.is_full_payment_received 
+                ? `Full payment received at booking for ${newClient.name}`
+                : `Advance booking token received for ${newClient.name}`,
+              payment_mode: formData.payment_mode || 'UPI',
+              created_at: new Date().toISOString()
+            }]);
+          } catch (auditErr) {
+            console.warn('Finance audit log notice:', auditErr);
+          }
+        }
+
         setClients(prev => [newClient, ...prev]);
         setShowAddModal(false);
         setFormData({
@@ -290,7 +463,11 @@ export default function ClientsPage() {
           event_type: 'Wedding Photography',
           event_date: '',
           total_package_amount: '',
-          paid_amount: '',
+          is_full_payment_received: false,
+          advance_amount: '',
+          is_advance_received: false,
+          payment_date: new Date().toISOString().split('T')[0],
+          payment_mode: 'UPI',
           whatsapp_group_link: '',
           notes: ''
         });
@@ -689,18 +866,116 @@ export default function ClientsPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Event Type</label>
-                    <input
-                      type="text"
-                      placeholder="Wedding Photography"
-                      value={formData.event_type}
-                      onChange={(e) => setFormData(prev => ({ ...prev, event_type: e.target.value }))}
-                      className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
-                    />
+                {/* Event Type & Main Event Date */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Searchable Event Type Dropdown */}
+                  <div className="relative" ref={eventTypeDropdownRef}>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-bold text-slate-700 block">Event Type</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowCustomEventInput(prev => !prev);
+                          setIsEventTypeDropdownOpen(true);
+                        }}
+                        className="text-[10px] font-black text-amber-700 hover:text-amber-900 hover:underline flex items-center gap-0.5"
+                      >
+                        <Plus className="w-3 h-3" /> Add Category
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsEventTypeDropdownOpen(prev => !prev)}
+                      className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-bold text-slate-900 flex items-center justify-between text-left focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                    >
+                      <span className="truncate">{formData.event_type || 'Select Event Type'}</span>
+                      <ChevronDown className="w-4 h-4 text-slate-400 shrink-0 ml-2" />
+                    </button>
+
+                    {/* Event Type Dropdown Panel */}
+                    <AnimatePresence>
+                      {isEventTypeDropdownOpen && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 5 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 5 }}
+                          className="absolute z-30 left-0 right-0 mt-1.5 bg-white border border-[#EAE5DA] rounded-2xl shadow-xl p-2.5 space-y-2 max-h-60 overflow-y-auto"
+                        >
+                          {/* Search Filter Input inside Dropdown */}
+                          <div className="relative">
+                            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                            <input
+                              type="text"
+                              placeholder="Search or filter event types..."
+                              value={eventTypeSearch}
+                              onChange={(e) => setEventTypeSearch(e.target.value)}
+                              className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-amber-500"
+                            />
+                          </div>
+
+                          {/* Top Action Item: Inline Custom Add */}
+                          {showCustomEventInput ? (
+                            <div className="p-2 bg-amber-50 rounded-xl border border-amber-200 space-y-1.5">
+                              <label className="text-[10px] font-black text-amber-900 uppercase">Add New Category:</label>
+                              <div className="flex gap-1.5">
+                                <input
+                                  type="text"
+                                  placeholder="e.g. Maternity Shoot, Fashion Editorial"
+                                  value={newCustomEventType}
+                                  onChange={(e) => setNewCustomEventType(e.target.value)}
+                                  className="w-full px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={handleAddNewEventType}
+                                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 font-black text-white text-xs rounded-lg shadow-xs shrink-0"
+                                >
+                                  Save
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setShowCustomEventInput(true)}
+                              className="w-full text-left px-2.5 py-1.5 text-xs font-black text-amber-700 hover:bg-amber-50 rounded-lg flex items-center gap-1.5 transition-colors border border-dashed border-amber-300"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>+ Add New Event Type</span>
+                            </button>
+                          )}
+
+                          {/* Filtered Event Types List */}
+                          <div className="space-y-0.5 pt-1 border-t border-slate-100">
+                            {eventTypes
+                              .filter(t => t.toLowerCase().includes(eventTypeSearch.toLowerCase()))
+                              .map(type => (
+                                <button
+                                  key={type}
+                                  type="button"
+                                  onClick={() => {
+                                    setFormData(prev => ({ ...prev, event_type: type }));
+                                    setIsEventTypeDropdownOpen(false);
+                                    setEventTypeSearch('');
+                                  }}
+                                  className={`w-full text-left px-2.5 py-1.5 text-xs font-bold rounded-lg flex items-center justify-between transition-colors ${
+                                    formData.event_type === type
+                                      ? 'bg-amber-100 text-amber-900 font-black'
+                                      : 'text-slate-700 hover:bg-slate-50'
+                                  }`}
+                                >
+                                  <span>{type}</span>
+                                  {formData.event_type === type && <Check className="w-3.5 h-3.5 text-amber-800" />}
+                                </button>
+                              ))}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
 
+                  {/* Main Event Date */}
                   <div>
                     <label className="font-bold text-slate-700 block mb-1">Main Event Date</label>
                     <input
@@ -712,28 +987,104 @@ export default function ClientsPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                {/* ─── DYNAMIC PRICING & PAYMENT CONFIGURATION ─── */}
+                <div className="p-3.5 bg-amber-50/60 border border-amber-200/80 rounded-2xl space-y-3">
+                  {/* Total Package & Full Payment Toggle */}
                   <div>
-                    <label className="font-bold text-slate-700 block mb-1">Total Package (₹)</label>
-                    <input
-                      type="number"
-                      placeholder="150000"
-                      value={formData.total_package_amount}
-                      onChange={(e) => setFormData(prev => ({ ...prev, total_package_amount: e.target.value }))}
-                      className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
-                    />
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-bold text-slate-800">Total Package (₹)</label>
+                      <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={formData.is_full_payment_received}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setFormData(prev => ({
+                              ...prev,
+                              is_full_payment_received: checked,
+                              is_advance_received: false,
+                              advance_amount: checked ? '' : prev.advance_amount
+                            }));
+                          }}
+                          className="w-3.5 h-3.5 text-amber-600 rounded-md border-amber-300 focus:ring-amber-500 cursor-pointer"
+                        />
+                        <span className="text-[11px] font-extrabold text-amber-900">Full Payment Received</span>
+                      </label>
+                    </div>
+
+                    <div className="relative">
+                      <DollarSign className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                      <input
+                        type="number"
+                        placeholder="150000"
+                        value={formData.total_package_amount}
+                        onChange={(e) => setFormData(prev => ({ ...prev, total_package_amount: e.target.value }))}
+                        className="w-full pl-8 pr-3.5 py-2 bg-white border border-[#EAE5DA] rounded-xl font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                      />
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Advance Received (₹)</label>
-                    <input
-                      type="number"
-                      placeholder="25000"
-                      value={formData.paid_amount}
-                      onChange={(e) => setFormData(prev => ({ ...prev, paid_amount: e.target.value }))}
-                      className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
-                    />
-                  </div>
+                  {/* Token / Advance Payment Row (Only if NOT full payment) */}
+                  {!formData.is_full_payment_received ? (
+                    <div className="pt-2 border-t border-amber-200/60 space-y-2.5">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="font-bold text-slate-800 text-[11px]">Token / Advance Amount (₹)</label>
+                            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={formData.is_advance_received}
+                                onChange={(e) => setFormData(prev => ({ ...prev, is_advance_received: e.target.checked }))}
+                                className="w-3.5 h-3.5 text-amber-600 rounded-md border-amber-300 focus:ring-amber-500 cursor-pointer"
+                              />
+                              <span className="text-[10px] font-extrabold text-amber-900">Advance Received</span>
+                            </label>
+                          </div>
+                          <input
+                            type="number"
+                            placeholder="e.g. 25000"
+                            value={formData.advance_amount}
+                            onChange={(e) => setFormData(prev => ({ ...prev, advance_amount: e.target.value }))}
+                            className="w-full px-3 py-2 bg-white border border-[#EAE5DA] rounded-xl font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="font-bold text-slate-800 text-[11px] block mb-1">
+                            Payment Date <span className="text-slate-400 font-normal">(for Token / Advance)</span>
+                          </label>
+                          <input
+                            type="date"
+                            value={formData.payment_date}
+                            onChange={(e) => setFormData(prev => ({ ...prev, payment_date: e.target.value }))}
+                            className="w-full px-3 py-2 bg-white border border-[#EAE5DA] rounded-xl font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-xs"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Payment Mode Selector */}
+                      <div>
+                        <label className="font-bold text-slate-700 text-[11px] block mb-1">Payment Mode</label>
+                        <select
+                          value={formData.payment_mode}
+                          onChange={(e) => setFormData(prev => ({ ...prev, payment_mode: e.target.value }))}
+                          className="w-full px-3 py-1.5 bg-white border border-[#EAE5DA] rounded-xl font-bold text-slate-800 text-xs focus:outline-none"
+                        >
+                          <option value="UPI">UPI / GooglePay / PhonePe</option>
+                          <option value="Bank Transfer">Bank Transfer (NEFT / IMPS)</option>
+                          <option value="Cash">Cash</option>
+                          <option value="Card">Credit / Debit Card</option>
+                          <option value="Cheque">Cheque</option>
+                        </select>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-2.5 bg-emerald-50 rounded-xl border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>100% Full Payment of ₹{Number(formData.total_package_amount || 0).toLocaleString('en-IN')} will be marked as Received.</span>
+                    </div>
+                  )}
                 </div>
 
                 <div>

@@ -72,12 +72,12 @@ export async function verifyMetaAuth(
     }
 
     // 5. Resolve active/primary workspace directly from Supabase profile
-    let resolvedWorkspaceId = resolvedId;
+    let resolvedWorkspaceId = authenticatedUserId;
     try {
       const { data: userProfile } = await supabaseAdmin
         .from('profiles')
         .select('role, workspace_id, studio_id')
-        .eq('id', resolvedId)
+        .eq('id', authenticatedUserId)
         .maybeSingle();
 
       if (userProfile?.workspace_id) {
@@ -90,15 +90,15 @@ export async function verifyMetaAuth(
       if (
         clientSuppliedWorkspaceId &&
         clientSuppliedWorkspaceId !== '00000000-0000-0000-0000-000000000000' &&
-        clientSuppliedWorkspaceId !== resolvedId &&
+        clientSuppliedWorkspaceId !== authenticatedUserId &&
         clientSuppliedWorkspaceId !== userProfile?.workspace_id
       ) {
         if (!isAdminRole) {
-          console.warn(`[SECURITY 403] Non-admin user ${resolvedId} attempted cross-workspace access to ${clientSuppliedWorkspaceId}. Access Denied.`);
+          console.warn(`[SECURITY 403] Non-admin user ${authenticatedUserId} attempted cross-workspace access to ${clientSuppliedWorkspaceId}. Access Denied.`);
           return {
             authorized: false,
             workspaceId: resolvedWorkspaceId,
-            userId: resolvedId,
+            userId: authenticatedUserId,
             errorResponse: NextResponse.json(
               { error: 'Forbidden: Cross-workspace access denied. You do not have permission to access another user workspace.' },
               { status: 403 }
@@ -114,7 +114,7 @@ export async function verifyMetaAuth(
     return {
       authorized: true,
       workspaceId: resolvedWorkspaceId,
-      userId: resolvedId,
+      userId: authenticatedUserId,
     };
   } catch (err: any) {
     console.error('[Meta Security Guard Error]:', err.message);
