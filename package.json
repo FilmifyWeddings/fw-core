@@ -44,7 +44,8 @@
     "sharp": "^0.35.2",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4",
-    "utf-8-validate": "^6.0.5"
+    "utf-8-validate": "^6.0.5",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/node": "^20",

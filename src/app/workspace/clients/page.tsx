@@ -9,13 +9,14 @@ import {
   Film, Edit3, Trash2, CheckCircle2, Clock, AlertCircle, ArrowRight, X, 
   Sparkles, Check, ChevronRight, RefreshCw, FolderPlus, MessageCircle,
   Share2, Key, Tag, Layers, ExternalLink, ChevronDown, CreditCard, ShieldCheck,
-  CheckSquare, Square
+  CheckSquare, Square, Upload
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { 
   ClientInsiderModal, parseClientExtended, serializeClientExtended 
 } from '@/components/clients/client-insider-modal';
-import type { WorkspaceClient, Lead } from '@/types';
+import { ExcelMigrationModal } from '@/components/finance/excel-migration-modal';
+import type { WorkspaceClient, Lead, ClientFinanceRecord } from '@/types';
 
 const DEFAULT_EVENT_TYPES = [
   'Wedding Photography',
@@ -32,6 +33,8 @@ const DEFAULT_EVENT_TYPES = [
 export default function ClientsPage() {
   const router = useRouter();
   const [clients, setClients] = useState<WorkspaceClient[]>([]);
+  const [financeRecordsMap, setFinanceRecordsMap] = useState<Map<string, ClientFinanceRecord>>(new Map());
+  const [isExcelMigrationModalOpen, setIsExcelMigrationModalOpen] = useState(false);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -779,7 +782,16 @@ export default function ClientsPage() {
           MODAL: ADD NEW CLIENT (WITH BOOKED LEADS CONVERT DROPDOWN)
       ───────────────────────────────────────────────────────────── */}
       <AnimatePresence>
-        {showAddModal && (
+        <ExcelMigrationModal
+        isOpen={isExcelMigrationModalOpen}
+        onClose={() => setIsExcelMigrationModalOpen(false)}
+        workspaceId={typeof window !== 'undefined' ? (sessionStorage.getItem('workspace_id') || 'ws_demo') : 'ws_demo'}
+        onSuccess={async () => {
+          await fetchClientsAndSyncBookedLeads();
+        }}
+      />
+
+      {showAddModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}

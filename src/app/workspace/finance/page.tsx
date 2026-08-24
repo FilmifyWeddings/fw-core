@@ -10,12 +10,14 @@ import {
   Trash2, X, RefreshCw, Sparkles, Phone, Calculator, Tag, PieChart, Wallet, 
   ArrowRight, Bell, Send, Check, Crown, Lock, Unlock, ShieldCheck, Key,
   Eye, EyeOff, AlertCircle, CheckSquare, Square, Pencil, MoreVertical, SlidersHorizontal,
-  MapPin, CheckCheck, UserCheck, UserPlus
+  MapPin, CheckCheck, UserCheck, UserPlus, Upload
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { extractFinancialsFromQuotation, normalizeToIsoDate } from '@/lib/quotation-finance-sync';
 import { LeadQuotationModal } from '@/components/dashboard/lead-quotation-modal';
 import { InvoiceModalDialog } from '@/components/finance/invoice-modal-dialog';
+import { ExcelMigrationModal } from '@/components/finance/excel-migration-modal';
+import { exportCurrentFinanceToExcel } from '@/lib/excel-finance-migration';
 import type { 
   WorkspaceClient, ClientFinanceRecord, FinanceMilestoneItem, FinanceExpenseItem, 
   FinanceAuditLog, FinanceSecuritySettings, Lead, LeadStatus, LeadScore 
@@ -293,6 +295,7 @@ export default function FinancePage() {
   const [isQuotationModalOpen, setIsQuotationModalOpen] = useState(false);
   const [defaultQuotationTemplate, setDefaultQuotationTemplate] = useState<any>(null);
   const [settingFinalLoadingId, setSettingFinalLoadingId] = useState<string | null>(null);
+  const [isExcelMigrationModalOpen, setIsExcelMigrationModalOpen] = useState(false);
 
   // ─────────────────────────────────────────────────────────────
   // 🧮 HELPER: COMPUTE TOTALS (STRICT ZERO DUMMY DATA)
@@ -2253,6 +2256,28 @@ export default function FinancePage() {
               </AnimatePresence>
             </div>
 
+            {/* 📥 Import Excel / CSV Button */}
+            <button
+              type="button"
+              onClick={() => setIsExcelMigrationModalOpen(true)}
+              className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-black transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+              title="Import Clients & Finance from Legacy Excel / CSV Spreadsheet"
+            >
+              <Upload className="w-3.5 h-3.5 text-emerald-700" />
+              <span className="hidden sm:inline">Import Excel / CSV</span>
+            </button>
+
+            {/* 📤 Export Finance to Excel */}
+            <button
+              type="button"
+              onClick={() => exportCurrentFinanceToExcel(filteredRecords, clients)}
+              className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+              title="Export Current Filtered Finance to Excel (.xlsx)"
+            >
+              <Download className="w-3.5 h-3.5 text-slate-600" />
+              <span className="hidden sm:inline">Export Excel</span>
+            </button>
+
             {/* 📜 Audit Log Trigger */}
             <button
               type="button"
@@ -2341,13 +2366,22 @@ export default function FinancePage() {
                               {record.payment_status === 'paid' ? 'Paid Full' : recAmt > 0 ? 'Partially Paid' : 'Pending'}
                             </span>
 
-                            {/* 🚨 CARD-LEVEL OVERDUE ALERT BADGE */}
-                            {clientOverdueSum > 0 && (
-                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200 animate-pulse flex items-center gap-1">
-                                <AlertTriangle className="w-3 h-3 text-rose-600" />
-                                Payment Overdue: ₹{clientOverdueSum.toLocaleString('en-IN')}
-                              </span>
-                            )}
+                            {/* 🚨 CARD-LEVEL OVERDUE DAYS & AMOUNT BADGE */}
+                            {clientOverdueSum > 0 && (() => {
+                              const maxDays = milestones
+                                .filter(m => m.due_date && m.due_date < todayStr && m.status !== 'completed' && m.status !== 'paid')
+                                .reduce((max, m) => {
+                                  const diff = Math.floor((new Date().getTime() - new Date(m.due_date!).getTime()) / (1000 * 60 * 60 * 24));
+                                  return Math.max(max, diff);
+                                }, 0);
+
+                              return (
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200 animate-pulse flex items-center gap-1 shadow-2xs">
+                                  <AlertTriangle className="w-3 h-3 text-rose-600 shrink-0" />
+                                  <span>⚠️ Due Since <strong>{maxDays} Days</strong> (₹{clientOverdueSum.toLocaleString('en-IN')} Overdue)</span>
+                                </span>
+                              );
+                            })()}
 
                             {/* 🏷️ DYNAMIC SELECTED QUOTATION VERSION BADGE */}
                             {record.has_final_quotation && record.final_quotation_version ? (
@@ -3997,6 +4031,15 @@ export default function FinancePage() {
       {/* ─────────────────────────────────────────────────────────────
           INVOICE & QUOTATION MODAL DIALOGS
       ───────────────────────────────────────────────────────────── */}
+      <ExcelMigrationModal
+        isOpen={isExcelMigrationModalOpen}
+        onClose={() => setIsExcelMigrationModalOpen(false)}
+        workspaceId={typeof window !== 'undefined' ? (sessionStorage.getItem('workspace_id') || 'ws_demo') : 'ws_demo'}
+        onSuccess={async () => {
+          await fetchFinanceData();
+        }}
+      />
+
       {showInvoiceModal.open && (
         <InvoiceModalDialog
           isOpen={showInvoiceModal.open}
