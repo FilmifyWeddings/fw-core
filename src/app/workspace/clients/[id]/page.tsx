@@ -83,6 +83,8 @@ export default function ClientWorkspaceDetailPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Tab 2: Quotations & Versions (Synced with Leads CRM)
   const [quotationDocs, setQuotationDocs] = useState<QuotationVersionItem[]>([]);
@@ -558,6 +560,43 @@ export default function ClientWorkspaceDetailPage() {
     }
   };
 
+  // ─── 🗑️ CASCADE SAFE DELETE CLIENT (DB LEVEL PURGE) ───
+  const handleCascadeDeleteClient = async () => {
+    if (!client) return;
+    setIsDeleting(true);
+    try {
+      const clientId = client.id;
+      const leadId = client.lead_id;
+
+      // 1. Delete client finance record
+      await supabase.from('client_finance_records').delete().eq('client_id', clientId);
+
+      // 2. Delete finance audit logs
+      await supabase.from('finance_audit_logs').delete().eq('client_id', clientId);
+
+      // 3. Delete post-production project
+      await supabase.from('post_production_projects').delete().eq('client_id', clientId);
+
+      // 4. Delete quotation documents
+      if (leadId) {
+        await supabase.from('quotation_documents').delete().eq('lead_id', leadId);
+      }
+      await supabase.from('quotation_documents').delete().eq('lead_id', clientId);
+
+      // 5. Delete workspace_clients record
+      const { error: delErr } = await supabase.from('workspace_clients').delete().eq('id', clientId);
+      if (delErr) throw delErr;
+
+      setShowDeleteModal(false);
+      router.push('/workspace/clients');
+    } catch (err: any) {
+      console.error('Cascade delete error:', err);
+      alert(`Failed to delete client: ${err.message || 'Database error'}`);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   // Add Ceremony Event
   const handleAddEvent = () => {
     if (!newEventName.trim() || !client) return;
@@ -1015,6 +1054,28 @@ export default function ClientWorkspaceDetailPage() {
                 className="w-full px-4 py-3 bg-white border border-[#EAE5DA] rounded-2xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20 resize-none"
               />
             </div>
+
+            {/* ─── 🗑️ DANGER ZONE: SAFE DELETE CLIENT ─── */}
+            <div className="bg-rose-50/50 rounded-3xl border border-rose-200/80 p-5 sm:p-6 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <h4 className="text-xs font-black text-rose-900 flex items-center gap-1.5">
+                  <Trash2 className="w-4 h-4 text-rose-600" />
+                  Danger Zone: Delete Client Workspace
+                </h4>
+                <p className="text-[11px] text-rose-700 font-medium max-w-lg">
+                  Permanently delete <strong className="font-black text-rose-950">{name || client.name}</strong> and remove all associated finance cards, milestone schedules, quotations, deliverables, and invoices.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowDeleteModal(true)}
+                className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black flex items-center gap-2 shadow-sm transition active:scale-95 cursor-pointer shrink-0"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Delete Client</span>
+              </button>
+            </div>
           </motion.div>
         )}
 
@@ -1432,11 +1493,53 @@ export default function ClientWorkspaceDetailPage() {
               </div>
             </div>
 
+            {/* Top Overdue Summary Banner if Overdue Milestones Exist */}
+            {(() => {
+              const today = new Date();
+              today.setHours(0, 0, 0, 0);
+              const todayStr = today.toISOString().split('T')[0];
+
+              const overdueList = (financeRecord?.milestones || []).filter(
+                m => m.due_date && m.due_date < todayStr && m.status !== 'completed' && m.status !== 'paid' && (m.status as string) !== 'Completed'
+              );
+
+              if (overdueList.length === 0) return null;
+
+              const totalOverdue = overdueList.reduce((s, m) => s + (Number(m.amount) || 0), 0);
+              const maxDays = overdueList.reduce((max, m) => {
+                const diff = Math.floor((today.getTime() - new Date(m.due_date!).getTime()) / (1000 * 60 * 60 * 24));
+                return Math.max(max, diff);
+              }, 0);
+
+              return (
+                <div className="p-4 bg-rose-50/90 rounded-2xl border border-rose-200 flex items-center justify-between shadow-2xs">
+                  <div className="flex items-center gap-2.5">
+                    <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+                    <div>
+                      <span className="text-xs font-black text-rose-900 block">
+                        ⚠️ Total Overdue: ₹{totalOverdue.toLocaleString('en-IN')} (Oldest: {maxDays} days ago)
+                      </span>
+                      <span className="text-[11px] text-rose-700 font-medium">
+                        Immediate collection required for {overdueList.length} pending milestone schedule{overdueList.length > 1 ? 's' : ''}.
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-700 bg-rose-100 px-3 py-1 rounded-full border border-rose-200">
+                    {overdueList.length} Pending
+                  </span>
+                </div>
+              );
+            })()}
+
             {financeRecord?.milestones && financeRecord.milestones.length > 0 ? (
               <div className="space-y-3">
                 {financeRecord.milestones.map((ms, idx) => {
                   const isPaid = (ms.status as string) === 'completed' || (ms.status as string) === 'paid' || (ms.status as string) === 'Completed';
-                  const isOverdue = !isPaid && ms.due_date && new Date(ms.due_date) < new Date();
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  const todayStr = today.toISOString().split('T')[0];
+                  const isOverdue = !isPaid && ms.due_date && ms.due_date < todayStr;
+                  const overdueDays = isOverdue ? Math.max(1, Math.floor((today.getTime() - new Date(ms.due_date!).getTime()) / (1000 * 60 * 60 * 24))) : 0;
 
                   return (
                     <div
@@ -1461,7 +1564,14 @@ export default function ClientWorkspaceDetailPage() {
                             {isPaid && ms.paid_date ? (
                               <span className="text-emerald-700 font-bold">Paid on: {new Date(ms.paid_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
                             ) : (
-                              <span>Due Date: {ms.due_date ? new Date(ms.due_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'On completion'}</span>
+                              <span>
+                                Due: {ms.due_date ? new Date(ms.due_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'On completion'}
+                                {isOverdue && (
+                                  <span className="text-rose-600 font-black ml-1.5 inline-flex items-center gap-0.5">
+                                    • ⚠️ {overdueDays} Days Overdue
+                                  </span>
+                                )}
+                              </span>
                             )}
                             {ms.payment_mode && <span className="text-slate-400"> • Mode: {ms.payment_mode}</span>}
                           </p>
@@ -1485,7 +1595,7 @@ export default function ClientWorkspaceDetailPage() {
                           title="Click to toggle Paid / Pending"
                         >
                           {isPaid ? <Check className="w-3.5 h-3.5 text-emerald-700" /> : <Clock className="w-3.5 h-3.5" />}
-                          {isPaid ? 'PAID' : isOverdue ? 'OVERDUE' : 'DUE / PENDING'}
+                          {isPaid ? 'PAID' : isOverdue ? `⚠️ OVERDUE (${overdueDays}d)` : 'DUE / PENDING'}
                         </button>
                       </div>
                     </div>
@@ -1763,6 +1873,73 @@ export default function ClientWorkspaceDetailPage() {
       {/* ─────────────────────────────────────────────────────────────
           POPUP: INVOICE PRINT DIALOG
       ───────────────────────────────────────────────────────────── */}
+      {/* ─────────────────────────────────────────────────────────────
+          🗑️ MODAL: DOUBLE CONFIRMATION DELETE CLIENT (CASCADE)
+      ───────────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showDeleteModal && (
+          <div className="fixed inset-0 z-70 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md">
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.92, opacity: 0 }}
+              className="bg-white rounded-3xl p-6 sm:p-7 max-w-md w-full border border-rose-200 shadow-2xl space-y-5 text-center font-sans"
+            >
+              <div className="w-14 h-14 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto border border-rose-200 shadow-inner">
+                <AlertTriangle className="w-7 h-7" />
+              </div>
+
+              <div className="space-y-2">
+                <h3 className="text-lg font-black text-slate-900">
+                  Delete Client & Associated Records?
+                </h3>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Are you sure you want to permanently delete <strong className="text-slate-900 font-black">{name || client?.name}</strong>?
+                </p>
+                <div className="p-3 bg-rose-50 rounded-xl border border-rose-100 text-left text-[11px] text-rose-800 space-y-1">
+                  <p className="font-bold">⚠️ This action will permanently purge:</p>
+                  <ul className="list-disc list-inside space-y-0.5 text-rose-700 pl-1 font-medium">
+                    <li>Client Workspace & Event Schedules</li>
+                    <li>Finance Cards, Installments & Balance Ledgers</li>
+                    <li>Associated Quotation Versions & PDFs</li>
+                    <li>Post-Production Task Checklists</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteModal(false)}
+                  disabled={isDeleting}
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCascadeDeleteClient}
+                  disabled={isDeleting}
+                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-xl text-xs shadow-md hover:shadow-lg transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isDeleting ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Deleting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4" />
+                      <span>Yes, Delete Everything</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {showInvoiceModal && (
         <InvoiceModalDialog
           isOpen={showInvoiceModal}

@@ -2382,7 +2382,7 @@ export default function FinancePage() {
                               return (
                                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200 animate-pulse flex items-center gap-1 shadow-2xs">
                                   <AlertTriangle className="w-3 h-3 text-rose-600 shrink-0" />
-                                  <span>⚠️ Due Since <strong>{maxDays} Days</strong> (₹{clientOverdueSum.toLocaleString('en-IN')} Overdue)</span>
+                                  <span>⚠️ Total Overdue: <strong>₹{clientOverdueSum.toLocaleString('en-IN')}</strong> (Oldest: {maxDays} days ago)</span>
                                 </span>
                               );
                             })()}
@@ -2701,6 +2701,7 @@ export default function FinancePage() {
                                   {milestones.map((ms) => {
                                     const isPaid = ms.status === 'completed' || ms.status === 'paid' || (ms.status as string) === 'Completed';
                                     const isOverdue = !isPaid && ms.due_date && ms.due_date < todayStr;
+                                    const overdueDays = isOverdue ? Math.max(1, Math.floor((new Date(todayStr).getTime() - new Date(ms.due_date!).getTime()) / (1000 * 60 * 60 * 24))) : 0;
 
                                     return (
                                       <div
@@ -2721,6 +2722,11 @@ export default function FinancePage() {
                                             onChange={(e) => handleMilestoneStepChange(record.id, ms.id, 'due_date', e.target.value)}
                                             className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-xl text-[11px] font-medium text-slate-700 focus:outline-none focus:border-amber-500"
                                           />
+                                          {isOverdue && (
+                                            <span className="text-[10px] font-black text-rose-600 flex items-center gap-0.5 mt-0.5 pl-0.5">
+                                              ⚠️ {overdueDays} Days Overdue
+                                            </span>
+                                          )}
                                         </div>
 
                                         {/* Step Name (CLEAN: No payment mode badge beneath title) */}
@@ -2761,7 +2767,7 @@ export default function FinancePage() {
                                             {isPaid ? (
                                               <><Check className="w-3 h-3 text-emerald-600" /> Completed</>
                                             ) : isOverdue ? (
-                                              '⚠️ Overdue'
+                                              <span className="flex items-center gap-1 font-black">⚠️ Overdue by {overdueDays} Days</span>
                                             ) : (
                                               'Pending'
                                             )}
