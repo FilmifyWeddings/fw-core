@@ -31,6 +31,7 @@ export default function MilestoneStepDropdown({
   className = ''
 }: MilestoneStepDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [dropUp, setDropUp] = useState(false);
   const [newInputText, setNewInputText] = useState('');
   const [isAddingNew, setIsAddingNew] = useState(false);
   const [isCustomInline, setIsCustomInline] = useState(false);
@@ -51,6 +52,20 @@ export default function MilestoneStepDropdown({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [isOpen]);
+
+  const handleToggle = () => {
+    if (!isOpen && containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      // If space below is less than 280px or if placed low in viewport, open upwards
+      if (spaceBelow < 280 && rect.top > 220) {
+        setDropUp(true);
+      } else {
+        setDropUp(false);
+      }
+    }
+    setIsOpen(prev => !prev);
+  };
 
   const handleSelectOption = (opt: string) => {
     onChange(opt);
@@ -79,7 +94,7 @@ export default function MilestoneStepDropdown({
   };
 
   return (
-    <div ref={containerRef} className={`relative inline-block w-full ${className}`}>
+    <div ref={containerRef} className={`relative inline-block w-full ${isOpen ? 'z-[70]' : 'z-10'} ${className}`}>
       {/* ── 3D TRIGGER BUTTON ── */}
       {isCustomInline ? (
         <div className="flex items-center gap-1">
@@ -103,7 +118,7 @@ export default function MilestoneStepDropdown({
       ) : (
         <button
           type="button"
-          onClick={() => setIsOpen(prev => !prev)}
+          onClick={handleToggle}
           className={`w-full flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
             isOpen
               ? 'bg-gradient-to-b from-amber-50 to-[#FAF5EC] border-amber-400 shadow-[0_4px_14px_rgba(200,148,53,0.22)]'
@@ -120,15 +135,17 @@ export default function MilestoneStepDropdown({
         </button>
       )}
 
-      {/* ── 3D FLOATING DROPDOWN POPOVER ── */}
+      {/* ── 3D FLOATING DROPDOWN POPOVER (SMART UP/DOWN PLACEMENT) ── */}
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            initial={{ opacity: 0, y: 6, scale: 0.97 }}
+            initial={{ opacity: 0, y: dropUp ? -6 : 6, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 4, scale: 0.97 }}
+            exit={{ opacity: 0, y: dropUp ? -4 : 4, scale: 0.97 }}
             transition={{ duration: 0.15 }}
-            className="absolute left-0 top-full mt-1.5 w-72 bg-[#FFFDF9] border-2 border-[#E9DFD2] rounded-2xl shadow-[0_16px_36px_rgba(33,27,23,0.22)] p-2.5 z-50 space-y-2 font-sans text-xs backdrop-blur-md"
+            className={`absolute left-0 ${
+              dropUp ? 'bottom-full mb-1.5 shadow-[0_-16px_36px_rgba(33,27,23,0.25)]' : 'top-full mt-1.5 shadow-[0_16px_36px_rgba(33,27,23,0.25)]'
+            } w-72 bg-[#FFFDF9] border-2 border-[#E9DFD2] rounded-2xl p-2.5 z-[100] space-y-2 font-sans text-xs backdrop-blur-md`}
           >
             {/* ── 1. TOP 3D "+ ADD NEW STEP" BAR ── */}
             <div className="bg-gradient-to-br from-amber-50 to-[#FAF6EE] p-2 rounded-xl border border-amber-200/80 shadow-inner space-y-1.5">

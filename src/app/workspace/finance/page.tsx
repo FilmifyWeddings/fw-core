@@ -2509,7 +2509,7 @@ export default function FinancePage() {
                   <motion.div
                     key={record.id}
                     layout
-                    className="bg-white rounded-3xl border border-slate-100 shadow-[0_2px_15px_rgba(0,0,0,0.03)] overflow-hidden transition-all"
+                    className="bg-white rounded-3xl border border-slate-100 shadow-[0_2px_15px_rgba(0,0,0,0.03)] transition-all"
                   >
                     {/* ─── CLIENT HEADER ROW ─── */}
                     <div 
