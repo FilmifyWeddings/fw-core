@@ -48,33 +48,133 @@ function createTransporter(port: number, secure: boolean) {
 }
 
 /**
- * Dispatches email using Hostinger SMTP with automatic Port 465 (SSL) -> Port 587 (STARTTLS) fallback
+ * Dispatches email using a resilient multi-provider cascade:
+ * 1. Resend REST API (HTTPS Port 443 - zero blockages)
+ * 2. Brevo REST API (HTTPS Port 443)
+ * 3. Gmail / Google Workspace SMTP (Port 465 SSL)
+ * 4. Hostinger SMTP (Port 465 SSL -> Port 587 STARTTLS)
  */
-async function sendMailWithFallback(mailOptions: any) {
+async function sendMailWithFallback(mailOptions: {
+  from?: string;
+  to: string;
+  subject: string;
+  text: string;
+  html: string;
+}) {
+  // ── Provider 1: Resend HTTP API (Port 443) ──
+  const resendApiKey = process.env.RESEND_API_KEY;
+  if (resendApiKey) {
+    try {
+      const fromAddr = process.env.RESEND_FROM || process.env.SMTP_FROM || 'StudioCore <onboarding@resend.dev>';
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${resendApiKey.trim()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: fromAddr,
+          to: [mailOptions.to],
+          subject: mailOptions.subject,
+          text: mailOptions.text,
+          html: mailOptions.html,
+        }),
+      });
+
+      const resData = await res.json().catch(() => ({}));
+      if (res.ok && resData.id) {
+        console.log(`[Resend API Success] Email ID: ${resData.id} delivered to ${mailOptions.to}`);
+        return { success: true, messageId: resData.id, provider: 'resend' };
+      } else {
+        console.warn('[Resend API Notice]:', resData);
+      }
+    } catch (resendErr: any) {
+      console.warn('[Resend API Dispatch Error]:', resendErr?.message);
+    }
+  }
+
+  // ── Provider 2: Brevo HTTP API (Port 443) ──
+  const brevoApiKey = process.env.BREVO_API_KEY;
+  if (brevoApiKey) {
+    try {
+      const fromEmail = process.env.BREVO_FROM_EMAIL || 'support@studiocore.in';
+      const fromName = process.env.BREVO_FROM_NAME || 'StudioCore';
+      const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'api-key': brevoApiKey.trim(),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sender: { name: fromName, email: fromEmail },
+          to: [{ email: mailOptions.to }],
+          subject: mailOptions.subject,
+          textContent: mailOptions.text,
+          htmlContent: mailOptions.html,
+        }),
+      });
+
+      const brevoData = await res.json().catch(() => ({}));
+      if (res.ok && brevoData.messageId) {
+        console.log(`[Brevo API Success] MessageID: ${brevoData.messageId}`);
+        return { success: true, messageId: brevoData.messageId, provider: 'brevo' };
+      }
+    } catch (brevoErr: any) {
+      console.warn('[Brevo API Dispatch Error]:', brevoErr?.message);
+    }
+  }
+
+  // ── Provider 3: Gmail / Google Workspace SMTP (Port 465 SSL) ──
+  const gmailPass = process.env.GMAIL_APP_PASSWORD || process.env.GOOGLE_SMTP_PASS;
+  const gmailUser = process.env.GMAIL_USER || process.env.GOOGLE_SMTP_USER;
+  if (gmailPass && gmailUser) {
+    try {
+      const transporter = nodemailer.createTransport({
+        host: 'smtp.gmail.com',
+        port: 465,
+        secure: true,
+        auth: { user: gmailUser, pass: gmailPass },
+        tls: { rejectUnauthorized: false },
+        connectionTimeout: 8000,
+      });
+
+      const info = await transporter.sendMail({
+        from: `"StudioCore" <${gmailUser}>`,
+        to: mailOptions.to,
+        subject: mailOptions.subject,
+        text: mailOptions.text,
+        html: mailOptions.html,
+      });
+      console.log(`[Gmail SMTP Success] MessageID: ${info.messageId}`);
+      return { success: true, messageId: info.messageId, provider: 'gmail' };
+    } catch (gmailErr: any) {
+      console.warn('[Gmail SMTP Dispatch Notice]:', gmailErr?.message);
+    }
+  }
+
+  // ── Provider 4: Hostinger SMTP (Port 465 SSL -> Port 587 STARTTLS) ──
   const defaultPort = parseInt(process.env.SMTP_PORT || '465', 10);
-  
-  // Attempt 1: Port 465 (SSL)
   try {
     const isSecure = defaultPort === 465;
     const transporter = createTransporter(defaultPort, isSecure);
     const info = await transporter.sendMail(mailOptions);
     console.log(`[Hostinger SMTP Port ${defaultPort} Success] MessageID: ${info.messageId}`);
-    return { success: true, messageId: info.messageId };
+    return { success: true, messageId: info.messageId, provider: 'hostinger' };
   } catch (err1: any) {
     console.warn(`[Hostinger SMTP Port ${defaultPort} Notice]: ${err1.message}. Attempting fallback port 587...`);
   }
 
-  // Attempt 2: Fallback to Port 587 STARTTLS
   try {
     const fallbackPort = defaultPort === 465 ? 587 : 465;
     const transporterFallback = createTransporter(fallbackPort, fallbackPort === 465);
     const info = await transporterFallback.sendMail(mailOptions);
     console.log(`[Hostinger SMTP Fallback Port ${fallbackPort} Success] MessageID: ${info.messageId}`);
-    return { success: true, messageId: info.messageId };
+    return { success: true, messageId: info.messageId, provider: 'hostinger' };
   } catch (err2: any) {
     console.error(`[Hostinger SMTP Fallback Error]:`, err2.message);
-    return { success: false, error: err2.message || 'SMTP Connection failed' };
   }
+
+  return { success: false, error: 'All email providers failed or sender address rejected by mail server.' };
 }
 
 /**

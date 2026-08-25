@@ -90,7 +90,22 @@ export async function POST(req: NextRequest) {
 
     console.log(`[Email OTP Generated for ${targetEmail}]: ${otp}`);
 
-    // 6. Trigger Supabase Cloud Mailer (Over HTTPS 443 - Never blocked on VPS!)
+    // 6. Trigger Multi-Provider Email Dispatch
+    let emailDelivered = false;
+    try {
+      const emailRes = await sendEmailOtp({
+        toEmail: targetEmail,
+        recipientName: targetName,
+        otp,
+        expiresInMinutes: 10,
+      });
+      emailDelivered = emailRes.success;
+      console.log(`[Send Email OTP Result for ${targetEmail}]:`, emailRes);
+    } catch (emailErr: any) {
+      console.warn('[Email OTP Dispatch Notice]:', emailErr?.message);
+    }
+
+    // 7. Supabase Cloud Mailer Trigger (backup)
     try {
       supabaseAdmin.auth.signInWithOtp({
         email: targetEmail,
@@ -107,19 +122,12 @@ export async function POST(req: NextRequest) {
       });
     } catch (_) {}
 
-    // 7. Non-blocking Hostinger SMTP Dispatch in background
-    sendEmailOtp({
-      toEmail: targetEmail,
-      recipientName: targetName,
-      otp,
-      expiresInMinutes: 10,
-    }).catch((emailErr) => {
-      console.warn('[Email OTP SMTP Dispatch Notice]:', emailErr?.message);
-    });
-
     return NextResponse.json({
       success: true,
-      message: `A verification code has been sent to ${targetEmail}.`,
+      message: `A verification code has been dispatched to ${targetEmail}.`,
+      delivered: emailDelivered,
+      // Provide debugOtp in development so developers never get blocked by mail server issues
+      debugOtp: process.env.NODE_ENV !== 'production' ? otp : undefined,
     });
   } catch (err: any) {
     console.error('[Send Email OTP Error]:', err);

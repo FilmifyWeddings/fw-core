@@ -82,19 +82,27 @@ export async function POST(req: NextRequest) {
       console.warn('[Forgot Password Supabase Recovery Exception]:', sbErr.message);
     }
 
-    // 5. Send Branded Password Reset Email with direct 1-click button via Hostinger SMTP fallback
-    sendPasswordResetEmail({
-      toEmail: targetEmail,
-      recipientName,
-      resetUrl,
-      expiresInMinutes: 15,
-    }).catch((emailErr) => {
-      console.warn('[Forgot Password Direct SMTP Notice]:', emailErr?.message);
-    });
+    // 5. Send Branded Password Reset Email with direct 1-click button via Multi-Provider Cascade
+    let emailDelivered = false;
+    try {
+      const emailRes = await sendPasswordResetEmail({
+        toEmail: targetEmail,
+        recipientName,
+        resetUrl,
+        expiresInMinutes: 15,
+      });
+      emailDelivered = emailRes.success;
+      console.log(`[Forgot Password Email Result for ${targetEmail}]:`, emailRes);
+    } catch (emailErr: any) {
+      console.warn('[Forgot Password Dispatch Notice]:', emailErr?.message);
+    }
 
     return NextResponse.json({
       success: true,
       message: 'Password reset link sent to your email. Please check your inbox.',
+      delivered: emailDelivered,
+      // Provide debug reset URL in development mode
+      debugResetUrl: process.env.NODE_ENV !== 'production' ? resetUrl : undefined,
     });
   } catch (err: any) {
     console.error('[Forgot Password Error]:', err);
