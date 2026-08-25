@@ -181,11 +181,22 @@ export async function POST(request: NextRequest) {
 
     let status: 'present' | 'late' | 'half_day' | 'holiday' | 'week_off' = 'present';
     let lateMinutes = 0;
+    let earlyArrivalMinutes = 0;
+
+    if (currentTotalMinutes < shiftStartMinutes) {
+      earlyArrivalMinutes = shiftStartMinutes - currentTotalMinutes;
+    }
 
     if (holidayToday) {
       status = 'holiday';
+      if (currentTotalMinutes > lateThresholdMinutes) {
+        lateMinutes = currentTotalMinutes - shiftStartMinutes;
+      }
     } else if (isWeeklyOff) {
       status = 'week_off';
+      if (currentTotalMinutes > lateThresholdMinutes) {
+        lateMinutes = currentTotalMinutes - shiftStartMinutes;
+      }
     } else if (currentTotalMinutes > shiftStartMinutes + 180) {
       status = 'half_day';
       lateMinutes = Math.max(0, currentTotalMinutes - shiftStartMinutes);
@@ -218,6 +229,7 @@ export async function POST(request: NextRequest) {
       check_in_verified: true,
       check_in_geofence_status: geofenceStatus,
       late_minutes: lateMinutes,
+      early_arrival_minutes: earlyArrivalMinutes,
       total_work_minutes: 0,
       total_pause_minutes: 0,
       device_info: {
@@ -225,6 +237,10 @@ export async function POST(request: NextRequest) {
         check_in_ist: formattedIstTime,
         check_in_address: punchAddress,
         selfie_url: photoPath || photoBase64,
+        early_arrival_minutes: earlyArrivalMinutes,
+        is_holiday_work: !!holidayToday,
+        is_week_off_work: !!isWeeklyOff,
+        holiday_name: holidayToday?.name || null,
         last_heartbeat_at: nowTime.toISOString(),
         last_heartbeat_inside: true
       },
@@ -290,8 +306,11 @@ export async function POST(request: NextRequest) {
       lateMinutes,
       geofenceStatus,
       punchAddress,
-      message: status === 'late' 
-        ? `Checked in at ${formattedIstTime} IST (${lateMinutes} minutes late)`
+      earlyArrivalMinutes,
+      message: status === 'late'
+        ? `Checked in at ${formattedIstTime} IST (Late by ${Math.floor(lateMinutes / 60) > 0 ? `${Math.floor(lateMinutes / 60)}h ` : ''}${lateMinutes % 60}m)`
+        : earlyArrivalMinutes > 0
+        ? `Checked in at ${formattedIstTime} IST (Arrived ${Math.floor(earlyArrivalMinutes / 60) > 0 ? `${Math.floor(earlyArrivalMinutes / 60)}h ` : ''}${earlyArrivalMinutes % 60}m early)`
         : `Checked in on-time at ${formattedIstTime} IST`
     });
 

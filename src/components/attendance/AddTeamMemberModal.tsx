@@ -7,10 +7,22 @@ import {
   DollarSign, RefreshCw, Upload, Camera, Check, Plus, Edit2, 
   Trash2, ShieldCheck, Map, Layers, Sun, CheckCircle2, AlertCircle
 } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabase';
 import type { FWTeamMember, AttendanceLocation, AttendanceShift, StaffRole } from '@/types';
-import GooglePlacesGeofenceMap from '@/components/attendance/GooglePlacesGeofenceMap';
 import { compressStaffAvatar, uploadStaffAvatar } from '@/lib/attendance/avatar-compression';
+
+const GooglePlacesGeofenceMap = dynamic(
+  () => import('@/components/attendance/GooglePlacesGeofenceMap'),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-64 w-full bg-[#1A1816] rounded-2xl flex items-center justify-center text-amber-400 text-xs font-mono animate-pulse border border-[#EAE5DA]">
+        Loading GPS Geofence Map...
+      </div>
+    )
+  }
+);
 
 interface AddTeamMemberModalProps {
   isOpen: boolean;

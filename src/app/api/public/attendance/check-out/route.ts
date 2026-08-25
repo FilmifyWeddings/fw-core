@@ -114,9 +114,14 @@ export async function POST(request: NextRequest) {
     const currentTotalMinutes = currH * 60 + currM;
 
     let earlyCheckoutMinutes = 0;
+    let lateDepartureMinutes = 0;
     if (currentTotalMinutes < shiftEndTotalMinutes) {
       earlyCheckoutMinutes = shiftEndTotalMinutes - currentTotalMinutes;
+    } else if (currentTotalMinutes > shiftEndTotalMinutes) {
+      lateDepartureMinutes = currentTotalMinutes - shiftEndTotalMinutes;
     }
+
+    const finalOvertimeMinutes = Math.max(overtimeMinutes, lateDepartureMinutes);
 
     // Check-Out Address
     const punchOutAddress = address || (lat && lng ? `Lat: ${Number(lat).toFixed(4)}, Lng: ${Number(lng).toFixed(4)}` : 'Studio Venue');
@@ -161,6 +166,8 @@ export async function POST(request: NextRequest) {
       check_out_ist: formattedIstTime,
       check_out_address: punchOutAddress,
       early_checkout_minutes: earlyCheckoutMinutes,
+      late_departure_minutes: lateDepartureMinutes,
+      overtime_minutes: finalOvertimeMinutes,
       selfie_out_url: photoPath || photoBase64
     };
 
@@ -177,7 +184,7 @@ export async function POST(request: NextRequest) {
       total_work_minutes: netWorkMinutes,
       break_duration_minutes: totalBreakMinutes,
       total_pause_minutes: totalBreakMinutes,
-      overtime_minutes: overtimeMinutes,
+      overtime_minutes: finalOvertimeMinutes,
       early_checkout_minutes: earlyCheckoutMinutes,
       device_info: updatedDeviceInfo,
       notes: updatedNotes,

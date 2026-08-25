@@ -657,12 +657,20 @@ export default function PersonalAttendancePage() {
                       </span>
                     ) : isCheckedIn ? (
                       <span className={`px-2.5 py-0.5 rounded-full text-[12px] font-bold ${
-                        todayRecord?.status === 'late'
+                        todayRecord?.status === 'holiday' || todayRecord?.device_info?.is_holiday_work
+                          ? 'bg-purple-100 text-purple-900 border border-purple-300'
+                          : todayRecord?.status === 'week_off' || todayRecord?.device_info?.is_week_off_work
+                          ? 'bg-indigo-100 text-indigo-900 border border-indigo-300'
+                          : todayRecord?.status === 'late'
                           ? 'bg-[#FFF3E0] text-[#E65100] border border-[#FFE0B2]'
                           : 'bg-[#E8F5E9] text-[#2E7D32] border border-[#C8E6C9]'
                       } flex items-center gap-1`}>
                         <span className="w-2 h-2 rounded-full bg-current animate-ping" />
-                        {todayRecord?.status === 'late' && todayRecord?.late_minutes
+                        {todayRecord?.status === 'holiday' || todayRecord?.device_info?.is_holiday_work
+                          ? '🎉 Holiday Duty'
+                          : todayRecord?.status === 'week_off' || todayRecord?.device_info?.is_week_off_work
+                          ? '🏖️ Week-Off Duty'
+                          : todayRecord?.status === 'late' && todayRecord?.late_minutes
                           ? `Late by ${Math.floor(todayRecord.late_minutes / 60) > 0 ? `${Math.floor(todayRecord.late_minutes / 60)}h ` : ''}${todayRecord.late_minutes % 60}m`
                           : 'On Duty (Present)'}
                       </span>
@@ -692,6 +700,10 @@ export default function PersonalAttendancePage() {
                   {todayRecord?.late_minutes && todayRecord.late_minutes > 0 ? (
                     <span className="text-[10px] text-[#C62828] font-bold block mt-0.5">
                       ⏱️ Late by {Math.floor(todayRecord.late_minutes / 60) > 0 ? `${Math.floor(todayRecord.late_minutes / 60)}h ` : ''}{todayRecord.late_minutes % 60}m
+                    </span>
+                  ) : (todayRecord?.early_arrival_minutes || todayRecord?.device_info?.early_arrival_minutes) ? (
+                    <span className="text-[10px] text-[#2E7D32] font-bold block mt-0.5">
+                      🟢 Arrived {Math.floor((todayRecord.early_arrival_minutes || todayRecord.device_info?.early_arrival_minutes) / 60) > 0 ? `${Math.floor((todayRecord.early_arrival_minutes || todayRecord.device_info?.early_arrival_minutes) / 60)}h ` : ''}{(todayRecord.early_arrival_minutes || todayRecord.device_info?.early_arrival_minutes) % 60}m early
                     </span>
                   ) : todayRecord?.check_in_time ? (
                     <span className="text-[10px] text-[#2E7D32] font-semibold block mt-0.5">✓ On-Time</span>

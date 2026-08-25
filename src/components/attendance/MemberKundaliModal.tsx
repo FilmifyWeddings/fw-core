@@ -489,6 +489,15 @@ export default function MemberKundaliModal({
                               <span className="text-xs font-black text-emerald-950 font-mono">
                                 {rec.check_in_time ? new Date(rec.check_in_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
                               </span>
+                              {rec.late_minutes && rec.late_minutes > 0 ? (
+                                <span className="text-[9px] font-bold text-amber-700 block">
+                                  Late by {Math.floor(rec.late_minutes / 60) > 0 ? `${Math.floor(rec.late_minutes / 60)}h ` : ''}{rec.late_minutes % 60}m
+                                </span>
+                              ) : (rec.early_arrival_minutes || rec.device_info?.early_arrival_minutes) ? (
+                                <span className="text-[9px] font-bold text-emerald-700 block">
+                                  Arrived {Math.floor((rec.early_arrival_minutes || rec.device_info?.early_arrival_minutes) / 60) > 0 ? `${Math.floor((rec.early_arrival_minutes || rec.device_info?.early_arrival_minutes) / 60)}h ` : ''}{(rec.early_arrival_minutes || rec.device_info?.early_arrival_minutes) % 60}m early
+                                </span>
+                              ) : null}
                             </div>
                           </button>
                         </div>
@@ -577,12 +586,12 @@ export default function MemberKundaliModal({
                           )}
                           {rec.status === 'holiday' && (
                             <span className="px-3 py-1 rounded-full text-[11px] font-black bg-purple-100 text-purple-900 border border-purple-200">
-                              Paid Holiday
+                              🎉 Holiday Duty
                             </span>
                           )}
                           {rec.status === 'week_off' && (
-                            <span className="px-3 py-1 rounded-full text-[11px] font-black bg-slate-100 text-slate-700 border border-slate-300">
-                              Weekly Off
+                            <span className="px-3 py-1 rounded-full text-[11px] font-black bg-indigo-100 text-indigo-900 border border-indigo-200">
+                              🏖️ Week-Off Duty
                             </span>
                           )}
                         </div>

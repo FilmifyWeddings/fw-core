@@ -16,10 +16,15 @@ import type {
   FWTeamMember, AttendanceRecord, AttendanceLocation, 
   AttendanceShift, AttendanceLeaveRequest, AttendanceMemberLink, AttendanceHoliday
 } from '@/types';
-import GooglePlacesGeofenceMap from '@/components/attendance/GooglePlacesGeofenceMap';
+import dynamic from 'next/dynamic';
 import MemberKundaliModal from '@/components/attendance/MemberKundaliModal';
 import AddTeamMemberModal from '@/components/attendance/AddTeamMemberModal';
 import CompanyHolidayModal from '@/components/attendance/CompanyHolidayModal';
+
+const GooglePlacesGeofenceMap = dynamic(
+  () => import('@/components/attendance/GooglePlacesGeofenceMap'),
+  { ssr: false }
+);
 
 export default function AttendancePage() {
   const [activeTab, setActiveTab] = useState<'roster' | 'live' | 'matrix' | 'leaves' | 'locations' | 'shifts' | 'links'>('roster');
@@ -765,7 +770,13 @@ export default function AttendancePage() {
 
                           <td className="py-3 px-4">
                             <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border ${
-                              isPresent
+                              record?.status === 'holiday' || record?.device_info?.is_holiday_work
+                                ? 'bg-purple-100 text-purple-900 border-purple-300'
+                                : record?.status === 'week_off' || record?.device_info?.is_week_off_work
+                                ? 'bg-indigo-100 text-indigo-900 border-indigo-300'
+                                : record?.status === 'half_day'
+                                ? 'bg-orange-100 text-orange-900 border-orange-200'
+                                : isPresent
                                 ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                 : isLate
                                 ? 'bg-amber-100 text-amber-900 border-amber-300'
@@ -773,7 +784,13 @@ export default function AttendancePage() {
                                 ? 'bg-sky-50 text-sky-700 border-sky-200'
                                 : 'bg-rose-50 text-rose-700 border-rose-200'
                             }`}>
-                              {isPresent
+                              {record?.status === 'holiday' || record?.device_info?.is_holiday_work
+                                ? '🎉 Holiday Duty'
+                                : record?.status === 'week_off' || record?.device_info?.is_week_off_work
+                                ? '🏖️ Week-Off Duty'
+                                : record?.status === 'half_day'
+                                ? '🌗 Half-Day'
+                                : isPresent
                                 ? '✓ Present'
                                 : isLate
                                 ? `Late (${Math.floor((record?.late_minutes || 0) / 60) > 0 ? `${Math.floor((record?.late_minutes || 0) / 60)}h ` : ''}${(record?.late_minutes || 0) % 60}m)`
@@ -793,8 +810,12 @@ export default function AttendancePage() {
                                   <span className="text-[9.5px] font-bold text-amber-700 block">
                                     Late by {Math.floor(record.late_minutes / 60) > 0 ? `${Math.floor(record.late_minutes / 60)}h ` : ''}{record.late_minutes % 60}m
                                   </span>
+                                ) : (record.early_arrival_minutes || record.device_info?.early_arrival_minutes) ? (
+                                  <span className="text-[9.5px] font-bold text-emerald-700 block">
+                                    Arrived {Math.floor((record.early_arrival_minutes || record.device_info?.early_arrival_minutes) / 60) > 0 ? `${Math.floor((record.early_arrival_minutes || record.device_info?.early_arrival_minutes) / 60)}h ` : ''}{(record.early_arrival_minutes || record.device_info?.early_arrival_minutes) % 60}m early
+                                  </span>
                                 ) : (
-                                  <span className="text-[9px] font-semibold text-emerald-600 block">On-time</span>
+                                  <span className="text-[9px] font-semibold text-emerald-600 block">✓ On-time</span>
                                 )}
                               </div>
                             ) : (
@@ -814,10 +835,10 @@ export default function AttendancePage() {
                                   </span>
                                 ) : record.overtime_minutes && record.overtime_minutes > 0 ? (
                                   <span className="text-[9.5px] font-bold text-emerald-700 block">
-                                    +{Math.floor(record.overtime_minutes / 60) > 0 ? `${Math.floor(record.overtime_minutes / 60)}h ` : ''}{record.overtime_minutes % 60}m OT
+                                    +{Math.floor(record.overtime_minutes / 60) > 0 ? `${Math.floor(record.overtime_minutes / 60)}h ` : ''}{record.overtime_minutes % 60}m Overtime
                                   </span>
                                 ) : (
-                                  <span className="text-[9px] font-semibold text-emerald-600 block">On-time</span>
+                                  <span className="text-[9px] font-semibold text-emerald-600 block">✓ On-time</span>
                                 )}
                               </div>
                             ) : record?.check_in_time ? (
