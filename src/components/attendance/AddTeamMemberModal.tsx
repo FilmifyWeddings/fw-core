@@ -97,7 +97,9 @@ export default function AddTeamMemberModal({
         setName(memberToEdit.name || '');
         setPhoneNumber(memberToEdit.phone_number || '');
         setWhatsappNumber(memberToEdit.whatsapp_number || memberToEdit.phone_number || '');
-        setEmail(memberToEdit.email || '');
+        // Clean out internal fallback emails so user sees clean empty input
+        const rawEmail = memberToEdit.email || '';
+        setEmail(rawEmail.includes('@internal.') ? '' : rawEmail);
         setAvatarUrl(memberToEdit.avatar_url || '');
         setSelectedRole(memberToEdit.primary_role || 'Senior Cinematographer');
         setLatitude(Number(memberToEdit.latitude) || 19.0596);
@@ -132,8 +134,20 @@ export default function AddTeamMemberModal({
     }
   }, [isOpen, memberToEdit]);
 
-  // Fetch custom staff roles from Supabase
+  // Fetch custom staff roles from Supabase and LocalStorage
   const fetchStaffRoles = async () => {
+    // 1. Read local storage cache first
+    try {
+      const cached = localStorage.getItem('studiocore_custom_roles');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          setDbRoles(parsed.map(r => typeof r === 'string' ? { id: `local_${r}`, workspace_id: 'ws_demo', role_name: r } : r));
+        }
+      }
+    } catch (_) {}
+
+    // 2. Fetch from Supabase
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const workspaceId = session?.user?.id || 'ws_demo';
@@ -144,7 +158,14 @@ export default function AddTeamMemberModal({
       }
 
       const { data } = await query;
-      if (data) setDbRoles(data);
+      if (data && data.length > 0) {
+        setDbRoles(prev => {
+          const map = new Map<string, StaffRole>();
+          prev.forEach(r => map.set(r.role_name.toLowerCase(), r));
+          data.forEach(r => map.set(r.role_name.toLowerCase(), r));
+          return Array.from(map.values());
+        });
+      }
     } catch (e) {
       console.warn('Error fetching staff roles:', e);
     }
@@ -160,52 +181,46 @@ export default function AddTeamMemberModal({
     const roleTrimmed = newRoleInput.trim();
     if (!roleTrimmed) return;
     setSavingRole(true);
+
+    const tempRoleObj: StaffRole = {
+      id: `role_${Date.now()}`,
+      workspace_id: 'ws_user',
+      role_name: roleTrimmed,
+      created_at: new Date().toISOString()
+    };
+
+    // 1. Optimistically update local state immediately
+    setDbRoles(prev => {
+      const exists = prev.some(r => r.role_name.toLowerCase() === roleTrimmed.toLowerCase());
+      const updated = exists ? prev : [...prev, tempRoleObj];
+      try {
+        localStorage.setItem('studiocore_custom_roles', JSON.stringify(updated.map(r => r.role_name)));
+      } catch (_) {}
+      return updated;
+    });
+
+    // 2. Select and close modal input immediately
+    setSelectedRole(roleTrimmed);
+    setNewRoleInput('');
+    setIsAddingNewRole(false);
+    setSavingRole(false);
+
+    // 3. Background persist to Supabase
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const workspaceId = session?.user?.id || 'ws_demo';
-
-      if (workspaceId !== 'ws_demo') {
-        const { data: newRole, error: insertErr } = await supabase
+      const workspaceId = session?.user?.id;
+      if (workspaceId) {
+        await supabase
           .from('staff_roles')
           .insert([{
             user_id: workspaceId,
             workspace_id: workspaceId,
             role_name: roleTrimmed
           }])
-          .select('*')
-          .maybeSingle();
-
-        if (newRole) {
-          setDbRoles(prev => {
-            const exists = prev.some(r => r.role_name.toLowerCase() === roleTrimmed.toLowerCase());
-            return exists ? prev : [...prev, newRole];
-          });
-        } else if (insertErr) {
-          // If already exists or constraint, fetch existing
-          const { data: existing } = await supabase
-            .from('staff_roles')
-            .select('*')
-            .eq('workspace_id', workspaceId)
-            .eq('role_name', roleTrimmed)
-            .maybeSingle();
-          if (existing) {
-            setDbRoles(prev => prev.some(r => r.id === existing.id) ? prev : [...prev, existing]);
-          }
-        }
-      } else {
-        setDbRoles(prev => [...prev, { id: `role_${Date.now()}`, workspace_id: 'ws_demo', role_name: roleTrimmed }]);
+          .select('*');
       }
-
-      setSelectedRole(roleTrimmed);
-      setNewRoleInput('');
-      setIsAddingNewRole(false);
     } catch (e) {
-      console.error('Error creating role:', e);
-      // Fallback selection anyway
-      setSelectedRole(roleTrimmed);
-      setIsAddingNewRole(false);
-    } finally {
-      setSavingRole(false);
+      console.warn('Background role save notice:', e);
     }
   };
 
@@ -254,6 +269,9 @@ export default function AddTeamMemberModal({
       const { data: { session } } = await supabase.auth.getSession();
       const workspaceId = session?.user?.id || 'ws_demo';
 
+      // Ensure a valid non-empty string is provided if database still enforces NOT NULL constraint on email
+      const safeEmail = email.trim() || (memberToEdit?.email && !memberToEdit.email.includes('@internal.') ? memberToEdit.email : `staff_${Date.now()}_${Math.random().toString(36).slice(2, 7)}@internal.studiocore.in`);
+
       const payload = {
         user_id: workspaceId,
         workspace_id: workspaceId,
@@ -261,7 +279,7 @@ export default function AddTeamMemberModal({
         primary_role: selectedRole,
         phone_number: phoneNumber.trim(),
         whatsapp_number: whatsappNumber.trim() || phoneNumber.trim(),
-        email: email.trim() || null,
+        email: safeEmail,
         avatar_url: avatarUrl || null,
         latitude: Number(latitude) || 19.0596,
         longitude: Number(longitude) || 72.8295,
@@ -294,7 +312,7 @@ export default function AddTeamMemberModal({
             name: name.trim(),
             primary_role: selectedRole,
             phone_number: phoneNumber.trim(),
-            email: email.trim() || null,
+            email: safeEmail,
             avatar_url: avatarUrl || null,
             updated_at: new Date().toISOString()
           };
@@ -323,7 +341,7 @@ export default function AddTeamMemberModal({
             name: name.trim(),
             primary_role: selectedRole,
             phone_number: phoneNumber.trim(),
-            email: email.trim() || null,
+            email: safeEmail,
             avatar_url: avatarUrl || null,
             created_at: new Date().toISOString()
           };
