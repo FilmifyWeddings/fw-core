@@ -102,15 +102,35 @@ export default function AddTeamMemberModal({
         setEmail(rawEmail.includes('@internal.') ? '' : rawEmail);
         setAvatarUrl(memberToEdit.avatar_url || '');
         setSelectedRole(memberToEdit.primary_role || 'Senior Cinematographer');
-        setLatitude(Number(memberToEdit.latitude) || 19.0596);
-        setLongitude(Number(memberToEdit.longitude) || 72.8295);
-        setRadiusMeters(Number(memberToEdit.radius_meters) || 150);
-        setLocationName(memberToEdit.location_name || 'Studio Main Office');
-        setShiftStart(memberToEdit.shift_start ? memberToEdit.shift_start.slice(0, 5) : '10:00');
-        setShiftEnd(memberToEdit.shift_end ? memberToEdit.shift_end.slice(0, 5) : '19:00');
-        setDailyRate(memberToEdit.daily_rate ? String(memberToEdit.daily_rate) : '');
-        setMonthlySalary(memberToEdit.monthly_salary ? String(memberToEdit.monthly_salary) : '');
-        setWeeklyOffs(Array.isArray(memberToEdit.weekly_offs) ? memberToEdit.weekly_offs : ['Sun']);
+
+        const custom = (memberToEdit.custom_data as any) || {};
+        let parsedNotes: any = {};
+        try {
+          if (memberToEdit.notes && memberToEdit.notes.startsWith('{')) parsedNotes = JSON.parse(memberToEdit.notes);
+        } catch (_) {}
+
+        const editLat = Number(memberToEdit.latitude) || Number(custom.latitude) || Number(parsedNotes.latitude) || (locations[0]?.latitude ? Number(locations[0].latitude) : 19.0596);
+        const editLng = Number(memberToEdit.longitude) || Number(custom.longitude) || Number(parsedNotes.longitude) || (locations[0]?.longitude ? Number(locations[0].longitude) : 72.8295);
+        const editRadius = Number(memberToEdit.radius_meters) || Number(custom.radius_meters) || Number(parsedNotes.radius_meters) || (locations[0]?.radius_meters ? Number(locations[0].radius_meters) : 150);
+        const editLocationName = memberToEdit.location_name || custom.location_name || parsedNotes.location_name || locations[0]?.name || 'Studio Main Office';
+
+        setLatitude(editLat);
+        setLongitude(editLng);
+        setRadiusMeters(editRadius);
+        setLocationName(editLocationName);
+
+        const editShiftStart = memberToEdit.shift_start ? memberToEdit.shift_start.slice(0, 5) : (custom.shift_start ? custom.shift_start.slice(0, 5) : '10:00');
+        const editShiftEnd = memberToEdit.shift_end ? memberToEdit.shift_end.slice(0, 5) : (custom.shift_end ? custom.shift_end.slice(0, 5) : '19:00');
+        setShiftStart(editShiftStart);
+        setShiftEnd(editShiftEnd);
+
+        const editDailyRate = memberToEdit.daily_rate ? String(memberToEdit.daily_rate) : (custom.daily_rate ? String(custom.daily_rate) : '');
+        const editMonthlySalary = memberToEdit.monthly_salary ? String(memberToEdit.monthly_salary) : (custom.monthly_salary ? String(custom.monthly_salary) : '');
+        setDailyRate(editDailyRate);
+        setMonthlySalary(editMonthlySalary);
+
+        const editWeeklyOffs = Array.isArray(memberToEdit.weekly_offs) ? memberToEdit.weekly_offs : (Array.isArray(custom.weekly_offs) ? custom.weekly_offs : ['Sun']);
+        setWeeklyOffs(editWeeklyOffs);
         setCompressedSizeKb(null);
       } else {
         // Reset to clean defaults
@@ -272,7 +292,20 @@ export default function AddTeamMemberModal({
       // Ensure a valid non-empty string is provided if database still enforces NOT NULL constraint on email
       const safeEmail = email.trim() || (memberToEdit?.email && !memberToEdit.email.includes('@internal.') ? memberToEdit.email : `staff_${Date.now()}_${Math.random().toString(36).slice(2, 7)}@internal.studiocore.in`);
 
-      const payload = {
+      const customDataObj = {
+        latitude: Number(latitude) || 19.0596,
+        longitude: Number(longitude) || 72.8295,
+        radius_meters: Number(radiusMeters) || 150,
+        location_name: locationName.trim() || 'Studio Main Office',
+        shift_start: shiftStart || '10:00:00',
+        shift_end: shiftEnd || '19:00:00',
+        weekly_offs: weeklyOffs,
+        daily_rate: parseFloat(dailyRate) || 0,
+        monthly_salary: parseFloat(monthlySalary) || 0,
+        whatsapp_number: whatsappNumber.trim() || phoneNumber.trim()
+      };
+
+      const payload: Record<string, any> = {
         user_id: workspaceId,
         workspace_id: workspaceId,
         name: name.trim(),
@@ -290,30 +323,48 @@ export default function AddTeamMemberModal({
         weekly_offs: weeklyOffs,
         daily_rate: parseFloat(dailyRate) || 0,
         monthly_salary: parseFloat(monthlySalary) || 0,
+        custom_data: customDataObj,
+        notes: JSON.stringify(customDataObj),
         is_active: true,
         active_status: true,
         updated_at: new Date().toISOString()
       };
 
       let savedMember: FWTeamMember | null = null;
+      let currentPayload = { ...payload };
 
       if (isEditMode && memberToEdit?.id) {
-        // UPDATE EXISTING MEMBER
-        const { data, error: updateErr } = await supabase
-          .from('fw_team_members')
-          .update(payload)
-          .eq('id', memberToEdit.id)
-          .select('*')
-          .single();
+        // UPDATE EXISTING MEMBER WITH RETRY
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const res = await supabase
+            .from('fw_team_members')
+            .update(currentPayload)
+            .eq('id', memberToEdit.id)
+            .select('*')
+            .single();
 
-        if (updateErr) {
-          // Fallback update without new schema columns if migration pending
+          if (!res.error) {
+            savedMember = res.data;
+            break;
+          }
+
+          const errMsg = res.error.message || '';
+          const match = errMsg.match(/Could not find the '([^']+)' column/i) || errMsg.match(/column "([^"]+)" of relation/i);
+          if (match && match[1]) {
+            delete currentPayload[match[1]];
+          } else {
+            break;
+          }
+        }
+
+        if (!savedMember) {
           const fallbackPayload = {
             name: name.trim(),
             primary_role: selectedRole,
             phone_number: phoneNumber.trim(),
             email: safeEmail,
             avatar_url: avatarUrl || null,
+            notes: JSON.stringify(customDataObj),
             updated_at: new Date().toISOString()
           };
           const { data: fbData, error: fbErr } = await supabase
@@ -324,18 +375,31 @@ export default function AddTeamMemberModal({
             .single();
           if (fbErr) throw fbErr;
           savedMember = fbData;
-        } else {
-          savedMember = data;
         }
       } else {
-        // INSERT NEW MEMBER
-        const { data, error: insertErr } = await supabase
-          .from('fw_team_members')
-          .insert([{ ...payload, created_at: new Date().toISOString() }])
-          .select('*')
-          .single();
+        // INSERT NEW MEMBER WITH RETRY
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const res = await supabase
+            .from('fw_team_members')
+            .insert([{ ...currentPayload, created_at: new Date().toISOString() }])
+            .select('*')
+            .single();
 
-        if (insertErr) {
+          if (!res.error) {
+            savedMember = res.data;
+            break;
+          }
+
+          const errMsg = res.error.message || '';
+          const match = errMsg.match(/Could not find the '([^']+)' column/i) || errMsg.match(/column "([^"]+)" of relation/i);
+          if (match && match[1]) {
+            delete currentPayload[match[1]];
+          } else {
+            break;
+          }
+        }
+
+        if (!savedMember) {
           const fallbackInsert = {
             user_id: workspaceId,
             name: name.trim(),
@@ -343,6 +407,7 @@ export default function AddTeamMemberModal({
             phone_number: phoneNumber.trim(),
             email: safeEmail,
             avatar_url: avatarUrl || null,
+            notes: JSON.stringify(customDataObj),
             created_at: new Date().toISOString()
           };
           const { data: fbData, error: fbErr } = await supabase
@@ -352,8 +417,6 @@ export default function AddTeamMemberModal({
             .single();
           if (fbErr) throw fbErr;
           savedMember = fbData;
-        } else {
-          savedMember = data;
         }
 
         // Generate personalized mobile attendance token

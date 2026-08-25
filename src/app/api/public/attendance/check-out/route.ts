@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { calculateHaversineDistanceMeters } from '@/lib/attendance/geo-fence';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { token, lat, lng, accuracy, photoBase64, address } = body;
+    const { token, lat, lng, photoBase64, address } = body;
 
     if (!token || !token.trim()) {
-      return NextResponse.json({ error: 'Token is required' }, { status: 400 });
+      return NextResponse.json({ error: 'Attendance token is required' }, { status: 400 });
     }
 
     // 1. Resolve member link
@@ -18,7 +19,7 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     if (linkErr || !link || !link.is_active) {
-      return NextResponse.json({ error: 'Invalid or expired token' }, { status: 403 });
+      return NextResponse.json({ error: 'Invalid or expired attendance link' }, { status: 404 });
     }
 
     const todayDate = new Date().toISOString().split('T')[0];
@@ -32,48 +33,58 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     if (recErr || !record || !record.check_in_time) {
-      return NextResponse.json({ error: 'No active check-in found for today' }, { status: 404 });
+      return NextResponse.json({ error: 'No active check-in record found for today' }, { status: 400 });
     }
 
     if (record.check_out_time) {
-      return NextResponse.json({ error: 'Already checked out for today', record }, { status: 409 });
+      return NextResponse.json({
+        error: 'Already clocked-out today',
+        record
+      }, { status: 400 });
     }
 
-    // 3. Close open break if any
-    const nowTime = new Date();
-    await supabaseAdmin
+    // 3. Close any open break if active
+    const { data: openBreak } = await supabaseAdmin
       .from('attendance_breaks')
-      .update({ break_end: nowTime.toISOString() })
+      .select('*')
       .eq('attendance_record_id', record.id)
-      .is('break_end', null);
+      .is('break_end', null)
+      .maybeSingle();
 
-    // 4. Calculate total break duration in minutes
-    const { data: breaks } = await supabaseAdmin
+    const nowTime = new Date();
+
+    if (openBreak) {
+      const bStart = new Date(openBreak.break_start).getTime();
+      const bEnd = nowTime.getTime();
+      const bDuration = Math.max(1, Math.round((bEnd - bStart) / (1000 * 60)));
+
+      await supabaseAdmin
+        .from('attendance_breaks')
+        .update({
+          break_end: nowTime.toISOString(),
+          duration_minutes: bDuration,
+          updated_at: nowTime.toISOString()
+        })
+        .eq('id', openBreak.id);
+    }
+
+    // 4. Calculate Total Break / Paused Duration
+    const { data: allBreaks } = await supabaseAdmin
       .from('attendance_breaks')
-      .select('break_start, break_end, duration_minutes')
+      .select('duration_minutes')
       .eq('attendance_record_id', record.id);
 
-    let totalBreakMinutes = 0;
-    if (breaks) {
-      breaks.forEach(b => {
-        if (b.break_start && b.break_end) {
-          const bStart = new Date(b.break_start).getTime();
-          const bEnd = new Date(b.break_end).getTime();
-          const diffMin = Math.max(0, Math.round((bEnd - bStart) / 60000));
-          totalBreakMinutes += diffMin;
-        }
-      });
-    }
+    const totalBreakMinutes = (allBreaks || []).reduce((acc, b) => acc + (b.duration_minutes || 0), 0);
 
-    // 5. Calculate total gross work time and net work time
-    const checkInMs = new Date(record.check_in_time).getTime();
-    const checkOutMs = nowTime.getTime();
-    const grossMinutes = Math.max(0, Math.round((checkOutMs - checkInMs) / 60000));
-    const netWorkMinutes = Math.max(0, grossMinutes - totalBreakMinutes);
+    // 5. Calculate Total Active Work Duration
+    const inTime = new Date(record.check_in_time).getTime();
+    const outTime = nowTime.getTime();
+    const grossWorkMinutes = Math.max(1, Math.round((outTime - inTime) / (1000 * 60)));
+    const netWorkMinutes = Math.max(1, grossWorkMinutes - totalBreakMinutes);
 
-    // Automated Half Day Check: If total working minutes < 240 mins (4 hours)
+    // If net work is less than 4 hours (240 min) and wasn't late, mark as half-day
     let finalStatus = record.status;
-    if (netWorkMinutes < 240) {
+    if (netWorkMinutes < 240 && finalStatus === 'present') {
       finalStatus = 'half_day';
     }
 
@@ -81,10 +92,10 @@ export async function POST(request: NextRequest) {
     const overtimeThreshold = 540;
     const overtimeMinutes = netWorkMinutes > overtimeThreshold ? netWorkMinutes - overtimeThreshold : 0;
 
-    // Fast Check-Out Address
+    // Check-Out Address
     const punchOutAddress = address || (lat && lng ? `Lat: ${Number(lat).toFixed(4)}, Lng: ${Number(lng).toFixed(4)}` : 'Studio Venue');
 
-    // Persistent Check-Out Photo Upload to Supabase Storage
+    // Check-Out Photo Upload to Supabase Storage
     let photoPath: string | null = null;
     if (photoBase64 && photoBase64.includes('base64,')) {
       try {
@@ -122,11 +133,12 @@ export async function POST(request: NextRequest) {
     const updatedDeviceInfo = {
       ...(record.device_info || {}),
       check_out_ist: formattedIstTime,
-      check_out_address: punchOutAddress
+      check_out_address: punchOutAddress,
+      selfie_out_url: photoPath || photoBase64
     };
 
-    // 6. Update Record
-    const updatePayload = {
+    // 6. Resilient Record Update with Retry Loop
+    const updatePayload: Record<string, any> = {
       status: finalStatus,
       check_out_time: nowTime.toISOString(),
       check_out_lat: lat ? Number(lat) : null,
@@ -144,14 +156,55 @@ export async function POST(request: NextRequest) {
       updated_at: nowTime.toISOString()
     };
 
-    const { data: updatedRecord, error: updErr } = await supabaseAdmin
-      .from('attendance_records')
-      .update(updatePayload)
-      .eq('id', record.id)
-      .select('*')
-      .single();
+    let updatedRecord = null;
+    let currentPayload = { ...updatePayload };
 
-    if (updErr) throw updErr;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const res = await supabaseAdmin
+        .from('attendance_records')
+        .update(currentPayload)
+        .eq('id', record.id)
+        .select('*')
+        .single();
+
+      if (!res.error) {
+        updatedRecord = res.data;
+        break;
+      }
+
+      const errMsg = res.error.message || '';
+      const match = errMsg.match(/Could not find the '([^']+)' column/i) || errMsg.match(/column "([^"]+)" of relation/i);
+      if (match && match[1]) {
+        const missingCol = match[1];
+        delete currentPayload[missingCol];
+      } else {
+        break;
+      }
+    }
+
+    if (!updatedRecord) {
+      const minimalPayload = {
+        status: finalStatus,
+        check_out_time: nowTime.toISOString(),
+        check_out_lat: lat ? Number(lat) : null,
+        check_out_lng: lng ? Number(lng) : null,
+        check_out_photo_path: photoPath || photoBase64,
+        work_duration_minutes: netWorkMinutes,
+        break_duration_minutes: totalBreakMinutes,
+        notes: updatedNotes,
+        updated_at: nowTime.toISOString()
+      };
+
+      const finalRes = await supabaseAdmin
+        .from('attendance_records')
+        .update(minimalPayload)
+        .eq('id', record.id)
+        .select('*')
+        .single();
+
+      if (finalRes.error) throw finalRes.error;
+      updatedRecord = finalRes.data;
+    }
 
     const workHoursFormatted = `${Math.floor(netWorkMinutes / 60)}h ${netWorkMinutes % 60}m`;
 
@@ -160,9 +213,9 @@ export async function POST(request: NextRequest) {
       record: updatedRecord,
       status: finalStatus,
       workDurationMinutes: netWorkMinutes,
+      breakDurationMinutes: totalBreakMinutes,
       overtimeMinutes,
-      punchOutAddress,
-      message: `Checked out at ${formattedIstTime} IST (Total Work: ${workHoursFormatted})`
+      message: `Clocked out at ${formattedIstTime} IST (Worked: ${workHoursFormatted})`
     });
 
   } catch (err: any) {

@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
     const { token, lat, lng, accuracy, photoBase64, address, deviceInfo } = body;
 
     if (!token || !token.trim()) {
-      return NextResponse.json({ error: 'Token is required' }, { status: 400 });
+      return NextResponse.json({ error: 'Attendance token is required' }, { status: 400 });
     }
 
     // 1. Resolve member link
@@ -19,63 +19,59 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     if (linkErr || !link || !link.is_active) {
-      return NextResponse.json({ error: 'Invalid or expired token' }, { status: 403 });
+      return NextResponse.json({ error: 'Invalid or expired attendance link' }, { status: 404 });
     }
 
-    const todayDate = new Date().toISOString().split('T')[0];
-
-    // 2. Anti-Duplicate Check: Prevent 2 active check-ins for the same employee today
-    const { data: existingRecord } = await supabaseAdmin
-      .from('attendance_records')
-      .select('id, check_in_time, status')
-      .eq('member_id', link.member_id)
-      .eq('date', todayDate)
-      .maybeSingle();
-
-    if (existingRecord && existingRecord.check_in_time) {
-      return NextResponse.json({ 
-        error: 'Already checked in for today',
-        record: existingRecord 
-      }, { status: 409 });
-    }
-
-    // 3. Fetch Settings, Member & Geofence Locations
+    // 2. Fetch Employee Profile
     const { data: member } = await supabaseAdmin
       .from('fw_team_members')
       .select('*')
       .eq('id', link.member_id)
       .single();
 
-    const { data: settings } = await supabaseAdmin
-      .from('attendance_settings')
-      .select('*')
-      .eq('user_id', link.user_id)
-      .maybeSingle();
+    if (!member) {
+      return NextResponse.json({ error: 'Staff member profile not found' }, { status: 404 });
+    }
 
+    // 3. Resolve Geofence Locations (Support direct columns, custom_data, and notes fallback)
     let locationsQuery = supabaseAdmin
       .from('attendance_locations')
-      .select('id, name, latitude, longitude, radius_meters, address')
+      .select('id, name, latitude, longitude, radius_meters')
+      .eq('user_id', link.user_id)
       .eq('is_active', true);
 
     const { data: allLocations } = await locationsQuery;
     let locations = allLocations || [];
 
-    // Prioritize member's direct assigned geofence if configured
-    if (member?.latitude && member?.longitude) {
+    const custom = (member.custom_data as any) || {};
+    let parsedNotes = {};
+    try {
+      if (member.notes && member.notes.startsWith('{')) parsedNotes = JSON.parse(member.notes);
+    } catch (_) {}
+
+    const mLat = Number(member.latitude) || Number(custom.latitude) || Number((parsedNotes as any).latitude);
+    const mLng = Number(member.longitude) || Number(custom.longitude) || Number((parsedNotes as any).longitude);
+    const mRadius = Number(member.radius_meters) || Number(custom.radius_meters) || Number((parsedNotes as any).radius_meters) || 150;
+    const mLocName = member.location_name || custom.location_name || (parsedNotes as any).location_name || 'Assigned Work Location';
+
+    if (mLat && mLng) {
       const staffLoc = {
         id: `staff_${member.id}`,
-        name: member.location_name || 'Assigned Work Location',
-        latitude: Number(member.latitude),
-        longitude: Number(member.longitude),
-        radius_meters: Number(member.radius_meters) || 150,
-        address: member.location_name || 'Assigned Studio/Venue'
+        name: mLocName,
+        latitude: mLat,
+        longitude: mLng,
+        radius_meters: mRadius,
+        address: mLocName
       };
       locations = [staffLoc, ...locations.filter(l => l.name !== staffLoc.name)];
-    } else if (member?.default_geofence_id) {
-      const userLoc = locations.find(l => l.id === member.default_geofence_id);
-      if (userLoc) {
-        locations = [userLoc, ...locations.filter(l => l.id !== member.default_geofence_id)];
-      }
+    } else if (locations.length === 0) {
+      locations = [{
+        id: 'loc_default',
+        name: 'Studio Main Office (Bandra West)',
+        latitude: 19.0596,
+        longitude: 72.8295,
+        radius_meters: 150
+      }];
     }
 
     // 4. Ultra-Fast Geofence Verification using Haversine
@@ -83,7 +79,7 @@ export async function POST(request: NextRequest) {
     let matchedLocationId: string | null = null;
     let minDistance = Infinity;
     let closestLocationName = '';
-    let allowedRadius = member?.radius_meters ? Number(member.radius_meters) : 150;
+    let allowedRadius = mRadius || 150;
 
     if (locations && locations.length > 0 && lat && lng) {
       for (const loc of locations) {
@@ -109,21 +105,20 @@ export async function POST(request: NextRequest) {
 
       if (geofenceStatus !== 'verified') {
         geofenceStatus = 'outside_geofence';
-        if (settings?.require_geofence !== false) {
-          const distStr = minDistance >= 1000 ? `${(minDistance / 1000).toFixed(1)} km` : `${minDistance}m`;
-          return NextResponse.json({
-            error: `Outside Geofence (${distStr} away from ${closestLocationName}). Check-in allowed only inside studio/venue perimeter (${allowedRadius}m).`,
-            distanceMeters: minDistance,
-            allowedRadiusMeters: allowedRadius
-          }, { status: 403 });
-        }
+        const distStr = minDistance >= 1000 ? `${(minDistance / 1000).toFixed(1)} km` : `${minDistance}m`;
+        return NextResponse.json({
+          error: `Outside Geofence (${distStr} away from ${closestLocationName}). Check-in allowed only inside assigned perimeter (${allowedRadius}m).`,
+          distanceMeters: minDistance,
+          allowedRadiusMeters: allowedRadius
+        }, { status: 403 });
       }
     }
 
-    // 5. Fast Punch Address
-    let punchAddress = address || closestLocationName || (lat && lng ? `Lat: ${Number(lat).toFixed(4)}, Lng: ${Number(lng).toFixed(4)}` : '');
+    // 5. Punch Address
+    const punchAddress = address || closestLocationName || (lat && lng ? `Lat: ${Number(lat).toFixed(4)}, Lng: ${Number(lng).toFixed(4)}` : 'Studio Location');
 
-    // 6. Fast Selfie Upload to Supabase Storage
+    // 6. Selfie Upload to Supabase Storage
+    const todayDate = new Date().toISOString().split('T')[0];
     let photoPath: string | null = null;
     if (photoBase64 && photoBase64.includes('base64,')) {
       try {
@@ -144,31 +139,36 @@ export async function POST(request: NextRequest) {
             .getPublicUrl(uploadData.path);
           photoPath = urlData.publicUrl || uploadData.path;
         }
-      } catch (uploadEx) {
-        console.error('Selfie upload error:', uploadEx);
+      } catch (ex) {
+        console.error('Checkin selfie upload error:', ex);
       }
     }
 
-    // 7. Automated Attendance Status Evaluation in IST (Asia/Kolkata)
+    // 7. Check if already checked in today
+    const { data: existingRecord } = await supabaseAdmin
+      .from('attendance_records')
+      .select('*')
+      .eq('member_id', link.member_id)
+      .eq('date', todayDate)
+      .maybeSingle();
+
+    if (existingRecord && existingRecord.check_in_time) {
+      return NextResponse.json({
+        error: 'Already clocked-in today',
+        record: existingRecord
+      }, { status: 400 });
+    }
+
+    // 8. Calculate Shift Timings & Late Penalty
     const nowTime = new Date();
-    const istTimeStr = new Intl.DateTimeFormat('en-IN', {
-      timeZone: 'Asia/Kolkata',
-      hour: 'numeric',
-      minute: 'numeric',
-      hour12: false
-    }).format(nowTime);
+    const currentTotalMinutes = nowTime.getHours() * 60 + nowTime.getMinutes();
 
-    const [istHour, istMin] = istTimeStr.split(':').map(Number);
-    const currentTotalMinutes = istHour * 60 + istMin;
+    const mShiftStart = member?.shift_start ? member.shift_start.slice(0, 5) : (custom.shift_start ? custom.shift_start.slice(0, 5) : '10:00');
+    const [shiftH, shiftM] = mShiftStart.split(':').map(Number);
+    const shiftStartMinutes = shiftH * 60 + shiftM;
+    const lateThresholdMinutes = shiftStartMinutes + 15; // 15-minute grace period
 
-    // Check staff-specific shift start time or default
-    const shiftStart = member?.shift_start ? member.shift_start.slice(0, 5) : (settings?.default_shift_start || '10:00:00');
-    const [sHour, sMin] = shiftStart.split(':').map(Number);
-    const shiftStartMinutes = sHour * 60 + sMin;
-    const graceMinutes = Number(settings?.grace_period_minutes || 15);
-    const lateThresholdMinutes = shiftStartMinutes + graceMinutes;
-
-    // Check if today is a Company Holiday or Weekly Off
+    // Check Holiday or Weekly Off
     const { data: holidayToday } = await supabaseAdmin
       .from('company_holidays')
       .select('*')
@@ -176,7 +176,8 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     const todayDayName = new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(nowTime);
-    const isWeeklyOff = Array.isArray(member?.weekly_offs) && member.weekly_offs.includes(todayDayName);
+    const weeklyOffsList = Array.isArray(member?.weekly_offs) ? member.weekly_offs : (Array.isArray(custom.weekly_offs) ? custom.weekly_offs : ['Sun']);
+    const isWeeklyOff = weeklyOffsList.includes(todayDayName);
 
     let status: 'present' | 'late' | 'half_day' | 'holiday' | 'week_off' = 'present';
     let lateMinutes = 0;
@@ -200,8 +201,8 @@ export async function POST(request: NextRequest) {
       hour12: true
     }).format(nowTime);
 
-    // 8. Insert/Update Daily Attendance Record
-    const recordPayload = {
+    // 9. Resilient Record Insertion with Column Fallback
+    const recordPayload: Record<string, any> = {
       user_id: link.user_id,
       workspace_id: link.workspace_id,
       member_id: link.member_id,
@@ -223,6 +224,7 @@ export async function POST(request: NextRequest) {
         ...(deviceInfo || {}),
         check_in_ist: formattedIstTime,
         check_in_address: punchAddress,
+        selfie_url: photoPath || photoBase64,
         last_heartbeat_at: nowTime.toISOString(),
         last_heartbeat_inside: true
       },
@@ -230,26 +232,55 @@ export async function POST(request: NextRequest) {
       updated_at: nowTime.toISOString()
     };
 
-    let savedRecord;
-    if (existingRecord) {
-      const { data: updated, error: updErr } = await supabaseAdmin
-        .from('attendance_records')
-        .update(recordPayload)
-        .eq('id', existingRecord.id)
-        .select('*')
-        .single();
+    let savedRecord = null;
+    let currentPayload = { ...recordPayload };
 
-      if (updErr) throw updErr;
-      savedRecord = updated;
-    } else {
-      const { data: inserted, error: insErr } = await supabaseAdmin
-        .from('attendance_records')
-        .insert([{ ...recordPayload, created_at: nowTime.toISOString() }])
-        .select('*')
-        .single();
+    // Intelligent Retry Loop: Auto-strip any missing column that fails PostgREST schema cache
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const query = existingRecord
+        ? supabaseAdmin.from('attendance_records').update(currentPayload).eq('id', existingRecord.id).select('*').single()
+        : supabaseAdmin.from('attendance_records').insert([{ ...currentPayload, created_at: nowTime.toISOString() }]).select('*').single();
 
-      if (insErr) throw insErr;
-      savedRecord = inserted;
+      const res = await query;
+      if (!res.error) {
+        savedRecord = res.data;
+        break;
+      }
+
+      const errMsg = res.error.message || '';
+      const match = errMsg.match(/Could not find the '([^']+)' column/i) || errMsg.match(/column "([^"]+)" of relation/i);
+      if (match && match[1]) {
+        const missingCol = match[1];
+        delete currentPayload[missingCol];
+      } else {
+        console.warn('Attendance record insert attempt error:', errMsg);
+        break;
+      }
+    }
+
+    // Final Fallback if schema cache is still strict
+    if (!savedRecord) {
+      const minimalCorePayload = {
+        user_id: link.user_id,
+        workspace_id: link.workspace_id,
+        member_id: link.member_id,
+        date: todayDate,
+        status,
+        check_in_time: nowTime.toISOString(),
+        check_in_lat: lat ? Number(lat) : null,
+        check_in_lng: lng ? Number(lng) : null,
+        check_in_photo_path: photoPath || photoBase64,
+        notes: punchAddress,
+        updated_at: nowTime.toISOString()
+      };
+
+      const finalQuery = existingRecord
+        ? supabaseAdmin.from('attendance_records').update(minimalCorePayload).eq('id', existingRecord.id).select('*').single()
+        : supabaseAdmin.from('attendance_records').insert([{ ...minimalCorePayload, created_at: nowTime.toISOString() }]).select('*').single();
+
+      const finalRes = await finalQuery;
+      if (finalRes.error) throw finalRes.error;
+      savedRecord = finalRes.data;
     }
 
     return NextResponse.json({

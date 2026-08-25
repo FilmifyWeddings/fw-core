@@ -351,13 +351,19 @@ export default function GooglePlacesGeofenceMap({
     }
   }, [radiusMeters]);
 
-  // Update Coordinates when props change externally
+  // Update Coordinates when props change externally (e.g. memberToEdit loaded or coordinates changed)
   useEffect(() => {
-    if (leafletMarkerRef.current && leafletMapRef.current) {
-      leafletMarkerRef.current.setLatLng([latitude, longitude]);
+    if (latitude && longitude) {
+      if (leafletMarkerRef.current) leafletMarkerRef.current.setLatLng([latitude, longitude]);
       if (leafletCircleRef.current) leafletCircleRef.current.setLatLng([latitude, longitude]);
+      if (leafletMapRef.current) {
+        leafletMapRef.current.setView([latitude, longitude], 16);
+      }
     }
-  }, [latitude, longitude]);
+    if (locationName) {
+      setSearchQuery(locationName);
+    }
+  }, [latitude, longitude, locationName]);
 
   return (
     <div className={`relative rounded-2xl overflow-hidden border border-[#EAE5DA] shadow-xs bg-[#1A1816] ${className}`}>

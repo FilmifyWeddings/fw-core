@@ -122,15 +122,26 @@ export async function GET(request: NextRequest) {
 
     locations = allLocations || [];
 
-    // Prioritize member's direct assigned geofence if configured
-    if (member.latitude && member.longitude) {
+    // Prioritize member's direct assigned geofence (from columns, custom_data, or notes JSON)
+    const custom = (member.custom_data as any) || {};
+    let parsedNotes = {};
+    try {
+      if (member.notes && member.notes.startsWith('{')) parsedNotes = JSON.parse(member.notes);
+    } catch (_) {}
+
+    const mLat = Number(member.latitude) || Number(custom.latitude) || Number((parsedNotes as any).latitude);
+    const mLng = Number(member.longitude) || Number(custom.longitude) || Number((parsedNotes as any).longitude);
+    const mRadius = Number(member.radius_meters) || Number(custom.radius_meters) || Number((parsedNotes as any).radius_meters) || 150;
+    const mLocName = member.location_name || custom.location_name || (parsedNotes as any).location_name || 'Assigned Studio/Office';
+
+    if (mLat && mLng) {
       const staffLoc = {
         id: `staff_${member.id}`,
-        name: member.location_name || 'Assigned Work Location',
-        latitude: Number(member.latitude),
-        longitude: Number(member.longitude),
-        radius_meters: Number(member.radius_meters) || 150,
-        address: member.location_name || 'Assigned Studio/Office'
+        name: mLocName,
+        latitude: mLat,
+        longitude: mLng,
+        radius_meters: mRadius,
+        address: mLocName
       };
       locations = [staffLoc, ...locations.filter(l => l.name !== staffLoc.name)];
     } else if (member.default_geofence_id) {
@@ -138,6 +149,17 @@ export async function GET(request: NextRequest) {
       if (userLoc) {
         locations = [userLoc, ...locations.filter(l => l.id !== member.default_geofence_id)];
       }
+    }
+
+    if (locations.length === 0) {
+      locations = [{
+        id: 'loc_default',
+        name: 'Studio Main Office (Bandra West)',
+        latitude: 19.0596,
+        longitude: 72.8295,
+        radius_meters: 150,
+        address: 'Studio Main Office, Bandra West, Mumbai'
+      }];
     }
 
     // 7. Check if today is a Company Holiday or Weekly Off

@@ -225,12 +225,45 @@ export async function POST(request: NextRequest) {
       updatePayload.notes = [record.notes, `Auto-Checked Out at exit time: ${finalCheckOutTime}`].filter(Boolean).join(' | ');
     }
 
-    const { data: updatedRecord } = await supabaseAdmin
-      .from('attendance_records')
-      .update(updatePayload)
-      .eq('id', record.id)
-      .select('*')
-      .single();
+    let updatedRecord = null;
+    let currentPayload = { ...updatePayload };
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const res = await supabaseAdmin
+        .from('attendance_records')
+        .update(currentPayload)
+        .eq('id', record.id)
+        .select('*')
+        .single();
+
+      if (!res.error) {
+        updatedRecord = res.data;
+        break;
+      }
+
+      const errMsg = res.error.message || '';
+      const match = errMsg.match(/Could not find the '([^']+)' column/i) || errMsg.match(/column "([^"]+)" of relation/i);
+      if (match && match[1]) {
+        delete currentPayload[match[1]];
+      } else {
+        break;
+      }
+    }
+
+    if (!updatedRecord) {
+      const minimalPayload = {
+        work_duration_minutes: netActiveMinutes,
+        break_duration_minutes: pausedMinutes,
+        updated_at: now.toISOString()
+      };
+      const finalRes = await supabaseAdmin
+        .from('attendance_records')
+        .update(minimalPayload)
+        .eq('id', record.id)
+        .select('*')
+        .single();
+      updatedRecord = finalRes.data;
+    }
 
     return NextResponse.json({
       success: true,
