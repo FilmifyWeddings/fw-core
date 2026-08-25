@@ -157,16 +157,15 @@ export default function AddTeamMemberModal({
 
   // Handle Dynamic Role Inline Creation
   const handleCreateCustomRole = async () => {
-    if (!newRoleInput.trim()) return;
+    const roleTrimmed = newRoleInput.trim();
+    if (!roleTrimmed) return;
     setSavingRole(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const workspaceId = session?.user?.id || 'ws_demo';
 
-      const roleTrimmed = newRoleInput.trim();
-
       if (workspaceId !== 'ws_demo') {
-        const { data: newRole } = await supabase
+        const { data: newRole, error: insertErr } = await supabase
           .from('staff_roles')
           .insert([{
             user_id: workspaceId,
@@ -177,7 +176,21 @@ export default function AddTeamMemberModal({
           .maybeSingle();
 
         if (newRole) {
-          setDbRoles(prev => [...prev, newRole]);
+          setDbRoles(prev => {
+            const exists = prev.some(r => r.role_name.toLowerCase() === roleTrimmed.toLowerCase());
+            return exists ? prev : [...prev, newRole];
+          });
+        } else if (insertErr) {
+          // If already exists or constraint, fetch existing
+          const { data: existing } = await supabase
+            .from('staff_roles')
+            .select('*')
+            .eq('workspace_id', workspaceId)
+            .eq('role_name', roleTrimmed)
+            .maybeSingle();
+          if (existing) {
+            setDbRoles(prev => prev.some(r => r.id === existing.id) ? prev : [...prev, existing]);
+          }
         }
       } else {
         setDbRoles(prev => [...prev, { id: `role_${Date.now()}`, workspace_id: 'ws_demo', role_name: roleTrimmed }]);
@@ -188,6 +201,9 @@ export default function AddTeamMemberModal({
       setIsAddingNewRole(false);
     } catch (e) {
       console.error('Error creating role:', e);
+      // Fallback selection anyway
+      setSelectedRole(roleTrimmed);
+      setIsAddingNewRole(false);
     } finally {
       setSavingRole(false);
     }
@@ -547,6 +563,12 @@ export default function AddTeamMemberModal({
                       placeholder="e.g. Lead Colorist, Drone Director, Album Stylist..."
                       value={newRoleInput}
                       onChange={(e) => setNewRoleInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleCreateCustomRole();
+                        }
+                      }}
                       className="flex-1 px-3 py-2 bg-white border border-amber-200 rounded-lg font-bold text-slate-900 text-xs focus:outline-none"
                     />
                     <button
@@ -590,48 +612,25 @@ export default function AddTeamMemberModal({
             </div>
 
             {/* ── 3. ASSIGNED GEOFENCE LOCATION (GOOGLE PLACES + SATELLITE MAP) ── */}
-            <div className="p-5 bg-white rounded-2xl border border-[#EAE5DA] shadow-2xs space-y-4">
+            <div className="p-5 bg-white rounded-2xl border border-[#EAE5DA] shadow-2xs space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
                 <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
                   <MapPin className="w-4 h-4 text-amber-600" />
-                  Assigned Geofence Location & Perimeter
+                  Assigned Geofence Location &amp; Perimeter
                 </h4>
                 <span className="text-[11px] font-black text-amber-900 bg-amber-100 border border-amber-200 px-2.5 py-0.5 rounded-full">
                   Allowed Radius: {radiusMeters} Meters
                 </span>
               </div>
 
-              {/* Radius Slider Bar */}
-              <div className="space-y-1.5 p-3.5 bg-amber-50/70 border border-amber-200/80 rounded-2xl">
-                <div className="flex items-center justify-between text-xs font-bold text-slate-700">
-                  <span>Geofence Boundary Radius:</span>
-                  <span className="font-black text-amber-900 font-mono text-sm">{radiusMeters}m</span>
-                </div>
-                <input
-                  type="range"
-                  min={30}
-                  max={600}
-                  step={10}
-                  value={radiusMeters}
-                  onChange={(e) => setRadiusMeters(Number(e.target.value))}
-                  className="w-full accent-amber-600 cursor-pointer"
-                />
-                <div className="flex justify-between text-[10px] text-slate-400 font-bold">
-                  <span>50m (Tight Studio)</span>
-                  <span>150m (Standard Office)</span>
-                  <span>300m (Resort / Hotel)</span>
-                  <span>500m (Wide Campus)</span>
-                </div>
-              </div>
-
-              {/* Embedded Satellite Map */}
+              {/* Embedded Satellite Map with Google Places Autocomplete & Radius Slider */}
               <div className="rounded-2xl overflow-hidden border border-[#EAE5DA]">
                 <GooglePlacesGeofenceMap
                   latitude={latitude}
                   longitude={longitude}
                   radiusMeters={radiusMeters}
                   locationName={locationName}
-                  height="340px"
+                  height="360px"
                   onCoordinatesChange={(lat, lng, addr, placeName) => {
                     setLatitude(lat);
                     setLongitude(lng);
@@ -642,38 +641,15 @@ export default function AddTeamMemberModal({
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Location / Venue Name</label>
-                  <input
-                    type="text"
-                    value={locationName}
-                    onChange={(e) => setLocationName(e.target.value)}
-                    className="w-full px-3 py-2 bg-[#FAF9F5] border border-[#EAE5DA] rounded-xl font-bold text-slate-900"
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <div className="flex-1">
-                    <label className="font-bold text-slate-700 block mb-1">Latitude</label>
-                    <input
-                      type="number"
-                      step="any"
-                      value={latitude}
-                      onChange={(e) => setLatitude(parseFloat(e.target.value) || 0)}
-                      className="w-full px-3 py-2 bg-[#FAF9F5] border border-[#EAE5DA] rounded-xl font-mono text-xs font-bold text-slate-900"
-                    />
-                  </div>
-                  <div className="flex-1">
-                    <label className="font-bold text-slate-700 block mb-1">Longitude</label>
-                    <input
-                      type="number"
-                      step="any"
-                      value={longitude}
-                      onChange={(e) => setLongitude(parseFloat(e.target.value) || 0)}
-                      className="w-full px-3 py-2 bg-[#FAF9F5] border border-[#EAE5DA] rounded-xl font-mono text-xs font-bold text-slate-900"
-                    />
-                  </div>
-                </div>
+              <div>
+                <label className="font-bold text-slate-700 text-xs block mb-1">Selected Location / Venue Address</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Studio Main Office, Bandra West, Mumbai"
+                  value={locationName}
+                  onChange={(e) => setLocationName(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-[#FAF9F5] border border-[#EAE5DA] rounded-xl font-bold text-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                />
               </div>
             </div>
 
