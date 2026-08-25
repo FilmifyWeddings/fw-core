@@ -1,44 +1,235 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, UserPlus, Send, Sparkles, MessageCircle, MapPin, Clock, DollarSign, RefreshCw } from 'lucide-react';
+import { 
+  X, UserPlus, Send, Sparkles, MessageCircle, MapPin, Clock, 
+  DollarSign, RefreshCw, Upload, Camera, Check, Plus, Edit2, 
+  Trash2, ShieldCheck, Map, Layers, Sun, CheckCircle2, AlertCircle
+} from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import type { AttendanceLocation, AttendanceShift } from '@/types';
+import type { FWTeamMember, AttendanceLocation, AttendanceShift, StaffRole } from '@/types';
+import GooglePlacesGeofenceMap from '@/components/attendance/GooglePlacesGeofenceMap';
+import { compressStaffAvatar, uploadStaffAvatar } from '@/lib/attendance/avatar-compression';
 
 interface AddTeamMemberModalProps {
   isOpen: boolean;
   onClose: () => void;
-  locations: AttendanceLocation[];
-  shifts: AttendanceShift[];
-  onMemberCreated?: () => void;
+  memberToEdit?: FWTeamMember | null;
+  locations?: AttendanceLocation[];
+  shifts?: AttendanceShift[];
+  onMemberCreated?: (member?: FWTeamMember) => void;
 }
+
+const DEFAULT_ROLES = [
+  'Senior Cinematographer',
+  'Lead Photographer',
+  'Traditional Videographer',
+  'Senior Video Editor',
+  'Album & Layout Designer',
+  'Drone Pilot',
+  'Colorist & Post Supervisor',
+  'Studio Production Manager',
+  'Lighting & Sound Tech',
+  'Studio Assistant'
+];
+
+const DAYS_OF_WEEK = [
+  { key: 'Sun', label: 'Sun' },
+  { key: 'Mon', label: 'Mon' },
+  { key: 'Tue', label: 'Tue' },
+  { key: 'Wed', label: 'Wed' },
+  { key: 'Thu', label: 'Thu' },
+  { key: 'Fri', label: 'Fri' },
+  { key: 'Sat', label: 'Sat' },
+];
 
 export default function AddTeamMemberModal({
   isOpen,
   onClose,
-  locations,
-  shifts,
+  memberToEdit,
+  locations = [],
+  shifts = [],
   onMemberCreated
 }: AddTeamMemberModalProps) {
+  const isEditMode = !!memberToEdit;
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({
-    name: '',
-    primary_role: 'Senior Cinematographer',
-    phone_number: '',
-    email: '',
-    shift_id: shifts[0]?.id || '',
-    default_geofence_id: locations[0]?.id || '',
-    daily_rate: '3500',
-    base_salary: '45000'
-  });
+  const [compressing, setCompressing] = useState(false);
+  const [compressedSizeKb, setCompressedSizeKb] = useState<number | null>(null);
 
-  if (!isOpen) return null;
+  // Form State
+  const [name, setName] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [whatsappNumber, setWhatsappNumber] = useState('');
+  const [email, setEmail] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState('');
+  const [selectedRole, setSelectedRole] = useState('Senior Cinematographer');
 
+  // Custom Dynamic Roles
+  const [dbRoles, setDbRoles] = useState<StaffRole[]>([]);
+  const [isAddingNewRole, setIsAddingNewRole] = useState(false);
+  const [newRoleInput, setNewRoleInput] = useState('');
+  const [savingRole, setSavingRole] = useState(false);
+
+  // Geofence & Location
+  const [latitude, setLatitude] = useState(19.0596);
+  const [longitude, setLongitude] = useState(72.8295);
+  const [radiusMeters, setRadiusMeters] = useState(150);
+  const [locationName, setLocationName] = useState('Studio Main Office');
+
+  // Work Timings & Compensation
+  const [shiftStart, setShiftStart] = useState('10:00');
+  const [shiftEnd, setShiftEnd] = useState('19:00');
+  const [dailyRate, setDailyRate] = useState('');
+  const [monthlySalary, setMonthlySalary] = useState('');
+
+  // Weekly Offs Multi-Select
+  const [weeklyOffs, setWeeklyOffs] = useState<string[]>(['Sun']);
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Initialize or reset form on open / member change
+  useEffect(() => {
+    if (isOpen) {
+      fetchStaffRoles();
+
+      if (memberToEdit) {
+        setName(memberToEdit.name || '');
+        setPhoneNumber(memberToEdit.phone_number || '');
+        setWhatsappNumber(memberToEdit.whatsapp_number || memberToEdit.phone_number || '');
+        setEmail(memberToEdit.email || '');
+        setAvatarUrl(memberToEdit.avatar_url || '');
+        setSelectedRole(memberToEdit.primary_role || 'Senior Cinematographer');
+        setLatitude(Number(memberToEdit.latitude) || 19.0596);
+        setLongitude(Number(memberToEdit.longitude) || 72.8295);
+        setRadiusMeters(Number(memberToEdit.radius_meters) || 150);
+        setLocationName(memberToEdit.location_name || 'Studio Main Office');
+        setShiftStart(memberToEdit.shift_start ? memberToEdit.shift_start.slice(0, 5) : '10:00');
+        setShiftEnd(memberToEdit.shift_end ? memberToEdit.shift_end.slice(0, 5) : '19:00');
+        setDailyRate(memberToEdit.daily_rate ? String(memberToEdit.daily_rate) : '');
+        setMonthlySalary(memberToEdit.monthly_salary ? String(memberToEdit.monthly_salary) : '');
+        setWeeklyOffs(Array.isArray(memberToEdit.weekly_offs) ? memberToEdit.weekly_offs : ['Sun']);
+        setCompressedSizeKb(null);
+      } else {
+        // Reset to clean defaults
+        setName('');
+        setPhoneNumber('');
+        setWhatsappNumber('');
+        setEmail('');
+        setAvatarUrl('');
+        setSelectedRole(DEFAULT_ROLES[0]);
+        setLatitude(locations[0]?.latitude ? Number(locations[0].latitude) : 19.0596);
+        setLongitude(locations[0]?.longitude ? Number(locations[0].longitude) : 72.8295);
+        setRadiusMeters(locations[0]?.radius_meters ? Number(locations[0].radius_meters) : 150);
+        setLocationName(locations[0]?.name || 'Studio Main Office');
+        setShiftStart('10:00');
+        setShiftEnd('19:00');
+        setDailyRate('3500');
+        setMonthlySalary('45000');
+        setWeeklyOffs(['Sun']);
+        setCompressedSizeKb(null);
+      }
+    }
+  }, [isOpen, memberToEdit]);
+
+  // Fetch custom staff roles from Supabase
+  const fetchStaffRoles = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const workspaceId = session?.user?.id || 'ws_demo';
+
+      let query = supabase.from('staff_roles').select('*').order('role_name', { ascending: true });
+      if (workspaceId !== 'ws_demo') {
+        query = query.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
+      }
+
+      const { data } = await query;
+      if (data) setDbRoles(data);
+    } catch (e) {
+      console.warn('Error fetching staff roles:', e);
+    }
+  };
+
+  // Combine default roles with custom database roles
+  const allRolesList = Array.from(
+    new Set([...DEFAULT_ROLES, ...dbRoles.map(r => r.role_name)])
+  );
+
+  // Handle Dynamic Role Inline Creation
+  const handleCreateCustomRole = async () => {
+    if (!newRoleInput.trim()) return;
+    setSavingRole(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const workspaceId = session?.user?.id || 'ws_demo';
+
+      const roleTrimmed = newRoleInput.trim();
+
+      if (workspaceId !== 'ws_demo') {
+        const { data: newRole } = await supabase
+          .from('staff_roles')
+          .insert([{
+            user_id: workspaceId,
+            workspace_id: workspaceId,
+            role_name: roleTrimmed
+          }])
+          .select('*')
+          .maybeSingle();
+
+        if (newRole) {
+          setDbRoles(prev => [...prev, newRole]);
+        }
+      } else {
+        setDbRoles(prev => [...prev, { id: `role_${Date.now()}`, workspace_id: 'ws_demo', role_name: roleTrimmed }]);
+      }
+
+      setSelectedRole(roleTrimmed);
+      setNewRoleInput('');
+      setIsAddingNewRole(false);
+    } catch (e) {
+      console.error('Error creating role:', e);
+    } finally {
+      setSavingRole(false);
+    }
+  };
+
+  // Handle Client-Side Compressed Image Upload (50KB–80KB WebP)
+  const handleImageFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setCompressing(true);
+    try {
+      const compressed = await compressStaffAvatar(file, 400, 400);
+      setCompressedSizeKb(compressed.sizeKb);
+
+      // Upload to Supabase Storage or get base64
+      const uploadedUrl = await uploadStaffAvatar(file, name || 'staff_member');
+      setAvatarUrl(uploadedUrl);
+    } catch (err) {
+      console.error('Image compression error:', err);
+      alert('Failed to compress image. Please try another image.');
+    } finally {
+      setCompressing(false);
+    }
+  };
+
+  // Toggle Weekly Off Day Pill
+  const toggleWeeklyOff = (dayKey: string) => {
+    setWeeklyOffs(prev => {
+      if (prev.includes(dayKey)) {
+        return prev.length === 1 ? prev : prev.filter(d => d !== dayKey);
+      } else {
+        return [...prev, dayKey];
+      }
+    });
+  };
+
+  // Handle Form Submit (Save / Update to Supabase)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name.trim() || !form.phone_number.trim()) {
-      alert('Please provide full name and phone number.');
+    if (!name.trim() || !phoneNumber.trim()) {
+      alert('Please enter staff name and phone number.');
       return;
     }
 
@@ -47,214 +238,548 @@ export default function AddTeamMemberModal({
       const { data: { session } } = await supabase.auth.getSession();
       const workspaceId = session?.user?.id || 'ws_demo';
 
-      // 1. Insert into fw_team_members
-      const memberPayload = {
-        user_id: workspaceId,
-        name: form.name.trim(),
-        primary_role: form.primary_role,
-        phone_number: form.phone_number.trim(),
-        email: form.email.trim() || null,
-        default_geofence_id: form.default_geofence_id || null,
-        shift_id: form.shift_id || null,
-        daily_rate: parseFloat(form.daily_rate) || 0,
-        base_salary: parseFloat(form.base_salary) || 0,
-        created_at: new Date().toISOString()
-      };
-
-      const { data: member, error: mErr } = await supabase
-        .from('fw_team_members')
-        .insert([memberPayload])
-        .select('*')
-        .single();
-
-      if (mErr) {
-        // Retry insert without extended columns if schema strictness
-        const fallbackPayload = {
-          user_id: workspaceId,
-          name: form.name.trim(),
-          primary_role: form.primary_role,
-          phone_number: form.phone_number.trim(),
-          email: form.email.trim() || null,
-          created_at: new Date().toISOString()
-        };
-        const { data: fbMember, error: fbErr } = await supabase
-          .from('fw_team_members')
-          .insert([fallbackPayload])
-          .select('*')
-          .single();
-        if (fbErr) throw fbErr;
-      }
-
-      const memberId = member?.id;
-
-      // 2. Generate secure token & insert attendance_member_links
-      const secureToken = `att_${(memberId || 'emp').slice(0, 6)}_${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
-      await supabase.from('attendance_member_links').insert([{
+      const payload = {
         user_id: workspaceId,
         workspace_id: workspaceId,
-        member_id: memberId,
-        secure_token: secureToken,
+        name: name.trim(),
+        primary_role: selectedRole,
+        phone_number: phoneNumber.trim(),
+        whatsapp_number: whatsappNumber.trim() || phoneNumber.trim(),
+        email: email.trim() || null,
+        avatar_url: avatarUrl || null,
+        latitude: Number(latitude) || 19.0596,
+        longitude: Number(longitude) || 72.8295,
+        radius_meters: Number(radiusMeters) || 150,
+        location_name: locationName.trim() || 'Studio Main Office',
+        shift_start: shiftStart || '10:00:00',
+        shift_end: shiftEnd || '19:00:00',
+        weekly_offs: weeklyOffs,
+        daily_rate: parseFloat(dailyRate) || 0,
+        monthly_salary: parseFloat(monthlySalary) || 0,
         is_active: true,
-        created_at: new Date().toISOString()
-      }]);
+        active_status: true,
+        updated_at: new Date().toISOString()
+      };
 
-      // 3. Open WhatsApp link to send onboarding punch portal
-      const portalUrl = `${window.location.origin}/attendance/${secureToken}`;
-      const phoneDigits = form.phone_number.replace(/[^0-9]/g, '');
-      const waText = encodeURIComponent(
-        `Hi ${form.name},\nWelcome to the team! 🎉\nHere is your personal mobile attendance punch portal link for StudioCore:\n${portalUrl}\n\nPlease bookmark this link on your phone to punch in with selfie & GPS when reporting on duty.`
-      );
-      window.open(`https://wa.me/${phoneDigits}?text=${waText}`, '_blank');
+      let savedMember: FWTeamMember | null = null;
 
-      if (onMemberCreated) onMemberCreated();
+      if (isEditMode && memberToEdit?.id) {
+        // UPDATE EXISTING MEMBER
+        const { data, error: updateErr } = await supabase
+          .from('fw_team_members')
+          .update(payload)
+          .eq('id', memberToEdit.id)
+          .select('*')
+          .single();
+
+        if (updateErr) {
+          // Fallback update without new schema columns if migration pending
+          const fallbackPayload = {
+            name: name.trim(),
+            primary_role: selectedRole,
+            phone_number: phoneNumber.trim(),
+            email: email.trim() || null,
+            avatar_url: avatarUrl || null,
+            updated_at: new Date().toISOString()
+          };
+          const { data: fbData, error: fbErr } = await supabase
+            .from('fw_team_members')
+            .update(fallbackPayload)
+            .eq('id', memberToEdit.id)
+            .select('*')
+            .single();
+          if (fbErr) throw fbErr;
+          savedMember = fbData;
+        } else {
+          savedMember = data;
+        }
+      } else {
+        // INSERT NEW MEMBER
+        const { data, error: insertErr } = await supabase
+          .from('fw_team_members')
+          .insert([{ ...payload, created_at: new Date().toISOString() }])
+          .select('*')
+          .single();
+
+        if (insertErr) {
+          const fallbackInsert = {
+            user_id: workspaceId,
+            name: name.trim(),
+            primary_role: selectedRole,
+            phone_number: phoneNumber.trim(),
+            email: email.trim() || null,
+            avatar_url: avatarUrl || null,
+            created_at: new Date().toISOString()
+          };
+          const { data: fbData, error: fbErr } = await supabase
+            .from('fw_team_members')
+            .insert([fallbackInsert])
+            .select('*')
+            .single();
+          if (fbErr) throw fbErr;
+          savedMember = fbData;
+        } else {
+          savedMember = data;
+        }
+
+        // Generate personalized mobile attendance token
+        if (savedMember?.id) {
+          const memberId = savedMember.id;
+          const secureToken = `att_${memberId.slice(0, 6)}_${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+          await supabase.from('attendance_member_links').insert([{
+            user_id: workspaceId,
+            workspace_id: workspaceId,
+            member_id: memberId,
+            secure_token: secureToken,
+            is_active: true,
+            created_at: new Date().toISOString()
+          }]);
+
+          // Optional WhatsApp invite trigger
+          const portalUrl = `${window.location.origin}/attendance/${secureToken}`;
+          const cleanPhone = (whatsappNumber || phoneNumber).replace(/[^0-9]/g, '');
+          if (cleanPhone) {
+            const waMsg = encodeURIComponent(
+              `Hi ${name},\nWelcome to the team! 🎉\nHere is your personal mobile attendance punch portal link for StudioCore:\n${portalUrl}\n\nPlease bookmark this link on your phone to punch in with selfie & GPS when reporting on duty.`
+            );
+            window.open(`https://wa.me/${cleanPhone}?text=${waMsg}`, '_blank');
+          }
+        }
+      }
+
+      if (onMemberCreated) onMemberCreated(savedMember || undefined);
       onClose();
     } catch (err: any) {
-      console.error('Add team member error:', err);
-      alert(err.message || 'Failed to onboard team member');
+      console.error('Save staff error:', err);
+      alert(`Error saving staff profile: ${err.message || err}`);
     } finally {
       setSubmitting(false);
     }
   };
 
+  if (!isOpen) return null;
+
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs font-sans">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-xs font-sans overflow-y-auto">
         <motion.div
-          initial={{ scale: 0.95, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ scale: 0.95, opacity: 0 }}
-          className="bg-white rounded-2xl p-6 max-w-lg w-full border border-[#E9DFD2] shadow-2xl space-y-4"
+          initial={{ scale: 0.95, opacity: 0, y: 10 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          exit={{ scale: 0.95, opacity: 0, y: 10 }}
+          className="bg-[#FFFDF9] rounded-3xl p-6 sm:p-7 max-w-3xl w-full border border-[#EAE5DA] shadow-2xl space-y-5 my-8 max-h-[90vh] overflow-y-auto text-slate-900"
         >
-          <div className="flex items-center justify-between border-b border-[#F0E8DC] pb-3">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-[#FAF3E6] text-[#8C6D33] flex items-center justify-center">
+          {/* Top Modal Header */}
+          <div className="flex items-center justify-between border-b border-[#EAE5DA] pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center shadow-xs border border-amber-200">
                 <UserPlus className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-[#211B17]">Onboard Team Member</h3>
-                <p className="text-xs text-[#8C847B]">Add staff profile & auto-generate mobile magic punch link.</p>
+                <h3 className="text-lg font-black text-slate-900">
+                  {isEditMode ? `Edit Staff Profile: ${memberToEdit.name}` : 'Onboard Staff & Team Member'}
+                </h3>
+                <p className="text-xs text-slate-500 font-medium">
+                  {isEditMode 
+                    ? 'Update profile details, geofence perimeter, shift timings and compensation.' 
+                    : 'Add crew member, compress profile photo, configure geofence radius & shift rules.'}
+                </p>
               </div>
             </div>
-            <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600 rounded-full">
+            <button
+              onClick={onClose}
+              className="p-2 text-slate-400 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer"
+            >
               <X className="w-5 h-5" />
             </button>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-3.5">
-            <div>
-              <label className="text-xs font-bold text-[#746E67] block mb-1">Full Name *</label>
-              <input
-                type="text"
-                placeholder="e.g. Rahul Sharma"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className="w-full px-3.5 py-2 text-xs bg-[#FAF8F3] border border-[#E9DFD2] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C89435] font-semibold"
-                required
-              />
+          <form onSubmit={handleSubmit} className="space-y-6 text-xs">
+
+            {/* ── 1. AVATAR COMPRESSION & CORE CONTACT INFO ── */}
+            <div className="p-5 bg-white rounded-2xl border border-[#EAE5DA] shadow-2xs space-y-4">
+              <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 pb-2">
+                <Camera className="w-4 h-4 text-amber-600" />
+                Staff Profile & Biometric Photo
+              </h4>
+
+              <div className="flex flex-col sm:flex-row items-center gap-5">
+                {/* Avatar Preview & Upload Trigger */}
+                <div className="relative group cursor-pointer shrink-0" onClick={() => fileInputRef.current?.click()}>
+                  <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-amber-100 to-amber-200 border-2 border-amber-300 overflow-hidden flex items-center justify-center shadow-xs">
+                    {avatarUrl ? (
+                      <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                    ) : (
+                      <Camera className="w-8 h-8 text-amber-700" />
+                    )}
+                  </div>
+                  <div className="absolute inset-0 bg-black/40 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-[10px] font-bold">
+                    Change
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleImageFileSelected}
+                  />
+                </div>
+
+                <div className="space-y-1.5 flex-1 text-center sm:text-left">
+                  <div className="flex items-center justify-center sm:justify-start gap-2">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={compressing}
+                      className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-xl font-bold text-xs flex items-center gap-1.5 transition cursor-pointer"
+                    >
+                      {compressing ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-600" /> : <Upload className="w-3.5 h-3.5" />}
+                      {compressing ? 'Compressing WebP...' : 'Upload Profile Photo'}
+                    </button>
+                    {avatarUrl && (
+                      <button
+                        type="button"
+                        onClick={() => { setAvatarUrl(''); setCompressedSizeKb(null); }}
+                        className="p-1.5 text-rose-500 hover:text-rose-700 bg-rose-50 rounded-lg text-xs"
+                        title="Remove Avatar"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {compressedSizeKb !== null && (
+                    <p className="text-[11px] font-black text-emerald-600 flex items-center justify-center sm:justify-start gap-1">
+                      <Sparkles className="w-3 h-3 text-emerald-500" />
+                      Compressed to {compressedSizeKb} KB (WebP Retina Quality)
+                    </p>
+                  )}
+                  <p className="text-[10px] text-slate-400">
+                    Automatic client-side canvas compression ensures file size strictly between 50KB–80KB.
+                  </p>
+                </div>
+              </div>
+
+              {/* Name, Phone, WhatsApp, Email Inputs */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">
+                    Full Name <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Vicky Sharma"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-[#FAF9F5] border border-[#EAE5DA] rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">
+                    Primary Phone Number <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="+91 98765 43210"
+                    value={phoneNumber}
+                    onChange={(e) => {
+                      setPhoneNumber(e.target.value);
+                      if (!whatsappNumber) setWhatsappNumber(e.target.value);
+                    }}
+                    className="w-full px-3.5 py-2.5 bg-[#FAF9F5] border border-[#EAE5DA] rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1 flex items-center gap-1">
+                    <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                    WhatsApp Number
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="+91 98765 43210"
+                    value={whatsappNumber}
+                    onChange={(e) => setWhatsappNumber(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-[#FAF9F5] border border-[#EAE5DA] rounded-xl font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Email ID (Optional)</label>
+                  <input
+                    type="email"
+                    placeholder="staff@studio.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-[#FAF9F5] border border-[#EAE5DA] rounded-xl font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                  />
+                </div>
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-bold text-[#746E67] block mb-1">Role / Designation *</label>
-                <select
-                  value={form.primary_role}
-                  onChange={(e) => setForm({ ...form, primary_role: e.target.value })}
-                  className="w-full px-3 py-2 text-xs bg-[#FAF8F3] border border-[#E9DFD2] rounded-xl focus:outline-none font-semibold"
-                >
-                  <option value="Senior Cinematographer">Senior Cinematographer</option>
-                  <option value="Lead Photographer">Lead Photographer</option>
-                  <option value="Lead Video Editor">Lead Video Editor</option>
-                  <option value="Drone Pilot">Drone Pilot</option>
-                  <option value="Album Designer">Album Designer</option>
-                  <option value="Studio Manager">Studio Manager</option>
-                  <option value="Production Assistant">Production Assistant</option>
-                </select>
+            {/* ── 2. DYNAMIC ROLES ENGINE ── */}
+            <div className="p-5 bg-white rounded-2xl border border-[#EAE5DA] shadow-2xs space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-amber-600" />
+                  Primary Studio Role
+                </h4>
+                {!isAddingNewRole && (
+                  <button
+                    type="button"
+                    onClick={() => setIsAddingNewRole(true)}
+                    className="px-2.5 py-1 text-[11px] font-black text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-lg flex items-center gap-1 transition cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3" /> + Add New Role
+                  </button>
+                )}
               </div>
 
-              <div>
-                <label className="text-xs font-bold text-[#746E67] block mb-1">WhatsApp / Phone *</label>
+              {isAddingNewRole ? (
+                <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl space-y-2">
+                  <label className="font-bold text-amber-900 text-xs">Create Custom Studio Role:</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      autoFocus
+                      placeholder="e.g. Lead Colorist, Drone Director, Album Stylist..."
+                      value={newRoleInput}
+                      onChange={(e) => setNewRoleInput(e.target.value)}
+                      className="flex-1 px-3 py-2 bg-white border border-amber-200 rounded-lg font-bold text-slate-900 text-xs focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleCreateCustomRole}
+                      disabled={savingRole || !newRoleInput.trim()}
+                      className="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-900 font-black rounded-lg text-xs shadow-xs disabled:opacity-50 flex items-center gap-1 cursor-pointer"
+                    >
+                      {savingRole ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                      Save Role
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setIsAddingNewRole(false); setNewRoleInput(''); }}
+                      className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-lg text-xs"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <select
+                    value={selectedRole}
+                    onChange={(e) => {
+                      if (e.target.value === '__add_new__') {
+                        setIsAddingNewRole(true);
+                      } else {
+                        setSelectedRole(e.target.value);
+                      }
+                    }}
+                    className="w-full px-3.5 py-2.5 bg-[#FAF9F5] border border-[#EAE5DA] rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20 cursor-pointer"
+                  >
+                    {allRolesList.map(role => (
+                      <option key={role} value={role}>{role}</option>
+                    ))}
+                    <option value="__add_new__">+ Add Custom Role...</option>
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {/* ── 3. ASSIGNED GEOFENCE LOCATION (GOOGLE PLACES + SATELLITE MAP) ── */}
+            <div className="p-5 bg-white rounded-2xl border border-[#EAE5DA] shadow-2xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-amber-600" />
+                  Assigned Geofence Location & Perimeter
+                </h4>
+                <span className="text-[11px] font-black text-amber-900 bg-amber-100 border border-amber-200 px-2.5 py-0.5 rounded-full">
+                  Allowed Radius: {radiusMeters} Meters
+                </span>
+              </div>
+
+              {/* Radius Slider Bar */}
+              <div className="space-y-1.5 p-3.5 bg-amber-50/70 border border-amber-200/80 rounded-2xl">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                  <span>Geofence Boundary Radius:</span>
+                  <span className="font-black text-amber-900 font-mono text-sm">{radiusMeters}m</span>
+                </div>
                 <input
-                  type="tel"
-                  placeholder="+91 9876543210"
-                  value={form.phone_number}
-                  onChange={(e) => setForm({ ...form, phone_number: e.target.value })}
-                  className="w-full px-3.5 py-2 text-xs bg-[#FAF8F3] border border-[#E9DFD2] rounded-xl focus:outline-none font-mono font-semibold"
-                  required
+                  type="range"
+                  min={30}
+                  max={600}
+                  step={10}
+                  value={radiusMeters}
+                  onChange={(e) => setRadiusMeters(Number(e.target.value))}
+                  className="w-full accent-amber-600 cursor-pointer"
                 />
+                <div className="flex justify-between text-[10px] text-slate-400 font-bold">
+                  <span>50m (Tight Studio)</span>
+                  <span>150m (Standard Office)</span>
+                  <span>300m (Resort / Hotel)</span>
+                  <span>500m (Wide Campus)</span>
+                </div>
+              </div>
+
+              {/* Embedded Satellite Map */}
+              <div className="rounded-2xl overflow-hidden border border-[#EAE5DA]">
+                <GooglePlacesGeofenceMap
+                  latitude={latitude}
+                  longitude={longitude}
+                  radiusMeters={radiusMeters}
+                  locationName={locationName}
+                  height="340px"
+                  onCoordinatesChange={(lat, lng, addr, placeName) => {
+                    setLatitude(lat);
+                    setLongitude(lng);
+                    if (placeName) setLocationName(placeName);
+                    else if (addr) setLocationName(addr);
+                  }}
+                  onRadiusChange={(r) => setRadiusMeters(r)}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Location / Venue Name</label>
+                  <input
+                    type="text"
+                    value={locationName}
+                    onChange={(e) => setLocationName(e.target.value)}
+                    className="w-full px-3 py-2 bg-[#FAF9F5] border border-[#EAE5DA] rounded-xl font-bold text-slate-900"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <label className="font-bold text-slate-700 block mb-1">Latitude</label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={latitude}
+                      onChange={(e) => setLatitude(parseFloat(e.target.value) || 0)}
+                      className="w-full px-3 py-2 bg-[#FAF9F5] border border-[#EAE5DA] rounded-xl font-mono text-xs font-bold text-slate-900"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="font-bold text-slate-700 block mb-1">Longitude</label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={longitude}
+                      onChange={(e) => setLongitude(parseFloat(e.target.value) || 0)}
+                      className="w-full px-3 py-2 bg-[#FAF9F5] border border-[#EAE5DA] rounded-xl font-mono text-xs font-bold text-slate-900"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-bold text-[#746E67] block mb-1">Email (Optional)</label>
-                <input
-                  type="email"
-                  placeholder="rahul@studiocore.in"
-                  value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  className="w-full px-3.5 py-2 text-xs bg-[#FAF8F3] border border-[#E9DFD2] rounded-xl focus:outline-none"
-                />
-              </div>
+            {/* ── 4. WORK TIMINGS & COMPENSATION ── */}
+            <div className="p-5 bg-white rounded-2xl border border-[#EAE5DA] shadow-2xs space-y-4">
+              <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 pb-2">
+                <Clock className="w-4 h-4 text-amber-600" />
+                Work Shift Timings & Compensation Rates
+              </h4>
 
-              <div>
-                <label className="text-xs font-bold text-[#746E67] block mb-1">Assigned Geofence / Studio</label>
-                <select
-                  value={form.default_geofence_id}
-                  onChange={(e) => setForm({ ...form, default_geofence_id: e.target.value })}
-                  className="w-full px-3.5 py-2 text-xs bg-[#FAF8F3] border border-[#E9DFD2] rounded-xl focus:outline-none font-semibold"
-                >
-                  {locations.map(loc => (
-                    <option key={loc.id} value={loc.id}>{loc.name} ({loc.radius_meters}m)</option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Shift Start Time</label>
+                  <input
+                    type="time"
+                    value={shiftStart}
+                    onChange={(e) => setShiftStart(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-[#FAF9F5] border border-[#EAE5DA] rounded-xl font-bold text-slate-900 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Shift End Time</label>
+                  <input
+                    type="time"
+                    value={shiftEnd}
+                    onChange={(e) => setShiftEnd(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-[#FAF9F5] border border-[#EAE5DA] rounded-xl font-bold text-slate-900 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Daily Shoot Day Rate (₹)</label>
+                  <input
+                    type="number"
+                    placeholder="3500"
+                    value={dailyRate}
+                    onChange={(e) => setDailyRate(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-[#FAF9F5] border border-[#EAE5DA] rounded-xl font-mono font-bold text-slate-900 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Monthly Base Salary (₹)</label>
+                  <input
+                    type="number"
+                    placeholder="45000"
+                    value={monthlySalary}
+                    onChange={(e) => setMonthlySalary(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-[#FAF9F5] border border-[#EAE5DA] rounded-xl font-mono font-bold text-slate-900 focus:outline-none"
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-bold text-[#746E67] block mb-1">Daily Shoot Rate (₹)</label>
-                <input
-                  type="number"
-                  placeholder="3500"
-                  value={form.daily_rate}
-                  onChange={(e) => setForm({ ...form, daily_rate: e.target.value })}
-                  className="w-full px-3.5 py-2 text-xs bg-[#FAF8F3] border border-[#E9DFD2] rounded-xl focus:outline-none font-mono font-bold"
-                />
-              </div>
+            {/* ── 5. WEEKLY OFF SELECTOR ── */}
+            <div className="p-5 bg-white rounded-2xl border border-[#EAE5DA] shadow-2xs space-y-3">
+              <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 pb-2">
+                <Sun className="w-4 h-4 text-amber-600" />
+                Assigned Weekly Off Days
+              </h4>
 
-              <div>
-                <label className="text-xs font-bold text-[#746E67] block mb-1">Monthly Salary (₹)</label>
-                <input
-                  type="number"
-                  placeholder="45000"
-                  value={form.base_salary}
-                  onChange={(e) => setForm({ ...form, base_salary: e.target.value })}
-                  className="w-full px-3.5 py-2 text-xs bg-[#FAF8F3] border border-[#E9DFD2] rounded-xl focus:outline-none font-mono font-bold"
-                />
+              <div className="flex flex-wrap gap-2 pt-1">
+                {DAYS_OF_WEEK.map(day => {
+                  const isSelected = weeklyOffs.includes(day.key);
+                  return (
+                    <button
+                      key={day.key}
+                      type="button"
+                      onClick={() => toggleWeeklyOff(day.key)}
+                      className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs ${
+                        isSelected 
+                          ? 'bg-amber-400 text-slate-900 border border-amber-500 scale-105 shadow-xs' 
+                          : 'bg-[#FAF9F5] hover:bg-slate-100 text-slate-600 border border-[#EAE5DA]'
+                      }`}
+                    >
+                      {isSelected && <Check className="w-3.5 h-3.5" />}
+                      <span>{day.label}</span>
+                    </button>
+                  );
+                })}
               </div>
+              <p className="text-[11px] text-slate-400">
+                Weekly off days are automatically recognized and marked as non-working on shift logs.
+              </p>
             </div>
 
-            <div className="pt-2 flex justify-end gap-2">
+            {/* ── SUBMIT BUTTONS ── */}
+            <div className="flex justify-end gap-3 pt-3 border-t border-[#EAE5DA]">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl"
+                className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                disabled={submitting}
-                className="px-5 py-2 text-xs font-bold text-white bg-[#C89435] hover:bg-[#B3802B] rounded-xl shadow-md flex items-center gap-1.5 transition"
+                disabled={submitting || compressing}
+                className="px-6 py-2.5 bg-amber-400 hover:bg-amber-500 text-slate-900 font-black rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
               >
-                {submitting ? (
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <MessageCircle className="w-3.5 h-3.5" />
-                )}
-                <span>Save & Send WhatsApp Magic Link</span>
+                {submitting ? <RefreshCw className="w-4 h-4 animate-spin" /> : isEditMode ? <Check className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
+                {submitting ? 'Saving Profile...' : isEditMode ? 'Update Staff Profile' : 'Onboard Team Member'}
               </button>
             </div>
+
           </form>
         </motion.div>
       </div>

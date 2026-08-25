@@ -19,6 +19,7 @@ import type {
 import GooglePlacesGeofenceMap from '@/components/attendance/GooglePlacesGeofenceMap';
 import MemberKundaliModal from '@/components/attendance/MemberKundaliModal';
 import AddTeamMemberModal from '@/components/attendance/AddTeamMemberModal';
+import CompanyHolidayModal from '@/components/attendance/CompanyHolidayModal';
 
 export default function AttendancePage() {
   const [activeTab, setActiveTab] = useState<'roster' | 'live' | 'matrix' | 'leaves' | 'locations' | 'shifts' | 'links'>('roster');
@@ -41,6 +42,8 @@ export default function AttendancePage() {
   // Modals state
   const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+  const [memberToEdit, setMemberToEdit] = useState<FWTeamMember | null>(null);
+  const [showHolidayModal, setShowHolidayModal] = useState(false);
   const [showKundaliModal, setShowKundaliModal] = useState<{ open: boolean; member: FWTeamMember | null }>({
     open: false,
     member: null
@@ -532,16 +535,25 @@ export default function AttendancePage() {
 
             {/* Onboard Team Member Button */}
             <button
-              onClick={() => setShowAddMemberModal(true)}
-              className="px-3.5 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-xl transition flex items-center gap-1.5 shadow-xs"
+              onClick={() => { setMemberToEdit(null); setShowAddMemberModal(true); }}
+              className="px-3.5 py-2 text-xs font-black text-slate-900 bg-amber-400 hover:bg-amber-500 rounded-xl transition flex items-center gap-1.5 shadow-xs cursor-pointer"
             >
               <UserPlus className="w-3.5 h-3.5" />
-              Onboard Staff
+              + Onboard Staff
+            </button>
+
+            {/* Holidays & Calendar Modal Trigger */}
+            <button
+              onClick={() => setShowHolidayModal(true)}
+              className="px-3.5 py-2 text-xs font-bold text-purple-900 bg-purple-100 hover:bg-purple-200 border border-purple-200 rounded-xl transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+            >
+              <Calendar className="w-3.5 h-3.5 text-purple-700" />
+              Holidays &amp; Leaves
             </button>
 
             <button
               onClick={handleExportCSV}
-              className="px-3.5 py-2 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition flex items-center gap-1.5 shadow-2xs"
+              className="px-3.5 py-2 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
               Export CSV
@@ -549,15 +561,15 @@ export default function AttendancePage() {
 
             <button
               onClick={() => setShowLeaveModal(true)}
-              className="px-3.5 py-2 text-xs font-bold text-white bg-[#C89435] hover:bg-[#B3802B] rounded-xl transition flex items-center gap-1.5 shadow-xs"
+              className="px-3.5 py-2 text-xs font-bold text-slate-800 bg-amber-100 hover:bg-amber-200 border border-amber-200 rounded-xl transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
             >
-              <Plus className="w-3.5 h-3.5" />
+              <Plus className="w-3.5 h-3.5 text-amber-700" />
               Apply Leave
             </button>
 
             <button
               onClick={fetchAttendanceData}
-              className="p-2 text-slate-500 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition shadow-2xs"
+              className="p-2 text-slate-500 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition shadow-2xs cursor-pointer"
               title="Refresh Attendance Data"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -801,23 +813,39 @@ export default function AttendancePage() {
                             )}
                           </td>
 
-                          <td className="py-3 px-4 text-right space-x-2 whitespace-nowrap">
+                          <td className="py-3 px-4 text-right space-x-1.5 whitespace-nowrap">
                             <button
+                              type="button"
                               onClick={() => setShowKundaliModal({ open: true, member })}
-                              className="px-2.5 py-1 text-[11px] font-bold text-[#8C6D33] bg-[#FAF3E6] hover:bg-[#F2E5CC] rounded-lg transition"
-                              title="View Deep Staff Kundali Analytics"
+                              className="px-2.5 py-1 text-[11px] font-black text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-lg transition cursor-pointer"
+                              title="View Deep Staff Attendance Card & Logs"
                             >
                               Kundali
                             </button>
 
                             <button
-                              onClick={() => handleGenerateOrCopyLink(member.id)}
-                              className="px-2.5 py-1 text-[11px] font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 rounded-lg transition"
+                              type="button"
+                              onClick={() => {
+                                setMemberToEdit(member);
+                                setShowAddMemberModal(true);
+                              }}
+                              className="px-2.5 py-1 text-[11px] font-black text-slate-800 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition cursor-pointer"
+                              title="Edit Staff Profile, Geofence & Timings"
                             >
-                              {copiedLinkId === member.id ? '✓ Copied' : 'Copy Link'}
+                              Edit Profile
                             </button>
 
                             <button
+                              type="button"
+                              onClick={() => handleGenerateOrCopyLink(member.id)}
+                              className="px-2.5 py-1 text-[11px] font-black text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition cursor-pointer"
+                              title="Copy Personal Punch Portal Link"
+                            >
+                              {copiedLinkId === member.id ? '✓ Copied' : 'Punch Link'}
+                            </button>
+
+                            <button
+                              type="button"
                               onClick={() => {
                                 setShowOverrideModal({
                                   open: true,
@@ -825,9 +853,10 @@ export default function AttendancePage() {
                                   record: record || undefined
                                 });
                               }}
-                              className="px-2.5 py-1 text-[11px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition"
+                              className="px-2 py-1 text-[11px] font-bold text-slate-500 hover:text-slate-800 rounded-lg transition cursor-pointer"
+                              title="Manual Override"
                             >
-                              Edit
+                              Override
                             </button>
                           </td>
                         </tr>
@@ -1279,15 +1308,30 @@ export default function AttendancePage() {
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          MODAL: ONBOARD TEAM MEMBER & MAGIC LINK
+          MODAL: ONBOARD / EDIT TEAM MEMBER & MAGIC LINK
       ───────────────────────────────────────────────────────────── */}
       {showAddMemberModal && (
         <AddTeamMemberModal
           isOpen={showAddMemberModal}
-          onClose={() => setShowAddMemberModal(false)}
+          onClose={() => {
+            setShowAddMemberModal(false);
+            setMemberToEdit(null);
+          }}
+          memberToEdit={memberToEdit}
           locations={locations}
           shifts={shifts}
           onMemberCreated={fetchAttendanceData}
+        />
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          MODAL: COMPANY HOLIDAY & FESTIVE CALENDAR
+      ───────────────────────────────────────────────────────────── */}
+      {showHolidayModal && (
+        <CompanyHolidayModal
+          isOpen={showHolidayModal}
+          onClose={() => setShowHolidayModal(false)}
+          onHolidayUpdated={fetchAttendanceData}
         />
       )}
 

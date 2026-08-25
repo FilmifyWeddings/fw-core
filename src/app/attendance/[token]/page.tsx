@@ -29,6 +29,8 @@ export default function PersonalAttendancePage() {
   const [shifts, setShifts] = useState<any[]>([]);
   const [monthlyHistory, setMonthlyHistory] = useState<any[]>([]);
   const [recentLeaves, setRecentLeaves] = useState<any[]>([]);
+  const [holidayToday, setHolidayToday] = useState<any>(null);
+  const [isWeeklyOff, setIsWeeklyOff] = useState<boolean>(false);
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
   const [isOnline, setIsOnline] = useState<boolean>(true);
   const [offlineQueueCount, setOfflineQueueCount] = useState<number>(0);
@@ -37,7 +39,7 @@ export default function PersonalAttendancePage() {
   // Live Geofence Heartbeat & In-Zone Active State
   const [isInsideGeofence, setIsInsideGeofence] = useState<boolean>(true);
   const [currentDistanceMeters, setCurrentDistanceMeters] = useState<number>(0);
-  const [currentAllowedRadius, setCurrentAllowedRadius] = useState<number>(50);
+  const [currentAllowedRadius, setCurrentAllowedRadius] = useState<number>(150);
   const [lastExitTime, setLastExitTime] = useState<string | null>(null);
 
   // Verification modal state
@@ -114,6 +116,8 @@ export default function PersonalAttendancePage() {
         setActiveBreak(data.activeBreak);
         setLocations(data.locations || []);
         setShifts(data.shifts || []);
+        setHolidayToday(data.holidayToday || null);
+        setIsWeeklyOff(!!data.isWeeklyOff);
         setMonthlyHistory(data.monthlyHistory || []);
         setRecentLeaves(data.recentLeaves || []);
       } else {
@@ -612,9 +616,30 @@ export default function PersonalAttendancePage() {
                 {currentTime.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
               </div>
               <p className="text-[12px] text-[#8C847B] font-medium mt-1">
-                {shifts[0]?.name ? `${shifts[0].name} (${shifts[0].start_time.substring(0, 5)} - ${shifts[0].end_time.substring(0, 5)})` : 'Standard Studio Shift (09:30 AM - 06:30 PM)'}
+                {shifts[0]?.name ? `${shifts[0].name} (${shifts[0].start_time.substring(0, 5)} - ${shifts[0].end_time.substring(0, 5)})` : 'Standard Studio Shift (10:00 AM - 07:00 PM)'}
               </p>
             </div>
+
+            {/* Holiday / Weekly Off Alerts */}
+            {holidayToday && (
+              <div className="p-3 bg-purple-50 border border-purple-200 rounded-2xl text-xs text-purple-950 font-bold flex items-center gap-2 mb-3 shadow-2xs">
+                <Sparkles className="w-4 h-4 text-purple-600 shrink-0" />
+                <div>
+                  <span className="font-black text-purple-900 block">{holidayToday.name} (Company Holiday)</span>
+                  <span className="text-[10px] text-purple-700 font-normal">Today is a paid festival holiday. Full attendance score is credited.</span>
+                </div>
+              </div>
+            )}
+
+            {isWeeklyOff && !isCheckedIn && !holidayToday && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-950 font-bold flex items-center gap-2 mb-3 shadow-2xs">
+                <Sun className="w-4 h-4 text-amber-600 shrink-0" />
+                <div>
+                  <span className="font-black text-amber-900 block">Scheduled Weekly Off</span>
+                  <span className="text-[10px] text-amber-700 font-normal">Today is your weekly off day. You are not required to punch in.</span>
+                </div>
+              </div>
+            )}
 
             {/* Status Card & Geofence Indicator */}
             <div className="bg-white rounded-[20px] p-4 border border-[#F0E8DC] shadow-sm mb-4">

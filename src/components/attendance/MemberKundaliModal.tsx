@@ -6,11 +6,12 @@ import {
   X, User, Calendar, Clock, MapPin, ShieldCheck, AlertTriangle, 
   TrendingUp, Award, CheckCircle2, XCircle, Coffee, ChevronRight,
   Sparkles, Camera, Phone, Mail, ArrowUpRight, BarChart2, Filter,
-  Pause, Play, RefreshCw
+  Pause, Play, RefreshCw, Sun, Check, Eye, Download, Info
 } from 'lucide-react';
 import { 
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine 
 } from 'recharts';
+import { supabase } from '@/lib/supabase';
 import type { FWTeamMember, AttendanceRecord, AttendanceShift } from '@/types';
 
 interface MemberKundaliModalProps {
@@ -22,6 +23,8 @@ interface MemberKundaliModalProps {
   onUpdateRecord?: (recordId: string, updates: Partial<AttendanceRecord>) => Promise<void>;
 }
 
+type DatePreset = 'today' | 'week' | 'month' | 'custom';
+
 export default function MemberKundaliModal({
   isOpen,
   onClose,
@@ -30,30 +33,113 @@ export default function MemberKundaliModal({
   shifts,
   onUpdateRecord
 }: MemberKundaliModalProps) {
-  const [selectedMonth, setSelectedMonth] = useState<string>(
-    new Date().toISOString().substring(0, 7)
-  );
-  const [statusFilter, setStatusFilter] = useState<'all' | 'present' | 'late' | 'half_day' | 'absent'>('all');
-  const [updatingRecordId, setUpdatingRecordId] = useState<string | null>(null);
+  // Preset & Custom Date Range State
+  const [datePreset, setDatePreset] = useState<DatePreset>('month');
+  const [startDate, setStartDate] = useState<string>(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0];
+  });
+  const [endDate, setEndDate] = useState<string>(() => {
+    return new Date().toISOString().split('T')[0];
+  });
 
-  // Filter records specifically for this member & selected month
+  const [statusFilter, setStatusFilter] = useState<'all' | 'present' | 'late' | 'half_day' | 'absent' | 'holiday' | 'week_off'>('all');
+  const [updatingRecordId, setUpdatingRecordId] = useState<string | null>(null);
+  const [fetchedRecords, setFetchedRecords] = useState<AttendanceRecord[]>([]);
+
+  // Selfie / GPS Map Inspection Modal
+  const [inspectPunch, setInspectPunch] = useState<{
+    open: boolean;
+    type: 'check_in' | 'check_out';
+    time?: string | null;
+    photoUrl?: string | null;
+    lat?: number | null;
+    lng?: number | null;
+    address?: string | null;
+    dateStr?: string;
+  }>({ open: false, type: 'check_in' });
+
+  // Fetch Member's Historical Attendance Records for the Date Range
+  useEffect(() => {
+    if (isOpen && member?.id) {
+      fetchMemberHistoricalRecords();
+    }
+  }, [isOpen, member?.id, startDate, endDate]);
+
+  const fetchMemberHistoricalRecords = async () => {
+    try {
+      const { data } = await supabase
+        .from('attendance_records')
+        .select('*')
+        .eq('member_id', member.id)
+        .gte('date', startDate)
+        .lte('date', endDate)
+        .order('date', { ascending: false });
+
+      if (data && data.length > 0) {
+        setFetchedRecords(data);
+      }
+    } catch (e) {
+      console.warn('Error fetching member records:', e);
+    }
+  };
+
+  // Combine parent-passed records and fetched records
+  const effectiveRecords = useMemo(() => {
+    const map = new Map<string, AttendanceRecord>();
+    records.forEach(r => { if (r.member_id === member.id) map.set(r.id || r.date, r); });
+    fetchedRecords.forEach(r => map.set(r.id || r.date, r));
+    return Array.from(map.values());
+  }, [records, fetchedRecords, member.id]);
+
+  // Handle Preset Changes
+  const handlePresetSelect = (preset: DatePreset) => {
+    setDatePreset(preset);
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+
+    if (preset === 'today') {
+      setStartDate(todayStr);
+      setEndDate(todayStr);
+    } else if (preset === 'week') {
+      const day = today.getDay();
+      const diff = today.getDate() - day + (day === 0 ? -6 : 1); // Monday
+      const monday = new Date(today.setDate(diff));
+      setStartDate(monday.toISOString().split('T')[0]);
+      setEndDate(todayStr);
+    } else if (preset === 'month') {
+      const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+      setStartDate(firstDay);
+      setEndDate(todayStr);
+    }
+  };
+
+  // Filter records specifically for this member and date range
   const memberRecords = useMemo(() => {
-    return records
-      .filter(r => r.member_id === member.id && (r.date || '').startsWith(selectedMonth))
+    return effectiveRecords
+      .filter(r => r.member_id === member.id)
+      .filter(r => {
+        if (!r.date) return false;
+        return r.date >= startDate && r.date <= endDate;
+      })
       .filter(r => statusFilter === 'all' || r.status === statusFilter)
       .sort((a, b) => (b.date > a.date ? 1 : -1));
-  }, [records, member.id, selectedMonth, statusFilter]);
+  }, [effectiveRecords, member.id, startDate, endDate, statusFilter]);
 
   // Executive KPI Calculations
   const stats = useMemo(() => {
-    const allMemberMonthRecs = records.filter(
-      r => r.member_id === member.id && (r.date || '').startsWith(selectedMonth)
+    const allRangeRecs = effectiveRecords.filter(
+      r => r.member_id === member.id && r.date >= startDate && r.date <= endDate
     );
 
-    const totalLoggedDays = allMemberMonthRecs.length;
-    const presentRecs = allMemberMonthRecs.filter(r => r.status === 'present');
-    const lateRecs = allMemberMonthRecs.filter(r => r.status === 'late' || (r.late_minutes && r.late_minutes > 0));
-    const halfDayRecs = allMemberMonthRecs.filter(r => r.status === 'half_day');
+    const totalLoggedDays = allRangeRecs.length;
+    const presentRecs = allRangeRecs.filter(r => r.status === 'present');
+    const lateRecs = allRangeRecs.filter(r => r.status === 'late' || (r.late_minutes && r.late_minutes > 0));
+    const halfDayRecs = allRangeRecs.filter(r => r.status === 'half_day');
+    const absentRecs = allRangeRecs.filter(r => r.status === 'absent');
+    const holidayRecs = allRangeRecs.filter(r => r.status === 'holiday');
+    const weekOffRecs = allRangeRecs.filter(r => r.status === 'week_off');
+
     const totalPresentCount = presentRecs.length + lateRecs.length + halfDayRecs.length;
 
     const onTimeRate = totalPresentCount > 0 
@@ -63,13 +149,11 @@ export default function MemberKundaliModal({
     const totalLateMinutes = lateRecs.reduce((acc, r) => acc + (r.late_minutes || 0), 0);
     const avgDelayMinutes = lateRecs.length > 0 ? Math.round(totalLateMinutes / lateRecs.length) : 0;
 
-    const totalWorkMinutes = allMemberMonthRecs.reduce((acc, r) => acc + (r.work_duration_minutes || 0), 0);
-    const totalPausedMinutes = allMemberMonthRecs.reduce((acc, r) => acc + (r.break_duration_minutes || 0), 0);
-    const totalOvertimeMinutes = allMemberMonthRecs.reduce((acc, r) => acc + (r.overtime_minutes || 0), 0);
+    const totalWorkMinutes = allRangeRecs.reduce((acc, r) => acc + (r.work_duration_minutes || r.total_work_minutes || 0), 0);
+    const totalPausedMinutes = allRangeRecs.reduce((acc, r) => acc + (r.break_duration_minutes || r.total_pause_minutes || 0), 0);
 
     const totalHoursLogged = Math.round((totalWorkMinutes / 60) * 10) / 10;
     const totalPausedHours = Math.round((totalPausedMinutes / 60) * 10) / 10;
-    const totalOTHours = Math.round((totalOvertimeMinutes / 60) * 10) / 10;
 
     return {
       totalLoggedDays,
@@ -77,17 +161,21 @@ export default function MemberKundaliModal({
       onTimeRate,
       lateCount: lateRecs.length,
       avgDelayMinutes,
+      absentCount: absentRecs.length,
+      holidayCount: holidayRecs.length,
+      weekOffCount: weekOffRecs.length,
+      totalWorkMinutes,
+      totalPausedMinutes,
       totalHoursLogged,
-      totalPausedHours,
-      totalOTHours
+      totalPausedHours
     };
-  }, [records, member.id, selectedMonth]);
+  }, [records, member.id, startDate, endDate]);
 
   // Chart data for daily active hours vs shift target (8.0h)
   const chartData = useMemo(() => {
     return memberRecords.slice(0, 14).reverse().map(r => {
-      const activeHrs = Math.round(((r.work_duration_minutes || 0) / 60) * 10) / 10;
-      const pausedHrs = Math.round(((r.break_duration_minutes || 0) / 60) * 10) / 10;
+      const activeHrs = Math.round(((r.work_duration_minutes || r.total_work_minutes || 0) / 60) * 10) / 10;
+      const pausedHrs = Math.round(((r.break_duration_minutes || r.total_pause_minutes || 0) / 60) * 10) / 10;
       return {
         day: new Date(r.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
         hours: activeHrs,
@@ -117,289 +205,465 @@ export default function MemberKundaliModal({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/75 backdrop-blur-md font-sans">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/75 backdrop-blur-xs font-sans overflow-y-auto">
         <motion.div
-          initial={{ scale: 0.95, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ scale: 0.95, opacity: 0 }}
-          className="bg-[#1A1816] text-[#FDFCF7] w-full max-w-5xl rounded-2xl border border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
+          initial={{ scale: 0.96, opacity: 0, y: 10 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          exit={{ scale: 0.96, opacity: 0, y: 10 }}
+          className="bg-[#FFFDF9] text-slate-900 w-full max-w-5xl rounded-3xl border border-[#EAE5DA] shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
         >
-          {/* Top Header Drawer Bar */}
-          <div className="px-6 py-5 bg-[#211E1B] border-b border-white/10 flex items-center justify-between">
+          {/* ── TOP DRAWER HEADER ── */}
+          <div className="px-6 py-5 bg-[#FAF9F5] border-b border-[#EAE5DA] flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#C89435] to-[#8C6D33] text-white font-black text-lg flex items-center justify-center shadow-lg border border-white/15">
-                {member.name.slice(0, 2).toUpperCase()}
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-200 to-amber-300 border-2 border-amber-400 overflow-hidden flex items-center justify-center font-black text-lg text-amber-900 shadow-xs shrink-0">
+                {member.avatar_url ? (
+                  <img src={member.avatar_url} alt={member.name} className="w-full h-full object-cover" />
+                ) : (
+                  member.name.slice(0, 2).toUpperCase()
+                )}
               </div>
+
               <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-xl font-black text-white tracking-tight">{member.name}</h2>
-                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#FAF3E6] text-[#8C6D33]">
-                    {member.primary_role || 'Crew Member'}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="text-xl font-black text-slate-900 tracking-tight">{member.name}</h2>
+                  <span className="px-3 py-0.5 rounded-full text-xs font-black bg-amber-100 text-amber-900 border border-amber-200">
+                    {member.primary_role || 'Staff Member'}
                   </span>
                 </div>
-                <div className="flex items-center gap-3 text-xs text-white/60 mt-1">
+                <div className="flex items-center gap-3 text-xs text-slate-500 font-medium mt-1 flex-wrap">
                   {member.phone_number && (
                     <span className="flex items-center gap-1">
-                      <Phone className="w-3 h-3 text-[#C89435]" /> {member.phone_number}
+                      <Phone className="w-3.5 h-3.5 text-amber-600" /> {member.phone_number}
                     </span>
                   )}
-                  {member.email && (
+                  {member.location_name && (
                     <span className="flex items-center gap-1">
-                      <Mail className="w-3 h-3 text-[#C89435]" /> {member.email}
+                      <MapPin className="w-3.5 h-3.5 text-amber-600" /> {member.location_name} ({member.radius_meters || 150}m)
+                    </span>
+                  )}
+                  {member.shift_start && (
+                    <span className="flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 text-amber-600" /> {member.shift_start.slice(0, 5)} - {member.shift_end ? member.shift_end.slice(0, 5) : '19:00'}
                     </span>
                   )}
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
-              {/* Month Selector */}
-              <div className="flex items-center gap-1.5 bg-white/5 border border-white/15 rounded-xl px-3 py-1.5 text-xs font-mono text-white">
-                <Calendar className="w-3.5 h-3.5 text-[#C89435]" />
+            {/* Header Date Range Filter Presets */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1 p-1 bg-white border border-[#EAE5DA] rounded-xl shadow-2xs">
+                {(['today', 'week', 'month', 'custom'] as const).map(preset => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => handlePresetSelect(preset)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                      datePreset === preset
+                        ? 'bg-amber-400 text-slate-900 shadow-2xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    {preset === 'today' ? 'Today' : preset === 'week' ? 'This Week' : preset === 'month' ? 'This Month' : 'Custom'}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-1.5 bg-white border border-[#EAE5DA] rounded-xl px-3 py-1.5 text-xs font-mono text-slate-800 shadow-2xs">
+                <Calendar className="w-3.5 h-3.5 text-amber-600" />
                 <input
-                  type="month"
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="bg-transparent text-white font-bold focus:outline-none cursor-pointer"
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => { setStartDate(e.target.value); setDatePreset('custom'); }}
+                  className="bg-transparent text-slate-800 font-bold focus:outline-none cursor-pointer"
+                />
+                <span className="text-slate-400">➔</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => { setEndDate(e.target.value); setDatePreset('custom'); }}
+                  className="bg-transparent text-slate-800 font-bold focus:outline-none cursor-pointer"
                 />
               </div>
 
               <button
                 onClick={onClose}
-                className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition"
+                className="p-2 text-slate-400 hover:text-slate-700 bg-white border border-[#EAE5DA] hover:bg-slate-100 rounded-xl transition cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
           </div>
 
-          {/* Body Content */}
-          <div className="p-6 overflow-y-auto space-y-6 flex-1">
+          {/* ── BODY CONTENT ── */}
+          <div className="p-6 overflow-y-auto space-y-6 flex-1 bg-[#FFFDF9]">
 
-            {/* 4 Executive KPI Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* 1. On-Time Score */}
-              <div className="bg-[#24211D] p-4 rounded-2xl border border-white/10 space-y-2">
-                <div className="flex items-center justify-between text-xs text-white/60">
-                  <span className="font-semibold uppercase tracking-wider text-[10px]">On-Time Rate</span>
-                  <Award className="w-4 h-4 text-[#C89435]" />
+            {/* ── 5 TOP METRIC SUMMARY CARDS ── */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
+              
+              {/* 1. Total Working Hours */}
+              <div className="bg-white p-4 rounded-2xl border border-[#EAE5DA] shadow-2xs space-y-1">
+                <div className="flex items-center justify-between text-xs text-slate-500">
+                  <span className="font-extrabold uppercase tracking-wider text-[10px]">Total Work Time</span>
+                  <TrendingUp className="w-4 h-4 text-emerald-600" />
                 </div>
-                <div className="text-2xl font-black text-[#81C784] font-mono">
-                  {stats.onTimeRate}%
+                <div className="text-xl font-black text-emerald-700 font-mono">
+                  {Math.floor(stats.totalWorkMinutes / 60)}h {stats.totalWorkMinutes % 60}m
                 </div>
-                <p className="text-[10.5px] text-white/50">
-                  {stats.totalPresentCount} days attended in {selectedMonth}
+                <p className="text-[10.5px] text-slate-400 font-medium">
+                  {stats.totalHoursLogged} hrs active
                 </p>
               </div>
 
-              {/* 2. Late Arrivals */}
-              <div className="bg-[#24211D] p-4 rounded-2xl border border-white/10 space-y-2">
-                <div className="flex items-center justify-between text-xs text-white/60">
-                  <span className="font-semibold uppercase tracking-wider text-[10px]">Late Arrivals</span>
-                  <Clock className="w-4 h-4 text-[#FFB74D]" />
+              {/* 2. Present Days */}
+              <div className="bg-white p-4 rounded-2xl border border-[#EAE5DA] shadow-2xs space-y-1">
+                <div className="flex items-center justify-between text-xs text-slate-500">
+                  <span className="font-extrabold uppercase tracking-wider text-[10px]">Present Days</span>
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                 </div>
-                <div className="text-2xl font-black text-[#FFB74D] font-mono">
-                  {stats.lateCount} <span className="text-xs text-white/50">Times</span>
+                <div className="text-xl font-black text-slate-900 font-mono">
+                  {stats.totalPresentCount} <span className="text-xs text-slate-400 font-medium">Days</span>
                 </div>
-                <p className="text-[10.5px] text-white/50">
-                  Avg delay: {stats.avgDelayMinutes} mins per late mark
+                <p className="text-[10.5px] text-slate-400 font-medium">
+                  {stats.onTimeRate}% on-time rate
                 </p>
               </div>
 
-              {/* 3. In-Zone Active Work Hours */}
-              <div className="bg-[#24211D] p-4 rounded-2xl border border-white/10 space-y-2">
-                <div className="flex items-center justify-between text-xs text-white/60">
-                  <span className="font-semibold uppercase tracking-wider text-[10px]">In-Zone Active Hours</span>
-                  <TrendingUp className="w-4 h-4 text-[#4FC3F7]" />
+              {/* 3. Late Marks */}
+              <div className="bg-white p-4 rounded-2xl border border-[#EAE5DA] shadow-2xs space-y-1">
+                <div className="flex items-center justify-between text-xs text-slate-500">
+                  <span className="font-extrabold uppercase tracking-wider text-[10px]">Late Marks</span>
+                  <Clock className="w-4 h-4 text-amber-600" />
                 </div>
-                <div className="text-2xl font-black text-[#4FC3F7] font-mono">
-                  {stats.totalHoursLogged}h
+                <div className="text-xl font-black text-amber-800 font-mono">
+                  {stats.lateCount} <span className="text-xs text-slate-400 font-medium">Times</span>
                 </div>
-                <p className="text-[10.5px] text-white/50">
-                  Paused outside: {stats.totalPausedHours}h
+                <p className="text-[10.5px] text-slate-400 font-medium">
+                  Avg delay: {stats.avgDelayMinutes} mins
                 </p>
               </div>
 
-              {/* 4. Overtime Hours */}
-              <div className="bg-[#24211D] p-4 rounded-2xl border border-white/10 space-y-2">
-                <div className="flex items-center justify-between text-xs text-white/60">
-                  <span className="font-semibold uppercase tracking-wider text-[10px]">Overtime Hours</span>
-                  <Sparkles className="w-4 h-4 text-[#E5B55D]" />
+              {/* 4. Total Paused / Break Time */}
+              <div className="bg-white p-4 rounded-2xl border border-[#EAE5DA] shadow-2xs space-y-1">
+                <div className="flex items-center justify-between text-xs text-slate-500">
+                  <span className="font-extrabold uppercase tracking-wider text-[10px]">Paused / Breaks</span>
+                  <Coffee className="w-4 h-4 text-amber-700" />
                 </div>
-                <div className="text-2xl font-black text-[#E5B55D] font-mono">
-                  +{stats.totalOTHours}h
+                <div className="text-xl font-black text-amber-900 font-mono">
+                  {Math.floor(stats.totalPausedMinutes / 60)}h {stats.totalPausedMinutes % 60}m
                 </div>
-                <p className="text-[10.5px] text-white/50">
-                  Beyond scheduled shift hours
+                <p className="text-[10.5px] text-slate-400 font-medium">
+                  Out-of-zone or pauses
                 </p>
               </div>
+
+              {/* 5. Absents */}
+              <div className="bg-white p-4 rounded-2xl border border-[#EAE5DA] shadow-2xs space-y-1">
+                <div className="flex items-center justify-between text-xs text-slate-500">
+                  <span className="font-extrabold uppercase tracking-wider text-[10px]">Absents</span>
+                  <XCircle className="w-4 h-4 text-rose-600" />
+                </div>
+                <div className="text-xl font-black text-rose-700 font-mono">
+                  {stats.absentCount} <span className="text-xs text-slate-400 font-medium">Days</span>
+                </div>
+                <p className="text-[10.5px] text-slate-400 font-medium">
+                  {stats.holidayCount} holidays • {stats.weekOffCount} off
+                </p>
+              </div>
+
             </div>
 
-            {/* Visual Recharts Trend Bar Graph */}
+            {/* Visual Recharts Bar Graph */}
             {chartData.length > 0 && (
-              <div className="bg-[#24211D] p-5 rounded-2xl border border-white/10 space-y-3">
+              <div className="bg-white p-5 rounded-2xl border border-[#EAE5DA] shadow-2xs space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="text-sm font-bold text-white">Daily In-Zone Work Hours vs 8h Target</h3>
-                    <p className="text-xs text-white/50">Clocked in-zone hours per shoot/day</p>
+                    <h3 className="text-sm font-black text-slate-900">Daily Active Shift Hours Timeline</h3>
+                    <p className="text-xs text-slate-500 font-medium">Verified active hours inside geofence perimeter</p>
                   </div>
-                  <span className="text-xs font-mono text-[#C89435] font-bold">Target: 8.0 hrs</span>
+                  <span className="text-xs font-mono text-amber-900 font-black bg-amber-100 px-2.5 py-1 rounded-lg border border-amber-200">
+                    Shift Target: 8.0 hrs
+                  </span>
                 </div>
 
-                <div className="h-44 w-full pt-2">
+                <div className="h-40 w-full pt-2">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#36302B" />
-                      <XAxis dataKey="day" stroke="#746855" fontSize={10} tickLine={false} />
-                      <YAxis stroke="#746855" fontSize={10} tickLine={false} domain={[0, 14]} />
+                      <CartesianGrid strokeDasharray="3 3" stroke="#F0E8DC" />
+                      <XAxis dataKey="day" stroke="#8C847B" fontSize={10} tickLine={false} />
+                      <YAxis stroke="#8C847B" fontSize={10} tickLine={false} domain={[0, 14]} />
                       <Tooltip 
-                        contentStyle={{ backgroundColor: '#1A1816', borderColor: '#C89435', borderRadius: 8, fontSize: 11, color: '#fff' }}
-                        formatter={(val: any) => [`${val} hrs`, 'In-Zone Clocked']}
+                        contentStyle={{ backgroundColor: '#FFFDF9', borderColor: '#EAE5DA', borderRadius: 12, fontSize: 11, color: '#211B17', fontWeight: 600 }}
+                        formatter={(val: any) => [`${val} hrs`, 'In-Zone Active']}
                       />
-                      <ReferenceLine y={8} stroke="#C89435" strokeDasharray="3 3" />
-                      <Bar dataKey="hours" fill="#C89435" radius={[4, 4, 0, 0]} />
+                      <ReferenceLine y={8} stroke="#D97706" strokeDasharray="3 3" />
+                      <Bar dataKey="hours" fill="#F59E0B" radius={[6, 6, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               </div>
             )}
 
-            {/* Day-by-Day Timeline & Selfie Audits */}
+            {/* ── STRUCTURED SHIFT LOG ROWS ── */}
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold text-white">Daily Punch Audits & Selfie Verifications</h3>
-                <div className="flex items-center gap-1.5">
-                  {(['all', 'present', 'late', 'half_day'] as const).map(flt => (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#EAE5DA] pb-2">
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">Structured Shift Logs & Biometric Audits</h3>
+                  <p className="text-xs text-slate-500 font-medium">Click on Check-In or Check-Out pills to inspect selfie snapshots & GPS coords</p>
+                </div>
+
+                {/* Filter Pills */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {(['all', 'present', 'late', 'half_day', 'holiday', 'week_off'] as const).map(flt => (
                     <button
                       key={flt}
                       onClick={() => setStatusFilter(flt)}
-                      className={`px-2.5 py-1 rounded-lg text-[10.5px] font-bold capitalize transition ${
+                      className={`px-2.5 py-1 rounded-lg text-[10.5px] font-black capitalize transition-all cursor-pointer ${
                         statusFilter === flt
-                          ? 'bg-[#C89435] text-white'
-                          : 'bg-white/5 text-white/60 hover:bg-white/10'
+                          ? 'bg-amber-400 text-slate-900 shadow-2xs'
+                          : 'bg-white text-slate-600 hover:bg-slate-100 border border-[#EAE5DA]'
                       }`}
                     >
-                      {flt}
+                      {flt === 'week_off' ? 'Weekly Off' : flt}
                     </button>
                   ))}
                 </div>
               </div>
 
               {memberRecords.length === 0 ? (
-                <div className="bg-[#24211D] p-8 rounded-2xl border border-dashed border-white/10 text-center text-xs text-white/40">
-                  No attendance records logged for {selectedMonth} with filter &quot;{statusFilter}&quot;.
+                <div className="bg-white p-10 rounded-2xl border border-dashed border-[#EAE5DA] text-center text-xs text-slate-400 space-y-2">
+                  <Calendar className="w-8 h-8 mx-auto text-slate-300" />
+                  <p className="font-bold">No attendance records logged for the selected period.</p>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {memberRecords.map(rec => (
-                    <div key={rec.id} className="bg-[#24211D] border border-white/10 rounded-2xl p-4 space-y-3 hover:border-white/20 transition">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-xs text-white">
-                            {new Date(rec.date).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short' })}
+                <div className="space-y-2.5">
+                  {memberRecords.map(rec => {
+                    const dateObj = new Date(rec.date);
+                    const isLate = rec.status === 'late' || (rec.late_minutes && rec.late_minutes > 0);
+                    const netWork = rec.work_duration_minutes || rec.total_work_minutes || 0;
+                    const pausedWork = rec.break_duration_minutes || rec.total_pause_minutes || 0;
+
+                    return (
+                      <div 
+                        key={rec.id} 
+                        className="p-4 bg-white rounded-2xl border border-[#EAE5DA] hover:border-amber-300 shadow-2xs transition-all flex flex-col md:flex-row md:items-center justify-between gap-4"
+                      >
+                        {/* 1. Left Column: Date & Day */}
+                        <div className="flex items-center gap-3 min-w-[170px]">
+                          <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-900 border border-amber-200 flex flex-col items-center justify-center font-black font-mono text-xs shrink-0">
+                            <span>{dateObj.toLocaleDateString('en-IN', { day: '2-digit' })}</span>
+                            <span className="text-[9px] uppercase text-amber-700">{dateObj.toLocaleDateString('en-IN', { month: 'short' })}</span>
+                          </div>
+                          <div>
+                            <h4 className="text-xs font-black text-slate-900">
+                              {dateObj.toLocaleDateString('en-IN', { weekday: 'long' })}
+                            </h4>
+                            <p className="text-[11px] text-slate-500 font-medium">
+                              {dateObj.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* 2. Middle-Left Column: Check-In Pill */}
+                        <div className="flex items-center gap-2 min-w-[140px]">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setInspectPunch({
+                                open: true,
+                                type: 'check_in',
+                                time: rec.check_in_time,
+                                photoUrl: rec.check_in_selfie || rec.check_in_photo_path,
+                                lat: rec.check_in_lat,
+                                lng: rec.check_in_lng,
+                                address: rec.device_info?.check_in_address || rec.notes,
+                                dateStr: rec.date
+                              });
+                            }}
+                            className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl text-left transition cursor-pointer flex items-center gap-2 group shadow-2xs"
+                            title="Click to view Check-In Selfie & Map"
+                          >
+                            <Camera className="w-3.5 h-3.5 text-emerald-600 group-hover:scale-110 transition" />
+                            <div>
+                              <span className="text-[9px] font-black text-emerald-700 uppercase tracking-wider block">Check-In</span>
+                              <span className="text-xs font-black text-emerald-950 font-mono">
+                                {rec.check_in_time ? new Date(rec.check_in_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
+                              </span>
+                            </div>
+                          </button>
+                        </div>
+
+                        {/* 3. Middle-Right Column: Check-Out Pill */}
+                        <div className="flex items-center gap-2 min-w-[140px]">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setInspectPunch({
+                                open: true,
+                                type: 'check_out',
+                                time: rec.check_out_time,
+                                photoUrl: rec.check_out_selfie || rec.check_out_photo_path,
+                                lat: rec.check_out_lat,
+                                lng: rec.check_out_lng,
+                                address: rec.device_info?.check_out_address,
+                                dateStr: rec.date
+                              });
+                            }}
+                            className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl text-left transition cursor-pointer flex items-center gap-2 group shadow-2xs"
+                            title="Click to view Check-Out Selfie & Map"
+                          >
+                            <Camera className="w-3.5 h-3.5 text-amber-700 group-hover:scale-110 transition" />
+                            <div>
+                              <span className="text-[9px] font-black text-amber-800 uppercase tracking-wider block">Check-Out</span>
+                              <span className="text-xs font-black text-amber-950 font-mono">
+                                {rec.check_out_time ? new Date(rec.check_out_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : 'In Progress'}
+                              </span>
+                            </div>
+                          </button>
+                        </div>
+
+                        {/* 4. Right Column: Net Hours Logged */}
+                        <div className="text-left md:text-right min-w-[150px]">
+                          <span className="text-xs font-black text-slate-900 font-mono block">
+                            {Math.floor(netWork / 60)}h {netWork % 60}m Active
                           </span>
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            rec.status === 'present' ? 'bg-emerald-500/20 text-emerald-300' :
-                            rec.status === 'late' ? 'bg-amber-500/20 text-amber-300' : 'bg-rose-500/20 text-rose-300'
-                          }`}>
-                            {rec.status.toUpperCase()}
+                          <span className="text-[10px] text-slate-500 font-medium">
+                            {pausedWork > 0 ? `${pausedWork}m Paused/Breaks` : '0m Paused'}
                           </span>
                         </div>
 
+                        {/* 5. Outer Status Tag */}
                         <div className="flex items-center gap-2">
+                          {rec.status === 'present' && (
+                            <span className="px-3 py-1 rounded-full text-[11px] font-black bg-emerald-50 text-emerald-800 border border-emerald-200">
+                              Present
+                            </span>
+                          )}
                           {rec.status === 'late' && (
-                            <button
-                              disabled={updatingRecordId === rec.id}
-                              onClick={() => handleMarkRegularized(rec)}
-                              className="px-2.5 py-1 rounded-lg bg-[#C89435] hover:bg-[#B3802B] text-white text-[10.5px] font-bold shadow-xs transition"
-                            >
-                              {updatingRecordId === rec.id ? 'Regularizing...' : 'Mark Regularized'}
-                            </button>
-                          )}
-                          <span className="text-xs font-mono text-white/80 font-bold">
-                            {Math.floor((rec.work_duration_minutes || 0) / 60)}h {(rec.work_duration_minutes || 0) % 60}m Active
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Side-by-Side Selfie & Coordinates Stage */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                        {/* Check-In Card */}
-                        <div className="bg-black/30 rounded-xl p-3 border border-white/5 space-y-2">
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="text-white/60 font-semibold">Check-In (IST)</span>
-                            <span className="text-[#81C784] font-mono font-bold">
-                              {rec.check_in_time ? new Date(rec.check_in_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
-                            </span>
-                          </div>
-                          {rec.check_in_photo_path ? (
-                            <div className="relative aspect-video rounded-lg overflow-hidden border border-white/10 bg-black/60">
-                              <img src={rec.check_in_photo_path} alt="Check-in Selfie" className="w-full h-full object-cover" />
-                              <span className="absolute bottom-1 right-1 text-[9px] bg-black/70 px-1.5 py-0.5 rounded text-white font-mono">
-                                Verified
+                            <div className="flex items-center gap-1.5">
+                              <span className="px-2.5 py-1 rounded-full text-[11px] font-black bg-amber-100 text-amber-900 border border-amber-300">
+                                Late ({rec.late_minutes}m)
                               </span>
-                            </div>
-                          ) : (
-                            <div className="aspect-video rounded-lg border border-dashed border-white/10 flex items-center justify-center text-[10px] text-white/30">
-                              No selfie photo
+                              {onUpdateRecord && (
+                                <button
+                                  type="button"
+                                  disabled={updatingRecordId === rec.id}
+                                  onClick={() => handleMarkRegularized(rec)}
+                                  className="px-2 py-0.5 text-[10px] font-black bg-amber-400 hover:bg-amber-500 text-slate-900 rounded-lg shadow-2xs cursor-pointer"
+                                >
+                                  {updatingRecordId === rec.id ? '...' : 'Regularize'}
+                                </button>
+                              )}
                             </div>
                           )}
-                          <div className="text-[10px] text-white/50 flex flex-col gap-0.5">
-                            <div className="flex items-center gap-1">
-                              <MapPin className="w-3 h-3 text-[#C89435]" />
-                              <span>GPS: {rec.check_in_lat?.toFixed(4) || '—'}, {rec.check_in_lng?.toFixed(4) || '—'}</span>
-                            </div>
-                            {rec.notes && <span className="text-[9.5px] text-white/40 truncate">{rec.notes}</span>}
-                          </div>
+                          {rec.status === 'half_day' && (
+                            <span className="px-3 py-1 rounded-full text-[11px] font-black bg-orange-100 text-orange-900 border border-orange-200">
+                              Half-Day
+                            </span>
+                          )}
+                          {rec.status === 'absent' && (
+                            <span className="px-3 py-1 rounded-full text-[11px] font-black bg-rose-100 text-rose-800 border border-rose-200">
+                              Absent
+                            </span>
+                          )}
+                          {rec.status === 'holiday' && (
+                            <span className="px-3 py-1 rounded-full text-[11px] font-black bg-purple-100 text-purple-900 border border-purple-200">
+                              Paid Holiday
+                            </span>
+                          )}
+                          {rec.status === 'week_off' && (
+                            <span className="px-3 py-1 rounded-full text-[11px] font-black bg-slate-100 text-slate-700 border border-slate-300">
+                              Weekly Off
+                            </span>
+                          )}
                         </div>
 
-                        {/* Check-Out Card */}
-                        <div className="bg-black/30 rounded-xl p-3 border border-white/5 space-y-2">
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="text-white/60 font-semibold">Check-Out (IST)</span>
-                            <span className="text-[#FF8A80] font-mono font-bold">
-                              {rec.check_out_time ? new Date(rec.check_out_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
-                            </span>
-                          </div>
-                          {rec.check_out_photo_path ? (
-                            <div className="relative aspect-video rounded-lg overflow-hidden border border-white/10 bg-black/60">
-                              <img src={rec.check_out_photo_path} alt="Check-out Selfie" className="w-full h-full object-cover" />
-                            </div>
-                          ) : (
-                            <div className="aspect-video rounded-lg border border-dashed border-white/10 flex items-center justify-center text-[10px] text-white/30">
-                              No check-out photo
-                            </div>
-                          )}
-                          <div className="text-[10px] text-white/50 flex flex-col gap-0.5">
-                            <div className="flex items-center gap-1">
-                              <MapPin className="w-3 h-3 text-[#FF8A80]" />
-                              <span>GPS: {rec.check_out_lat ? `${rec.check_out_lat.toFixed(4)}, ${rec.check_out_lng?.toFixed(4)}` : '—'}</span>
-                            </div>
-                            {(rec.device_info?.check_out_address || (rec.notes && rec.notes.includes('Punch Out:'))) ? (
-                              <span className="text-[9.5px] text-white/40 truncate">
-                                {rec.device_info?.check_out_address || rec.notes?.split('Punch Out:')[1]?.trim() || ''}
-                              </span>
-                            ) : null}
-                          </div>
-                          <div className="text-[10px] text-white/50 flex items-center justify-between pt-1 border-t border-white/5">
-                            <div className="flex items-center gap-1">
-                              <Clock className="w-3 h-3 text-[#4FC3F7]" />
-                              <span>Overtime: {rec.overtime_minutes || 0}m</span>
-                            </div>
-                            {rec.break_duration_minutes ? (
-                              <span className="text-amber-400/80 font-mono">Paused: {rec.break_duration_minutes}m</span>
-                            ) : null}
-                          </div>
-                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
 
           </div>
         </motion.div>
+
+        {/* ── POPUP: SELFIE SNAPSHOT & GPS AUDIT INSPECTOR ── */}
+        <AnimatePresence>
+          {inspectPunch.open && (
+            <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs font-sans">
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-[#FFFDF9] rounded-3xl p-6 max-w-md w-full border border-[#EAE5DA] shadow-2xl space-y-4 text-slate-900"
+              >
+                <div className="flex items-center justify-between border-b border-[#EAE5DA] pb-3">
+                  <div className="flex items-center gap-2">
+                    <Camera className="w-5 h-5 text-amber-600" />
+                    <div>
+                      <h4 className="text-sm font-black text-slate-900 capitalize">
+                        {inspectPunch.type === 'check_in' ? 'Check-In' : 'Check-Out'} Biometric Audit
+                      </h4>
+                      <p className="text-[11px] text-slate-500 font-medium">{inspectPunch.dateStr}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setInspectPunch({ open: false, type: 'check_in' })}
+                    className="p-1.5 text-slate-400 hover:text-slate-700 bg-slate-100 rounded-xl"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Photo Preview */}
+                <div className="aspect-4/3 rounded-2xl overflow-hidden bg-slate-900 border border-[#EAE5DA] relative shadow-inner">
+                  {inspectPunch.photoUrl ? (
+                    <img
+                      src={inspectPunch.photoUrl}
+                      alt="Punch Selfie"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 space-y-1">
+                      <Camera className="w-8 h-8 opacity-40" />
+                      <span className="text-xs font-bold">No Selfie Snapshot Attached</span>
+                    </div>
+                  )}
+                  {inspectPunch.time && (
+                    <div className="absolute bottom-2 left-2 px-2.5 py-1 bg-black/70 backdrop-blur-xs rounded-lg text-white font-mono text-[11px] font-bold">
+                      {new Date(inspectPunch.time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })} IST
+                    </div>
+                  )}
+                </div>
+
+                {/* GPS Location Details */}
+                <div className="p-3.5 bg-amber-50/70 rounded-2xl border border-amber-200/80 space-y-1 text-xs">
+                  <div className="flex items-center gap-1.5 text-amber-900 font-bold">
+                    <MapPin className="w-4 h-4 text-amber-700 shrink-0" />
+                    <span>GPS Coordinates: {inspectPunch.lat ? `${inspectPunch.lat.toFixed(5)}, ${inspectPunch.lng?.toFixed(5)}` : 'Location Not Available'}</span>
+                  </div>
+                  {inspectPunch.address && (
+                    <p className="text-[11px] text-slate-600 font-medium pl-5">
+                      {inspectPunch.address}
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setInspectPunch({ open: false, type: 'check_in' })}
+                    className="px-5 py-2 bg-amber-400 hover:bg-amber-500 text-slate-900 font-black rounded-xl text-xs shadow-xs"
+                  >
+                    Close Audit
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
       </div>
     </AnimatePresence>
   );

@@ -60,7 +60,18 @@ export async function POST(request: NextRequest) {
     const { data: allLocations } = await locationsQuery;
     let locations = allLocations || [];
 
-    if (member?.default_geofence_id) {
+    // Prioritize member's direct assigned geofence if configured
+    if (member?.latitude && member?.longitude) {
+      const staffLoc = {
+        id: `staff_${member.id}`,
+        name: member.location_name || 'Assigned Work Location',
+        latitude: Number(member.latitude),
+        longitude: Number(member.longitude),
+        radius_meters: Number(member.radius_meters) || 150,
+        address: member.location_name || 'Assigned Studio/Venue'
+      };
+      locations = [staffLoc, ...locations.filter(l => l.name !== staffLoc.name)];
+    } else if (member?.default_geofence_id) {
       const userLoc = locations.find(l => l.id === member.default_geofence_id);
       if (userLoc) {
         locations = [userLoc, ...locations.filter(l => l.id !== member.default_geofence_id)];
@@ -72,7 +83,7 @@ export async function POST(request: NextRequest) {
     let matchedLocationId: string | null = null;
     let minDistance = Infinity;
     let closestLocationName = '';
-    let allowedRadius = 50;
+    let allowedRadius = member?.radius_meters ? Number(member.radius_meters) : 150;
 
     if (locations && locations.length > 0 && lat && lng) {
       for (const loc of locations) {
@@ -86,10 +97,10 @@ export async function POST(request: NextRequest) {
         if (dist < minDistance) {
           minDistance = dist;
           closestLocationName = loc.name;
-          allowedRadius = Number(loc.radius_meters || 50);
+          allowedRadius = Number(loc.radius_meters || 150);
         }
 
-        if (dist <= Number(loc.radius_meters || 50)) {
+        if (dist <= Number(loc.radius_meters || 150)) {
           geofenceStatus = 'verified';
           matchedLocationId = loc.id;
           break;
@@ -109,7 +120,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 5. Fast Punch Address (use client-resolved address or location name immediately)
+    // 5. Fast Punch Address
     let punchAddress = address || closestLocationName || (lat && lng ? `Lat: ${Number(lat).toFixed(4)}, Lng: ${Number(lng).toFixed(4)}` : '');
 
     // 6. Fast Selfie Upload to Supabase Storage
@@ -150,22 +161,36 @@ export async function POST(request: NextRequest) {
     const [istHour, istMin] = istTimeStr.split(':').map(Number);
     const currentTotalMinutes = istHour * 60 + istMin;
 
-    const shiftStart = settings?.default_shift_start || '09:30:00';
+    // Check staff-specific shift start time or default
+    const shiftStart = member?.shift_start ? member.shift_start.slice(0, 5) : (settings?.default_shift_start || '10:00:00');
     const [sHour, sMin] = shiftStart.split(':').map(Number);
     const shiftStartMinutes = sHour * 60 + sMin;
     const graceMinutes = Number(settings?.grace_period_minutes || 15);
     const lateThresholdMinutes = shiftStartMinutes + graceMinutes;
 
-    let status: 'present' | 'late' | 'half_day' = 'present';
+    // Check if today is a Company Holiday or Weekly Off
+    const { data: holidayToday } = await supabaseAdmin
+      .from('company_holidays')
+      .select('*')
+      .eq('holiday_date', todayDate)
+      .maybeSingle();
+
+    const todayDayName = new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(nowTime);
+    const isWeeklyOff = Array.isArray(member?.weekly_offs) && member.weekly_offs.includes(todayDayName);
+
+    let status: 'present' | 'late' | 'half_day' | 'holiday' | 'week_off' = 'present';
     let lateMinutes = 0;
 
-    if (currentTotalMinutes > lateThresholdMinutes) {
+    if (holidayToday) {
+      status = 'holiday';
+    } else if (isWeeklyOff) {
+      status = 'week_off';
+    } else if (currentTotalMinutes > shiftStartMinutes + 180) {
+      status = 'half_day';
+      lateMinutes = Math.max(0, currentTotalMinutes - shiftStartMinutes);
+    } else if (currentTotalMinutes > lateThresholdMinutes) {
       status = 'late';
       lateMinutes = currentTotalMinutes - shiftStartMinutes;
-    }
-
-    if (currentTotalMinutes > shiftStartMinutes + 180) {
-      status = 'half_day';
     }
 
     const formattedIstTime = new Intl.DateTimeFormat('en-IN', {
@@ -187,10 +212,13 @@ export async function POST(request: NextRequest) {
       check_in_lng: lng ? Number(lng) : null,
       check_in_accuracy: accuracy ? Number(accuracy) : null,
       check_in_photo_path: photoPath || photoBase64,
+      check_in_selfie: photoPath || photoBase64,
       check_in_location_id: matchedLocationId,
       check_in_verified: true,
       check_in_geofence_status: geofenceStatus,
       late_minutes: lateMinutes,
+      total_work_minutes: 0,
+      total_pause_minutes: 0,
       device_info: {
         ...(deviceInfo || {}),
         check_in_ist: formattedIstTime,

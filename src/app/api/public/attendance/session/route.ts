@@ -112,7 +112,7 @@ export async function GET(request: NextRequest) {
       .eq('user_id', link.user_id)
       .maybeSingle();
 
-    // 6. Fetch Active Geofence Locations (Include Custom User Location first if assigned)
+    // 6. Fetch Active Geofence Locations (Include Custom Staff Location first if assigned)
     let locations: any[] = [];
     const { data: allLocations } = await supabaseAdmin
       .from('attendance_locations')
@@ -122,20 +122,63 @@ export async function GET(request: NextRequest) {
 
     locations = allLocations || [];
 
-    // Prioritize member's assigned default geofence if present
-    if (member.default_geofence_id) {
+    // Prioritize member's direct assigned geofence if configured
+    if (member.latitude && member.longitude) {
+      const staffLoc = {
+        id: `staff_${member.id}`,
+        name: member.location_name || 'Assigned Work Location',
+        latitude: Number(member.latitude),
+        longitude: Number(member.longitude),
+        radius_meters: Number(member.radius_meters) || 150,
+        address: member.location_name || 'Assigned Studio/Office'
+      };
+      locations = [staffLoc, ...locations.filter(l => l.name !== staffLoc.name)];
+    } else if (member.default_geofence_id) {
       const userLoc = locations.find(l => l.id === member.default_geofence_id);
       if (userLoc) {
         locations = [userLoc, ...locations.filter(l => l.id !== member.default_geofence_id)];
       }
     }
 
-    // 7. Fetch Active Shifts
-    const { data: shifts } = await supabaseAdmin
+    // 7. Check if today is a Company Holiday or Weekly Off
+    const { data: holidayToday } = await supabaseAdmin
+      .from('company_holidays')
+      .select('*')
+      .eq('holiday_date', todayDate)
+      .maybeSingle();
+
+    const todayDayName = new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(new Date());
+    const isWeeklyOff = Array.isArray(member.weekly_offs) && member.weekly_offs.includes(todayDayName);
+
+    // 8. Fetch Active Shifts (or construct from member profile)
+    let shifts: any[] = [];
+    if (member.shift_start && member.shift_end) {
+      shifts.push({
+        id: `shift_${member.id}`,
+        name: `${member.name}'s Shift`,
+        start_time: member.shift_start,
+        end_time: member.shift_end,
+        grace_period_minutes: 15
+      });
+    }
+
+    const { data: dbShifts } = await supabaseAdmin
       .from('attendance_shifts')
       .select('id, name, start_time, end_time, grace_period_minutes')
       .eq('user_id', link.user_id)
       .eq('is_active', true);
+
+    if (dbShifts && dbShifts.length > 0) {
+      shifts = [...shifts, ...dbShifts];
+    } else if (shifts.length === 0) {
+      shifts = [{
+        id: 'shift_default',
+        name: 'Standard Shift (10 AM - 7 PM)',
+        start_time: '10:00:00',
+        end_time: '19:00:00',
+        grace_period_minutes: 15
+      }];
+    }
 
     // 8. Fetch Current Month Attendance Records
     const startOfMonth = `${todayDate.substring(0, 7)}-01`;
@@ -168,6 +211,8 @@ export async function GET(request: NextRequest) {
       },
       locations,
       shifts: shifts || [],
+      holidayToday: holidayToday || null,
+      isWeeklyOff: !!isWeeklyOff,
       monthlyHistory: monthlyHistory || [],
       recentLeaves: recentLeaves || []
     });

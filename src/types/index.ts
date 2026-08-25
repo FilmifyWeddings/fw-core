@@ -311,16 +311,48 @@ export interface FWSubEvent {
 export interface FWTeamMember {
   id: string;
   user_id?: string | null;
+  workspace_id?: string | null;
   name: string;
   primary_role: string;
+  role_id?: string | null;
   country_code?: string;
   phone_number: string;
+  whatsapp_number?: string | null;
   email?: string;
   avatar_url?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  radius_meters?: number | null;
+  location_name?: string | null;
+  shift_start?: string | null; // e.g. '10:00:00' or '10:00'
+  shift_end?: string | null; // e.g. '19:00:00' or '19:00'
+  weekly_offs?: string[] | null; // e.g. ['Sun']
+  daily_rate?: number | null;
+  monthly_salary?: number | null;
   active_status?: boolean;
   is_active?: boolean;
+  custom_data?: Record<string, any> | null;
   created_at?: string;
   updated_at?: string;
+}
+
+export interface StaffRole {
+  id: string;
+  user_id?: string | null;
+  workspace_id: string;
+  role_name: string;
+  created_at?: string;
+}
+
+export interface CompanyHoliday {
+  id: string;
+  user_id?: string | null;
+  workspace_id: string;
+  holiday_date: string; // YYYY-MM-DD
+  name: string;
+  note?: string | null;
+  is_optional?: boolean;
+  created_at?: string;
 }
 
 export interface FWAssignment {
@@ -585,6 +617,7 @@ export interface AttendanceRecord {
   check_in_lng?: number | null;
   check_in_accuracy?: number | null;
   check_in_photo_path?: string | null;
+  check_in_selfie?: string | null;
   check_in_location_id?: string | null;
   check_in_location?: AttendanceLocation | null;
   check_in_verified: boolean;
@@ -593,17 +626,34 @@ export interface AttendanceRecord {
   check_out_lat?: number | null;
   check_out_lng?: number | null;
   check_out_photo_path?: string | null;
+  check_out_selfie?: string | null;
   check_out_verified: boolean;
   work_duration_minutes: number;
   break_duration_minutes: number;
+  total_work_minutes?: number;
+  total_pause_minutes?: number;
   overtime_minutes: number;
   late_minutes: number;
   early_checkout_minutes: number;
+  auto_checkout?: boolean;
   shift_id?: string | null;
   device_info?: Record<string, any>;
   notes?: string | null;
   created_at?: string;
   updated_at?: string;
+}
+
+export interface AttendancePauseLog {
+  id: string;
+  user_id?: string | null;
+  workspace_id: string;
+  attendance_record_id: string;
+  member_id: string;
+  paused_at: string;
+  resumed_at?: string | null;
+  duration_minutes: number;
+  reason?: string | null;
+  created_at?: string;
 }
 
 export interface AttendanceBreak {
