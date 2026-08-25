@@ -71,116 +71,138 @@ export default function GooglePlacesGeofenceMap({
   // Initialize Leaflet Map with CartoDB & Esri Satellite Layers
   useEffect(() => {
     let isMounted = true;
+    let initTimer: any = null;
 
     const initMap = async () => {
-      if (!mapContainerRef.current) return;
+      try {
+        if (!mapContainerRef.current) return;
+        if (typeof window === 'undefined' || typeof document === 'undefined') return;
+        if (!document.body.contains(mapContainerRef.current)) return;
 
-      if (!document.getElementById('leaflet-css')) {
-        const link = document.createElement('link');
-        link.id = 'leaflet-css';
-        link.rel = 'stylesheet';
-        link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-        document.head.appendChild(link);
-      }
+        if (!document.getElementById('leaflet-css')) {
+          const link = document.createElement('link');
+          link.id = 'leaflet-css';
+          link.rel = 'stylesheet';
+          link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+          document.head.appendChild(link);
+        }
 
-      const leafletModule = await import('leaflet');
-      const L = (leafletModule as any).default || leafletModule;
+        const leafletModule = await import('leaflet');
+        const L = (leafletModule as any).default || leafletModule;
+        if (!L || typeof L.map !== 'function') return;
 
-      if (leafletMapRef.current) {
-        try {
-          leafletMapRef.current.remove();
-        } catch (_) {}
-      }
+        if (!isMounted || !mapContainerRef.current) return;
+        if (!document.body.contains(mapContainerRef.current)) return;
 
-      const initialLat = latitude || 19.0596;
-      const initialLng = longitude || 72.8295;
+        if (leafletMapRef.current) {
+          try {
+            leafletMapRef.current.off();
+            leafletMapRef.current.remove();
+          } catch (_) {}
+          leafletMapRef.current = null;
+        }
 
-      const map = L.map(mapContainerRef.current, {
-        center: [initialLat, initialLng],
-        zoom: 16,
-        zoomControl: true,
-        attributionControl: false
-      });
+        if ((mapContainerRef.current as any)._leaflet_id) {
+          delete (mapContainerRef.current as any)._leaflet_id;
+        }
 
-      // Street Layer (CartoDB Voyager)
-      const streetLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        maxZoom: 20
-      });
+        const initialLat = Number(latitude) || 19.0596;
+        const initialLng = Number(longitude) || 72.8295;
 
-      // Satellite Layer (Esri World Imagery)
-      const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-        maxZoom: 19
-      });
-
-      streetLayer.addTo(map);
-      streetTileLayerRef.current = streetLayer;
-      satelliteTileLayerRef.current = satelliteLayer;
-      leafletMapRef.current = map;
-
-      // Custom Gold Pin Marker
-      const goldIcon = L.divIcon({
-        className: 'custom-geofence-pin',
-        html: `
-          <div style="position: relative; display: flex; align-items: center; justify-content: center; width: 40px; height: 40px;">
-            <div style="position: absolute; width: 36px; height: 36px; border-radius: 50%; background: rgba(200, 148, 53, 0.4); animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
-            <div style="width: 32px; height: 32px; border-radius: 50%; background: #C89435; border: 3px solid #FFFFFF; box-shadow: 0 4px 14px rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; color: white; font-size: 16px;">📍</div>
-          </div>
-        `,
-        iconSize: [40, 40],
-        iconAnchor: [20, 20]
-      });
-
-      const marker = L.marker([initialLat, initialLng], {
-        icon: goldIcon,
-        draggable: isEditable
-      }).addTo(map);
-      leafletMarkerRef.current = marker;
-
-      // Radial Geofence Circle
-      const circle = L.circle([initialLat, initialLng], {
-        radius: radiusMeters || 150,
-        color: '#C89435',
-        weight: 2.5,
-        fillColor: '#C89435',
-        fillOpacity: 0.22
-      }).addTo(map);
-      leafletCircleRef.current = circle;
-
-      // Marker Drag End Listener
-      if (isEditable) {
-        marker.on('dragend', async (e: any) => {
-          const { lat, lng } = e.target.getLatLng();
-          circle.setLatLng([lat, lng]);
-          const newLat = Number(lat.toFixed(6));
-          const newLng = Number(lng.toFixed(6));
-          const addr = await reverseGeocodeAddress(newLat, newLng);
-          setCurrentAddress(addr);
-          if (onCoordinatesChange) onCoordinatesChange(newLat, newLng, addr);
+        const map = L.map(mapContainerRef.current, {
+          center: [initialLat, initialLng],
+          zoom: 16,
+          zoomControl: true,
+          attributionControl: false
         });
 
-        map.on('click', async (e: any) => {
-          const { lat, lng } = e.latlng;
-          marker.setLatLng([lat, lng]);
-          circle.setLatLng([lat, lng]);
-          const newLat = Number(lat.toFixed(6));
-          const newLng = Number(lng.toFixed(6));
-          const addr = await reverseGeocodeAddress(newLat, newLng);
-          setCurrentAddress(addr);
-          if (onCoordinatesChange) onCoordinatesChange(newLat, newLng, addr);
+        // Street Layer (CartoDB Voyager)
+        const streetLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+          maxZoom: 20
         });
-      }
 
-      if (isMounted) setMapLoaded(true);
+        // Satellite Layer (Esri World Imagery)
+        const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+          maxZoom: 19
+        });
+
+        streetLayer.addTo(map);
+        streetTileLayerRef.current = streetLayer;
+        satelliteTileLayerRef.current = satelliteLayer;
+        leafletMapRef.current = map;
+
+        // Custom Gold Pin Marker
+        const goldIcon = L.divIcon({
+          className: 'custom-geofence-pin',
+          html: `
+            <div style="position: relative; display: flex; align-items: center; justify-content: center; width: 40px; height: 40px;">
+              <div style="position: absolute; width: 36px; height: 36px; border-radius: 50%; background: rgba(200, 148, 53, 0.4); animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
+              <div style="width: 32px; height: 32px; border-radius: 50%; background: #C89435; border: 3px solid #FFFFFF; box-shadow: 0 4px 14px rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; color: white; font-size: 16px;">📍</div>
+            </div>
+          `,
+          iconSize: [40, 40],
+          iconAnchor: [20, 20]
+        });
+
+        const marker = L.marker([initialLat, initialLng], {
+          icon: goldIcon,
+          draggable: isEditable
+        }).addTo(map);
+        leafletMarkerRef.current = marker;
+
+        // Radial Geofence Circle
+        const circle = L.circle([initialLat, initialLng], {
+          radius: radiusMeters || 150,
+          color: '#C89435',
+          weight: 2.5,
+          fillColor: '#C89435',
+          fillOpacity: 0.22
+        }).addTo(map);
+        leafletCircleRef.current = circle;
+
+        // Marker Drag End Listener
+        if (isEditable) {
+          marker.on('dragend', async (e: any) => {
+            const { lat, lng } = e.target.getLatLng();
+            circle.setLatLng([lat, lng]);
+            const newLat = Number(lat.toFixed(6));
+            const newLng = Number(lng.toFixed(6));
+            const addr = await reverseGeocodeAddress(newLat, newLng);
+            setCurrentAddress(addr);
+            if (onCoordinatesChange) onCoordinatesChange(newLat, newLng, addr);
+          });
+
+          map.on('click', async (e: any) => {
+            const { lat, lng } = e.latlng;
+            marker.setLatLng([lat, lng]);
+            circle.setLatLng([lat, lng]);
+            const newLat = Number(lat.toFixed(6));
+            const newLng = Number(lng.toFixed(6));
+            const addr = await reverseGeocodeAddress(newLat, newLng);
+            setCurrentAddress(addr);
+            if (onCoordinatesChange) onCoordinatesChange(newLat, newLng, addr);
+          });
+        }
+
+        if (isMounted) setMapLoaded(true);
+      } catch (err) {
+        console.warn('Map initialization safely skipped:', err);
+      }
     };
 
-    initMap();
+    initTimer = setTimeout(() => {
+      initMap();
+    }, 120);
 
     return () => {
       isMounted = false;
+      if (initTimer) clearTimeout(initTimer);
       if (leafletMapRef.current) {
         try {
+          leafletMapRef.current.off();
           leafletMapRef.current.remove();
         } catch (_) {}
+        leafletMapRef.current = null;
       }
     };
   }, []);

@@ -131,8 +131,8 @@ export default function AddTeamMemberModal({
         setRadiusMeters(editRadius);
         setLocationName(editLocationName);
 
-        const editShiftStart = memberToEdit.shift_start ? memberToEdit.shift_start.slice(0, 5) : (custom.shift_start ? custom.shift_start.slice(0, 5) : '10:00');
-        const editShiftEnd = memberToEdit.shift_end ? memberToEdit.shift_end.slice(0, 5) : (custom.shift_end ? custom.shift_end.slice(0, 5) : '19:00');
+        const editShiftStart = memberToEdit.shift_start ? String(memberToEdit.shift_start).slice(0, 5) : (custom.shift_start ? String(custom.shift_start).slice(0, 5) : '10:00');
+        const editShiftEnd = memberToEdit.shift_end ? String(memberToEdit.shift_end).slice(0, 5) : (custom.shift_end ? String(custom.shift_end).slice(0, 5) : '19:00');
         setShiftStart(editShiftStart);
         setShiftEnd(editShiftEnd);
 
