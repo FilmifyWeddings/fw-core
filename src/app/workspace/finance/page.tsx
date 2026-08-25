@@ -17,6 +17,7 @@ import { extractFinancialsFromQuotation, normalizeToIsoDate } from '@/lib/quotat
 import { LeadQuotationModal } from '@/components/dashboard/lead-quotation-modal';
 import { InvoiceModalDialog } from '@/components/finance/invoice-modal-dialog';
 import { ExcelMigrationModal } from '@/components/finance/excel-migration-modal';
+import MilestoneStepDropdown from '@/components/finance/MilestoneStepDropdown';
 import { exportCurrentFinanceToExcel } from '@/lib/excel-finance-migration';
 import type { 
   WorkspaceClient, ClientFinanceRecord, FinanceMilestoneItem, FinanceExpenseItem, 
@@ -65,6 +66,15 @@ export default function FinancePage() {
   const [teamMemberFilter, setTeamMemberFilter] = useState('all');
   const [addingMemberForClientId, setAddingMemberForClientId] = useState<string | null>(null);
   const [newMemberInputName, setNewMemberInputName] = useState('');
+
+  // ─────────────────────────────────────────────────────────────
+  // 🪙 PAYMENT TERMS & 3D MILESTONE TEMPLATES
+  // ─────────────────────────────────────────────────────────────
+  const [paymentMilestoneTemplates, setPaymentMilestoneTemplates] = useState<string[]>([
+    'Token Amount',
+    'Advance Amount',
+    'On Wedding Day'
+  ]);
 
   // ─────────────────────────────────────────────────────────────
   // 🔐 ADMIN SECURITY GATE & PIN VAULT
@@ -467,21 +477,76 @@ export default function FinancePage() {
         financeData.forEach(f => financeMap.set(f.client_id, f));
       }
 
-      // 3. Fetch Team Members from profiles & projects
+      // 3. Fetch Team Members & Finance Milestone Settings
       try {
-        const { data: profiles } = await supabase.from('profiles').select('id, workspace_name');
         const memberSet = new Set<string>(DEFAULT_TEAM_MEMBERS);
+
+        // A. Fetch from fw_team_members for this user/workspace
+        let tmQuery = supabase.from('fw_team_members').select('id, name');
+        if (workspaceId && workspaceId !== 'ws_demo') {
+          tmQuery = tmQuery.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
+        }
+        const { data: teamMembersDb } = await tmQuery;
+        if (teamMembersDb) {
+          teamMembersDb.forEach(tm => {
+            if (tm.name && tm.name.trim()) memberSet.add(tm.name.trim());
+          });
+        }
+
+        // B. Fetch from profiles
+        const { data: profiles } = await supabase.from('profiles').select('id, workspace_name');
         if (profiles) {
           profiles.forEach(p => {
             if (p.workspace_name && p.workspace_name.trim()) memberSet.add(p.workspace_name.trim());
           });
         }
+
+        // C. Fetch Handled By from clientList and financeData
         clientList.forEach(c => {
-          const handled = (c as any).handled_by || (c as any).assigned_team_member_name;
+          let handled = (c as any).handled_by || (c as any).assigned_team_member_name;
+          if (!handled && (c as any).custom_data?.handled_by) handled = (c as any).custom_data.handled_by;
+          if (!handled && c.notes && typeof c.notes === 'string') {
+            const match = c.notes.match(/handled_by:\s*([^\n\r,]+)/i);
+            if (match && match[1]) handled = match[1].trim();
+          }
           if (handled && typeof handled === 'string' && handled.trim()) memberSet.add(handled.trim());
         });
+
+        if (financeData) {
+          financeData.forEach(f => {
+            const h = (f as any).handled_by;
+            if (h && typeof h === 'string' && h.trim()) memberSet.add(h.trim());
+          });
+        }
+
         setTeamMembersList(Array.from(memberSet));
-      } catch (_) {}
+
+        // D. Fetch Payment Milestone Templates from workspace_finance_settings or localStorage
+        const templateSet = new Set<string>(['Token Amount', 'Advance Amount', 'On Wedding Day']);
+        try {
+          const { data: finSettings } = await supabase
+            .from('workspace_finance_settings')
+            .select('*')
+            .eq('user_id', workspaceId)
+            .maybeSingle();
+
+          if (finSettings?.payment_milestone_templates && Array.isArray(finSettings.payment_milestone_templates)) {
+            finSettings.payment_milestone_templates.forEach((t: string) => {
+              if (t && typeof t === 'string' && t.trim()) templateSet.add(t.trim());
+            });
+          } else {
+            const savedLocal = typeof window !== 'undefined' ? localStorage.getItem(`fw_milestone_templates_${workspaceId}`) : null;
+            if (savedLocal) {
+              const parsed = JSON.parse(savedLocal);
+              if (Array.isArray(parsed)) parsed.forEach(t => templateSet.add(t));
+            }
+          }
+        } catch (_) {}
+
+        setPaymentMilestoneTemplates(Array.from(templateSet));
+      } catch (err) {
+        console.warn('Error loading team members or finance settings:', err);
+      }
 
       // 4. Fetch Quotation Documents
       const leadIds = clientList.map(c => c.lead_id).filter(Boolean);
@@ -880,13 +945,43 @@ export default function FinancePage() {
     }));
 
     try {
+      // 1. Fetch current client to preserve custom_data and notes
+      const { data: currentClient } = await supabase
+        .from('workspace_clients')
+        .select('notes, custom_data')
+        .eq('id', clientId)
+        .maybeSingle();
+
+      const existingNotes = currentClient?.notes || '';
+      let newNotes = existingNotes;
+      if (newNotes.includes('handled_by:')) {
+        newNotes = newNotes.replace(/handled_by:\s*[^\n\r,]+/i, `handled_by: ${memberName}`);
+      } else {
+        newNotes = newNotes ? `${newNotes}\nhandled_by: ${memberName}` : `handled_by: ${memberName}`;
+      }
+
+      const existingCustom = (currentClient?.custom_data as any) || {};
+      const updatedCustom = { ...existingCustom, handled_by: memberName };
+
+      // Update workspace_clients with handled_by column + custom_data + notes fallback
       await supabase
         .from('workspace_clients')
         .update({
-          notes: `handled_by: ${memberName}`,
+          handled_by: memberName,
+          custom_data: updatedCustom,
+          notes: newNotes,
           updated_at: new Date().toISOString()
         })
         .eq('id', clientId);
+
+      // Also update client_finance_records
+      await supabase
+        .from('client_finance_records')
+        .update({
+          handled_by: memberName,
+          updated_at: new Date().toISOString()
+        })
+        .eq('client_id', clientId);
 
       const targetClient = clients.find(c => c.id === clientId);
       logAudit(
@@ -907,9 +1002,83 @@ export default function FinancePage() {
     if (!teamMembersList.includes(cleanName)) {
       setTeamMembersList(prev => [...prev, cleanName]);
     }
+
+    // Persist new team member to fw_team_members in Supabase
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const workspaceId = session?.user?.id;
+      if (workspaceId) {
+        await supabase.from('fw_team_members').insert([{
+          user_id: workspaceId,
+          workspace_id: workspaceId,
+          name: cleanName,
+          primary_role: 'Executive',
+          is_active: true,
+          created_at: new Date().toISOString()
+        }]);
+      }
+    } catch (e) {
+      console.warn('Could not insert team member into fw_team_members:', e);
+    }
+
     await handleAssignTeamMember(clientId, cleanName);
     setAddingMemberForClientId(null);
     setNewMemberInputName('');
+  };
+
+  // ─────────────────────────────────────────────────────────────
+  // 🪙 PAYMENT TERMS & MILESTONE TEMPLATES SAVING
+  // ─────────────────────────────────────────────────────────────
+  const handleSaveNewMilestoneTemplate = async (newTemplateName: string) => {
+    if (!newTemplateName || !newTemplateName.trim()) return;
+    const clean = newTemplateName.trim();
+
+    let updatedList = [...paymentMilestoneTemplates];
+    if (!updatedList.includes(clean)) {
+      updatedList = [...updatedList, clean];
+      setPaymentMilestoneTemplates(updatedList);
+    }
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const workspaceId = session?.user?.id || 'ws_demo';
+
+      // 1. Save in localStorage
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(`fw_milestone_templates_${workspaceId}`, JSON.stringify(updatedList));
+      }
+
+      // 2. Persist in workspace_finance_settings in Supabase
+      if (workspaceId !== 'ws_demo') {
+        const { data: existing } = await supabase
+          .from('workspace_finance_settings')
+          .select('id')
+          .eq('user_id', workspaceId)
+          .maybeSingle();
+
+        if (existing) {
+          await supabase
+            .from('workspace_finance_settings')
+            .update({
+              payment_milestone_templates: updatedList,
+              updated_at: new Date().toISOString()
+            })
+            .eq('user_id', workspaceId);
+        } else {
+          await supabase
+            .from('workspace_finance_settings')
+            .insert([{
+              user_id: workspaceId,
+              workspace_id: workspaceId,
+              payment_milestone_templates: updatedList,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            }]);
+        }
+      }
+    } catch (e) {
+      console.warn('Error persisting milestone template in DB:', e);
+    }
   };
 
   // ─────────────────────────────────────────────────────────────
@@ -2460,11 +2629,11 @@ export default function FinancePage() {
                                     }}
                                     className="bg-transparent text-[11px] font-bold text-purple-950 focus:outline-none cursor-pointer pr-1"
                                   >
+                                    <option value="__add_new__">✨ + Add / Assign New Member</option>
                                     <option value="Unassigned">Unassigned</option>
                                     {teamMembersList.map(m => (
                                       <option key={m} value={m}>{m}</option>
                                     ))}
-                                    <option value="__add_new__">+ Add / Assign New Member</option>
                                   </select>
                                 </div>
                               )}
@@ -2729,14 +2898,14 @@ export default function FinancePage() {
                                           )}
                                         </div>
 
-                                        {/* Step Name (CLEAN: No payment mode badge beneath title) */}
+                                        {/* Step Name (3D Milestone Dropdown) */}
                                         <div className="col-span-4">
-                                          <input
-                                            type="text"
+                                          <MilestoneStepDropdown
                                             value={ms.step_name || ms.title || ''}
-                                            onChange={(e) => handleMilestoneStepChange(record.id, ms.id, 'step_name', e.target.value)}
-                                            placeholder="Payment Milestone"
-                                            className="w-full px-2.5 py-1 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-amber-500"
+                                            onChange={(newVal) => handleMilestoneStepChange(record.id, ms.id, 'step_name', newVal)}
+                                            templates={paymentMilestoneTemplates}
+                                            onAddTemplate={handleSaveNewMilestoneTemplate}
+                                            placeholder="Select Milestone"
                                           />
                                         </div>
 
@@ -3520,11 +3689,12 @@ export default function FinancePage() {
               <div className="space-y-3 text-xs">
                 <div>
                   <label className="font-bold text-slate-700 block mb-1">Step Name</label>
-                  <input
-                    type="text"
+                  <MilestoneStepDropdown
                     value={editingMilestoneData.step_name}
-                    onChange={(e) => setEditingMilestoneData(prev => ({ ...prev, step_name: e.target.value }))}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-900"
+                    onChange={(newVal) => setEditingMilestoneData(prev => ({ ...prev, step_name: newVal }))}
+                    templates={paymentMilestoneTemplates}
+                    onAddTemplate={handleSaveNewMilestoneTemplate}
+                    placeholder="Select Milestone"
                   />
                 </div>
 
@@ -3707,12 +3877,12 @@ export default function FinancePage() {
               <div className="space-y-3 text-xs">
                 <div>
                   <label className="font-bold text-slate-700 block mb-1">Step Name</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Pre-Wedding Shoot Balance"
+                  <MilestoneStepDropdown
                     value={stepFormData.step_name}
-                    onChange={(e) => setStepFormData(prev => ({ ...prev, step_name: e.target.value }))}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold"
+                    onChange={(newVal) => setStepFormData(prev => ({ ...prev, step_name: newVal }))}
+                    templates={paymentMilestoneTemplates}
+                    onAddTemplate={handleSaveNewMilestoneTemplate}
+                    placeholder="Select Milestone"
                   />
                 </div>
 
