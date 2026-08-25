@@ -7,7 +7,7 @@ import {
   Clock, MapPin, Camera, CheckCircle2, AlertCircle, Coffee, 
   LogOut, RefreshCw, ShieldCheck, Sparkles, AlertTriangle, Wifi, WifiOff, X,
   Calendar, Send, ChevronRight, Check, History, Plane, DollarSign, Award,
-  Compass, ArrowUpRight, TrendingUp, Navigation, Pause, Play
+  Compass, ArrowUpRight, TrendingUp, Navigation, Pause, Play, Sun
 } from 'lucide-react';
 import type { AttendanceRecord, AttendanceBreak, AttendanceLocation } from '@/types';
 import { validateCoordinatesAgainstGeofences, GeofenceValidationResult, calculateHaversineDistanceMeters } from '@/lib/attendance/geo-fence';
@@ -976,7 +976,7 @@ export default function PersonalAttendancePage() {
                             ) : rec.check_in_time ? (
                               <div>
                                 <span>Out: </span>
-                                {rec.date === todayDate ? (
+                                {rec.date === new Date().toISOString().split('T')[0] ? (
                                   <span className="text-emerald-600 font-bold animate-pulse">In Progress (Active)</span>
                                 ) : (
                                   <span className="text-rose-600 font-bold">Missed Check-Out</span>

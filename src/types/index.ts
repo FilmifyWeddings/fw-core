@@ -329,6 +329,10 @@ export interface FWTeamMember {
   weekly_offs?: string[] | null; // e.g. ['Sun']
   daily_rate?: number | null;
   monthly_salary?: number | null;
+  payout_type?: 'monthly' | 'daily' | string | null;
+  is_geofence_exempt?: boolean | null;
+  geofence_required?: boolean | null;
+  notes?: string | null;
   active_status?: boolean;
   is_active?: boolean;
   custom_data?: Record<string, any> | null;
