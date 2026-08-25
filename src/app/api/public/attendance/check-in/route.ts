@@ -118,13 +118,40 @@ export async function POST(request: NextRequest) {
     const punchAddress = address || closestLocationName || (lat && lng ? `Lat: ${Number(lat).toFixed(4)}, Lng: ${Number(lng).toFixed(4)}` : 'Studio Location');
 
     // 6. Selfie Upload to Supabase Storage
-    const todayDate = new Date().toISOString().split('T')[0];
+    // 6. Accurate Indian Standard Time (Asia/Kolkata) Extraction
+    const nowTime = new Date();
+    const istDateStr = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(nowTime); // Exact YYYY-MM-DD in IST
+
+    const istTimeFormatter = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
+    const istParts = istTimeFormatter.formatToParts(nowTime);
+    const istH = Number(istParts.find(p => p.type === 'hour')?.value || 0);
+    const istM = Number(istParts.find(p => p.type === 'minute')?.value || 0);
+    const currentTotalMinutes = istH * 60 + istM;
+
+    const formattedIstTime = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    }).format(nowTime);
+
     let photoPath: string | null = null;
     if (photoBase64 && photoBase64.includes('base64,')) {
       try {
         const base64Data = photoBase64.split('base64,')[1];
         const buffer = Buffer.from(base64Data, 'base64');
-        const filename = `${link.member_id}_${todayDate}_in_${Date.now()}.webp`;
+        const filename = `${link.member_id}_${istDateStr}_in_${Date.now()}.webp`;
 
         const { data: uploadData } = await supabaseAdmin.storage
           .from('attendance-selfies')
@@ -149,7 +176,7 @@ export async function POST(request: NextRequest) {
       .from('attendance_records')
       .select('*')
       .eq('member_id', link.member_id)
-      .eq('date', todayDate)
+      .eq('date', istDateStr)
       .maybeSingle();
 
     if (existingRecord && existingRecord.check_in_time) {
@@ -160,22 +187,23 @@ export async function POST(request: NextRequest) {
     }
 
     // 8. Calculate Shift Timings & Late Penalty
-    const nowTime = new Date();
-    const currentTotalMinutes = nowTime.getHours() * 60 + nowTime.getMinutes();
-
-    const mShiftStart = member?.shift_start ? member.shift_start.slice(0, 5) : (custom.shift_start ? custom.shift_start.slice(0, 5) : '10:00');
-    const [shiftH, shiftM] = mShiftStart.split(':').map(Number);
+    const mShiftStart = member?.shift_start ? String(member.shift_start).slice(0, 5) : (custom.shift_start ? String(custom.shift_start).slice(0, 5) : '10:00');
+    const [shiftHRaw, shiftMRaw] = mShiftStart.split(':').map(Number);
+    const shiftH = Number.isFinite(shiftHRaw) ? shiftHRaw : 10;
+    const shiftM = Number.isFinite(shiftMRaw) ? shiftMRaw : 0;
     const shiftStartMinutes = shiftH * 60 + shiftM;
-    const lateThresholdMinutes = shiftStartMinutes + 15; // 15-minute grace period
 
     // Check Holiday or Weekly Off
     const { data: holidayToday } = await supabaseAdmin
       .from('company_holidays')
       .select('*')
-      .eq('holiday_date', todayDate)
+      .eq('holiday_date', istDateStr)
       .maybeSingle();
 
-    const todayDayName = new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(nowTime);
+    const todayDayName = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      weekday: 'short'
+    }).format(nowTime);
     const weeklyOffsList = Array.isArray(member?.weekly_offs) ? member.weekly_offs : (Array.isArray(custom.weekly_offs) ? custom.weekly_offs : ['Sun']);
     const isWeeklyOff = weeklyOffsList.includes(todayDayName);
 
@@ -183,41 +211,40 @@ export async function POST(request: NextRequest) {
     let lateMinutes = 0;
     let earlyArrivalMinutes = 0;
 
-    if (currentTotalMinutes < shiftStartMinutes) {
+    if (currentTotalMinutes > shiftStartMinutes) {
+      lateMinutes = currentTotalMinutes - shiftStartMinutes;
+      if (currentTotalMinutes > shiftStartMinutes + 180) {
+        status = 'half_day';
+      } else {
+        status = 'late';
+      }
+    } else if (currentTotalMinutes < shiftStartMinutes) {
       earlyArrivalMinutes = shiftStartMinutes - currentTotalMinutes;
+      status = 'present';
+    } else {
+      status = 'present';
     }
 
     if (holidayToday) {
       status = 'holiday';
-      if (currentTotalMinutes > lateThresholdMinutes) {
-        lateMinutes = currentTotalMinutes - shiftStartMinutes;
-      }
     } else if (isWeeklyOff) {
       status = 'week_off';
-      if (currentTotalMinutes > lateThresholdMinutes) {
-        lateMinutes = currentTotalMinutes - shiftStartMinutes;
-      }
-    } else if (currentTotalMinutes > shiftStartMinutes + 180) {
-      status = 'half_day';
-      lateMinutes = Math.max(0, currentTotalMinutes - shiftStartMinutes);
-    } else if (currentTotalMinutes > lateThresholdMinutes) {
-      status = 'late';
-      lateMinutes = currentTotalMinutes - shiftStartMinutes;
     }
 
-    const formattedIstTime = new Intl.DateTimeFormat('en-IN', {
-      timeZone: 'Asia/Kolkata',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true
-    }).format(nowTime);
+    const lateText = lateMinutes > 0
+      ? `${Math.floor(lateMinutes / 60) > 0 ? `${Math.floor(lateMinutes / 60)}h ` : ''}${lateMinutes % 60}m`
+      : null;
+
+    const earlyText = earlyArrivalMinutes > 0
+      ? `${Math.floor(earlyArrivalMinutes / 60) > 0 ? `${Math.floor(earlyArrivalMinutes / 60)}h ` : ''}${earlyArrivalMinutes % 60}m`
+      : null;
 
     // 9. Resilient Record Insertion with Column Fallback
     const recordPayload: Record<string, any> = {
       user_id: link.user_id,
       workspace_id: link.workspace_id,
       member_id: link.member_id,
-      date: todayDate,
+      date: istDateStr,
       status,
       check_in_time: nowTime.toISOString(),
       check_in_lat: lat ? Number(lat) : null,
@@ -237,7 +264,11 @@ export async function POST(request: NextRequest) {
         check_in_ist: formattedIstTime,
         check_in_address: punchAddress,
         selfie_url: photoPath || photoBase64,
+        late_minutes: lateMinutes,
+        late_text: lateText,
         early_arrival_minutes: earlyArrivalMinutes,
+        early_text: earlyText,
+        shift_start: mShiftStart,
         is_holiday_work: !!holidayToday,
         is_week_off_work: !!isWeeklyOff,
         holiday_name: holidayToday?.name || null,

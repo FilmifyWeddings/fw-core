@@ -80,7 +80,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Employee profile not found' }, { status: 404 });
     }
 
-    const todayDate = new Date().toISOString().split('T')[0];
+    const todayDate = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(new Date());
 
     // 3. Fetch Today's Attendance Record for this member
     const { data: todayRecord } = await supabaseAdmin

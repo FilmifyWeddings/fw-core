@@ -22,7 +22,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid or expired attendance link' }, { status: 404 });
     }
 
-    const todayDate = new Date().toISOString().split('T')[0];
+    const todayDate = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(new Date());
 
     // 2. Fetch today's record & member profile
     const { data: record, error: recErr } = await supabaseAdmin
