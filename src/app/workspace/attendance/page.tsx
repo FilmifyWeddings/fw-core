@@ -905,7 +905,13 @@ export default function AttendancePage() {
                                 )}
                               </div>
                             ) : record?.check_in_time ? (
-                              <span className="text-emerald-600 font-bold text-[10px] animate-pulse">In Progress</span>
+                              selectedDate === new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()) ? (
+                                <span className="text-emerald-600 font-bold text-[10px] animate-pulse">In Progress</span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-50 text-rose-800 border border-rose-200">
+                                  Missed Out
+                                </span>
+                              )
                             ) : (
                               <span className="text-slate-400 font-mono text-xs">—</span>
                             )}

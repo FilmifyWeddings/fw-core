@@ -962,7 +962,7 @@ export default function PersonalAttendancePage() {
                                 <span className="text-emerald-600 font-medium ml-1.5">(On-Time)</span>
                               ) : null}
                             </div>
-                            {rec.check_out_time && (
+                            {rec.check_out_time ? (
                               <div>
                                 <span>Out: {new Date(rec.check_out_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })}</span>
                                 {rec.timing?.isEarlyCheckout ? (
@@ -973,7 +973,16 @@ export default function PersonalAttendancePage() {
                                   <span className="text-emerald-600 font-medium ml-1.5">(On-Time)</span>
                                 )}
                               </div>
-                            )}
+                            ) : rec.check_in_time ? (
+                              <div>
+                                <span>Out: </span>
+                                {rec.date === todayDate ? (
+                                  <span className="text-emerald-600 font-bold animate-pulse">In Progress (Active)</span>
+                                ) : (
+                                  <span className="text-rose-600 font-bold">Missed Check-Out</span>
+                                )}
+                              </div>
+                            ) : null}
                           </div>
                         </div>
                       </div>
