@@ -324,7 +324,6 @@ export default function AddTeamMemberModal({
         daily_rate: parseFloat(dailyRate) || 0,
         monthly_salary: parseFloat(monthlySalary) || 0,
         custom_data: customDataObj,
-        notes: JSON.stringify(customDataObj),
         is_active: true,
         active_status: true,
         updated_at: new Date().toISOString()
@@ -334,8 +333,8 @@ export default function AddTeamMemberModal({
       let currentPayload = { ...payload };
 
       if (isEditMode && memberToEdit?.id) {
-        // UPDATE EXISTING MEMBER WITH RETRY
-        for (let attempt = 0; attempt < 5; attempt++) {
+        // UPDATE EXISTING MEMBER WITH DYNAMIC COLUMN STRIPPING
+        for (let attempt = 0; attempt < 8; attempt++) {
           const res = await supabase
             .from('fw_team_members')
             .update(currentPayload)
@@ -353,6 +352,7 @@ export default function AddTeamMemberModal({
           if (match && match[1]) {
             delete currentPayload[match[1]];
           } else {
+            console.warn('Member update attempt notice:', errMsg);
             break;
           }
         }
@@ -364,7 +364,6 @@ export default function AddTeamMemberModal({
             phone_number: phoneNumber.trim(),
             email: safeEmail,
             avatar_url: avatarUrl || null,
-            notes: JSON.stringify(customDataObj),
             updated_at: new Date().toISOString()
           };
           const { data: fbData, error: fbErr } = await supabase
@@ -377,8 +376,8 @@ export default function AddTeamMemberModal({
           savedMember = fbData;
         }
       } else {
-        // INSERT NEW MEMBER WITH RETRY
-        for (let attempt = 0; attempt < 5; attempt++) {
+        // INSERT NEW MEMBER WITH DYNAMIC COLUMN STRIPPING
+        for (let attempt = 0; attempt < 8; attempt++) {
           const res = await supabase
             .from('fw_team_members')
             .insert([{ ...currentPayload, created_at: new Date().toISOString() }])
@@ -395,6 +394,7 @@ export default function AddTeamMemberModal({
           if (match && match[1]) {
             delete currentPayload[match[1]];
           } else {
+            console.warn('Member insert attempt notice:', errMsg);
             break;
           }
         }
@@ -407,7 +407,6 @@ export default function AddTeamMemberModal({
             phone_number: phoneNumber.trim(),
             email: safeEmail,
             avatar_url: avatarUrl || null,
-            notes: JSON.stringify(customDataObj),
             created_at: new Date().toISOString()
           };
           const { data: fbData, error: fbErr } = await supabase
