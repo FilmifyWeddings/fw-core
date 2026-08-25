@@ -97,12 +97,14 @@ export default function AddTeamMemberModal({
 
   // Weekly Offs Multi-Select
   const [weeklyOffs, setWeeklyOffs] = useState<string[]>(['Sun']);
+  const [mapMounted, setMapMounted] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Initialize or reset form on open / member change
   useEffect(() => {
     if (isOpen) {
+      const timer = setTimeout(() => setMapMounted(true), 250);
       fetchStaffRoles();
 
       if (memberToEdit) {
@@ -163,6 +165,10 @@ export default function AddTeamMemberModal({
         setWeeklyOffs(['Sun']);
         setCompressedSizeKb(null);
       }
+
+      return () => clearTimeout(timer);
+    } else {
+      setMapMounted(false);
     }
   }, [isOpen, memberToEdit]);
 
@@ -300,9 +306,7 @@ export default function AddTeamMemberModal({
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const workspaceId = session?.user?.id || 'ws_demo';
-
-      // Ensure a valid non-empty string is provided if database still enforces NOT NULL constraint on email
-      const safeEmail = email.trim() || (memberToEdit?.email && !memberToEdit.email.includes('@internal.') ? memberToEdit.email : `staff_${Date.now()}_${Math.random().toString(36).slice(2, 7)}@internal.studiocore.in`);
+      const safeEmail = email.trim() ? email.trim() : null;
 
       const customDataObj = {
         latitude: Number(latitude) || 19.0596,
@@ -311,7 +315,7 @@ export default function AddTeamMemberModal({
         location_name: locationName.trim() || 'Studio Main Office',
         shift_start: shiftStart || '10:00:00',
         shift_end: shiftEnd || '19:00:00',
-        weekly_offs: weeklyOffs,
+        weekly_offs: Array.isArray(weeklyOffs) && weeklyOffs.length > 0 ? weeklyOffs : ['Sun'],
         daily_rate: parseFloat(dailyRate) || 0,
         monthly_salary: parseFloat(monthlySalary) || 0,
         whatsapp_number: whatsappNumber.trim() || phoneNumber.trim()
@@ -332,7 +336,7 @@ export default function AddTeamMemberModal({
         location_name: locationName.trim() || 'Studio Main Office',
         shift_start: shiftStart || '10:00:00',
         shift_end: shiftEnd || '19:00:00',
-        weekly_offs: weeklyOffs,
+        weekly_offs: Array.isArray(weeklyOffs) && weeklyOffs.length > 0 ? weeklyOffs : ['Sun'],
         daily_rate: parseFloat(dailyRate) || 0,
         monthly_salary: parseFloat(monthlySalary) || 0,
         custom_data: customDataObj,
@@ -360,6 +364,11 @@ export default function AddTeamMemberModal({
           }
 
           const errMsg = res.error.message || '';
+          if (errMsg.includes('violates not-null constraint') && errMsg.includes('email')) {
+            currentPayload.email = `staff_${Date.now()}_${Math.random().toString(36).slice(2, 6)}@internal.studiocore.in`;
+            continue;
+          }
+
           const match = errMsg.match(/Could not find the '([^']+)' column/i) || errMsg.match(/column "([^"]+)" of relation/i);
           if (match && match[1]) {
             delete currentPayload[match[1]];
@@ -368,7 +377,6 @@ export default function AddTeamMemberModal({
             break;
           }
         }
-
         if (!savedMember) {
           const fallbackPayload = {
             name: name.trim(),
@@ -717,20 +725,27 @@ export default function AddTeamMemberModal({
 
               {/* Embedded Satellite Map with Google Places Autocomplete & Radius Slider */}
               <div className="rounded-2xl overflow-hidden border border-[#EAE5DA]">
-                <GooglePlacesGeofenceMap
-                  latitude={latitude}
-                  longitude={longitude}
-                  radiusMeters={radiusMeters}
-                  locationName={locationName}
-                  height="360px"
-                  onCoordinatesChange={(lat, lng, addr, placeName) => {
-                    setLatitude(lat);
-                    setLongitude(lng);
-                    if (placeName) setLocationName(placeName);
-                    else if (addr) setLocationName(addr);
-                  }}
-                  onRadiusChange={(r) => setRadiusMeters(r)}
-                />
+                {mapMounted ? (
+                  <GooglePlacesGeofenceMap
+                    latitude={latitude}
+                    longitude={longitude}
+                    radiusMeters={radiusMeters}
+                    locationName={locationName}
+                    height="360px"
+                    onCoordinatesChange={(lat, lng, addr, placeName) => {
+                      setLatitude(lat);
+                      setLongitude(lng);
+                      if (placeName) setLocationName(placeName);
+                      else if (addr) setLocationName(addr);
+                    }}
+                    onRadiusChange={(r) => setRadiusMeters(r)}
+                  />
+                ) : (
+                  <div className="h-[360px] w-full bg-[#1A1816] rounded-2xl flex flex-col items-center justify-center text-amber-400 text-xs font-mono animate-pulse border border-[#EAE5DA] gap-2">
+                    <MapPin className="w-6 h-6 text-amber-500 animate-bounce" />
+                    <span>Loading Satellite Geofence Radar...</span>
+                  </div>
+                )}
               </div>
 
               <div>
