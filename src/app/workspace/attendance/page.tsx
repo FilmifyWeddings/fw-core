@@ -31,8 +31,8 @@ const CompanyHolidayModal = dynamic(
   () => import('@/components/attendance/CompanyHolidayModal'),
   { ssr: false }
 );
-const GooglePlacesGeofenceMap = dynamic(
-  () => import('@/components/attendance/GooglePlacesGeofenceMap'),
+const GeofenceMapPicker = dynamic(
+  () => import('@/components/attendance/GeofenceMapPicker'),
   { ssr: false }
 );
 
@@ -1187,7 +1187,7 @@ export default function AttendancePage() {
                   )}
                 </div>
 
-                <GooglePlacesGeofenceMap
+                <GeofenceMapPicker
                   latitude={selectedLocation.latitude}
                   longitude={selectedLocation.longitude}
                   radiusMeters={selectedLocation.radius_meters}

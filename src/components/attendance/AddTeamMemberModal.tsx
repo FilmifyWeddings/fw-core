@@ -12,13 +12,14 @@ import { supabase } from '@/lib/supabase';
 import type { FWTeamMember, AttendanceLocation, AttendanceShift, StaffRole } from '@/types';
 import { compressStaffAvatar, uploadStaffAvatar } from '@/lib/attendance/avatar-compression';
 
-const GooglePlacesGeofenceMap = dynamic(
-  () => import('@/components/attendance/GooglePlacesGeofenceMap'),
+const GeofenceMapPicker = dynamic(
+  () => import('@/components/attendance/GeofenceMapPicker'),
   {
     ssr: false,
     loading: () => (
-      <div className="h-64 w-full bg-[#1A1816] rounded-2xl flex items-center justify-center text-amber-400 text-xs font-mono animate-pulse border border-[#EAE5DA]">
-        Loading GPS Geofence Map...
+      <div className="h-64 w-full bg-[#1A1816] rounded-2xl flex flex-col items-center justify-center text-amber-400 text-xs font-mono animate-pulse border border-[#EAE5DA] gap-2">
+        <MapPin className="w-6 h-6 text-amber-500 animate-bounce" />
+        <span>Loading Satellite Geofence Radar...</span>
       </div>
     )
   }
@@ -198,10 +199,13 @@ export default function AddTeamMemberModal({
       const { data } = await query;
       if (data && data.length > 0) {
         setDbRoles(prev => {
-          const map = new Map<string, StaffRole>();
-          prev.forEach(r => map.set(r.role_name.toLowerCase(), r));
-          data.forEach(r => map.set(r.role_name.toLowerCase(), r));
-          return Array.from(map.values());
+          const list: StaffRole[] = [...prev];
+          data.forEach(r => {
+            if (r?.role_name && !list.some(existing => existing.role_name.toLowerCase() === r.role_name.toLowerCase())) {
+              list.push(r);
+            }
+          });
+          return list;
         });
       }
     } catch (e) {
@@ -209,10 +213,13 @@ export default function AddTeamMemberModal({
     }
   };
 
-  // Combine default roles with custom database roles
-  const allRolesList = Array.from(
-    new Set([...DEFAULT_ROLES, ...dbRoles.map(r => r.role_name)])
-  );
+  // Combine default roles with custom database roles using pure arrays
+  const allRolesList: string[] = [...DEFAULT_ROLES];
+  dbRoles.forEach(r => {
+    if (r && r.role_name && !allRolesList.includes(r.role_name)) {
+      allRolesList.push(r.role_name);
+    }
+  });
 
   // Handle Dynamic Role Inline Creation
   const handleCreateCustomRole = async () => {
@@ -726,7 +733,7 @@ export default function AddTeamMemberModal({
               {/* Embedded Satellite Map with Google Places Autocomplete & Radius Slider */}
               <div className="rounded-2xl overflow-hidden border border-[#EAE5DA]">
                 {mapMounted ? (
-                  <GooglePlacesGeofenceMap
+                  <GeofenceMapPicker
                     latitude={latitude}
                     longitude={longitude}
                     radiusMeters={radiusMeters}
