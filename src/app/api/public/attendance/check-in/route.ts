@@ -126,6 +126,7 @@ export async function POST(request: NextRequest) {
       month: '2-digit',
       day: '2-digit'
     }).format(nowTime); // Exact YYYY-MM-DD in IST
+    const todayDate = istDateStr;
 
     const istTimeFormatter = new Intl.DateTimeFormat('en-GB', {
       timeZone: 'Asia/Kolkata',
