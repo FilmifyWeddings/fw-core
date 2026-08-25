@@ -189,7 +189,7 @@ export default function MemberKundaliModal({
 
     // Distinct dates where member was present or late
     const uniquePresentDates = new Set(
-      filteredRecords
+      allRangeRecs
         .filter(r => r.check_in_time || r.status === 'present' || r.status === 'late' || r.status === 'half_day')
         .map(r => r.date)
         .filter(Boolean)
