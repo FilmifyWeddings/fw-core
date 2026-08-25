@@ -17,10 +17,20 @@ import type {
   AttendanceShift, AttendanceLeaveRequest, AttendanceMemberLink, AttendanceHoliday
 } from '@/types';
 import dynamic from 'next/dynamic';
-import MemberKundaliModal from '@/components/attendance/MemberKundaliModal';
-import AddTeamMemberModal from '@/components/attendance/AddTeamMemberModal';
-import CompanyHolidayModal from '@/components/attendance/CompanyHolidayModal';
+import AttendanceErrorBoundary from '@/components/attendance/AttendanceErrorBoundary';
 
+const MemberKundaliModal = dynamic(
+  () => import('@/components/attendance/MemberKundaliModal'),
+  { ssr: false }
+);
+const AddTeamMemberModal = dynamic(
+  () => import('@/components/attendance/AddTeamMemberModal'),
+  { ssr: false }
+);
+const CompanyHolidayModal = dynamic(
+  () => import('@/components/attendance/CompanyHolidayModal'),
+  { ssr: false }
+);
 const GooglePlacesGeofenceMap = dynamic(
   () => import('@/components/attendance/GooglePlacesGeofenceMap'),
   { ssr: false }
@@ -1364,47 +1374,53 @@ export default function AttendancePage() {
       {/* ─────────────────────────────────────────────────────────────
           MODAL: STAFF MEMBER "KUNDALI" DEEP ANALYTICS DRAWER
       ───────────────────────────────────────────────────────────── */}
-      {showKundaliModal.open && showKundaliModal.member && (
-        <MemberKundaliModal
-          isOpen={showKundaliModal.open}
-          onClose={() => setShowKundaliModal({ open: false, member: null })}
-          member={showKundaliModal.member}
-          records={records}
-          shifts={shifts}
-          onUpdateRecord={async (id, updates) => {
-            setRecords(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
-            await supabase.from('attendance_records').update(updates).eq('id', id);
-          }}
-        />
-      )}
+      <AttendanceErrorBoundary fallbackTitle="Could not load Staff Kundali Drawer">
+        {showKundaliModal.open && showKundaliModal.member && (
+          <MemberKundaliModal
+            isOpen={showKundaliModal.open}
+            onClose={() => setShowKundaliModal({ open: false, member: null })}
+            member={showKundaliModal.member}
+            records={records}
+            shifts={shifts}
+            onUpdateRecord={async (id, updates) => {
+              setRecords(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
+              await supabase.from('attendance_records').update(updates).eq('id', id);
+            }}
+          />
+        )}
+      </AttendanceErrorBoundary>
 
       {/* ─────────────────────────────────────────────────────────────
           MODAL: ONBOARD / EDIT TEAM MEMBER & MAGIC LINK
       ───────────────────────────────────────────────────────────── */}
-      {showAddMemberModal && (
-        <AddTeamMemberModal
-          isOpen={showAddMemberModal}
-          onClose={() => {
-            setShowAddMemberModal(false);
-            setMemberToEdit(null);
-          }}
-          memberToEdit={memberToEdit}
-          locations={locations}
-          shifts={shifts}
-          onMemberCreated={fetchAttendanceData}
-        />
-      )}
+      <AttendanceErrorBoundary fallbackTitle="Could not load Staff Profile Modal">
+        {showAddMemberModal && (
+          <AddTeamMemberModal
+            isOpen={showAddMemberModal}
+            onClose={() => {
+              setShowAddMemberModal(false);
+              setMemberToEdit(null);
+            }}
+            memberToEdit={memberToEdit}
+            locations={locations}
+            shifts={shifts}
+            onMemberCreated={fetchAttendanceData}
+          />
+        )}
+      </AttendanceErrorBoundary>
 
       {/* ─────────────────────────────────────────────────────────────
           MODAL: COMPANY HOLIDAY & FESTIVE CALENDAR
       ───────────────────────────────────────────────────────────── */}
-      {showHolidayModal && (
-        <CompanyHolidayModal
-          isOpen={showHolidayModal}
-          onClose={() => setShowHolidayModal(false)}
-          onHolidayUpdated={fetchAttendanceData}
-        />
-      )}
+      <AttendanceErrorBoundary fallbackTitle="Could not load Company Holiday Calendar">
+        {showHolidayModal && (
+          <CompanyHolidayModal
+            isOpen={showHolidayModal}
+            onClose={() => setShowHolidayModal(false)}
+            onHolidayUpdated={fetchAttendanceData}
+          />
+        )}
+      </AttendanceErrorBoundary>
 
       {/* ─────────────────────────────────────────────────────────────
           MODAL: ADD GEOFENCE VENUE
