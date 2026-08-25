@@ -102,10 +102,54 @@ export default function AttendancePage() {
   const [overrideCheckIn, setOverrideCheckIn] = useState('09:30');
   const [overrideCheckOut, setOverrideCheckOut] = useState('18:30');
 
+  // 📅 Monthly Timesheet Matrix & Payroll State
+  const [selectedMatrixMonth, setSelectedMatrixMonth] = useState(() => {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date());
+  });
+  const [matrixMonthlyRecords, setMatrixMonthlyRecords] = useState<AttendanceRecord[]>([]);
+  const [loadingMatrixRecords, setLoadingMatrixRecords] = useState(false);
+
   // Load Data
   useEffect(() => {
     fetchAttendanceData();
   }, [selectedDate]);
+
+  // Load Monthly Records for Payroll Matrix when month or tab changes
+  useEffect(() => {
+    if (activeTab === 'matrix') {
+      const fetchMonthlyMatrix = async () => {
+        setLoadingMatrixRecords(true);
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const workspaceId = session?.user?.id || 'ws_demo';
+
+          const startOfMonth = `${selectedMatrixMonth}-01`;
+          const endOfMonth = `${selectedMatrixMonth}-31`;
+
+          let q = supabase
+            .from('attendance_records')
+            .select('*')
+            .gte('date', startOfMonth)
+            .lte('date', endOfMonth);
+
+          if (workspaceId !== 'ws_demo') {
+            q = q.eq('user_id', workspaceId);
+          }
+
+          const { data, error } = await q;
+          if (!error && data) {
+            setMatrixMonthlyRecords(data);
+          }
+        } catch (err) {
+          console.error('Error fetching monthly matrix records:', err);
+        } finally {
+          setLoadingMatrixRecords(false);
+        }
+      };
+
+      fetchMonthlyMatrix();
+    }
+  }, [activeTab, selectedMatrixMonth]);
 
   const fetchAttendanceData = async () => {
     setLoading(true);
@@ -713,7 +757,6 @@ export default function AttendancePage() {
               { id: 'live', label: 'Live Floor View', icon: Users },
               { id: 'matrix', label: 'Monthly Matrix & Payroll', icon: Calendar },
               { id: 'leaves', label: 'Leaves & Approvals', icon: Coffee },
-              { id: 'locations', label: 'Google Places Geofence', icon: Globe },
               { id: 'shifts', label: 'Shift Timings', icon: Sliders },
               { id: 'links', label: 'Employee Mobile Links', icon: Link2 },
             ].map(tab => {
@@ -1023,51 +1066,185 @@ export default function AttendancePage() {
         ───────────────────────────────────────────────────────────── */}
         {activeTab === 'matrix' && (
           <div className="space-y-4">
-            <div className="bg-white p-5 rounded-2xl border border-[#E9DFD2] shadow-sm flex items-center justify-between">
+            <div className="bg-white p-5 rounded-2xl border border-[#E9DFD2] shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <h3 className="text-base font-black text-slate-900">Monthly Timesheet Matrix &amp; Payroll Summary</h3>
                 <p className="text-xs text-slate-500">Comprehensive attendance breakdown for salary calculation, overtime, and leave deductions.</p>
               </div>
-              <button
-                onClick={() => window.print()}
-                className="px-3.5 py-2 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition flex items-center gap-1.5 shadow-2xs"
-              >
-                <Printer className="w-3.5 h-3.5" />
-                Print Timesheet
-              </button>
+
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 shadow-2xs">
+                  <Calendar className="w-3.5 h-3.5 text-amber-600" />
+                  <span className="text-xs font-bold text-slate-700">Month:</span>
+                  <input
+                    type="month"
+                    value={selectedMatrixMonth}
+                    onChange={(e) => setSelectedMatrixMonth(e.target.value)}
+                    className="bg-transparent text-xs font-black text-slate-900 focus:outline-none font-mono cursor-pointer"
+                  />
+                </div>
+
+                <button
+                  onClick={() => window.print()}
+                  className="px-3.5 py-1.5 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  Print Timesheet
+                </button>
+              </div>
             </div>
 
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase text-slate-500">
-                    <th className="py-3 px-4">Employee</th>
-                    <th className="py-3 px-4">Role</th>
-                    <th className="py-3 px-4 text-center">Present Days</th>
-                    <th className="py-3 px-4 text-center">Late Penalties</th>
-                    <th className="py-3 px-4 text-center">Approved Leaves</th>
-                    <th className="py-3 px-4 text-center">Total Overtime</th>
-                    <th className="py-3 px-4 text-right">Payable Units</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {teamMembers.map(m => {
-                    const mRec = records.find(r => r.member_id === m.id);
-                    const isPres = mRec?.status === 'present' || mRec?.status === 'late';
-                    return (
-                      <tr key={m.id} className="hover:bg-slate-50 transition">
-                        <td className="py-3 px-4 font-bold text-slate-900">{m.name}</td>
-                        <td className="py-3 px-4 text-slate-500">{m.primary_role || 'Staff'}</td>
-                        <td className="py-3 px-4 text-center font-bold text-emerald-700">{isPres ? '1 Day' : '0 Days'}</td>
-                        <td className="py-3 px-4 text-center font-bold text-amber-700">{mRec?.late_minutes ? `${mRec.late_minutes}m` : '0m'}</td>
-                        <td className="py-3 px-4 text-center font-bold text-sky-700">0</td>
-                        <td className="py-3 px-4 text-center font-bold text-emerald-700">{mRec?.overtime_minutes ? `${mRec.overtime_minutes}m` : '0m'}</td>
-                        <td className="py-3 px-4 text-right font-black text-slate-900">{isPres ? '1.0' : '0.0'}</td>
+              {loadingMatrixRecords ? (
+                <div className="p-12 text-center text-slate-400 space-y-2">
+                  <RefreshCw className="w-6 h-6 animate-spin mx-auto text-amber-600" />
+                  <p className="text-xs font-bold text-slate-600">Calculating monthly timesheet &amp; payroll metrics...</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs min-w-[700px]">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase text-slate-500">
+                        <th className="py-3.5 px-4">Employee</th>
+                        <th className="py-3.5 px-4">Role</th>
+                        <th className="py-3.5 px-4 text-center">Present Days</th>
+                        <th className="py-3.5 px-4 text-center">Late Penalties</th>
+                        <th className="py-3.5 px-4 text-center">Approved Leaves</th>
+                        <th className="py-3.5 px-4 text-center">Total Overtime</th>
+                        <th className="py-3.5 px-4 text-right">Payable Units / Salary</th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-sans">
+                      {teamMembers.map(m => {
+                        const mRecords = matrixMonthlyRecords.filter(r => r.member_id === m.id);
+                        
+                        // Distinct calendar days present
+                        const uniquePresentDays = new Set(
+                          mRecords
+                            .filter(r => r.check_in_time || r.status === 'present' || r.status === 'late' || r.status === 'half_day')
+                            .map(r => r.date)
+                            .filter(Boolean)
+                        ).size;
+
+                        let totalLateCount = 0;
+                        let totalLateMinutes = 0;
+                        let totalOvertimeCount = 0;
+                        let totalOvertimeMinutes = 0;
+
+                        mRecords.forEach(r => {
+                          const t = analyzeAttendanceRecordTiming(r, m, shifts[0]?.start_time || '10:00', shifts[0]?.end_time || '19:00');
+                          if (t.isLate) {
+                            totalLateCount++;
+                            totalLateMinutes += t.lateMinutes;
+                          }
+                          if (t.isOvertime) {
+                            totalOvertimeCount++;
+                            totalOvertimeMinutes += t.overtimeMinutes;
+                          }
+                        });
+
+                        const approvedLeavesCount = leaveRequests.filter(l => 
+                          l.member_id === m.id && 
+                          l.status === 'approved' && 
+                          (l.start_date.substring(0, 7) <= selectedMatrixMonth && l.end_date.substring(0, 7) >= selectedMatrixMonth)
+                        ).length;
+
+                        const dailyRate = Number(m.daily_rate) || Number((m.custom_data as any)?.daily_rate) || 0;
+                        const monthlySalary = Number(m.monthly_salary) || Number((m.custom_data as any)?.monthly_salary) || 0;
+                        const isMonthly = monthlySalary > 0 || m.payout_type === 'monthly';
+
+                        return (
+                          <tr key={m.id} className="hover:bg-slate-50 transition">
+                            <td className="py-3 px-4">
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-900 font-black text-xs shrink-0 overflow-hidden">
+                                  {m.avatar_url ? (
+                                    <img src={m.avatar_url} alt={m.name} className="w-full h-full object-cover" />
+                                  ) : (
+                                    m.name.slice(0, 2).toUpperCase()
+                                  )}
+                                </div>
+                                <div>
+                                  <span className="font-extrabold text-slate-900 block">{m.name}</span>
+                                  <span className="text-[10px] text-slate-400 font-mono">{m.phone_number || ''}</span>
+                                </div>
+                              </div>
+                            </td>
+
+                            <td className="py-3 px-4 font-semibold text-slate-600">
+                              {m.primary_role || 'Staff Member'}
+                            </td>
+
+                            <td className="py-3 px-4 text-center">
+                              <span className={`px-2.5 py-0.5 rounded-full text-xs font-black border ${
+                                uniquePresentDays > 0 
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
+                                  : 'bg-slate-50 text-slate-400 border-slate-200'
+                              }`}>
+                                {uniquePresentDays} {uniquePresentDays === 1 ? 'Day' : 'Days'}
+                              </span>
+                            </td>
+
+                            <td className="py-3 px-4 text-center">
+                              {totalLateCount > 0 ? (
+                                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-amber-50 text-amber-900 border border-amber-200">
+                                  {totalLateCount} ({formatMinutesToHumanReadable(totalLateMinutes)})
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 text-xs font-semibold">0m</span>
+                              )}
+                            </td>
+
+                            <td className="py-3 px-4 text-center">
+                              {approvedLeavesCount > 0 ? (
+                                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-sky-50 text-sky-800 border border-sky-200">
+                                  {approvedLeavesCount} {approvedLeavesCount === 1 ? 'Day' : 'Days'}
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 text-xs font-semibold">0</span>
+                              )}
+                            </td>
+
+                            <td className="py-3 px-4 text-center">
+                              {totalOvertimeCount > 0 ? (
+                                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                  +{Math.round((totalOvertimeMinutes / 60) * 10) / 10}h ({totalOvertimeCount})
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 text-xs font-semibold">0h</span>
+                              )}
+                            </td>
+
+                            <td className="py-3 px-4 text-right">
+                              {isMonthly ? (
+                                <div>
+                                  <span className="font-mono font-black text-slate-900 text-xs block">
+                                    ₹{monthlySalary.toLocaleString('en-IN')}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 font-semibold block">Fixed Monthly</span>
+                                </div>
+                              ) : dailyRate > 0 ? (
+                                <div>
+                                  <span className="font-mono font-black text-slate-900 text-xs block">
+                                    ₹{(uniquePresentDays * dailyRate).toLocaleString('en-IN')}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 font-semibold block">
+                                    {uniquePresentDays}d × ₹{dailyRate.toLocaleString('en-IN')}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="font-black text-slate-800 font-mono text-xs">
+                                  {uniquePresentDays}.0 Units
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         )}

@@ -467,7 +467,13 @@ export default function PersonalAttendancePage() {
   // Monthly Report Calculations
   const monthlyStats = useMemo(() => {
     const records = monthlyHistory.filter(r => (r.date || '').startsWith(selectedMonth));
-    const presentCount = records.filter(r => r.status === 'present' || r.status === 'late' || r.status === 'half_day');
+    const uniquePresentDates = new Set(
+      records
+        .filter(r => r.check_in_time || r.status === 'present' || r.status === 'late' || r.status === 'half_day')
+        .map(r => r.date)
+        .filter(Boolean)
+    );
+    const distinctPresentCount = uniquePresentDates.size;
 
     let totalLateCount = 0;
     let totalLateMinutes = 0;
@@ -513,12 +519,27 @@ export default function PersonalAttendancePage() {
     });
 
     const custom = (member?.custom_data as any) || {};
-    const dailyRate = Number(member?.daily_rate) || Number(custom.daily_rate) || 3500;
-    const estimatedPayout = presentCount.length * dailyRate;
+    const dailyRate = Number(member?.daily_rate) || Number(custom.daily_rate) || 0;
+    const monthlySalary = Number(member?.monthly_salary) || Number(custom.monthly_salary) || 0;
+    const isMonthly = monthlySalary > 0 || member?.payout_type === 'monthly';
+
+    let estimatedPayout = 0;
+    let payoutSubtitle = '';
+
+    if (isMonthly) {
+      estimatedPayout = monthlySalary;
+      payoutSubtitle = `(Monthly Fixed Salary • ${distinctPresentCount} Days Present)`;
+    } else if (dailyRate > 0) {
+      estimatedPayout = distinctPresentCount * dailyRate;
+      payoutSubtitle = `(${distinctPresentCount} Days × ₹${dailyRate.toLocaleString('en-IN')}/day)`;
+    } else {
+      estimatedPayout = 0;
+      payoutSubtitle = `(${distinctPresentCount} Days Logged)`;
+    }
 
     return {
       totalLoggedDays: records.length,
-      presentCount: presentCount.length,
+      presentCount: distinctPresentCount,
       lateCount: totalLateCount,
       totalLateMinutes,
       totalLateFormatted: formatMinutesToHumanReadable(totalLateMinutes),
@@ -532,7 +553,10 @@ export default function PersonalAttendancePage() {
       totalHours: Math.round((totalWorkMinutes / 60) * 10) / 10,
       totalOTHours: Math.round((totalOvertimeMinutes / 60) * 10) / 10,
       dailyRate,
+      monthlySalary,
+      isMonthly,
       estimatedPayout,
+      payoutSubtitle,
       records: analyzedRecords
     };
   }, [monthlyHistory, selectedMonth, member, shifts]);
@@ -548,9 +572,16 @@ export default function PersonalAttendancePage() {
     );
   }
 
+  const isGeofenceExempt = Boolean(
+    member?.is_geofence_exempt || 
+    member?.geofence_required === false || 
+    (member?.custom_data as any)?.is_geofence_exempt || 
+    (member?.custom_data as any)?.allow_anywhere
+  );
+
   const isCheckedIn = Boolean(todayRecord?.check_in_time && !todayRecord?.check_out_time);
   const isCheckedOut = Boolean(todayRecord?.check_out_time);
-  const isPunchBlockedByGeofence = Boolean(geofenceResult && !geofenceResult.isWithinGeofence);
+  const isPunchBlockedByGeofence = !isGeofenceExempt && Boolean(geofenceResult && !geofenceResult.isWithinGeofence);
 
   return (
     <div className="min-h-screen bg-[#FDFBF7] text-[#211B17] flex flex-col justify-between max-w-md mx-auto relative shadow-2xl overflow-hidden border-x border-[#EFE8DC]">
@@ -868,12 +899,18 @@ export default function PersonalAttendancePage() {
             {/* Monthly Earnings Card */}
             <div className="bg-gradient-to-br from-[#211E1B] to-[#36302B] text-white p-5 rounded-[20px] shadow-lg space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-[#E5B55D] uppercase tracking-wider">Estimated Monthly Payout</span>
+                <span className="text-[11px] font-bold text-[#E5B55D] uppercase tracking-wider">
+                  {monthlyStats.isMonthly ? 'Monthly Salary' : 'Estimated Monthly Payout'}
+                </span>
                 <DollarSign className="w-4 h-4 text-[#E5B55D]" />
               </div>
-              <div className="flex items-baseline gap-1">
-                <span className="text-3xl font-black text-white font-mono">₹{monthlyStats.estimatedPayout.toLocaleString('en-IN')}</span>
-                <span className="text-xs text-white/60">({monthlyStats.presentCount} Days × ₹{monthlyStats.dailyRate})</span>
+              <div className="flex items-baseline gap-2 flex-wrap">
+                <span className="text-3xl font-black text-white font-mono">
+                  ₹{monthlyStats.estimatedPayout.toLocaleString('en-IN')}
+                </span>
+                <span className="text-xs text-white/60 font-medium">
+                  {monthlyStats.payoutSubtitle}
+                </span>
               </div>
               <div className="grid grid-cols-4 gap-2 pt-2 border-t border-white/10 text-center text-xs">
                 <div>

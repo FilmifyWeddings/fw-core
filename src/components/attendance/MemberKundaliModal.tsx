@@ -187,7 +187,14 @@ export default function MemberKundaliModal({
       totalPausedMinutes += (r.break_duration_minutes || r.total_pause_minutes || 0);
     });
 
-    const totalPresentCount = presentRecs + lateCount + halfDayRecs;
+    // Distinct dates where member was present or late
+    const uniquePresentDates = new Set(
+      filteredRecords
+        .filter(r => r.check_in_time || r.status === 'present' || r.status === 'late' || r.status === 'half_day')
+        .map(r => r.date)
+        .filter(Boolean)
+    );
+    const totalPresentCount = uniquePresentDates.size;
     const onTimeRate = totalPresentCount > 0 
       ? Math.max(0, Math.round(((totalPresentCount - lateCount) / totalPresentCount) * 100))
       : 100;

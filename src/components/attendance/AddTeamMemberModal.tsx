@@ -95,6 +95,7 @@ export default function AddTeamMemberModal({
   const [shiftEnd, setShiftEnd] = useState('19:00');
   const [dailyRate, setDailyRate] = useState('');
   const [monthlySalary, setMonthlySalary] = useState('');
+  const [isGeofenceExempt, setIsGeofenceExempt] = useState(false);
 
   // Weekly Offs Multi-Select
   const [weeklyOffs, setWeeklyOffs] = useState<string[]>(['Sun']);
@@ -134,6 +135,14 @@ export default function AddTeamMemberModal({
         setRadiusMeters(editRadius);
         setLocationName(editLocationName);
 
+        const isExempt = Boolean(
+          memberToEdit.is_geofence_exempt || 
+          memberToEdit.geofence_required === false || 
+          custom.is_geofence_exempt || 
+          custom.allow_anywhere
+        );
+        setIsGeofenceExempt(isExempt);
+
         const editShiftStart = memberToEdit.shift_start ? String(memberToEdit.shift_start).slice(0, 5) : (custom.shift_start ? String(custom.shift_start).slice(0, 5) : '10:00');
         const editShiftEnd = memberToEdit.shift_end ? String(memberToEdit.shift_end).slice(0, 5) : (custom.shift_end ? String(custom.shift_end).slice(0, 5) : '19:00');
         setShiftStart(editShiftStart);
@@ -159,10 +168,11 @@ export default function AddTeamMemberModal({
         setLongitude(locations[0]?.longitude ? Number(locations[0].longitude) : 72.8295);
         setRadiusMeters(locations[0]?.radius_meters ? Number(locations[0].radius_meters) : 150);
         setLocationName(locations[0]?.name || 'Studio Main Office');
+        setIsGeofenceExempt(false);
         setShiftStart('10:00');
         setShiftEnd('19:00');
-        setDailyRate('3500');
-        setMonthlySalary('45000');
+        setDailyRate('');
+        setMonthlySalary('');
         setWeeklyOffs(['Sun']);
         setCompressedSizeKb(null);
       }
@@ -320,6 +330,9 @@ export default function AddTeamMemberModal({
         longitude: Number(longitude) || 72.8295,
         radius_meters: Number(radiusMeters) || 150,
         location_name: locationName.trim() || 'Studio Main Office',
+        is_geofence_exempt: isGeofenceExempt,
+        geofence_required: !isGeofenceExempt,
+        allow_anywhere: isGeofenceExempt,
         shift_start: shiftStart || '10:00:00',
         shift_end: shiftEnd || '19:00:00',
         weekly_offs: Array.isArray(weeklyOffs) && weeklyOffs.length > 0 ? weeklyOffs : ['Sun'],
@@ -341,6 +354,8 @@ export default function AddTeamMemberModal({
         longitude: Number(longitude) || 72.8295,
         radius_meters: Number(radiusMeters) || 150,
         location_name: locationName.trim() || 'Studio Main Office',
+        is_geofence_exempt: isGeofenceExempt,
+        geofence_required: !isGeofenceExempt,
         shift_start: shiftStart || '10:00:00',
         shift_end: shiftEnd || '19:00:00',
         weekly_offs: Array.isArray(weeklyOffs) && weeklyOffs.length > 0 ? weeklyOffs : ['Sun'],
@@ -725,13 +740,39 @@ export default function AddTeamMemberModal({
                   <MapPin className="w-4 h-4 text-amber-600" />
                   Assigned Geofence Location &amp; Perimeter
                 </h4>
-                <span className="text-[11px] font-black text-amber-900 bg-amber-100 border border-amber-200 px-2.5 py-0.5 rounded-full">
-                  Allowed Radius: {radiusMeters} Meters
-                </span>
+                {isGeofenceExempt ? (
+                  <span className="text-[11px] font-black text-emerald-900 bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 rounded-full">
+                    🌐 Geofence Not Required (Anywhere)
+                  </span>
+                ) : (
+                  <span className="text-[11px] font-black text-amber-900 bg-amber-100 border border-amber-200 px-2.5 py-0.5 rounded-full">
+                    Allowed Radius: {radiusMeters} Meters
+                  </span>
+                )}
+              </div>
+
+              {/* 🌐 No Geofence Required / Anywhere Punch Checkbox */}
+              <div className="flex items-center justify-between gap-3 bg-gradient-to-r from-amber-50/80 via-emerald-50/50 to-amber-50/80 border border-amber-200/90 p-3 rounded-xl shadow-2xs">
+                <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={isGeofenceExempt}
+                    onChange={(e) => setIsGeofenceExempt(e.target.checked)}
+                    className="w-4 h-4 text-amber-600 rounded focus:ring-amber-500 cursor-pointer accent-amber-600"
+                  />
+                  <div>
+                    <span className="text-xs font-black text-slate-900 block">
+                      No Geofence Required / Punch Allowed from Anywhere
+                    </span>
+                    <span className="text-[10.5px] font-medium text-slate-500 block">
+                      Check this box so this staff member can punch in &amp; out from any shoot location or home without geofence limits.
+                    </span>
+                  </div>
+                </label>
               </div>
 
               {/* Embedded Satellite Map with Google Places Autocomplete & Radius Slider */}
-              <div className="rounded-2xl overflow-hidden border border-[#EAE5DA]">
+              <div className={`rounded-2xl overflow-hidden border border-[#EAE5DA] transition-opacity ${isGeofenceExempt ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
                 {mapMounted ? (
                   <GeofenceMapPicker
                     latitude={latitude}

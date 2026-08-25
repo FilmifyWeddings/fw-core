@@ -81,7 +81,18 @@ export async function POST(request: NextRequest) {
     let closestLocationName = '';
     let allowedRadius = mRadius || 150;
 
-    if (locations && locations.length > 0 && lat && lng) {
+    const isGeofenceExempt = Boolean(
+      member.is_geofence_exempt || 
+      member.geofence_required === false || 
+      custom.is_geofence_exempt || 
+      custom.allow_anywhere || 
+      (parsedNotes as any).is_geofence_exempt
+    );
+
+    if (isGeofenceExempt) {
+      geofenceStatus = 'verified';
+      closestLocationName = mLocName || 'Anywhere (Remote Authorized)';
+    } else if (locations && locations.length > 0 && lat && lng) {
       for (const loc of locations) {
         const dist = calculateHaversineDistanceMeters(
           Number(lat), 
