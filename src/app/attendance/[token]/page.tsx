@@ -13,6 +13,7 @@ import type { AttendanceRecord, AttendanceBreak, AttendanceLocation } from '@/ty
 import { validateCoordinatesAgainstGeofences, GeofenceValidationResult, calculateHaversineDistanceMeters } from '@/lib/attendance/geo-fence';
 import { captureAndCompressVideoFrame } from '@/lib/attendance/image-compression';
 import { saveOfflinePunch, getOfflinePunches, removeOfflinePunch } from '@/lib/attendance/offline-store';
+import { analyzeAttendanceRecordTiming, formatMinutesToHumanReadable } from '@/lib/attendance/time-calculations';
 
 export default function PersonalAttendancePage() {
   const params = useParams();
@@ -453,27 +454,88 @@ export default function PersonalAttendancePage() {
     return `${hrs}h ${mins < 10 ? '0' : ''}${mins}m`;
   };
 
+  // Today's Real-time Shift Timing & Late/Early Arrival Analyzer
+  const todayTiming = useMemo(() => {
+    return analyzeAttendanceRecordTiming(
+      todayRecord,
+      member,
+      shifts[0]?.start_time || '10:00',
+      shifts[0]?.end_time || '19:00'
+    );
+  }, [todayRecord, member, shifts]);
+
   // Monthly Report Calculations
   const monthlyStats = useMemo(() => {
     const records = monthlyHistory.filter(r => (r.date || '').startsWith(selectedMonth));
-    const presentCount = records.filter(r => r.status === 'present' || r.status === 'late');
-    const lateCount = records.filter(r => r.status === 'late' || (r.late_minutes && r.late_minutes > 0));
-    const totalWorkMins = records.reduce((acc, r) => acc + (r.work_duration_minutes || 0), 0);
-    const totalOTMins = records.reduce((acc, r) => acc + (r.overtime_minutes || 0), 0);
+    const presentCount = records.filter(r => r.status === 'present' || r.status === 'late' || r.status === 'half_day');
 
-    const dailyRate = 3500;
+    let totalLateCount = 0;
+    let totalLateMinutes = 0;
+    let totalEarlyArrivalCount = 0;
+    let totalEarlyArrivalMinutes = 0;
+    let totalEarlyDepartureCount = 0;
+    let totalEarlyDepartureMinutes = 0;
+    let totalOvertimeCount = 0;
+    let totalOvertimeMinutes = 0;
+    let totalWorkMinutes = 0;
+
+    const analyzedRecords = records.map(r => {
+      const timing = analyzeAttendanceRecordTiming(
+        r,
+        member,
+        shifts[0]?.start_time || '10:00',
+        shifts[0]?.end_time || '19:00'
+      );
+
+      if (timing.isLate) {
+        totalLateCount++;
+        totalLateMinutes += timing.lateMinutes;
+      }
+      if (timing.isEarlyArrival) {
+        totalEarlyArrivalCount++;
+        totalEarlyArrivalMinutes += timing.earlyArrivalMinutes;
+      }
+      if (timing.isEarlyCheckout) {
+        totalEarlyDepartureCount++;
+        totalEarlyDepartureMinutes += timing.earlyCheckoutMinutes;
+      }
+      if (timing.isOvertime) {
+        totalOvertimeCount++;
+        totalOvertimeMinutes += timing.overtimeMinutes;
+      }
+
+      totalWorkMinutes += (r.work_duration_minutes || r.total_work_minutes || 0);
+
+      return {
+        ...r,
+        timing
+      };
+    });
+
+    const custom = (member?.custom_data as any) || {};
+    const dailyRate = Number(member?.daily_rate) || Number(custom.daily_rate) || 3500;
     const estimatedPayout = presentCount.length * dailyRate;
 
     return {
       totalLoggedDays: records.length,
       presentCount: presentCount.length,
-      lateCount: lateCount.length,
-      totalHours: Math.round((totalWorkMins / 60) * 10) / 10,
-      totalOTHours: Math.round((totalOTMins / 60) * 10) / 10,
+      lateCount: totalLateCount,
+      totalLateMinutes,
+      totalLateFormatted: formatMinutesToHumanReadable(totalLateMinutes),
+      earlyArrivalCount: totalEarlyArrivalCount,
+      earlyArrivalFormatted: formatMinutesToHumanReadable(totalEarlyArrivalMinutes),
+      earlyDepartureCount: totalEarlyDepartureCount,
+      earlyDepartureFormatted: formatMinutesToHumanReadable(totalEarlyDepartureMinutes),
+      overtimeCount: totalOvertimeCount,
+      totalOvertimeMinutes,
+      totalOvertimeFormatted: formatMinutesToHumanReadable(totalOvertimeMinutes),
+      totalHours: Math.round((totalWorkMinutes / 60) * 10) / 10,
+      totalOTHours: Math.round((totalOvertimeMinutes / 60) * 10) / 10,
+      dailyRate,
       estimatedPayout,
-      records
+      records: analyzedRecords
     };
-  }, [monthlyHistory, selectedMonth]);
+  }, [monthlyHistory, selectedMonth, member, shifts]);
 
   if (loading) {
     return (
@@ -661,7 +723,7 @@ export default function PersonalAttendancePage() {
                           ? 'bg-purple-100 text-purple-900 border border-purple-300'
                           : todayRecord?.status === 'week_off' || todayRecord?.device_info?.is_week_off_work
                           ? 'bg-indigo-100 text-indigo-900 border border-indigo-300'
-                          : (todayRecord?.status === 'late' || (Number(todayRecord?.late_minutes || todayRecord?.device_info?.late_minutes || 0) > 0))
+                          : todayTiming.isLate
                           ? 'bg-amber-100 text-amber-900 border border-amber-300'
                           : 'bg-[#E8F5E9] text-[#2E7D32] border border-[#C8E6C9]'
                       } flex items-center gap-1`}>
@@ -670,8 +732,8 @@ export default function PersonalAttendancePage() {
                           ? '🎉 Holiday Duty'
                           : todayRecord?.status === 'week_off' || todayRecord?.device_info?.is_week_off_work
                           ? '🏖️ Week-Off Duty'
-                          : (todayRecord?.status === 'late' || (Number(todayRecord?.late_minutes || todayRecord?.device_info?.late_minutes || 0) > 0))
-                          ? `⏱️ Late by ${Math.floor((Number(todayRecord?.late_minutes || todayRecord?.device_info?.late_minutes || 0)) / 60) > 0 ? `${Math.floor((Number(todayRecord?.late_minutes || todayRecord?.device_info?.late_minutes || 0)) / 60)}h ` : ''}${(Number(todayRecord?.late_minutes || todayRecord?.device_info?.late_minutes || 0)) % 60}m`
+                          : todayTiming.isLate
+                          ? `⏱️ Late by ${todayTiming.lateFormattedText}`
                           : 'On Duty (Present)'}
                       </span>
                     ) : (
@@ -697,13 +759,13 @@ export default function PersonalAttendancePage() {
                   <span className="font-semibold text-[#211B17]">
                     {todayRecord?.check_in_time ? new Date(todayRecord.check_in_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '--:--'}
                   </span>
-                  {(Number(todayRecord?.late_minutes || todayRecord?.device_info?.late_minutes || 0) > 0) ? (
+                  {todayTiming.isLate ? (
                     <span className="text-[10.5px] text-[#C62828] font-bold block mt-0.5">
-                      ⏱️ Late by {Math.floor((Number(todayRecord?.late_minutes || todayRecord?.device_info?.late_minutes || 0)) / 60) > 0 ? `${Math.floor((Number(todayRecord?.late_minutes || todayRecord?.device_info?.late_minutes || 0)) / 60)}h ` : ''}${(Number(todayRecord?.late_minutes || todayRecord?.device_info?.late_minutes || 0)) % 60}m
+                      ⏱️ Late by {todayTiming.lateFormattedText}
                     </span>
-                  ) : (Number(todayRecord?.early_arrival_minutes || todayRecord?.device_info?.early_arrival_minutes || 0) > 0) ? (
+                  ) : todayTiming.isEarlyArrival ? (
                     <span className="text-[10.5px] text-[#2E7D32] font-bold block mt-0.5">
-                      🟢 Arrived {Math.floor((Number(todayRecord?.early_arrival_minutes || todayRecord?.device_info?.early_arrival_minutes || 0)) / 60) > 0 ? `${Math.floor((Number(todayRecord?.early_arrival_minutes || todayRecord?.device_info?.early_arrival_minutes || 0)) / 60)}h ` : ''}${(Number(todayRecord?.early_arrival_minutes || todayRecord?.device_info?.early_arrival_minutes || 0)) % 60}m early
+                      🟢 Arrived {todayTiming.earlyArrivalFormattedText} early
                     </span>
                   ) : todayRecord?.check_in_time ? (
                     <span className="text-[10.5px] text-[#2E7D32] font-semibold block mt-0.5">✓ On-Time</span>
@@ -715,16 +777,16 @@ export default function PersonalAttendancePage() {
                   <span className="font-semibold text-[#211B17]">
                     {todayRecord?.check_out_time ? new Date(todayRecord.check_out_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '--:--'}
                   </span>
-                  {todayRecord?.early_checkout_minutes && todayRecord.early_checkout_minutes > 0 ? (
-                    <span className="text-[10px] text-[#C62828] font-bold block mt-0.5">
-                      🚪 Left {Math.floor(todayRecord.early_checkout_minutes / 60) > 0 ? `${Math.floor(todayRecord.early_checkout_minutes / 60)}h ` : ''}{todayRecord.early_checkout_minutes % 60}m early
+                  {todayTiming.isEarlyCheckout ? (
+                    <span className="text-[10.5px] text-[#C62828] font-bold block mt-0.5">
+                      🚪 Left {todayTiming.earlyCheckoutFormattedText} early
                     </span>
-                  ) : todayRecord?.overtime_minutes && todayRecord.overtime_minutes > 0 ? (
-                    <span className="text-[10px] text-[#2E7D32] font-bold block mt-0.5">
-                      ⚡ +{Math.floor(todayRecord.overtime_minutes / 60) > 0 ? `${Math.floor(todayRecord.overtime_minutes / 60)}h ` : ''}{todayRecord.overtime_minutes % 60}m OT
+                  ) : todayTiming.isOvertime ? (
+                    <span className="text-[10.5px] text-[#2E7D32] font-bold block mt-0.5">
+                      ⚡ +{todayTiming.overtimeFormattedText} OT
                     </span>
                   ) : todayRecord?.check_out_time ? (
-                    <span className="text-[10px] text-[#2E7D32] font-semibold block mt-0.5">✓ On-Time</span>
+                    <span className="text-[10.5px] text-[#2E7D32] font-semibold block mt-0.5">✓ On-Time</span>
                   ) : null}
                 </div>
               </div>
@@ -811,20 +873,24 @@ export default function PersonalAttendancePage() {
               </div>
               <div className="flex items-baseline gap-1">
                 <span className="text-3xl font-black text-white font-mono">₹{monthlyStats.estimatedPayout.toLocaleString('en-IN')}</span>
-                <span className="text-xs text-white/60">({monthlyStats.presentCount} Days × ₹3,500)</span>
+                <span className="text-xs text-white/60">({monthlyStats.presentCount} Days × ₹{monthlyStats.dailyRate})</span>
               </div>
-              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/10 text-center text-xs">
+              <div className="grid grid-cols-4 gap-2 pt-2 border-t border-white/10 text-center text-xs">
                 <div>
                   <span className="text-white/60 text-[10px] block">Present</span>
-                  <span className="font-bold text-[#81C784]">{monthlyStats.presentCount} Days</span>
+                  <span className="font-bold text-[#81C784] text-xs">{monthlyStats.presentCount} Days</span>
                 </div>
                 <div>
                   <span className="text-white/60 text-[10px] block">Late Marks</span>
-                  <span className="font-bold text-[#FFB74D]">{monthlyStats.lateCount}</span>
+                  <span className="font-bold text-[#FFB74D] text-xs">{monthlyStats.lateCount} ({monthlyStats.totalLateFormatted})</span>
+                </div>
+                <div>
+                  <span className="text-white/60 text-[10px] block">Left Early</span>
+                  <span className="font-bold text-[#EF9A9A] text-xs">{monthlyStats.earlyDepartureCount} ({monthlyStats.earlyDepartureFormatted})</span>
                 </div>
                 <div>
                   <span className="text-white/60 text-[10px] block">Overtime</span>
-                  <span className="font-bold text-[#4FC3F7]">+{monthlyStats.totalOTHours}h</span>
+                  <span className="font-bold text-[#4FC3F7] text-xs">+{monthlyStats.totalOTHours}h ({monthlyStats.overtimeCount})</span>
                 </div>
               </div>
             </div>
@@ -848,8 +914,29 @@ export default function PersonalAttendancePage() {
                           <div className="font-bold text-xs text-[#211B17]">
                             {new Date(rec.date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}
                           </div>
-                          <div className="text-[10.5px] text-[#746E67] mt-0.5">
-                            In: {rec.check_in_time ? new Date(rec.check_in_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '--'} | Out: {rec.check_out_time ? new Date(rec.check_out_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '--'}
+                          <div className="text-[10.5px] text-[#746E67] mt-0.5 space-y-0.5">
+                            <div>
+                              <span>In: {rec.check_in_time ? new Date(rec.check_in_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '--'}</span>
+                              {rec.timing?.isLate ? (
+                                <span className="text-rose-600 font-bold ml-1.5">(Late by {rec.timing.lateFormattedText})</span>
+                              ) : rec.timing?.isEarlyArrival ? (
+                                <span className="text-emerald-600 font-bold ml-1.5">({rec.timing.earlyArrivalFormattedText} early)</span>
+                              ) : rec.check_in_time ? (
+                                <span className="text-emerald-600 font-medium ml-1.5">(On-Time)</span>
+                              ) : null}
+                            </div>
+                            {rec.check_out_time && (
+                              <div>
+                                <span>Out: {new Date(rec.check_out_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })}</span>
+                                {rec.timing?.isEarlyCheckout ? (
+                                  <span className="text-rose-600 font-bold ml-1.5">(Left {rec.timing.earlyCheckoutFormattedText} early)</span>
+                                ) : rec.timing?.isOvertime ? (
+                                  <span className="text-sky-600 font-bold ml-1.5">(+{rec.timing.overtimeFormattedText} OT)</span>
+                                ) : (
+                                  <span className="text-emerald-600 font-medium ml-1.5">(On-Time)</span>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -857,9 +944,9 @@ export default function PersonalAttendancePage() {
                       <div className="text-right">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                           rec.status === 'present' ? 'bg-[#E8F5E9] text-[#2E7D32]' :
-                          rec.status === 'late' ? 'bg-[#FFF3E0] text-[#E65100]' : 'bg-[#FFEBEE] text-[#C62828]'
+                          rec.status === 'late' || rec.timing?.isLate ? 'bg-[#FFF3E0] text-[#E65100]' : 'bg-[#FFEBEE] text-[#C62828]'
                         }`}>
-                          {rec.status.toUpperCase()}
+                          {(rec.timing?.isLate ? 'LATE' : rec.status).toUpperCase()}
                         </span>
                         <div className="text-[10px] font-mono text-[#8C847B] mt-0.5">
                           {Math.floor((rec.work_duration_minutes || 0) / 60)}h {(rec.work_duration_minutes || 0) % 60}m

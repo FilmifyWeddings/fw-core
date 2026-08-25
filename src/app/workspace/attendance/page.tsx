@@ -18,6 +18,7 @@ import type {
 } from '@/types';
 import dynamic from 'next/dynamic';
 import AttendanceErrorBoundary from '@/components/attendance/AttendanceErrorBoundary';
+import { analyzeAttendanceRecordTiming, formatMinutesToHumanReadable } from '@/lib/attendance/time-calculations';
 
 const MemberKundaliModal = dynamic(
   () => import('@/components/attendance/MemberKundaliModal'),
@@ -490,26 +491,35 @@ export default function AttendancePage() {
     document.body.removeChild(link);
   };
 
-  // Summaries calculation
-  const totalEmployees = teamMembers.length;
-  const presentCount = records.filter(r => r.status === 'present' || r.status === 'late').length;
-  const lateCount = records.filter(r => r.status === 'late' || (r.late_minutes && r.late_minutes > 0)).length;
-  const absentCount = Math.max(0, totalEmployees - presentCount);
-  const onLeaveCount = leaveRequests.filter(l => l.status === 'approved' && l.start_date <= selectedDate && l.end_date >= selectedDate).length;
-  const liveWorkingCount = records.filter(r => r.check_in_time && !r.check_out_time).length;
-
-  // Filtered daily roster list
+  // Filtered daily roster list with dynamic shift timing analyzer
   const rosterList = useMemo(() => {
     return teamMembers.map(member => {
       const record = records.find(r => r.member_id === member.id);
-      return { member, record };
-    }).filter(({ member, record }) => {
+      const timing = analyzeAttendanceRecordTiming(record, member);
+      return { member, record, timing };
+    }).filter(({ member, record, timing }) => {
       const nameMatch = member.name.toLowerCase().includes(searchQuery.toLowerCase());
       const roleMatch = roleFilter === 'all' || (member.primary_role || '').toLowerCase().includes(roleFilter.toLowerCase());
-      const statusMatch = statusFilter === 'all' || (record ? record.status === statusFilter : statusFilter === 'absent');
+      const statusMatch = statusFilter === 'all' || (
+        statusFilter === 'late' ? timing.isLate :
+        statusFilter === 'present' ? (record && record.status === 'present' && !timing.isLate) :
+        (record ? record.status === statusFilter : statusFilter === 'absent')
+      );
       return nameMatch && roleMatch && statusMatch;
     });
   }, [teamMembers, records, searchQuery, roleFilter, statusFilter]);
+
+  // Summaries calculation
+  const totalEmployees = teamMembers.length;
+  const lateCount = records.filter(r => {
+    const mem = teamMembers.find(m => m.id === r.member_id);
+    const t = analyzeAttendanceRecordTiming(r, mem);
+    return t.isLate;
+  }).length;
+  const presentCount = records.filter(r => r.check_in_time).length;
+  const absentCount = Math.max(0, totalEmployees - presentCount);
+  const onLeaveCount = leaveRequests.filter(l => l.status === 'approved' && l.start_date <= selectedDate && l.end_date >= selectedDate).length;
+  const liveWorkingCount = records.filter(r => r.check_in_time && !r.check_out_time).length;
 
   return (
     <div className="min-h-screen bg-[#FDFCF7] text-slate-900 pb-24 pt-2 px-4 sm:px-6 lg:px-8 font-sans">
@@ -748,9 +758,9 @@ export default function AttendancePage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {rosterList.map(({ member, record }) => {
-                      const isPresent = record?.status === 'present';
-                      const isLate = record?.status === 'late';
+                    {rosterList.map(({ member, record, timing }) => {
+                      const isPresent = record?.status === 'present' && !timing.isLate;
+                      const isLate = timing.isLate;
                       const isAbsent = !record || record.status === 'absent';
 
                       return (
@@ -786,10 +796,10 @@ export default function AttendancePage() {
                                 ? 'bg-indigo-100 text-indigo-900 border-indigo-300'
                                 : record?.status === 'half_day'
                                 ? 'bg-orange-100 text-orange-900 border-orange-200'
-                                : isPresent
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                 : isLate
                                 ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                : isPresent
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                 : record?.status === 'leave'
                                 ? 'bg-sky-50 text-sky-700 border-sky-200'
                                 : 'bg-rose-50 text-rose-700 border-rose-200'
@@ -800,10 +810,10 @@ export default function AttendancePage() {
                                 ? '🏖️ Week-Off Duty'
                                 : record?.status === 'half_day'
                                 ? '🌗 Half-Day'
+                                : isLate
+                                ? `Late (${timing.lateFormattedText})`
                                 : isPresent
                                 ? '✓ Present'
-                                : isLate
-                                ? `Late (${Math.floor((record?.late_minutes || 0) / 60) > 0 ? `${Math.floor((record?.late_minutes || 0) / 60)}h ` : ''}${(record?.late_minutes || 0) % 60}m)`
                                 : record?.status === 'leave'
                                 ? 'On Leave'
                                 : 'Absent'}
@@ -816,13 +826,13 @@ export default function AttendancePage() {
                                 <span className="font-bold text-slate-800 font-mono text-xs block">
                                   {new Date(record.check_in_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })}
                                 </span>
-                                {record.late_minutes && record.late_minutes > 0 ? (
+                                {timing.isLate ? (
                                   <span className="text-[9.5px] font-bold text-amber-700 block">
-                                    Late by {Math.floor(record.late_minutes / 60) > 0 ? `${Math.floor(record.late_minutes / 60)}h ` : ''}{record.late_minutes % 60}m
+                                    Late by {timing.lateFormattedText}
                                   </span>
-                                ) : (record.early_arrival_minutes || record.device_info?.early_arrival_minutes) ? (
+                                ) : timing.isEarlyArrival ? (
                                   <span className="text-[9.5px] font-bold text-emerald-700 block">
-                                    Arrived {Math.floor((record.early_arrival_minutes || record.device_info?.early_arrival_minutes) / 60) > 0 ? `${Math.floor((record.early_arrival_minutes || record.device_info?.early_arrival_minutes) / 60)}h ` : ''}{(record.early_arrival_minutes || record.device_info?.early_arrival_minutes) % 60}m early
+                                    Arrived {timing.earlyArrivalFormattedText} early
                                   </span>
                                 ) : (
                                   <span className="text-[9px] font-semibold text-emerald-600 block">✓ On-time</span>
@@ -839,13 +849,13 @@ export default function AttendancePage() {
                                 <span className="font-bold text-slate-800 font-mono text-xs block">
                                   {new Date(record.check_out_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })}
                                 </span>
-                                {record.early_checkout_minutes && record.early_checkout_minutes > 0 ? (
+                                {timing.isEarlyCheckout ? (
                                   <span className="text-[9.5px] font-bold text-rose-700 block">
-                                    Left {Math.floor(record.early_checkout_minutes / 60) > 0 ? `${Math.floor(record.early_checkout_minutes / 60)}h ` : ''}{record.early_checkout_minutes % 60}m early
+                                    Left {timing.earlyCheckoutFormattedText} early
                                   </span>
-                                ) : record.overtime_minutes && record.overtime_minutes > 0 ? (
+                                ) : timing.isOvertime ? (
                                   <span className="text-[9.5px] font-bold text-emerald-700 block">
-                                    +{Math.floor(record.overtime_minutes / 60) > 0 ? `${Math.floor(record.overtime_minutes / 60)}h ` : ''}{record.overtime_minutes % 60}m Overtime
+                                    +{timing.overtimeFormattedText} Overtime
                                   </span>
                                 ) : (
                                   <span className="text-[9px] font-semibold text-emerald-600 block">✓ On-time</span>

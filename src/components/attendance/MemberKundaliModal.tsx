@@ -13,6 +13,7 @@ import {
 } from 'recharts';
 import { supabase } from '@/lib/supabase';
 import type { FWTeamMember, AttendanceRecord, AttendanceShift } from '@/types';
+import { analyzeAttendanceRecordTiming, formatMinutesToHumanReadable } from '@/lib/attendance/time-calculations';
 
 interface MemberKundaliModalProps {
   isOpen: boolean;
@@ -133,25 +134,65 @@ export default function MemberKundaliModal({
     );
 
     const totalLoggedDays = allRangeRecs.length;
-    const presentRecs = allRangeRecs.filter(r => r.status === 'present');
-    const lateRecs = allRangeRecs.filter(r => r.status === 'late' || (r.late_minutes && r.late_minutes > 0));
-    const halfDayRecs = allRangeRecs.filter(r => r.status === 'half_day');
-    const absentRecs = allRangeRecs.filter(r => r.status === 'absent');
-    const holidayRecs = allRangeRecs.filter(r => r.status === 'holiday');
-    const weekOffRecs = allRangeRecs.filter(r => r.status === 'week_off');
+    let lateCount = 0;
+    let totalLateMinutes = 0;
+    let earlyArrivalCount = 0;
+    let totalEarlyArrivalMinutes = 0;
+    let earlyDepartureCount = 0;
+    let totalEarlyDepartureMinutes = 0;
+    let overtimeCount = 0;
+    let totalOvertimeMinutes = 0;
 
-    const totalPresentCount = presentRecs.length + lateRecs.length + halfDayRecs.length;
+    let presentRecs = 0;
+    let halfDayRecs = 0;
+    let absentRecs = 0;
+    let holidayRecs = 0;
+    let weekOffRecs = 0;
 
+    let totalWorkMinutes = 0;
+    let totalPausedMinutes = 0;
+
+    allRangeRecs.forEach(r => {
+      const timing = analyzeAttendanceRecordTiming(
+        r,
+        member,
+        shifts[0]?.start_time || '10:00',
+        shifts[0]?.end_time || '19:00'
+      );
+
+      if (r.status === 'absent') absentRecs++;
+      else if (r.status === 'holiday') holidayRecs++;
+      else if (r.status === 'week_off') weekOffRecs++;
+      else if (r.status === 'half_day') halfDayRecs++;
+      else presentRecs++;
+
+      if (timing.isLate) {
+        lateCount++;
+        totalLateMinutes += timing.lateMinutes;
+      }
+      if (timing.isEarlyArrival) {
+        earlyArrivalCount++;
+        totalEarlyArrivalMinutes += timing.earlyArrivalMinutes;
+      }
+      if (timing.isEarlyCheckout) {
+        earlyDepartureCount++;
+        totalEarlyDepartureMinutes += timing.earlyCheckoutMinutes;
+      }
+      if (timing.isOvertime) {
+        overtimeCount++;
+        totalOvertimeMinutes += timing.overtimeMinutes;
+      }
+
+      totalWorkMinutes += (r.work_duration_minutes || r.total_work_minutes || 0);
+      totalPausedMinutes += (r.break_duration_minutes || r.total_pause_minutes || 0);
+    });
+
+    const totalPresentCount = presentRecs + lateCount + halfDayRecs;
     const onTimeRate = totalPresentCount > 0 
-      ? Math.round((presentRecs.length / totalPresentCount) * 100) 
+      ? Math.max(0, Math.round(((totalPresentCount - lateCount) / totalPresentCount) * 100))
       : 100;
 
-    const totalLateMinutes = lateRecs.reduce((acc, r) => acc + (r.late_minutes || 0), 0);
-    const avgDelayMinutes = lateRecs.length > 0 ? Math.round(totalLateMinutes / lateRecs.length) : 0;
-
-    const totalWorkMinutes = allRangeRecs.reduce((acc, r) => acc + (r.work_duration_minutes || r.total_work_minutes || 0), 0);
-    const totalPausedMinutes = allRangeRecs.reduce((acc, r) => acc + (r.break_duration_minutes || r.total_pause_minutes || 0), 0);
-
+    const avgDelayMinutes = lateCount > 0 ? Math.round(totalLateMinutes / lateCount) : 0;
     const totalHoursLogged = Math.round((totalWorkMinutes / 60) * 10) / 10;
     const totalPausedHours = Math.round((totalPausedMinutes / 60) * 10) / 10;
 
@@ -159,17 +200,26 @@ export default function MemberKundaliModal({
       totalLoggedDays,
       totalPresentCount,
       onTimeRate,
-      lateCount: lateRecs.length,
+      lateCount,
+      totalLateMinutes,
+      totalLateFormatted: formatMinutesToHumanReadable(totalLateMinutes),
+      earlyArrivalCount,
+      earlyArrivalFormatted: formatMinutesToHumanReadable(totalEarlyArrivalMinutes),
+      earlyDepartureCount,
+      earlyDepartureFormatted: formatMinutesToHumanReadable(totalEarlyDepartureMinutes),
+      overtimeCount,
+      totalOvertimeMinutes,
+      totalOvertimeFormatted: formatMinutesToHumanReadable(totalOvertimeMinutes),
       avgDelayMinutes,
-      absentCount: absentRecs.length,
-      holidayCount: holidayRecs.length,
-      weekOffCount: weekOffRecs.length,
+      absentCount: absentRecs,
+      holidayCount: holidayRecs,
+      weekOffCount: weekOffRecs,
       totalWorkMinutes,
       totalPausedMinutes,
       totalHoursLogged,
       totalPausedHours
     };
-  }, [records, member.id, startDate, endDate]);
+  }, [effectiveRecords, member, shifts, startDate, endDate]);
 
   // Chart data for daily active hours vs shift target (8.0h)
   const chartData = useMemo(() => {
@@ -439,7 +489,12 @@ export default function MemberKundaliModal({
                 <div className="space-y-2.5">
                   {memberRecords.map(rec => {
                     const dateObj = new Date(rec.date);
-                    const isLate = rec.status === 'late' || (rec.late_minutes && rec.late_minutes > 0);
+                    const recTiming = analyzeAttendanceRecordTiming(
+                      rec,
+                      member,
+                      shifts[0]?.start_time || '10:00',
+                      shifts[0]?.end_time || '19:00'
+                    );
                     const netWork = rec.work_duration_minutes || rec.total_work_minutes || 0;
                     const pausedWork = rec.break_duration_minutes || rec.total_pause_minutes || 0;
 
@@ -489,14 +544,16 @@ export default function MemberKundaliModal({
                               <span className="text-xs font-black text-emerald-950 font-mono">
                                 {rec.check_in_time ? new Date(rec.check_in_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
                               </span>
-                              {rec.late_minutes && rec.late_minutes > 0 ? (
+                              {recTiming.isLate ? (
                                 <span className="text-[9px] font-bold text-amber-700 block">
-                                  Late by {Math.floor(rec.late_minutes / 60) > 0 ? `${Math.floor(rec.late_minutes / 60)}h ` : ''}{rec.late_minutes % 60}m
+                                  Late by {recTiming.lateFormattedText}
                                 </span>
-                              ) : (rec.early_arrival_minutes || rec.device_info?.early_arrival_minutes) ? (
+                              ) : recTiming.isEarlyArrival ? (
                                 <span className="text-[9px] font-bold text-emerald-700 block">
-                                  Arrived {Math.floor((rec.early_arrival_minutes || rec.device_info?.early_arrival_minutes) / 60) > 0 ? `${Math.floor((rec.early_arrival_minutes || rec.device_info?.early_arrival_minutes) / 60)}h ` : ''}{(rec.early_arrival_minutes || rec.device_info?.early_arrival_minutes) % 60}m early
+                                  Arrived {recTiming.earlyArrivalFormattedText} early
                                 </span>
+                              ) : rec.check_in_time ? (
+                                <span className="text-[9px] font-semibold text-emerald-700 block">✓ On-Time</span>
                               ) : null}
                             </div>
                           </button>
@@ -527,14 +584,16 @@ export default function MemberKundaliModal({
                               <span className="text-xs font-black text-amber-950 font-mono">
                                 {rec.check_out_time ? new Date(rec.check_out_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : 'In Progress'}
                               </span>
-                              {rec.early_checkout_minutes && rec.early_checkout_minutes > 0 ? (
+                              {recTiming.isEarlyCheckout ? (
                                 <span className="text-[9px] font-bold text-rose-700 block">
-                                  Left {Math.floor(rec.early_checkout_minutes / 60) > 0 ? `${Math.floor(rec.early_checkout_minutes / 60)}h ` : ''}{rec.early_checkout_minutes % 60}m early
+                                  Left {recTiming.earlyCheckoutFormattedText} early
                                 </span>
-                              ) : rec.overtime_minutes && rec.overtime_minutes > 0 ? (
-                                <span className="text-[9px] font-bold text-emerald-700 block">
-                                  +{Math.floor(rec.overtime_minutes / 60) > 0 ? `${Math.floor(rec.overtime_minutes / 60)}h ` : ''}{rec.overtime_minutes % 60}m OT
+                              ) : recTiming.isOvertime ? (
+                                <span className="text-[9px] font-bold text-sky-700 block">
+                                  +{recTiming.overtimeFormattedText} OT
                                 </span>
+                              ) : rec.check_out_time ? (
+                                <span className="text-[9px] font-semibold text-emerald-700 block">✓ On-Time</span>
                               ) : null}
                             </div>
                           </button>
@@ -552,15 +611,15 @@ export default function MemberKundaliModal({
 
                         {/* 5. Outer Status Tag */}
                         <div className="flex items-center gap-2">
-                          {rec.status === 'present' && (
+                          {rec.status === 'present' && !recTiming.isLate && (
                             <span className="px-3 py-1 rounded-full text-[11px] font-black bg-emerald-50 text-emerald-800 border border-emerald-200">
                               Present
                             </span>
                           )}
-                          {rec.status === 'late' && (
+                          {(rec.status === 'late' || recTiming.isLate) && (
                             <div className="flex items-center gap-1.5">
                               <span className="px-2.5 py-1 rounded-full text-[11px] font-black bg-amber-100 text-amber-900 border border-amber-300">
-                                Late ({Math.floor((rec.late_minutes || 0) / 60) > 0 ? `${Math.floor((rec.late_minutes || 0) / 60)}h ` : ''}${(rec.late_minutes || 0) % 60}m)
+                                Late ({recTiming.lateFormattedText})
                               </span>
                               {onUpdateRecord && (
                                 <button
