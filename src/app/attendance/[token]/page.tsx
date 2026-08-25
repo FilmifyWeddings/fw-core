@@ -496,8 +496,12 @@ export default function PersonalAttendancePage() {
       <header className="px-5 pt-6 pb-3 bg-white border-b border-[#F0E8DC] sticky top-0 z-30">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[#C89435] to-[#8C6D33] text-white font-bold flex items-center justify-center shadow-md text-base">
-              {member?.name ? member.name.charAt(0).toUpperCase() : 'U'}
+            <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[#C89435] to-[#8C6D33] text-white font-bold flex items-center justify-center shadow-md text-base overflow-hidden shrink-0 border border-amber-300">
+              {member?.avatar_url ? (
+                <img src={member.avatar_url} alt={member.name} className="w-full h-full object-cover" />
+              ) : (
+                member?.name ? member.name.charAt(0).toUpperCase() : 'U'
+              )}
             </div>
             <div>
               <h1 className="text-[15px] font-bold text-[#211B17] leading-tight flex items-center gap-1.5">
@@ -658,7 +662,9 @@ export default function PersonalAttendancePage() {
                           : 'bg-[#E8F5E9] text-[#2E7D32] border border-[#C8E6C9]'
                       } flex items-center gap-1`}>
                         <span className="w-2 h-2 rounded-full bg-current animate-ping" />
-                        {todayRecord?.status === 'late' ? `Late (${todayRecord?.late_minutes}m)` : 'On Duty (Present)'}
+                        {todayRecord?.status === 'late' && todayRecord?.late_minutes
+                          ? `Late by ${Math.floor(todayRecord.late_minutes / 60) > 0 ? `${Math.floor(todayRecord.late_minutes / 60)}h ` : ''}${todayRecord.late_minutes % 60}m`
+                          : 'On Duty (Present)'}
                       </span>
                     ) : (
                       <span className="px-2.5 py-0.5 rounded-full text-[12px] font-bold bg-[#FFF3E0] text-[#E65100]">
@@ -683,8 +689,12 @@ export default function PersonalAttendancePage() {
                   <span className="font-semibold text-[#211B17]">
                     {todayRecord?.check_in_time ? new Date(todayRecord.check_in_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '--:--'}
                   </span>
-                  {todayRecord?.late_minutes ? (
-                    <span className="text-[9.5px] text-[#C62828] block">({todayRecord.late_minutes}m late arrival)</span>
+                  {todayRecord?.late_minutes && todayRecord.late_minutes > 0 ? (
+                    <span className="text-[10px] text-[#C62828] font-bold block mt-0.5">
+                      ⏱️ Late by {Math.floor(todayRecord.late_minutes / 60) > 0 ? `${Math.floor(todayRecord.late_minutes / 60)}h ` : ''}{todayRecord.late_minutes % 60}m
+                    </span>
+                  ) : todayRecord?.check_in_time ? (
+                    <span className="text-[10px] text-[#2E7D32] font-semibold block mt-0.5">✓ On-Time</span>
                   ) : null}
                 </div>
 
@@ -693,8 +703,16 @@ export default function PersonalAttendancePage() {
                   <span className="font-semibold text-[#211B17]">
                     {todayRecord?.check_out_time ? new Date(todayRecord.check_out_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '--:--'}
                   </span>
-                  {todayRecord?.overtime_minutes ? (
-                    <span className="text-[9.5px] text-[#2E7D32] block">(+{todayRecord.overtime_minutes}m OT)</span>
+                  {todayRecord?.early_checkout_minutes && todayRecord.early_checkout_minutes > 0 ? (
+                    <span className="text-[10px] text-[#C62828] font-bold block mt-0.5">
+                      🚪 Left {Math.floor(todayRecord.early_checkout_minutes / 60) > 0 ? `${Math.floor(todayRecord.early_checkout_minutes / 60)}h ` : ''}{todayRecord.early_checkout_minutes % 60}m early
+                    </span>
+                  ) : todayRecord?.overtime_minutes && todayRecord.overtime_minutes > 0 ? (
+                    <span className="text-[10px] text-[#2E7D32] font-bold block mt-0.5">
+                      ⚡ +{Math.floor(todayRecord.overtime_minutes / 60) > 0 ? `${Math.floor(todayRecord.overtime_minutes / 60)}h ` : ''}{todayRecord.overtime_minutes % 60}m OT
+                    </span>
+                  ) : todayRecord?.check_out_time ? (
+                    <span className="text-[10px] text-[#2E7D32] font-semibold block mt-0.5">✓ On-Time</span>
                   ) : null}
                 </div>
               </div>

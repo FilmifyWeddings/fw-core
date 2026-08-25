@@ -518,6 +518,15 @@ export default function MemberKundaliModal({
                               <span className="text-xs font-black text-amber-950 font-mono">
                                 {rec.check_out_time ? new Date(rec.check_out_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : 'In Progress'}
                               </span>
+                              {rec.early_checkout_minutes && rec.early_checkout_minutes > 0 ? (
+                                <span className="text-[9px] font-bold text-rose-700 block">
+                                  Left {Math.floor(rec.early_checkout_minutes / 60) > 0 ? `${Math.floor(rec.early_checkout_minutes / 60)}h ` : ''}{rec.early_checkout_minutes % 60}m early
+                                </span>
+                              ) : rec.overtime_minutes && rec.overtime_minutes > 0 ? (
+                                <span className="text-[9px] font-bold text-emerald-700 block">
+                                  +{Math.floor(rec.overtime_minutes / 60) > 0 ? `${Math.floor(rec.overtime_minutes / 60)}h ` : ''}{rec.overtime_minutes % 60}m OT
+                                </span>
+                              ) : null}
                             </div>
                           </button>
                         </div>
@@ -542,7 +551,7 @@ export default function MemberKundaliModal({
                           {rec.status === 'late' && (
                             <div className="flex items-center gap-1.5">
                               <span className="px-2.5 py-1 rounded-full text-[11px] font-black bg-amber-100 text-amber-900 border border-amber-300">
-                                Late ({rec.late_minutes}m)
+                                Late ({Math.floor((rec.late_minutes || 0) / 60) > 0 ? `${Math.floor((rec.late_minutes || 0) / 60)}h ` : ''}${(rec.late_minutes || 0) % 60}m)
                               </span>
                               {onUpdateRecord && (
                                 <button

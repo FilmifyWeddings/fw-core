@@ -746,8 +746,12 @@ export default function AttendancePage() {
                               onClick={() => setShowKundaliModal({ open: true, member })}
                               className="flex items-center gap-2.5 cursor-pointer group"
                             >
-                              <div className="w-8 h-8 rounded-xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-900 font-bold text-xs group-hover:scale-105 transition-transform">
-                                {member.name.slice(0, 2).toUpperCase()}
+                              <div className="w-8 h-8 rounded-xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-900 font-bold text-xs group-hover:scale-105 transition-transform overflow-hidden shrink-0">
+                                {member.avatar_url ? (
+                                  <img src={member.avatar_url} alt={member.name} className="w-full h-full object-cover" />
+                                ) : (
+                                  member.name.slice(0, 2).toUpperCase()
+                                )}
                               </div>
                               <div>
                                 <h4 className="font-extrabold text-slate-900 group-hover:text-[#C89435] flex items-center gap-1 transition-colors">
@@ -769,16 +773,58 @@ export default function AttendancePage() {
                                 ? 'bg-sky-50 text-sky-700 border-sky-200'
                                 : 'bg-rose-50 text-rose-700 border-rose-200'
                             }`}>
-                              {isPresent ? '✓ Present' : isLate ? `Late (${record?.late_minutes}m)` : record?.status === 'leave' ? 'On Leave' : 'Absent'}
+                              {isPresent
+                                ? '✓ Present'
+                                : isLate
+                                ? `Late (${Math.floor((record?.late_minutes || 0) / 60) > 0 ? `${Math.floor((record?.late_minutes || 0) / 60)}h ` : ''}${(record?.late_minutes || 0) % 60}m)`
+                                : record?.status === 'leave'
+                                ? 'On Leave'
+                                : 'Absent'}
                             </span>
                           </td>
 
-                          <td className="py-3 px-4 font-bold text-slate-800 font-mono">
-                            {record?.check_in_time ? new Date(record.check_in_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
+                          <td className="py-3 px-4">
+                            {record?.check_in_time ? (
+                              <div>
+                                <span className="font-bold text-slate-800 font-mono text-xs block">
+                                  {new Date(record.check_in_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })}
+                                </span>
+                                {record.late_minutes && record.late_minutes > 0 ? (
+                                  <span className="text-[9.5px] font-bold text-amber-700 block">
+                                    Late by {Math.floor(record.late_minutes / 60) > 0 ? `${Math.floor(record.late_minutes / 60)}h ` : ''}{record.late_minutes % 60}m
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] font-semibold text-emerald-600 block">On-time</span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 font-mono text-xs">—</span>
+                            )}
                           </td>
 
-                          <td className="py-3 px-4 font-bold text-slate-800 font-mono">
-                            {record?.check_out_time ? new Date(record.check_out_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
+                          <td className="py-3 px-4">
+                            {record?.check_out_time ? (
+                              <div>
+                                <span className="font-bold text-slate-800 font-mono text-xs block">
+                                  {new Date(record.check_out_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })}
+                                </span>
+                                {record.early_checkout_minutes && record.early_checkout_minutes > 0 ? (
+                                  <span className="text-[9.5px] font-bold text-rose-700 block">
+                                    Left {Math.floor(record.early_checkout_minutes / 60) > 0 ? `${Math.floor(record.early_checkout_minutes / 60)}h ` : ''}{record.early_checkout_minutes % 60}m early
+                                  </span>
+                                ) : record.overtime_minutes && record.overtime_minutes > 0 ? (
+                                  <span className="text-[9.5px] font-bold text-emerald-700 block">
+                                    +{Math.floor(record.overtime_minutes / 60) > 0 ? `${Math.floor(record.overtime_minutes / 60)}h ` : ''}{record.overtime_minutes % 60}m OT
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] font-semibold text-emerald-600 block">On-time</span>
+                                )}
+                              </div>
+                            ) : record?.check_in_time ? (
+                              <span className="text-emerald-600 font-bold text-[10px] animate-pulse">In Progress</span>
+                            ) : (
+                              <span className="text-slate-400 font-mono text-xs">—</span>
+                            )}
                           </td>
 
                           <td className="py-3 px-4 font-extrabold text-slate-900 font-mono">
@@ -895,8 +941,12 @@ export default function AttendancePage() {
                   <div key={rec.id} className="bg-white p-5 rounded-2xl border border-emerald-200 shadow-xs space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-900 font-black flex items-center justify-center text-xs">
-                          {rec.member?.name?.slice(0, 2).toUpperCase() || 'CW'}
+                        <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-900 font-black flex items-center justify-center text-xs overflow-hidden shrink-0 border border-emerald-300">
+                          {rec.member?.avatar_url ? (
+                            <img src={rec.member.avatar_url} alt={rec.member.name} className="w-full h-full object-cover" />
+                          ) : (
+                            rec.member?.name?.slice(0, 2).toUpperCase() || 'CW'
+                          )}
                         </div>
                         <div>
                           <h4 className="font-extrabold text-slate-900">{rec.member?.name || 'Crew Member'}</h4>

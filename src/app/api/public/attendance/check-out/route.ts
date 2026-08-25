@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
 
     const todayDate = new Date().toISOString().split('T')[0];
 
-    // 2. Fetch today's record
+    // 2. Fetch today's record & member profile
     const { data: record, error: recErr } = await supabaseAdmin
       .from('attendance_records')
       .select('*')
@@ -42,6 +42,12 @@ export async function POST(request: NextRequest) {
         record
       }, { status: 400 });
     }
+
+    const { data: member } = await supabaseAdmin
+      .from('fw_team_members')
+      .select('id, name, shift_start, shift_end, custom_data')
+      .eq('id', link.member_id)
+      .maybeSingle();
 
     // 3. Close any open break if active
     const { data: openBreak } = await supabaseAdmin
@@ -92,6 +98,26 @@ export async function POST(request: NextRequest) {
     const overtimeThreshold = 540;
     const overtimeMinutes = netWorkMinutes > overtimeThreshold ? netWorkMinutes - overtimeThreshold : 0;
 
+    // Calculate Early Checkout vs Shift End Time (IST)
+    const custom = (member?.custom_data as any) || {};
+    const mShiftEnd = member?.shift_end ? member.shift_end.slice(0, 5) : (custom.shift_end ? custom.shift_end.slice(0, 5) : '19:00');
+    const [sEndH, sEndM] = mShiftEnd.split(':').map(Number);
+    const shiftEndTotalMinutes = sEndH * 60 + sEndM;
+
+    const istTimeStr = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: false
+    }).format(nowTime);
+    const [currH, currM] = istTimeStr.split(':').map(Number);
+    const currentTotalMinutes = currH * 60 + currM;
+
+    let earlyCheckoutMinutes = 0;
+    if (currentTotalMinutes < shiftEndTotalMinutes) {
+      earlyCheckoutMinutes = shiftEndTotalMinutes - currentTotalMinutes;
+    }
+
     // Check-Out Address
     const punchOutAddress = address || (lat && lng ? `Lat: ${Number(lat).toFixed(4)}, Lng: ${Number(lng).toFixed(4)}` : 'Studio Venue');
 
@@ -134,6 +160,7 @@ export async function POST(request: NextRequest) {
       ...(record.device_info || {}),
       check_out_ist: formattedIstTime,
       check_out_address: punchOutAddress,
+      early_checkout_minutes: earlyCheckoutMinutes,
       selfie_out_url: photoPath || photoBase64
     };
 
@@ -151,6 +178,7 @@ export async function POST(request: NextRequest) {
       break_duration_minutes: totalBreakMinutes,
       total_pause_minutes: totalBreakMinutes,
       overtime_minutes: overtimeMinutes,
+      early_checkout_minutes: earlyCheckoutMinutes,
       device_info: updatedDeviceInfo,
       notes: updatedNotes,
       updated_at: nowTime.toISOString()
@@ -159,7 +187,7 @@ export async function POST(request: NextRequest) {
     let updatedRecord = null;
     let currentPayload = { ...updatePayload };
 
-    for (let attempt = 0; attempt < 5; attempt++) {
+    for (let attempt = 0; attempt < 6; attempt++) {
       const res = await supabaseAdmin
         .from('attendance_records')
         .update(currentPayload)
@@ -208,14 +236,28 @@ export async function POST(request: NextRequest) {
 
     const workHoursFormatted = `${Math.floor(netWorkMinutes / 60)}h ${netWorkMinutes % 60}m`;
 
+    let checkoutMsg = `Clocked out at ${formattedIstTime} IST (Worked: ${workHoursFormatted})`;
+    if (earlyCheckoutMinutes > 0) {
+      const eHrs = Math.floor(earlyCheckoutMinutes / 60);
+      const eMins = earlyCheckoutMinutes % 60;
+      const earlyStr = eHrs > 0 && eMins > 0 ? `${eHrs}h ${eMins}m` : (eHrs > 0 ? `${eHrs}h` : `${eMins}m`);
+      checkoutMsg = `Clocked out at ${formattedIstTime} IST (Left ${earlyStr} early | Worked: ${workHoursFormatted})`;
+    } else if (overtimeMinutes > 0) {
+      const oHrs = Math.floor(overtimeMinutes / 60);
+      const oMins = overtimeMinutes % 60;
+      const otStr = oHrs > 0 && oMins > 0 ? `${oHrs}h ${oMins}m` : (oHrs > 0 ? `${oHrs}h` : `${oMins}m`);
+      checkoutMsg = `Clocked out at ${formattedIstTime} IST (+${otStr} Overtime | Worked: ${workHoursFormatted})`;
+    }
+
     return NextResponse.json({
       success: true,
       record: updatedRecord,
       status: finalStatus,
       workDurationMinutes: netWorkMinutes,
       breakDurationMinutes: totalBreakMinutes,
+      earlyCheckoutMinutes,
       overtimeMinutes,
-      message: `Clocked out at ${formattedIstTime} IST (Worked: ${workHoursFormatted})`
+      message: checkoutMsg
     });
 
   } catch (err: any) {

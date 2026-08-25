@@ -83,7 +83,8 @@ export default function GooglePlacesGeofenceMap({
         document.head.appendChild(link);
       }
 
-      const L = (await import('leaflet')).default;
+      const leafletModule = await import('leaflet');
+      const L = (leafletModule as any).default || leafletModule;
 
       if (leafletMapRef.current) {
         try {
@@ -184,70 +185,7 @@ export default function GooglePlacesGeofenceMap({
     };
   }, []);
 
-  // Initialize Google Places Autocomplete API if loaded or available
-  useEffect(() => {
-    if (!searchInputRef.current) return;
 
-    const attachGooglePlaces = () => {
-      if (window.google?.maps?.places?.Autocomplete && searchInputRef.current) {
-        try {
-          const autocomplete = new window.google.maps.places.Autocomplete(searchInputRef.current, {
-            types: ['establishment', 'geocode'],
-            fields: ['geometry', 'name', 'formatted_address', 'address_components']
-          });
-
-          autocomplete.addListener('place_changed', () => {
-            const place = autocomplete.getPlace();
-            if (place.geometry?.location) {
-              const pLat = place.geometry.location.lat();
-              const pLng = place.geometry.location.lng();
-              const pName = place.name || place.formatted_address || 'Selected Location';
-              const pAddress = place.formatted_address || pName;
-
-              const cleanLat = Number(pLat.toFixed(6));
-              const cleanLng = Number(pLng.toFixed(6));
-
-              // Pan map & center pin & circle
-              if (leafletMapRef.current) {
-                leafletMapRef.current.flyTo([cleanLat, cleanLng], 17, { duration: 1.2 });
-              }
-              if (leafletMarkerRef.current) leafletMarkerRef.current.setLatLng([cleanLat, cleanLng]);
-              if (leafletCircleRef.current) leafletCircleRef.current.setLatLng([cleanLat, cleanLng]);
-
-              setSearchQuery(pName);
-              setCurrentAddress(pAddress);
-              setSearchResults([]);
-
-              if (onCoordinatesChange) {
-                onCoordinatesChange(cleanLat, cleanLng, pAddress, pName);
-              }
-            }
-          });
-
-          googleAutocompleteRef.current = autocomplete;
-        } catch (e) {
-          console.warn('Google Places Autocomplete init warning:', e);
-        }
-      }
-    };
-
-    // If Google Maps script is already on page
-    if (window.google?.maps?.places) {
-      attachGooglePlaces();
-    } else {
-      // Attempt dynamic load
-      const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
-      if (apiKey && !document.getElementById('google-maps-places-script')) {
-        const script = document.createElement('script');
-        script.id = 'google-maps-places-script';
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
-        script.async = true;
-        script.defer = true;
-        script.onload = attachGooglePlaces;
-        document.head.appendChild(script);
-      }
-    }
-  }, []);
 
   // Switch between Street and Satellite Map Layers
   const toggleMapLayer = () => {
