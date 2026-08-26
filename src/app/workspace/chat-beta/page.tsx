@@ -61,6 +61,9 @@ export default function WhatsAppWebBetaInbox() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
+  const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
+  const [profileName, setProfileName] = useState<string | null>(null);
+
   // 1. Authenticate & load workspace
   useEffect(() => {
     const init = async () => {
@@ -131,6 +134,8 @@ export default function WhatsAppWebBetaInbox() {
       const data = await res.json();
       if (data.success) {
         setConnectionStatus(data.connection_status || 'DISCONNECTED');
+        if (data.phone_number) setPhoneNumber(data.phone_number);
+        if (data.profile_name) setProfileName(data.profile_name);
       }
     } catch (_) {}
   };
@@ -285,8 +290,8 @@ export default function WhatsAppWebBetaInbox() {
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`} />
-                  <span className="text-[10px] text-zinc-400">
-                    {isConnected ? 'Evolution Live' : 'Disconnected'}
+                  <span className="text-[10px] text-zinc-400 font-medium">
+                    {isConnected ? (phoneNumber ? `+${phoneNumber} • Live` : 'Connected (● Live)') : 'Disconnected'}
                   </span>
                 </div>
               </div>
@@ -664,9 +669,17 @@ export default function WhatsAppWebBetaInbox() {
       {workspaceId && (
         <WhatsAppBetaConnectModal
           isOpen={connectModalOpen}
-          onClose={() => { setConnectModalOpen(false); checkConnection(workspaceId); }}
+          onClose={() => { 
+            setConnectModalOpen(false); 
+            checkConnection(workspaceId); 
+            loadChats(workspaceId);
+          }}
           workspaceId={workspaceId}
-          onConnectionChange={(status) => setConnectionStatus(status)}
+          onConnectionChange={(status) => {
+            setConnectionStatus(status);
+            checkConnection(workspaceId);
+            loadChats(workspaceId);
+          }}
         />
       )}
 

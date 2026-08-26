@@ -37,6 +37,10 @@ export default function WhatsAppBetaIntegrationPage() {
 
   const fetchCounts = async (wsId: string) => {
     try {
+      // 1. Fetch chats to get accurate total count including CRM leads
+      const chatsRes = await fetch(`/api/whatsapp-beta/chats?workspace_id=${wsId}`);
+      const chatsData = await chatsRes.json();
+
       const { count: msgCount } = await supabase
         .from('evolution_messages')
         .select('*', { count: 'exact', head: true })
@@ -47,8 +51,9 @@ export default function WhatsAppBetaIntegrationPage() {
         .select('*', { count: 'exact', head: true })
         .eq('workspace_id', wsId);
 
+      const totalContacts = Math.max(contCount || 0, chatsData?.total || 0);
+      setContactsCount(totalContacts);
       setRecentMessagesCount(msgCount || 0);
-      setContactsCount(contCount || 0);
     } catch (_) {}
   };
 
@@ -252,9 +257,17 @@ export default function WhatsAppBetaIntegrationPage() {
       {workspaceId && (
         <WhatsAppBetaConnectModal
           isOpen={modalOpen}
-          onClose={() => { setModalOpen(false); fetchInstanceData(workspaceId); }}
+          onClose={() => { 
+            setModalOpen(false); 
+            fetchInstanceData(workspaceId); 
+            fetchCounts(workspaceId);
+          }}
           workspaceId={workspaceId}
-          onConnectionChange={(status) => setConnectionStatus(status)}
+          onConnectionChange={(status) => {
+            setConnectionStatus(status);
+            fetchInstanceData(workspaceId);
+            fetchCounts(workspaceId);
+          }}
         />
       )}
     </div>
