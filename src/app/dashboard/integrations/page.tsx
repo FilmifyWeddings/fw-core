@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { BhamstraProvider, useBhamstra } from '@/lib/context/BhamstraContext';
 import { supabase } from '@/lib/supabase';
+import { WhatsAppBetaConnectModal } from '@/components/integrations/whatsapp-beta-connect-modal';
 
 interface IntegrationCard {
   id: string;
@@ -32,20 +33,35 @@ function IntegrationsCore() {
   
   // Local integration statuses
   const [whatsappConnected, setWhatsappConnected] = useState(true);
+  const [whatsappBetaConnected, setWhatsappBetaConnected] = useState(false);
   const [metaConnected, setMetaConnected] = useState(true);
   const [websiteConnected, setWebsiteConnected] = useState(true);
   const [contactsConnected, setGoogleContactsConnected] = useState(false);
   const [calendarConnected, setGoogleCalendarConnected] = useState(false);
   const [sheetsConnected, setGoogleSheetsConnected] = useState(false);
   const [smtpConnected, setSmtpConnected] = useState(false);
+  const [betaModalOpen, setBetaModalOpen] = useState(false);
+  const [currentWsId, setCurrentWsId] = useState('');
 
   // Sync state with database (Law 1 Multi-Tenancy)
   useEffect(() => {
     const fetchCreds = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
+      setCurrentWsId(session.user.id);
       
       try {
+        // 1. Check Evolution Instances
+        const { data: evoInst } = await supabase
+          .from('evolution_instances')
+          .select('connection_status')
+          .eq('workspace_id', session.user.id)
+          .maybeSingle();
+
+        if (evoInst?.connection_status === 'CONNECTED') {
+          setWhatsappBetaConnected(true);
+        }
+
         const { data: creds } = await supabase
           .from('integration_credentials')
           .select('*')
@@ -56,6 +72,7 @@ function IntegrationsCore() {
             if (c.provider === 'meta') setMetaConnected(c.status === 'connected');
             if (c.provider === 'custom_website') setWebsiteConnected(c.status === 'connected');
             if (c.provider === 'whatsapp') setWhatsappConnected(c.status === 'connected');
+            if (c.provider === 'evolution_whatsapp') setWhatsappBetaConnected(c.status === 'connected');
             if (c.provider === 'smtp') setSmtpConnected(c.status === 'connected');
             if (c.provider === 'google_contacts') setGoogleContactsConnected(c.status === 'connected');
             if (c.provider === 'google_sheets') setGoogleSheetsConnected(c.status === 'connected');
@@ -82,6 +99,7 @@ function IntegrationsCore() {
   const handleToggleStatus = async (id: string, currentStatus: boolean) => {
     const nextStatus = !currentStatus;
     if (id === 'whatsapp-web') setWhatsappConnected(nextStatus);
+    if (id === 'whatsapp-web-beta') setWhatsappBetaConnected(nextStatus);
     if (id === 'meta-ads') setMetaConnected(nextStatus);
     if (id === 'personal-website') setWebsiteConnected(nextStatus);
     if (id === 'google-contacts') setGoogleContactsConnected(nextStatus);
@@ -95,6 +113,7 @@ function IntegrationsCore() {
       
       const targetDbProvider = id === 'personal-website' ? 'custom_website' : 
                                id === 'whatsapp-web' ? 'whatsapp' : 
+                               id === 'whatsapp-web-beta' ? 'evolution_whatsapp' :
                                id === 'meta-ads' ? 'meta' : 
                                id === 'google-contacts' ? 'google_contacts' :
                                id === 'google-sheets' ? 'google_sheets' :
@@ -115,6 +134,16 @@ function IntegrationsCore() {
   };
 
   const integrations: IntegrationCard[] = [
+    {
+      id: 'whatsapp-web-beta',
+      name: 'WhatsApp Web (Beta)',
+      category: 'marketing',
+      description: 'Evolution Engine • 2-Way Realtime Sync. Full dual-pane Web Inbox with CRM quick actions.',
+      logoName: 'whatsapp.png',
+      status: whatsappBetaConnected ? 'connected' : 'disconnected',
+      path: '/workspace/integrations/whatsapp-beta',
+      metaText: 'Evolution Engine • 2-Way Sync'
+    },
     {
       id: 'meta-ads',
       name: 'Meta Ads Manager',
@@ -321,12 +350,29 @@ function IntegrationsCore() {
                       </button>
 
                       {/* Configure Button link */}
-                      <Link
-                        href={item.path}
-                        className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-850 border border-zinc-850 hover:border-zinc-700 text-white text-[10px] font-bold rounded-xl transition-all flex items-center gap-0.5"
-                      >
-                        Configure <ChevronRight className="w-3.5 h-3.5" />
-                      </Link>
+                      {item.id === 'whatsapp-web-beta' ? (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => setBetaModalOpen(true)}
+                            className="px-2.5 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-[10px] font-bold rounded-xl transition-all"
+                          >
+                            QR
+                          </button>
+                          <Link
+                            href={item.path}
+                            className="px-2.5 py-1.5 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-850 border border-zinc-850 hover:border-zinc-700 text-white text-[10px] font-bold rounded-xl transition-all flex items-center gap-0.5"
+                          >
+                            Config <ChevronRight className="w-3.5 h-3.5" />
+                          </Link>
+                        </div>
+                      ) : (
+                        <Link
+                          href={item.path}
+                          className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-850 border border-zinc-850 hover:border-zinc-700 text-white text-[10px] font-bold rounded-xl transition-all flex items-center gap-0.5"
+                        >
+                          Configure <ChevronRight className="w-3.5 h-3.5" />
+                        </Link>
+                      )}
                     </div>
                   </div>
                 </motion.div>
@@ -347,6 +393,16 @@ function IntegrationsCore() {
         </div>
 
       </div>
+
+      {/* WhatsApp Beta Connect Modal */}
+      {currentWsId && (
+        <WhatsAppBetaConnectModal
+          isOpen={betaModalOpen}
+          onClose={() => setBetaModalOpen(false)}
+          workspaceId={currentWsId}
+          onConnectionChange={(status) => setWhatsappBetaConnected(status === 'CONNECTED')}
+        />
+      )}
 
     </div>
   );
