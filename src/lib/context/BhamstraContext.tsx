@@ -150,77 +150,19 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
 
       const workspaceList: WorkspaceOption[] = [ownerOption];
 
-      // 2. Fetch Partner Workspaces (where user is invited as a team member/partner)
+      // 2. Fetch Multi-Tenant Workspaces (Owner Studio + Partner Workspaces)
       try {
-        const { data: memberships, error: memErr } = await supabase
-          .from('workspace_members')
-          .select(`
-            id,
-            workspace_id,
-            user_id,
-            email,
-            name,
-            primary_role,
-            roles,
-            status,
-            avatar_url
-          `)
-          .or(`email.ilike.${uEmail},user_id.eq.${uId}`);
-
-        if (!memErr && memberships && memberships.length > 0) {
-          for (const mem of memberships) {
-            // Auto-link user_id if this invited email is now logged in
-            if ((!mem.user_id || mem.user_id !== uId) && mem.email?.toLowerCase() === uEmail.toLowerCase()) {
-              supabase.from('workspace_members').update({ user_id: uId, status: 'ACTIVE' }).eq('id', mem.id).then(() => {});
-            }
-
-            // Skip if this is their own workspace
-            if (mem.workspace_id === uId) continue;
-
-            // Fetch workspace name
-            let partnerStudioName = 'Partner Studio';
-            const { data: wsProfile } = await supabase
-              .from('profiles')
-              .select('workspace_name, full_name')
-              .eq('id', mem.workspace_id)
-              .maybeSingle();
-
-            if (wsProfile?.workspace_name) {
-              partnerStudioName = wsProfile.workspace_name;
-            }
-
-            // Fetch member permissions
-            let memberPerms = DEFAULT_MEMBER_PERMISSIONS;
-            const { data: permData } = await supabase
-              .from('member_permissions')
-              .select('*')
-              .eq('member_id', mem.id)
-              .maybeSingle();
-
-            if (permData) {
-              memberPerms = {
-                leads_access: permData.leads_access || 'NONE',
-                quotations_access: permData.quotations_access || 'NONE',
-                team_manager_access: permData.team_manager_access || 'VIEW_ASSIGNED',
-                post_production_access: permData.post_production_access || 'ASSIGNED_ONLY',
-                finance_access: permData.finance_access || 'NONE',
-              };
-            }
-
-            workspaceList.push({
-              workspaceId: mem.workspace_id,
-              studioName: partnerStudioName,
-              userRole: mem.primary_role || 'FREELANCER',
-              isOwner: false,
-              memberId: mem.id,
-              roles: mem.roles || [],
-              permissions: memberPerms,
-              avatarUrl: mem.avatar_url,
-            });
+        if (session?.access_token) {
+          const apiRes = await fetch('/api/workspace/my-workspaces', {
+            headers: { Authorization: `Bearer ${session.access_token}` }
+          });
+          const apiJson = await apiRes.json();
+          if (apiJson.success && Array.isArray(apiJson.workspaces) && apiJson.workspaces.length > 0) {
+            workspaceList.splice(0, workspaceList.length, ...apiJson.workspaces);
           }
         }
-      } catch (memFetchErr) {
-        console.warn('[BhamstraContext] Partner workspaces fetch skipped:', memFetchErr);
+      } catch (wsApiErr) {
+        console.warn('[BhamstraContext] my-workspaces API fallback to direct query:', wsApiErr);
       }
 
       setAvailableWorkspaces(workspaceList);

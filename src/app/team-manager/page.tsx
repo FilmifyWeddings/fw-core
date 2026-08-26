@@ -13,6 +13,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import { supabase } from '@/lib/supabase';
+import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { FWProject, FWSubEvent, FWTeamMember, FWAssignment } from '@/types';
 import AddProjectModal from './components/AddProjectModal';
 import AddTeamMemberModal from './components/AddTeamMemberModal';
@@ -112,6 +113,7 @@ const resolveSubEventAssignments = (subEvent: FWSubEvent, teamMembers: FWTeamMem
 };
 
 export default function TeamManagerPage() {
+  const { workspaceId, workspaceName, isOwner, userRole, permissions } = useWorkspace();
   const [activeTab, setActiveTab] = useState<'overview' | 'projects' | 'list' | 'calendar' | 'trash'>('projects');
   
   // Dynamic Time-Based Greeting & Studio Profile Name
@@ -123,12 +125,13 @@ export default function TeamManagerPage() {
   }, []);
 
   const studioName = useMemo(() => {
+    if (workspaceName) return workspaceName;
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('fw_studio_name');
       if (saved) return saved;
     }
     return 'Studio Admin';
-  }, []);
+  }, [workspaceName]);
   
   // Real Data State & Current User Workspace ID
   const [currentUserId, setCurrentUserId] = useState<string>('');
@@ -205,7 +208,7 @@ export default function TeamManagerPage() {
   const fetchAllData = async (targetUid?: string) => {
     setLoading(true);
     setError(null);
-    const uid = targetUid !== undefined ? targetUid : currentUserId;
+    const uid = targetUid !== undefined ? targetUid : (workspaceId || currentUserId);
 
     try {
       try {
@@ -213,7 +216,7 @@ export default function TeamManagerPage() {
       } catch (e) {
         // Bucket initialized or skipped
       }
-      // 1. Fetch Team Members for authenticated user only
+      // 1. Fetch Team Members for active workspace
       let membersQuery = supabase
         .from('fw_team_members')
         .select('*')
@@ -227,7 +230,7 @@ export default function TeamManagerPage() {
       if (membersErr) console.warn('[TeamManager] fw_team_members error:', membersErr.message);
       setTeamMembers(membersData || []);
 
-      // 2. Fetch Projects for authenticated user only
+      // 2. Fetch Projects for active workspace
       let projectsQuery = supabase
         .from('fw_projects')
         .select(`
@@ -262,10 +265,11 @@ export default function TeamManagerPage() {
       const { data: { session } } = await supabase.auth.getSession();
       const uid = session?.user?.id || '';
       setCurrentUserId(uid);
-      await fetchAllData(uid);
+      const effectiveWsId = workspaceId || uid;
+      await fetchAllData(effectiveWsId);
     }
     initUserAndFetch();
-  }, []);
+  }, [workspaceId]);
 
   // Handle Team Member Save (Create / Edit)
   const handleSaveTeamMember = async (memberData: {
