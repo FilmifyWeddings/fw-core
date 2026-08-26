@@ -623,6 +623,92 @@ export default function MetaIntegrationPage() {
     }
   }, []);
 
+  // Per-Form Sync (SSE streaming)
+  const handleSyncForm = useCallback(async (formId: string, pageId: string) => {
+    abortRefs.current.get(formId)?.abort();
+    const controller = new AbortController();
+    abortRefs.current.set(formId, controller);
+
+    setSyncStates(prev => new Map(prev).set(formId, { phase: 'fetching', imported: 0, skipped: 0, failed: 0, total: 0, current: 0, message: 'Starting…' }));
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const wsId = session?.user?.id || '';
+      const headers = await getAuthHeaders();
+      const res = await fetch('/api/meta/forms/sync', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ form_id: formId, page_id: pageId, workspace_id: wsId }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok || !res.body) {
+        const errData = await res.json().catch(() => ({}));
+        setSyncStates(prev => new Map(prev).set(formId, { ...DEFAULT_SYNC, phase: 'error', errorMessage: errData.error || `HTTP ${res.status}` }));
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() || '';
+
+        for (const chunk of lines) {
+          const dataLine = chunk.split('\n').find(l => l.startsWith('data: '));
+          if (!dataLine) continue;
+
+          try {
+            const event = JSON.parse(dataLine.slice(6));
+            if (event.type === 'start') {
+              setSyncStates(prev => new Map(prev).set(formId, {
+                phase: 'fetching', imported: 0, skipped: 0, failed: 0,
+                total: event.total > 0 ? event.total : 0, current: 0,
+                message: `Fetching leads for "${event.form_name}"…`,
+              }));
+            } else if (event.type === 'progress') {
+              setSyncStates(prev => new Map(prev).set(formId, {
+                phase: event.phase === 'importing' ? 'importing' : 'fetching',
+                imported: event.imported, skipped: event.skipped, failed: event.failed,
+                total: event.total, current: event.current,
+                message: event.message || '',
+              }));
+            } else if (event.type === 'complete') {
+              setSyncStates(prev => new Map(prev).set(formId, {
+                phase: 'complete', imported: event.imported, skipped: event.skipped,
+                failed: event.failed, total: event.total, current: event.total,
+                message: 'Sync complete', durationMs: event.duration_ms,
+              }));
+              if (event.new_leads_count !== undefined) {
+                setLeadForms(prev => prev.map(f =>
+                  f.form_id === formId ? { ...f, leads_count: event.new_leads_count, sync_count: event.new_leads_count } : f
+                ));
+              }
+              fetchMetaSyncData();
+            } else if (event.type === 'error') {
+              setSyncStates(prev => new Map(prev).set(formId, {
+                ...DEFAULT_SYNC, phase: 'error',
+                errorMessage: event.message,
+              }));
+            }
+          } catch { /* skip */ }
+        }
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        setSyncStates(prev => new Map(prev).set(formId, { ...DEFAULT_SYNC, phase: 'error', errorMessage: err.message }));
+      }
+    } finally {
+      abortRefs.current.delete(formId);
+    }
+  }, [getAuthHeaders, fetchMetaSyncData]);
+
   // Sync All Historical Leads Handler (Sequential with Live SSE Stream)
   const handleSyncAllHistoricalLeads = useCallback(async () => {
     if (leadForms.length === 0) {
@@ -766,90 +852,6 @@ export default function MetaIntegrationPage() {
       setPageToggleLoading(prev => { const m = new Map(prev); m.delete(pageId); return m; });
     }
   }, [getAuthHeaders, showToast]);
-
-  // Per-Form Sync (SSE streaming)
-  const handleSyncForm = useCallback(async (formId: string, pageId: string) => {
-    abortRefs.current.get(formId)?.abort();
-    const controller = new AbortController();
-    abortRefs.current.set(formId, controller);
-
-    setSyncStates(prev => new Map(prev).set(formId, { phase: 'fetching', imported: 0, skipped: 0, failed: 0, total: 0, current: 0, message: 'Starting…' }));
-
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const wsId = session?.user?.id || '';
-      const headers = await getAuthHeaders();
-      const res = await fetch('/api/meta/forms/sync', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ form_id: formId, page_id: pageId, workspace_id: wsId }),
-        signal: controller.signal,
-      });
-
-      if (!res.ok || !res.body) {
-        const errData = await res.json().catch(() => ({}));
-        setSyncStates(prev => new Map(prev).set(formId, { ...DEFAULT_SYNC, phase: 'error', errorMessage: errData.error || `HTTP ${res.status}` }));
-        return;
-      }
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n\n');
-        buffer = lines.pop() || '';
-
-        for (const chunk of lines) {
-          const dataLine = chunk.split('\n').find(l => l.startsWith('data: '));
-          if (!dataLine) continue;
-
-          try {
-            const event = JSON.parse(dataLine.slice(6));
-            if (event.type === 'start') {
-              setSyncStates(prev => new Map(prev).set(formId, {
-                phase: 'fetching', imported: 0, skipped: 0, failed: 0,
-                total: event.total > 0 ? event.total : 0, current: 0,
-                message: `Fetching leads for "${event.form_name}"…`,
-              }));
-            } else if (event.type === 'progress') {
-              setSyncStates(prev => new Map(prev).set(formId, {
-                phase: event.phase === 'importing' ? 'importing' : 'fetching',
-                imported: event.imported, skipped: event.skipped, failed: event.failed,
-                total: event.total, current: event.current,
-                message: event.message || '',
-              }));
-            } else if (event.type === 'complete') {
-              setSyncStates(prev => new Map(prev).set(formId, {
-                phase: 'complete', imported: event.imported, skipped: event.skipped,
-                failed: event.failed, total: event.total, current: event.total,
-                message: 'Sync complete', durationMs: event.duration_ms,
-              }));
-              if (event.new_leads_count !== undefined) {
-                setLeadForms(prev => prev.map(f =>
-                  f.form_id === formId ? { ...f, leads_count: event.new_leads_count, sync_count: event.new_leads_count } : f
-                ));
-              }
-              fetchMetaSyncData();
-            } else if (event.type === 'error') {
-              setSyncStates(prev => new Map(prev).set(formId, {
-                ...DEFAULT_SYNC, phase: 'error',
-                errorMessage: event.message,
-              }));
-            }
-          } catch { /* skip */ }
-        }
-      }
-    } catch (err: any) {
-      if (err.name !== 'AbortError') {
-        setSyncStates(prev => new Map(prev).set(formId, { ...DEFAULT_SYNC, phase: 'error', errorMessage: err.message }));
-      }
-    }
-  }, [getAuthHeaders, fetchMetaSyncData]);
 
   // CSV Export for Real Activity Logs
   const handleExportLogsCSV = () => {
