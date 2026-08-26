@@ -193,14 +193,14 @@ function SyncCell({ formId, pageId, syncState, onSync }: {
   syncState: FormSyncState;
   onSync: (formId: string, pageId: string) => void;
 }) {
-  const { phase, imported, current, total, message } = syncState;
+  const { phase, imported, message, errorMessage } = syncState;
 
   if (phase === 'idle') {
     return (
       <button
         onClick={() => onSync(formId, pageId)}
         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 text-[#0866FF] hover:bg-blue-100 text-xs font-black border border-blue-200 transition-all active:scale-95 shadow-2xs cursor-pointer"
-        title="Deep historical sync for all leads from this form"
+        title="Sync all historical leads from Meta"
       >
         <Zap className="w-3.5 h-3.5 fill-current text-amber-500" />
         <span>Sync All Old Leads</span>
@@ -209,26 +209,12 @@ function SyncCell({ formId, pageId, syncState, onSync }: {
   }
 
   if (phase === 'fetching' || phase === 'importing') {
-    const pct = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 35;
     return (
-      <div className="space-y-1 min-w-[130px] text-right">
-        <div className="flex items-center justify-between text-[10px] font-semibold text-slate-700">
-          <span className="flex items-center gap-1">
-            <Loader2 className="w-3 h-3 animate-spin text-[#0866FF]" />
-            {phase === 'fetching' ? 'Fetching…' : 'Saving…'}
-          </span>
-          <span className="font-mono text-[#0866FF] font-bold">
-            {phase === 'fetching' ? `${current} leads` : `${current}/${total || '?'}`}
-          </span>
-        </div>
-        <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
-          <div className="h-full rounded-full bg-[#0866FF] transition-all duration-300" style={{ width: `${pct}%` }} />
-        </div>
-        {message && (
-          <p className="text-[9px] text-slate-500 truncate max-w-[150px]" title={message}>
-            {message}
-          </p>
-        )}
+      <div className="flex items-center justify-end gap-2 text-right">
+        <Loader2 className="w-4 h-4 animate-spin text-[#0866FF] shrink-0" />
+        <span className="text-[11px] font-semibold text-slate-700 whitespace-nowrap">
+          Syncing historical leads with Meta...
+        </span>
       </div>
     );
   }
@@ -236,10 +222,14 @@ function SyncCell({ formId, pageId, syncState, onSync }: {
   if (phase === 'complete') {
     return (
       <div className="space-y-0.5 text-right">
-        <div className="flex items-center justify-end gap-1 text-emerald-600 text-xs font-bold">
-          <CheckCircle2 className="w-3.5 h-3.5" /> Synced ({imported} leads)
+        <div className="flex items-center justify-end gap-1 text-emerald-600 text-xs font-black">
+          <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+          <span>{imported} Leads Synced</span>
         </div>
-        <button onClick={() => onSync(formId, pageId)} className="text-[10px] text-[#0866FF] font-semibold hover:underline flex items-center justify-end gap-0.5 ml-auto cursor-pointer">
+        <button
+          onClick={() => onSync(formId, pageId)}
+          className="text-[10px] text-[#0866FF] font-semibold hover:underline flex items-center justify-end gap-0.5 ml-auto cursor-pointer"
+        >
           <RotateCcw className="w-2.5 h-2.5" /> Re-Sync
         </button>
       </div>
@@ -248,8 +238,8 @@ function SyncCell({ formId, pageId, syncState, onSync }: {
 
   return (
     <div className="space-y-0.5 text-right">
-      <div className="flex items-center justify-end gap-1 text-red-600 text-xs font-bold">
-        <AlertCircle className="w-3.5 h-3.5" /> Failed
+      <div className="flex items-center justify-end gap-1 text-red-600 text-xs font-bold" title={errorMessage || 'Sync Failed'}>
+        <AlertCircle className="w-3.5 h-3.5 shrink-0" /> Failed
       </div>
       <button onClick={() => onSync(formId, pageId)} className="text-[10px] text-[#0866FF] font-semibold hover:underline cursor-pointer">Retry</button>
     </div>
@@ -623,93 +613,81 @@ export default function MetaIntegrationPage() {
     }
   }, []);
 
-  // Per-Form Sync (SSE streaming)
+  // Per-Form Sync (Robust Incremental Sync via /api/meta/sync-leads)
   const handleSyncForm = useCallback(async (formId: string, pageId: string) => {
-    abortRefs.current.get(formId)?.abort();
-    const controller = new AbortController();
-    abortRefs.current.set(formId, controller);
-
-    setSyncStates(prev => new Map(prev).set(formId, { phase: 'fetching', imported: 0, skipped: 0, failed: 0, total: 0, current: 0, message: 'Starting…' }));
+    setSyncStates(prev => new Map(prev).set(formId, {
+      phase: 'importing',
+      imported: 0,
+      skipped: 0,
+      failed: 0,
+      total: 0,
+      current: 0,
+      message: 'Syncing historical leads with Meta...',
+    }));
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const wsId = session?.user?.id || '';
       const headers = await getAuthHeaders();
-      const res = await fetch('/api/meta/forms/sync', {
+      const res = await fetch('/api/meta/sync-leads', {
         method: 'POST',
         headers,
         body: JSON.stringify({ form_id: formId, page_id: pageId, workspace_id: wsId }),
-        signal: controller.signal,
       });
 
-      if (!res.ok || !res.body) {
-        const errData = await res.json().catch(() => ({}));
-        setSyncStates(prev => new Map(prev).set(formId, { ...DEFAULT_SYNC, phase: 'error', errorMessage: errData.error || `HTTP ${res.status}` }));
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok || !data.success) {
+        const errorMsg = data.error || `Sync Failed: ${res.status}`;
+        setSyncStates(prev => new Map(prev).set(formId, {
+          ...DEFAULT_SYNC,
+          phase: 'error',
+          errorMessage: errorMsg,
+        }));
+        showToast(`Sync Failed: ${errorMsg}`, 'error');
         return;
       }
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
+      const totalCount = data.count ?? 0;
+      setSyncStates(prev => new Map(prev).set(formId, {
+        phase: 'complete',
+        imported: totalCount,
+        skipped: 0,
+        failed: 0,
+        total: totalCount,
+        current: totalCount,
+        message: data.message || (totalCount > 0 ? `Successfully synced ${totalCount} leads!` : 'No historical leads found for this form in Meta'),
+        durationMs: data.duration_ms,
+      }));
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      // Immediately update local state for the form so UI updates instantly
+      setLeadForms(prev => prev.map(f =>
+        f.form_id === formId ? {
+          ...f,
+          leads_count: totalCount,
+          sync_count: totalCount,
+          last_lead_received: new Date().toISOString(),
+        } : f
+      ));
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n\n');
-        buffer = lines.pop() || '';
-
-        for (const chunk of lines) {
-          const dataLine = chunk.split('\n').find(l => l.startsWith('data: '));
-          if (!dataLine) continue;
-
-          try {
-            const event = JSON.parse(dataLine.slice(6));
-            if (event.type === 'start') {
-              setSyncStates(prev => new Map(prev).set(formId, {
-                phase: 'fetching', imported: 0, skipped: 0, failed: 0,
-                total: event.total > 0 ? event.total : 0, current: 0,
-                message: `Fetching leads for "${event.form_name}"…`,
-              }));
-            } else if (event.type === 'progress') {
-              setSyncStates(prev => new Map(prev).set(formId, {
-                phase: event.phase === 'importing' ? 'importing' : 'fetching',
-                imported: event.imported, skipped: event.skipped, failed: event.failed,
-                total: event.total, current: event.current,
-                message: event.message || '',
-              }));
-            } else if (event.type === 'complete') {
-              setSyncStates(prev => new Map(prev).set(formId, {
-                phase: 'complete', imported: event.imported, skipped: event.skipped,
-                failed: event.failed, total: event.total, current: event.total,
-                message: 'Sync complete', durationMs: event.duration_ms,
-              }));
-              if (event.new_leads_count !== undefined) {
-                setLeadForms(prev => prev.map(f =>
-                  f.form_id === formId ? { ...f, leads_count: event.new_leads_count, sync_count: event.new_leads_count } : f
-                ));
-              }
-              fetchMetaSyncData();
-            } else if (event.type === 'error') {
-              setSyncStates(prev => new Map(prev).set(formId, {
-                ...DEFAULT_SYNC, phase: 'error',
-                errorMessage: event.message,
-              }));
-            }
-          } catch { /* skip */ }
-        }
+      if (totalCount > 0) {
+        showToast(`✅ [${totalCount}] Leads Synced for form!`);
+      } else {
+        showToast('ℹ️ No historical leads found for this form in Meta');
       }
+
+      fetchMetaSyncData();
     } catch (err: any) {
-      if (err.name !== 'AbortError') {
-        setSyncStates(prev => new Map(prev).set(formId, { ...DEFAULT_SYNC, phase: 'error', errorMessage: err.message }));
-      }
-    } finally {
-      abortRefs.current.delete(formId);
+      setSyncStates(prev => new Map(prev).set(formId, {
+        ...DEFAULT_SYNC,
+        phase: 'error',
+        errorMessage: err.message,
+      }));
+      showToast('Sync error: ' + err.message, 'error');
     }
-  }, [getAuthHeaders, fetchMetaSyncData]);
+  }, [getAuthHeaders, fetchMetaSyncData, showToast]);
 
-  // Sync All Historical Leads Handler (Sequential with Live SSE Stream)
+  // Sync All Historical Leads Handler (Sequential Incremental Sync)
   const handleSyncAllHistoricalLeads = useCallback(async () => {
     if (leadForms.length === 0) {
       showToast('No active Lead Forms discovered to sync.', 'error');
@@ -722,7 +700,7 @@ export default function MetaIntegrationPage() {
       let formIdx = 0;
       for (const form of leadForms) {
         formIdx++;
-        showToast(`Fetching leads (${formIdx}/${leadForms.length}): "${form.form_name || form.name}"…`);
+        showToast(`Syncing form (${formIdx}/${leadForms.length}): "${form.form_name || form.name}"…`);
         try {
           await handleSyncForm(form.form_id, form.page_id);
         } catch (formErr) {

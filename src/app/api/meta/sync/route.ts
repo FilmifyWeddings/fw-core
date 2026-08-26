@@ -25,6 +25,19 @@ export async function POST(req: NextRequest) {
     // 1. Get Page Access Token from Supabase
     let pageToken = '';
     if (page_id) {
+      const { data: metaPage } = await supabaseAdmin
+        .from('meta_connected_pages')
+        .select('permanent_page_token')
+        .eq('workspace_id', workspaceId)
+        .eq('page_id', page_id)
+        .maybeSingle();
+
+      if (metaPage?.permanent_page_token) {
+        pageToken = metaPage.permanent_page_token;
+      }
+    }
+
+    if (!pageToken && page_id) {
       const { data: pageConfig } = await supabaseAdmin
         .from('fb_page_configs')
         .select('page_access_token')
