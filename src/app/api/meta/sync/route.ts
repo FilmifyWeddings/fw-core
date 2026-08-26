@@ -151,28 +151,43 @@ export async function POST(req: NextRequest) {
       const leadgenId = leadItem.id;
       if (!leadgenId) continue;
 
-      const extracted = extractLeadFields(leadItem.field_data || []);
+      const parsed = safelyExtractFields(leadItem.field_data || []);
 
-      formattedLeads.push({
+      // 1. Check if lead already exists
+      const { data: existingLead } = await supabaseAdmin
+        .from('leads')
+        .select('id')
+        .eq('workspace_id', workspaceId)
+        .or(`meta_lead_id.eq.${leadgenId},raw_payload->>leadgen_id.eq.${leadgenId},raw_payload->>meta_lead_id.eq.${leadgenId}`)
+        .maybeSingle();
+
+      if (existingLead?.id) {
+        totalSaved++;
+        continue;
+      }
+
+      const newLeadPayload: Record<string, any> = {
         workspace_id: workspaceId,
         tenant_id: workspaceId,
-        name: extracted.fullName,
-        full_name: extracted.fullName,
-        phone: extracted.phone || null,
-        phone_number: extracted.phone || null,
-        email: extracted.email || null,
-        source: `Facebook Ads / ${formName}`,
-        status: 'new',
+        meta_lead_id: leadgenId,
         form_id: form_id || leadItem.form_id,
         source_form_id: form_id || leadItem.form_id,
+        name: parsed.fullName || 'Facebook Lead',
+        full_name: parsed.fullName || 'Facebook Lead',
+        phone: parsed.phone !== '-' ? parsed.phone : (leadItem.phone || '-'),
+        phone_number: parsed.phone !== '-' ? parsed.phone : (leadItem.phone || '-'),
+        email: parsed.email !== '-' ? parsed.email : '',
+        city: parsed.city !== '-' ? parsed.city : '',
+        location: parsed.city !== '-' ? parsed.city : '',
+        budget: parsed.budget !== '-' ? parsed.budget : '',
+        event_date: parsed.eventDate !== '-' ? parsed.eventDate : '',
+        source: leadItem.campaign_name ? `Facebook Ads / ${leadItem.campaign_name}` : `Facebook Ads / ${formName}`,
+        status: 'new',
+        score: 'Cold ❄️',
+        score_reason: 'Imported via Meta Bulk Sync',
         form_tag: formName,
-        meta_lead_id: leadgenId,
-        event_date: extracted.eventDate || null,
-        location: extracted.location || null,
-        city: extracted.location || null,
-        budget: extracted.budget || null,
-        raw_field_data: extracted.rawFieldMap,
-        created_at: leadItem.created_time || new Date().toISOString(),
+        raw_field_data: leadItem,
+        created_at: leadItem.created_time ? new Date(leadItem.created_time).toISOString() : new Date().toISOString(),
         updated_at: new Date().toISOString(),
         raw_payload: {
           leadgen_id: leadgenId,
@@ -184,66 +199,37 @@ export async function POST(req: NextRequest) {
           ad_name: leadItem.ad_name || '',
           field_data: leadItem.field_data || [],
           synced_via: 'manual_bulk_sync',
-          ...extracted.rawFieldMap,
+          ...parsed,
         },
-      });
-    }
+        raw_meta_payload: leadItem,
+      };
 
-    // Chunked Batch Upsert (50 records per chunk)
-    const chunkSize = 50;
-    let totalSaved = 0;
-
-    for (let i = 0; i < formattedLeads.length; i += chunkSize) {
-      const chunk = formattedLeads.slice(i, i + chunkSize);
-      let chunkToUpsert = [...chunk];
-      let chunkSuccess = false;
-
+      // 2. Resilient column-stripping insert
+      let payloadCopy = { ...newLeadPayload };
       for (let attempt = 0; attempt < 6; attempt++) {
-        const { data: upsertData, error: upsertErr } = await supabaseAdmin
+        const { data: ins, error: insertErr } = await supabaseAdmin
           .from('leads')
-          .upsert(chunkToUpsert, { onConflict: 'meta_lead_id', ignoreDuplicates: true })
-          .select('id');
+          .insert(payloadCopy)
+          .select('id')
+          .maybeSingle();
 
-        if (!upsertErr) {
-          const savedCount = upsertData?.length ?? chunk.length;
-          totalSaved += savedCount;
-          chunkSuccess = true;
+        if (!insertErr && ins) {
+          totalSaved++;
           break;
         }
 
-        const errMsg = upsertErr.message || '';
-        const match = errMsg.match(/Could not find the '([^']+)' column/i) || errMsg.match(/column "([^"]+)" of relation/i);
-        if (match && match[1]) {
-          const badCol = match[1];
-          chunkToUpsert = chunkToUpsert.map(row => {
-            const copy = { ...row };
-            delete copy[badCol];
-            return copy;
-          });
-        } else {
-          console.error('[Bulk Sync Upsert Error]:', errMsg);
-          break;
-        }
-      }
-
-      if (!chunkSuccess) {
-        for (const singleLead of chunk) {
-          let singleCopy = { ...singleLead };
-          for (let attempt = 0; attempt < 6; attempt++) {
-            const { error: singleErr } = await supabaseAdmin
-              .from('leads')
-              .upsert(singleCopy, { onConflict: 'meta_lead_id', ignoreDuplicates: true });
-            if (!singleErr) {
-              totalSaved++;
-              break;
-            }
-            const errMsg = singleErr.message || '';
-            const match = errMsg.match(/Could not find the '([^']+)' column/i) || errMsg.match(/column "([^"]+)" of relation/i);
-            if (match && match[1]) {
-              delete singleCopy[match[1]];
-            } else {
-              break;
-            }
+        if (insertErr) {
+          if (insertErr.code === '23505') {
+            totalSaved++;
+            break;
+          }
+          const errMsg = insertErr.message || '';
+          const match = errMsg.match(/Could not find the '([^']+)' column/i) || errMsg.match(/column "([^"]+)" of relation/i);
+          if (match && match[1]) {
+            delete payloadCopy[match[1]];
+          } else {
+            console.error('[Bulk Sync Insert Error]:', errMsg);
+            break;
           }
         }
       }

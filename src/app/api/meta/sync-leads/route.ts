@@ -159,18 +159,35 @@ export async function POST(req: NextRequest) {
 
       totalFetched += leadsBatch.length;
 
-      const formattedBatch = leadsBatch.map((lead: any) => {
+      for (const lead of leadsBatch) {
+        const leadgenId = lead.id;
+        if (!leadgenId) continue;
+
         const parsed = safelyExtractFields(lead.field_data || []);
-        return {
+
+        // 1. Check if lead already exists by meta_lead_id or inside raw_payload
+        const { data: existingLead } = await supabaseAdmin
+          .from('leads')
+          .select('id')
+          .eq('workspace_id', workspaceId)
+          .or(`meta_lead_id.eq.${leadgenId},raw_payload->>leadgen_id.eq.${leadgenId},raw_payload->>meta_lead_id.eq.${leadgenId}`)
+          .maybeSingle();
+
+        if (existingLead?.id) {
+          totalSaved++;
+          continue;
+        }
+
+        const newLeadPayload: Record<string, any> = {
           workspace_id: workspaceId,
           tenant_id: workspaceId,
-          meta_lead_id: lead.id,
+          meta_lead_id: leadgenId,
           form_id: formId,
           source_form_id: formId,
           name: parsed.fullName || 'Facebook Lead',
           full_name: parsed.fullName || 'Facebook Lead',
-          phone: parsed.phone !== '-' ? parsed.phone : '',
-          phone_number: parsed.phone !== '-' ? parsed.phone : '',
+          phone: parsed.phone !== '-' ? parsed.phone : (lead.phone || '-'),
+          phone_number: parsed.phone !== '-' ? parsed.phone : (lead.phone || '-'),
           email: parsed.email !== '-' ? parsed.email : '',
           city: parsed.city !== '-' ? parsed.city : '',
           location: parsed.city !== '-' ? parsed.city : '',
@@ -178,14 +195,16 @@ export async function POST(req: NextRequest) {
           event_date: parsed.eventDate !== '-' ? parsed.eventDate : '',
           source: lead.campaign_name ? `Facebook Ads / ${lead.campaign_name}` : `Facebook Ads / ${formName}`,
           status: 'new',
+          score: 'Cold ❄️',
+          score_reason: 'Imported via Meta Historical Sync',
           whatsapp_group_id: contactGroupId,
           form_tag: formName,
           raw_field_data: lead,
           created_at: lead.created_time ? new Date(lead.created_time).toISOString() : new Date().toISOString(),
           updated_at: new Date().toISOString(),
           raw_payload: {
-            leadgen_id: lead.id,
-            meta_lead_id: lead.id,
+            leadgen_id: leadgenId,
+            meta_lead_id: leadgenId,
             form_id: formId,
             form_name: formName,
             page_id: pageId,
@@ -196,60 +215,59 @@ export async function POST(req: NextRequest) {
             synced_via: 'manual_incremental_sync',
             ...parsed,
           },
+          raw_meta_payload: lead,
         };
-      });
 
-      // Save batch immediately to database with resilient column fallback
-      let chunkToUpsert = [...formattedBatch];
-      let chunkSuccess = false;
+        // 2. Resilient column-stripping insert
+        let payloadCopy = { ...newLeadPayload };
+        let insertedId: string | null = null;
 
-      for (let attempt = 0; attempt < 6; attempt++) {
-        const { data: upsertData, error: upsertErr } = await supabaseAdmin
-          .from('leads')
-          .upsert(chunkToUpsert, { onConflict: 'meta_lead_id', ignoreDuplicates: true })
-          .select('id');
+        for (let attempt = 0; attempt < 6; attempt++) {
+          const { data: ins, error: insertErr } = await supabaseAdmin
+            .from('leads')
+            .insert(payloadCopy)
+            .select('id')
+            .maybeSingle();
 
-        if (!upsertErr) {
-          totalSaved += (upsertData?.length ?? chunkToUpsert.length);
-          chunkSuccess = true;
-          break;
-        }
+          if (!insertErr && ins) {
+            insertedId = ins.id;
+            totalSaved++;
+            break;
+          }
 
-        const errMsg = upsertErr.message || '';
-        const match = errMsg.match(/Could not find the '([^']+)' column/i) || errMsg.match(/column "([^"]+)" of relation/i);
-        if (match && match[1]) {
-          const badCol = match[1];
-          chunkToUpsert = chunkToUpsert.map(row => {
-            const copy = { ...row };
-            delete copy[badCol];
-            return copy;
-          });
-        } else {
-          console.error('[Incremental Sync Batch Upsert Error]:', errMsg);
-          break;
-        }
-      }
-
-      if (!chunkSuccess) {
-        // Fallback to row-by-row upsert for failing chunk
-        for (const singleLead of chunkToUpsert) {
-          let singleCopy = { ...singleLead };
-          for (let attempt = 0; attempt < 6; attempt++) {
-            const { error: singleErr } = await supabaseAdmin
-              .from('leads')
-              .upsert(singleCopy, { onConflict: 'meta_lead_id', ignoreDuplicates: true });
-            if (!singleErr) {
+          if (insertErr) {
+            if (insertErr.code === '23505') {
+              // Duplicate key (constraint) -> already saved
               totalSaved++;
               break;
             }
-            const errMsg = singleErr.message || '';
+            const errMsg = insertErr.message || '';
             const match = errMsg.match(/Could not find the '([^']+)' column/i) || errMsg.match(/column "([^"]+)" of relation/i);
             if (match && match[1]) {
-              delete singleCopy[match[1]];
+              delete payloadCopy[match[1]];
             } else {
+              console.error('[Sync Leads Insert Error]:', errMsg);
               break;
             }
           }
+        }
+
+        // 3. Log to live_logs so CRM activity logs immediately reflect the ingestion
+        if (insertedId) {
+          try {
+            await supabaseAdmin.from('live_logs').insert({
+              workspace_id: workspaceId,
+              lead_id: insertedId,
+              event_type: 'leadgen_ingestion_success',
+              message: `Meta lead "${newLeadPayload.name || newLeadPayload.phone}" ingested successfully from form "${formName}".`,
+              metadata: {
+                meta_lead_id: leadgenId,
+                form_id: formId,
+                form_name: formName,
+                page_id: pageId,
+              },
+            });
+          } catch (_) {}
         }
       }
 

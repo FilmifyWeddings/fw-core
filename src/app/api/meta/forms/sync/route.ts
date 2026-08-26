@@ -320,79 +320,78 @@ export async function POST(req: NextRequest) {
           });
         }
 
-        // ── Step 3: Chunked Batch Upsert to Supabase (50 records per chunk) ──
-        const chunkSize = 50;
+        // ── Step 3: Resilient Deduplication & Ingestion into Supabase ──
         let totalSaved = 0;
+        let processedCount = 0;
 
-        for (let i = 0; i < formattedLeads.length; i += chunkSize) {
-          const chunk = formattedLeads.slice(i, i + chunkSize);
+        for (const singleLead of formattedLeads) {
+          processedCount++;
+          const leadgenId = singleLead.meta_lead_id;
 
-          controller.enqueue(sseEvent({
-            type: 'progress',
-            phase: 'importing',
-            imported: totalSaved,
-            skipped,
-            failed,
-            total: formattedLeads.length,
-            current: Math.min(i + chunkSize, formattedLeads.length),
-            message: `Saving leads to database (${Math.min(i + chunkSize, formattedLeads.length)} / ${formattedLeads.length})…`,
-          }));
+          if (processedCount % 5 === 0 || processedCount === formattedLeads.length) {
+            controller.enqueue(sseEvent({
+              type: 'progress',
+              phase: 'importing',
+              imported: totalSaved,
+              skipped,
+              failed,
+              total: formattedLeads.length,
+              current: processedCount,
+              message: `Saving leads to database (${processedCount} / ${formattedLeads.length})…`,
+            }));
+          }
 
-          let chunkToUpsert = [...chunk];
-          let chunkSuccess = false;
+          // 1. Check if lead already exists
+          const { data: existingLead } = await supabaseAdmin
+            .from('leads')
+            .select('id')
+            .eq('workspace_id', workspaceId)
+            .or(`meta_lead_id.eq.${leadgenId},raw_payload->>leadgen_id.eq.${leadgenId},raw_payload->>meta_lead_id.eq.${leadgenId}`)
+            .maybeSingle();
+
+          if (existingLead?.id) {
+            totalSaved++;
+            skipped++;
+            continue;
+          }
+
+          // 2. Resilient column-stripping insert
+          let payloadCopy = { ...singleLead };
+          let inserted = false;
 
           for (let attempt = 0; attempt < 6; attempt++) {
-            const { data: upsertData, error: upsertErr } = await supabaseAdmin
+            const { data: ins, error: insertErr } = await supabaseAdmin
               .from('leads')
-              .upsert(chunkToUpsert, { onConflict: 'meta_lead_id', ignoreDuplicates: true })
-              .select('id');
+              .insert(payloadCopy)
+              .select('id')
+              .maybeSingle();
 
-            if (!upsertErr) {
-              const savedCount = upsertData?.length ?? chunk.length;
-              totalSaved += savedCount;
-              chunkSuccess = true;
+            if (!insertErr && ins) {
+              totalSaved++;
+              inserted = true;
               break;
             }
 
-            const errMsg = upsertErr.message || '';
-            const match = errMsg.match(/Could not find the '([^']+)' column/i) || errMsg.match(/column "([^"]+)" of relation/i);
-            if (match && match[1]) {
-              const badCol = match[1];
-              chunkToUpsert = chunkToUpsert.map(row => {
-                const copy = { ...row };
-                delete copy[badCol];
-                return copy;
-              });
-            } else {
-              console.error('[Batch Upsert Error]:', errMsg);
-              break;
+            if (insertErr) {
+              if (insertErr.code === '23505') {
+                totalSaved++;
+                skipped++;
+                inserted = true;
+                break;
+              }
+              const errMsg = insertErr.message || '';
+              const match = errMsg.match(/Could not find the '([^']+)' column/i) || errMsg.match(/column "([^"]+)" of relation/i);
+              if (match && match[1]) {
+                delete payloadCopy[match[1]];
+              } else {
+                console.error('[Forms Sync Insert Error]:', errMsg);
+                break;
+              }
             }
           }
 
-          if (!chunkSuccess) {
-            // Fallback to row-by-row upsert for this specific failing chunk
-            for (const singleLead of chunk) {
-              let singleCopy = { ...singleLead };
-              let singleSaved = false;
-              for (let attempt = 0; attempt < 6; attempt++) {
-                const { error: singleErr } = await supabaseAdmin
-                  .from('leads')
-                  .upsert(singleCopy, { onConflict: 'meta_lead_id', ignoreDuplicates: true });
-                if (!singleErr) {
-                  totalSaved++;
-                  singleSaved = true;
-                  break;
-                }
-                const errMsg = singleErr.message || '';
-                const match = errMsg.match(/Could not find the '([^']+)' column/i) || errMsg.match(/column "([^"]+)" of relation/i);
-                if (match && match[1]) {
-                  delete singleCopy[match[1]];
-                } else {
-                  break;
-                }
-              }
-              if (!singleSaved) failed++;
-            }
+          if (!inserted) {
+            failed++;
           }
         }
 
