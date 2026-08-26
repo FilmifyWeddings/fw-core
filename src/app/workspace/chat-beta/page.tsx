@@ -54,6 +54,27 @@ function formatSidebarTime(dateStr?: string): string {
   return date.toLocaleDateString([], { day: '2-digit', month: '2-digit', year: '2-digit' });
 }
 
+function getInitials(name: string): string {
+  if (!name || name.startsWith('+') || name === 'WhatsApp Contact' || name === 'WhatsApp Group') return '';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function getAvatarBg(name: string): string {
+  const gradients = [
+    'from-emerald-600 to-teal-800',
+    'from-teal-600 to-cyan-800',
+    'from-blue-600 to-indigo-800',
+    'from-violet-600 to-purple-800',
+    'from-amber-600 to-orange-800',
+    'from-rose-600 to-pink-800',
+  ];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return gradients[Math.abs(hash) % gradients.length];
+}
+
 interface MessageItem {
   id?: string;
   message_id: string;
@@ -87,25 +108,42 @@ export default function WhatsAppWebBetaInbox() {
   const [newChatModalOpen, setNewChatModalOpen] = useState(false);
   const [newChatPhone, setNewChatPhone] = useState('');
   const [newChatName, setNewChatName] = useState('');
+  const [newChatMessage, setNewChatMessage] = useState('');
+  const [newChatStarting, setNewChatStarting] = useState(false);
+  const [profileName, setProfileName] = useState('My WhatsApp');
+  const [phoneNumber, setPhoneNumber] = useState('');
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
-  const [profileName, setProfileName] = useState<string | null>(null);
-
-  // 1. Authenticate & load workspace
+  // 1. Initial Load: Workspace & Connection Status
   useEffect(() => {
-    const init = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-      
-      const wsId = session.user.id;
-      setWorkspaceId(wsId);
-      await checkConnection(wsId);
-      await loadChats(wsId);
-    };
+    async function init() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        let wsId = session?.user?.id;
+
+        if (!wsId) {
+          const { data: ws } = await supabase
+            .from('workspaces')
+            .select('id')
+            .limit(1)
+            .maybeSingle();
+          if (ws?.id) wsId = ws.id;
+        }
+
+        if (wsId) {
+          setWorkspaceId(wsId);
+          await checkConnection(wsId);
+          await loadChats(wsId);
+        }
+      } catch (err) {
+        console.error('[Chat Init Error]:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
     init();
   }, []);
 
@@ -174,7 +212,34 @@ export default function WhatsAppWebBetaInbox() {
     };
   }, [workspaceId, selectedChat]);
 
-  // 3. Scroll helper
+  // 3. Live 3.5s background polling interval for instant no-refresh syncing
+  useEffect(() => {
+    if (!workspaceId) return;
+
+    const timer = setInterval(() => {
+      loadChats(workspaceId);
+      if (selectedChat) {
+        fetch(`/api/whatsapp-beta/messages?workspace_id=${workspaceId}&remote_jid=${encodeURIComponent(selectedChat.jid)}`)
+          .then(r => r.json())
+          .then(data => {
+            if (data.success && Array.isArray(data.messages)) {
+              setMessages(prev => {
+                if (data.messages.length !== prev.length || (data.messages[data.messages.length - 1]?.message_id !== prev[prev.length - 1]?.message_id)) {
+                  scrollToBottom();
+                  return data.messages;
+                }
+                return prev;
+              });
+            }
+          })
+          .catch(() => {});
+      }
+    }, 3500);
+
+    return () => clearInterval(timer);
+  }, [workspaceId, selectedChat?.jid]);
+
+  // 4. Scroll helper
   const scrollToBottom = () => {
     setTimeout(() => {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -254,12 +319,13 @@ export default function WhatsAppWebBetaInbox() {
     scrollToBottom();
 
     try {
+      const targetRecipient = selectedChat.phone || selectedChat.jid;
       const res = await fetch('/api/whatsapp-beta/send-message', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           workspace_id: workspaceId,
-          recipient: selectedChat.phone,
+          recipient: targetRecipient,
           content: textToSend.trim(),
           message_type: 'text',
         }),
@@ -419,13 +485,17 @@ export default function WhatsAppWebBetaInbox() {
                     }`}
                   >
                     {/* Avatar */}
-                    <div className={`relative w-12 h-12 rounded-full shrink-0 flex items-center justify-center overflow-hidden ${
-                      chat.is_group ? 'bg-teal-600/20 border border-teal-500/30 text-teal-400' : 'bg-[#374248] text-zinc-400'
+                    <div className={`relative w-12 h-12 rounded-full shrink-0 flex items-center justify-center overflow-hidden shadow-sm ${
+                      chat.is_group 
+                        ? 'bg-teal-600/20 border border-teal-500/30 text-teal-400' 
+                        : (getInitials(chat.name) ? `bg-gradient-to-tr ${getAvatarBg(chat.name)} text-white font-bold text-sm shadow` : 'bg-[#374248] text-zinc-400')
                     }`}>
                       {chat.profile_pic_url ? (
                         <img src={chat.profile_pic_url} alt={chat.name} className="w-full h-full object-cover" />
                       ) : chat.is_group ? (
                         <Users className="w-6 h-6" />
+                      ) : getInitials(chat.name) ? (
+                        <span>{getInitials(chat.name)}</span>
                       ) : (
                         <User className="w-6 h-6" />
                       )}
@@ -492,13 +562,17 @@ export default function WhatsAppWebBetaInbox() {
                   <ArrowLeft className="w-5 h-5" />
                 </button>
 
-                <div className={`w-10 h-10 rounded-full shrink-0 flex items-center justify-center overflow-hidden ${
-                  selectedChat.is_group ? 'bg-teal-600/20 border border-teal-500/30 text-teal-400' : 'bg-[#374248] text-zinc-400'
+                <div className={`w-10 h-10 rounded-full shrink-0 flex items-center justify-center overflow-hidden shadow-sm ${
+                  selectedChat.is_group 
+                    ? 'bg-teal-600/20 border border-teal-500/30 text-teal-400' 
+                    : (getInitials(selectedChat.name) ? `bg-gradient-to-tr ${getAvatarBg(selectedChat.name)} text-white font-bold text-xs shadow` : 'bg-[#374248] text-zinc-400')
                 }`}>
                   {selectedChat.profile_pic_url ? (
                     <img src={selectedChat.profile_pic_url} alt={selectedChat.name} className="w-full h-full object-cover" />
                   ) : selectedChat.is_group ? (
                     <Users className="w-5 h-5" />
+                  ) : getInitials(selectedChat.name) ? (
+                    <span>{getInitials(selectedChat.name)}</span>
                   ) : (
                     <User className="w-5 h-5" />
                   )}

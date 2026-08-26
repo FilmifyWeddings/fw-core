@@ -108,15 +108,24 @@ export async function GET(req: NextRequest) {
 
     // A. Add from baileys_chats (mobile chats sync)
     (bChats || []).forEach(bc => {
-      const cleanDigits = (bc.phone_number || bc.jid?.split('@')[0] || '').replace(/[^0-9]/g, '');
-      const isGroup = bc.is_group || bc.jid?.endsWith('@g.us') || cleanDigits.length > 13 || cleanDigits.startsWith('12036');
-      const jid = isGroup ? (bc.jid?.endsWith('@g.us') ? bc.jid : `${cleanDigits}@g.us`) : (cleanDigits ? `${cleanDigits}@s.whatsapp.net` : bc.jid);
-      if (!jid) return;
+      if (!bc.jid || bc.jid === 'status@broadcast' || bc.jid.endsWith('@broadcast')) return;
 
-      const hasSubject = bc.display_name && !bc.display_name.startsWith('12036') && !bc.display_name.startsWith('+12036');
-      const displayName = hasSubject 
-        ? bc.display_name 
-        : (isGroup ? 'WhatsApp Group' : formatPhoneDisplay(cleanDigits) || 'WhatsApp Chat');
+      const isGroup = bc.jid.endsWith('@g.us') || (bc.is_group === true && !bc.jid.endsWith('@lid'));
+      const cleanDigits = (bc.phone_number || bc.jid.split('@')[0] || '').replace(/[^0-9]/g, '');
+      const jid = bc.jid;
+
+      const hasSubject = bc.display_name && !bc.display_name.startsWith('+') && !bc.display_name.startsWith('12036');
+      let displayName = hasSubject ? bc.display_name : null;
+
+      if (!displayName) {
+        if (isGroup) {
+          displayName = 'WhatsApp Group';
+        } else if (cleanDigits && cleanDigits.length >= 10 && cleanDigits.length <= 13) {
+          displayName = formatPhoneDisplay(cleanDigits);
+        } else {
+          displayName = 'WhatsApp Contact';
+        }
+      }
 
       const lastTime = bc.last_message_at || bc.updated_at || bc.created_at;
 
@@ -124,7 +133,7 @@ export async function GET(req: NextRequest) {
         jid,
         name: displayName,
         push_name: hasSubject ? bc.display_name : null,
-        phone: isGroup ? '' : (cleanDigits || ''),
+        phone: isGroup ? '' : (cleanDigits.length <= 13 ? cleanDigits : ''),
         profile_pic_url: bc.profile_pic_url,
         unread_count: bc.unread_count || 0,
         last_message: bc.last_message ? {
@@ -140,18 +149,19 @@ export async function GET(req: NextRequest) {
 
     // B. Add from evolution_contacts
     (contacts || []).forEach(c => {
+      if (!c.jid || c.jid === 'status@broadcast' || c.jid.endsWith('@broadcast')) return;
+
+      const isGroup = c.jid.endsWith('@g.us');
       const cleanDigits = (c.phone || c.jid.split('@')[0] || '').replace(/[^0-9]/g, '');
-      const isGroup = c.jid?.endsWith('@g.us') || cleanDigits.length > 13 || cleanDigits.startsWith('12036');
-      const jid = isGroup ? (c.jid?.endsWith('@g.us') ? c.jid : `${cleanDigits}@g.us`) : (cleanDigits ? `${cleanDigits}@s.whatsapp.net` : c.jid);
-      if (!jid) return;
+      const jid = c.jid;
 
       const existing = threadsMap.get(jid);
       const hasRealName = c.name && !c.name.startsWith('+') && !c.name.startsWith('12036');
-      const hasPushName = c.push_name && !c.push_name.startsWith('12036');
+      const hasPushName = c.push_name && !c.push_name.startsWith('+') && !c.push_name.startsWith('12036');
 
       if (existing) {
         if (hasPushName && !existing.push_name) existing.push_name = c.push_name;
-        if (hasRealName && (existing.name === 'WhatsApp Group' || existing.name.startsWith('+'))) {
+        if (hasRealName && (existing.name === 'WhatsApp Group' || existing.name === 'WhatsApp Contact' || existing.name.startsWith('+'))) {
           existing.name = c.name;
         }
         if (!existing.profile_pic_url && c.profile_pic_url) existing.profile_pic_url = c.profile_pic_url;
@@ -160,7 +170,7 @@ export async function GET(req: NextRequest) {
           jid,
           name: hasRealName ? c.name : (hasPushName ? c.push_name : (isGroup ? 'WhatsApp Group' : formatPhoneDisplay(cleanDigits) || 'WhatsApp Contact')),
           push_name: c.push_name,
-          phone: isGroup ? '' : (cleanDigits || c.phone),
+          phone: isGroup ? '' : (cleanDigits.length <= 13 ? cleanDigits : ''),
           profile_pic_url: c.profile_pic_url,
           unread_count: 0,
           last_message: null,
@@ -215,7 +225,7 @@ export async function GET(req: NextRequest) {
 
       const existing = threadsMap.get(jid);
       if (existing) {
-        if (!existing.name || existing.name.startsWith('+')) {
+        if (!existing.name || existing.name.startsWith('+') || existing.name === 'WhatsApp Contact') {
           existing.name = cl.name || existing.name;
         }
         existing.client_id = cl.id;
@@ -238,10 +248,11 @@ export async function GET(req: NextRequest) {
 
     // E. Merge messages from evolution_messages
     (messages || []).forEach(m => {
+      if (!m.remote_jid || m.remote_jid === 'status@broadcast' || m.remote_jid.endsWith('@broadcast')) return;
+
       const cleanDigits = (m.remote_jid || '').replace(/[^0-9]/g, '');
-      const isGroup = m.remote_jid?.endsWith('@g.us') || cleanDigits.length > 13 || cleanDigits.startsWith('12036');
-      const jid = isGroup ? (m.remote_jid?.endsWith('@g.us') ? m.remote_jid : `${cleanDigits}@g.us`) : (cleanDigits ? `${cleanDigits}@s.whatsapp.net` : m.remote_jid);
-      if (!jid) return;
+      const isGroup = m.remote_jid.endsWith('@g.us');
+      const jid = m.remote_jid;
 
       let existing = threadsMap.get(jid);
       if (!existing) {
@@ -249,7 +260,7 @@ export async function GET(req: NextRequest) {
           jid,
           name: isGroup ? 'WhatsApp Group' : formatPhoneDisplay(cleanDigits) || 'WhatsApp Contact',
           push_name: null,
-          phone: isGroup ? '' : cleanDigits,
+          phone: isGroup ? '' : (cleanDigits.length <= 13 ? cleanDigits : ''),
           profile_pic_url: null,
           unread_count: 0,
           last_message: null,
@@ -276,10 +287,11 @@ export async function GET(req: NextRequest) {
 
     // F. Merge messages from baileys_messages
     (bMessages || []).forEach(bm => {
+      if (!bm.chat_jid || bm.chat_jid === 'status@broadcast' || bm.chat_jid.endsWith('@broadcast')) return;
+
       const cleanDigits = (bm.chat_jid || '').replace(/[^0-9]/g, '');
-      const isGroup = bm.chat_jid?.endsWith('@g.us') || cleanDigits.length > 13 || cleanDigits.startsWith('12036');
-      const jid = isGroup ? (bm.chat_jid?.endsWith('@g.us') ? bm.chat_jid : `${cleanDigits}@g.us`) : (cleanDigits ? `${cleanDigits}@s.whatsapp.net` : bm.chat_jid);
-      if (!jid) return;
+      const isGroup = bm.chat_jid.endsWith('@g.us');
+      const jid = bm.chat_jid;
 
       let existing = threadsMap.get(jid);
       if (!existing) {
@@ -287,7 +299,7 @@ export async function GET(req: NextRequest) {
           jid,
           name: isGroup ? 'WhatsApp Group' : formatPhoneDisplay(cleanDigits) || 'WhatsApp Contact',
           push_name: null,
-          phone: isGroup ? '' : cleanDigits,
+          phone: isGroup ? '' : (cleanDigits.length <= 13 ? cleanDigits : ''),
           profile_pic_url: null,
           unread_count: 0,
           last_message: null,
