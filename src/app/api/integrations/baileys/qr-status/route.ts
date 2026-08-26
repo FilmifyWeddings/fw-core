@@ -36,11 +36,13 @@ export async function GET(req: NextRequest) {
 
     const userId = user.id;
 
-    // Use select('*') with strict eq('user_id', userId)
+    // Use select('*') with flexible user_id OR workspace_id matching
     const { data, error } = await supabaseAdmin
       .from('baileys_sessions')
       .select('*')
-      .eq('user_id', userId)
+      .or(`user_id.eq.${userId},workspace_id.eq.${userId}`)
+      .order('updated_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (error || !data) {
