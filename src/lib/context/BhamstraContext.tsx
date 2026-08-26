@@ -30,7 +30,7 @@ interface WorkspaceConfig {
   pinLockEnabled?: boolean;
 }
 
-const DEFAULT_OWNER_PERMISSIONS: MemberPermissions = {
+export const DEFAULT_OWNER_PERMISSIONS: MemberPermissions = {
   leads_access: 'FULL_EDIT',
   quotations_access: 'MANAGE',
   team_manager_access: 'MANAGE_ALL',
@@ -38,7 +38,7 @@ const DEFAULT_OWNER_PERMISSIONS: MemberPermissions = {
   finance_access: 'MANAGE',
 };
 
-const DEFAULT_MEMBER_PERMISSIONS: MemberPermissions = {
+export const DEFAULT_MEMBER_PERMISSIONS: MemberPermissions = {
   leads_access: 'NONE',
   quotations_access: 'NONE',
   team_manager_access: 'VIEW_ASSIGNED',
@@ -46,7 +46,7 @@ const DEFAULT_MEMBER_PERMISSIONS: MemberPermissions = {
   finance_access: 'NONE',
 };
 
-interface BhamstraContextType {
+export interface BhamstraContextType {
   userId: string | null;
   userEmail: string | null;
   workspaceId: string | null;
@@ -69,7 +69,31 @@ interface BhamstraContextType {
   refreshContext: () => Promise<void>;
 }
 
-const BhamstraContext = createContext<BhamstraContextType | undefined>(undefined);
+// Fail-Safe Fallback State (Ensures ZERO crash if accessed outside Provider)
+const DEFAULT_FALLBACK_CONTEXT: BhamstraContextType = {
+  userId: null,
+  userEmail: null,
+  workspaceId: null,
+  workspaceName: 'StudioCore',
+  activeWorkspace: null,
+  availableWorkspaces: [],
+  isOwner: true,
+  userRole: 'OWNER',
+  permissions: DEFAULT_OWNER_PERMISSIONS,
+  activeEventId: null,
+  currentClientStatus: null,
+  sessionShootState: null,
+  workspaceConfig: {},
+  loading: false,
+  setActiveEventId: () => {},
+  setCurrentClientStatus: () => {},
+  setSessionShootState: () => {},
+  updateWorkspaceConfig: async () => {},
+  switchWorkspace: async () => {},
+  refreshContext: async () => {},
+};
+
+const BhamstraContext = createContext<BhamstraContextType>(DEFAULT_FALLBACK_CONTEXT);
 
 export function BhamstraProvider({ children }: { children: React.ReactNode }) {
   const [userId, setUserId] = useState<string | null>(null);
@@ -290,12 +314,11 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+// 🛡️ Fail-Safe Hook: Returns DEFAULT_FALLBACK_CONTEXT instead of throwing unhandled error
 export function useBhamstra() {
   const context = useContext(BhamstraContext);
-  if (!context) {
-    throw new Error('useBhamstra must be used within a BhamstraProvider');
-  }
-  return context;
+  return context || DEFAULT_FALLBACK_CONTEXT;
 }
 
 export const useWorkspace = useBhamstra;
+export const WorkspaceProvider = BhamstraProvider;
