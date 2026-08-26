@@ -69,6 +69,8 @@ export async function GET(req: NextRequest) {
         name,
         primary_role,
         roles,
+        member_types,
+        primary_type,
         status,
         avatar_url,
         member_permissions (*)
@@ -116,7 +118,7 @@ export async function GET(req: NextRequest) {
         const memberPerms = {
           leads_access: perm?.leads_access || 'NONE',
           quotations_access: perm?.quotations_access || 'NONE',
-          team_manager_access: perm?.team_manager_access || 'VIEW_ASSIGNED',
+          team_manager_access: perm?.team_manager_access || 'ASSIGNED_ONLY_VIEW',
           post_production_access: perm?.post_production_access || 'ASSIGNED_ONLY',
           finance_access: perm?.finance_access || 'NONE',
         };
@@ -128,6 +130,7 @@ export async function GET(req: NextRequest) {
           isOwner: false,
           memberId: mem.id,
           roles: mem.roles || [mem.primary_role || 'FREELANCER'],
+          member_types: mem.member_types || ['IN_HOUSE'],
           permissions: memberPerms,
           avatarUrl: mem.avatar_url || wsData?.logo_url || '',
           ownerEmail: '',

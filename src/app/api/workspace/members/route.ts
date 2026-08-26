@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Fetch members for this workspace
+    // 1. Fetch workspace members with joined permissions
     try {
       const { data: members, error: memErr } = await supabaseAdmin
         .from('workspace_members')
@@ -65,6 +65,8 @@ export async function POST(req: NextRequest) {
       phone,
       primary_role,
       roles,
+      member_types,
+      primary_type,
       avatar_url,
       permissions
     } = body;
@@ -83,6 +85,10 @@ export async function POST(req: NextRequest) {
     }
 
     const cleanEmail = email.trim().toLowerCase();
+    const cleanMemberTypes = Array.isArray(member_types) && member_types.length > 0 
+      ? member_types 
+      : [primary_type || 'IN_HOUSE'];
+    const cleanPrimaryType = primary_type || cleanMemberTypes[0] || 'IN_HOUSE';
 
     // 1. Check if user already exists in auth profiles
     let invitedUserId: string | null = null;
@@ -110,6 +116,8 @@ export async function POST(req: NextRequest) {
       phone: phone || null,
       primary_role: primary_role || 'FREELANCER',
       roles: Array.isArray(roles) ? roles : [primary_role || 'FREELANCER'],
+      member_types: cleanMemberTypes,
+      primary_type: cleanPrimaryType,
       avatar_url: avatar_url || null,
       status: 'ACTIVE',
       role: 'member',
@@ -139,21 +147,22 @@ export async function POST(req: NextRequest) {
       savedMember = inserted;
     }
 
-    // 3. Upsert into member_permissions if member was saved
-    if (savedMember?.id && permissions) {
+    // 3. Upsert into member_permissions table
+    const targetMemberId = savedMember?.id || existingMember?.id;
+    if (targetMemberId && permissions) {
       try {
         const { data: existingPerm } = await supabaseAdmin
           .from('member_permissions')
           .select('id')
-          .eq('member_id', savedMember.id)
+          .eq('member_id', targetMemberId)
           .maybeSingle();
 
         const permPayload = {
-          member_id: savedMember.id,
+          member_id: targetMemberId,
           workspace_id,
           leads_access: permissions.leads_access || 'NONE',
+          team_manager_access: permissions.team_manager_access || 'ASSIGNED_ONLY_VIEW',
           quotations_access: permissions.quotations_access || 'NONE',
-          team_manager_access: permissions.team_manager_access || 'VIEW_ASSIGNED',
           post_production_access: permissions.post_production_access || 'ASSIGNED_ONLY',
           finance_access: permissions.finance_access || 'NONE',
           updated_at: new Date().toISOString(),
@@ -169,25 +178,28 @@ export async function POST(req: NextRequest) {
             .from('member_permissions')
             .insert([permPayload]);
         }
-      } catch (_) {}
+      } catch (permErr) {
+        console.warn('[member_permissions update notice]:', permErr);
+      }
     }
 
     return NextResponse.json({
       success: true,
       member: savedMember || {
-        id: existingMember?.id || 'temp_' + Date.now(),
+        id: targetMemberId || 'temp_' + Date.now(),
         workspace_id,
         email: cleanEmail,
         name: name.trim(),
         primary_role: primary_role || 'FREELANCER',
         roles: Array.isArray(roles) ? roles : [primary_role || 'FREELANCER'],
+        member_types: cleanMemberTypes,
+        primary_type: cleanPrimaryType,
         status: 'ACTIVE',
       },
       message: 'Workspace partner registered successfully.',
     });
   } catch (err: any) {
     console.error('[workspace_members POST Exception]:', err);
-    // Graceful fallback to avoid client failure
     return NextResponse.json({
       success: true,
       message: 'Workspace partner saved gracefully.',

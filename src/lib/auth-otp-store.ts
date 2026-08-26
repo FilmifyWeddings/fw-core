@@ -37,7 +37,9 @@ const DISPOSABLE_EMAIL_DOMAINS = new Set([
   'guerrillamail.com', 'sharklasers.com', 'getairmail.com', 'throwawaymail.com',
   'dispostable.com', 'yopmail.com', 'fakeinbox.com', 'trashmail.com',
   'mohmal.com', 'tempinbox.com', 'generator.email', 'crazymailing.com',
-  'mytemp.email', 'dropmail.me', 'trashmail.net', 'minuteinbox.com'
+  'mytemp.email', 'dropmail.me', 'trashmail.net', 'minuteinbox.com',
+  'burnermail.io', 'mailcatch.com', 'maildrop.cc', 'inboxkitten.com',
+  'nada.ltd', 'tempr.email', 'emailondeck.com', 'disposablemail.com'
 ]);
 
 /**
@@ -46,7 +48,23 @@ const DISPOSABLE_EMAIL_DOMAINS = new Set([
 export function isDisposableEmail(rawEmail: string): boolean {
   if (!rawEmail || !rawEmail.includes('@')) return true;
   const domain = rawEmail.trim().toLowerCase().split('@')[1];
-  return DISPOSABLE_EMAIL_DOMAINS.has(domain);
+  if (!domain || !domain.includes('.')) return true;
+  if (DISPOSABLE_EMAIL_DOMAINS.has(domain)) return true;
+  
+  // Keyword pattern heuristic for obvious throwaway domains
+  if (
+    domain.includes('tempmail') || 
+    domain.includes('guerrilla') || 
+    domain.includes('throwaway') || 
+    domain.includes('fakeinbox') || 
+    domain.includes('10minute') ||
+    domain.includes('trashmail') ||
+    domain.includes('dispostable')
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 /**

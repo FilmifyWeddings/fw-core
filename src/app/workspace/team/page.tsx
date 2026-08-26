@@ -6,7 +6,8 @@ import {
   Users2, UserPlus, Search, Filter, Mail, Phone, 
   Camera, Film, BookOpen, ShieldCheck, Trash2, Edit3, 
   CheckCircle2, RefreshCw, ChevronRight, User, MoreVertical,
-  ExternalLink, Sparkles, AlertCircle
+  ExternalLink, Sparkles, AlertCircle, Building2, Briefcase,
+  Target, FileText, IndianRupee, Layers, Check
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
@@ -21,12 +22,14 @@ interface TeamMember {
   phone_number?: string;
   primary_role: string;
   roles?: string[];
+  member_types?: string[];
+  primary_type?: string;
   avatar_url?: string;
   status?: string;
   permissions?: {
     leads_access?: string;
-    quotations_access?: string;
     team_manager_access?: string;
+    quotations_access?: string;
     post_production_access?: string;
     finance_access?: string;
   };
@@ -37,7 +40,7 @@ export default function WorkspaceTeamPage() {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedRoleFilter, setSelectedRoleFilter] = useState('All');
+  const [selectedFilter, setSelectedFilter] = useState('All');
   
   // Modal states
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -70,9 +73,11 @@ export default function WorkspaceTeamPage() {
             phone: m.phone || '',
             primary_role: m.primary_role || 'FREELANCER',
             roles: m.roles || [m.primary_role || 'FREELANCER'],
+            member_types: m.member_types || [m.primary_type || 'IN_HOUSE'],
+            primary_type: m.primary_type || 'IN_HOUSE',
             avatar_url: m.avatar_url || '',
             status: m.status || 'ACTIVE',
-            permissions: m.member_permissions?.[0] || undefined,
+            permissions: m.member_permissions?.[0] || m.member_permissions || undefined,
           }));
         }
       } catch (_) {}
@@ -96,6 +101,8 @@ export default function WorkspaceTeamPage() {
               phone: f.phone_number ? `${f.country_code || '+91'} ${f.phone_number}` : '',
               primary_role: f.primary_role || 'Crew',
               roles: [f.primary_role || 'Crew'],
+              member_types: f.member_types || ['IN_HOUSE'],
+              primary_type: f.primary_type || 'IN_HOUSE',
               avatar_url: f.avatar_url || '',
               status: 'ACTIVE',
             });
@@ -122,7 +129,7 @@ export default function WorkspaceTeamPage() {
       const currentUid = session?.user?.id;
       if (!currentUid) return;
 
-      // 1. Insert/Update in fw_team_members for scheduling calendar
+      // 1. Insert/Update in fw_team_members for scheduling calendar & attendance
       const fwPayload = {
         name: memberData.name,
         primary_role: memberData.primary_role,
@@ -130,6 +137,8 @@ export default function WorkspaceTeamPage() {
         phone_number: memberData.phone_number,
         email: memberData.email || null,
         avatar_url: memberData.avatar_url || null,
+        member_types: memberData.member_types || [memberData.primary_type || 'IN_HOUSE'],
+        primary_type: memberData.primary_type || 'IN_HOUSE',
         user_id: currentUid,
       };
 
@@ -145,7 +154,7 @@ export default function WorkspaceTeamPage() {
       }
 
       // 2. Insert/Update in workspace_members API for Multi-Tenant RBAC
-      if (session.access_token) {
+      if (session?.access_token) {
         await fetch('/api/workspace/members', {
           method: 'POST',
           headers: {
@@ -159,6 +168,8 @@ export default function WorkspaceTeamPage() {
             phone: `${memberData.country_code || '+91'} ${memberData.phone_number}`.trim(),
             primary_role: memberData.primary_role,
             roles: memberData.roles || [memberData.primary_role],
+            member_types: memberData.member_types || ['IN_HOUSE'],
+            primary_type: memberData.primary_type || 'IN_HOUSE',
             avatar_url: memberData.avatar_url || null,
             permissions: memberData.permissions,
           }),
@@ -199,19 +210,43 @@ export default function WorkspaceTeamPage() {
 
     if (!matchesSearch) return false;
 
-    if (selectedRoleFilter === 'All') return true;
-    if (selectedRoleFilter === 'Photographers') return m.primary_role.toLowerCase().includes('photo') || m.roles?.some(r => r.toLowerCase().includes('photo'));
-    if (selectedRoleFilter === 'Cinematographers') return m.primary_role.toLowerCase().includes('cine') || m.roles?.some(r => r.toLowerCase().includes('cine'));
-    if (selectedRoleFilter === 'Editors') return m.primary_role.toLowerCase().includes('edit') || m.roles?.some(r => r.toLowerCase().includes('edit'));
-    if (selectedRoleFilter === 'Labs') return m.primary_role.toLowerCase().includes('lab') || m.primary_role.toLowerCase().includes('print') || m.roles?.some(r => r.toLowerCase().includes('lab'));
+    if (selectedFilter === 'All') return true;
+    if (selectedFilter === 'In-House') return m.member_types?.includes('IN_HOUSE') || m.primary_type === 'IN_HOUSE';
+    if (selectedFilter === 'Freelancers') return m.member_types?.includes('FREELANCER') || m.primary_type === 'FREELANCER';
+    if (selectedFilter === 'Partners') return m.member_types?.includes('PARTNER') || m.primary_type === 'PARTNER';
+    if (selectedFilter === 'Photographers') return m.primary_role.toLowerCase().includes('photo') || m.roles?.some(r => r.toLowerCase().includes('photo'));
+    if (selectedFilter === 'Cinematographers') return m.primary_role.toLowerCase().includes('cine') || m.roles?.some(r => r.toLowerCase().includes('cine'));
+    if (selectedFilter === 'Editors') return m.primary_role.toLowerCase().includes('edit') || m.roles?.some(r => r.toLowerCase().includes('edit'));
+    if (selectedFilter === 'Labs') return m.primary_role.toLowerCase().includes('lab') || m.primary_role.toLowerCase().includes('print') || m.roles?.some(r => r.toLowerCase().includes('lab'));
     return true;
   });
 
   // Metrics
   const totalCount = members.length;
-  const photoCount = members.filter(m => m.primary_role.toLowerCase().includes('photo') || m.roles?.some(r => r.toLowerCase().includes('photo'))).length;
-  const editCount = members.filter(m => m.primary_role.toLowerCase().includes('edit') || m.roles?.some(r => r.toLowerCase().includes('edit'))).length;
-  const labCount = members.filter(m => m.primary_role.toLowerCase().includes('lab') || m.roles?.some(r => r.toLowerCase().includes('lab'))).length;
+  const inHouseCount = members.filter(m => m.member_types?.includes('IN_HOUSE') || m.primary_type === 'IN_HOUSE').length;
+  const freelancerCount = members.filter(m => m.member_types?.includes('FREELANCER') || m.primary_type === 'FREELANCER').length;
+  const partnerCount = members.filter(m => m.member_types?.includes('PARTNER') || m.primary_type === 'PARTNER').length;
+
+  // Format Permissions for visual pills
+  const formatLeadsBadge = (p?: string) => {
+    switch (p) {
+      case 'ALL_EDIT': return { label: 'CRM: Full Edit', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+      case 'ALL_VIEW': return { label: 'CRM: View All', color: 'bg-blue-50 text-blue-700 border-blue-200' };
+      case 'ASSIGNED_EDIT': return { label: 'CRM: Assigned (Edit)', color: 'bg-amber-50 text-amber-700 border-amber-200' };
+      case 'ASSIGNED_VIEW': return { label: 'CRM: Assigned (View)', color: 'bg-amber-50 text-amber-700 border-amber-200' };
+      default: return { label: 'CRM: Hidden', color: 'bg-zinc-100 text-zinc-400 border-zinc-200' };
+    }
+  };
+
+  const formatTeamManagerBadge = (p?: string) => {
+    switch (p) {
+      case 'ALL_MANAGE': return { label: 'Team: Full Manage', color: 'bg-indigo-50 text-indigo-700 border-indigo-200' };
+      case 'ALL_VIEW': return { label: 'Team: View All', color: 'bg-blue-50 text-blue-700 border-blue-200' };
+      case 'ASSIGNED_FULL_TEAM_VIEW': return { label: 'Team: Card (Full Team)', color: 'bg-purple-50 text-purple-700 border-purple-200' };
+      case 'ASSIGNED_ONLY_VIEW': return { label: 'Team: Card (Self Only)', color: 'bg-amber-50 text-amber-700 border-amber-200' };
+      default: return { label: 'Team: Hidden', color: 'bg-zinc-100 text-zinc-400 border-zinc-200' };
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#FAF9F6] p-4 sm:p-8 space-y-6 max-w-7xl mx-auto font-sans">
@@ -222,7 +257,7 @@ export default function WorkspaceTeamPage() {
           <div className="flex items-center gap-2">
             <span className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1.5">
               <Users2 className="w-3.5 h-3.5" />
-              Team Directory &amp; RBAC
+              Team Directory &amp; Multi-Role RBAC
             </span>
             <span className="text-[11px] font-bold text-zinc-400 bg-zinc-100 px-2.5 py-0.5 rounded-full">
               {totalCount} Total Members
@@ -233,7 +268,7 @@ export default function WorkspaceTeamPage() {
             Studio Team &amp; Partner Network
           </h1>
           <p className="text-xs sm:text-sm text-zinc-500 font-medium max-w-2xl">
-            Manage your crew, freelance cinematographers, video editors, and album printing labs with granular multi-role tags and strict permission isolation.
+            Classify in-house staff, freelance crew, and vendor printing labs with multi-select tags and permanent Supabase permission matrices.
           </p>
         </div>
 
@@ -259,7 +294,7 @@ export default function WorkspaceTeamPage() {
         </div>
       </div>
 
-      {/* 2. STATS OVERVIEW CARDS */}
+      {/* 2. STATS OVERVIEW CARDS (WITH IN-HOUSE / FREELANCER / PARTNER BREAKDOWN) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <div className="bg-white p-5 rounded-2xl border border-zinc-200 shadow-2xs space-y-1">
           <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Total Crew &amp; Partners</span>
@@ -267,28 +302,28 @@ export default function WorkspaceTeamPage() {
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-zinc-200 shadow-2xs space-y-1">
-          <span className="text-[11px] font-bold text-sky-600 uppercase tracking-wider">📸 Photographers &amp; Cine</span>
-          <div className="text-2xl font-black text-sky-900">{photoCount}</div>
+          <span className="text-[11px] font-bold text-emerald-600 uppercase tracking-wider">🏢 In-House Staff</span>
+          <div className="text-2xl font-black text-emerald-900">{inHouseCount}</div>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-zinc-200 shadow-2xs space-y-1">
-          <span className="text-[11px] font-bold text-rose-600 uppercase tracking-wider">🎬 Editors &amp; Designers</span>
-          <div className="text-2xl font-black text-rose-900">{editCount}</div>
+          <span className="text-[11px] font-bold text-sky-600 uppercase tracking-wider">📸 Freelancers</span>
+          <div className="text-2xl font-black text-sky-900">{freelancerCount}</div>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-zinc-200 shadow-2xs space-y-1">
-          <span className="text-[11px] font-bold text-emerald-600 uppercase tracking-wider">📖 Printing Labs &amp; Vendors</span>
-          <div className="text-2xl font-black text-emerald-900">{labCount}</div>
+          <span className="text-[11px] font-bold text-purple-600 uppercase tracking-wider">🤝 Printing Labs &amp; Partners</span>
+          <div className="text-2xl font-black text-purple-900">{partnerCount}</div>
         </div>
       </div>
 
-      {/* 3. SEARCH & ROLE FILTER BAR */}
+      {/* 3. SEARCH & CLASSIFICATION FILTER BAR */}
       <div className="bg-white p-4 rounded-2xl border border-zinc-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="relative flex-1 max-w-md">
           <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
           <input
             type="text"
-            placeholder="Search by member name, email, phone, role..."
+            placeholder="Search by name, email, phone, role..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-10 pr-4 py-2 bg-zinc-50 rounded-xl border border-zinc-200 text-xs font-semibold text-zinc-900 focus:bg-white focus:outline-hidden focus:border-amber-500 transition"
@@ -297,17 +332,26 @@ export default function WorkspaceTeamPage() {
 
         {/* Filter Pills */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-          {['All', 'Photographers', 'Cinematographers', 'Editors', 'Labs'].map((role) => (
+          {[
+            { id: 'All', label: 'All' },
+            { id: 'In-House', label: '🏢 In-House' },
+            { id: 'Freelancers', label: '📸 Freelancers' },
+            { id: 'Partners', label: '🤝 Partners' },
+            { id: 'Photographers', label: 'Photographers' },
+            { id: 'Cinematographers', label: 'Cinematographers' },
+            { id: 'Editors', label: 'Editors' },
+            { id: 'Labs', label: 'Labs' }
+          ].map((f) => (
             <button
-              key={role}
-              onClick={() => setSelectedRoleFilter(role)}
+              key={f.id}
+              onClick={() => setSelectedFilter(f.id)}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                selectedRoleFilter === role
+                selectedFilter === f.id
                   ? 'bg-zinc-900 text-white shadow-xs'
                   : 'bg-zinc-50 text-zinc-600 hover:bg-zinc-100 border border-zinc-200'
               }`}
             >
-              {role}
+              {f.label}
             </button>
           ))}
         </div>
@@ -320,7 +364,7 @@ export default function WorkspaceTeamPage() {
           <div className="space-y-1">
             <h3 className="text-base font-bold text-zinc-800">No Team Members Found</h3>
             <p className="text-xs text-zinc-400 max-w-sm mx-auto">
-              {searchQuery ? 'No members match your search query.' : 'Add your first photographer, video editor, or album lab partner.'}
+              {searchQuery ? 'No members match your search query.' : 'Add your in-house staff, freelance crew, or album printing lab partners.'}
             </p>
           </div>
           <button
@@ -336,106 +380,127 @@ export default function WorkspaceTeamPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredMembers.map((member) => (
-            <div
-              key={member.id}
-              className="bg-white rounded-3xl p-5 border border-zinc-200/80 shadow-2xs hover:shadow-md transition-all flex flex-col justify-between space-y-4 relative group"
-            >
-              {/* Top Row: Avatar & Roles */}
-              <div className="space-y-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-2xl bg-zinc-100 border border-zinc-200 overflow-hidden flex items-center justify-center shrink-0">
-                      {member.avatar_url ? (
-                        <img src={member.avatar_url} alt={member.name} className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full bg-gradient-to-tr from-amber-400 via-amber-500 to-amber-600 text-white font-black text-sm flex items-center justify-center">
-                          {member.name.slice(0, 2).toUpperCase()}
+          {filteredMembers.map((member) => {
+            const leadsBadge = formatLeadsBadge(member.permissions?.leads_access);
+            const teamBadge = formatTeamManagerBadge(member.permissions?.team_manager_access);
+
+            return (
+              <div
+                key={member.id}
+                className="bg-white rounded-3xl p-5 border border-zinc-200/80 shadow-2xs hover:shadow-md transition-all flex flex-col justify-between space-y-4 relative group"
+              >
+                {/* Top Row: Avatar & Details */}
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-12 h-12 rounded-2xl bg-zinc-100 border border-zinc-200 overflow-hidden flex items-center justify-center shrink-0">
+                        {member.avatar_url ? (
+                          <img src={member.avatar_url} alt={member.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full bg-gradient-to-tr from-amber-400 via-amber-500 to-amber-600 text-white font-black text-sm flex items-center justify-center">
+                            {member.name.slice(0, 2).toUpperCase()}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="min-w-0">
+                        <h3 className="text-sm font-black text-zinc-900 truncate leading-tight">{member.name}</h3>
+                        
+                        {/* Member Type Badges */}
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {(member.member_types || [member.primary_type || 'IN_HOUSE']).map((t) => (
+                            <span 
+                              key={t}
+                              className={`px-1.5 py-0.5 rounded-md text-[9.5px] font-black uppercase tracking-wider border ${
+                                t === 'IN_HOUSE'
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                  : t === 'PARTNER'
+                                    ? 'bg-purple-50 text-purple-800 border-purple-200'
+                                    : 'bg-sky-50 text-sky-800 border-sky-200'
+                              }`}
+                            >
+                              {t === 'IN_HOUSE' ? '🏢 In-House' : t === 'PARTNER' ? '🤝 Partner' : '📸 Freelancer'}
+                            </span>
+                          ))}
                         </div>
-                      )}
+                      </div>
                     </div>
 
-                    <div className="min-w-0">
-                      <h3 className="text-sm font-black text-zinc-900 truncate leading-tight">{member.name}</h3>
-                      <span className="inline-block mt-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-amber-50 text-amber-900 border border-amber-200">
-                        {member.primary_role}
-                      </span>
+                    {/* Actions */}
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => {
+                          setMemberToEdit(member);
+                          setIsAddModalOpen(true);
+                        }}
+                        className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition cursor-pointer"
+                        title="Edit Member & RBAC Permissions"
+                      >
+                        <Edit3 className="w-4 h-4" />
+                      </button>
+
+                      <button
+                        onClick={() => handleDeleteMember(member.id)}
+                        disabled={deletingId === member.id}
+                        className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                        title="Remove Member"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
 
-                  {/* Actions Dropdown */}
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => {
-                        setMemberToEdit(member);
-                        setIsAddModalOpen(true);
-                      }}
-                      className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition cursor-pointer"
-                      title="Edit Member"
-                    >
-                      <Edit3 className="w-4 h-4" />
-                    </button>
+                  {/* Contact Info */}
+                  <div className="space-y-1 text-xs">
+                    {member.email && (
+                      <div className="flex items-center gap-2 text-zinc-600 truncate">
+                        <Mail className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                        <span className="truncate">{member.email}</span>
+                      </div>
+                    )}
 
-                    <button
-                      onClick={() => handleDeleteMember(member.id)}
-                      disabled={deletingId === member.id}
-                      className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
-                      title="Remove Member"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {member.phone && (
+                      <div className="flex items-center gap-2 text-zinc-600">
+                        <Phone className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                        <span>{member.phone}</span>
+                      </div>
+                    )}
                   </div>
-                </div>
 
-                {/* Contact Info */}
-                <div className="space-y-1 text-xs">
-                  {member.email && (
-                    <div className="flex items-center gap-2 text-zinc-600 truncate">
-                      <Mail className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                      <span className="truncate">{member.email}</span>
+                  {/* Multi-Role Tags */}
+                  {member.roles && member.roles.length > 0 && (
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {member.roles.map((r) => (
+                        <span key={r} className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-zinc-100 text-zinc-600 border border-zinc-200">
+                          {r}
+                        </span>
+                      ))}
                     </div>
                   )}
-
-                  {member.phone && (
-                    <div className="flex items-center gap-2 text-zinc-600">
-                      <Phone className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                      <span>{member.phone}</span>
-                    </div>
-                  )}
                 </div>
 
-                {/* Multi-Role Tags */}
-                {member.roles && member.roles.length > 1 && (
-                  <div className="flex flex-wrap gap-1 pt-1">
-                    {member.roles.map((r) => (
-                      <span key={r} className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-zinc-100 text-zinc-600">
-                        {r}
-                      </span>
-                    ))}
+                {/* Permissions & Security Summary */}
+                <div className="pt-3 border-t border-zinc-100 space-y-1.5">
+                  <div className="flex flex-wrap gap-1.5">
+                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${leadsBadge.color}`}>
+                      {leadsBadge.label}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${teamBadge.color}`}>
+                      {teamBadge.label}
+                    </span>
                   </div>
-                )}
-              </div>
 
-              {/* Permissions & Security Summary */}
-              <div className="pt-3 border-t border-zinc-100 flex items-center justify-between text-[11px] text-zinc-500 font-medium">
-                <div className="flex items-center gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>
-                    {member.permissions?.leads_access === 'FULL_EDIT' 
-                      ? 'Full CRM Access' 
-                      : member.permissions?.leads_access === 'ASSIGNED_ONLY'
-                        ? 'Assigned Leads Only'
-                        : 'Restricted Partner'}
-                  </span>
+                  <div className="flex items-center justify-between text-[10px] text-zinc-400 font-semibold pt-1">
+                    <span className="flex items-center gap-1 text-emerald-600">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      Active Access
+                    </span>
+                    <span>Role: {member.primary_role}</span>
+                  </div>
                 </div>
-
-                <span className="flex items-center gap-1 text-emerald-600 font-bold">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  Active
-                </span>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

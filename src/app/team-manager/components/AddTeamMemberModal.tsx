@@ -6,7 +6,8 @@ import {
   X, UserPlus, Sparkles, User, Briefcase, Phone, Mail, 
   Camera, Loader2, ShieldCheck, ChevronDown, ChevronUp,
   Target, FileText, Users2, Film, IndianRupee, Check,
-  AlertTriangle, AlertCircle, CheckCircle2, Search
+  AlertTriangle, AlertCircle, CheckCircle2, Search, Building2,
+  Lock, Eye, Edit2, ShieldAlert, CheckSquare, Square
 } from 'lucide-react';
 import CountryFlagPhoneInput from './CountryFlagPhoneInput';
 import { supabase } from '@/lib/supabase';
@@ -25,9 +26,17 @@ interface AddTeamMemberModalProps {
     email?: string;
     avatar_url?: string;
     roles?: string[];
+    member_types?: string[];
+    primary_type?: string;
     permissions?: any;
   }) => Promise<void> | void;
 }
+
+const MEMBER_TYPE_OPTIONS = [
+  { id: 'IN_HOUSE', label: '🏢 In-House Staff', desc: 'Fixed studio team · Attendance & Monthly tracking' },
+  { id: 'FREELANCER', label: '📸 Freelancer', desc: 'Gig-based crew · Event/day rate shoot assignments' },
+  { id: 'PARTNER', label: '🤝 Partner / Vendor', desc: 'External editing lab, printing partner, studio agency' },
+];
 
 const MULTI_ROLES_OPTIONS = [
   { id: 'Photographer', label: '📸 Photographer' },
@@ -38,6 +47,12 @@ const MULTI_ROLES_OPTIONS = [
   { id: 'Printing Lab', label: '📖 Printing Lab' },
   { id: 'Assistant', label: '🤝 Assistant' },
   { id: 'Traditional Video', label: '📹 Traditional Video' },
+];
+
+const DISPOSABLE_EMAIL_DOMAINS = [
+  'tempmail.com', 'temp-mail.org', 'guerrillamail.com', 'mailinator.com', 
+  '10minutemail.com', 'throwawaymail.com', 'sharklasers.com', 'yopmail.com',
+  'getairmail.com', 'trashmail.com', 'dispostable.com'
 ];
 
 export default function AddTeamMemberModal({
@@ -51,6 +66,7 @@ export default function AddTeamMemberModal({
   const [name, setName] = useState('');
   const [primaryRole, setPrimaryRole] = useState(initialRole);
   const [selectedRoles, setSelectedRoles] = useState<string[]>([initialRole]);
+  const [selectedMemberTypes, setSelectedMemberTypes] = useState<string[]>(['IN_HOUSE']);
   const [countryCode, setCountryCode] = useState('+91');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [email, setEmail] = useState('');
@@ -70,11 +86,11 @@ export default function AddTeamMemberModal({
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Granular Permissions Matrix State
-  const [leadsAccess, setLeadsAccess] = useState<'NONE' | 'ASSIGNED_ONLY' | 'VIEW_ALL' | 'FULL_EDIT'>('NONE');
-  const [quotationsAccess, setQuotationsAccess] = useState<'NONE' | 'VIEW_ONLY' | 'MANAGE'>('NONE');
-  const [teamManagerAccess, setTeamManagerAccess] = useState<'NONE' | 'VIEW_ASSIGNED' | 'MANAGE_ALL'>('VIEW_ASSIGNED');
-  const [postProductionAccess, setPostProductionAccess] = useState<'NONE' | 'ASSIGNED_ONLY' | 'FULL_ACCESS'>('ASSIGNED_ONLY');
-  const [financeAccess, setFinanceAccess] = useState<'NONE' | 'VIEW_ONLY' | 'MANAGE'>('NONE');
+  const [leadsAccess, setLeadsAccess] = useState<string>('NONE');
+  const [teamManagerAccess, setTeamManagerAccess] = useState<string>('ASSIGNED_ONLY_VIEW');
+  const [quotationsAccess, setQuotationsAccess] = useState<string>('NONE');
+  const [postProductionAccess, setPostProductionAccess] = useState<string>('ASSIGNED_ONLY');
+  const [financeAccess, setFinanceAccess] = useState<string>('NONE');
 
   // Load existing workspace members to check duplicates
   useEffect(() => {
@@ -106,15 +122,16 @@ export default function AddTeamMemberModal({
       setName(memberToEdit.name || '');
       setPrimaryRole(memberToEdit.primary_role || initialRole);
       setSelectedRoles(memberToEdit.roles || [memberToEdit.primary_role || initialRole]);
+      setSelectedMemberTypes(memberToEdit.member_types || [memberToEdit.primary_type || 'IN_HOUSE']);
       setCountryCode(memberToEdit.country_code || '+91');
       setPhoneNumber(memberToEdit.phone_number || memberToEdit.phone || '');
       setEmail(memberToEdit.email || '');
       setAvatarUrl(memberToEdit.avatar_url || '');
 
-      const perms = memberToEdit.permissions || memberToEdit.member_permissions?.[0] || {};
+      const perms = memberToEdit.permissions || memberToEdit.member_permissions?.[0] || memberToEdit.member_permissions || {};
       setLeadsAccess(perms.leads_access || 'NONE');
+      setTeamManagerAccess(perms.team_manager_access || 'ASSIGNED_ONLY_VIEW');
       setQuotationsAccess(perms.quotations_access || 'NONE');
-      setTeamManagerAccess(perms.team_manager_access || 'VIEW_ASSIGNED');
       setPostProductionAccess(perms.post_production_access || 'ASSIGNED_ONLY');
       setFinanceAccess(perms.finance_access || 'NONE');
       setIsRegisteredUser(true);
@@ -122,13 +139,14 @@ export default function AddTeamMemberModal({
       setName('');
       setPrimaryRole(initialRole);
       setSelectedRoles([initialRole]);
+      setSelectedMemberTypes(['IN_HOUSE']);
       setCountryCode('+91');
       setPhoneNumber('');
       setEmail('');
       setAvatarUrl('');
       setLeadsAccess('NONE');
+      setTeamManagerAccess('ASSIGNED_ONLY_VIEW');
       setQuotationsAccess('NONE');
-      setTeamManagerAccess('VIEW_ASSIGNED');
       setPostProductionAccess('ASSIGNED_ONLY');
       setFinanceAccess('NONE');
       setIsRegisteredUser(false);
@@ -206,6 +224,20 @@ export default function AddTeamMemberModal({
     existingMembers.some(m => m.email && m.email.trim().toLowerCase() === cleanEnteredEmail)
   );
 
+  // 3. Disposable email check
+  const emailDomain = cleanEnteredEmail.split('@')[1] || '';
+  const isDisposableEmail = DISPOSABLE_EMAIL_DOMAINS.includes(emailDomain);
+
+  // Toggle Member Type Checkbox
+  const toggleMemberType = (typeId: string) => {
+    setSelectedMemberTypes(prev => {
+      const exists = prev.includes(typeId);
+      const next = exists ? prev.filter(t => t !== typeId) : [...prev, typeId];
+      return next.length > 0 ? next : [typeId];
+    });
+  };
+
+  // Toggle Role Tag
   const toggleRole = (roleId: string) => {
     setSelectedRoles(prev => {
       const exists = prev.includes(roleId);
@@ -290,14 +322,14 @@ export default function AddTeamMemberModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || isSelfEmail || isDuplicateEmail) return;
+    if (!name.trim() || isSelfEmail || isDuplicateEmail || isDisposableEmail) return;
 
     setLoading(true);
     try {
       const permissionsObj = {
         leads_access: leadsAccess,
-        quotations_access: quotationsAccess,
         team_manager_access: teamManagerAccess,
+        quotations_access: quotationsAccess,
         post_production_access: postProductionAccess,
         finance_access: financeAccess,
       };
@@ -307,6 +339,8 @@ export default function AddTeamMemberModal({
         name: name.trim(),
         primary_role: primaryRole,
         roles: selectedRoles,
+        member_types: selectedMemberTypes,
+        primary_type: selectedMemberTypes[0] || 'IN_HOUSE',
         country_code: countryCode,
         phone_number: phoneNumber.trim(),
         email: email.trim() || undefined,
@@ -331,6 +365,8 @@ export default function AddTeamMemberModal({
               phone: `${countryCode} ${phoneNumber.trim()}`.trim(),
               primary_role: primaryRole,
               roles: selectedRoles,
+              member_types: selectedMemberTypes,
+              primary_type: selectedMemberTypes[0] || 'IN_HOUSE',
               avatar_url: avatarUrl || null,
               permissions: permissionsObj,
             }),
@@ -363,7 +399,7 @@ export default function AddTeamMemberModal({
           initial={{ opacity: 0, scale: 0.95, y: 10 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 10 }}
-          className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-zinc-100 overflow-hidden z-10 max-h-[90vh] flex flex-col"
+          className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-zinc-100 overflow-hidden z-10 max-h-[92vh] flex flex-col"
         >
           {/* Header */}
           <div className="px-6 py-4 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/50">
@@ -376,7 +412,7 @@ export default function AddTeamMemberModal({
                   {memberToEdit ? 'Edit Team Member / Partner' : 'Add Team Member / Partner'}
                 </h3>
                 <p className="text-[11px] text-zinc-400 font-medium mt-0.5">
-                  Global Directory Search &amp; Multi-Role RBAC Matrix
+                  Member Type · Global Directory Search · Granular RBAC
                 </p>
               </div>
             </div>
@@ -398,7 +434,7 @@ export default function AddTeamMemberModal({
                 <div>
                   <p className="font-bold">Cannot Add Yourself as Team Member</p>
                   <p className="text-[11px] text-rose-700 mt-0.5">
-                    Aap already is Studio ke <strong>👑 Studio Owner</strong> hain. Team members me sirf aapke freelancers, crew, ya lab vendors ka email add karein.
+                    Aap already is Studio ke <strong>👑 Studio Owner</strong> hain. Team members me sirf aapke freelancers, staff, ya lab vendors ka email add karein.
                   </p>
                 </div>
               </div>
@@ -417,7 +453,64 @@ export default function AddTeamMemberModal({
               </div>
             )}
 
-            {/* Email Directory Search & Autocomplete */}
+            {/* Disposable Email Warning */}
+            {isDisposableEmail && (
+              <div className="p-3 bg-rose-50 rounded-2xl border border-rose-200 flex items-start gap-2.5 text-xs text-rose-800">
+                <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold">Disposable Email Not Allowed</p>
+                  <p className="text-[11px] text-rose-700 mt-0.5">
+                    Temporary/throwaway emails are not supported. Please enter a real Gmail or work email address.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* ── 1. MEMBER TYPE CLASSIFICATION (3D Multi-Select Checkboxes) ── */}
+            <div className="space-y-2">
+              <label className="text-[11px] font-black text-zinc-800 uppercase tracking-wider flex items-center justify-between">
+                <span>Member Type Classification (Select All That Apply) *</span>
+                <span className="text-[10px] text-amber-600 font-bold lowercase">
+                  {selectedMemberTypes.length} selected
+                </span>
+              </label>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {MEMBER_TYPE_OPTIONS.map((opt) => {
+                  const isChecked = selectedMemberTypes.includes(opt.id);
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => toggleMemberType(opt.id)}
+                      className={`p-3 rounded-2xl text-left border transition-all cursor-pointer flex flex-col justify-between ${
+                        isChecked
+                          ? 'bg-gradient-to-b from-amber-50 to-amber-100/60 border-amber-400 shadow-sm shadow-amber-500/10'
+                          : 'bg-zinc-50/70 hover:bg-zinc-100 border-zinc-200 text-zinc-600'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between w-full mb-1">
+                        <span className={`text-xs font-black ${isChecked ? 'text-amber-950' : 'text-zinc-800'}`}>
+                          {opt.label}
+                        </span>
+                        <div className={`w-4 h-4 rounded-md flex items-center justify-center border transition ${
+                          isChecked
+                            ? 'bg-amber-500 border-amber-600 text-white'
+                            : 'border-zinc-300 bg-white'
+                        }`}>
+                          {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
+                        </div>
+                      </div>
+                      <p className="text-[9.5px] text-zinc-500 font-medium leading-tight">
+                        {opt.desc}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* ── 2. EMAIL DIRECTORY SEARCH & AUTOCOMPLETE ── */}
             <div className="space-y-1.5 relative">
               <label className="text-[11px] font-bold text-zinc-700 flex items-center justify-between">
                 <span className="flex items-center gap-1">
@@ -436,7 +529,7 @@ export default function AddTeamMemberModal({
                 <input
                   type="email"
                   required
-                  placeholder="Type email to search StudioCore directory..."
+                  placeholder="Type real email (@gmail.com, etc.)..."
                   value={email}
                   onChange={(e) => handleEmailChange(e.target.value)}
                   onFocus={() => searchResults.length > 0 && setShowSuggestions(true)}
@@ -496,7 +589,7 @@ export default function AddTeamMemberModal({
               </AnimatePresence>
 
               {/* Unregistered User Helper Info */}
-              {!isRegisteredUser && cleanEnteredEmail && !isSearching && searchResults.length === 0 && !isSelfEmail && !isDuplicateEmail && (
+              {!isRegisteredUser && cleanEnteredEmail && !isSearching && searchResults.length === 0 && !isSelfEmail && !isDuplicateEmail && !isDisposableEmail && (
                 <p className="text-[10px] text-zinc-400 font-medium pt-0.5 flex items-center gap-1">
                   <Sparkles className="w-3 h-3 text-amber-500 shrink-0" />
                   <span>Naya user: Jab yeh person StudioCore par signup/login karenge, yeh studio unke dashboard me automatically link ho jayega.</span>
@@ -504,7 +597,7 @@ export default function AddTeamMemberModal({
               )}
             </div>
 
-            {/* Avatar & Full Name */}
+            {/* ── 3. AVATAR & FULL NAME ── */}
             <div className="flex items-center gap-4">
               <div className="relative group shrink-0">
                 <div className="w-16 h-16 rounded-2xl bg-zinc-100 border-2 border-dashed border-zinc-200 flex items-center justify-center overflow-hidden">
@@ -543,7 +636,7 @@ export default function AddTeamMemberModal({
               </div>
             </div>
 
-            {/* Mobile Phone */}
+            {/* ── 4. MOBILE PHONE ── */}
             <div className="space-y-1.5">
               <label className="text-[11px] font-bold text-zinc-600 flex items-center gap-1">
                 <Phone className="w-3 h-3 text-zinc-400" />
@@ -557,7 +650,7 @@ export default function AddTeamMemberModal({
               />
             </div>
 
-            {/* Multi-Role Badges Selection */}
+            {/* ── 5. MULTI-ROLE SPECIALIZATIONS ── */}
             <div className="space-y-2">
               <label className="text-[11px] font-bold text-zinc-700 flex items-center justify-between">
                 <span>Multi-Role Specializations (Select All That Apply)</span>
@@ -588,7 +681,7 @@ export default function AddTeamMemberModal({
               </div>
             </div>
 
-            {/* Granular Permission Matrix Accordion */}
+            {/* ── 6. COMPREHENSIVE GRANULAR PERMISSION MATRIX ── */}
             <div className="rounded-2xl border border-zinc-200 overflow-hidden bg-zinc-50/50">
               <button
                 type="button"
@@ -598,8 +691,8 @@ export default function AddTeamMemberModal({
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4 text-emerald-600" />
                   <div>
-                    <p className="text-xs font-bold text-zinc-900">Granular Permission Matrix</p>
-                    <p className="text-[10px] text-zinc-500">Configure CRM, Quotations, and Finance access levels</p>
+                    <p className="text-xs font-bold text-zinc-900">Granular Permission Matrix (Permanent Supabase RBAC)</p>
+                    <p className="text-[10px] text-zinc-500">Configure Leads, Shoot Cards, Quotations, and Finance access</p>
                   </div>
                 </div>
                 {showPermissions ? (
@@ -615,91 +708,94 @@ export default function AddTeamMemberModal({
                     initial={{ height: 0, opacity: 0 }}
                     animate={{ height: 'auto', opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}
-                    className="px-4 pb-4 space-y-3 pt-2 border-t border-zinc-200 bg-white"
+                    className="px-4 pb-4 space-y-3.5 pt-2 border-t border-zinc-200 bg-white"
                   >
-                    {/* Leads & CRM */}
-                    <div className="flex items-center justify-between py-1">
+                    {/* 1. Leads & CRM Access */}
+                    <div className="space-y-1">
                       <div className="flex items-center gap-1.5">
                         <Target className="w-3.5 h-3.5 text-emerald-600" />
-                        <span className="text-xs font-bold text-zinc-800">Leads &amp; CRM</span>
+                        <span className="text-xs font-bold text-zinc-900">Leads &amp; CRM Access</span>
                       </div>
                       <select
                         value={leadsAccess}
-                        onChange={(e: any) => setLeadsAccess(e.target.value)}
-                        className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-zinc-50 border border-zinc-200 text-zinc-800"
+                        onChange={(e) => setLeadsAccess(e.target.value)}
+                        className="w-full text-xs font-semibold px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-800 focus:bg-white focus:border-amber-500 focus:outline-hidden"
                       >
-                        <option value="NONE">No Access (Hidden)</option>
-                        <option value="ASSIGNED_ONLY">Assigned Only</option>
-                        <option value="VIEW_ALL">View All Leads</option>
-                        <option value="FULL_EDIT">Full Edit Access</option>
+                        <option value="NONE">❌ No Access (CRM Hidden)</option>
+                        <option value="ASSIGNED_VIEW">👁️ Assigned Leads Only (View Only)</option>
+                        <option value="ASSIGNED_EDIT">✏️ Assigned Leads Only (Can Edit)</option>
+                        <option value="ALL_VIEW">🌐 All Studio Leads (View Only)</option>
+                        <option value="ALL_EDIT">⚡ All Studio Leads (Full Edit Access)</option>
                       </select>
                     </div>
 
-                    {/* Quotations & Pricing */}
-                    <div className="flex items-center justify-between py-1 border-t border-zinc-100">
-                      <div className="flex items-center gap-1.5">
-                        <FileText className="w-3.5 h-3.5 text-amber-600" />
-                        <span className="text-xs font-bold text-zinc-800">Quotations &amp; Pricing</span>
-                      </div>
-                      <select
-                        value={quotationsAccess}
-                        onChange={(e: any) => setQuotationsAccess(e.target.value)}
-                        className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-zinc-50 border border-zinc-200 text-zinc-800"
-                      >
-                        <option value="NONE">Hidden</option>
-                        <option value="VIEW_ONLY">View Only</option>
-                        <option value="MANAGE">Full Manage</option>
-                      </select>
-                    </div>
-
-                    {/* Team Manager */}
-                    <div className="flex items-center justify-between py-1 border-t border-zinc-100">
+                    {/* 2. Team Manager & Shoot Calendar Access */}
+                    <div className="space-y-1 pt-2 border-t border-zinc-100">
                       <div className="flex items-center gap-1.5">
                         <Users2 className="w-3.5 h-3.5 text-indigo-600" />
-                        <span className="text-xs font-bold text-zinc-800">Team Manager</span>
+                        <span className="text-xs font-bold text-zinc-900">Team Manager &amp; Shoot Schedule Access</span>
                       </div>
                       <select
                         value={teamManagerAccess}
-                        onChange={(e: any) => setTeamManagerAccess(e.target.value)}
-                        className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-zinc-50 border border-zinc-200 text-zinc-800"
+                        onChange={(e) => setTeamManagerAccess(e.target.value)}
+                        className="w-full text-xs font-semibold px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-800 focus:bg-white focus:border-amber-500 focus:outline-hidden"
                       >
-                        <option value="NONE">Hidden</option>
-                        <option value="VIEW_ASSIGNED">View Assigned Crew</option>
-                        <option value="MANAGE_ALL">Full Access</option>
+                        <option value="NONE">❌ No Access (Hidden)</option>
+                        <option value="ASSIGNED_ONLY_VIEW">👤 Assigned Sub-Event Card Only (View Call Time &amp; Own Role)</option>
+                        <option value="ASSIGNED_FULL_TEAM_VIEW">👥 Assigned Sub-Event Card (View Full Team &amp; Crew Call Times)</option>
+                        <option value="ALL_VIEW">📅 All Bookings &amp; Events (View Only)</option>
+                        <option value="ALL_MANAGE">⚡ Full Manage Access (Add / Edit Shoots &amp; Assign Crew)</option>
                       </select>
                     </div>
 
-                    {/* Post-Production */}
-                    <div className="flex items-center justify-between py-1 border-t border-zinc-100">
+                    {/* 3. Quotations & Pricing */}
+                    <div className="space-y-1 pt-2 border-t border-zinc-100">
+                      <div className="flex items-center gap-1.5">
+                        <FileText className="w-3.5 h-3.5 text-amber-600" />
+                        <span className="text-xs font-bold text-zinc-900">Quotations &amp; Pricing Proposals</span>
+                      </div>
+                      <select
+                        value={quotationsAccess}
+                        onChange={(e) => setQuotationsAccess(e.target.value)}
+                        className="w-full text-xs font-semibold px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-800 focus:bg-white focus:border-amber-500 focus:outline-hidden"
+                      >
+                        <option value="NONE">❌ Hidden</option>
+                        <option value="VIEW_ONLY">👁️ View Only</option>
+                        <option value="MANAGE">⚡ Full Manage</option>
+                      </select>
+                    </div>
+
+                    {/* 4. Post-Production / Deliverables */}
+                    <div className="space-y-1 pt-2 border-t border-zinc-100">
                       <div className="flex items-center gap-1.5">
                         <Film className="w-3.5 h-3.5 text-rose-600" />
-                        <span className="text-xs font-bold text-zinc-800">Post-Production / Projects</span>
+                        <span className="text-xs font-bold text-zinc-900">Post-Production / Deliverables</span>
                       </div>
                       <select
                         value={postProductionAccess}
-                        onChange={(e: any) => setPostProductionAccess(e.target.value)}
-                        className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-zinc-50 border border-zinc-200 text-zinc-800"
+                        onChange={(e) => setPostProductionAccess(e.target.value)}
+                        className="w-full text-xs font-semibold px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-800 focus:bg-white focus:border-amber-500 focus:outline-hidden"
                       >
-                        <option value="NONE">Hidden</option>
-                        <option value="ASSIGNED_ONLY">Assigned Projects Only</option>
-                        <option value="FULL_ACCESS">Full Access</option>
+                        <option value="NONE">❌ Hidden</option>
+                        <option value="ASSIGNED_ONLY">🎬 Assigned Projects Only</option>
+                        <option value="FULL_ACCESS">⚡ Full Access</option>
                       </select>
                     </div>
 
-                    {/* Finance & Invoices */}
-                    <div className="flex items-center justify-between py-1 border-t border-zinc-100">
+                    {/* 5. Finance & Invoices */}
+                    <div className="space-y-1 pt-2 border-t border-zinc-100">
                       <div className="flex items-center gap-1.5">
                         <IndianRupee className="w-3.5 h-3.5 text-yellow-600" />
-                        <span className="text-xs font-bold text-zinc-800">Finance &amp; Invoices</span>
+                        <span className="text-xs font-bold text-zinc-900">Finance &amp; Invoices</span>
                       </div>
                       <select
                         value={financeAccess}
-                        onChange={(e: any) => setFinanceAccess(e.target.value)}
-                        className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-zinc-50 border border-zinc-200 text-zinc-800"
+                        onChange={(e) => setFinanceAccess(e.target.value)}
+                        className="w-full text-xs font-semibold px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-800 focus:bg-white focus:border-amber-500 focus:outline-hidden"
                       >
-                        <option value="NONE">Hidden</option>
-                        <option value="VIEW_ONLY">View Only</option>
-                        <option value="MANAGE">Full Access</option>
+                        <option value="NONE">❌ Hidden</option>
+                        <option value="VIEW_ONLY">👁️ View Only</option>
+                        <option value="MANAGE">⚡ Full Access</option>
                       </select>
                     </div>
                   </motion.div>
@@ -718,7 +814,7 @@ export default function AddTeamMemberModal({
               </button>
               <button
                 type="submit"
-                disabled={loading || !name.trim() || isSelfEmail || isDuplicateEmail}
+                disabled={loading || !name.trim() || isSelfEmail || isDuplicateEmail || isDisposableEmail}
                 className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white text-xs font-bold shadow-md shadow-amber-500/20 transition cursor-pointer flex items-center gap-2"
               >
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
