@@ -135,14 +135,14 @@ function IntegrationsCore() {
 
   const integrations: IntegrationCard[] = [
     {
-      id: 'whatsapp-web-beta',
-      name: 'WhatsApp Web (Beta)',
+      id: 'whatsapp-web',
+      name: 'WhatsApp Web',
       category: 'marketing',
-      description: 'Evolution Engine • 2-Way Realtime Sync. Full dual-pane Web Inbox with CRM quick actions.',
+      description: 'Trigger notifications and reply via our serverless socket gateway.',
       logoName: 'whatsapp.png',
-      status: whatsappBetaConnected ? 'connected' : 'disconnected',
-      path: '/workspace/integrations/whatsapp-beta',
-      metaText: 'Evolution Engine • 2-Way Sync'
+      status: whatsappConnected ? 'connected' : 'disconnected',
+      path: '/dashboard/integrations/whatsapp-web',
+      metaText: 'WhatsApp Socket Gateway API'
     },
     {
       id: 'meta-ads',
@@ -153,16 +153,6 @@ function IntegrationsCore() {
       status: metaConnected ? 'connected' : 'disconnected',
       path: '/workspace/integrations/meta',
       metaText: 'Facebook/Instagram Forms Sync'
-    },
-    {
-      id: 'whatsapp-web',
-      name: 'WhatsApp Web',
-      category: 'marketing',
-      description: 'Trigger notifications and reply via our serverless socket gateway.',
-      logoName: 'whatsapp.png',
-      status: whatsappConnected ? 'connected' : 'disconnected',
-      path: '/dashboard/integrations/whatsapp-web',
-      metaText: 'WhatsApp Socket Gateway API'
     },
     {
       id: 'google-sheets',
