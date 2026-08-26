@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, QrCode, RefreshCw, CheckCircle2, AlertCircle, Smartphone, 
-  ArrowRight, ShieldCheck, Zap, LogOut, MessageSquare, ExternalLink
+  ArrowRight, ShieldCheck, Zap, LogOut, MessageSquare, ExternalLink,
+  Settings, Save, Check, Copy
 } from 'lucide-react';
 
 interface WhatsAppBetaConnectModalProps {
@@ -29,11 +30,34 @@ export function WhatsAppBetaConnectModal({
   const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [instanceData, setInstanceData] = useState<any>(null);
   const [countdown, setCountdown] = useState(25);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  // Server config editor states
+  const [showConfig, setShowConfig] = useState(false);
+  const [serverUrl, setServerUrl] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [savingConfig, setSavingConfig] = useState(false);
+  const [configSuccess, setConfigSuccess] = useState(false);
+
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 1. Fetch live connection & QR state
+  // 1. Fetch current server config
+  const fetchConfig = useCallback(async () => {
+    if (!workspaceId) return;
+    try {
+      const res = await fetch(`/api/whatsapp-beta/config?workspace_id=${workspaceId}`);
+      const data = await res.json();
+      if (data.success && data.server_url) {
+        setServerUrl(data.server_url);
+      }
+    } catch (_) {}
+  }, [workspaceId]);
+
+  // 2. Fetch live connection & QR state
   const fetchStatusAndQr = useCallback(async () => {
     if (!workspaceId) return;
+    setErrorMessage(null);
     try {
       // First check instance state
       const instRes = await fetch(`/api/whatsapp-beta/instance?workspace_id=${workspaceId}`);
@@ -62,24 +86,68 @@ export function WhatsAppBetaConnectModal({
           onConnectionChange?.('CONNECTED');
         } else {
           const rawQr = qrData.qrcode || qrData.base64 || qrData.raw?.qrcode?.base64 || qrData.raw?.base64 || null;
-          const formattedQr = rawQr?.startsWith('data:') ? rawQr : rawQr ? `data:image/png;base64,${rawQr}` : null;
-          setQrCode(formattedQr);
+          const formattedQr = rawQr?.startsWith('data:') || rawQr?.startsWith('http') ? rawQr : rawQr ? `data:image/png;base64,${rawQr}` : null;
+          
+          if (formattedQr) {
+            setQrCode(formattedQr);
+            setErrorMessage(null);
+          } else if (qrData.rawCode) {
+            setQrCode(`https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(qrData.rawCode)}&bgcolor=ffffff&color=111b21&qzone=2&format=png`);
+          }
+
           setPairingCode(qrData.pairingCode || qrData.pairing_code || qrData.raw?.pairingCode || null);
           setCountdown(25);
         }
+      } else {
+        if (qrData.error) {
+          setErrorMessage(qrData.error);
+        }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('[WhatsApp Beta Connect Modal Error]:', err);
+      setErrorMessage(err?.message || 'Failed to connect to Evolution Engine');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, [workspaceId, onConnectionChange]);
 
-  // 2. Poll for connection when modal is open and not connected
+  // 3. Save Custom Server Config
+  const handleSaveConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!workspaceId || savingConfig) return;
+    setSavingConfig(true);
+    setConfigSuccess(false);
+
+    try {
+      const res = await fetch('/api/whatsapp-beta/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspace_id: workspaceId,
+          server_url: serverUrl,
+          api_key: apiKey,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setConfigSuccess(true);
+        setTimeout(() => setShowConfig(false), 800);
+        fetchStatusAndQr();
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to save configuration');
+    } finally {
+      setSavingConfig(false);
+    }
+  };
+
+  // 4. Poll for connection when modal is open and not connected
   useEffect(() => {
     if (isOpen) {
       setLoading(true);
+      fetchConfig();
       fetchStatusAndQr();
 
       // Poll connection status every 3s
@@ -92,9 +160,7 @@ export function WhatsAppBetaConnectModal({
             setQrCode(null);
             onConnectionChange?.('CONNECTED');
           } else if (data.qrcode && !qrCode) {
-            const rawQr = data.qrcode || data.base64;
-            const formattedQr = rawQr?.startsWith('data:') ? rawQr : rawQr ? `data:image/png;base64,${rawQr}` : null;
-            setQrCode(formattedQr);
+            setQrCode(data.qrcode);
           }
         } catch (_) {}
       }, 3000);
@@ -117,9 +183,9 @@ export function WhatsAppBetaConnectModal({
     } else {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     }
-  }, [isOpen, workspaceId, fetchStatusAndQr, onConnectionChange, qrCode]);
+  }, [isOpen, workspaceId, fetchConfig, fetchStatusAndQr, onConnectionChange, qrCode]);
 
-  // 3. Disconnect handler
+  // 5. Disconnect handler
   const handleDisconnect = async () => {
     setDisconnecting(true);
     try {
@@ -167,20 +233,96 @@ export function WhatsAppBetaConnectModal({
               <p className="text-xs text-zinc-500 dark:text-zinc-400">Multi-Tenant 2-Way Realtime Web Sync</p>
             </div>
           </div>
-          <button 
-            onClick={onClose}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setShowConfig(!showConfig)}
+              title="Evolution Server Settings"
+              className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
+                showConfig ? 'bg-emerald-500/20 text-emerald-500' : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+              }`}
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={onClose}
+              className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
+
+        {/* Server Config Drawer */}
+        <AnimatePresence>
+          {showConfig && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/90 p-5 space-y-4 overflow-hidden"
+            >
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                  <Settings className="w-3.5 h-3.5 text-emerald-500" /> Evolution Server Settings
+                </h4>
+                {configSuccess && (
+                  <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1">
+                    <Check className="w-3 h-3" /> Saved!
+                  </span>
+                )}
+              </div>
+
+              <form onSubmit={handleSaveConfig} className="space-y-3">
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-zinc-400">Evolution Base URL</label>
+                  <input
+                    type="text"
+                    value={serverUrl}
+                    onChange={e => setServerUrl(e.target.value)}
+                    placeholder="http://127.0.0.1:8085 or https://evolution.yourdomain.com"
+                    className="w-full mt-1 px-3 py-1.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs text-zinc-900 dark:text-white placeholder-zinc-400 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-zinc-400">Global API Key</label>
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={e => setApiKey(e.target.value)}
+                    placeholder="studiocore_evo_secret_2026"
+                    className="w-full mt-1 px-3 py-1.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs text-zinc-900 dark:text-white placeholder-zinc-400 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowConfig(false)}
+                    className="px-3 py-1.5 text-xs text-zinc-500 font-semibold"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingConfig}
+                    className="px-4 py-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow transition-all flex items-center gap-1.5"
+                  >
+                    <Save className="w-3.5 h-3.5" /> {savingConfig ? 'Saving...' : 'Save & Connect'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Content Body */}
         <div className="p-6 space-y-6">
           {loading ? (
             <div className="py-16 flex flex-col items-center justify-center space-y-3">
               <RefreshCw className="w-8 h-8 text-emerald-500 animate-spin" />
-              <p className="text-xs font-semibold text-zinc-500">Initializing Evolution Engine & Instance...</p>
+              <p className="text-xs font-semibold text-zinc-500">Connecting to Evolution Engine...</p>
             </div>
           ) : connectionStatus === 'CONNECTED' ? (
             /* Connected State */
@@ -208,7 +350,7 @@ export function WhatsAppBetaConnectModal({
                 </div>
                 <div className="flex justify-between text-zinc-500">
                   <span>Instance ID:</span>
-                  <span className="font-mono text-zinc-800 dark:text-zinc-200">{instanceData?.instance_name || `ws_${workspaceId.slice(0, 8)}`}</span>
+                  <span className="font-mono text-zinc-800 dark:text-zinc-200">{instanceData?.instance_name || `ws_${workspaceId.replace(/[^a-zA-Z0-9]/g, '_')}`}</span>
                 </div>
                 <div className="flex justify-between text-zinc-500">
                   <span>Sync Status:</span>
@@ -237,6 +379,22 @@ export function WhatsAppBetaConnectModal({
           ) : (
             /* QR Pairing State */
             <div className="space-y-6">
+              {/* Error banner if unreachable */}
+              {errorMessage && !qrCode && (
+                <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-start gap-3 text-xs text-rose-600 dark:text-rose-400">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="font-semibold">{errorMessage}</p>
+                    <button
+                      onClick={() => setShowConfig(true)}
+                      className="text-[11px] underline font-bold hover:text-rose-700"
+                    >
+                      Configure Evolution Server URL & Key →
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="flex flex-col md:flex-row items-center gap-6">
                 {/* QR Code Container */}
                 <div className="relative p-3 rounded-2xl bg-white border border-zinc-200 shadow-md flex flex-col items-center justify-center w-64 h-64 shrink-0 overflow-hidden">
@@ -289,10 +447,13 @@ export function WhatsAppBetaConnectModal({
                         <button
                           onClick={() => {
                             navigator.clipboard?.writeText(pairingCode);
+                            setCopied(true);
+                            setTimeout(() => setCopied(false), 1500);
                           }}
-                          className="px-2 py-1 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-[10px] font-bold rounded-lg transition-all"
+                          className="px-2 py-1 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-[10px] font-bold rounded-lg transition-all flex items-center gap-1"
                         >
-                          Copy
+                          {copied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                          {copied ? 'Copied' : 'Copy'}
                         </button>
                       </div>
                     </div>
@@ -310,13 +471,21 @@ export function WhatsAppBetaConnectModal({
                   <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} /> Refresh QR Code
                 </button>
 
-                <Link
-                  href="/workspace/chat-beta"
-                  onClick={onClose}
-                  className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline font-bold flex items-center gap-1"
-                >
-                  Open Inbox Preview <ExternalLink className="w-3 h-3" />
-                </Link>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setShowConfig(!showConfig)}
+                    className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 font-semibold"
+                  >
+                    Server Settings
+                  </button>
+                  <Link
+                    href="/workspace/chat-beta"
+                    onClick={onClose}
+                    className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline font-bold flex items-center gap-1"
+                  >
+                    Open Inbox <ExternalLink className="w-3 h-3" />
+                  </Link>
+                </div>
               </div>
             </div>
           )}

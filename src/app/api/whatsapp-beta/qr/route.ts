@@ -1,19 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { resolveEvolutionConfig, getInstanceNameForWorkspace } from '@/lib/evolution-api';
 
 export const runtime = 'nodejs';
-
-const EVO_URL = (
-  process.env.EVOLUTION_API_URL ||
-  process.env.EVOLUTION_BASE_URL ||
-  'http://127.0.0.1:8085'
-).replace(/\/+$/, '');
-
-const EVO_KEY = (
-  process.env.EVOLUTION_API_KEY ||
-  process.env.EVOLUTION_GLOBAL_API_KEY ||
-  'studiocore_evo_secret_2026'
-);
 
 export async function GET(req: NextRequest) {
   try {
@@ -24,21 +13,36 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'workspace_id is required' }, { status: 400 });
     }
 
-    const instanceName = `ws_${workspaceId.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    const { baseUrl, apiKey, webhookUrl } = await resolveEvolutionConfig(workspaceId);
+    const instanceName = getInstanceNameForWorkspace(workspaceId);
 
     // 1. Ensure Instance Exists (Auto-provision)
     try {
-      await fetch(`${EVO_URL}/instance/create`, {
+      await fetch(`${baseUrl}/instance/create`, {
         method: 'POST',
         headers: {
-          'apikey': EVO_KEY,
+          'apikey': apiKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           instanceName: instanceName,
-          token: EVO_KEY,
+          token: apiKey,
           qrcode: true,
           integration: 'WHATSAPP-BAILEYS',
+          webhook: {
+            url: webhookUrl,
+            byEvents: false,
+            base64: false,
+            events: [
+              'MESSAGES_UPSERT',
+              'MESSAGES_UPDATE',
+              'CHATS_UPSERT',
+              'CHATS_SET',
+              'CONTACTS_SET',
+              'CONTACTS_UPSERT',
+              'CONNECTION_UPDATE',
+            ],
+          },
         }),
         cache: 'no-store',
       });
@@ -49,9 +53,9 @@ export async function GET(req: NextRequest) {
     // 2. Fetch Active Connection / QR State
     let connectRes: Response | null = null;
     try {
-      connectRes = await fetch(`${EVO_URL}/instance/connect/${instanceName}`, {
+      connectRes = await fetch(`${baseUrl}/instance/connect/${instanceName}`, {
         method: 'GET',
-        headers: { 'apikey': EVO_KEY },
+        headers: { 'apikey': apiKey },
         cache: 'no-store',
       });
     } catch (connectErr: any) {

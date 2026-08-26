@@ -4,6 +4,8 @@
  * QR generation, webhook auto-configuration, and zero-storage media dispatch.
  */
 
+import { supabaseAdmin } from '@/lib/supabase';
+
 export interface EvolutionConfig {
   baseUrl: string;
   apiKey: string;
@@ -22,6 +24,57 @@ export function getEvolutionConfig(): EvolutionConfig {
     process.env.EVOLUTION_GLOBAL_API_KEY ||
     'studiocore_evo_secret_2026'
   );
+
+  const appUrl = (
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.APP_URL ||
+    'https://studiocore.in'
+  ).replace(/\/+$/, '');
+
+  const webhookUrl = `${appUrl}/api/webhooks/evolution-beta`;
+
+  return { baseUrl, apiKey, webhookUrl };
+}
+
+export async function resolveEvolutionConfig(workspaceId?: string): Promise<EvolutionConfig> {
+  let baseUrl = (
+    process.env.EVOLUTION_API_URL ||
+    process.env.EVOLUTION_BASE_URL ||
+    'http://127.0.0.1:8085'
+  ).replace(/\/+$/, '');
+
+  let apiKey = (
+    process.env.EVOLUTION_API_KEY ||
+    process.env.EVOLUTION_GLOBAL_API_KEY ||
+    'studiocore_evo_secret_2026'
+  );
+
+  if (workspaceId) {
+    try {
+      // 1. Check evolution_instances table
+      const { data: inst } = await supabaseAdmin
+        .from('evolution_instances')
+        .select('api_key, raw_payload')
+        .eq('workspace_id', workspaceId)
+        .maybeSingle();
+
+      if (inst?.api_key) apiKey = inst.api_key;
+      if (inst?.raw_payload?.server_url) baseUrl = inst.raw_payload.server_url.replace(/\/+$/, '');
+
+      // 2. Check integration_credentials
+      if (!inst?.raw_payload?.server_url) {
+        const { data: cred } = await supabaseAdmin
+          .from('integration_credentials')
+          .select('access_token, config')
+          .eq('user_id', workspaceId)
+          .eq('provider', 'evolution_whatsapp')
+          .maybeSingle();
+
+        if (cred?.access_token) apiKey = cred.access_token;
+        if (cred?.config?.server_url) baseUrl = cred.config.server_url.replace(/\/+$/, '');
+      }
+    } catch (_) {}
+  }
 
   const appUrl = (
     process.env.NEXT_PUBLIC_APP_URL ||
