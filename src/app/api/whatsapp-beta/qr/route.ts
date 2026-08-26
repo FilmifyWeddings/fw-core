@@ -104,6 +104,37 @@ export async function GET(req: NextRequest) {
         .then(() => {});
     }
 
+    // 3. Fallback: If no Evolution QR yet, check if workspace has an active Baileys session
+    if (!finalQrImage && !isConnected) {
+      try {
+        const { data: bSession } = await supabaseAdmin
+          .from('baileys_sessions')
+          .select('*')
+          .eq('user_id', workspaceId)
+          .maybeSingle();
+
+        if (bSession) {
+          const isBConnected = (bSession.conn_state === 'open' || bSession.status === 'CONNECTED' || bSession.status === 'open') && !!bSession.phone_number;
+          if (isBConnected) {
+            return NextResponse.json({
+              success: true,
+              instanceName,
+              instance_name: instanceName,
+              state: 'CONNECTED',
+              is_connected: true,
+              phone_number: bSession.phone_number,
+              connection_status: 'CONNECTED',
+            });
+          }
+
+          if (bSession.qr_string) {
+            finalQrImage = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(bSession.qr_string)}&bgcolor=ffffff&color=111b21&qzone=2&format=png`;
+            rawCodeString = bSession.qr_string;
+          }
+        }
+      } catch (_) {}
+    }
+
     return NextResponse.json({
       success: true,
       instanceName,

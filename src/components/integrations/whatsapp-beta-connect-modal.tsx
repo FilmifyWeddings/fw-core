@@ -381,15 +381,29 @@ export function WhatsAppBetaConnectModal({
             <div className="space-y-6">
               {/* Error banner if unreachable */}
               {errorMessage && !qrCode && (
-                <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-start gap-3 text-xs text-rose-600 dark:text-rose-400">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <div className="space-y-1">
-                    <p className="font-semibold">{errorMessage}</p>
+                <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 space-y-2 text-xs text-amber-700 dark:text-amber-300">
+                  <div className="flex items-start gap-2.5">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                    <div>
+                      <p className="font-bold text-xs">Evolution API Server Not Connected</p>
+                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
+                        VPS microservice is currently offline. You can connect using the built-in <b>Direct WhatsApp Engine</b> (Zero Setup) or configure your VPS Server URL.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 pt-1 border-t border-amber-500/10">
+                    <Link
+                      href="/dashboard/integrations/whatsapp-web"
+                      onClick={onClose}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[11px] flex items-center gap-1 shadow transition-all"
+                    >
+                      ⚡ Connect Direct Engine (Zero VPS Setup) →
+                    </Link>
                     <button
                       onClick={() => setShowConfig(true)}
-                      className="text-[11px] underline font-bold hover:text-rose-700"
+                      className="px-2.5 py-1.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg font-semibold text-[11px] text-zinc-700 dark:text-zinc-300 transition-all"
                     >
-                      Configure Evolution Server URL & Key →
+                      ⚙️ VPS Settings
                     </button>
                   </div>
                 </div>
