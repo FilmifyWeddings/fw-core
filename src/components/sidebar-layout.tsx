@@ -258,9 +258,9 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       iconBg: 'bg-[#E0F2FE] text-[#0284C7]',
     },
     {
-      id: 'team-manager',
-      name: 'Team Manager',
-      path: '/team-manager',
+      id: 'team',
+      name: 'Team & Partners',
+      path: '/workspace/team',
       icon: Users2,
       iconBg: 'bg-[#EDE9FE] text-[#6366F1]',
     },
@@ -323,6 +323,13 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       icon: Film,
       iconBg: 'bg-[#FFE4E6] text-[#E11D48]',
     },
+    ...(permissions?.team_manager_access && permissions.team_manager_access === 'MANAGE_ALL' ? [{
+      id: 'team',
+      name: 'Team & Partners',
+      path: '/workspace/team',
+      icon: Users2,
+      iconBg: 'bg-[#EDE9FE] text-[#6366F1]',
+    }] : []),
     ...(permissions?.leads_access && permissions.leads_access !== 'NONE' ? [{
       id: 'leads',
       name: 'Leads (Assigned)',
