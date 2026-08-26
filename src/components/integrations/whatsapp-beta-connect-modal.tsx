@@ -51,18 +51,20 @@ export function WhatsAppBetaConnectModal({
         }
       }
 
-      // Fetch QR if not connected
+      // Fetch QR from /api/whatsapp-beta/qr
       const qrRes = await fetch(`/api/whatsapp-beta/qr?workspace_id=${workspaceId}`);
       const qrData = await qrRes.json();
 
       if (qrData.success) {
-        if (qrData.is_connected) {
+        if (qrData.is_connected || qrData.state === 'open' || qrData.state === 'CONNECTED' || qrData.connection_status === 'CONNECTED') {
           setConnectionStatus('CONNECTED');
           setQrCode(null);
           onConnectionChange?.('CONNECTED');
         } else {
-          setQrCode(qrData.qrcode || null);
-          setPairingCode(qrData.pairing_code || null);
+          const rawQr = qrData.qrcode || qrData.base64 || qrData.raw?.qrcode?.base64 || qrData.raw?.base64 || null;
+          const formattedQr = rawQr?.startsWith('data:') ? rawQr : rawQr ? `data:image/png;base64,${rawQr}` : null;
+          setQrCode(formattedQr);
+          setPairingCode(qrData.pairingCode || qrData.pairing_code || qrData.raw?.pairingCode || null);
           setCountdown(25);
         }
       }
@@ -80,18 +82,22 @@ export function WhatsAppBetaConnectModal({
       setLoading(true);
       fetchStatusAndQr();
 
-      // Poll connection status every 4s
+      // Poll connection status every 3s
       pollIntervalRef.current = setInterval(async () => {
         try {
-          const res = await fetch(`/api/whatsapp-beta/instance?workspace_id=${workspaceId}`);
+          const res = await fetch(`/api/whatsapp-beta/qr?workspace_id=${workspaceId}`);
           const data = await res.json();
-          if (data.success && data.connection_status === 'CONNECTED') {
+          if (data.success && (data.is_connected || data.state === 'open' || data.connection_status === 'CONNECTED')) {
             setConnectionStatus('CONNECTED');
             setQrCode(null);
             onConnectionChange?.('CONNECTED');
+          } else if (data.qrcode && !qrCode) {
+            const rawQr = data.qrcode || data.base64;
+            const formattedQr = rawQr?.startsWith('data:') ? rawQr : rawQr ? `data:image/png;base64,${rawQr}` : null;
+            setQrCode(formattedQr);
           }
         } catch (_) {}
-      }, 4000);
+      }, 3000);
 
       // Countdown ticker for QR refresh
       const countdownInterval = setInterval(() => {
@@ -111,7 +117,7 @@ export function WhatsAppBetaConnectModal({
     } else {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     }
-  }, [isOpen, workspaceId, fetchStatusAndQr, onConnectionChange]);
+  }, [isOpen, workspaceId, fetchStatusAndQr, onConnectionChange, qrCode]);
 
   // 3. Disconnect handler
   const handleDisconnect = async () => {
@@ -233,17 +239,17 @@ export function WhatsAppBetaConnectModal({
             <div className="space-y-6">
               <div className="flex flex-col md:flex-row items-center gap-6">
                 {/* QR Code Container */}
-                <div className="relative p-3 rounded-2xl bg-white border border-zinc-200 shadow-md flex items-center justify-center w-52 h-52 shrink-0">
+                <div className="relative p-3 rounded-2xl bg-white border border-zinc-200 shadow-md flex items-center justify-center w-60 h-60 shrink-0">
                   {qrCode ? (
                     <img 
-                      src={qrCode.startsWith('data:') ? qrCode : `data:image/png;base64,${qrCode}`} 
-                      alt="WhatsApp Web QR Code" 
-                      className="w-full h-full object-contain rounded-xl"
+                      src={qrCode} 
+                      alt="Scan QR" 
+                      className="w-full h-full object-contain rounded-lg"
                     />
                   ) : (
                     <div className="flex flex-col items-center justify-center text-zinc-400 space-y-2">
-                      <QrCode className="w-10 h-10 animate-pulse" />
-                      <span className="text-[10px] font-medium">Generating QR...</span>
+                      <QrCode className="w-10 h-10 animate-pulse text-emerald-500" />
+                      <span className="text-[11px] font-medium text-zinc-500">Generating QR...</span>
                     </div>
                   )}
 
