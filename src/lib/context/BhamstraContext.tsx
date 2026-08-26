@@ -157,6 +157,7 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
           .select(`
             id,
             workspace_id,
+            user_id,
             email,
             name,
             primary_role,
@@ -164,11 +165,15 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
             status,
             avatar_url
           `)
-          .or(`email.eq.${uEmail},user_id.eq.${uId}`)
-          .eq('status', 'ACTIVE');
+          .or(`email.ilike.${uEmail},user_id.eq.${uId}`);
 
         if (!memErr && memberships && memberships.length > 0) {
           for (const mem of memberships) {
+            // Auto-link user_id if this invited email is now logged in
+            if ((!mem.user_id || mem.user_id !== uId) && mem.email?.toLowerCase() === uEmail.toLowerCase()) {
+              supabase.from('workspace_members').update({ user_id: uId, status: 'ACTIVE' }).eq('id', mem.id).then(() => {});
+            }
+
             // Skip if this is their own workspace
             if (mem.workspace_id === uId) continue;
 

@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, UserPlus, Sparkles, User, Briefcase, Phone, Mail, 
   Camera, Loader2, ShieldCheck, ChevronDown, ChevronUp,
-  Target, FileText, Users2, Film, IndianRupee, Check
+  Target, FileText, Users2, Film, IndianRupee, Check,
+  AlertTriangle, AlertCircle, CheckCircle2, Search
 } from 'lucide-react';
 import CountryFlagPhoneInput from './CountryFlagPhoneInput';
 import { supabase } from '@/lib/supabase';
@@ -46,7 +47,7 @@ export default function AddTeamMemberModal({
   initialRole = 'Photographer',
   onSave,
 }: AddTeamMemberModalProps) {
-  const { workspaceId } = useWorkspace();
+  const { workspaceId, userEmail, userId } = useWorkspace();
   const [name, setName] = useState('');
   const [primaryRole, setPrimaryRole] = useState(initialRole);
   const [selectedRoles, setSelectedRoles] = useState<string[]>([initialRole]);
@@ -58,6 +59,16 @@ export default function AddTeamMemberModal({
   const [loading, setLoading] = useState(false);
   const [showPermissions, setShowPermissions] = useState(false);
 
+  // Existing Workspace Members for duplicate detection
+  const [existingMembers, setExistingMembers] = useState<Array<{ email?: string; phone?: string }>>([]);
+
+  // Auto-Suggest Directory Search
+  const [searchResults, setSearchResults] = useState<Array<any>>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [isRegisteredUser, setIsRegisteredUser] = useState(false);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   // Granular Permissions Matrix State
   const [leadsAccess, setLeadsAccess] = useState<'NONE' | 'ASSIGNED_ONLY' | 'VIEW_ALL' | 'FULL_EDIT'>('NONE');
   const [quotationsAccess, setQuotationsAccess] = useState<'NONE' | 'VIEW_ONLY' | 'MANAGE'>('NONE');
@@ -65,13 +76,38 @@ export default function AddTeamMemberModal({
   const [postProductionAccess, setPostProductionAccess] = useState<'NONE' | 'ASSIGNED_ONLY' | 'FULL_ACCESS'>('ASSIGNED_ONLY');
   const [financeAccess, setFinanceAccess] = useState<'NONE' | 'VIEW_ONLY' | 'MANAGE'>('NONE');
 
+  // Load existing workspace members to check duplicates
+  useEffect(() => {
+    if (isOpen && workspaceId) {
+      (async () => {
+        try {
+          const { data: wm } = await supabase
+            .from('workspace_members')
+            .select('email, phone')
+            .eq('workspace_id', workspaceId);
+
+          const { data: ftm } = await supabase
+            .from('fw_team_members')
+            .select('email, phone_number')
+            .eq('user_id', userId || '');
+
+          const combined = [
+            ...(wm || []),
+            ...(ftm || []).map(f => ({ email: f.email, phone: f.phone_number }))
+          ];
+          setExistingMembers(combined);
+        } catch (_) {}
+      })();
+    }
+  }, [isOpen, workspaceId, userId]);
+
   useEffect(() => {
     if (memberToEdit && isOpen) {
       setName(memberToEdit.name || '');
       setPrimaryRole(memberToEdit.primary_role || initialRole);
       setSelectedRoles(memberToEdit.roles || [memberToEdit.primary_role || initialRole]);
       setCountryCode(memberToEdit.country_code || '+91');
-      setPhoneNumber(memberToEdit.phone_number || '');
+      setPhoneNumber(memberToEdit.phone_number || memberToEdit.phone || '');
       setEmail(memberToEdit.email || '');
       setAvatarUrl(memberToEdit.avatar_url || '');
 
@@ -81,6 +117,7 @@ export default function AddTeamMemberModal({
       setTeamManagerAccess(perms.team_manager_access || 'VIEW_ASSIGNED');
       setPostProductionAccess(perms.post_production_access || 'ASSIGNED_ONLY');
       setFinanceAccess(perms.finance_access || 'NONE');
+      setIsRegisteredUser(true);
     } else if (isOpen) {
       setName('');
       setPrimaryRole(initialRole);
@@ -94,8 +131,80 @@ export default function AddTeamMemberModal({
       setTeamManagerAccess('VIEW_ASSIGNED');
       setPostProductionAccess('ASSIGNED_ONLY');
       setFinanceAccess('NONE');
+      setIsRegisteredUser(false);
+      setSearchResults([]);
     }
   }, [memberToEdit, isOpen, initialRole]);
+
+  // Real-time Email Directory Search (Debounced)
+  const handleEmailChange = (val: string) => {
+    setEmail(val);
+    setIsRegisteredUser(false);
+
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+
+    const query = val.trim().toLowerCase();
+    if (query.length < 2 || memberToEdit) {
+      setSearchResults([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    setIsSearching(true);
+    searchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        if (!token) return;
+
+        const res = await fetch(`/api/workspace/users/search?q=${encodeURIComponent(query)}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const json = await res.json();
+        if (json.success && Array.isArray(json.users)) {
+          setSearchResults(json.users);
+          setShowSuggestions(json.users.length > 0);
+        }
+      } catch (err) {
+        console.error('[AddTeamMemberModal] Directory search failed:', err);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 250);
+  };
+
+  // Select User from Directory Suggestion
+  const handleSelectUser = (u: any) => {
+    setEmail(u.email);
+    if (u.name) setName(u.name);
+    if (u.phone) {
+      const cleanPhone = u.phone.replace(/\D/g, '');
+      if (cleanPhone.length >= 10) {
+        setPhoneNumber(cleanPhone.slice(-10));
+      } else {
+        setPhoneNumber(u.phone);
+      }
+    }
+    if (u.avatar_url) setAvatarUrl(u.avatar_url);
+    setIsRegisteredUser(true);
+    setShowSuggestions(false);
+    setSearchResults([]);
+  };
+
+  // Validations
+  const cleanEnteredEmail = email.trim().toLowerCase();
+  const cleanEnteredPhone = phoneNumber.trim().replace(/\D/g, '');
+  const cleanOwnerEmail = (userEmail || '').trim().toLowerCase();
+
+  // 1. Self-Add Validation: Cannot add self (Owner)
+  const isSelfEmail = Boolean(cleanOwnerEmail && cleanEnteredEmail && cleanEnteredEmail === cleanOwnerEmail);
+
+  // 2. Duplicate Check in same workspace
+  const isDuplicateEmail = Boolean(
+    !memberToEdit && 
+    cleanEnteredEmail && 
+    existingMembers.some(m => m.email && m.email.trim().toLowerCase() === cleanEnteredEmail)
+  );
 
   const toggleRole = (roleId: string) => {
     setSelectedRoles(prev => {
@@ -181,7 +290,7 @@ export default function AddTeamMemberModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || isSelfEmail || isDuplicateEmail) return;
 
     setLoading(true);
     try {
@@ -205,7 +314,7 @@ export default function AddTeamMemberModal({
         permissions: permissionsObj,
       });
 
-      // 2. Persist to Multi-Tenant Database API if email is present and workspace is available
+      // 2. Persist to Multi-Tenant Database API
       if (email.trim() && workspaceId) {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.access_token) {
@@ -267,7 +376,7 @@ export default function AddTeamMemberModal({
                   {memberToEdit ? 'Edit Team Member / Partner' : 'Add Team Member / Partner'}
                 </h3>
                 <p className="text-[11px] text-zinc-400 font-medium mt-0.5">
-                  Multi-Role Tagging &amp; Granular Permission Matrix
+                  Global Directory Search &amp; Multi-Role RBAC Matrix
                 </p>
               </div>
             </div>
@@ -281,7 +390,121 @@ export default function AddTeamMemberModal({
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-5">
-            {/* Avatar & Basic Info */}
+            
+            {/* Self-Add Warning Banner */}
+            {isSelfEmail && (
+              <div className="p-3 bg-rose-50 rounded-2xl border border-rose-200 flex items-start gap-2.5 text-xs text-rose-800">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold">Cannot Add Yourself as Team Member</p>
+                  <p className="text-[11px] text-rose-700 mt-0.5">
+                    Aap already is Studio ke <strong>👑 Studio Owner</strong> hain. Team members me sirf aapke freelancers, crew, ya lab vendors ka email add karein.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Duplicate Member Warning Banner */}
+            {isDuplicateEmail && (
+              <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 flex items-start gap-2.5 text-xs text-amber-800">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold">Team Member Already Exists</p>
+                  <p className="text-[11px] text-amber-700 mt-0.5">
+                    Yeh email (<strong>{cleanEnteredEmail}</strong>) aapke studio me pehle se added hai. Duplicate banane ki jagah aap unhe edit kar sakte hain.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Email Directory Search & Autocomplete */}
+            <div className="space-y-1.5 relative">
+              <label className="text-[11px] font-bold text-zinc-700 flex items-center justify-between">
+                <span className="flex items-center gap-1">
+                  <Mail className="w-3 h-3 text-zinc-400" />
+                  <span>Email (For Partner Portal Login) *</span>
+                </span>
+                {isRegisteredUser && (
+                  <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" />
+                    Registered StudioCore User
+                  </span>
+                )}
+              </label>
+
+              <div className="relative">
+                <input
+                  type="email"
+                  required
+                  placeholder="Type email to search StudioCore directory..."
+                  value={email}
+                  onChange={(e) => handleEmailChange(e.target.value)}
+                  onFocus={() => searchResults.length > 0 && setShowSuggestions(true)}
+                  className="w-full px-3.5 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-semibold text-zinc-900 focus:bg-white focus:border-amber-500 focus:outline-hidden transition"
+                />
+                {isSearching && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <Loader2 className="w-3.5 h-3.5 text-amber-600 animate-spin" />
+                  </div>
+                )}
+              </div>
+
+              {/* Suggestions Dropdown */}
+              <AnimatePresence>
+                {showSuggestions && searchResults.length > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -5 }}
+                    className="absolute left-0 right-0 top-full mt-1 bg-white rounded-2xl shadow-xl border border-zinc-200 z-30 overflow-hidden divide-y divide-zinc-100 max-h-48 overflow-y-auto"
+                  >
+                    <div className="px-3 py-1.5 bg-zinc-50 text-[10px] font-black text-zinc-400 uppercase tracking-wider">
+                      StudioCore Verified Users Found
+                    </div>
+                    {searchResults.map((u) => (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onClick={() => handleSelectUser(u)}
+                        className="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-amber-50/80 transition text-left cursor-pointer group"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 font-bold text-xs flex items-center justify-center shrink-0 overflow-hidden">
+                            {u.avatar_url ? (
+                              <img src={u.avatar_url} alt={u.name} className="w-full h-full object-cover" />
+                            ) : (
+                              u.name.slice(0, 2).toUpperCase()
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-zinc-900 group-hover:text-amber-900 truncate">
+                              {u.name}
+                            </p>
+                            <p className="text-[10px] text-zinc-400 truncate">
+                              {u.email} {u.phone ? `• ${u.phone}` : ''}
+                            </p>
+                          </div>
+                        </div>
+
+                        <span className="text-[10px] font-bold text-amber-600 group-hover:translate-x-0.5 transition-transform shrink-0">
+                          Auto-Fill ↵
+                        </span>
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Unregistered User Helper Info */}
+              {!isRegisteredUser && cleanEnteredEmail && !isSearching && searchResults.length === 0 && !isSelfEmail && !isDuplicateEmail && (
+                <p className="text-[10px] text-zinc-400 font-medium pt-0.5 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3 text-amber-500 shrink-0" />
+                  <span>Naya user: Jab yeh person StudioCore par signup/login karenge, yeh studio unke dashboard me automatically link ho jayega.</span>
+                </p>
+              )}
+            </div>
+
+            {/* Avatar & Full Name */}
             <div className="flex items-center gap-4">
               <div className="relative group shrink-0">
                 <div className="w-16 h-16 rounded-2xl bg-zinc-100 border-2 border-dashed border-zinc-200 flex items-center justify-center overflow-hidden">
@@ -320,34 +543,18 @@ export default function AddTeamMemberModal({
               </div>
             </div>
 
-            {/* Email & Phone */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-zinc-600 flex items-center gap-1">
-                  <Mail className="w-3 h-3 text-zinc-400" />
-                  <span>Email (For Partner Portal Login)</span>
-                </label>
-                <input
-                  type="email"
-                  placeholder="rahul@gmail.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-semibold text-zinc-900 focus:bg-white focus:border-amber-500 focus:outline-hidden transition"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-zinc-600 flex items-center gap-1">
-                  <Phone className="w-3 h-3 text-zinc-400" />
-                  <span>Mobile Phone</span>
-                </label>
-                <CountryFlagPhoneInput
-                  countryCode={countryCode}
-                  phoneNumber={phoneNumber}
-                  onCountryCodeChange={setCountryCode}
-                  onPhoneNumberChange={setPhoneNumber}
-                />
-              </div>
+            {/* Mobile Phone */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-zinc-600 flex items-center gap-1">
+                <Phone className="w-3 h-3 text-zinc-400" />
+                <span>Mobile Phone</span>
+              </label>
+              <CountryFlagPhoneInput
+                countryCode={countryCode}
+                phoneNumber={phoneNumber}
+                onCountryCodeChange={setCountryCode}
+                onPhoneNumberChange={setPhoneNumber}
+              />
             </div>
 
             {/* Multi-Role Badges Selection */}
@@ -511,7 +718,7 @@ export default function AddTeamMemberModal({
               </button>
               <button
                 type="submit"
-                disabled={loading || !name.trim()}
+                disabled={loading || !name.trim() || isSelfEmail || isDuplicateEmail}
                 className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white text-xs font-bold shadow-md shadow-amber-500/20 transition cursor-pointer flex items-center gap-2"
               >
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
