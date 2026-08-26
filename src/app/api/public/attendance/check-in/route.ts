@@ -82,11 +82,14 @@ export async function POST(request: NextRequest) {
     let allowedRadius = mRadius || 150;
 
     const isGeofenceExempt = Boolean(
-      member.is_geofence_exempt || 
+      member.is_geofence_exempt === true || 
       member.geofence_required === false || 
-      custom.is_geofence_exempt || 
-      custom.allow_anywhere || 
-      (parsedNotes as any).is_geofence_exempt
+      custom.is_geofence_exempt === true || 
+      custom.allow_anywhere === true || 
+      custom.geofence_required === false ||
+      (parsedNotes as any).is_geofence_exempt === true ||
+      (parsedNotes as any).allow_anywhere === true ||
+      (parsedNotes as any).geofence_required === false
     );
 
     if (isGeofenceExempt) {

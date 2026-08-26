@@ -134,12 +134,32 @@ export async function GET(request: NextRequest) {
       if (member.notes && member.notes.startsWith('{')) parsedNotes = JSON.parse(member.notes);
     } catch (_) {}
 
+    const isMemberExempt = Boolean(
+      member.is_geofence_exempt === true ||
+      member.geofence_required === false ||
+      custom.is_geofence_exempt === true ||
+      custom.allow_anywhere === true ||
+      custom.geofence_required === false ||
+      (parsedNotes as any).is_geofence_exempt === true ||
+      (parsedNotes as any).allow_anywhere === true ||
+      (parsedNotes as any).geofence_required === false
+    );
+
     const mLat = Number(member.latitude) || Number(custom.latitude) || Number((parsedNotes as any).latitude);
     const mLng = Number(member.longitude) || Number(custom.longitude) || Number((parsedNotes as any).longitude);
     const mRadius = Number(member.radius_meters) || Number(custom.radius_meters) || Number((parsedNotes as any).radius_meters) || 150;
     const mLocName = member.location_name || custom.location_name || (parsedNotes as any).location_name || 'Assigned Studio/Office';
 
-    if (mLat && mLng) {
+    if (isMemberExempt) {
+      locations = [{
+        id: 'loc_exempt',
+        name: 'Anywhere (Remote Authorized)',
+        latitude: mLat || 19.0596,
+        longitude: mLng || 72.8295,
+        radius_meters: 50000000, // 50,000 km (covers entire earth)
+        address: 'Remote / Unlimited Perimeter'
+      }];
+    } else if (mLat && mLng) {
       const staffLoc = {
         id: `staff_${member.id}`,
         name: mLocName,

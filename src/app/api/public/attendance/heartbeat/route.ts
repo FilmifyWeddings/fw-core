@@ -90,7 +90,29 @@ export async function POST(request: NextRequest) {
     let allowedRadius = member?.radius_meters ? Number(member.radius_meters) : 150;
     let matchedLocationName = '';
 
-    if (locations.length > 0 && lat && lng) {
+    const custom = (member?.custom_data as any) || {};
+    let parsedNotes = {};
+    try {
+      if (member?.notes && member.notes.startsWith('{')) parsedNotes = JSON.parse(member.notes);
+    } catch (_) {}
+
+    const isMemberExempt = Boolean(
+      member?.is_geofence_exempt === true ||
+      member?.geofence_required === false ||
+      custom.is_geofence_exempt === true ||
+      custom.allow_anywhere === true ||
+      custom.geofence_required === false ||
+      (parsedNotes as any).is_geofence_exempt === true ||
+      (parsedNotes as any).allow_anywhere === true ||
+      (parsedNotes as any).geofence_required === false
+    );
+
+    if (isMemberExempt) {
+      isInside = true;
+      minDistance = 0;
+      allowedRadius = 99999;
+      matchedLocationName = 'Remote / Anywhere';
+    } else if (locations.length > 0 && lat && lng) {
       for (const loc of locations) {
         const dist = calculateHaversineDistanceMeters(
           Number(lat),

@@ -54,6 +54,30 @@ export default function PersonalAttendancePage() {
   const [successAnimation, setSuccessAnimation] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Check if member is exempt from geofence checks (support direct column, custom_data, and notes JSON)
+  const isGeofenceExempt = useMemo(() => {
+    if (!member) return false;
+    let parsedNotes: any = {};
+    try {
+      if (member.notes && typeof member.notes === 'string' && member.notes.startsWith('{')) {
+        parsedNotes = JSON.parse(member.notes);
+      }
+    } catch (_) {}
+
+    const custom = (member.custom_data as any) || {};
+
+    return Boolean(
+      member.is_geofence_exempt === true ||
+      member.geofence_required === false ||
+      custom.is_geofence_exempt === true ||
+      custom.allow_anywhere === true ||
+      custom.geofence_required === false ||
+      parsedNotes.is_geofence_exempt === true ||
+      parsedNotes.allow_anywhere === true ||
+      parsedNotes.geofence_required === false
+    );
+  }, [member]);
+
   // Modals state
   const [showLeaveModal, setShowLeaveModal] = useState(false);
   const [leaveSubmitting, setLeaveSubmitting] = useState(false);
@@ -150,16 +174,28 @@ export default function PersonalAttendancePage() {
         locations
       );
 
-      setGeofenceResult(validation);
       setCurrentDistanceMeters(validation.distanceMeters);
       setCurrentAllowedRadius(validation.allowedRadiusMeters);
 
-      if (validation.isWithinGeofence) {
+      if (isGeofenceExempt) {
         setIsInsideGeofence(true);
         setLastExitTime(null);
+        setGeofenceResult({
+          isWithinGeofence: true,
+          distanceMeters: validation.distanceMeters,
+          allowedRadiusMeters: 99999,
+          message: `✓ Remote Authorized (Punch allowed anywhere)`,
+          nearestLocationName: validation.nearestLocationName || 'Remote Location'
+        });
       } else {
-        setIsInsideGeofence(false);
-        setLastExitTime(prev => prev || new Date().toISOString());
+        setGeofenceResult(validation);
+        if (validation.isWithinGeofence) {
+          setIsInsideGeofence(true);
+          setLastExitTime(null);
+        } else {
+          setIsInsideGeofence(false);
+          setLastExitTime(prev => prev || new Date().toISOString());
+        }
       }
     };
 
@@ -175,7 +211,7 @@ export default function PersonalAttendancePage() {
         navigator.geolocation.clearWatch(watchIdRef.current);
       }
     };
-  }, [locations]);
+  }, [locations, isGeofenceExempt]);
 
   // Periodic Heartbeat Sync (every 60s when clocked in)
   useEffect(() => {
@@ -228,6 +264,7 @@ export default function PersonalAttendancePage() {
           await removeOfflinePunch(p.id);
         }
         setOfflineQueueCount(0);
+        checkOfflineQueueCount();
         fetchSession();
       }
     } catch (_) {}
@@ -253,8 +290,8 @@ export default function PersonalAttendancePage() {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: 'user',
-          width: { ideal: 640 },
-          height: { ideal: 480 }
+          width: { ideal: 720 },
+          height: { ideal: 960 }
         },
         audio: false
       });
@@ -265,8 +302,8 @@ export default function PersonalAttendancePage() {
       }
       setCameraActive(true);
     } catch (err: any) {
-      console.error('Camera access error:', err);
-      setCameraError('Camera access denied or unavailable. Please enable camera permission.');
+      console.warn('Front camera stream error:', err);
+      setCameraError('Camera access required for facial biometric verification. Please allow camera permissions.');
       setCameraActive(false);
     }
   };
@@ -281,12 +318,12 @@ export default function PersonalAttendancePage() {
 
   // GPS Acquisition Helper
   const acquireGPS = () => {
-    setGpsError(null);
     if (!navigator.geolocation) {
-      setGpsError('Geolocation is not supported on this browser.');
+      setGpsError('Geolocation is not supported by your browser.');
       return;
     }
 
+    setGpsError(null);
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const coords = {
@@ -300,10 +337,22 @@ export default function PersonalAttendancePage() {
           { latitude: coords.lat, longitude: coords.lng },
           locations
         );
-        setGeofenceResult(res);
-        setIsInsideGeofence(res.isWithinGeofence);
         setCurrentDistanceMeters(res.distanceMeters);
         setCurrentAllowedRadius(res.allowedRadiusMeters);
+
+        if (isGeofenceExempt) {
+          setIsInsideGeofence(true);
+          setGeofenceResult({
+            isWithinGeofence: true,
+            distanceMeters: res.distanceMeters,
+            allowedRadiusMeters: 99999,
+            message: `✓ Remote Authorized (Punch allowed anywhere)`,
+            nearestLocationName: res.nearestLocationName || 'Remote Location'
+          });
+        } else {
+          setGeofenceResult(res);
+          setIsInsideGeofence(res.isWithinGeofence);
+        }
       },
       (err) => {
         console.warn('GPS error code:', err.code, err.message);
@@ -323,8 +372,8 @@ export default function PersonalAttendancePage() {
   const handleExecutePunch = async () => {
     if (!showVerifyModal) return;
 
-    // Strict client-side Geofence blocker
-    if (geofenceResult && !geofenceResult.isWithinGeofence) {
+    // Strict client-side Geofence blocker (only for non-exempt staff)
+    if (!isGeofenceExempt && geofenceResult && !geofenceResult.isWithinGeofence) {
       setErrorMessage(`Outside Geofence (${geofenceResult.distanceMeters}m away). Check-in allowed only inside studio/venue perimeter (${geofenceResult.allowedRadiusMeters}m).`);
       return;
     }
@@ -572,13 +621,6 @@ export default function PersonalAttendancePage() {
     );
   }
 
-  const isGeofenceExempt = Boolean(
-    member?.is_geofence_exempt || 
-    member?.geofence_required === false || 
-    (member?.custom_data as any)?.is_geofence_exempt || 
-    (member?.custom_data as any)?.allow_anywhere
-  );
-
   const isCheckedIn = Boolean(todayRecord?.check_in_time && !todayRecord?.check_out_time);
   const isCheckedOut = Boolean(todayRecord?.check_out_time);
   const isPunchBlockedByGeofence = !isGeofenceExempt && Boolean(geofenceResult && !geofenceResult.isWithinGeofence);
@@ -673,12 +715,18 @@ export default function PersonalAttendancePage() {
         {/* Real-Time Out-of-Radius Auto-Pause Alert Banner */}
         {isCheckedIn && !isCheckedOut && (
           <div className={`mt-2.5 p-2.5 rounded-[12px] text-xs flex items-center justify-between border transition-all ${
-            isInsideGeofence 
+            isGeofenceExempt || isInsideGeofence 
               ? 'bg-[#E8F5E9] text-[#2E7D32] border-[#C8E6C9]'
               : 'bg-[#FFEBEE] text-[#C62828] border-[#FFCDD2] shadow-sm animate-pulse'
           }`}>
             <div className="flex items-center gap-2">
-              {isInsideGeofence ? (
+              {isGeofenceExempt ? (
+                <>
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#2E7D32] animate-ping" />
+                  <span className="font-bold">🟢 Remote Active</span>
+                  <span className="text-[10.5px] opacity-80">(Anywhere Punch Authorized)</span>
+                </>
+              ) : isInsideGeofence ? (
                 <>
                   <span className="w-2.5 h-2.5 rounded-full bg-[#2E7D32] animate-ping" />
                   <span className="font-bold">🟢 Active in Zone</span>
@@ -697,7 +745,7 @@ export default function PersonalAttendancePage() {
               )}
             </div>
             <span className="text-[10.5px] font-mono font-bold whitespace-nowrap pl-2">
-              {todayRecord?.break_duration_minutes ? `Paused: ${todayRecord.break_duration_minutes}m` : 'Live GPS'}
+              {isGeofenceExempt ? 'Remote GPS' : todayRecord?.break_duration_minutes ? `Paused: ${todayRecord.break_duration_minutes}m` : 'Live GPS'}
             </span>
           </div>
         )}
@@ -1093,16 +1141,28 @@ export default function PersonalAttendancePage() {
               </div>
 
               {gpsLocation ? (
-                <div>
-                  <div className="flex items-center gap-1.5 text-[11px] text-white/90">
-                    <span className="w-2 h-2 rounded-full bg-[#4CAF50]" />
-                    <span>Accuracy: ±{gpsLocation.accuracy}m</span>
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px] text-white/90">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-[#4CAF50] animate-pulse" />
+                      <span>Accuracy: ±{gpsLocation.accuracy}m</span>
+                    </div>
+                    <span className="font-mono text-[10.5px] text-amber-300 bg-black/50 px-2 py-0.5 rounded-md border border-amber-300/30 font-bold">
+                      📍 {gpsLocation.lat.toFixed(5)}, {gpsLocation.lng.toFixed(5)}
+                    </span>
                   </div>
-                  {geofenceResult && (
+                  {isGeofenceExempt ? (
+                    <div className="mt-1 text-[11px] font-bold text-[#81C784] bg-emerald-950/40 border border-emerald-500/30 px-2.5 py-1 rounded-lg flex items-center justify-between">
+                      <span>✓ Remote Authorized (Punch Allowed)</span>
+                      {currentDistanceMeters > 0 && (
+                        <span className="text-[10px] font-normal opacity-80">({currentDistanceMeters}m from base)</span>
+                      )}
+                    </div>
+                  ) : geofenceResult ? (
                     <div className={`mt-1 text-[11px] font-medium ${geofenceResult.isWithinGeofence ? 'text-[#81C784]' : 'text-[#FF8A80] font-bold'}`}>
                       {geofenceResult.message}
                     </div>
-                  )}
+                  ) : null}
                 </div>
               ) : (
                 <div className="flex items-center gap-1.5 text-white/70 text-[11px]">

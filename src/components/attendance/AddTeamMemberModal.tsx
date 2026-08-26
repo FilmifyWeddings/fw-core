@@ -362,6 +362,7 @@ export default function AddTeamMemberModal({
         daily_rate: parseFloat(dailyRate) || 0,
         monthly_salary: parseFloat(monthlySalary) || 0,
         custom_data: customDataObj,
+        notes: JSON.stringify(customDataObj),
         is_active: true,
         active_status: true,
         updated_at: new Date().toISOString()
@@ -406,6 +407,8 @@ export default function AddTeamMemberModal({
             phone_number: phoneNumber.trim(),
             email: safeEmail,
             avatar_url: avatarUrl || null,
+            custom_data: customDataObj,
+            notes: JSON.stringify(customDataObj),
             updated_at: new Date().toISOString()
           };
           const { data: fbData, error: fbErr } = await supabase
@@ -449,6 +452,8 @@ export default function AddTeamMemberModal({
             phone_number: phoneNumber.trim(),
             email: safeEmail,
             avatar_url: avatarUrl || null,
+            custom_data: customDataObj,
+            notes: JSON.stringify(customDataObj),
             created_at: new Date().toISOString()
           };
           const { data: fbData, error: fbErr } = await supabase
