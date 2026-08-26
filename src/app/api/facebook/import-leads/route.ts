@@ -109,23 +109,11 @@ export async function POST(req: NextRequest) {
     }
 
     let importedCount = 0;
+    let updatedCount = 0;
     let duplicateCount = 0;
 
     for (const lead of metaLeadsData) {
       const leadgenId = lead.id;
-
-      // Deduplication check: check if already exists in DB
-      const { data: existingLead } = await supabaseAdmin
-        .from('leads')
-        .select('id')
-        .eq('workspace_id', workspaceId)
-        .eq('meta_lead_id', leadgenId)
-        .maybeSingle();
-
-      if (existingLead) {
-        duplicateCount++;
-        continue;
-      }
 
       // Parse lead values
       let leadName = '';
@@ -160,6 +148,14 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
+      // Check if lead already exists for this specific workspace
+      const { data: existingLead } = await supabaseAdmin
+        .from('leads')
+        .select('id')
+        .eq('workspace_id', workspaceId)
+        .eq('meta_lead_id', leadgenId)
+        .maybeSingle();
+
       // Determine lead owner via auto-distribution
       let assignedOwner: string | null = null;
       try {
@@ -170,51 +166,62 @@ export async function POST(req: NextRequest) {
       // Score and classify lead
       const scoringResult = classifyLead(rawPayload);
 
-      // Save Lead to Supabase
+      // Save Lead to Supabase with multi-tenant upsert on (workspace_id, meta_lead_id)
+      const leadRecord = {
+        workspace_id:      workspaceId,
+        tenant_id:         workspaceId,
+        name:              leadName  || null,
+        email:             leadEmail || null,
+        phone:             leadPhone,
+        source:            'facebook',
+        status:            'new' as LeadStatus,
+        score:             scoringResult.score,
+        score_reason:      scoringResult.reason,
+        raw_payload:       rawPayload,
+        raw_meta_payload:  rawMetaPayload,
+        meta_lead_id:      leadgenId,
+        source_form_id:    form_id,
+        form_tag:          isTaggingEnabled && formName ? formName : null,
+        created_at:        lead.created_time || new Date().toISOString(),
+        updated_at:        new Date().toISOString(),
+      };
+
       const { data: insertedLead, error: insertErr } = await supabaseAdmin
         .from('leads')
-        .insert({
-          workspace_id:      workspaceId,
-          name:              leadName  || null,
-          email:             leadEmail || null,
-          phone:             leadPhone,
-          source:            'facebook',
-          status:            'new' as LeadStatus,
-          score:             scoringResult.score,
-          score_reason:      scoringResult.reason,
-          raw_payload:       rawPayload,
-          raw_meta_payload:  rawMetaPayload,
-          meta_lead_id:      leadgenId,
-          source_form_id:    form_id,
-          form_tag:          isTaggingEnabled && formName ? formName : null,
-          created_at:        lead.created_time || new Date().toISOString(),
-          updated_at:        new Date().toISOString(),
+        .upsert(leadRecord, {
+          onConflict: 'workspace_id,meta_lead_id',
+          ignoreDuplicates: false,
         })
         .select('*')
         .single();
 
       if (!insertErr && insertedLead) {
-        importedCount++;
+        if (existingLead) {
+          updatedCount++;
+        } else {
+          importedCount++;
+        }
         syncLeadToGoogleContacts(workspaceId, insertedLead).catch(e =>
           console.error('[FB Import Auto Google Contacts Sync Error]:', e)
         );
       } else if (insertErr) {
-        console.error('[FB Import Leads] DB Insert Error:', insertErr.message);
+        console.error('[FB Import Leads] DB Upsert Error:', insertErr.message);
       }
     }
 
     // Log the import event
-    if (importedCount > 0) {
+    if (importedCount > 0 || updatedCount > 0) {
       await supabaseAdmin.from('live_logs').insert({
         workspace_id: workspaceId,
         event_type: 'leads_imported',
-        message: `Imported ${importedCount} historical leads for form: "${formName || form_id}". Duplicates skipped: ${duplicateCount}.`,
+        message: `Synced leads for form: "${formName || form_id}". New imported: ${importedCount}, Updated: ${updatedCount}.`,
       });
     }
 
     return NextResponse.json({
       success: true,
       imported_count: importedCount,
+      updated_count: updatedCount,
       duplicate_count: duplicateCount,
       total_found: metaLeadsData.length,
     });

@@ -186,20 +186,25 @@ export default function LeadsPage() {
     checkAuth();
   }, [router]);
 
-  // Settings sync listener
+  // Settings & Leads sync listener
   useEffect(() => {
     const handleSync = () => {
       if (userId) {
+        console.log('[Leads CRM] Triggering instant reload due to sync/update event.');
         loadLeadsAndPreferences(userId);
       }
     };
     if (typeof window !== 'undefined') {
       window.addEventListener('settings_updated', handleSync);
+      window.addEventListener('leads_updated', handleSync);
+      window.addEventListener('meta_sync_completed', handleSync);
       window.addEventListener('storage', handleSync);
     }
     return () => {
       if (typeof window !== 'undefined') {
         window.removeEventListener('settings_updated', handleSync);
+        window.removeEventListener('leads_updated', handleSync);
+        window.removeEventListener('meta_sync_completed', handleSync);
         window.removeEventListener('storage', handleSync);
       }
     };

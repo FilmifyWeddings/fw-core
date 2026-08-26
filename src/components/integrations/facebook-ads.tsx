@@ -541,11 +541,24 @@ function PagesTab({
       });
       const data = await res.json();
       if (data.success) {
+        const newCount = data.imported_count || 0;
+        const updCount = data.updated_count || 0;
+        const msg = updCount > 0 
+          ? `Synced ${newCount} new leads (${updCount} updated, ${data.duplicate_count || 0} duplicates skipped)!`
+          : `Imported ${newCount} leads! (Skipped ${data.duplicate_count || 0} duplicates)`;
+
         setImportResult(prev => ({
           ...prev,
-          [form.form_id]: `Imported ${data.imported_count} leads! (Skipped ${data.duplicate_count} duplicates)`
+          [form.form_id]: msg
         }));
         fetchForms(selectedPageId);
+
+        // 🧹 Instant Lead CRM Cache Invalidation & Refetch
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('leads_updated', { detail: { workspaceId, count: newCount } }));
+          window.dispatchEvent(new CustomEvent('settings_updated', { detail: { workspaceId } }));
+          window.dispatchEvent(new Event('storage'));
+        }
       } else {
         setImportResult(prev => ({
           ...prev,

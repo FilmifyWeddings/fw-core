@@ -146,25 +146,19 @@ export async function POST(req: NextRequest) {
     }
 
     // Format all leads in memory
-    const formattedLeads: any[] = [];
     for (const leadItem of allLeads) {
       const leadgenId = leadItem.id;
       if (!leadgenId) continue;
 
       const parsed = safelyExtractFields(leadItem.field_data || []);
 
-      // 1. Check if lead already exists
+      // Check if lead already exists in this workspace
       const { data: existingLead } = await supabaseAdmin
         .from('leads')
         .select('id')
         .eq('workspace_id', workspaceId)
-        .or(`meta_lead_id.eq.${leadgenId},raw_payload->>leadgen_id.eq.${leadgenId},raw_payload->>meta_lead_id.eq.${leadgenId}`)
+        .eq('meta_lead_id', leadgenId)
         .maybeSingle();
-
-      if (existingLead?.id) {
-        totalSaved++;
-        continue;
-      }
 
       const newLeadPayload: Record<string, any> = {
         workspace_id: workspaceId,
@@ -190,7 +184,7 @@ export async function POST(req: NextRequest) {
         created_at: leadItem.created_time ? new Date(leadItem.created_time).toISOString() : new Date().toISOString(),
         updated_at: new Date().toISOString(),
         raw_payload: {
-          leadgen_id: leadgenId,
+          leadgen_id,
           meta_lead_id: leadgenId,
           form_id: form_id || leadItem.form_id,
           form_name: formName,
@@ -204,31 +198,33 @@ export async function POST(req: NextRequest) {
         raw_meta_payload: leadItem,
       };
 
-      // 2. Resilient column-stripping insert
+      // Resilient column-stripping upsert with composite onConflict 'workspace_id,meta_lead_id'
       let payloadCopy = { ...newLeadPayload };
       for (let attempt = 0; attempt < 6; attempt++) {
         const { data: ins, error: insertErr } = await supabaseAdmin
           .from('leads')
-          .insert(payloadCopy)
+          .upsert(payloadCopy, {
+            onConflict: 'workspace_id,meta_lead_id',
+            ignoreDuplicates: false,
+          })
           .select('id')
           .maybeSingle();
 
         if (!insertErr && ins) {
           totalSaved++;
+          if (existingLead) {
+            duplicateCount++;
+          }
           break;
         }
 
         if (insertErr) {
-          if (insertErr.code === '23505') {
-            totalSaved++;
-            break;
-          }
           const errMsg = insertErr.message || '';
           const match = errMsg.match(/Could not find the '([^']+)' column/i) || errMsg.match(/column "([^"]+)" of relation/i);
           if (match && match[1]) {
             delete payloadCopy[match[1]];
           } else {
-            console.error('[Bulk Sync Insert Error]:', errMsg);
+            console.error('[Bulk Sync Upsert Error]:', errMsg);
             break;
           }
         }

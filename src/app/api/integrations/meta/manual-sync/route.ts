@@ -117,22 +117,9 @@ export async function POST(req: NextRequest) {
     let skipped = 0;
     let failed = 0;
 
-    // ── 4. Process Leads & Prevent Duplicates ───────────────────────────────
+    // ── 4. Process Leads & Upsert (Multi-Tenant Scoped) ─────────────────────
     for (const lead of fetchedLeads) {
       const leadgenId = lead.id;
-
-      // Duplicate Check
-      const { data: existing } = await supabaseAdmin
-        .from('leads')
-        .select('id')
-        .eq('workspace_id', workspaceId)
-        .contains('raw_payload', { leadgen_id: leadgenId })
-        .maybeSingle();
-
-      if (existing) {
-        skipped++;
-        continue;
-      }
 
       // Extract field_data
       const fieldData: Record<string, string> = {};
@@ -162,6 +149,14 @@ export async function POST(req: NextRequest) {
         fieldData['work_email'] ||
         '';
 
+      // Check if existing in this specific workspace
+      const { data: existing } = await supabaseAdmin
+        .from('leads')
+        .select('id')
+        .eq('workspace_id', workspaceId)
+        .eq('meta_lead_id', leadgenId)
+        .maybeSingle();
+
       // Round-Robin Lead Owner Auto-Distribution
       let assignedOwner: string | null = null;
       try {
@@ -170,10 +165,10 @@ export async function POST(req: NextRequest) {
         console.error('[Manual Sync Distribution Error]:', distErr?.message);
       }
 
-      // Insert Lead
+      // Upsert Lead Scoped by workspace_id
       const { error: insertErr } = await supabaseAdmin
         .from('leads')
-        .insert({
+        .upsert({
           workspace_id: workspaceId,
           tenant_id: workspaceId,
           name: fullName,
@@ -181,7 +176,10 @@ export async function POST(req: NextRequest) {
           email,
           source: 'Facebook Lead Ads',
           status: 'new',
+          meta_lead_id: leadgenId,
+          source_form_id: form_id,
           created_at: lead.created_time ? new Date(lead.created_time).toISOString() : new Date().toISOString(),
+          updated_at: new Date().toISOString(),
           raw_payload: {
             leadgen_id: leadgenId,
             form_id,
@@ -194,12 +192,20 @@ export async function POST(req: NextRequest) {
             lead_owner: assignedOwner || 'Unassigned',
             synced_manually: true,
           },
+        }, {
+          onConflict: 'workspace_id,meta_lead_id',
+          ignoreDuplicates: false,
         });
 
       if (insertErr) {
+        console.error('[Manual Sync Upsert Error]:', insertErr.message);
         failed++;
       } else {
-        imported++;
+        if (existing) {
+          skipped++;
+        } else {
+          imported++;
+        }
       }
     }
 

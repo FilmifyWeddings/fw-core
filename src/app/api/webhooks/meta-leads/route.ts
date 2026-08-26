@@ -483,7 +483,10 @@ export async function POST(req: NextRequest) {
 
           const { data: inserted, error: insertErr } = await supabaseAdmin
             .from('leads')
-            .insert(newLeadRecord)
+            .upsert(newLeadRecord, {
+              onConflict: 'workspace_id,meta_lead_id',
+              ignoreDuplicates: false,
+            })
             .select('*')
             .single();
 

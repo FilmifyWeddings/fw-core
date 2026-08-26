@@ -341,56 +341,52 @@ export async function POST(req: NextRequest) {
             }));
           }
 
-          // 1. Check if lead already exists
+          // 1. Check if lead already exists in this workspace
           const { data: existingLead } = await supabaseAdmin
             .from('leads')
             .select('id')
             .eq('workspace_id', workspaceId)
-            .or(`meta_lead_id.eq.${leadgenId},raw_payload->>leadgen_id.eq.${leadgenId},raw_payload->>meta_lead_id.eq.${leadgenId}`)
+            .eq('meta_lead_id', leadgenId)
             .maybeSingle();
 
-          if (existingLead?.id) {
-            totalSaved++;
-            skipped++;
-            continue;
-          }
-
-          // 2. Resilient column-stripping insert
+          // 2. Resilient column-stripping upsert with composite onConflict 'workspace_id,meta_lead_id'
           let payloadCopy = { ...singleLead };
-          let inserted = false;
+          let saved = false;
 
           for (let attempt = 0; attempt < 6; attempt++) {
             const { data: ins, error: insertErr } = await supabaseAdmin
               .from('leads')
-              .insert(payloadCopy)
+              .upsert(payloadCopy, {
+                onConflict: 'workspace_id,meta_lead_id',
+                ignoreDuplicates: false,
+              })
               .select('id')
               .maybeSingle();
 
             if (!insertErr && ins) {
               totalSaved++;
-              inserted = true;
+              if (existingLead) {
+                skipped++;
+              } else {
+                imported++;
+              }
+              saved = true;
               break;
             }
 
             if (insertErr) {
-              if (insertErr.code === '23505') {
-                totalSaved++;
-                skipped++;
-                inserted = true;
-                break;
-              }
               const errMsg = insertErr.message || '';
               const match = errMsg.match(/Could not find the '([^']+)' column/i) || errMsg.match(/column "([^"]+)" of relation/i);
               if (match && match[1]) {
                 delete payloadCopy[match[1]];
               } else {
-                console.error('[Forms Sync Insert Error]:', errMsg);
+                console.error('[Forms Sync Upsert Error]:', errMsg);
                 break;
               }
             }
           }
 
-          if (!inserted) {
+          if (!saved) {
             failed++;
           }
         }

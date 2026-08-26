@@ -358,26 +358,48 @@ export async function POST(req: NextRequest) {
     const scoringResult = classifyLead(leadData.raw_payload);
 
     // ── 5. Save Lead to Supabase ───────────────────────────
-    const { data: savedLead, error: insertErr } = await supabaseAdmin
-      .from('leads')
-      .insert({
-        workspace_id:      workspaceId,
-        name:              leadData.name  || null,
-        email:             leadData.email || null,
-        phone:             leadData.phone,
-        source:            'facebook',
-        status:            'new' as LeadStatus,
-        score:             scoringResult.score,
-        score_reason:      scoringResult.reason,
-        raw_payload:       leadData.raw_payload,
-        raw_meta_payload:  leadData.raw_meta_payload,
-        meta_lead_id:      leadData.meta_lead_id,
-        source_form_id:    leadData.source_form_id,
-        form_tag:          leadData.form_tag,
-        whatsapp_group_id: leadData.whatsapp_group_id,
-      })
-      .select()
-      .single();
+    const leadInsertPayload = {
+      workspace_id:      workspaceId,
+      tenant_id:         workspaceId,
+      name:              leadData.name  || null,
+      email:             leadData.email || null,
+      phone:             leadData.phone,
+      source:            'facebook',
+      status:            'new' as LeadStatus,
+      score:             scoringResult.score,
+      score_reason:      scoringResult.reason,
+      raw_payload:       leadData.raw_payload,
+      raw_meta_payload:  leadData.raw_meta_payload,
+      meta_lead_id:      leadData.meta_lead_id,
+      source_form_id:    leadData.source_form_id,
+      form_tag:          leadData.form_tag,
+      whatsapp_group_id: leadData.whatsapp_group_id,
+      updated_at:        new Date().toISOString(),
+    };
+
+    let savedLead: any = null;
+    let insertErr: any = null;
+
+    if (leadData.meta_lead_id) {
+      const res = await supabaseAdmin
+        .from('leads')
+        .upsert(leadInsertPayload, {
+          onConflict: 'workspace_id,meta_lead_id',
+          ignoreDuplicates: false,
+        })
+        .select()
+        .single();
+      savedLead = res.data;
+      insertErr = res.error;
+    } else {
+      const res = await supabaseAdmin
+        .from('leads')
+        .insert(leadInsertPayload)
+        .select()
+        .single();
+      savedLead = res.data;
+      insertErr = res.error;
+    }
 
     if (insertErr || !savedLead) {
       // Unique constraint violation = duplicate
