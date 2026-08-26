@@ -2,7 +2,7 @@
 -- ENTERPRISE MULTI-TENANT ARCHITECTURE: CROSS-WORKSPACE RBAC & PARTNER PORTAL
 -- ==============================================================================
 
--- 1. WORKSPACES TABLE (Central workspace registry)
+-- 1. WORKSPACES TABLE
 CREATE TABLE IF NOT EXISTS public.workspaces (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   owner_id UUID,
@@ -13,34 +13,51 @@ CREATE TABLE IF NOT EXISTS public.workspaces (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Safely remove any existing owner_id foreign key constraint if table already exists
 ALTER TABLE IF EXISTS public.workspaces DROP CONSTRAINT IF EXISTS workspaces_owner_id_fkey;
 
--- Backfill workspaces from profiles if missing
+-- Ensure all workspaces columns exist
+ALTER TABLE public.workspaces 
+  ADD COLUMN IF NOT EXISTS owner_id UUID,
+  ADD COLUMN IF NOT EXISTS name TEXT DEFAULT 'My Studio',
+  ADD COLUMN IF NOT EXISTS slug TEXT,
+  ADD COLUMN IF NOT EXISTS logo_url TEXT,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+
+-- Backfill workspaces from profiles
 INSERT INTO public.workspaces (id, owner_id, name, created_at, updated_at)
 SELECT id, id, COALESCE(workspace_name, 'My Studio'), created_at, updated_at
 FROM public.profiles
 ON CONFLICT (id) DO UPDATE
-SET name = EXCLUDED.name, updated_at = now();
+SET name = COALESCE(EXCLUDED.name, public.workspaces.name), updated_at = now();
 
--- 2. WORKSPACE MEMBERS TABLE (Links 1 User Email to Multiple Studio Workspaces)
+-- 2. WORKSPACE MEMBERS TABLE (Add all missing columns if table already exists)
 CREATE TABLE IF NOT EXISTS public.workspace_members (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id UUID NOT NULL,
   user_id UUID,
-  email TEXT NOT NULL,
+  email TEXT,
   phone TEXT,
-  name TEXT NOT NULL,
+  name TEXT DEFAULT 'Team Member',
   avatar_url TEXT,
   primary_role TEXT DEFAULT 'FREELANCER',
   roles TEXT[] DEFAULT '{}',
   status TEXT DEFAULT 'ACTIVE',
   created_at TIMESTAMPTZ DEFAULT now(),
-  updated_at TIMESTAMPTZ DEFAULT now(),
-  UNIQUE(workspace_id, email)
+  updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 3. GRANULAR PERMISSION MATRIX (Configurable Per Studio Member)
+-- Upgrade existing workspace_members table with all enterprise columns
+ALTER TABLE public.workspace_members 
+  ADD COLUMN IF NOT EXISTS email TEXT,
+  ADD COLUMN IF NOT EXISTS phone TEXT,
+  ADD COLUMN IF NOT EXISTS name TEXT DEFAULT 'Team Member',
+  ADD COLUMN IF NOT EXISTS avatar_url TEXT,
+  ADD COLUMN IF NOT EXISTS primary_role TEXT DEFAULT 'FREELANCER',
+  ADD COLUMN IF NOT EXISTS roles TEXT[] DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'ACTIVE',
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+
+-- 3. MEMBER PERMISSIONS TABLE
 CREATE TABLE IF NOT EXISTS public.member_permissions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   member_id UUID NOT NULL REFERENCES public.workspace_members(id) ON DELETE CASCADE,
@@ -55,7 +72,14 @@ CREATE TABLE IF NOT EXISTS public.member_permissions (
   UNIQUE(member_id)
 );
 
--- 4. PROJECT DELIVERABLES & LAB VENDOR PIPELINE
+ALTER TABLE public.member_permissions
+  ADD COLUMN IF NOT EXISTS leads_access TEXT DEFAULT 'NONE',
+  ADD COLUMN IF NOT EXISTS quotations_access TEXT DEFAULT 'NONE',
+  ADD COLUMN IF NOT EXISTS team_manager_access TEXT DEFAULT 'NONE',
+  ADD COLUMN IF NOT EXISTS post_production_access TEXT DEFAULT 'ASSIGNED_ONLY',
+  ADD COLUMN IF NOT EXISTS finance_access TEXT DEFAULT 'NONE';
+
+-- 4. PROJECT DELIVERABLES TABLE
 CREATE TABLE IF NOT EXISTS public.project_deliverables (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id UUID NOT NULL,
@@ -93,24 +117,27 @@ RETURNS BOOLEAN AS $$
   SELECT EXISTS (
     SELECT 1 FROM public.workspace_members
     WHERE workspace_id = ws_id
-    AND (user_id = auth.uid() OR email = (auth.jwt() ->> 'email'))
-    AND status = 'ACTIVE'
+    AND (
+      (user_id IS NOT NULL AND user_id = auth.uid())
+      OR (email IS NOT NULL AND email = (auth.jwt() ->> 'email'))
+    )
+    AND (status = 'ACTIVE' OR status IS NULL)
   ) OR EXISTS (
     SELECT 1 FROM public.workspaces
-    WHERE id = ws_id AND owner_id = auth.uid()
+    WHERE id = ws_id AND (owner_id = auth.uid() OR id = auth.uid())
   );
 $$ LANGUAGE sql SECURITY DEFINER;
 
 -- 7. CLEAN RLS POLICIES (DROP & RECREATE)
 DROP POLICY IF EXISTS "Workspaces Owner & Member Access" ON public.workspaces;
 CREATE POLICY "Workspaces Owner & Member Access" ON public.workspaces FOR ALL
-USING (owner_id = auth.uid() OR public.is_workspace_member(id));
+USING (owner_id = auth.uid() OR id = auth.uid() OR public.is_workspace_member(id));
 
 DROP POLICY IF EXISTS "Workspace Members Isolation Policy" ON public.workspace_members;
 CREATE POLICY "Workspace Members Isolation Policy" ON public.workspace_members FOR ALL
 USING (
-  user_id = auth.uid() 
-  OR email = (auth.jwt() ->> 'email')
+  (user_id IS NOT NULL AND user_id = auth.uid())
+  OR (email IS NOT NULL AND email = (auth.jwt() ->> 'email'))
   OR public.is_workspace_member(workspace_id)
 );
 
