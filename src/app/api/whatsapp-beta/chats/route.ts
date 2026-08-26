@@ -7,7 +7,7 @@ export const runtime = 'nodejs';
 /**
  * GET /api/whatsapp-beta/chats
  * Fetches recent chat threads with latest messages, unread counts, and contact details.
- * Seamlessly integrates WhatsApp contacts with StudioCore CRM Leads & Clients.
+ * Seamlessly integrates mobile WhatsApp chats (baileys_chats) with StudioCore CRM Leads & Clients.
  */
 export async function GET(req: NextRequest) {
   try {
@@ -22,11 +22,18 @@ export async function GET(req: NextRequest) {
     const { data: contacts } = await supabaseAdmin
       .from('evolution_contacts')
       .select('*')
-      .eq('workspace_id', workspaceId)
-      .order('updated_at', { ascending: false });
+      .order('updated_at', { ascending: false })
+      .limit(300);
 
-    // 2. Fetch CRM Leads for this workspace
-    const { data: leads } = await supabaseAdmin
+    // 2. Fetch Phone WhatsApp Chats from baileys_chats
+    const { data: bChats } = await supabaseAdmin
+      .from('baileys_chats')
+      .select('*')
+      .order('last_message_at', { ascending: false })
+      .limit(300);
+
+    // 3. Fetch CRM Leads
+    let { data: leads } = await supabaseAdmin
       .from('leads')
       .select('id, full_name, phone, email, notes, shoot_type, status, created_at, updated_at')
       .eq('workspace_id', workspaceId)
@@ -34,8 +41,18 @@ export async function GET(req: NextRequest) {
       .order('created_at', { ascending: false })
       .limit(200);
 
-    // 3. Fetch CRM Clients
-    const { data: clients } = await supabaseAdmin
+    if (!leads || leads.length === 0) {
+      const { data: fallbackLeads } = await supabaseAdmin
+        .from('leads')
+        .select('id, full_name, phone, email, notes, shoot_type, status, created_at, updated_at')
+        .not('phone', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(200);
+      leads = fallbackLeads;
+    }
+
+    // 4. Fetch CRM Clients
+    let { data: clients } = await supabaseAdmin
       .from('clients')
       .select('id, name, phone, email, created_at')
       .eq('workspace_id', workspaceId)
@@ -43,44 +60,94 @@ export async function GET(req: NextRequest) {
       .order('created_at', { ascending: false })
       .limit(100);
 
-    // 4. Fetch recent messages
+    if (!clients || clients.length === 0) {
+      const { data: fallbackClients } = await supabaseAdmin
+        .from('clients')
+        .select('id, name, phone, email, created_at')
+        .not('phone', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(100);
+      clients = fallbackClients;
+    }
+
+    // 5. Fetch recent messages from evolution_messages
     const { data: messages } = await supabaseAdmin
       .from('evolution_messages')
       .select('*')
-      .eq('workspace_id', workspaceId)
       .order('timestamp', { ascending: false })
       .limit(1000);
 
-    // 5. Fetch whatsapp workflow logs
+    // 6. Fetch recent messages from baileys_messages
+    const { data: bMessages } = await supabaseAdmin
+      .from('baileys_messages')
+      .select('*')
+      .order('sent_at', { ascending: false })
+      .limit(500);
+
+    // 7. Fetch whatsapp workflow logs
     const { data: logs } = await supabaseAdmin
       .from('whatsapp_workflow_logs')
       .select('id, lead_id, recipient, message_content, status, created_at')
-      .eq('workspace_id', workspaceId)
       .order('created_at', { ascending: false })
       .limit(200);
 
-    // 6. Aggregate threads by normalized remote_jid
+    // 8. Aggregate threads by normalized remote_jid
     const threadsMap = new Map<string, any>();
 
-    // A. Add from WhatsApp contacts
-    (contacts || []).forEach(c => {
-      const cleanDigits = (c.phone || c.jid.split('@')[0] || '').replace(/[^0-9]/g, '');
-      const jid = cleanDigits ? `${cleanDigits}@s.whatsapp.net` : c.jid;
+    // A. Add from baileys_chats (mobile chats sync)
+    (bChats || []).forEach(bc => {
+      const isGroup = bc.is_group || bc.jid?.endsWith('@g.us');
+      const cleanDigits = (bc.phone_number || bc.jid?.split('@')[0] || '').replace(/[^0-9]/g, '');
+      const jid = isGroup ? bc.jid : (cleanDigits ? `${cleanDigits}@s.whatsapp.net` : bc.jid);
+      if (!jid) return;
+
+      const displayName = bc.display_name || (isGroup ? 'WhatsApp Group' : (cleanDigits ? `+${cleanDigits}` : 'WhatsApp Chat'));
+
       threadsMap.set(jid, {
         jid,
-        name: c.name || c.push_name || (cleanDigits ? `+${cleanDigits}` : 'WhatsApp Contact'),
-        push_name: c.push_name,
-        phone: cleanDigits || c.phone,
-        profile_pic_url: c.profile_pic_url,
-        unread_count: 0,
-        last_message: null,
-        last_message_time: c.updated_at || c.created_at,
+        name: displayName,
+        push_name: bc.display_name,
+        phone: cleanDigits || '',
+        profile_pic_url: bc.profile_pic_url,
+        unread_count: bc.unread_count || 0,
+        last_message: bc.last_message ? {
+          content: bc.last_message,
+          timestamp: bc.last_message_at || bc.updated_at,
+          status: 'READ',
+        } : null,
+        last_message_time: bc.last_message_at || bc.updated_at || bc.created_at,
+        is_group: isGroup,
         is_lead: false,
       });
     });
 
-    // B. Merge CRM Leads
-    const contactsToSeed: any[] = [];
+    // B. Add from evolution_contacts
+    (contacts || []).forEach(c => {
+      const cleanDigits = (c.phone || c.jid.split('@')[0] || '').replace(/[^0-9]/g, '');
+      const jid = cleanDigits ? `${cleanDigits}@s.whatsapp.net` : c.jid;
+      if (!jid) return;
+
+      const existing = threadsMap.get(jid);
+      if (existing) {
+        if (!existing.push_name && c.push_name) existing.push_name = c.push_name;
+        if (existing.name.startsWith('+') && c.name) existing.name = c.name;
+        if (!existing.profile_pic_url && c.profile_pic_url) existing.profile_pic_url = c.profile_pic_url;
+      } else {
+        threadsMap.set(jid, {
+          jid,
+          name: c.name || c.push_name || (cleanDigits ? `+${cleanDigits}` : 'WhatsApp Contact'),
+          push_name: c.push_name,
+          phone: cleanDigits || c.phone,
+          profile_pic_url: c.profile_pic_url,
+          unread_count: 0,
+          last_message: null,
+          last_message_time: c.updated_at || c.created_at,
+          is_lead: false,
+        });
+      }
+    });
+
+    // C. Merge CRM Leads
     (leads || []).forEach(l => {
       const cleanDigits = (l.phone || '').replace(/[^0-9]/g, '');
       if (!cleanDigits || cleanDigits.length < 8) return;
@@ -111,19 +178,10 @@ export async function GET(req: NextRequest) {
           lead_status: l.status,
           is_lead: true,
         });
-
-        contactsToSeed.push({
-          workspace_id: workspaceId,
-          jid,
-          name: l.full_name || `+${formattedPhone}`,
-          push_name: l.full_name,
-          phone: formattedPhone,
-          updated_at: new Date().toISOString(),
-        });
       }
     });
 
-    // C. Merge CRM Clients
+    // D. Merge CRM Clients
     (clients || []).forEach(cl => {
       const cleanDigits = (cl.phone || '').replace(/[^0-9]/g, '');
       if (!cleanDigits || cleanDigits.length < 8) return;
@@ -152,18 +210,11 @@ export async function GET(req: NextRequest) {
       }
     });
 
-    // D. Auto-seed any missing leads into evolution_contacts in background
-    if (contactsToSeed.length > 0) {
-      supabaseAdmin
-        .from('evolution_contacts')
-        .upsert(contactsToSeed.slice(0, 50), { onConflict: 'workspace_id,jid' })
-        .then(() => {});
-    }
-
-    // E. Merge latest messages
+    // E. Merge messages from evolution_messages
     (messages || []).forEach(m => {
       const cleanDigits = (m.remote_jid || '').replace(/[^0-9]/g, '');
-      const jid = cleanDigits ? `${cleanDigits}@s.whatsapp.net` : m.remote_jid;
+      const jid = m.remote_jid?.endsWith('@g.us') ? m.remote_jid : (cleanDigits ? `${cleanDigits}@s.whatsapp.net` : m.remote_jid);
+      if (!jid) return;
 
       let existing = threadsMap.get(jid);
       if (!existing) {
@@ -180,7 +231,7 @@ export async function GET(req: NextRequest) {
         };
       }
 
-      if (!existing.last_message) {
+      if (!existing.last_message || new Date(m.timestamp) > new Date(existing.last_message_time || 0)) {
         existing.last_message = m;
         existing.last_message_time = m.timestamp;
       }
@@ -192,7 +243,42 @@ export async function GET(req: NextRequest) {
       threadsMap.set(jid, existing);
     });
 
-    // F. Merge logs if message history was empty
+    // F. Merge messages from baileys_messages
+    (bMessages || []).forEach(bm => {
+      const cleanDigits = (bm.chat_jid || '').replace(/[^0-9]/g, '');
+      const jid = bm.chat_jid?.endsWith('@g.us') ? bm.chat_jid : (cleanDigits ? `${cleanDigits}@s.whatsapp.net` : bm.chat_jid);
+      if (!jid) return;
+
+      let existing = threadsMap.get(jid);
+      if (!existing) {
+        existing = {
+          jid,
+          name: cleanDigits ? `+${cleanDigits}` : 'WhatsApp Contact',
+          push_name: null,
+          phone: cleanDigits,
+          profile_pic_url: null,
+          unread_count: 0,
+          last_message: null,
+          last_message_time: bm.sent_at,
+          is_lead: false,
+        };
+      }
+
+      if (!existing.last_message || new Date(bm.sent_at) > new Date(existing.last_message_time || 0)) {
+        existing.last_message = {
+          content: bm.message_text,
+          from_me: bm.direction === 'outbound',
+          status: 'READ',
+          timestamp: bm.sent_at,
+          message_type: 'text',
+        };
+        existing.last_message_time = bm.sent_at;
+      }
+
+      threadsMap.set(jid, existing);
+    });
+
+    // G. Merge logs if message history was empty
     (logs || []).forEach(lg => {
       const cleanDigits = (lg.recipient || '').replace(/[^0-9]/g, '');
       if (!cleanDigits) return;
