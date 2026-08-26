@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const workspaceId = searchParams.get('workspace_id') || '00000000-0000-0000-0000-000000000000';
 
-  const appId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || process.env.FACEBOOK_APP_ID || '1488107768502570';
+  const appId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || process.env.FACEBOOK_APP_ID || '1279608780825934';
   const baseUrl = getBaseUrl(req);
 
   // SINGLE UNIFIED PRODUCTION REDIRECT URI
@@ -31,13 +31,12 @@ export async function GET(req: NextRequest) {
 
   const scopes = [
     'public_profile',
-    'email',
     'pages_show_list',
-    'pages_read_engagement',
-    'pages_manage_metadata',
-    'ads_management',
-    'business_management',
     'leads_retrieval',
+    'pages_manage_metadata',
+    'pages_read_engagement',
+    'business_management',
+    'ads_management',
   ].join(',');
 
   const oauthUrl = new URL('https://www.facebook.com/v20.0/dialog/oauth');

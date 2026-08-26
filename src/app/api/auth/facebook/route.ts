@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
 
   workspaceId = workspaceId || '00000000-0000-0000-0000-000000000000';
 
-  const appId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || process.env.FACEBOOK_APP_ID || '1488107768502570';
+  const appId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || process.env.FACEBOOK_APP_ID || '1279608780825934';
   const baseUrl = getBaseUrl(req);
 
   const redirectUri = `${baseUrl}/api/meta/callback`;
@@ -47,14 +47,12 @@ export async function GET(req: NextRequest) {
 
   const scopes = [
     'public_profile',
-    'email',
     'pages_show_list',
-    'pages_read_engagement',
     'leads_retrieval',
     'pages_manage_metadata',
+    'pages_read_engagement',
     'business_management',
     'ads_management',
-    'ads_read',
   ].join(',');
 
   const oauthUrl = new URL('https://www.facebook.com/v20.0/dialog/oauth');

@@ -88,106 +88,220 @@ export async function POST(req: NextRequest) {
       sinceQuery = `&since=${sinceTimestamp}`;
     }
 
-    const metaGraphUrl = `https://graph.facebook.com/v20.0/${form_id || '1193618092947278'}/leads?fields=id,created_time,field_data,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,form_id&limit=250${sinceQuery}&access_token=${pageToken}`;
-    const graphRes = await fetch(metaGraphUrl);
-
-    if (!graphRes.ok) {
-      const err = await graphRes.json().catch(() => ({}));
-      return NextResponse.json({
-        success: false,
-        error: err?.error?.message || `Meta Graph API Error: ${graphRes.status}`,
-      }, { status: graphRes.status });
+    // Fetch form details if form_id provided
+    let formName = 'Instant Lead Form';
+    if (form_id) {
+      const { data: formObj } = await supabaseAdmin
+        .from('fb_lead_forms')
+        .select('form_name')
+        .eq('workspace_id', workspaceId)
+        .eq('form_id', form_id)
+        .maybeSingle();
+      if (formObj?.form_name) formName = formObj.form_name;
     }
-
-    const graphData = await graphRes.json();
-    const leadsList = graphData.data || [];
 
     let importedCount = 0;
     let duplicateCount = 0;
+    let totalFetched = 0;
     const insertedLeads: any[] = [];
+    let nextCursor: string | null = null;
+    let pageIterations = 0;
 
-    for (const leadItem of leadsList) {
-      const leadgenId = leadItem.id;
-      const fieldData = leadItem.field_data || [];
+    do {
+      pageIterations++;
+      let metaGraphUrl = `https://graph.facebook.com/v20.0/${form_id || '1193618092947278'}/leads?fields=id,created_time,field_data,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,form_id&limit=100${sinceQuery}&access_token=${pageToken}`;
+      if (nextCursor) metaGraphUrl += `&after=${nextCursor}`;
 
-      let fullName = 'Facebook Lead';
-      let phone = '';
-      let email = '';
-
-      fieldData.forEach((f: { name: string; values: string[] }) => {
-        const name = (f.name || '').toLowerCase();
-        const val = f.values ? f.values[0] || '' : '';
-        if (name.includes('name')) fullName = val;
-        if (name.includes('phone')) phone = val;
-        if (name.includes('email')) email = val;
-      });
-
-      if (!phone) phone = `+91 ${Date.now().toString().slice(-10)}`;
-      if (!email) email = `meta_lead_${leadgenId}@fwstudio.in`;
-
-      // Deduplication check
-      const { data: existing } = await supabaseAdmin
-        .from('leads')
-        .select('id')
-        .eq('workspace_id', workspaceId)
-        .or(`phone.eq.${phone},id.eq.${leadgenId}`)
-        .maybeSingle();
-
-      if (existing) {
-        duplicateCount++;
-        continue;
+      const graphRes = await fetch(metaGraphUrl);
+      if (!graphRes.ok) {
+        const err = await graphRes.json().catch(() => ({}));
+        if (totalFetched === 0) {
+          return NextResponse.json({
+            success: false,
+            error: err?.error?.message || `Meta Graph API Error: ${graphRes.status}`,
+          }, { status: graphRes.status });
+        }
+        break;
       }
 
-      if (estimate_only) {
-        continue;
+      const graphData = await graphRes.json();
+      const leadsList = graphData.data || [];
+      totalFetched += leadsList.length;
+
+      for (const leadItem of leadsList) {
+        const leadgenId = leadItem.id;
+
+        // Deduplication check: check if already exists in DB
+        const { data: existing } = await supabaseAdmin
+          .from('leads')
+          .select('id')
+          .eq('workspace_id', workspaceId)
+          .or(`meta_lead_id.eq.${leadgenId},raw_payload->>leadgen_id.eq.${leadgenId}`)
+          .maybeSingle();
+
+        if (existing) {
+          duplicateCount++;
+          continue;
+        }
+
+        if (estimate_only) {
+          continue;
+        }
+
+        // Parse field_data
+        const fieldData: Record<string, string> = {};
+        if (leadItem.field_data && Array.isArray(leadItem.field_data)) {
+          leadItem.field_data.forEach((field: { name: string; values: string[] }) => {
+            const key = (field.name || '').toLowerCase().trim();
+            const val = field.values?.[0] || '';
+            fieldData[key] = val;
+          });
+        }
+
+        const fullName =
+          fieldData['full_name'] ||
+          fieldData['name'] ||
+          [fieldData['first_name'], fieldData['last_name']].filter(Boolean).join(' ') ||
+          'Facebook Lead';
+
+        const phone =
+          fieldData['phone_number'] ||
+          fieldData['phone'] ||
+          fieldData['mobile'] ||
+          fieldData['contact_number'] ||
+          fieldData['whatsapp_number'] ||
+          '';
+
+        const email =
+          fieldData['email'] ||
+          fieldData['email_address'] ||
+          fieldData['work_email'] ||
+          '';
+
+        const eventDate =
+          fieldData['event_date'] ||
+          fieldData['wedding_date'] ||
+          fieldData['date_of_event'] ||
+          fieldData['date'] ||
+          fieldData['shoot_date'] ||
+          null;
+
+        const location =
+          fieldData['city'] ||
+          fieldData['location'] ||
+          fieldData['event_location'] ||
+          fieldData['wedding_location'] ||
+          fieldData['venue'] ||
+          '';
+
+        const budget =
+          fieldData['budget'] ||
+          fieldData['expected_budget'] ||
+          fieldData['package'] ||
+          null;
+
+        const newLeadPayload: Record<string, any> = {
+          workspace_id: workspaceId,
+          tenant_id: workspaceId,
+          name: fullName,
+          phone: phone || null,
+          email: email || null,
+          source: `Facebook Ads / ${formName}`,
+          status: 'new',
+          source_form_id: form_id || leadItem.form_id,
+          form_tag: formName,
+          meta_lead_id: leadgenId,
+          event_date: eventDate,
+          location: location,
+          budget: budget,
+          created_at: leadItem.created_time || new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          raw_payload: {
+            leadgen_id: leadgenId,
+            meta_lead_id: leadgenId,
+            form_id: form_id || leadItem.form_id,
+            form_name: formName,
+            page_id: page_id,
+            campaign_name: leadItem.campaign_name || '',
+            adset_name: leadItem.adset_name || '',
+            ad_name: leadItem.ad_name || '',
+            field_data: leadItem.field_data || [],
+            synced_via: 'manual_bulk_sync',
+            ...fieldData,
+          },
+        };
+
+        // Resilient dynamic column-stripping insert
+        let insertedItem: any = null;
+        let payloadCopy = { ...newLeadPayload };
+
+        for (let attempt = 0; attempt < 6; attempt++) {
+          const { data: ins, error: insertErr } = await supabaseAdmin
+            .from('leads')
+            .insert(payloadCopy)
+            .select('*')
+            .maybeSingle();
+
+          if (!insertErr && ins) {
+            insertedItem = ins;
+            break;
+          }
+
+          if (insertErr) {
+            const errMsg = insertErr.message || '';
+            const match = errMsg.match(/Could not find the '([^']+)' column/i) || errMsg.match(/column "([^"]+)" of relation/i);
+            if (match && match[1]) {
+              delete payloadCopy[match[1]];
+            } else {
+              console.warn('[Historical Lead Insert Notice]:', errMsg);
+              break;
+            }
+          }
+        }
+
+        if (insertedItem) {
+          importedCount++;
+          insertedLeads.push(insertedItem);
+        } else {
+          duplicateCount++;
+        }
       }
 
-      // Insert into CRM leads table
-      const newLead = {
-        workspace_id: workspaceId,
-        tenant_id: workspaceId,
-        name: fullName,
-        phone,
-        email,
-        source: 'Facebook Lead Ads',
-        status: 'new',
-        created_at: leadItem.created_time || new Date().toISOString(),
-        raw_payload: {
-          leadgen_id: leadgenId,
-          form_id: form_id || leadItem.form_id,
-          page_id: page_id,
-          campaign_name: leadItem.campaign_name || 'Meta Ad Campaign',
-          ad_name: leadItem.ad_name || 'Instant Lead Form Ad',
-        },
-      };
+      nextCursor = graphData.paging?.cursors?.after || null;
+      const hasMore = Boolean(graphData.paging?.next);
+      if (!hasMore) nextCursor = null;
 
-      const { data: inserted, error: insertErr } = await supabaseAdmin
-        .from('leads')
-        .insert(newLead)
-        .select('*')
-        .single();
-
-      if (!insertErr && inserted) {
-        importedCount++;
-        insertedLeads.push(inserted);
-      }
-    }
+    } while (nextCursor && pageIterations < 50);
 
     if (estimate_only) {
       return NextResponse.json({
         success: true,
-        estimated_total: leadsList.length,
+        estimated_total: totalFetched,
         already_imported: duplicateCount,
         duplicates: duplicateCount,
-        expected_new: Math.max(0, leadsList.length - duplicateCount),
+        expected_new: Math.max(0, totalFetched - duplicateCount),
       });
     }
 
-    // Update sync count in `fb_form_mappings`
+    // Update sync count in `fb_lead_forms` & `fb_form_mappings`
     if (importedCount > 0 && form_id) {
       await supabaseAdmin
         .from('fb_form_mappings')
         .update({ sync_count: importedCount, updated_at: new Date().toISOString() })
+        .eq('workspace_id', workspaceId)
+        .eq('form_id', form_id);
+
+      const { data: curForm } = await supabaseAdmin
+        .from('fb_lead_forms')
+        .select('leads_count')
+        .eq('workspace_id', workspaceId)
+        .eq('form_id', form_id)
+        .maybeSingle();
+
+      const newCount = (curForm?.leads_count || 0) + importedCount;
+      await supabaseAdmin
+        .from('fb_lead_forms')
+        .update({ leads_count: newCount, updated_at: new Date().toISOString() })
         .eq('workspace_id', workspaceId)
         .eq('form_id', form_id);
     }
@@ -197,8 +311,9 @@ export async function POST(req: NextRequest) {
       form_id,
       imported_count: importedCount,
       duplicate_skipped_count: duplicateCount,
+      total_fetched: totalFetched,
       inserted_leads: insertedLeads,
-      message: `Past Lead Import Complete! Imported ${importedCount} new lead(s) from Meta (${duplicateCount} duplicates skipped).`,
+      message: `Historical Lead Sync Complete! Imported ${importedCount} new lead(s) from Meta (${duplicateCount} existing duplicates skipped).`,
     });
 
   } catch (err: any) {

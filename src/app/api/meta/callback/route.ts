@@ -28,7 +28,7 @@ function getBaseUrl(req: NextRequest): string {
 
 // Code -> 60-Day Long-Lived Token Exchange
 async function exchangeCodeForLongLivedToken(code: string, redirectUri: string): Promise<string> {
-  const appId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || process.env.FACEBOOK_APP_ID || '1488107768502570';
+  const appId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || process.env.FACEBOOK_APP_ID || '1279608780825934';
   const appSecret = process.env.FACEBOOK_APP_SECRET || '4da60a4bc30f64db3570ffde1508b2b6';
 
   console.log(`[Meta Graph API] Exchanging OAuth code for access token. Redirect URI: ${redirectUri}`);
@@ -112,7 +112,6 @@ async function fetchUserPages(token: string) {
     const res = await fetch(`https://graph.facebook.com/v20.0/me/accounts?fields=id,name,category,access_token,picture{url}&access_token=${token}`);
     const data = await res.json().catch(() => ({}));
 
-    // PRINT COMPLETE RAW JSON RESPONSE AS REQUESTED
     console.log('[RAW GRAPH API RESPONSE] GET /me/accounts:\n', JSON.stringify(data, null, 2));
 
     if (!res.ok || data.error) {
@@ -215,6 +214,202 @@ async function subscribePageWebhook(pageId: string, pageAccessToken: string): Pr
   }
 }
 
+// Ingest ALL Historical Leads for a Lead Gen Form (Full Pagination)
+async function ingestHistoricalLeadsForForm(
+  workspaceId: string,
+  formId: string,
+  formName: string,
+  pageId: string,
+  pageName: string,
+  pageAccessToken: string
+): Promise<{ imported: number; skipped: number; total: number }> {
+  let imported = 0;
+  let skipped = 0;
+  let totalFetched = 0;
+  let nextCursor: string | null = null;
+  let pageCount = 0;
+
+  console.log(`[Historical Ingestion] Starting full lead pull for Form "${formName}" (${formId})...`);
+
+  try {
+    do {
+      pageCount++;
+      let url = `https://graph.facebook.com/v20.0/${formId}/leads?fields=id,created_time,field_data,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,form_id&limit=100&access_token=${pageAccessToken}`;
+      if (nextCursor) url += `&after=${nextCursor}`;
+
+      const res = await fetch(url);
+      const json = await res.json().catch(() => ({}));
+
+      if (!res.ok || json.error) {
+        console.error(`[Historical Ingestion ERROR] Form ${formId}:`, json.error || res.status);
+        break;
+      }
+
+      const leads = json.data || [];
+      totalFetched += leads.length;
+
+      for (const lead of leads) {
+        const leadgenId = lead.id;
+
+        // Deduplication Check
+        const { data: existing } = await supabaseAdmin
+          .from('leads')
+          .select('id')
+          .eq('workspace_id', workspaceId)
+          .or(`meta_lead_id.eq.${leadgenId},raw_payload->>leadgen_id.eq.${leadgenId}`)
+          .maybeSingle();
+
+        if (existing) {
+          skipped++;
+          continue;
+        }
+
+        // Parse Field Data
+        const fieldData: Record<string, string> = {};
+        if (lead.field_data && Array.isArray(lead.field_data)) {
+          lead.field_data.forEach((field: { name: string; values: string[] }) => {
+            const key = (field.name || '').toLowerCase().trim();
+            const val = field.values?.[0] || '';
+            fieldData[key] = val;
+          });
+        }
+
+        const fullName =
+          fieldData['full_name'] ||
+          fieldData['name'] ||
+          [fieldData['first_name'], fieldData['last_name']].filter(Boolean).join(' ') ||
+          'Facebook Lead';
+
+        const phone =
+          fieldData['phone_number'] ||
+          fieldData['phone'] ||
+          fieldData['mobile'] ||
+          fieldData['contact_number'] ||
+          fieldData['whatsapp_number'] ||
+          '';
+
+        const email =
+          fieldData['email'] ||
+          fieldData['email_address'] ||
+          fieldData['work_email'] ||
+          '';
+
+        const eventDate =
+          fieldData['event_date'] ||
+          fieldData['wedding_date'] ||
+          fieldData['date_of_event'] ||
+          fieldData['date'] ||
+          fieldData['shoot_date'] ||
+          null;
+
+        const location =
+          fieldData['city'] ||
+          fieldData['location'] ||
+          fieldData['event_location'] ||
+          fieldData['wedding_location'] ||
+          fieldData['venue'] ||
+          '';
+
+        const budget =
+          fieldData['budget'] ||
+          fieldData['expected_budget'] ||
+          fieldData['package'] ||
+          null;
+
+        const leadPayload: Record<string, any> = {
+          workspace_id: workspaceId,
+          tenant_id: workspaceId,
+          name: fullName,
+          phone: phone || null,
+          email: email || null,
+          source: `Facebook Ads / ${formName}`,
+          status: 'new',
+          source_form_id: formId,
+          form_tag: formName,
+          meta_lead_id: leadgenId,
+          event_date: eventDate,
+          location: location,
+          budget: budget,
+          created_at: lead.created_time ? new Date(lead.created_time).toISOString() : new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          raw_payload: {
+            leadgen_id: leadgenId,
+            meta_lead_id: leadgenId,
+            form_id: formId,
+            form_name: formName,
+            page_id: pageId,
+            page_name: pageName,
+            campaign_name: lead.campaign_name || '',
+            adset_name: lead.adset_name || '',
+            ad_name: lead.ad_name || '',
+            field_data: lead.field_data || [],
+            synced_via: '1-click_oauth_initial_sync',
+            ...fieldData,
+          },
+        };
+
+        // Resilient dynamic column-stripping insert
+        let inserted = false;
+        let currentLeadPayload = { ...leadPayload };
+
+        for (let attempt = 0; attempt < 6; attempt++) {
+          const { error: insErr } = await supabaseAdmin
+            .from('leads')
+            .insert(currentLeadPayload);
+
+          if (!insErr) {
+            inserted = true;
+            break;
+          }
+
+          const errMsg = insErr.message || '';
+          const match = errMsg.match(/Could not find the '([^']+)' column/i) || errMsg.match(/column "([^"]+)" of relation/i);
+          if (match && match[1]) {
+            delete currentLeadPayload[match[1]];
+          } else {
+            console.warn('[Historical Lead Insert Notice]:', errMsg);
+            break;
+          }
+        }
+
+        if (inserted) {
+          imported++;
+        } else {
+          skipped++;
+        }
+      }
+
+      nextCursor = json.paging?.cursors?.after || null;
+      const hasMore = Boolean(json.paging?.next);
+      if (!hasMore) nextCursor = null;
+
+    } while (nextCursor && pageCount < 50); // Up to 5,000 leads per form
+
+    // Update fb_lead_forms count
+    if (imported > 0) {
+      const { data: curForm } = await supabaseAdmin
+        .from('fb_lead_forms')
+        .select('leads_count')
+        .eq('workspace_id', workspaceId)
+        .eq('form_id', formId)
+        .maybeSingle();
+
+      const newCount = (curForm?.leads_count || 0) + imported;
+      await supabaseAdmin
+        .from('fb_lead_forms')
+        .update({ leads_count: newCount, updated_at: new Date().toISOString() })
+        .eq('workspace_id', workspaceId)
+        .eq('form_id', formId);
+    }
+
+    console.log(`[Historical Ingestion COMPLETE] Form ${formId}: ${imported} imported, ${skipped} skipped (out of ${totalFetched} fetched).`);
+  } catch (err: any) {
+    console.error(`[Historical Ingestion EXCEPTION] Form ${formId}:`, err.message);
+  }
+
+  return { imported, skipped, total: totalFetched };
+}
+
 // GET /api/meta/callback
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -305,10 +500,25 @@ export async function GET(req: NextRequest) {
       })
       .eq('id', workspaceId);
 
+    // Optional multi-table upsert for legacy schema compatibility
+    try {
+      await supabaseAdmin
+        .from('meta_integrations')
+        .upsert({
+          workspace_id: workspaceId,
+          user_id: workspaceId,
+          access_token: userToken,
+          account_name: userProfile.name,
+          status: 'active',
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'workspace_id' });
+    } catch (_) {}
+
     // 3. Fetch Managed Facebook Pages
     const pages = await fetchUserPages(userToken);
 
     let totalFormsCount = 0;
+    let totalHistoricalLeadsImported = 0;
 
     for (const page of pages) {
       // Subscribe Webhook
@@ -333,6 +543,19 @@ export async function GET(req: NextRequest) {
       if (pageErr) {
         console.error(`[Supabase DB ERROR] fb_page_configs upsert FAILED for page ${page.page_id}:`, pageErr.message, pageErr.details, pageErr.code);
       }
+
+      try {
+        await supabaseAdmin
+          .from('facebook_pages')
+          .upsert({
+            workspace_id: workspaceId,
+            page_id: page.page_id,
+            page_name: page.page_name,
+            access_token: page.page_access_token,
+            is_active: true,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'page_id' });
+      } catch (_) {}
 
       // Fetch Lead Forms for this Page
       const forms = await fetchLeadFormsForPage(page.page_id, page.page_access_token);
@@ -375,15 +598,27 @@ export async function GET(req: NextRequest) {
             mapping_config: { questions: form.questions || [] },
             updated_at: new Date().toISOString(),
           }, { onConflict: 'workspace_id,form_id' });
+
+        // 4. Ingest All Historical Leads for this Form
+        const leadSyncStats = await ingestHistoricalLeadsForForm(
+          workspaceId,
+          form.form_id,
+          form.form_name,
+          page.page_id,
+          page.page_name,
+          page.page_access_token
+        );
+        totalHistoricalLeadsImported += leadSyncStats.imported;
       }
     }
 
-    console.log(`[Meta OAuth Callback SUCCESS] Saved ${pages.length} Pages & ${totalFormsCount} Forms for workspace ${workspaceId}.`);
+    console.log(`[Meta OAuth Callback SUCCESS] Saved ${pages.length} Pages, ${totalFormsCount} Forms & Imported ${totalHistoricalLeadsImported} Historical Leads for workspace ${workspaceId}.`);
 
     const successParams = new URLSearchParams({
       meta_success: 'connected',
       pages_count: String(pages.length),
       forms_count: String(totalFormsCount),
+      leads_imported: String(totalHistoricalLeadsImported),
       user_name: userProfile.name || 'Meta Account',
     });
 
