@@ -500,18 +500,17 @@ export async function GET(req: NextRequest) {
       })
       .eq('id', workspaceId);
 
-    // Optional multi-table upsert for legacy schema compatibility
+    // Optional multi-table upsert for legacy and enterprise schema compatibility
     try {
       await supabaseAdmin
         .from('meta_integrations')
         .upsert({
           workspace_id: workspaceId,
-          user_id: workspaceId,
-          access_token: userToken,
-          account_name: userProfile.name,
-          status: 'active',
+          facebook_user_id: userProfile.id || workspaceId,
+          user_name: userProfile.name || 'Meta Account',
+          long_lived_token: userToken,
           updated_at: new Date().toISOString(),
-        }, { onConflict: 'workspace_id' });
+        }, { onConflict: 'workspace_id,facebook_user_id' });
     } catch (_) {}
 
     // 3. Fetch Managed Facebook Pages
@@ -543,6 +542,20 @@ export async function GET(req: NextRequest) {
       if (pageErr) {
         console.error(`[Supabase DB ERROR] fb_page_configs upsert FAILED for page ${page.page_id}:`, pageErr.message, pageErr.details, pageErr.code);
       }
+
+      try {
+        await supabaseAdmin
+          .from('meta_connected_pages')
+          .upsert({
+            workspace_id: workspaceId,
+            page_id: page.page_id,
+            page_name: page.page_name,
+            permanent_page_token: page.page_access_token,
+            is_webhook_subscribed: true,
+            is_active: true,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'workspace_id,page_id' });
+      } catch (_) {}
 
       try {
         await supabaseAdmin
@@ -584,6 +597,22 @@ export async function GET(req: NextRequest) {
         if (formErr) {
           console.error(`[Supabase DB ERROR] fb_lead_forms upsert FAILED for form ${form.form_id}:`, formErr.message, formErr.details);
         }
+
+        try {
+          await supabaseAdmin
+            .from('meta_lead_forms')
+            .upsert({
+              workspace_id: workspaceId,
+              page_id: page.page_id,
+              form_id: form.form_id,
+              form_name: form.form_name,
+              status: form.status || 'ACTIVE',
+              is_enabled: true,
+              total_leads_count: form.sync_count || 0,
+              last_synced_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'workspace_id,form_id' });
+        } catch (_) {}
 
         // ALSO SAVE FORM INTO fb_form_mappings
         await supabaseAdmin
