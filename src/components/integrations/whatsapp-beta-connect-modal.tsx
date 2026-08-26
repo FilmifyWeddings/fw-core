@@ -239,7 +239,7 @@ export function WhatsAppBetaConnectModal({
             <div className="space-y-6">
               <div className="flex flex-col md:flex-row items-center gap-6">
                 {/* QR Code Container */}
-                <div className="relative p-3 rounded-2xl bg-white border border-zinc-200 shadow-md flex items-center justify-center w-60 h-60 shrink-0">
+                <div className="relative p-3 rounded-2xl bg-white border border-zinc-200 shadow-md flex flex-col items-center justify-center w-60 h-60 shrink-0">
                   {qrCode ? (
                     <img 
                       src={qrCode} 
@@ -247,16 +247,25 @@ export function WhatsAppBetaConnectModal({
                       className="w-full h-full object-contain rounded-lg"
                     />
                   ) : (
-                    <div className="flex flex-col items-center justify-center text-zinc-400 space-y-2">
+                    <div className="flex flex-col items-center justify-center text-zinc-400 space-y-3 p-2 text-center">
                       <QrCode className="w-10 h-10 animate-pulse text-emerald-500" />
-                      <span className="text-[11px] font-medium text-zinc-500">Generating QR...</span>
+                      <span className="text-[11px] font-medium text-zinc-500">Connecting to Engine...</span>
+                      <button
+                        onClick={() => { setRefreshing(true); fetchStatusAndQr(); }}
+                        disabled={refreshing}
+                        className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-bold rounded-lg transition-all shadow"
+                      >
+                        {refreshing ? 'Generating...' : '⚡ Retry Generate QR'}
+                      </button>
                     </div>
                   )}
 
                   {/* Auto-refresh timer ring */}
-                  <div className="absolute -top-2 -right-2 px-2 py-0.5 rounded-full bg-zinc-900 text-white text-[9px] font-mono shadow">
-                    {countdown}s
-                  </div>
+                  {qrCode && (
+                    <div className="absolute -top-2 -right-2 px-2 py-0.5 rounded-full bg-zinc-900 text-white text-[9px] font-mono shadow">
+                      {countdown}s
+                    </div>
+                  )}
                 </div>
 
                 {/* Instructions */}

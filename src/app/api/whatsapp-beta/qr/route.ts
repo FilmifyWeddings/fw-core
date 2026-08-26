@@ -1,135 +1,127 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { 
-  getInstanceNameForWorkspace, 
-  getEvolutionConfig,
-  getEvolutionConnectionState 
-} from '@/lib/evolution-api';
 
 export const runtime = 'nodejs';
 
-/**
- * GET /api/whatsapp-beta/qr
- * Retrieves live base64/code QR for pairing with robust Evolution v2 parser
- */
+const EVO_URL = (
+  process.env.EVOLUTION_API_URL ||
+  process.env.EVOLUTION_BASE_URL ||
+  'http://127.0.0.1:8085'
+).replace(/\/+$/, '');
+
+const EVO_KEY = (
+  process.env.EVOLUTION_API_KEY ||
+  process.env.EVOLUTION_GLOBAL_API_KEY ||
+  'studiocore_evo_secret_2026'
+);
+
 export async function GET(req: NextRequest) {
   try {
-    const workspaceId = req.nextUrl.searchParams.get('workspace_id');
+    const { searchParams } = new URL(req.url);
+    const workspaceId = searchParams.get('workspace_id');
+
     if (!workspaceId) {
       return NextResponse.json({ success: false, error: 'workspace_id is required' }, { status: 400 });
     }
 
-    const { baseUrl, apiKey, webhookUrl } = getEvolutionConfig();
-    const instanceName = getInstanceNameForWorkspace(workspaceId);
+    const instanceName = `ws_${workspaceId.replace(/-/g, '_')}`;
 
-    // 1. Check if already connected on Evolution
-    const connState = await getEvolutionConnectionState(instanceName);
-
-    if (connState.state === 'CONNECTED') {
-      await supabaseAdmin
-        .from('evolution_instances')
-        .upsert({
-          workspace_id: workspaceId,
-          instance_name: instanceName,
-          connection_status: 'CONNECTED',
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'workspace_id' });
-
-      return NextResponse.json({
-        success: true,
-        is_connected: true,
-        state: 'open',
-        connection_status: 'CONNECTED',
-        message: 'Instance is already connected and authenticated.',
-      });
-    }
-
-    // 2. Fetch live QR from Evolution API
-    let qrRes = await fetch(`${baseUrl}/instance/connect/${instanceName}`, {
-      method: 'GET',
-      headers: { 'apikey': apiKey },
-    });
-
-    // If instance not found or error, auto-create instance first
-    if (!qrRes.ok || qrRes.status === 404) {
-      console.log(`[Evolution QR] Instance ${instanceName} not found, auto-creating...`);
-      await fetch(`${baseUrl}/instance/create`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': apiKey,
-        },
-        body: JSON.stringify({
-          instanceName: instanceName,
-          token: apiKey,
-          qrcode: true,
-          integration: 'WHATSAPP_BAILEYS',
-          webhook: {
-            url: webhookUrl,
-            byEvents: false,
-            base64: false,
-            events: [
-              'MESSAGES_UPSERT',
-              'MESSAGES_UPDATE',
-              'CHATS_UPSERT',
-              'CHATS_SET',
-              'CONTACTS_SET',
-              'CONTACTS_UPSERT',
-              'CONNECTION_UPDATE',
-            ],
-          },
-        }),
-      });
-
-      // Retry connect
-      qrRes = await fetch(`${baseUrl}/instance/connect/${instanceName}`, {
+    // 1. Check/Fetch QR from Evolution API
+    let qrResponse: Response | null = null;
+    try {
+      qrResponse = await fetch(`${EVO_URL}/instance/connect/${instanceName}`, {
         method: 'GET',
-        headers: { 'apikey': apiKey },
+        headers: {
+          'apikey': EVO_KEY,
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store',
       });
+    } catch (fetchErr: any) {
+      console.warn('[Evolution Connect Fetch Warning]:', fetchErr.message);
     }
 
-    const data = await qrRes.json().catch(() => ({}));
+    // 2. If instance doesn't exist yet (404/400 or fetch failed), automatically create it
+    if (!qrResponse || !qrResponse.ok) {
+      try {
+        await fetch(`${EVO_URL}/instance/create`, {
+          method: 'POST',
+          headers: {
+            'apikey': EVO_KEY,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            instanceName: instanceName,
+            token: EVO_KEY,
+            qrcode: true,
+            integration: 'WHATSAPP_BAILEYS',
+          }),
+          cache: 'no-store',
+        });
+      } catch (createErr: any) {
+        console.warn('[Evolution Create Instance Warning]:', createErr.message);
+      }
 
-    // 3. Robust base64 QR extraction across all Evolution v2 payload formats
-    const base64 = 
-      data?.base64 || 
-      data?.qrcode?.base64 || 
-      data?.qrcode || 
-      data?.code || 
-      null;
+      // Wait a moment and retry connect
+      await new Promise(r => setTimeout(r, 1200));
 
-    const qrImage = typeof base64 === 'string'
-      ? (base64.startsWith('data:image') ? base64 : `data:image/png;base64,${base64}`)
-      : null;
+      try {
+        qrResponse = await fetch(`${EVO_URL}/instance/connect/${instanceName}`, {
+          method: 'GET',
+          headers: {
+            'apikey': EVO_KEY,
+            'Content-Type': 'application/json',
+          },
+          cache: 'no-store',
+        });
+      } catch (retryErr: any) {
+        console.warn('[Evolution Connect Retry Warning]:', retryErr.message);
+      }
+    }
 
-    const pairingCode = data?.pairingCode || data?.pairing_code || null;
-    const liveState = data?.state || data?.instance?.state || connState.state;
+    const data: any = qrResponse ? await qrResponse.json().catch(() => ({})) : {};
+
+    // 3. Extract Base64 QR Image across all Evolution response variations
+    let qrRaw = data?.base64 || data?.qrcode?.base64 || data?.qrcode || data?.code || data?.pairingCode || null;
+    let qrImage: string | null = null;
+
+    if (qrRaw && typeof qrRaw === 'string') {
+      qrImage = qrRaw.startsWith('data:image') ? qrRaw : `data:image/png;base64,${qrRaw}`;
+    }
+
+    const liveState = data?.state || data?.instance?.state || (data?.status === 200 ? 'CONNECTING' : 'CONNECTING');
     const isConnected = liveState === 'open' || liveState === 'CONNECTED';
 
+    // Update DB record if connected
     if (isConnected) {
-      await supabaseAdmin
+      supabaseAdmin
         .from('evolution_instances')
         .upsert({
           workspace_id: workspaceId,
           instance_name: instanceName,
           connection_status: 'CONNECTED',
           updated_at: new Date().toISOString(),
-        }, { onConflict: 'workspace_id' });
+        }, { onConflict: 'workspace_id' })
+        .then(() => {});
     }
 
     return NextResponse.json({
       success: true,
       instance_name: instanceName,
       qrcode: qrImage,
-      pairingCode: pairingCode,
-      pairing_code: pairingCode,
-      state: liveState,
+      pairingCode: data?.pairingCode || null,
+      pairing_code: data?.pairingCode || null,
+      state: isConnected ? 'CONNECTED' : liveState,
       is_connected: isConnected,
-      connection_status: isConnected ? 'CONNECTED' : liveState === 'connecting' ? 'CONNECTING' : 'DISCONNECTED',
       raw: data,
     });
-  } catch (err: any) {
-    console.error('[Evolution QR GET Error]:', err);
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+
+  } catch (error: any) {
+    console.error('QR Generation Catch Error:', error);
+    return NextResponse.json({
+      success: false,
+      error: error?.message || 'Failed to generate QR code',
+      state: 'ERROR',
+    }, { status: 200 }); // Return 200 with error payload to prevent frontend crash
   }
 }
