@@ -165,12 +165,12 @@ export async function POST(req: NextRequest) {
 
         const parsed = safelyExtractFields(lead.field_data || []);
 
-        // 1. Check if lead already exists by meta_lead_id or inside raw_payload
+        // 1. Check if lead already exists by leadgen_id in raw_payload
         const { data: existingLead } = await supabaseAdmin
           .from('leads')
           .select('id')
           .eq('workspace_id', workspaceId)
-          .or(`meta_lead_id.eq.${leadgenId},raw_payload->>leadgen_id.eq.${leadgenId},raw_payload->>meta_lead_id.eq.${leadgenId}`)
+          .contains('raw_payload', { leadgen_id: leadgenId })
           .maybeSingle();
 
         if (existingLead?.id) {
@@ -180,28 +180,13 @@ export async function POST(req: NextRequest) {
 
         const newLeadPayload: Record<string, any> = {
           workspace_id: workspaceId,
-          tenant_id: workspaceId,
-          meta_lead_id: leadgenId,
-          form_id: formId,
-          source_form_id: formId,
           name: parsed.fullName || 'Facebook Lead',
-          full_name: parsed.fullName || 'Facebook Lead',
           phone: parsed.phone !== '-' ? parsed.phone : (lead.phone || '-'),
-          phone_number: parsed.phone !== '-' ? parsed.phone : (lead.phone || '-'),
           email: parsed.email !== '-' ? parsed.email : '',
-          city: parsed.city !== '-' ? parsed.city : '',
-          location: parsed.city !== '-' ? parsed.city : '',
-          budget: parsed.budget !== '-' ? parsed.budget : '',
-          event_date: parsed.eventDate !== '-' ? parsed.eventDate : '',
           source: lead.campaign_name ? `Facebook Ads / ${lead.campaign_name}` : `Facebook Ads / ${formName}`,
           status: 'new',
           score: 'Cold ❄️',
           score_reason: 'Imported via Meta Historical Sync',
-          whatsapp_group_id: contactGroupId,
-          form_tag: formName,
-          raw_field_data: lead,
-          created_at: lead.created_time ? new Date(lead.created_time).toISOString() : new Date().toISOString(),
-          updated_at: new Date().toISOString(),
           raw_payload: {
             leadgen_id: leadgenId,
             meta_lead_id: leadgenId,
@@ -215,6 +200,22 @@ export async function POST(req: NextRequest) {
             synced_via: 'manual_incremental_sync',
             ...parsed,
           },
+          // Optional enterprise columns
+          tenant_id: workspaceId,
+          meta_lead_id: leadgenId,
+          form_id: formId,
+          source_form_id: formId,
+          full_name: parsed.fullName || 'Facebook Lead',
+          phone_number: parsed.phone !== '-' ? parsed.phone : (lead.phone || '-'),
+          city: parsed.city !== '-' ? parsed.city : '',
+          location: parsed.city !== '-' ? parsed.city : '',
+          budget: parsed.budget !== '-' ? parsed.budget : '',
+          event_date: parsed.eventDate !== '-' ? parsed.eventDate : '',
+          whatsapp_group_id: contactGroupId,
+          form_tag: formName,
+          raw_field_data: lead,
+          created_at: lead.created_time ? new Date(lead.created_time).toISOString() : new Date().toISOString(),
+          updated_at: new Date().toISOString(),
           raw_meta_payload: lead,
         };
 
@@ -222,7 +223,7 @@ export async function POST(req: NextRequest) {
         let payloadCopy = { ...newLeadPayload };
         let insertedId: string | null = null;
 
-        for (let attempt = 0; attempt < 6; attempt++) {
+        for (let attempt = 0; attempt < 30; attempt++) {
           const { data: ins, error: insertErr } = await supabaseAdmin
             .from('leads')
             .insert(payloadCopy)
@@ -242,12 +243,27 @@ export async function POST(req: NextRequest) {
               break;
             }
             const errMsg = insertErr.message || '';
-            const match = errMsg.match(/Could not find the '([^']+)' column/i) || errMsg.match(/column "([^"]+)" of relation/i);
+            const match = 
+              errMsg.match(/Could not find the '([^']+)' column/i) || 
+              errMsg.match(/column "([^"]+)" of relation/i) || 
+              errMsg.match(/column "([^"]+)" does not exist/i) ||
+              errMsg.match(/column ([a-zA-Z0-9_]+) does not exist/i) ||
+              errMsg.match(/column leads\.([a-zA-Z0-9_]+) does not exist/i);
+
             if (match && match[1]) {
-              delete payloadCopy[match[1]];
+              const badCol = match[1].replace(/^leads\./, '');
+              delete payloadCopy[badCol];
             } else {
-              console.error('[Sync Leads Insert Error]:', errMsg);
-              break;
+              // Unknown error / constraint fallback -> insert base guaranteed columns
+              payloadCopy = {
+                workspace_id: workspaceId,
+                name: newLeadPayload.name,
+                phone: newLeadPayload.phone,
+                email: newLeadPayload.email,
+                source: newLeadPayload.source,
+                status: 'new',
+                raw_payload: newLeadPayload.raw_payload,
+              };
             }
           }
         }

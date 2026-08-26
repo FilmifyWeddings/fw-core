@@ -358,28 +358,13 @@ export default function LeadsPage() {
       const from = pageNum * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
 
-      // Check if targetUserId has an associated profile workspace_id
-      const { data: userProfile } = await supabase
-        .from('profiles')
-        .select('workspace_id')
-        .eq('id', targetUserId)
-        .maybeSingle();
-
-      const profileWsId = userProfile?.workspace_id;
-      let query = supabase
+      // Load Leads batch of 100 with deterministic ordering
+      const { data: dbLeads, error: leadsErr } = await supabase
         .from('leads')
         .select('*')
+        .eq('workspace_id', targetUserId)
         .order('created_at', { ascending: false })
-        .order('id', { ascending: false })
         .range(from, to);
-
-      if (profileWsId && profileWsId !== targetUserId) {
-        query = query.or(`workspace_id.eq.${targetUserId},workspace_id.eq.${profileWsId},tenant_id.eq.${targetUserId},tenant_id.eq.${profileWsId}`);
-      } else {
-        query = query.or(`workspace_id.eq.${targetUserId},tenant_id.eq.${targetUserId}`);
-      }
-
-      const { data: dbLeads, error: leadsErr } = await query;
 
       if (leadsErr) {
         console.error('[Leads Load Error]:', leadsErr);
@@ -391,15 +376,23 @@ export default function LeadsPage() {
           setHasMore(true);
         }
 
-        const sanitizedLeads = (dbLeads as any[]).map(l => ({
-          ...l,
-          name: l.name || l.full_name || 'Facebook Lead',
-          phone: l.phone || l.phone_number || '-',
-          email: l.email || '-',
-          source: l.source || 'Facebook Lead Ad',
-          status: l.status || 'new',
-          raw_payload: l.raw_payload || {},
-        })) as Lead[];
+        const sanitizedLeads = (dbLeads as any[]).map(l => {
+          const raw = l.raw_payload || {};
+          return {
+            ...l,
+            name: l.name || l.full_name || raw.full_name || raw.name || 'Facebook Lead',
+            phone: l.phone || l.phone_number || raw.phone || raw.phone_number || '-',
+            email: l.email || raw.email || '-',
+            source: l.source || raw.source || (raw.campaign_name ? `Facebook Ads / ${raw.campaign_name}` : 'Facebook Lead Ad'),
+            status: l.status || 'new',
+            score: l.score || 'Cold ❄️',
+            score_reason: l.score_reason || '',
+            location: l.location || l.city || raw.location || raw.city || '-',
+            budget: l.budget || raw.budget || '-',
+            event_date: l.event_date || raw.event_date || '-',
+            raw_payload: raw,
+          };
+        }) as Lead[];
 
         if (pageNum === 0) {
           setLeads(sanitizedLeads);
