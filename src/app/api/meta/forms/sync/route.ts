@@ -257,12 +257,12 @@ export async function POST(req: NextRequest) {
             }));
           }
 
-          // ── Duplicate check using leadgen_id in raw_payload ────────────────
+          // ── Duplicate check using meta_lead_id or leadgen_id in raw_payload ────────────────
           const { data: existing } = await supabaseAdmin
             .from('leads')
             .select('id')
             .eq('workspace_id', workspaceId)
-            .contains('raw_payload', { leadgen_id })
+            .or(`meta_lead_id.eq.${leadgen_id},raw_payload->>leadgen_id.eq.${leadgen_id}`)
             .maybeSingle();
 
           if (existing) {
@@ -274,7 +274,7 @@ export async function POST(req: NextRequest) {
           const fieldData: Record<string, string> = {};
           if (lead.field_data && Array.isArray(lead.field_data)) {
             lead.field_data.forEach((field: { name: string; values: string[] }) => {
-              const key = (field.name || '').toLowerCase();
+              const key = (field.name || '').toLowerCase().trim();
               const val = field.values?.[0] || '';
               fieldData[key] = val;
             });
@@ -290,6 +290,8 @@ export async function POST(req: NextRequest) {
             fieldData['phone_number'] ||
             fieldData['phone'] ||
             fieldData['mobile'] ||
+            fieldData['contact_number'] ||
+            fieldData['whatsapp_number'] ||
             '';
 
           const email =
@@ -297,6 +299,28 @@ export async function POST(req: NextRequest) {
             fieldData['email_address'] ||
             fieldData['work_email'] ||
             '';
+
+          const eventDate =
+            fieldData['event_date'] ||
+            fieldData['wedding_date'] ||
+            fieldData['date_of_event'] ||
+            fieldData['date'] ||
+            fieldData['shoot_date'] ||
+            null;
+
+          const location =
+            fieldData['city'] ||
+            fieldData['location'] ||
+            fieldData['event_location'] ||
+            fieldData['wedding_location'] ||
+            fieldData['venue'] ||
+            '';
+
+          const budget =
+            fieldData['budget'] ||
+            fieldData['expected_budget'] ||
+            fieldData['package'] ||
+            null;
 
           // ── Determine assigned Lead Owner & WhatsApp Group ───────────────
           let assignedLeadOwner: string | null = null;
@@ -315,43 +339,69 @@ export async function POST(req: NextRequest) {
 
           const contactGroupId = formMapping?.contact_group_id || null;
 
-          // ── Insert lead into CRM ───────────────────────────────────────────
-          const { error: insertErr } = await supabaseAdmin
-            .from('leads')
-            .insert({
-              workspace_id: workspaceId,
-              tenant_id: workspaceId,
-              name: fullName,
-              phone,
-              email,
-              source: 'Facebook Lead Ads',
-              status: 'new',
-              source_form_id: form_id,
-              form_tag: formName,
-              whatsapp_group_id: contactGroupId,
-              created_at: lead.created_time
-                ? new Date(lead.created_time).toISOString()
-                : new Date().toISOString(),
-              raw_payload: {
-                leadgen_id,
-                form_id,
-                form_name: formName,
-                page_id,
-                page_name: pageName,
-                campaign_name: lead.campaign_name || '',
-                adset_name: lead.adset_name || '',
-                ad_name: lead.ad_name || '',
-                field_data: lead.field_data || [],
-                lead_owner: assignedLeadOwner || 'Unassigned',
-                synced_manually: true,
-                ...fieldData,
-              },
-            });
+          // ── Insert lead into CRM with resilient column fallback ──────────
+          const newLeadItem: Record<string, any> = {
+            workspace_id: workspaceId,
+            tenant_id: workspaceId,
+            name: fullName,
+            phone: phone || null,
+            email: email || null,
+            source: `Facebook Ads / ${formName}`,
+            status: 'new',
+            source_form_id: form_id,
+            form_tag: formName,
+            meta_lead_id: leadgen_id,
+            whatsapp_group_id: contactGroupId,
+            event_date: eventDate,
+            location: location,
+            budget: budget,
+            created_at: lead.created_time
+              ? new Date(lead.created_time).toISOString()
+              : new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            raw_payload: {
+              leadgen_id,
+              meta_lead_id: leadgen_id,
+              form_id,
+              form_name: formName,
+              page_id,
+              page_name: pageName,
+              campaign_name: lead.campaign_name || '',
+              adset_name: lead.adset_name || '',
+              ad_name: lead.ad_name || '',
+              field_data: lead.field_data || [],
+              lead_owner: assignedLeadOwner || 'Unassigned',
+              synced_manually: true,
+              ...fieldData,
+            },
+          };
 
-          if (insertErr) {
-            failed++;
-          } else {
+          let insertedOk = false;
+          let insertCopy = { ...newLeadItem };
+
+          for (let attempt = 0; attempt < 6; attempt++) {
+            const { error: insErr } = await supabaseAdmin
+              .from('leads')
+              .insert(insertCopy);
+
+            if (!insErr) {
+              insertedOk = true;
+              break;
+            }
+
+            const errMsg = insErr.message || '';
+            const match = errMsg.match(/Could not find the '([^']+)' column/i) || errMsg.match(/column "([^"]+)" of relation/i);
+            if (match && match[1]) {
+              delete insertCopy[match[1]];
+            } else {
+              break;
+            }
+          }
+
+          if (insertedOk) {
             imported++;
+          } else {
+            failed++;
           }
         }
 

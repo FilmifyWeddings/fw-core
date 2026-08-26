@@ -199,9 +199,11 @@ function SyncCell({ formId, pageId, syncState, onSync }: {
     return (
       <button
         onClick={() => onSync(formId, pageId)}
-        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-blue-50 text-[#0866FF] hover:bg-blue-100 text-xs font-bold border border-blue-200 transition-all active:scale-95 shadow-sm"
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 text-[#0866FF] hover:bg-blue-100 text-xs font-black border border-blue-200 transition-all active:scale-95 shadow-2xs cursor-pointer"
+        title="Deep historical sync for all leads from this form"
       >
-        <Play className="w-3 h-3 fill-current" /> Sync Leads
+        <Zap className="w-3.5 h-3.5 fill-current text-amber-500" />
+        <span>Sync All Old Leads</span>
       </button>
     );
   }
@@ -951,11 +953,11 @@ export default function MetaIntegrationPage() {
                   </div>
                   <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5 flex-wrap">
                     <span className="flex items-center gap-1 font-semibold text-slate-700">
-                      <Building2 className="w-3 h-3 text-[#0866FF]" /> {businessName}
+                      <Building2 className="w-3.5 h-3.5 text-[#0866FF]" /> {businessName}
                     </span>
                     <span>•</span>
-                    <span className="text-emerald-600 font-bold flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Active Connection
+                    <span className="text-emerald-600 font-black flex items-center gap-1.5 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Connected to Facebook (Never-Expiring Session Active)
                     </span>
                   </div>
                 </div>
@@ -1032,16 +1034,18 @@ export default function MetaIntegrationPage() {
                 <p className="text-base sm:text-lg font-black text-slate-900 mt-0.5">{pages.length} Pages</p>
               </div>
               <div className="bg-slate-50/80 p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border border-slate-100">
-                <p className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400">Lead Forms</p>
-                <p className="text-base sm:text-lg font-black text-slate-900 mt-0.5">{leadForms.length} Forms</p>
+                <p className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400">Connected Lead Forms</p>
+                <p className="text-base sm:text-lg font-black text-slate-900 mt-0.5">{leadForms.length} Forms <span className="text-xs text-emerald-600 font-bold">({enabledCount} ON)</span></p>
               </div>
               <div className="bg-slate-50/80 p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border border-slate-100">
                 <p className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Synced Leads</p>
                 <p className="text-base sm:text-lg font-black text-[#0866FF] mt-0.5">{totalLeadsSynced} Leads</p>
               </div>
               <div className="bg-slate-50/80 p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border border-slate-100">
-                <p className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400">Last Sync Time</p>
-                <p className="text-xs font-extrabold text-slate-800 mt-1">{formatRelTime(lastSyncTime)}</p>
+                <p className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400">Real-Time Webhook Engine</p>
+                <p className="text-xs font-black text-emerald-600 mt-1.5 flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Zero-Limit Active
+                </p>
               </div>
             </div>
           )}
