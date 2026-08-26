@@ -29,20 +29,23 @@ export async function GET(req: NextRequest) {
       .eq('workspace_id', workspaceId)
       .maybeSingle();
 
-    // 2. Check baileys_sessions table for active WhatsApp session
+    // 2. Check baileys_sessions table for active WhatsApp session (by user_id OR workspace_id)
     const { data: bSession } = await supabaseAdmin
       .from('baileys_sessions')
       .select('*')
-      .eq('user_id', workspaceId)
+      .or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`)
       .maybeSingle();
 
     const isBaileysConnected = (bSession?.conn_state === 'open' || bSession?.status === 'CONNECTED' || bSession?.status === 'open') && !!bSession?.phone_number;
 
-    // 3. Query live state from Evolution API
-    const liveState = await getEvolutionConnectionState(instanceName);
+    // 3. Query live state from Evolution API only if Baileys is not connected
+    let liveState: any = { state: 'DISCONNECTED' };
+    if (!isBaileysConnected) {
+      liveState = await getEvolutionConnectionState(instanceName);
+    }
 
     let finalStatus = isBaileysConnected ? 'CONNECTED' : (liveState.state || dbInstance?.connection_status || 'DISCONNECTED');
-    let phoneNumber = isBaileysConnected ? bSession?.phone_number : (dbInstance?.phone_number || (liveState as any)?.phone_number || null);
+    let phoneNumber = isBaileysConnected ? bSession?.phone_number : (dbInstance?.phone_number || liveState?.phone_number || null);
     let profileName = bSession?.profile_name || dbInstance?.profile_name || 'My WhatsApp';
 
     // If connected in baileys_sessions or evolution, sync to evolution_instances

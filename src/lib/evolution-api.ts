@@ -133,6 +133,7 @@ export async function createEvolutionInstance(instanceName: string) {
   try {
     const res = await fetch(`${baseUrl}/instance/create`, {
       method: 'POST',
+      signal: AbortSignal.timeout(1500),
       headers: {
         'Content-Type': 'application/json',
         'apikey': apiKey,
@@ -156,6 +157,7 @@ export async function getEvolutionQrCode(instanceName: string) {
   try {
     const res = await fetch(`${baseUrl}/instance/connect/${instanceName}`, {
       method: 'GET',
+      signal: AbortSignal.timeout(1500),
       headers: {
         'apikey': apiKey,
       },
@@ -177,6 +179,7 @@ export async function getEvolutionConnectionState(instanceName: string) {
   try {
     const res = await fetch(`${baseUrl}/instance/connectionState/${instanceName}`, {
       method: 'GET',
+      signal: AbortSignal.timeout(1500),
       headers: {
         'apikey': apiKey,
       },
@@ -221,6 +224,7 @@ export async function setEvolutionWebhook(instanceName: string, customWebhookUrl
   try {
     const res = await fetch(`${baseUrl}/webhook/set/${instanceName}`, {
       method: 'POST',
+      signal: AbortSignal.timeout(1500),
       headers: {
         'Content-Type': 'application/json',
         'apikey': apiKey,
@@ -244,6 +248,7 @@ export async function logoutEvolutionInstance(instanceName: string) {
   try {
     const res = await fetch(`${baseUrl}/instance/logout/${instanceName}`, {
       method: 'DELETE',
+      signal: AbortSignal.timeout(1500),
       headers: {
         'apikey': apiKey,
       },
@@ -277,6 +282,7 @@ export async function sendEvolutionTextMessage(
   try {
     const res = await fetch(`${baseUrl}/message/sendText/${instanceName}`, {
       method: 'POST',
+      signal: AbortSignal.timeout(1500),
       headers: {
         'Content-Type': 'application/json',
         'apikey': apiKey,
@@ -320,6 +326,7 @@ export async function sendEvolutionMediaMessage(
   try {
     const res = await fetch(`${baseUrl}/message/sendMedia/${instanceName}`, {
       method: 'POST',
+      signal: AbortSignal.timeout(3000),
       headers: {
         'Content-Type': 'application/json',
         'apikey': apiKey,

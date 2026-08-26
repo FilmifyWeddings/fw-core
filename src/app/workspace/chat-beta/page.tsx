@@ -109,7 +109,7 @@ export default function WhatsAppWebBetaInbox() {
     init();
   }, []);
 
-  // 2. Real-time Subscription to evolution_messages
+  // 2. Real-time Subscription to messages and chats
   useEffect(() => {
     if (!workspaceId) return;
 
@@ -121,14 +121,12 @@ export default function WhatsAppWebBetaInbox() {
           event: '*',
           schema: 'public',
           table: 'evolution_messages',
-          filter: `workspace_id=eq.${workspaceId}`,
         },
         (payload: any) => {
           const newOrUpdatedMsg = payload.new as MessageItem;
           if (!newOrUpdatedMsg) return;
 
-          // Update active conversation if matches
-          if (selectedChat && newOrUpdatedMsg.remote_jid === selectedChat.jid) {
+          if (selectedChat && (newOrUpdatedMsg.remote_jid === selectedChat.jid || selectedChat.jid.includes(newOrUpdatedMsg.remote_jid.replace(/[^0-9]/g, '')))) {
             setMessages(prev => {
               const existingIdx = prev.findIndex(m => m.message_id === newOrUpdatedMsg.message_id);
               if (existingIdx >= 0) {
@@ -141,7 +139,31 @@ export default function WhatsAppWebBetaInbox() {
             scrollToBottom();
           }
 
-          // Reload/update chat list
+          loadChats(workspaceId);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'baileys_chats',
+        },
+        () => {
+          loadChats(workspaceId);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'baileys_messages',
+        },
+        () => {
+          if (selectedChat) {
+            selectChat(selectedChat);
+          }
           loadChats(workspaceId);
         }
       )
