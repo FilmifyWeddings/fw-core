@@ -39,7 +39,14 @@ export async function GET(req: NextRequest) {
       .eq('id', targetUserId)
       .maybeSingle();
 
-    // 2. Fetch Auth User metadata
+    // 2. Fetch Workspace row
+    const { data: wsData } = await supabaseAdmin
+      .from('workspaces')
+      .select('name, logo_url')
+      .or(`id.eq.${targetUserId},owner_id.eq.${targetUserId}`)
+      .maybeSingle();
+
+    // 3. Fetch Auth User metadata
     let userMeta: Record<string, any> = {};
     let email = userEmail;
     try {
@@ -50,17 +57,19 @@ export async function GET(req: NextRequest) {
       }
     } catch (e) {}
 
+    const effectiveStudioName = wsData?.name || profile?.workspace_name || userMeta.workspace_name || 'My Studio';
+
     return NextResponse.json({
       success: true,
       profile: {
         id: targetUserId,
         fullName: profile?.full_name || userMeta.full_name || userMeta.name || '',
-        studioName: profile?.workspace_name || userMeta.workspace_name || 'My Studio',
+        studioName: effectiveStudioName,
         email: email || '',
         phone: profile?.phone || userMeta.phone || '',
         address: profile?.address || userMeta.address || '',
         avatarUrl: profile?.avatar_url || userMeta.avatar_url || '',
-        logoUrl: profile?.logo_url || userMeta.logo_url || '',
+        logoUrl: profile?.logo_url || wsData?.logo_url || userMeta.logo_url || '',
         instagram: profile?.instagram_handle || userMeta.instagram_handle || '',
         youtube: profile?.youtube_handle || userMeta.youtube_handle || '',
         facebook: profile?.facebook_handle || userMeta.facebook_handle || '',
@@ -75,7 +84,7 @@ export async function GET(req: NextRequest) {
 
 /**
  * POST /api/user/profile-setup
- * Saves or updates complete Studio Profile details in Supabase.
+ * Saves or updates complete Studio Profile details in Supabase (profiles, workspaces, and auth.users).
  */
 export async function POST(req: NextRequest) {
   try {
@@ -130,7 +139,42 @@ export async function POST(req: NextRequest) {
       console.warn('[Profile Upsert Warning]:', profileErr);
     }
 
-    // 2. Update Supabase Auth User Metadata
+    // 2. Update or Upsert in public.workspaces table
+    if (cleanStudioName) {
+      try {
+        const { data: existingWs } = await supabaseAdmin
+          .from('workspaces')
+          .select('id')
+          .or(`id.eq.${targetUserId},owner_id.eq.${targetUserId}`)
+          .maybeSingle();
+
+        if (existingWs?.id) {
+          await supabaseAdmin
+            .from('workspaces')
+            .update({
+              name: cleanStudioName,
+              logo_url: logoUrl || null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', existingWs.id);
+        } else {
+          await supabaseAdmin
+            .from('workspaces')
+            .insert([{
+              id: targetUserId,
+              owner_id: targetUserId,
+              name: cleanStudioName,
+              logo_url: logoUrl || null,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }]);
+        }
+      } catch (wsErr) {
+        console.warn('[Workspaces Table Update Warning]:', wsErr);
+      }
+    }
+
+    // 3. Update Supabase Auth User Metadata
     try {
       const userMeta: Record<string, any> = {};
       if (cleanStudioName) userMeta.workspace_name = cleanStudioName;

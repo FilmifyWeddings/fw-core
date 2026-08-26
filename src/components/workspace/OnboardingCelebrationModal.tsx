@@ -167,6 +167,7 @@ export default function OnboardingCelebrationModal({
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
       const currentUserId = session?.user?.id || userId;
 
       const payload = {
@@ -181,7 +182,10 @@ export default function OnboardingCelebrationModal({
 
       const res = await fetch('/api/user/profile-setup', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
         body: JSON.stringify(payload),
       });
 
@@ -189,6 +193,10 @@ export default function OnboardingCelebrationModal({
 
       if (res.ok && json.success) {
         setIsSavedSuccess(true);
+        if (typeof window !== 'undefined' && payload.studioName) {
+          localStorage.setItem('sc_studio_name', payload.studioName);
+          localStorage.setItem('fw_studio_name', payload.studioName);
+        }
         if (onProfileUpdated) {
           onProfileUpdated(payload);
         }

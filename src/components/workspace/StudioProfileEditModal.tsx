@@ -8,6 +8,7 @@ import {
   ExternalLink, Trash2, ArrowRight
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { compressImageToDataUrl } from '@/lib/image-compression';
 
 function InstagramIcon({ className = "w-4 h-4" }: { className?: string }) {
@@ -149,6 +150,8 @@ export default function StudioProfileEditModal({
     }
   };
 
+  const { refreshContext } = useWorkspace();
+
   // Submit Profile Changes
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -156,8 +159,12 @@ export default function StudioProfileEditModal({
     setErrorMessage(null);
 
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      const currentUserId = session?.user?.id || userId;
+
       const payload = {
-        userId,
+        userId: currentUserId,
         fullName: fullName.trim(),
         studioName: studioName.trim() || 'My Studio',
         phone: phone.trim(),
@@ -171,7 +178,10 @@ export default function StudioProfileEditModal({
 
       const res = await fetch('/api/user/profile-setup', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
         body: JSON.stringify(payload),
       });
 
@@ -180,19 +190,23 @@ export default function StudioProfileEditModal({
       if (res.ok && json.success) {
         setSavedSuccess(true);
         if (typeof window !== 'undefined') {
-          if (payload.studioName) localStorage.setItem('sc_studio_name', payload.studioName);
+          if (payload.studioName) {
+            localStorage.setItem('sc_studio_name', payload.studioName);
+            localStorage.setItem('fw_studio_name', payload.studioName);
+          }
           if (payload.avatarUrl) localStorage.setItem('sc_avatar_url', payload.avatarUrl);
           if (payload.logoUrl) localStorage.setItem('sc_logo_url', payload.logoUrl);
           if (payload.fullName) localStorage.setItem('sc_user_name', payload.fullName);
           window.dispatchEvent(new CustomEvent('sc_profile_updated', { detail: payload }));
         }
+        await refreshContext();
         if (onProfileSaved) {
           onProfileSaved(payload);
         }
         setTimeout(() => {
           setSavedSuccess(false);
           onClose();
-        }, 800);
+        }, 600);
       } else {
         throw new Error(json.error || 'Failed to save changes');
       }
