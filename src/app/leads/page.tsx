@@ -358,51 +358,73 @@ export default function LeadsPage() {
       const from = pageNum * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
 
-      // Load Leads batch of 100 with deterministic ordering
-      const { data: dbLeads, error: leadsErr } = await supabase
-        .from('leads')
-        .select('*')
-        .eq('workspace_id', targetUserId)
-        .order('created_at', { ascending: false })
-        .range(from, to);
+      let sanitizedLeads: Lead[] = [];
+      let fetchedSuccessfully = false;
 
-      if (leadsErr) {
-        console.error('[Leads Load Error]:', leadsErr);
-        if (pageNum === 0) setLeads([]);
-      } else if (dbLeads) {
-        if (dbLeads.length < PAGE_SIZE) {
-          setHasMore(false);
-        } else {
-          setHasMore(true);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token || '';
+        const apiRes = await fetch(`/api/leads?workspace_id=${targetUserId}&page=${pageNum}&pageSize=${PAGE_SIZE}&_nocache=${Date.now()}`, {
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          }
+        });
+
+        if (apiRes.ok) {
+          const json = await apiRes.json();
+          if (json.success && Array.isArray(json.leads)) {
+            sanitizedLeads = json.leads as Lead[];
+            setHasMore(json.hasMore ?? (sanitizedLeads.length >= PAGE_SIZE));
+            fetchedSuccessfully = true;
+          }
         }
+      } catch (apiErr) {
+        console.warn('[Leads API Fetch Error, falling back to direct query]:', apiErr);
+      }
 
-        const sanitizedLeads = (dbLeads as any[]).map(l => {
-          const raw = l.raw_payload || {};
-          return {
-            ...l,
-            name: l.name || l.full_name || raw.full_name || raw.name || 'Facebook Lead',
-            phone: l.phone || l.phone_number || raw.phone || raw.phone_number || '-',
-            email: l.email || raw.email || '-',
-            source: l.source || raw.source || (raw.campaign_name ? `Facebook Ads / ${raw.campaign_name}` : 'Facebook Lead Ad'),
-            status: l.status || 'new',
-            score: l.score || 'Cold ❄️',
-            score_reason: l.score_reason || '',
-            location: l.location || l.city || raw.location || raw.city || '-',
-            budget: l.budget || raw.budget || '-',
-            event_date: l.event_date || raw.event_date || '-',
-            raw_payload: raw,
-          };
-        }) as Lead[];
+      // Fallback to direct client query if API route was not reached
+      if (!fetchedSuccessfully) {
+        const { data: dbLeads, error: leadsErr } = await supabase
+          .from('leads')
+          .select('*')
+          .eq('workspace_id', targetUserId)
+          .order('created_at', { ascending: false })
+          .range(from, to);
 
-        if (pageNum === 0) {
-          setLeads(sanitizedLeads);
-        } else {
-          setLeads(prev => {
-            const existingIds = new Set(prev.map(l => l.id));
-            const newLeads = sanitizedLeads.filter(l => !existingIds.has(l.id));
-            return [...prev, ...newLeads];
-          });
+        if (leadsErr) {
+          console.error('[Leads Direct Load Error]:', leadsErr);
+          if (pageNum === 0) setLeads([]);
+        } else if (dbLeads) {
+          setHasMore(dbLeads.length >= PAGE_SIZE);
+          sanitizedLeads = (dbLeads as any[]).map(l => {
+            const raw = l.raw_payload || {};
+            return {
+              ...l,
+              name: l.name || l.full_name || raw.full_name || raw.name || 'Facebook Lead',
+              phone: l.phone || l.phone_number || raw.phone || raw.phone_number || '-',
+              email: l.email || raw.email || '-',
+              source: l.source || raw.source || (raw.campaign_name ? `Facebook Ads / ${raw.campaign_name}` : 'Facebook Lead Ad'),
+              status: l.status || 'new',
+              score: l.score || 'Cold ❄️',
+              score_reason: l.score_reason || '',
+              location: l.location || l.city || raw.location || raw.city || '-',
+              budget: l.budget || raw.budget || '-',
+              event_date: l.event_date || raw.event_date || '-',
+              raw_payload: raw,
+            };
+          }) as Lead[];
         }
+      }
+
+      if (pageNum === 0) {
+        setLeads(sanitizedLeads);
+      } else {
+        setLeads(prev => {
+          const existingIds = new Set(prev.map(l => l.id));
+          const newLeads = sanitizedLeads.filter(l => !existingIds.has(l.id));
+          return [...prev, ...newLeads];
+        });
       }
 
       if (pageNum === 0) {
