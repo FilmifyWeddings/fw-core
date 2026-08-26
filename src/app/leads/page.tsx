@@ -217,21 +217,38 @@ export default function LeadsPage() {
           event: '*',
           schema: 'public',
           table: 'leads',
-          filter: `workspace_id=eq.${userId}`
         },
         (payload) => {
           if (payload.eventType === 'INSERT') {
-            const newLead = payload.new as Lead;
+            const l = payload.new as any;
+            const newLead = {
+              ...l,
+              name: l.name || l.full_name || 'Facebook Lead',
+              phone: l.phone || l.phone_number || '-',
+              email: l.email || '-',
+              source: l.source || 'Facebook Lead Ad',
+              status: l.status || 'new',
+              raw_payload: l.raw_payload || {},
+            } as Lead;
             setLeads(prev => {
-              if (prev.some(l => l.id === newLead.id)) return prev;
+              if (prev.some(x => x.id === newLead.id)) return prev;
               return [newLead, ...prev];
             });
           } else if (payload.eventType === 'UPDATE') {
-            const updatedLead = payload.new as Lead;
-            setLeads(prev => prev.map(l => l.id === updatedLead.id ? { ...l, ...updatedLead } : l));
+            const l = payload.new as any;
+            const updatedLead = {
+              ...l,
+              name: l.name || l.full_name || 'Facebook Lead',
+              phone: l.phone || l.phone_number || '-',
+              email: l.email || '-',
+              source: l.source || 'Facebook Lead Ad',
+              status: l.status || 'new',
+              raw_payload: l.raw_payload || {},
+            } as Lead;
+            setLeads(prev => prev.map(x => x.id === updatedLead.id ? { ...x, ...updatedLead } : x));
           } else if (payload.eventType === 'DELETE') {
             const deletedId = (payload.old as any).id;
-            setLeads(prev => prev.filter(l => l.id !== deletedId));
+            setLeads(prev => prev.filter(x => x.id !== deletedId));
           }
         }
       )
@@ -341,14 +358,28 @@ export default function LeadsPage() {
       const from = pageNum * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
 
-      // Load Leads batch of 100 with deterministic ordering
-      const { data: dbLeads, error: leadsErr } = await supabase
+      // Check if targetUserId has an associated profile workspace_id
+      const { data: userProfile } = await supabase
+        .from('profiles')
+        .select('workspace_id')
+        .eq('id', targetUserId)
+        .maybeSingle();
+
+      const profileWsId = userProfile?.workspace_id;
+      let query = supabase
         .from('leads')
         .select('*')
-        .eq('workspace_id', targetUserId)
         .order('created_at', { ascending: false })
         .order('id', { ascending: false })
         .range(from, to);
+
+      if (profileWsId && profileWsId !== targetUserId) {
+        query = query.or(`workspace_id.eq.${targetUserId},workspace_id.eq.${profileWsId},tenant_id.eq.${targetUserId},tenant_id.eq.${profileWsId}`);
+      } else {
+        query = query.or(`workspace_id.eq.${targetUserId},tenant_id.eq.${targetUserId}`);
+      }
+
+      const { data: dbLeads, error: leadsErr } = await query;
 
       if (leadsErr) {
         console.error('[Leads Load Error]:', leadsErr);
@@ -360,12 +391,22 @@ export default function LeadsPage() {
           setHasMore(true);
         }
 
+        const sanitizedLeads = (dbLeads as any[]).map(l => ({
+          ...l,
+          name: l.name || l.full_name || 'Facebook Lead',
+          phone: l.phone || l.phone_number || '-',
+          email: l.email || '-',
+          source: l.source || 'Facebook Lead Ad',
+          status: l.status || 'new',
+          raw_payload: l.raw_payload || {},
+        })) as Lead[];
+
         if (pageNum === 0) {
-          setLeads(dbLeads as Lead[]);
+          setLeads(sanitizedLeads);
         } else {
           setLeads(prev => {
             const existingIds = new Set(prev.map(l => l.id));
-            const newLeads = (dbLeads as Lead[]).filter(l => !existingIds.has(l.id));
+            const newLeads = sanitizedLeads.filter(l => !existingIds.has(l.id));
             return [...prev, ...newLeads];
           });
         }

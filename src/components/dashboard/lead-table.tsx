@@ -1448,10 +1448,16 @@ export function LeadTable({
 
   // Filter trigger calculation
   const filteredLeads = leads.filter(lead => {
+    const leadName = String(lead.name || (lead as any).full_name || '');
+    const leadPhone = String(lead.phone || (lead as any).phone_number || '');
+    const leadEmail = String(lead.email || '');
+    const leadSource = String(lead.source || '');
+    const leadScore = lead.score || '';
+
     const matchesSearch = 
-      (lead.name?.toLowerCase() || '').includes(search.toLowerCase()) ||
-      lead.phone.includes(search) ||
-      (lead.email?.toLowerCase() || '').includes(search.toLowerCase());
+      leadName.toLowerCase().includes(search.toLowerCase()) ||
+      leadPhone.includes(search) ||
+      leadEmail.toLowerCase().includes(search.toLowerCase());
     
     const matchesStatus = statusFilter === 'all' || 
       lead.stage_id === statusFilter || 
@@ -1459,10 +1465,10 @@ export function LeadTable({
       (stagesState.find(s => s.id === statusFilter)?.name?.toLowerCase() === lead.status?.toLowerCase()) ||
       (stagesState.find(s => s.id === statusFilter)?.name?.toLowerCase() === lead.stage_id?.toLowerCase()) ||
       (stagesState.find(s => s.name?.toLowerCase() === statusFilter?.toLowerCase())?.id?.toLowerCase() === lead.stage_id?.toLowerCase());
-    const matchesSource = sourceFilter === 'all' || lead.source.toLowerCase() === sourceFilter.toLowerCase();
-    const matchesScore = scoreFilter === 'all' || lead.score === scoreFilter;
+    const matchesSource = sourceFilter === 'all' || leadSource.toLowerCase() === sourceFilter.toLowerCase();
+    const matchesScore = scoreFilter === 'all' || leadScore === scoreFilter;
     
-    const owner = lead.raw_payload?.lead_owner || 'Unassigned';
+    const owner = lead.raw_payload?.lead_owner || (lead as any).lead_owner || 'Unassigned';
     const matchesOwner = ownerFilter === 'all' || owner === ownerFilter;
 
     // Sidebar Filter logic
