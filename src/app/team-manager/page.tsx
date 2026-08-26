@@ -277,8 +277,14 @@ export default function TeamManagerPage() {
     avatar_url?: string;
   }) => {
     try {
+      const { permissions, roles, ...cleanMemberData } = memberData as any;
       const payload = {
-        ...memberData,
+        name: cleanMemberData.name,
+        primary_role: cleanMemberData.primary_role,
+        country_code: cleanMemberData.country_code || '+91',
+        phone_number: cleanMemberData.phone_number,
+        email: cleanMemberData.email || null,
+        avatar_url: cleanMemberData.avatar_url || null,
         ...(currentUserId ? { user_id: currentUserId } : {})
       };
 
