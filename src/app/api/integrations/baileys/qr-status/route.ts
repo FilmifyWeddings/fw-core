@@ -68,11 +68,10 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Normalize: treat open / CONNECTED / open status as connected
+    // Normalize: treat open / CONNECTED status as connected immediately without waiting for phone number
     const rawState = (data.conn_state as string) ?? 'disconnected';
     const rawStatus = (data.status as string) ?? '';
-    const hasPhone = !!(data.phone_number && (data.phone_number as string).length > 5);
-    const isConnected = (rawState === 'open' || rawStatus === 'CONNECTED' || rawStatus === 'open') && hasPhone;
+    const isConnected = rawState === 'open' || rawStatus === 'CONNECTED' || rawStatus === 'open';
 
     const qrString = isConnected ? null : ((data.qr_string as string) ?? null);
 

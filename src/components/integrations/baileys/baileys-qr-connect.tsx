@@ -147,8 +147,13 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
       });
       if (!res.ok) return;
       const d = await res.json();
-      if (d.isConnected && d.phone_number) {
-        setConnState('open'); setPhoneNumber(d.phone_number); setQrString(null); qrStringRef.current = null; setIsResetting(false); stopPolling();
+      if (d.isConnected || d.conn_state === 'open' || d.status === 'CONNECTED') {
+        setConnState('open'); 
+        setPhoneNumber(d.phone_number || 'Connected Device'); 
+        setQrString(null); 
+        qrStringRef.current = null; 
+        setIsResetting(false); 
+        stopPolling();
       } else if (d.qr_string) {
         updateQr(d.qr_string);
       } else if (d.conn_state === 'connecting') {
@@ -163,7 +168,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
   const startPolling = useCallback((fast = true) => {
     if (pollRef.current) clearInterval(pollRef.current);
     tick();
-    pollRef.current = setInterval(tick, fast ? 2000 : 3000);
+    pollRef.current = setInterval(tick, fast ? 1500 : 2500);
   }, [tick]);
 
   const initSSE = useCallback(async () => {
@@ -182,8 +187,12 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
       });
       sse.addEventListener('connected', (e) => {
         const d = JSON.parse(e.data);
-        setConnState('open'); setPhoneNumber(d.phone ?? null); setQrString(null); setIsResetting(false);
-        sse.close(); stopPolling();
+        setConnState('open'); 
+        setPhoneNumber(d.phone ?? 'Connected Device'); 
+        setQrString(null); 
+        setIsResetting(false);
+        sse.close(); 
+        stopPolling();
       });
       sse.onerror = () => { startPolling(true); };
       startPolling(true);
@@ -203,9 +212,12 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
           });
           if (res.ok) {
             const d = await res.json();
-            if (d.isConnected && d.phone_number) {
+            if (d.isConnected || d.conn_state === 'open' || d.status === 'CONNECTED') {
               if (isMounted) {
-                setConnState('open'); setPhoneNumber(d.phone_number); setQrString(null); setIsResetting(false);
+                setConnState('open'); 
+                setPhoneNumber(d.phone_number || 'Connected Device'); 
+                setQrString(null); 
+                setIsResetting(false);
               }
               return;
             }
@@ -231,11 +243,17 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
         { event: '*', schema: 'public', table: 'baileys_sessions' },
         (payload) => {
           const newState = (payload.new as any)?.conn_state;
+          const status = (payload.new as any)?.status;
           const phone = (payload.new as any)?.phone_number;
           const qr = (payload.new as any)?.qr_string;
-          if (newState === 'open' && isMounted) {
-            setConnState('open'); setPhoneNumber(phone ?? null); setQrString(null); qrStringRef.current = null; setIsResetting(false); stopPolling();
-          } else if (qr && isMounted && newState !== 'open') {
+          if ((newState === 'open' || status === 'CONNECTED') && isMounted) {
+            setConnState('open'); 
+            setPhoneNumber(phone ?? 'Connected Device'); 
+            setQrString(null); 
+            qrStringRef.current = null; 
+            setIsResetting(false); 
+            stopPolling();
+          } else if (qr && isMounted && newState !== 'open' && status !== 'CONNECTED') {
             updateQr(qr);
           }
         }
