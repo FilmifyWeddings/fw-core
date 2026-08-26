@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { verifyMetaAuth } from '@/lib/meta-auth';
 import { getNextDistributedLeadOwner } from '@/lib/lead-distribution';
+import { extractLeadFields } from '@/lib/meta-lead-normalizer';
 
 /**
  * POST /api/meta/forms/sync
@@ -206,15 +207,12 @@ export async function POST(req: NextRequest) {
         const estimatedTotal = countData.paging?.cursors ? -1 : (countData.data?.length || 0);
         controller.enqueue(sseEvent({ type: 'start', total: estimatedTotal, form_name: formName, page_name: pageName }));
 
-        // Paginate through all leads
-        do {
-          pageNum++;
-          let url = `https://graph.facebook.com/v20.0/${form_id}/leads?fields=id,created_time,field_data,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,form_id&limit=100&access_token=${pageToken}`;
-          if (nextCursor) {
-            url += `&after=${nextCursor}`;
-          }
+        // Paginate through all leads using paging.next and limit=100
+        let nextUrl: string | null = `https://graph.facebook.com/v20.0/${form_id}/leads?fields=id,created_time,field_data,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,form_id&limit=100&access_token=${pageToken}`;
 
-          const leadsData = await fetchGraphWithFallback(url);
+        while (nextUrl && pageNum < 150) {
+          pageNum++;
+          const leadsData = await fetchGraphWithFallback(nextUrl);
 
           if (leadsData.error) {
             throw new Error(`Graph API Error: ${leadsData.error.message} (Code: ${leadsData.error.code})`);
@@ -224,9 +222,10 @@ export async function POST(req: NextRequest) {
           allLeads.push(...batch);
           totalFetched = allLeads.length;
 
-          nextCursor = leadsData.paging?.cursors?.after || null;
-          const hasMore = leadsData.paging?.next ? true : false;
-          if (!hasMore) nextCursor = null;
+          nextUrl = leadsData.paging?.next || null;
+          if (!nextUrl && leadsData.paging?.cursors?.after && batch.length >= 100) {
+            nextUrl = `https://graph.facebook.com/v20.0/${form_id}/leads?fields=id,created_time,field_data,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,form_id&limit=100&after=${leadsData.paging.cursors.after}&access_token=${pageToken}`;
+          }
 
           // Emit progress after each page fetch
           controller.enqueue(sseEvent({
@@ -237,8 +236,7 @@ export async function POST(req: NextRequest) {
             current: totalFetched,
             message: `Fetched ${totalFetched} leads from Meta…`,
           }));
-
-        } while (nextCursor && pageNum < 50); // safety cap: 5000 leads max
+        }
 
         // ── Step 2: Import leads to CRM with duplicate detection ─────────────
         for (let i = 0; i < allLeads.length; i++) {
@@ -270,57 +268,8 @@ export async function POST(req: NextRequest) {
             continue;
           }
 
-          // ── Extract field_data ─────────────────────────────────────────────
-          const fieldData: Record<string, string> = {};
-          if (lead.field_data && Array.isArray(lead.field_data)) {
-            lead.field_data.forEach((field: { name: string; values: string[] }) => {
-              const key = (field.name || '').toLowerCase().trim();
-              const val = field.values?.[0] || '';
-              fieldData[key] = val;
-            });
-          }
-
-          const fullName =
-            fieldData['full_name'] ||
-            fieldData['name'] ||
-            [fieldData['first_name'], fieldData['last_name']].filter(Boolean).join(' ') ||
-            'Facebook Lead';
-
-          const phone =
-            fieldData['phone_number'] ||
-            fieldData['phone'] ||
-            fieldData['mobile'] ||
-            fieldData['contact_number'] ||
-            fieldData['whatsapp_number'] ||
-            '';
-
-          const email =
-            fieldData['email'] ||
-            fieldData['email_address'] ||
-            fieldData['work_email'] ||
-            '';
-
-          const eventDate =
-            fieldData['event_date'] ||
-            fieldData['wedding_date'] ||
-            fieldData['date_of_event'] ||
-            fieldData['date'] ||
-            fieldData['shoot_date'] ||
-            null;
-
-          const location =
-            fieldData['city'] ||
-            fieldData['location'] ||
-            fieldData['event_location'] ||
-            fieldData['wedding_location'] ||
-            fieldData['venue'] ||
-            '';
-
-          const budget =
-            fieldData['budget'] ||
-            fieldData['expected_budget'] ||
-            fieldData['package'] ||
-            null;
+          // ── Extract normalized fields ──────────────────────────────────────
+          const extracted = extractLeadFields(lead.field_data || []);
 
           // ── Determine assigned Lead Owner & WhatsApp Group ───────────────
           let assignedLeadOwner: string | null = null;
@@ -343,18 +292,23 @@ export async function POST(req: NextRequest) {
           const newLeadItem: Record<string, any> = {
             workspace_id: workspaceId,
             tenant_id: workspaceId,
-            name: fullName,
-            phone: phone || null,
-            email: email || null,
+            name: extracted.fullName,
+            full_name: extracted.fullName,
+            phone: extracted.phone || null,
+            phone_number: extracted.phone || null,
+            email: extracted.email || null,
             source: `Facebook Ads / ${formName}`,
             status: 'new',
+            form_id: form_id,
             source_form_id: form_id,
             form_tag: formName,
             meta_lead_id: leadgen_id,
             whatsapp_group_id: contactGroupId,
-            event_date: eventDate,
-            location: location,
-            budget: budget,
+            event_date: extracted.eventDate || null,
+            location: extracted.location || null,
+            city: extracted.location || null,
+            budget: extracted.budget || null,
+            raw_field_data: extracted.rawFieldMap,
             created_at: lead.created_time
               ? new Date(lead.created_time).toISOString()
               : new Date().toISOString(),
@@ -372,7 +326,7 @@ export async function POST(req: NextRequest) {
               field_data: lead.field_data || [],
               lead_owner: assignedLeadOwner || 'Unassigned',
               synced_manually: true,
-              ...fieldData,
+              ...extracted.rawFieldMap,
             },
           };
 

@@ -915,8 +915,8 @@ export default function MetaIntegrationPage() {
     });
   }, [realSyncLogs, logSearchQuery, logStatusFilter]);
 
-  const enabledCount = useMemo(() => leadForms.filter(f => f.is_enabled !== false).length, [leadForms]);
-  const disabledCount = useMemo(() => leadForms.filter(f => f.is_enabled === false).length, [leadForms]);
+  const enabledCount = useMemo(() => leadForms.filter(f => (f.is_sync_enabled === true || f.is_enabled === true)).length, [leadForms]);
+  const disabledCount = useMemo(() => leadForms.filter(f => !(f.is_sync_enabled === true || f.is_enabled === true)).length, [leadForms]);
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] font-sans text-slate-900 p-2 sm:p-4 lg:p-8 selection:bg-[#0866FF] selection:text-white">
@@ -1181,7 +1181,7 @@ export default function MetaIntegrationPage() {
                 <tbody className="divide-y divide-slate-100">
                   {filteredForms.length > 0 ? (
                     filteredForms.map(form => {
-                      const isEnabled = form.is_enabled !== false;
+                      const isEnabled = form.is_sync_enabled === true || form.is_enabled === true;
                       const isToggling = toggleLoading.get(form.form_id) || false;
                       const isMapping = mappingLoading.get(form.form_id) || false;
                       const syncState = syncStates.get(form.form_id) || DEFAULT_SYNC;
@@ -1284,7 +1284,7 @@ export default function MetaIntegrationPage() {
             {/* Compact Mobile Cards View */}
             <div className="block md:hidden space-y-2.5">
               {filteredForms.map(form => {
-                const isEnabled = form.is_enabled !== false;
+                const isEnabled = form.is_sync_enabled === true || form.is_enabled === true;
                 const isToggling = toggleLoading.get(form.form_id) || false;
                 const isMapping = mappingLoading.get(form.form_id) || false;
                 const syncState = syncStates.get(form.form_id) || DEFAULT_SYNC;

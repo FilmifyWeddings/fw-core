@@ -40,39 +40,34 @@ export async function PATCH(req: NextRequest) {
       .select('form_id, form_name, is_enabled')
       .single();
 
-    if (error) {
-      console.error('[Forms Toggle API] fb_lead_forms update error:', error.message, error.code);
-
-      // Column pending migration – track client-side only
-      if (error.code === '42703') {
-        return NextResponse.json({
-          success: true,
-          form_id,
-          is_enabled,
-          warning: 'is_enabled column pending migration. Run SQL: ALTER TABLE fb_lead_forms ADD COLUMN IF NOT EXISTS is_enabled BOOLEAN DEFAULT TRUE;',
-        });
-      }
-
-      return NextResponse.json(
-        { success: false, error: error.message },
-        { status: 500 }
-      );
+    if (error && error.code !== '42703') {
+      console.error('[Forms Toggle API] fb_lead_forms update error:', error.message);
     }
 
+    // ── Update meta_lead_forms.is_enabled / is_sync_enabled ──────────────────
+    try {
+      await supabaseAdmin
+        .from('meta_lead_forms')
+        .update({ is_enabled, updated_at: now })
+        .eq('workspace_id', workspaceId)
+        .eq('form_id', form_id);
+    } catch (_) {}
+
     // ── Mirror toggle to fb_form_mappings.is_active (legacy webhook check) ───
-    // Use upsert so it works even if the mapping doesn't exist yet.
-    const { error: mappingError } = await supabaseAdmin
-      .from('fb_form_mappings')
-      .upsert(
-        {
-          workspace_id: workspaceId,
-          form_id,
-          form_name: data?.form_name || form_id,
-          is_active: is_enabled,
-          updated_at: now,
-        },
-        { onConflict: 'workspace_id,form_id', ignoreDuplicates: false }
-      );
+    try {
+      await supabaseAdmin
+        .from('fb_form_mappings')
+        .upsert(
+          {
+            workspace_id: workspaceId,
+            form_id,
+            form_name: data?.form_name || form_id,
+            is_active: is_enabled,
+            updated_at: now,
+          },
+          { onConflict: 'workspace_id,form_id', ignoreDuplicates: false }
+        );
+    } catch (_) {}
 
     // ── Fetch & save questions from Graph API when form is enabled ─────────
     if (is_enabled) {

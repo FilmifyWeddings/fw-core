@@ -2971,22 +2971,32 @@ export function LeadTable({
                                     </span>
                                   </MotionTd>
                                 );
-                              case 'event_date':
+                              case 'event_date': {
+                                const rawDate = (lead as any).event_date || lead.raw_payload?.event_date || lead.raw_payload?.wedding_date || lead.raw_payload?.shoot_date || lead.raw_payload?.date;
+                                let displayDate = '—';
+                                if (rawDate) {
+                                  if (!isNaN(Date.parse(rawDate))) {
+                                    displayDate = new Date(rawDate).toLocaleDateString('en-IN');
+                                  } else {
+                                    displayDate = String(rawDate);
+                                  }
+                                }
                                 return (
                                   <MotionTd key={col.id} className="py-2.5 px-3.5 text-xs text-slate-800 dark:text-zinc-200 font-semibold whitespace-nowrap">
-                                    {lead.raw_payload?.event_date ? new Date(lead.raw_payload.event_date).toLocaleDateString('en-IN') : '—'}
+                                    {displayDate}
                                   </MotionTd>
                                 );
+                              }
                               case 'budget':
                                 return (
                                   <MotionTd key={col.id} className="py-2.5 px-3.5 text-xs text-emerald-700 dark:text-emerald-400 font-bold whitespace-nowrap">
-                                    {lead.raw_payload?.budget || '—'}
+                                    {(lead as any).budget || lead.raw_payload?.budget || lead.raw_payload?.package || lead.raw_payload?.expected_budget || '—'}
                                   </MotionTd>
                                 );
                               case 'location':
                                 return (
                                   <MotionTd key={col.id} className="py-2.5 px-3.5 text-xs text-slate-800 dark:text-zinc-200 font-semibold whitespace-nowrap">
-                                    {lead.raw_payload?.location || lead.raw_payload?.city || '—'}
+                                    {(lead as any).location || (lead as any).city || lead.raw_payload?.location || lead.raw_payload?.city || lead.raw_payload?.event_location || lead.raw_payload?.wedding_location || '—'}
                                   </MotionTd>
                                 );
                               case 'venue':

@@ -69,18 +69,23 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const forms = allForms.map(f => ({
-      form_id: f.form_id,
-      name: f.form_name,
-      form_name: f.form_name,
-      status: (f.status || 'ACTIVE').toUpperCase(),
-      page_id: f.page_id,
-      page_name: pageMap.get(f.page_id) || 'Facebook Page',
-      is_active: true,
-      sync_count: f.leads_count || 0,
-      last_lead_time: f.created_time || 'Active',
-      questions_count: 5,
-    }));
+    const forms = allForms.map(f => {
+      const isFormEnabled = f.is_sync_enabled ?? f.is_enabled ?? false;
+      return {
+        form_id: f.form_id,
+        name: f.form_name,
+        form_name: f.form_name,
+        status: (f.status || 'ACTIVE').toUpperCase(),
+        page_id: f.page_id,
+        page_name: pageMap.get(f.page_id) || 'Facebook Page',
+        is_active: true,
+        is_enabled: isFormEnabled,
+        is_sync_enabled: isFormEnabled,
+        sync_count: f.leads_count || 0,
+        last_lead_time: f.created_time || 'Active',
+        questions_count: 5,
+      };
+    });
 
     return NextResponse.json({
       success: true,

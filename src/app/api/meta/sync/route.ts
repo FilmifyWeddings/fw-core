@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { verifyMetaAuth } from '@/lib/meta-auth';
+import { extractLeadFields } from '@/lib/meta-lead-normalizer';
 
 /**
  * POST /api/meta/sync
@@ -21,63 +22,39 @@ export async function POST(req: NextRequest) {
 
     const workspaceId = authResult.workspaceId;
 
-    // 1. Fetch Page Access Token from `fb_page_configs` or `integration_credentials`
+    // 1. Get Page Access Token from Supabase
     let pageToken = '';
     if (page_id) {
-      const { data: page } = await supabaseAdmin
+      const { data: pageConfig } = await supabaseAdmin
         .from('fb_page_configs')
         .select('page_access_token')
         .eq('workspace_id', workspaceId)
         .eq('page_id', page_id)
         .maybeSingle();
 
-      if (page?.page_access_token) {
-        pageToken = page.page_access_token;
-      } else {
-        const { data: fbPage } = await supabaseAdmin
-          .from('fb_page_configs')
-          .select('page_access_token')
-          .eq('page_id', page_id)
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (fbPage?.page_access_token) pageToken = fbPage.page_access_token;
+      if (pageConfig?.page_access_token) {
+        pageToken = pageConfig.page_access_token;
       }
     }
 
     if (!pageToken) {
-      const { data: conn } = await supabaseAdmin
+      const { data: creds } = await supabaseAdmin
         .from('integration_credentials')
         .select('access_token')
         .eq('user_id', workspaceId)
         .eq('provider', 'meta')
         .maybeSingle();
 
-      if (conn?.access_token) pageToken = conn.access_token;
+      if (creds?.access_token) {
+        pageToken = creds.access_token;
+      }
     }
 
-    if (!pageToken || pageToken.startsWith('mock_')) {
-      // Mock simulation mode if Meta access token is not active
-      const simulatedCount = days === '7' ? 5 : days === '30' ? 14 : 28;
-      const duplicateCount = 2;
-      const expectedNew = Math.max(0, simulatedCount - duplicateCount);
-
-      if (estimate_only) {
-        return NextResponse.json({
-          success: true,
-          estimated_total: simulatedCount,
-          already_imported: duplicateCount,
-          duplicates: duplicateCount,
-          expected_new: expectedNew,
-        });
-      }
-
+    if (!pageToken) {
       return NextResponse.json({
-        success: true,
-        imported_count: expectedNew,
-        duplicate_skipped_count: duplicateCount,
-        message: `Historical Lead Sync Complete! Imported ${expectedNew} new lead(s) from Meta (${duplicateCount} duplicates skipped).`,
-      });
+        success: false,
+        error: 'No valid Page Access Token found for this workspace. Please reconnect Facebook.',
+      }, { status: 400 });
     }
 
     // 2. Compute date threshold for Meta Graph API query
@@ -104,15 +81,13 @@ export async function POST(req: NextRequest) {
     let duplicateCount = 0;
     let totalFetched = 0;
     const insertedLeads: any[] = [];
-    let nextCursor: string | null = null;
     let pageIterations = 0;
 
-    do {
-      pageIterations++;
-      let metaGraphUrl = `https://graph.facebook.com/v20.0/${form_id || '1193618092947278'}/leads?fields=id,created_time,field_data,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,form_id&limit=100${sinceQuery}&access_token=${pageToken}`;
-      if (nextCursor) metaGraphUrl += `&after=${nextCursor}`;
+    let nextUrl: string | null = `https://graph.facebook.com/v20.0/${form_id || '1193618092947278'}/leads?fields=id,created_time,field_data,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,form_id&limit=100${sinceQuery}&access_token=${pageToken}`;
 
-      const graphRes = await fetch(metaGraphUrl);
+    while (nextUrl && pageIterations < 150) {
+      pageIterations++;
+      const graphRes = await fetch(nextUrl);
       if (!graphRes.ok) {
         const err = await graphRes.json().catch(() => ({}));
         if (totalFetched === 0) {
@@ -148,72 +123,28 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
-        // Parse field_data
-        const fieldData: Record<string, string> = {};
-        if (leadItem.field_data && Array.isArray(leadItem.field_data)) {
-          leadItem.field_data.forEach((field: { name: string; values: string[] }) => {
-            const key = (field.name || '').toLowerCase().trim();
-            const val = field.values?.[0] || '';
-            fieldData[key] = val;
-          });
-        }
-
-        const fullName =
-          fieldData['full_name'] ||
-          fieldData['name'] ||
-          [fieldData['first_name'], fieldData['last_name']].filter(Boolean).join(' ') ||
-          'Facebook Lead';
-
-        const phone =
-          fieldData['phone_number'] ||
-          fieldData['phone'] ||
-          fieldData['mobile'] ||
-          fieldData['contact_number'] ||
-          fieldData['whatsapp_number'] ||
-          '';
-
-        const email =
-          fieldData['email'] ||
-          fieldData['email_address'] ||
-          fieldData['work_email'] ||
-          '';
-
-        const eventDate =
-          fieldData['event_date'] ||
-          fieldData['wedding_date'] ||
-          fieldData['date_of_event'] ||
-          fieldData['date'] ||
-          fieldData['shoot_date'] ||
-          null;
-
-        const location =
-          fieldData['city'] ||
-          fieldData['location'] ||
-          fieldData['event_location'] ||
-          fieldData['wedding_location'] ||
-          fieldData['venue'] ||
-          '';
-
-        const budget =
-          fieldData['budget'] ||
-          fieldData['expected_budget'] ||
-          fieldData['package'] ||
-          null;
+        // Parse normalized field_data
+        const extracted = extractLeadFields(leadItem.field_data || []);
 
         const newLeadPayload: Record<string, any> = {
           workspace_id: workspaceId,
           tenant_id: workspaceId,
-          name: fullName,
-          phone: phone || null,
-          email: email || null,
+          name: extracted.fullName,
+          full_name: extracted.fullName,
+          phone: extracted.phone || null,
+          phone_number: extracted.phone || null,
+          email: extracted.email || null,
           source: `Facebook Ads / ${formName}`,
           status: 'new',
+          form_id: form_id || leadItem.form_id,
           source_form_id: form_id || leadItem.form_id,
           form_tag: formName,
           meta_lead_id: leadgenId,
-          event_date: eventDate,
-          location: location,
-          budget: budget,
+          event_date: extracted.eventDate || null,
+          location: extracted.location || null,
+          city: extracted.location || null,
+          budget: extracted.budget || null,
+          raw_field_data: extracted.rawFieldMap,
           created_at: leadItem.created_time || new Date().toISOString(),
           updated_at: new Date().toISOString(),
           raw_payload: {
@@ -227,7 +158,7 @@ export async function POST(req: NextRequest) {
             ad_name: leadItem.ad_name || '',
             field_data: leadItem.field_data || [],
             synced_via: 'manual_bulk_sync',
-            ...fieldData,
+            ...extracted.rawFieldMap,
           },
         };
 
@@ -267,11 +198,11 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      nextCursor = graphData.paging?.cursors?.after || null;
-      const hasMore = Boolean(graphData.paging?.next);
-      if (!hasMore) nextCursor = null;
-
-    } while (nextCursor && pageIterations < 50);
+      nextUrl = graphData.paging?.next || null;
+      if (!nextUrl && graphData.paging?.cursors?.after && leadsList.length >= 100) {
+        nextUrl = `https://graph.facebook.com/v20.0/${form_id || '1193618092947278'}/leads?fields=id,created_time,field_data,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,form_id&limit=100${sinceQuery}&after=${graphData.paging.cursors.after}&access_token=${pageToken}`;
+      }
+    }
 
     if (estimate_only) {
       return NextResponse.json({

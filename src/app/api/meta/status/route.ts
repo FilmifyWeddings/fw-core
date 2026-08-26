@@ -276,7 +276,7 @@ export async function GET(req: NextRequest) {
                 form_name: f.form_name,
                 status: f.status || 'ACTIVE',
                 leads_count: f.leads_count || 0,
-                is_enabled: true,
+                is_enabled: f.is_enabled ?? false,
                 updated_at: now,
               }, { onConflict: 'form_id' })
               .select('*')
@@ -316,7 +316,7 @@ export async function GET(req: NextRequest) {
                 form_name: formName,
                 status,
                 leads_count: leadsCount,
-                is_enabled: true,
+                is_enabled: false,
                 updated_at: now,
               }, { onConflict: 'form_id' })
               .select('*')
@@ -342,7 +342,7 @@ export async function GET(req: NextRequest) {
             form_name: `${p.page_name || 'Facebook Page'} Lead Form`,
             status: 'ACTIVE',
             leads_count: 0,
-            is_enabled: true,
+            is_enabled: false,
             updated_at: now,
           }, { onConflict: 'form_id' })
           .select('*')
@@ -379,7 +379,7 @@ export async function GET(req: NextRequest) {
           status: 'ACTIVE',
           leads_count: 0,
           created_at: m.created_at || new Date().toISOString(),
-          is_enabled: m.is_active ?? true,
+          is_enabled: m.is_active ?? false,
         });
       }
     }
@@ -404,11 +404,6 @@ export async function GET(req: NextRequest) {
       lastLeadTime = sorted[0].created_at;
     }
 
-    // If leads are missing in CRM but forms exist on Meta, trigger background auto-sync
-    if (metaLeads.length === 0 && formsData.length > 0 && isConnected) {
-      autoSyncAllMetaForms(workspaceId, conn?.access_token).catch(() => {});
-    }
-
     const formMap = new Map(formsData.map((f: any) => [f.form_id, f.form_name]));
 
     const forms = formsData.map((f: any) => {
@@ -429,6 +424,8 @@ export async function GET(req: NextRequest) {
         last_assigned_index: -1
       };
 
+      const isFormEnabled = f.is_sync_enabled ?? f.is_enabled ?? false;
+
       return {
         form_id: f.form_id,
         page_id: f.page_id,
@@ -444,7 +441,8 @@ export async function GET(req: NextRequest) {
         failed_count: 0,
         duplicate_count: 0,
         is_active: true,
-        is_enabled: f.is_enabled ?? true,
+        is_enabled: isFormEnabled,
+        is_sync_enabled: isFormEnabled,
         contact_group_id: mObj?.contact_group_id || null,
         distribution_config: formDist,
         last_lead_received: formLastLeadTime || lastLeadTime,

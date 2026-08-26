@@ -575,9 +575,19 @@ export async function GET(req: NextRequest) {
       totalFormsCount += forms.length;
 
       for (const form of forms) {
-        console.log(`[Supabase DB Write Audit] Upserting form "${form.form_name}" (${form.form_id}) into fb_lead_forms & fb_form_mappings...`);
+        console.log(`[Supabase DB Write Audit] Registering form "${form.form_name}" (${form.form_id}) in disabled state by default...`);
 
-        // SAVE FORM INTO fb_lead_forms (with only valid columns)
+        // Check if form already exists to preserve user toggle state across reconnects
+        const { data: existingForm } = await supabaseAdmin
+          .from('fb_lead_forms')
+          .select('is_enabled')
+          .eq('workspace_id', workspaceId)
+          .eq('form_id', form.form_id)
+          .maybeSingle();
+
+        const currentToggleState = existingForm?.is_enabled ?? false;
+
+        // SAVE FORM INTO fb_lead_forms
         const { data: formResult, error: formErr } = await supabaseAdmin
           .from('fb_lead_forms')
           .upsert({
@@ -588,12 +598,11 @@ export async function GET(req: NextRequest) {
             status: form.status || 'ACTIVE',
             leads_count: form.sync_count || 0,
             created_time: form.created_time || new Date().toISOString(),
-            is_enabled: true,
+            is_enabled: currentToggleState,
             updated_at: new Date().toISOString(),
           }, { onConflict: 'workspace_id,form_id' })
           .select('*');
 
-        console.log(`[Supabase DB Write Audit] fb_lead_forms upsert result for form ${form.form_id}:\n`, JSON.stringify(formResult, null, 2));
         if (formErr) {
           console.error(`[Supabase DB ERROR] fb_lead_forms upsert FAILED for form ${form.form_id}:`, formErr.message, formErr.details);
         }
@@ -607,7 +616,7 @@ export async function GET(req: NextRequest) {
               form_id: form.form_id,
               form_name: form.form_name,
               status: form.status || 'ACTIVE',
-              is_enabled: true,
+              is_enabled: currentToggleState,
               total_leads_count: form.sync_count || 0,
               last_synced_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
@@ -622,32 +631,20 @@ export async function GET(req: NextRequest) {
             page_id: page.page_id,
             form_id: form.form_id,
             form_name: form.form_name,
-            is_active: true,
+            is_active: currentToggleState,
             is_tagging_enabled: true,
             mapping_config: { questions: form.questions || [] },
             updated_at: new Date().toISOString(),
           }, { onConflict: 'workspace_id,form_id' });
-
-        // 4. Ingest All Historical Leads for this Form
-        const leadSyncStats = await ingestHistoricalLeadsForForm(
-          workspaceId,
-          form.form_id,
-          form.form_name,
-          page.page_id,
-          page.page_name,
-          page.page_access_token
-        );
-        totalHistoricalLeadsImported += leadSyncStats.imported;
       }
     }
 
-    console.log(`[Meta OAuth Callback SUCCESS] Saved ${pages.length} Pages, ${totalFormsCount} Forms & Imported ${totalHistoricalLeadsImported} Historical Leads for workspace ${workspaceId}.`);
+    console.log(`[Meta OAuth Callback SUCCESS] Saved ${pages.length} Pages & ${totalFormsCount} Forms (Toggles default to OFF) for workspace ${workspaceId}.`);
 
     const successParams = new URLSearchParams({
       meta_success: 'connected',
       pages_count: String(pages.length),
       forms_count: String(totalFormsCount),
-      leads_imported: String(totalHistoricalLeadsImported),
       user_name: userProfile.name || 'Meta Account',
     });
 

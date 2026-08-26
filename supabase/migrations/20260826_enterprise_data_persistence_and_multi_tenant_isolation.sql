@@ -45,9 +45,30 @@ CREATE TABLE IF NOT EXISTS public.meta_lead_forms (
   form_id TEXT NOT NULL,
   form_name TEXT,
   status TEXT DEFAULT 'ACTIVE',
-  is_enabled BOOLEAN DEFAULT true,
+  is_enabled BOOLEAN DEFAULT false,
+  is_sync_enabled BOOLEAN DEFAULT false,
   total_leads_count INT DEFAULT 0,
   last_synced_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(workspace_id, form_id)
+);
+
+ALTER TABLE public.meta_lead_forms
+  ADD COLUMN IF NOT EXISTS is_sync_enabled BOOLEAN DEFAULT false;
+
+ALTER TABLE public.fb_lead_forms
+  ADD COLUMN IF NOT EXISTS is_sync_enabled BOOLEAN DEFAULT false;
+
+-- 1.4 Lead Distribution Settings
+CREATE TABLE IF NOT EXISTS public.lead_distribution_settings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id UUID NOT NULL,
+  form_id TEXT NOT NULL,
+  is_enabled BOOLEAN DEFAULT false,
+  owners JSONB DEFAULT '[]'::jsonb,
+  strategy TEXT DEFAULT 'round_robin',
+  last_assigned_index INT DEFAULT -1,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now(),
   UNIQUE(workspace_id, form_id)

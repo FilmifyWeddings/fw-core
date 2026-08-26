@@ -21,24 +21,44 @@ export async function getNextDistributedLeadOwner(
   let formMappingId: string | null = null;
   let existingMappingConfig: Record<string, any> = {};
 
-  // 1. Fetch from fb_form_mappings
+  // 1. Fetch from lead_distribution_settings table
   try {
-    const { data: formMapping } = await supabaseAdmin
-      .from('fb_form_mappings')
-      .select('id, mapping_config')
+    const { data: dbDist } = await supabaseAdmin
+      .from('lead_distribution_settings')
+      .select('*')
       .eq('workspace_id', workspaceId)
       .eq('form_id', formId)
       .maybeSingle();
 
-    if (formMapping) {
-      formMappingId = formMapping.id;
-      existingMappingConfig = (formMapping.mapping_config as Record<string, any>) || {};
-      const cfg = existingMappingConfig.distribution_config;
-      if (cfg && Array.isArray(cfg.owners)) {
-        distConfig = cfg;
-      }
+    if (dbDist && Array.isArray(dbDist.owners)) {
+      distConfig = {
+        enabled: dbDist.is_enabled === true,
+        owners: dbDist.owners,
+        last_assigned_index: dbDist.last_assigned_index ?? -1,
+      };
     }
   } catch (_) {}
+
+  // 2. Fetch from fb_form_mappings
+  if (!distConfig) {
+    try {
+      const { data: formMapping } = await supabaseAdmin
+        .from('fb_form_mappings')
+        .select('id, mapping_config')
+        .eq('workspace_id', workspaceId)
+        .eq('form_id', formId)
+        .maybeSingle();
+
+      if (formMapping) {
+        formMappingId = formMapping.id;
+        existingMappingConfig = (formMapping.mapping_config as Record<string, any>) || {};
+        const cfg = existingMappingConfig.distribution_config;
+        if (cfg && Array.isArray(cfg.owners)) {
+          distConfig = cfg;
+        }
+      }
+    } catch (_) {}
+  }
 
   // 2. Fallback to user_metadata in Supabase Auth
   if (!distConfig) {

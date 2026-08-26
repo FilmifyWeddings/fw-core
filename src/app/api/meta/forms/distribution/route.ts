@@ -20,7 +20,24 @@ export async function GET(req: NextRequest) {
 
     const distributions: Record<string, { enabled: boolean; owners: string[] }> = {};
 
-    // 1. Fetch from fb_form_mappings
+    // 1. Fetch from lead_distribution_settings table
+    try {
+      const { data: dbDists } = await supabaseAdmin
+        .from('lead_distribution_settings')
+        .select('*')
+        .eq('workspace_id', workspaceId);
+
+      if (Array.isArray(dbDists)) {
+        dbDists.forEach((d: any) => {
+          distributions[d.form_id] = {
+            enabled: d.is_enabled === true,
+            owners: Array.isArray(d.owners) ? d.owners : [],
+          };
+        });
+      }
+    } catch (_) {}
+
+    // 2. Fetch from fb_form_mappings
     try {
       const { data: mappings } = await supabaseAdmin
         .from('fb_form_mappings')
@@ -30,7 +47,7 @@ export async function GET(req: NextRequest) {
       if (Array.isArray(mappings)) {
         mappings.forEach(m => {
           const cfg = (m.mapping_config as any)?.distribution_config;
-          if (cfg && Array.isArray(cfg.owners)) {
+          if (cfg && Array.isArray(cfg.owners) && !distributions[m.form_id]) {
             distributions[m.form_id] = {
               enabled: cfg.enabled !== false,
               owners: cfg.owners,
@@ -40,7 +57,7 @@ export async function GET(req: NextRequest) {
       }
     } catch (_) {}
 
-    // 2. Fallback to Supabase auth user_metadata
+    // 3. Fallback to Supabase auth user_metadata
     try {
       const { data: u } = await supabaseAdmin.auth.admin.getUserById(workspaceId);
       const metaDists = u?.user?.user_metadata?.form_distributions || {};
@@ -147,7 +164,22 @@ export async function POST(req: NextRequest) {
       if (!upsertErr) updatedSuccess = true;
     } catch (_) {}
 
-    // 2. Also save to Supabase Auth user_metadata (Built-in failproof persistence)
+    // 2. Also save to lead_distribution_settings table
+    try {
+      await supabaseAdmin
+        .from('lead_distribution_settings')
+        .upsert({
+          workspace_id: workspaceId,
+          form_id,
+          is_enabled: distConfig.enabled,
+          owners: distConfig.owners,
+          strategy: 'round_robin',
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'workspace_id,form_id' });
+      updatedSuccess = true;
+    } catch (_) {}
+
+    // 3. Also save to Supabase Auth user_metadata (Built-in failproof persistence)
     try {
       const { data: userData } = await supabaseAdmin.auth.admin.getUserById(workspaceId);
       const existingMeta = userData?.user?.user_metadata || {};

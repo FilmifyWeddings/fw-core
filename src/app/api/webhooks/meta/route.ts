@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { getNextDistributedLeadOwner } from '@/lib/lead-distribution';
 import { forceWakeQueue } from '@/lib/baileys-serverless';
 import { syncLeadToGoogleContacts } from '@/lib/google-contacts';
+import { extractLeadFields } from '@/lib/meta-lead-normalizer';
 
 /**
  * GET /api/webhooks/meta
@@ -85,7 +86,7 @@ async function processLeadgenEvent(pageId: string, leadgenId: string, formId?: s
       return;
     }
 
-    // 2. Fetch Form Name & Settings
+    // 2. Fetch Form Name & Settings (Strictly Skip if Form Toggle is OFF)
     let formName = 'Instant Lead Form';
     let contactGroupId: string | null = null;
 
@@ -97,18 +98,23 @@ async function processLeadgenEvent(pageId: string, leadgenId: string, formId?: s
         .eq('form_id', formId)
         .maybeSingle();
 
-      if (formObj?.is_enabled === false) {
-        console.log(`[Meta Webhook Notice] Form ${formId} is disabled by user. Skipping lead.`);
+      if (formObj && formObj.is_enabled === false) {
+        console.log(`[Meta Webhook Notice] Form ${formId} toggle is OFF. Skipping real-time lead ingestion.`);
         return;
       }
       if (formObj?.form_name) formName = formObj.form_name;
 
       const { data: mapping } = await supabaseAdmin
         .from('fb_form_mappings')
-        .select('contact_group_id')
+        .select('contact_group_id, is_active')
         .eq('workspace_id', workspaceId)
         .eq('form_id', formId)
         .maybeSingle();
+
+      if (mapping && mapping.is_active === false && formObj?.is_enabled === false) {
+        console.log(`[Meta Webhook Notice] Form mapping ${formId} is inactive. Skipping lead.`);
+        return;
+      }
       if (mapping?.contact_group_id) contactGroupId = mapping.contact_group_id;
     }
 
@@ -136,57 +142,7 @@ async function processLeadgenEvent(pageId: string, leadgenId: string, formId?: s
     }
 
     const leadData = await graphRes.json();
-    const fieldData: Record<string, string> = {};
-
-    if (leadData.field_data && Array.isArray(leadData.field_data)) {
-      leadData.field_data.forEach((field: { name: string; values: string[] }) => {
-        const key = (field.name || '').toLowerCase().trim();
-        const val = field.values?.[0] || '';
-        fieldData[key] = val;
-      });
-    }
-
-    const fullName =
-      fieldData['full_name'] ||
-      fieldData['name'] ||
-      [fieldData['first_name'], fieldData['last_name']].filter(Boolean).join(' ') ||
-      'Facebook Lead';
-
-    const phone =
-      fieldData['phone_number'] ||
-      fieldData['phone'] ||
-      fieldData['mobile'] ||
-      fieldData['contact_number'] ||
-      fieldData['whatsapp_number'] ||
-      '';
-
-    const email =
-      fieldData['email'] ||
-      fieldData['email_address'] ||
-      fieldData['work_email'] ||
-      '';
-
-    const eventDate =
-      fieldData['event_date'] ||
-      fieldData['wedding_date'] ||
-      fieldData['date_of_event'] ||
-      fieldData['date'] ||
-      fieldData['shoot_date'] ||
-      null;
-
-    const location =
-      fieldData['city'] ||
-      fieldData['location'] ||
-      fieldData['event_location'] ||
-      fieldData['wedding_location'] ||
-      fieldData['venue'] ||
-      '';
-
-    const budget =
-      fieldData['budget'] ||
-      fieldData['expected_budget'] ||
-      fieldData['package'] ||
-      null;
+    const extracted = extractLeadFields(leadData.field_data || []);
 
     let assignedOwner: string | null = null;
     try {
@@ -199,18 +155,23 @@ async function processLeadgenEvent(pageId: string, leadgenId: string, formId?: s
     const newLeadRecord: Record<string, any> = {
       workspace_id: workspaceId,
       tenant_id: workspaceId,
-      name: fullName,
-      phone: phone || null,
-      email: email || null,
+      name: extracted.fullName,
+      full_name: extracted.fullName,
+      phone: extracted.phone || null,
+      phone_number: extracted.phone || null,
+      email: extracted.email || null,
       source: `Facebook Ads / ${formName}`,
       status: 'new',
+      form_id: formId || leadData.form_id,
       source_form_id: formId || leadData.form_id,
       form_tag: formName,
       meta_lead_id: leadgenId,
       whatsapp_group_id: contactGroupId,
-      event_date: eventDate,
-      location: location,
-      budget: budget,
+      event_date: extracted.eventDate || null,
+      location: extracted.location || null,
+      city: extracted.location || null,
+      budget: extracted.budget || null,
+      raw_field_data: extracted.rawFieldMap,
       created_at: leadData.created_time || new Date().toISOString(),
       updated_at: new Date().toISOString(),
       raw_payload: {
@@ -226,7 +187,7 @@ async function processLeadgenEvent(pageId: string, leadgenId: string, formId?: s
         field_data: leadData.field_data || [],
         lead_owner: assignedOwner || 'Unassigned',
         synced_via: 'realtime_webhook',
-        ...fieldData,
+        ...extracted.rawFieldMap,
       },
     };
 
