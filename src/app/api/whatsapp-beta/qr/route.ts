@@ -24,75 +24,70 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'workspace_id is required' }, { status: 400 });
     }
 
-    const instanceName = `ws_${workspaceId.replace(/-/g, '_')}`;
+    const instanceName = `ws_${workspaceId.replace(/[^a-zA-Z0-9]/g, '_')}`;
 
-    // 1. Check/Fetch QR from Evolution API
-    let qrResponse: Response | null = null;
+    // 1. Ensure Instance Exists (Auto-provision)
     try {
-      qrResponse = await fetch(`${EVO_URL}/instance/connect/${instanceName}`, {
-        method: 'GET',
+      await fetch(`${EVO_URL}/instance/create`, {
+        method: 'POST',
         headers: {
           'apikey': EVO_KEY,
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({
+          instanceName: instanceName,
+          token: EVO_KEY,
+          qrcode: true,
+          integration: 'WHATSAPP-BAILEYS',
+        }),
         cache: 'no-store',
       });
-    } catch (fetchErr: any) {
-      console.warn('[Evolution Connect Fetch Warning]:', fetchErr.message);
+    } catch (createErr: any) {
+      console.warn('[Evolution Create Warning]:', createErr.message);
     }
 
-    // 2. If instance doesn't exist yet (404/400 or fetch failed), automatically create it
-    if (!qrResponse || !qrResponse.ok) {
-      try {
-        await fetch(`${EVO_URL}/instance/create`, {
-          method: 'POST',
-          headers: {
-            'apikey': EVO_KEY,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            instanceName: instanceName,
-            token: EVO_KEY,
-            qrcode: true,
-            integration: 'WHATSAPP_BAILEYS',
-          }),
-          cache: 'no-store',
-        });
-      } catch (createErr: any) {
-        console.warn('[Evolution Create Instance Warning]:', createErr.message);
+    // 2. Fetch Active Connection / QR State
+    let connectRes: Response | null = null;
+    try {
+      connectRes = await fetch(`${EVO_URL}/instance/connect/${instanceName}`, {
+        method: 'GET',
+        headers: { 'apikey': EVO_KEY },
+        cache: 'no-store',
+      });
+    } catch (connectErr: any) {
+      console.warn('[Evolution Connect Warning]:', connectErr.message);
+    }
+
+    const data: any = connectRes ? await connectRes.json().catch(() => ({})) : {};
+    console.log(`[Evo QR Engine Response for ${instanceName}]:`, JSON.stringify(data));
+
+    // Deep search for base64 or raw code across all response structures
+    let base64 = data?.base64 || 
+                 data?.qrcode?.base64 || 
+                 data?.code || 
+                 data?.qrcode?.code || 
+                 data?.qrcode || 
+                 null;
+
+    let finalQrImage: string | null = null;
+    let rawCodeString: string | null = null;
+
+    if (base64 && typeof base64 === 'string') {
+      if (base64.startsWith('data:image')) {
+        finalQrImage = base64;
+      } else if (base64.length > 500) {
+        // Raw base64 PNG data
+        finalQrImage = `data:image/png;base64,${base64}`;
+      } else {
+        // Raw QR text string (e.g. 2@xyz...)
+        rawCodeString = base64;
+        finalQrImage = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(base64)}&bgcolor=ffffff&color=111b21&qzone=2&format=png`;
       }
-
-      // Wait a moment and retry connect
-      await new Promise(r => setTimeout(r, 1200));
-
-      try {
-        qrResponse = await fetch(`${EVO_URL}/instance/connect/${instanceName}`, {
-          method: 'GET',
-          headers: {
-            'apikey': EVO_KEY,
-            'Content-Type': 'application/json',
-          },
-          cache: 'no-store',
-        });
-      } catch (retryErr: any) {
-        console.warn('[Evolution Connect Retry Warning]:', retryErr.message);
-      }
     }
 
-    const data: any = qrResponse ? await qrResponse.json().catch(() => ({})) : {};
+    const connectionState = data?.state || data?.status || (data?.instance?.state) || 'CONNECTING';
+    const isConnected = connectionState === 'open' || connectionState === 'CONNECTED';
 
-    // 3. Extract Base64 QR Image across all Evolution response variations
-    let qrRaw = data?.base64 || data?.qrcode?.base64 || data?.qrcode || data?.code || data?.pairingCode || null;
-    let qrImage: string | null = null;
-
-    if (qrRaw && typeof qrRaw === 'string') {
-      qrImage = qrRaw.startsWith('data:image') ? qrRaw : `data:image/png;base64,${qrRaw}`;
-    }
-
-    const liveState = data?.state || data?.instance?.state || (data?.status === 200 ? 'CONNECTING' : 'CONNECTING');
-    const isConnected = liveState === 'open' || liveState === 'CONNECTED';
-
-    // Update DB record if connected
     if (isConnected) {
       supabaseAdmin
         .from('evolution_instances')
@@ -107,21 +102,23 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
+      instanceName,
       instance_name: instanceName,
-      qrcode: qrImage,
-      pairingCode: data?.pairingCode || null,
-      pairing_code: data?.pairingCode || null,
-      state: isConnected ? 'CONNECTED' : liveState,
+      qrcode: finalQrImage,
+      pairingCode: data?.pairingCode || data?.pairing_code || null,
+      pairing_code: data?.pairingCode || data?.pairing_code || null,
+      rawCode: rawCodeString || (typeof base64 === 'string' && !base64.startsWith('data:') ? base64 : null),
+      state: isConnected ? 'CONNECTED' : connectionState,
       is_connected: isConnected,
-      raw: data,
+      connection_status: isConnected ? 'CONNECTED' : connectionState,
     });
 
-  } catch (error: any) {
-    console.error('QR Generation Catch Error:', error);
-    return NextResponse.json({
-      success: false,
-      error: error?.message || 'Failed to generate QR code',
-      state: 'ERROR',
-    }, { status: 200 }); // Return 200 with error payload to prevent frontend crash
+  } catch (err: any) {
+    console.error('QR Route Error:', err);
+    return NextResponse.json({ 
+      success: false, 
+      error: err?.message || 'Failed to generate QR code', 
+      state: 'ERROR' 
+    }, { status: 200 });
   }
 }
