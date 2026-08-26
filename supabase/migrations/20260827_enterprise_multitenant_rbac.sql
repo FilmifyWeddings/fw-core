@@ -2,10 +2,10 @@
 -- ENTERPRISE MULTI-TENANT ARCHITECTURE: CROSS-WORKSPACE RBAC & PARTNER PORTAL
 -- ==============================================================================
 
--- 1. WORKSPACES TABLE (Ensures central workspace registry)
+-- 1. WORKSPACES TABLE (Central workspace registry)
 CREATE TABLE IF NOT EXISTS public.workspaces (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  owner_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  owner_id UUID,
   name TEXT NOT NULL DEFAULT 'My Studio',
   slug TEXT,
   logo_url TEXT,
@@ -13,11 +13,15 @@ CREATE TABLE IF NOT EXISTS public.workspaces (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- Safely remove any existing owner_id foreign key constraint if table already exists
+ALTER TABLE IF EXISTS public.workspaces DROP CONSTRAINT IF EXISTS workspaces_owner_id_fkey;
+
 -- Backfill workspaces from profiles if missing
 INSERT INTO public.workspaces (id, owner_id, name, created_at, updated_at)
 SELECT id, id, COALESCE(workspace_name, 'My Studio'), created_at, updated_at
 FROM public.profiles
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE
+SET name = EXCLUDED.name, updated_at = now();
 
 -- 2. WORKSPACE MEMBERS TABLE (Links 1 User Email to Multiple Studio Workspaces)
 CREATE TABLE IF NOT EXISTS public.workspace_members (
