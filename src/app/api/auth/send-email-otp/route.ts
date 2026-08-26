@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
 
     console.log(`[Email OTP Generated for ${targetEmail}]: ${otp}`);
 
-    // 6. Trigger Multi-Provider Email Dispatch
+    // 6. Trigger Multi-Provider Email Dispatch (Primary: Resend)
     let emailDelivered = false;
     try {
       const emailRes = await sendEmailOtp({
@@ -105,22 +105,24 @@ export async function POST(req: NextRequest) {
       console.warn('[Email OTP Dispatch Notice]:', emailErr?.message);
     }
 
-    // 7. Supabase Cloud Mailer Trigger (backup)
-    try {
-      supabaseAdmin.auth.signInWithOtp({
-        email: targetEmail,
-        options: {
-          shouldCreateUser: true,
-          data: {
-            full_name: targetName,
-            workspace_name: targetStudio,
-            phone: fullPhone,
+    // 7. Supabase Cloud Mailer Trigger (ONLY as fallback if primary failed)
+    if (!emailDelivered) {
+      try {
+        supabaseAdmin.auth.signInWithOtp({
+          email: targetEmail,
+          options: {
+            shouldCreateUser: true,
+            data: {
+              full_name: targetName,
+              workspace_name: targetStudio,
+              phone: fullPhone,
+            },
           },
-        },
-      }).catch((sbErr) => {
-        console.warn('[Supabase Cloud Mailer Warning]:', sbErr?.message);
-      });
-    } catch (_) {}
+        }).catch((sbErr) => {
+          console.warn('[Supabase Cloud Mailer Fallback Notice]:', sbErr?.message);
+        });
+      } catch (_) {}
+    }
 
     return NextResponse.json({
       success: true,

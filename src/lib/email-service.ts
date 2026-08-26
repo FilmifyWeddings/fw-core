@@ -65,7 +65,8 @@ async function sendMailWithFallback(mailOptions: {
   const resendApiKey = process.env.RESEND_API_KEY;
   if (resendApiKey) {
     try {
-      const fromAddr = process.env.RESEND_FROM || process.env.SMTP_FROM || 'StudioCore <onboarding@resend.dev>';
+      const rawFrom = process.env.RESEND_FROM || process.env.SMTP_FROM || 'StudioCore <support@studiocore.in>';
+      const fromAddr = rawFrom.replace(/^["']|["']$/g, '').trim();
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
@@ -188,7 +189,8 @@ export async function sendEmailOtp({
 }: SendEmailOtpParams) {
   const defaultAppUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://studiocore.in';
   const logoUrl = `${defaultAppUrl.replace(/\/$/, '')}/images/auth/sc-orange-logo.png`;
-  const fromAddress = process.env.SMTP_FROM || `"StudioCore Verification" <support@studiocore.in>`;
+  const rawFrom = process.env.RESEND_FROM || process.env.SMTP_FROM || 'StudioCore <support@studiocore.in>';
+  const fromAddress = rawFrom.replace(/^["']|["']$/g, '').trim();
 
   const htmlContent = `
 <!DOCTYPE html>
