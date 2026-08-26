@@ -4,6 +4,18 @@ import { formatJid } from '@/lib/evolution-api';
 
 export const runtime = 'nodejs';
 
+function formatPhoneDisplay(digits: string): string {
+  const clean = digits.replace(/[^0-9]/g, '');
+  if (!clean) return '';
+  if (clean.length === 12 && clean.startsWith('91')) {
+    return `+91 ${clean.slice(2, 7)} ${clean.slice(7)}`;
+  }
+  if (clean.length === 10) {
+    return `+91 ${clean.slice(0, 5)} ${clean.slice(5)}`;
+  }
+  return `+${clean}`;
+}
+
 /**
  * GET /api/whatsapp-beta/chats
  * Fetches recent chat threads with latest messages, unread counts, and contact details.
@@ -18,18 +30,18 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'workspace_id is required' }, { status: 400 });
     }
 
-    // 1. Fetch WhatsApp Contacts from evolution_contacts
-    const { data: contacts } = await supabaseAdmin
-      .from('evolution_contacts')
-      .select('*')
-      .order('updated_at', { ascending: false })
-      .limit(300);
-
-    // 2. Fetch Phone WhatsApp Chats from baileys_chats
+    // 1. Fetch Phone WhatsApp Chats from baileys_chats
     const { data: bChats } = await supabaseAdmin
       .from('baileys_chats')
       .select('*')
       .order('last_message_at', { ascending: false })
+      .limit(300);
+
+    // 2. Fetch WhatsApp Contacts from evolution_contacts
+    const { data: contacts } = await supabaseAdmin
+      .from('evolution_contacts')
+      .select('*')
+      .order('updated_at', { ascending: false })
       .limit(300);
 
     // 3. Fetch CRM Leads
@@ -96,26 +108,31 @@ export async function GET(req: NextRequest) {
 
     // A. Add from baileys_chats (mobile chats sync)
     (bChats || []).forEach(bc => {
-      const isGroup = bc.is_group || bc.jid?.endsWith('@g.us');
       const cleanDigits = (bc.phone_number || bc.jid?.split('@')[0] || '').replace(/[^0-9]/g, '');
-      const jid = isGroup ? bc.jid : (cleanDigits ? `${cleanDigits}@s.whatsapp.net` : bc.jid);
+      const isGroup = bc.is_group || bc.jid?.endsWith('@g.us') || cleanDigits.length > 13 || cleanDigits.startsWith('12036');
+      const jid = isGroup ? (bc.jid?.endsWith('@g.us') ? bc.jid : `${cleanDigits}@g.us`) : (cleanDigits ? `${cleanDigits}@s.whatsapp.net` : bc.jid);
       if (!jid) return;
 
-      const displayName = bc.display_name || (isGroup ? 'WhatsApp Group' : (cleanDigits ? `+${cleanDigits}` : 'WhatsApp Chat'));
+      const hasSubject = bc.display_name && !bc.display_name.startsWith('12036') && !bc.display_name.startsWith('+12036');
+      const displayName = hasSubject 
+        ? bc.display_name 
+        : (isGroup ? 'WhatsApp Group' : formatPhoneDisplay(cleanDigits) || 'WhatsApp Chat');
+
+      const lastTime = bc.last_message_at || bc.updated_at || bc.created_at;
 
       threadsMap.set(jid, {
         jid,
         name: displayName,
-        push_name: bc.display_name,
-        phone: cleanDigits || '',
+        push_name: hasSubject ? bc.display_name : null,
+        phone: isGroup ? '' : (cleanDigits || ''),
         profile_pic_url: bc.profile_pic_url,
         unread_count: bc.unread_count || 0,
         last_message: bc.last_message ? {
           content: bc.last_message,
-          timestamp: bc.last_message_at || bc.updated_at,
+          timestamp: lastTime,
           status: 'READ',
         } : null,
-        last_message_time: bc.last_message_at || bc.updated_at || bc.created_at,
+        last_message_time: lastTime,
         is_group: isGroup,
         is_lead: false,
       });
@@ -124,24 +141,31 @@ export async function GET(req: NextRequest) {
     // B. Add from evolution_contacts
     (contacts || []).forEach(c => {
       const cleanDigits = (c.phone || c.jid.split('@')[0] || '').replace(/[^0-9]/g, '');
-      const jid = cleanDigits ? `${cleanDigits}@s.whatsapp.net` : c.jid;
+      const isGroup = c.jid?.endsWith('@g.us') || cleanDigits.length > 13 || cleanDigits.startsWith('12036');
+      const jid = isGroup ? (c.jid?.endsWith('@g.us') ? c.jid : `${cleanDigits}@g.us`) : (cleanDigits ? `${cleanDigits}@s.whatsapp.net` : c.jid);
       if (!jid) return;
 
       const existing = threadsMap.get(jid);
+      const hasRealName = c.name && !c.name.startsWith('+') && !c.name.startsWith('12036');
+      const hasPushName = c.push_name && !c.push_name.startsWith('12036');
+
       if (existing) {
-        if (!existing.push_name && c.push_name) existing.push_name = c.push_name;
-        if (existing.name.startsWith('+') && c.name) existing.name = c.name;
+        if (hasPushName && !existing.push_name) existing.push_name = c.push_name;
+        if (hasRealName && (existing.name === 'WhatsApp Group' || existing.name.startsWith('+'))) {
+          existing.name = c.name;
+        }
         if (!existing.profile_pic_url && c.profile_pic_url) existing.profile_pic_url = c.profile_pic_url;
       } else {
         threadsMap.set(jid, {
           jid,
-          name: c.name || c.push_name || (cleanDigits ? `+${cleanDigits}` : 'WhatsApp Contact'),
+          name: hasRealName ? c.name : (hasPushName ? c.push_name : (isGroup ? 'WhatsApp Group' : formatPhoneDisplay(cleanDigits) || 'WhatsApp Contact')),
           push_name: c.push_name,
-          phone: cleanDigits || c.phone,
+          phone: isGroup ? '' : (cleanDigits || c.phone),
           profile_pic_url: c.profile_pic_url,
           unread_count: 0,
           last_message: null,
           last_message_time: c.updated_at || c.created_at,
+          is_group: isGroup,
           is_lead: false,
         });
       }
@@ -166,7 +190,7 @@ export async function GET(req: NextRequest) {
       } else {
         threadsMap.set(jid, {
           jid,
-          name: l.full_name || `+${formattedPhone}`,
+          name: l.full_name || formatPhoneDisplay(formattedPhone),
           push_name: l.full_name,
           phone: formattedPhone,
           profile_pic_url: null,
@@ -176,6 +200,7 @@ export async function GET(req: NextRequest) {
           lead_id: l.id,
           shoot_type: l.shoot_type,
           lead_status: l.status,
+          is_group: false,
           is_lead: true,
         });
       }
@@ -197,7 +222,7 @@ export async function GET(req: NextRequest) {
       } else {
         threadsMap.set(jid, {
           jid,
-          name: cl.name || `+${formattedPhone}`,
+          name: cl.name || formatPhoneDisplay(formattedPhone),
           push_name: cl.name,
           phone: formattedPhone,
           profile_pic_url: null,
@@ -205,6 +230,7 @@ export async function GET(req: NextRequest) {
           last_message: null,
           last_message_time: cl.created_at,
           client_id: cl.id,
+          is_group: false,
           is_lead: false,
         });
       }
@@ -213,25 +239,30 @@ export async function GET(req: NextRequest) {
     // E. Merge messages from evolution_messages
     (messages || []).forEach(m => {
       const cleanDigits = (m.remote_jid || '').replace(/[^0-9]/g, '');
-      const jid = m.remote_jid?.endsWith('@g.us') ? m.remote_jid : (cleanDigits ? `${cleanDigits}@s.whatsapp.net` : m.remote_jid);
+      const isGroup = m.remote_jid?.endsWith('@g.us') || cleanDigits.length > 13 || cleanDigits.startsWith('12036');
+      const jid = isGroup ? (m.remote_jid?.endsWith('@g.us') ? m.remote_jid : `${cleanDigits}@g.us`) : (cleanDigits ? `${cleanDigits}@s.whatsapp.net` : m.remote_jid);
       if (!jid) return;
 
       let existing = threadsMap.get(jid);
       if (!existing) {
         existing = {
           jid,
-          name: cleanDigits ? `+${cleanDigits}` : 'WhatsApp Contact',
+          name: isGroup ? 'WhatsApp Group' : formatPhoneDisplay(cleanDigits) || 'WhatsApp Contact',
           push_name: null,
-          phone: cleanDigits,
+          phone: isGroup ? '' : cleanDigits,
           profile_pic_url: null,
           unread_count: 0,
           last_message: null,
           last_message_time: m.timestamp,
+          is_group: isGroup,
           is_lead: false,
         };
       }
 
-      if (!existing.last_message || new Date(m.timestamp) > new Date(existing.last_message_time || 0)) {
+      const msgTime = new Date(m.timestamp).getTime();
+      const existingTime = new Date(existing.last_message_time || 0).getTime();
+
+      if (!existing.last_message || msgTime >= existingTime) {
         existing.last_message = m;
         existing.last_message_time = m.timestamp;
       }
@@ -246,25 +277,30 @@ export async function GET(req: NextRequest) {
     // F. Merge messages from baileys_messages
     (bMessages || []).forEach(bm => {
       const cleanDigits = (bm.chat_jid || '').replace(/[^0-9]/g, '');
-      const jid = bm.chat_jid?.endsWith('@g.us') ? bm.chat_jid : (cleanDigits ? `${cleanDigits}@s.whatsapp.net` : bm.chat_jid);
+      const isGroup = bm.chat_jid?.endsWith('@g.us') || cleanDigits.length > 13 || cleanDigits.startsWith('12036');
+      const jid = isGroup ? (bm.chat_jid?.endsWith('@g.us') ? bm.chat_jid : `${cleanDigits}@g.us`) : (cleanDigits ? `${cleanDigits}@s.whatsapp.net` : bm.chat_jid);
       if (!jid) return;
 
       let existing = threadsMap.get(jid);
       if (!existing) {
         existing = {
           jid,
-          name: cleanDigits ? `+${cleanDigits}` : 'WhatsApp Contact',
+          name: isGroup ? 'WhatsApp Group' : formatPhoneDisplay(cleanDigits) || 'WhatsApp Contact',
           push_name: null,
-          phone: cleanDigits,
+          phone: isGroup ? '' : cleanDigits,
           profile_pic_url: null,
           unread_count: 0,
           last_message: null,
           last_message_time: bm.sent_at,
+          is_group: isGroup,
           is_lead: false,
         };
       }
 
-      if (!existing.last_message || new Date(bm.sent_at) > new Date(existing.last_message_time || 0)) {
+      const msgTime = new Date(bm.sent_at).getTime();
+      const existingTime = new Date(existing.last_message_time || 0).getTime();
+
+      if (!existing.last_message || msgTime >= existingTime) {
         existing.last_message = {
           content: bm.message_text,
           from_me: bm.direction === 'outbound',
@@ -297,9 +333,10 @@ export async function GET(req: NextRequest) {
       }
     });
 
+    // STRICT RECENT SORTING (Newest active conversation on top)
     let threads = Array.from(threadsMap.values()).sort((a, b) => {
-      const timeA = new Date(a.last_message_time || 0).getTime();
-      const timeB = new Date(b.last_message_time || 0).getTime();
+      const timeA = new Date(a.last_message_time || a.last_message?.timestamp || 0).getTime();
+      const timeB = new Date(b.last_message_time || b.last_message?.timestamp || 0).getTime();
       return timeB - timeA;
     });
 

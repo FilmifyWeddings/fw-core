@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Search, Send, Paperclip, Smile, MoreVertical, Phone, Video, 
   Check, CheckCheck, Clock, Image as ImageIcon, FileText, Music, 
-  User, ExternalLink, ArrowLeft, RefreshCw, Sparkles, Zap,
+  User, Users, ExternalLink, ArrowLeft, RefreshCw, Sparkles, Zap,
   ChevronRight, ShieldCheck, Download, Plus, X, MessageSquare, AlertCircle
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -21,6 +21,37 @@ interface ChatThread {
   unread_count: number;
   last_message?: any;
   last_message_time?: string;
+  is_group?: boolean;
+  is_lead?: boolean;
+}
+
+function formatDateDivider(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  if (isNaN(date.getTime())) return 'Recent';
+  
+  if (date.toDateString() === now.toDateString()) return 'Today';
+  const yesterday = new Date();
+  yesterday.setDate(now.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function formatSidebarTime(dateStr?: string): string {
+  if (!dateStr) return '';
+  const date = new Date(dateStr);
+  const now = new Date();
+  if (isNaN(date.getTime())) return '';
+  
+  if (date.toDateString() === now.toDateString()) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+  const yesterday = new Date();
+  yesterday.setDate(now.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) {
+    return 'Yesterday';
+  }
+  return date.toLocaleDateString([], { day: '2-digit', month: '2-digit', year: '2-digit' });
 }
 
 interface MessageItem {
@@ -354,34 +385,42 @@ export default function WhatsAppWebBetaInbox() {
               chats.map(chat => {
                 const isSelected = selectedChat?.jid === chat.jid;
                 const lastMsg = chat.last_message;
-                const timeStr = lastMsg?.timestamp 
-                  ? new Date(lastMsg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                  : '';
+                const timeStr = formatSidebarTime(lastMsg?.timestamp || chat.last_message_time);
+                const isMediaMsg = lastMsg?.content === '[media]' || lastMsg?.content === '[image]' || lastMsg?.message_type === 'image';
 
                 return (
                   <div
                     key={chat.jid}
                     onClick={() => selectChat(chat)}
-                    className={`px-4 py-3 flex items-center gap-3 cursor-pointer transition-colors ${
+                    className={`px-4 py-3 flex items-center gap-3 cursor-pointer transition-colors border-b border-[#222d34]/40 ${
                       isSelected ? 'bg-[#2a3942]' : 'hover:bg-[#202c33]'
                     }`}
                   >
                     {/* Avatar */}
-                    <div className="relative w-12 h-12 rounded-full bg-[#374248] shrink-0 flex items-center justify-center overflow-hidden">
+                    <div className={`relative w-12 h-12 rounded-full shrink-0 flex items-center justify-center overflow-hidden ${
+                      chat.is_group ? 'bg-teal-600/20 border border-teal-500/30 text-teal-400' : 'bg-[#374248] text-zinc-400'
+                    }`}>
                       {chat.profile_pic_url ? (
                         <img src={chat.profile_pic_url} alt={chat.name} className="w-full h-full object-cover" />
+                      ) : chat.is_group ? (
+                        <Users className="w-6 h-6" />
                       ) : (
-                        <User className="w-6 h-6 text-zinc-400" />
+                        <User className="w-6 h-6" />
                       )}
                     </div>
 
                     {/* Chat Info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
-                        <h4 className="text-sm font-semibold text-white truncate">
+                        <h4 className="text-sm font-semibold text-white truncate flex items-center gap-1.5">
                           {chat.name}
+                          {chat.is_lead && (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold shrink-0">
+                              LEAD
+                            </span>
+                          )}
                         </h4>
-                        <span className="text-[10px] text-zinc-400 shrink-0">
+                        <span className="text-[10px] text-zinc-400 shrink-0 font-medium ml-2">
                           {timeStr}
                         </span>
                       </div>
@@ -391,7 +430,13 @@ export default function WhatsAppWebBetaInbox() {
                           {lastMsg?.from_me && (
                             <CheckCheck className={`w-3.5 h-3.5 shrink-0 ${lastMsg.status === 'READ' ? 'text-sky-400' : 'text-zinc-400'}`} />
                           )}
-                          <span>{lastMsg?.content || (lastMsg?.message_type ? `[${lastMsg.message_type}]` : 'Tap to chat')}</span>
+                          {isMediaMsg ? (
+                            <span className="flex items-center gap-1 text-zinc-300">
+                              <ImageIcon className="w-3.5 h-3.5 text-emerald-400 shrink-0" /> Photo
+                            </span>
+                          ) : (
+                            <span>{lastMsg?.content || (lastMsg?.message_type ? `[${lastMsg.message_type}]` : 'Tap to chat')}</span>
+                          )}
                         </p>
 
                         {chat.unread_count > 0 && (
@@ -417,42 +462,50 @@ export default function WhatsAppWebBetaInbox() {
 
             {/* Conversation Header */}
             <div className="h-16 px-4 bg-[#202c33] flex items-center justify-between border-b border-[#222d34] z-10 shrink-0">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 min-w-0">
                 <button 
                   onClick={() => setSelectedChat(null)}
-                  className="md:hidden text-zinc-400 hover:text-white mr-1"
+                  className="md:hidden text-zinc-400 hover:text-white mr-1 shrink-0"
                 >
                   <ArrowLeft className="w-5 h-5" />
                 </button>
 
-                <div className="w-10 h-10 rounded-full bg-[#374248] flex items-center justify-center overflow-hidden shrink-0">
+                <div className={`w-10 h-10 rounded-full shrink-0 flex items-center justify-center overflow-hidden ${
+                  selectedChat.is_group ? 'bg-teal-600/20 border border-teal-500/30 text-teal-400' : 'bg-[#374248] text-zinc-400'
+                }`}>
                   {selectedChat.profile_pic_url ? (
                     <img src={selectedChat.profile_pic_url} alt={selectedChat.name} className="w-full h-full object-cover" />
+                  ) : selectedChat.is_group ? (
+                    <Users className="w-5 h-5" />
                   ) : (
-                    <User className="w-5 h-5 text-zinc-400" />
+                    <User className="w-5 h-5" />
                   )}
                 </div>
 
-                <div>
+                <div className="min-w-0">
                   <h3 className="text-sm font-bold text-white truncate max-w-[200px] md:max-w-md">
                     {selectedChat.name}
                   </h3>
-                  <p className="text-[11px] text-zinc-400">
-                    +{selectedChat.phone}
+                  <p className="text-[11px] text-zinc-400 truncate">
+                    {selectedChat.is_group 
+                      ? 'WhatsApp Group • Live Web Sync Active' 
+                      : (selectedChat.phone ? `+${selectedChat.phone}` : 'WhatsApp Contact')}
                   </p>
                 </div>
               </div>
 
               {/* CRM Quick Links */}
-              <div className="flex items-center gap-2">
-                <Link
-                  href={`/workspace/clients?search=${selectedChat.phone}`}
-                  target="_blank"
-                  className="px-2.5 py-1 bg-[#111b21] hover:bg-[#2a3942] border border-[#222d34] text-xs font-semibold rounded-lg text-emerald-400 flex items-center gap-1 transition-all"
-                  title="Open Client Profile"
-                >
-                  Client Card <ExternalLink className="w-3 h-3" />
-                </Link>
+              <div className="flex items-center gap-2 shrink-0">
+                {selectedChat.phone && (
+                  <Link
+                    href={`/workspace/clients?search=${selectedChat.phone}`}
+                    target="_blank"
+                    className="px-2.5 py-1 bg-[#111b21] hover:bg-[#2a3942] border border-[#222d34] text-xs font-semibold rounded-lg text-emerald-400 flex items-center gap-1 transition-all"
+                    title="Open Client Profile"
+                  >
+                    Client Card <ExternalLink className="w-3 h-3" />
+                  </Link>
+                )}
 
                 <Link
                   href={`/workspace/quotations?client=${encodeURIComponent(selectedChat.name)}`}
@@ -466,7 +519,7 @@ export default function WhatsAppWebBetaInbox() {
             </div>
 
             {/* Message Stream */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar z-10">
+            <div className="flex-1 overflow-y-auto p-4 space-y-2.5 custom-scrollbar z-10">
               {messagesLoading ? (
                 <div className="py-20 flex justify-center">
                   <RefreshCw className="w-6 h-6 animate-spin text-emerald-500" />
@@ -474,75 +527,102 @@ export default function WhatsAppWebBetaInbox() {
               ) : messages.length === 0 ? (
                 <div className="py-20 text-center text-zinc-500 space-y-2">
                   <p className="text-xs">No message history yet.</p>
-                  <p className="text-[11px] text-zinc-600">Send a greeting message below to start chatting!</p>
+                  <p className="text-[11px] text-zinc-600">Send a message below to start chatting!</p>
                 </div>
               ) : (
-                messages.map((msg, idx) => {
-                  const isOut = msg.from_me;
-                  const time = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                (() => {
+                  let lastDateDivider = '';
+                  return messages.map((msg, idx) => {
+                    const isOut = msg.from_me;
+                    const dateStr = msg.timestamp ? new Date(msg.timestamp).toDateString() : '';
+                    const showDateDivider = dateStr && dateStr !== lastDateDivider;
+                    if (showDateDivider) lastDateDivider = dateStr;
 
-                  return (
-                    <div 
-                      key={msg.message_id || idx}
-                      className={`flex ${isOut ? 'justify-end' : 'justify-start'}`}
-                    >
-                      <div className={`max-w-[85%] md:max-w-[70%] rounded-2xl px-3.5 py-2 shadow-sm relative group ${
-                        isOut ? 'bg-[#005c4b] text-white rounded-tr-none' : 'bg-[#202c33] text-zinc-100 rounded-tl-none'
-                      }`}>
-                        
-                        {/* Media rendering if available */}
-                        {msg.media_url && (
-                          <div className="mb-1.5 rounded-xl overflow-hidden max-w-sm">
-                            {msg.message_type === 'image' ? (
-                              <img 
-                                src={msg.media_url} 
-                                alt="Attachment" 
-                                className="w-full max-h-72 object-cover cursor-pointer hover:opacity-95 transition-opacity"
-                                onClick={() => window.open(msg.media_url || '', '_blank')}
-                              />
-                            ) : msg.message_type === 'audio' ? (
-                              <audio controls src={msg.media_url} className="w-full my-1" />
-                            ) : (
-                              <a 
-                                href={msg.media_url} 
-                                target="_blank" 
-                                rel="noreferrer"
-                                className="flex items-center gap-2 p-2 bg-black/20 rounded-lg text-xs hover:underline"
-                              >
-                                <FileText className="w-4 h-4" /> View Document
-                              </a>
-                            )}
+                    const time = msg.timestamp 
+                      ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+                      : '';
+                    const isMediaPlaceholder = msg.content === '[media]' || msg.content === '[image]' || (msg.message_type === 'image' && !msg.media_url);
+
+                    return (
+                      <React.Fragment key={msg.message_id || idx}>
+                        {showDateDivider && (
+                          <div className="flex justify-center my-3 sticky top-2 z-10">
+                            <span className="bg-[#182229]/95 backdrop-blur-sm border border-[#222d34] text-zinc-400 text-[10.5px] font-semibold px-3 py-1 rounded-lg shadow-sm">
+                              {formatDateDivider(msg.timestamp)}
+                            </span>
                           </div>
                         )}
 
-                        {/* Text content */}
-                        {msg.content && (
-                          <p className="text-xs leading-relaxed whitespace-pre-wrap select-text break-words">
-                            {msg.content}
-                          </p>
-                        )}
+                        <div className={`flex ${isOut ? 'justify-end' : 'justify-start'}`}>
+                          <div className={`max-w-[85%] md:max-w-[70%] rounded-2xl px-3.5 py-2 shadow-sm relative group ${
+                            isOut ? 'bg-[#005c4b] text-white rounded-tr-none border border-emerald-500/10' : 'bg-[#202c33] text-zinc-100 rounded-tl-none border border-white/5'
+                          }`}>
+                            
+                            {/* Media rendering if available */}
+                            {msg.media_url ? (
+                              <div className="mb-1.5 rounded-xl overflow-hidden max-w-sm">
+                                {msg.message_type === 'image' ? (
+                                  <img 
+                                    src={msg.media_url} 
+                                    alt="Attachment" 
+                                    className="w-full max-h-72 object-cover cursor-pointer hover:opacity-95 transition-opacity"
+                                    onClick={() => window.open(msg.media_url || '', '_blank')}
+                                  />
+                                ) : msg.message_type === 'audio' ? (
+                                  <audio controls src={msg.media_url} className="w-full my-1" />
+                                ) : (
+                                  <a 
+                                    href={msg.media_url} 
+                                    target="_blank" 
+                                    rel="noreferrer"
+                                    className="flex items-center gap-2 p-2 bg-black/20 rounded-lg text-xs hover:underline"
+                                  >
+                                    <FileText className="w-4 h-4" /> View Document
+                                  </a>
+                                )}
+                              </div>
+                            ) : isMediaPlaceholder ? (
+                              <div className="flex items-center gap-2.5 p-2 bg-black/25 rounded-xl my-1 border border-white/5">
+                                <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                                  <ImageIcon className="w-4 h-4" />
+                                </div>
+                                <div>
+                                  <p className="text-xs font-semibold text-zinc-200">Photo Attachment</p>
+                                  <p className="text-[10px] text-zinc-400">Encrypted WhatsApp Media</p>
+                                </div>
+                              </div>
+                            ) : null}
 
-                        {/* Message status footer */}
-                        <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-zinc-400">
-                          <span>{time}</span>
-                          {isOut && (
-                            msg.status === 'PENDING' ? (
-                              <Clock className="w-3 h-3 text-zinc-400" />
-                            ) : msg.status === 'SENT' ? (
-                              <Check className="w-3.5 h-3.5 text-zinc-400" />
-                            ) : msg.status === 'DELIVERED' ? (
-                              <CheckCheck className="w-3.5 h-3.5 text-zinc-400" />
-                            ) : msg.status === 'READ' ? (
-                              <CheckCheck className="w-3.5 h-3.5 text-sky-400" />
-                            ) : (
-                              <AlertCircle className="w-3 h-3 text-rose-400" />
-                            )
-                          )}
+                            {/* Text content */}
+                            {msg.content && !isMediaPlaceholder && (
+                              <p className="text-xs leading-relaxed whitespace-pre-wrap select-text break-words">
+                                {msg.content}
+                              </p>
+                            )}
+
+                            {/* Message status footer */}
+                            <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-zinc-400">
+                              <span>{time}</span>
+                              {isOut && (
+                                msg.status === 'PENDING' ? (
+                                  <Clock className="w-3 h-3 text-zinc-400" />
+                                ) : msg.status === 'SENT' ? (
+                                  <Check className="w-3.5 h-3.5 text-zinc-400" />
+                                ) : msg.status === 'DELIVERED' ? (
+                                  <CheckCheck className="w-3.5 h-3.5 text-zinc-400" />
+                                ) : msg.status === 'READ' ? (
+                                  <CheckCheck className="w-3.5 h-3.5 text-sky-400" />
+                                ) : (
+                                  <AlertCircle className="w-3 h-3 text-rose-400" />
+                                )
+                              )}
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  );
-                })
+                      </React.Fragment>
+                    );
+                  });
+                })()
               )}
               <div ref={messagesEndRef} />
             </div>
