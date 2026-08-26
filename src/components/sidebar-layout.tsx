@@ -9,11 +9,13 @@ import {
   Film, IndianRupee, Clock, Layers, BarChart3, Settings, 
   Headphones, LogOut, ChevronDown, ChevronRight, ChevronLeft, 
   Menu, X, Sparkles, UserCheck, Archive, UserX, CheckCircle2, 
-  ArrowUpRight, Bell, ShieldCheck, Crown
+  ArrowUpRight, Bell, ShieldCheck, Crown, Briefcase
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import StudioProfileEditModal from '@/components/workspace/StudioProfileEditModal';
 import OnboardingCelebrationModal from '@/components/workspace/OnboardingCelebrationModal';
+import { WorkspaceSwitcher } from '@/components/workspace/WorkspaceSwitcher';
+import { useWorkspace } from '@/lib/context/BhamstraContext';
 
 interface SidebarLayoutProps {
   children: React.ReactNode;
@@ -31,6 +33,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { isOwner, userRole, permissions, availableWorkspaces } = useWorkspace();
   const stageParam = searchParams?.get('stage') || searchParams?.get('filter') || searchParams?.get('view') || '';
 
   const checkIsSubActive = (subPath: string) => {
@@ -201,7 +204,17 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     }
   };
 
-  const menuItems = [
+  const partnerPortalItem = {
+    id: 'partner-portal',
+    name: 'Partner Portal',
+    path: '/workspace/partner-portal',
+    icon: Briefcase,
+    iconBg: 'bg-[#EEF2FF] text-[#4F46E5]',
+  };
+
+  const hasPartnerWorkspaces = availableWorkspaces?.some(w => !w.isOwner);
+
+  const baseMenuItems = isOwner ? [
     {
       id: 'dashboard',
       name: 'Workspace Home',
@@ -209,6 +222,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       icon: LayoutDashboard,
       iconBg: 'bg-[#E0F2FE] text-[#0369A1]',
     },
+    ...(hasPartnerWorkspaces ? [partnerPortalItem] : []),
     {
       id: 'leads',
       name: 'Leads & CRM',
@@ -292,7 +306,47 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       icon: Headphones,
       iconBg: 'bg-[#CCFBF1] text-[#0F766E]',
     },
+  ] : [
+    // PARTNER / FREELANCER WORKSPACE RESTRICTED NAVIGATION
+    partnerPortalItem,
+    {
+      id: 'bookings',
+      name: 'Assigned Shoots',
+      path: '/team-manager',
+      icon: Calendar,
+      iconBg: 'bg-[#E0F2FE] text-[#0284C7]',
+    },
+    {
+      id: 'post-production',
+      name: 'Post-Production',
+      path: '/workspace/post-production',
+      icon: Film,
+      iconBg: 'bg-[#FFE4E6] text-[#E11D48]',
+    },
+    ...(permissions?.leads_access && permissions.leads_access !== 'NONE' ? [{
+      id: 'leads',
+      name: 'Leads (Assigned)',
+      path: '/leads',
+      icon: Target,
+      iconBg: 'bg-[#E6F4EA] text-[#137333]',
+    }] : []),
+    ...(permissions?.finance_access && permissions.finance_access !== 'NONE' ? [{
+      id: 'finance',
+      name: 'Finance & Payments',
+      path: '/workspace/finance',
+      icon: IndianRupee,
+      iconBg: 'bg-[#FEF9C3] text-[#A16207]',
+    }] : []),
+    {
+      id: 'support',
+      name: 'Help & Support',
+      path: '/support',
+      icon: Headphones,
+      iconBg: 'bg-[#CCFBF1] text-[#0F766E]',
+    },
   ];
+
+  const menuItems = baseMenuItems;
 
   const isStandalonePage = 
     pathname === '/' ||
@@ -328,7 +382,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
           collapsed ? 'w-20' : 'w-64'
         }`}
       >
-        {/* Top Brand Logo Header (Never clipped, centered when collapsed) */}
+        {/* Top Brand Logo Header */}
         <div className={`h-16 border-b border-[#F0ECE4] flex items-center shrink-0 ${collapsed ? 'justify-center px-1' : 'justify-between px-4'}`}>
           {!collapsed ? (
             <>
@@ -367,8 +421,13 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
           )}
         </div>
 
+        {/* Workspace Switcher Bar */}
+        <div className="px-3 pt-3 pb-1 shrink-0">
+          <WorkspaceSwitcher isCollapsed={collapsed} />
+        </div>
+
         {/* Navigation Items */}
-        <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-1 scrollbar-thin scrollbar-thumb-zinc-200">
+        <nav className="flex-1 overflow-y-auto py-2 px-3 space-y-1 scrollbar-thin scrollbar-thumb-zinc-200">
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isDashboard = item.id === 'dashboard';
@@ -418,7 +477,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                 {/* Leads Nested Submenu */}
                 {isLeads && !collapsed && leadsSubmenuOpen && (
                   <div className="pl-9 pr-2 py-1 space-y-0.5 mt-0.5 border-l-2 border-amber-200 ml-4.5">
-                    {item.subItems?.map((sub) => {
+                    {(item as any).subItems?.map((sub: any) => {
                       const isSubActive = checkIsSubActive(sub.path);
                       return (
                         <Link
@@ -448,55 +507,46 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
             <div className="space-y-2">
               <div 
                 onClick={() => setShowProfileModal(true)}
-                className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-zinc-100 transition cursor-pointer group"
+                className="w-full flex items-center justify-between p-2 rounded-2xl bg-zinc-50/80 hover:bg-amber-50/60 border border-zinc-200/80 transition group cursor-pointer text-left"
               >
-                {userAvatarUrl ? (
-                  <img
-                    src={userAvatarUrl}
-                    alt="Studio Avatar"
-                    className="w-9 h-9 rounded-full object-cover border-2 border-amber-400 shadow-2xs group-hover:scale-105 transition-transform"
-                  />
-                ) : (
-                  <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-amber-400 via-amber-500 to-[#F36F21] text-white font-black text-xs flex items-center justify-center shadow-2xs">
-                    {(workspaceName || userName || 'SC').slice(0, 2).toUpperCase()}
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="relative">
+                    {userAvatarUrl ? (
+                      <img src={userAvatarUrl} alt="Avatar" className="w-8 h-8 rounded-full object-cover border border-amber-400" />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-400 via-amber-500 to-[#F36F21] text-white font-black text-xs flex items-center justify-center shadow-xs">
+                        {(workspaceName || userName || 'SC').slice(0, 2).toUpperCase()}
+                      </div>
+                    )}
+                    <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-white" />
                   </div>
-                )}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1">
-                    <h4 className="text-xs font-black text-zinc-900 truncate group-hover:text-amber-700 transition-colors">
-                      {workspaceName || 'My Studio'}
-                    </h4>
-                    <Crown className="w-3 h-3 text-amber-600 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-zinc-900 truncate leading-tight group-hover:text-amber-800 transition">
+                      {userName || 'Studio Owner'}
+                    </p>
+                    <p className="text-[10px] text-zinc-400 truncate leading-tight mt-0.5">
+                      {userEmail}
+                    </p>
                   </div>
-                  <p className="text-[10px] text-zinc-400 truncate">
-                    {userName || userEmail}
-                  </p>
+                </div>
+                <div className="p-1 rounded-lg text-zinc-400 group-hover:text-amber-700 transition">
+                  <Settings className="w-3.5 h-3.5" />
                 </div>
               </div>
 
-              <div className="flex items-center justify-between px-2 pt-1">
-                <button
-                  onClick={() => setShowProfileModal(true)}
-                  className="text-[10.5px] font-bold text-amber-700 hover:text-amber-800 flex items-center gap-1 cursor-pointer"
-                >
-                  <Settings className="w-3 h-3" />
-                  <span>Edit Profile</span>
-                </button>
-
-                <button
-                  onClick={handleSignOut}
-                  className="text-[10.5px] font-bold text-rose-600 hover:text-rose-700 flex items-center gap-1 cursor-pointer"
-                >
-                  <LogOut className="w-3 h-3" />
-                  <span>Sign Out</span>
-                </button>
-              </div>
+              <button
+                onClick={handleSignOut}
+                className="w-full flex items-center justify-center gap-2 py-1.5 px-3 rounded-xl text-[11px] font-bold text-zinc-500 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Sign Out</span>
+              </button>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-2">
               <button
                 onClick={() => setShowProfileModal(true)}
-                className="w-10 h-10 rounded-full cursor-pointer hover:ring-2 hover:ring-amber-400 transition"
+                className="w-9 h-9 rounded-full relative cursor-pointer group"
                 title="Edit Studio Profile"
               >
                 {userAvatarUrl ? (
@@ -521,14 +571,14 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       </aside>
 
       {/* ─────────────────────────────────────────────────────────────
-          2. MAIN CONTENT WRAPPER (ZERO TOP BAR ON DESKTOP)
+          2. MAIN CONTENT WRAPPER
       ───────────────────────────────────────────────────────────── */}
       <div
         className={`flex-1 flex flex-col transition-all duration-300 ease-in-out ${
           collapsed ? 'lg:pl-20' : 'lg:pl-64'
         }`}
       >
-        {/* Mobile-Only Minimal Header (< 1024px) */}
+        {/* Mobile-Only Minimal Header */}
         <header className="lg:hidden sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-[#EBE7DF] h-14 flex items-center justify-between px-4 shrink-0 shadow-2xs">
           <div className="flex items-center gap-2.5">
             <button
@@ -601,7 +651,10 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto py-3 px-3 space-y-1">
+              <div className="px-3 pt-3 pb-1 shrink-0">
+                <WorkspaceSwitcher isCollapsed={false} />
+              </div>
+              <div className="flex-1 overflow-y-auto py-2 px-3 space-y-1">
                 {menuItems.map((item) => {
                   const Icon = item.icon;
                   const isActive = pathname === item.path || (item.path !== '/workspace' && pathname.startsWith(item.path));
@@ -627,33 +680,13 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                 })}
               </div>
 
-              <div className="p-3 border-t border-zinc-100 bg-zinc-50 flex items-center justify-between">
-                <div 
-                  onClick={() => {
-                    setMobileDrawerOpen(false);
-                    setShowProfileModal(true);
-                  }}
-                  className="flex items-center gap-2 cursor-pointer"
-                >
-                  {userAvatarUrl ? (
-                    <img src={userAvatarUrl} alt="Avatar" className="w-8 h-8 rounded-full object-cover border border-amber-400" />
-                  ) : (
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-400 to-orange-400 text-zinc-900 font-black text-xs flex items-center justify-center">
-                      {(workspaceName || userName || 'SC').slice(0, 2).toUpperCase()}
-                    </div>
-                  )}
-                  <div className="text-left">
-                    <p className="text-xs font-bold text-zinc-900 truncate max-w-[120px]">{workspaceName || 'My Studio'}</p>
-                    <p className="text-[10px] text-zinc-400 truncate">{userName || 'Studio Owner'}</p>
-                  </div>
-                </div>
-
+              <div className="p-3 border-t border-zinc-100 bg-zinc-50/50">
                 <button
                   onClick={handleSignOut}
-                  className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
-                  title="Sign Out"
+                  className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 transition cursor-pointer"
                 >
                   <LogOut className="w-4 h-4" />
+                  <span>Sign Out</span>
                 </button>
               </div>
             </motion.div>
@@ -661,23 +694,16 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         )}
       </AnimatePresence>
 
-      {/* Profile Edit Modal */}
+      {/* Studio Profile Edit Modal */}
       <StudioProfileEditModal
         isOpen={showProfileModal}
         onClose={() => setShowProfileModal(false)}
-        onProfileSaved={(updated) => {
-          if (updated?.studioName) setWorkspaceName(updated.studioName);
-          if (updated?.fullName) setUserName(updated.fullName);
-          if (updated?.avatarUrl || updated?.logoUrl) setUserAvatarUrl(updated.avatarUrl || updated.logoUrl);
-          fetchUserProfile();
-        }}
       />
 
       {/* Onboarding Celebration Modal */}
       <OnboardingCelebrationModal
         isOpen={showOnboardingCelebration}
         onClose={() => setShowOnboardingCelebration(false)}
-        workspaceName={workspaceName}
       />
     </div>
   );

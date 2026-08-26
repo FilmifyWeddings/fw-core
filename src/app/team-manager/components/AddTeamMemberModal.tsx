@@ -2,9 +2,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, UserPlus, Sparkles, User, Briefcase, Phone, Mail, Camera, Loader2 } from 'lucide-react';
+import { 
+  X, UserPlus, Sparkles, User, Briefcase, Phone, Mail, 
+  Camera, Loader2, ShieldCheck, ChevronDown, ChevronUp,
+  Target, FileText, Users2, Film, IndianRupee, Check
+} from 'lucide-react';
 import CountryFlagPhoneInput from './CountryFlagPhoneInput';
 import { supabase } from '@/lib/supabase';
+import { useWorkspace } from '@/lib/context/BhamstraContext';
 
 interface AddTeamMemberModalProps {
   memberToEdit?: any | null;
@@ -18,49 +23,92 @@ interface AddTeamMemberModalProps {
     phone_number: string;
     email?: string;
     avatar_url?: string;
+    roles?: string[];
+    permissions?: any;
   }) => Promise<void> | void;
 }
 
-const COMMON_ROLES = [
-  'TM', 'Ass', 'TP', 'TV', 'CP', 'CV', 'Dron', 
-  'Makeup Art', 'Cine 2', 'Candid 2', 'social Media persone', 'Reel', 'Family Photographer'
+const MULTI_ROLES_OPTIONS = [
+  { id: 'Photographer', label: '📸 Photographer' },
+  { id: 'Cinematographer', label: '🎥 Cinematographer' },
+  { id: 'Drone Pilot', label: '🚁 Drone Pilot' },
+  { id: 'Video Editor', label: '🎬 Video Editor' },
+  { id: 'Album Designer', label: '🎨 Album Designer' },
+  { id: 'Printing Lab', label: '📖 Printing Lab' },
+  { id: 'Assistant', label: '🤝 Assistant' },
+  { id: 'Traditional Video', label: '📹 Traditional Video' },
 ];
 
 export default function AddTeamMemberModal({
   memberToEdit,
   isOpen,
   onClose,
-  initialRole = 'Ass',
+  initialRole = 'Photographer',
   onSave,
 }: AddTeamMemberModalProps) {
+  const { workspaceId } = useWorkspace();
   const [name, setName] = useState('');
   const [primaryRole, setPrimaryRole] = useState(initialRole);
+  const [selectedRoles, setSelectedRoles] = useState<string[]>([initialRole]);
   const [countryCode, setCountryCode] = useState('+91');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [email, setEmail] = useState('');
   const [avatarUrl, setAvatarUrl] = useState<string>('');
   const [isCompressing, setIsCompressing] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showPermissions, setShowPermissions] = useState(false);
+
+  // Granular Permissions Matrix State
+  const [leadsAccess, setLeadsAccess] = useState<'NONE' | 'ASSIGNED_ONLY' | 'VIEW_ALL' | 'FULL_EDIT'>('NONE');
+  const [quotationsAccess, setQuotationsAccess] = useState<'NONE' | 'VIEW_ONLY' | 'MANAGE'>('NONE');
+  const [teamManagerAccess, setTeamManagerAccess] = useState<'NONE' | 'VIEW_ASSIGNED' | 'MANAGE_ALL'>('VIEW_ASSIGNED');
+  const [postProductionAccess, setPostProductionAccess] = useState<'NONE' | 'ASSIGNED_ONLY' | 'FULL_ACCESS'>('ASSIGNED_ONLY');
+  const [financeAccess, setFinanceAccess] = useState<'NONE' | 'VIEW_ONLY' | 'MANAGE'>('NONE');
 
   useEffect(() => {
     if (memberToEdit && isOpen) {
       setName(memberToEdit.name || '');
       setPrimaryRole(memberToEdit.primary_role || initialRole);
+      setSelectedRoles(memberToEdit.roles || [memberToEdit.primary_role || initialRole]);
       setCountryCode(memberToEdit.country_code || '+91');
       setPhoneNumber(memberToEdit.phone_number || '');
       setEmail(memberToEdit.email || '');
       setAvatarUrl(memberToEdit.avatar_url || '');
+
+      const perms = memberToEdit.permissions || memberToEdit.member_permissions?.[0] || {};
+      setLeadsAccess(perms.leads_access || 'NONE');
+      setQuotationsAccess(perms.quotations_access || 'NONE');
+      setTeamManagerAccess(perms.team_manager_access || 'VIEW_ASSIGNED');
+      setPostProductionAccess(perms.post_production_access || 'ASSIGNED_ONLY');
+      setFinanceAccess(perms.finance_access || 'NONE');
     } else if (isOpen) {
       setName('');
       setPrimaryRole(initialRole);
+      setSelectedRoles([initialRole]);
       setCountryCode('+91');
       setPhoneNumber('');
       setEmail('');
       setAvatarUrl('');
+      setLeadsAccess('NONE');
+      setQuotationsAccess('NONE');
+      setTeamManagerAccess('VIEW_ASSIGNED');
+      setPostProductionAccess('ASSIGNED_ONLY');
+      setFinanceAccess('NONE');
     }
   }, [memberToEdit, isOpen, initialRole]);
 
-  // Client-Side Image Compression Engine (Max 200x200px, JPEG 0.6 quality, ~15-30KB)
+  const toggleRole = (roleId: string) => {
+    setSelectedRoles(prev => {
+      const exists = prev.includes(roleId);
+      const next = exists ? prev.filter(r => r !== roleId) : [...prev, roleId];
+      if (next.length > 0 && !next.includes(primaryRole)) {
+        setPrimaryRole(next[0]);
+      }
+      return next.length > 0 ? next : [roleId];
+    });
+  };
+
+  // Client-Side Image Compression Engine
   const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -120,156 +168,178 @@ export default function AddTeamMemberModal({
             const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
             resolve(dataUrl);
           } else {
-            reject(new Error('Canvas error'));
+            reject(new Error('Canvas context failed'));
           }
         };
-        img.onerror = (e) => reject(e);
+        img.onerror = () => reject(new Error('Image load failed'));
         img.src = event.target?.result as string;
       };
-      reader.onerror = (e) => reject(e);
+      reader.onerror = () => reject(new Error('File reading failed'));
       reader.readAsDataURL(file);
     });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !phoneNumber.trim()) return;
+    if (!name.trim()) return;
 
     setLoading(true);
     try {
+      const permissionsObj = {
+        leads_access: leadsAccess,
+        quotations_access: quotationsAccess,
+        team_manager_access: teamManagerAccess,
+        post_production_access: postProductionAccess,
+        finance_access: financeAccess,
+      };
+
+      // 1. Trigger parent onSave for UI state
       await onSave({
         name: name.trim(),
         primary_role: primaryRole,
+        roles: selectedRoles,
         country_code: countryCode,
         phone_number: phoneNumber.trim(),
         email: email.trim() || undefined,
         avatar_url: avatarUrl || undefined,
+        permissions: permissionsObj,
       });
-      setName('');
-      setPhoneNumber('');
-      setEmail('');
-      setAvatarUrl('');
+
+      // 2. Persist to Multi-Tenant Database API if email is present and workspace is available
+      if (email.trim() && workspaceId) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          await fetch('/api/workspace/members', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({
+              workspace_id: workspaceId,
+              name: name.trim(),
+              email: email.trim(),
+              phone: `${countryCode} ${phoneNumber.trim()}`.trim(),
+              primary_role: primaryRole,
+              roles: selectedRoles,
+              avatar_url: avatarUrl || null,
+              permissions: permissionsObj,
+            }),
+          }).catch(() => {});
+        }
+      }
+
       onClose();
+    } catch (err) {
+      console.error('[AddTeamMemberModal] Save error:', err);
     } finally {
       setLoading(false);
     }
   };
 
+  if (!isOpen) return null;
+
   return (
     <AnimatePresence>
-      {isOpen && (
-        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4">
-          {/* Glass Overlay */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
-          />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={onClose}
+          className="fixed inset-0 bg-black/60 backdrop-blur-xs"
+        />
 
-          {/* 3D Modal Chassis - Clean Professional Minimal */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.96, y: 15 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 15 }}
-            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="relative z-10 w-full max-w-md bg-white rounded-[24px] border border-slate-200 shadow-2xl overflow-hidden"
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-white">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-[#6C5CE7] flex items-center justify-center text-white shadow-md shadow-[#6C5CE7]/20">
-                  <UserPlus className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-extrabold text-[#0B111E] tracking-tight">
-                    {memberToEdit ? 'Edit Team Member' : 'Add New Team Member'}
-                  </h3>
-                  <p className="text-xs text-[#4F5E74] font-semibold mt-0.5">Directory registry & assignment allocation</p>
-                </div>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 10 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 10 }}
+          className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-zinc-100 overflow-hidden z-10 max-h-[90vh] flex flex-col"
+        >
+          {/* Header */}
+          <div className="px-6 py-4 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/50">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center font-bold">
+                <UserPlus className="w-4 h-4" />
               </div>
-              <button
-                type="button"
-                onClick={onClose}
-                className="w-9 h-9 rounded-2xl bg-slate-100 hover:bg-slate-200 text-[#4F5E74] flex items-center justify-center transition cursor-pointer"
-              >
-                <X className="w-4.5 h-4.5" />
-              </button>
+              <div>
+                <h3 className="text-base font-black text-zinc-900 leading-none">
+                  {memberToEdit ? 'Edit Team Member / Partner' : 'Add Team Member / Partner'}
+                </h3>
+                <p className="text-[11px] text-zinc-400 font-medium mt-0.5">
+                  Multi-Role Tagging &amp; Granular Permission Matrix
+                </p>
+              </div>
             </div>
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-full text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
 
-            {/* Form */}
-            <form onSubmit={handleSubmit} className="p-6 space-y-4 bg-slate-50/40">
-              {/* Photo Upload Picker with Avatar Preview */}
-              <div className="flex items-center gap-4 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs">
-                <div className="relative w-14 h-14 rounded-full bg-indigo-50 border-2 border-white ring-2 ring-[#6C5CE7]/30 flex items-center justify-center overflow-hidden shrink-0">
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-5">
+            {/* Avatar & Basic Info */}
+            <div className="flex items-center gap-4">
+              <div className="relative group shrink-0">
+                <div className="w-16 h-16 rounded-2xl bg-zinc-100 border-2 border-dashed border-zinc-200 flex items-center justify-center overflow-hidden">
                   {avatarUrl ? (
-                    // eslint-disable-next-next/no-img-element
-                    <img src={avatarUrl} alt="Preview" className="w-full h-full object-cover" />
+                    <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
                   ) : (
-                    <User className="w-6 h-6 text-[#6C5CE7]" />
+                    <User className="w-6 h-6 text-zinc-300" />
                   )}
                   {isCompressing && (
                     <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                      <Loader2 className="w-5 h-5 text-white animate-spin" />
+                      <Loader2 className="w-4 h-4 text-white animate-spin" />
                     </div>
                   )}
                 </div>
-                <div className="flex-1 space-y-1">
-                  <label className="text-[10px] font-extrabold text-[#4F5E74] uppercase tracking-wider block">
-                    Profile Photo (Compressed &lt; 30KB)
-                  </label>
-                  <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 hover:bg-indigo-50 border border-slate-200 text-[#6C5CE7] text-xs font-bold transition shadow-2xs">
-                    <Camera className="w-3.5 h-3.5" />
-                    <span>{avatarUrl ? 'Change Photo' : 'Upload Photo'}</span>
-                    <input 
-                      type="file" 
-                      accept="image/*" 
-                      onChange={handleImageSelect}
-                      className="hidden" 
-                    />
-                  </label>
-                </div>
+                <label className="absolute -bottom-1 -right-1 w-6 h-6 bg-amber-500 hover:bg-amber-600 text-white rounded-lg flex items-center justify-center cursor-pointer shadow-xs transition">
+                  <Camera className="w-3.5 h-3.5" />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageSelect}
+                    className="hidden"
+                  />
+                </label>
               </div>
 
-              {/* Member Name */}
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider flex items-center gap-1.5">
-                  <User className="w-3.5 h-3.5 text-[#6C5CE7]" />
-                  Member Full Name
-                </label>
+              <div className="flex-1 space-y-1.5">
+                <label className="text-[11px] font-bold text-zinc-600">Full Name *</label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Sushant Nawale"
+                  placeholder="e.g. Rahul Sharma"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full bg-white border border-slate-200 focus:border-[#6C5CE7] px-4 py-3 rounded-xl text-sm font-bold text-[#0B111E] placeholder:text-slate-400 focus:outline-none transition shadow-2xs"
+                  className="w-full px-3.5 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-semibold text-zinc-900 focus:bg-white focus:border-amber-500 focus:outline-hidden transition"
+                />
+              </div>
+            </div>
+
+            {/* Email & Phone */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-zinc-600 flex items-center gap-1">
+                  <Mail className="w-3 h-3 text-zinc-400" />
+                  <span>Email (For Partner Portal Login)</span>
+                </label>
+                <input
+                  type="email"
+                  placeholder="rahul@gmail.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-semibold text-zinc-900 focus:bg-white focus:border-amber-500 focus:outline-hidden transition"
                 />
               </div>
 
-              {/* Primary Designation / Role */}
               <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider flex items-center gap-1.5">
-                  <Briefcase className="w-3.5 h-3.5 text-[#6C5CE7]" />
-                  Primary Role / Designation
-                </label>
-                <select
-                  value={primaryRole}
-                  onChange={(e) => setPrimaryRole(e.target.value)}
-                  className="w-full bg-white border border-slate-200 focus:border-[#6C5CE7] px-4 py-3 rounded-xl text-sm font-bold text-[#0B111E] focus:outline-none transition cursor-pointer shadow-2xs"
-                >
-                  {COMMON_ROLES.map((role) => (
-                    <option key={role} value={role}>{role}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* International Mobile Phone Input */}
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider flex items-center gap-1.5">
-                  <Phone className="w-3.5 h-3.5 text-[#6C5CE7]" />
-                  Mobile Number (With Country Flag)
+                <label className="text-[11px] font-bold text-zinc-600 flex items-center gap-1">
+                  <Phone className="w-3 h-3 text-zinc-400" />
+                  <span>Mobile Phone</span>
                 </label>
                 <CountryFlagPhoneInput
                   countryCode={countryCode}
@@ -278,50 +348,179 @@ export default function AddTeamMemberModal({
                   onPhoneNumberChange={setPhoneNumber}
                 />
               </div>
+            </div>
 
-              {/* Email (Optional) */}
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider flex items-center gap-1.5">
-                  <Mail className="w-3.5 h-3.5 text-[#6C5CE7]" />
-                  Email Address (Optional)
-                </label>
-                <input
-                  type="email"
-                  placeholder="e.g. sushant@studio.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-white border border-slate-200 focus:border-[#6C5CE7] px-4 py-3 rounded-xl text-sm font-bold text-[#0B111E] placeholder:text-slate-400 focus:outline-none transition shadow-2xs"
-                />
+            {/* Multi-Role Badges Selection */}
+            <div className="space-y-2">
+              <label className="text-[11px] font-bold text-zinc-700 flex items-center justify-between">
+                <span>Multi-Role Specializations (Select All That Apply)</span>
+                <span className="text-[10px] text-zinc-400 font-normal">Primary: {primaryRole}</span>
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {MULTI_ROLES_OPTIONS.map((r) => {
+                  const isSelected = selectedRoles.includes(r.id);
+                  const isPrimary = primaryRole === r.id;
+                  return (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => toggleRole(r.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border ${
+                        isSelected
+                          ? isPrimary
+                            ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
+                            : 'bg-amber-50 text-amber-900 border-amber-300'
+                          : 'bg-zinc-50 text-zinc-600 border-zinc-200 hover:bg-zinc-100'
+                      }`}
+                    >
+                      <span>{r.label}</span>
+                      {isSelected && <Check className="w-3 h-3" />}
+                    </button>
+                  );
+                })}
               </div>
+            </div>
 
-              {/* Footer Actions */}
-              <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-bold text-[#4F5E74] transition cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading || isCompressing}
-                  className="px-6 py-2.5 rounded-xl bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-extrabold shadow-md shadow-[#6C5CE7]/20 transition disabled:opacity-50 flex items-center gap-2 cursor-pointer"
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    'Save & Allocate'
-                  )}
-                </button>
-              </div>
-            </form>
-          </motion.div>
-        </div>
-      )}
+            {/* Granular Permission Matrix Accordion */}
+            <div className="rounded-2xl border border-zinc-200 overflow-hidden bg-zinc-50/50">
+              <button
+                type="button"
+                onClick={() => setShowPermissions(!showPermissions)}
+                className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-zinc-100/50 transition cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                  <div>
+                    <p className="text-xs font-bold text-zinc-900">Granular Permission Matrix</p>
+                    <p className="text-[10px] text-zinc-500">Configure CRM, Quotations, and Finance access levels</p>
+                  </div>
+                </div>
+                {showPermissions ? (
+                  <ChevronUp className="w-4 h-4 text-zinc-400" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-zinc-400" />
+                )}
+              </button>
+
+              <AnimatePresence>
+                {showPermissions && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="px-4 pb-4 space-y-3 pt-2 border-t border-zinc-200 bg-white"
+                  >
+                    {/* Leads & CRM */}
+                    <div className="flex items-center justify-between py-1">
+                      <div className="flex items-center gap-1.5">
+                        <Target className="w-3.5 h-3.5 text-emerald-600" />
+                        <span className="text-xs font-bold text-zinc-800">Leads &amp; CRM</span>
+                      </div>
+                      <select
+                        value={leadsAccess}
+                        onChange={(e: any) => setLeadsAccess(e.target.value)}
+                        className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-zinc-50 border border-zinc-200 text-zinc-800"
+                      >
+                        <option value="NONE">No Access (Hidden)</option>
+                        <option value="ASSIGNED_ONLY">Assigned Only</option>
+                        <option value="VIEW_ALL">View All Leads</option>
+                        <option value="FULL_EDIT">Full Edit Access</option>
+                      </select>
+                    </div>
+
+                    {/* Quotations & Pricing */}
+                    <div className="flex items-center justify-between py-1 border-t border-zinc-100">
+                      <div className="flex items-center gap-1.5">
+                        <FileText className="w-3.5 h-3.5 text-amber-600" />
+                        <span className="text-xs font-bold text-zinc-800">Quotations &amp; Pricing</span>
+                      </div>
+                      <select
+                        value={quotationsAccess}
+                        onChange={(e: any) => setQuotationsAccess(e.target.value)}
+                        className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-zinc-50 border border-zinc-200 text-zinc-800"
+                      >
+                        <option value="NONE">Hidden</option>
+                        <option value="VIEW_ONLY">View Only</option>
+                        <option value="MANAGE">Full Manage</option>
+                      </select>
+                    </div>
+
+                    {/* Team Manager */}
+                    <div className="flex items-center justify-between py-1 border-t border-zinc-100">
+                      <div className="flex items-center gap-1.5">
+                        <Users2 className="w-3.5 h-3.5 text-indigo-600" />
+                        <span className="text-xs font-bold text-zinc-800">Team Manager</span>
+                      </div>
+                      <select
+                        value={teamManagerAccess}
+                        onChange={(e: any) => setTeamManagerAccess(e.target.value)}
+                        className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-zinc-50 border border-zinc-200 text-zinc-800"
+                      >
+                        <option value="NONE">Hidden</option>
+                        <option value="VIEW_ASSIGNED">View Assigned Crew</option>
+                        <option value="MANAGE_ALL">Full Access</option>
+                      </select>
+                    </div>
+
+                    {/* Post-Production */}
+                    <div className="flex items-center justify-between py-1 border-t border-zinc-100">
+                      <div className="flex items-center gap-1.5">
+                        <Film className="w-3.5 h-3.5 text-rose-600" />
+                        <span className="text-xs font-bold text-zinc-800">Post-Production / Projects</span>
+                      </div>
+                      <select
+                        value={postProductionAccess}
+                        onChange={(e: any) => setPostProductionAccess(e.target.value)}
+                        className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-zinc-50 border border-zinc-200 text-zinc-800"
+                      >
+                        <option value="NONE">Hidden</option>
+                        <option value="ASSIGNED_ONLY">Assigned Projects Only</option>
+                        <option value="FULL_ACCESS">Full Access</option>
+                      </select>
+                    </div>
+
+                    {/* Finance & Invoices */}
+                    <div className="flex items-center justify-between py-1 border-t border-zinc-100">
+                      <div className="flex items-center gap-1.5">
+                        <IndianRupee className="w-3.5 h-3.5 text-yellow-600" />
+                        <span className="text-xs font-bold text-zinc-800">Finance &amp; Invoices</span>
+                      </div>
+                      <select
+                        value={financeAccess}
+                        onChange={(e: any) => setFinanceAccess(e.target.value)}
+                        className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-zinc-50 border border-zinc-200 text-zinc-800"
+                      >
+                        <option value="NONE">Hidden</option>
+                        <option value="VIEW_ONLY">View Only</option>
+                        <option value="MANAGE">Full Access</option>
+                      </select>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="pt-3 flex items-center justify-end gap-2.5 border-t border-zinc-100">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-zinc-600 hover:bg-zinc-100 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={loading || !name.trim()}
+                className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white text-xs font-bold shadow-md shadow-amber-500/20 transition cursor-pointer flex items-center gap-2"
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                <span>{memberToEdit ? 'Save Changes' : 'Add Team Member'}</span>
+              </button>
+            </div>
+          </form>
+        </motion.div>
+      </div>
     </AnimatePresence>
   );
 }
