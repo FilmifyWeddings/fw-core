@@ -182,9 +182,10 @@ export async function POST(req: NextRequest) {
           return json;
         }
 
-        // ── Step 1: Fetch ALL leads with pagination ──────────────────────────
+        // ── Step 1: Deep Cursor Pagination for Historical Leads (Fetch 1000+ Leads) ──
         const allLeads: any[] = [];
-        let nextCursor: string | null = null;
+        let afterCursor: string | null = null;
+        let hasMore = true;
         let pageNum = 0;
 
         // First, test connection & get total count
@@ -207,89 +208,78 @@ export async function POST(req: NextRequest) {
         const estimatedTotal = countData.paging?.cursors ? -1 : (countData.data?.length || 0);
         controller.enqueue(sseEvent({ type: 'start', total: estimatedTotal, form_name: formName, page_name: pageName }));
 
-        // Paginate through all leads using paging.next and limit=100
-        let nextUrl: string | null = `https://graph.facebook.com/v20.0/${form_id}/leads?fields=id,created_time,field_data,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,form_id&limit=100&access_token=${pageToken}`;
-
-        while (nextUrl && pageNum < 150) {
+        while (hasMore && pageNum < 200) {
           pageNum++;
-          const leadsData = await fetchGraphWithFallback(nextUrl);
-
-          if (leadsData.error) {
-            throw new Error(`Graph API Error: ${leadsData.error.message} (Code: ${leadsData.error.code})`);
+          let url = `https://graph.facebook.com/v20.0/${form_id}/leads?fields=id,created_time,field_data,ad_name,campaign_name&limit=100&access_token=${pageToken}`;
+          if (afterCursor) {
+            url += `&after=${afterCursor}`;
           }
 
-          const batch = leadsData.data || [];
-          allLeads.push(...batch);
-          totalFetched = allLeads.length;
+          const data = await fetchGraphWithFallback(url);
 
-          nextUrl = leadsData.paging?.next || null;
-          if (!nextUrl && leadsData.paging?.cursors?.after && batch.length >= 100) {
-            nextUrl = `https://graph.facebook.com/v20.0/${form_id}/leads?fields=id,created_time,field_data,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,form_id&limit=100&after=${leadsData.paging.cursors.after}&access_token=${pageToken}`;
+          if (data.error) {
+            console.error("Meta Graph API Error:", data.error);
+            if (allLeads.length === 0) {
+              throw new Error(`Graph API Error: ${data.error.message} (Code: ${data.error.code})`);
+            }
+            break;
           }
 
-          // Emit progress after each page fetch
-          controller.enqueue(sseEvent({
-            type: 'progress',
-            phase: 'fetching',
-            imported, skipped, failed,
-            total: totalFetched,
-            current: totalFetched,
-            message: `Fetched ${totalFetched} leads from Meta…`,
-          }));
-        }
+          if (data?.data && Array.isArray(data.data) && data.data.length > 0) {
+            allLeads.push(...data.data);
+            totalFetched = allLeads.length;
 
-        // ── Step 2: Import leads to CRM with duplicate detection ─────────────
-        for (let i = 0; i < allLeads.length; i++) {
-          const lead = allLeads[i];
-          const leadgen_id = lead.id;
-
-          // Emit progress every 5 leads or on last
-          if (i % 5 === 0 || i === allLeads.length - 1) {
+            // Emit live progress during fetching
             controller.enqueue(sseEvent({
               type: 'progress',
-              phase: 'importing',
-              imported, skipped, failed,
-              total: allLeads.length,
-              current: i + 1,
-              message: `Importing ${i + 1} / ${allLeads.length}…`,
+              phase: 'fetching',
+              imported: 0,
+              skipped: 0,
+              failed: 0,
+              total: totalFetched,
+              current: totalFetched,
+              message: `Fetching leads... (Found ${totalFetched} leads so far)`,
             }));
+
+            if (data.paging?.cursors?.after && data.data.length === 100) {
+              afterCursor = data.paging.cursors.after;
+            } else if (data.paging?.next) {
+              const match = data.paging.next.match(/after=([^&]+)/);
+              afterCursor = match ? match[1] : null;
+              if (!afterCursor) hasMore = false;
+            } else {
+              hasMore = false;
+            }
+          } else {
+            hasMore = false;
           }
+        }
 
-          // ── Duplicate check using meta_lead_id or leadgen_id in raw_payload ────────────────
-          const { data: existing } = await supabaseAdmin
-            .from('leads')
-            .select('id')
-            .eq('workspace_id', workspaceId)
-            .or(`meta_lead_id.eq.${leadgen_id},raw_payload->>leadgen_id.eq.${leadgen_id}`)
-            .maybeSingle();
+        // ── Step 2: Format All Leads in Memory with Smart Normalized Keys ──
+        let assignedLeadOwner: string | null = null;
+        try {
+          assignedLeadOwner = await getNextDistributedLeadOwner(workspaceId, form_id);
+        } catch (distErr: any) {
+          console.error('[Forms Sync Distribution Error]:', distErr?.message);
+        }
 
-          if (existing) {
-            skipped++;
-            continue;
-          }
+        const { data: formMapping } = await supabaseAdmin
+          .from('fb_form_mappings')
+          .select('contact_group_id')
+          .eq('workspace_id', workspaceId)
+          .eq('form_id', form_id)
+          .maybeSingle();
 
-          // ── Extract normalized fields ──────────────────────────────────────
+        const contactGroupId = formMapping?.contact_group_id || null;
+
+        const formattedLeads: any[] = [];
+        for (const lead of allLeads) {
+          const leadgen_id = lead.id;
+          if (!leadgen_id) continue;
+
           const extracted = extractLeadFields(lead.field_data || []);
 
-          // ── Determine assigned Lead Owner & WhatsApp Group ───────────────
-          let assignedLeadOwner: string | null = null;
-          try {
-            assignedLeadOwner = await getNextDistributedLeadOwner(workspaceId, form_id);
-          } catch (distErr: any) {
-            console.error('[Forms Sync Distribution Error]:', distErr?.message);
-          }
-
-          const { data: formMapping } = await supabaseAdmin
-            .from('fb_form_mappings')
-            .select('contact_group_id')
-            .eq('workspace_id', workspaceId)
-            .eq('form_id', form_id)
-            .maybeSingle();
-
-          const contactGroupId = formMapping?.contact_group_id || null;
-
-          // ── Insert lead into CRM with resilient column fallback ──────────
-          const newLeadItem: Record<string, any> = {
+          formattedLeads.push({
             workspace_id: workspaceId,
             tenant_id: workspaceId,
             name: extracted.fullName,
@@ -321,56 +311,123 @@ export async function POST(req: NextRequest) {
               page_id,
               page_name: pageName,
               campaign_name: lead.campaign_name || '',
-              adset_name: lead.adset_name || '',
               ad_name: lead.ad_name || '',
               field_data: lead.field_data || [],
               lead_owner: assignedLeadOwner || 'Unassigned',
               synced_manually: true,
               ...extracted.rawFieldMap,
             },
-          };
+          });
+        }
 
-          let insertedOk = false;
-          let insertCopy = { ...newLeadItem };
+        // ── Step 3: Chunked Batch Upsert to Supabase (50 records per chunk) ──
+        const chunkSize = 50;
+        let totalSaved = 0;
+
+        for (let i = 0; i < formattedLeads.length; i += chunkSize) {
+          const chunk = formattedLeads.slice(i, i + chunkSize);
+
+          controller.enqueue(sseEvent({
+            type: 'progress',
+            phase: 'importing',
+            imported: totalSaved,
+            skipped,
+            failed,
+            total: formattedLeads.length,
+            current: Math.min(i + chunkSize, formattedLeads.length),
+            message: `Saving leads to database (${Math.min(i + chunkSize, formattedLeads.length)} / ${formattedLeads.length})…`,
+          }));
+
+          let chunkToUpsert = [...chunk];
+          let chunkSuccess = false;
 
           for (let attempt = 0; attempt < 6; attempt++) {
-            const { error: insErr } = await supabaseAdmin
+            const { data: upsertData, error: upsertErr } = await supabaseAdmin
               .from('leads')
-              .insert(insertCopy);
+              .upsert(chunkToUpsert, { onConflict: 'meta_lead_id', ignoreDuplicates: true })
+              .select('id');
 
-            if (!insErr) {
-              insertedOk = true;
+            if (!upsertErr) {
+              const savedCount = upsertData?.length ?? chunk.length;
+              totalSaved += savedCount;
+              chunkSuccess = true;
               break;
             }
 
-            const errMsg = insErr.message || '';
+            const errMsg = upsertErr.message || '';
             const match = errMsg.match(/Could not find the '([^']+)' column/i) || errMsg.match(/column "([^"]+)" of relation/i);
             if (match && match[1]) {
-              delete insertCopy[match[1]];
+              const badCol = match[1];
+              chunkToUpsert = chunkToUpsert.map(row => {
+                const copy = { ...row };
+                delete copy[badCol];
+                return copy;
+              });
             } else {
+              console.error('[Batch Upsert Error]:', errMsg);
               break;
             }
           }
 
-          if (insertedOk) {
-            imported++;
-          } else {
-            failed++;
+          if (!chunkSuccess) {
+            // Fallback to row-by-row upsert for this specific failing chunk
+            for (const singleLead of chunk) {
+              let singleCopy = { ...singleLead };
+              let singleSaved = false;
+              for (let attempt = 0; attempt < 6; attempt++) {
+                const { error: singleErr } = await supabaseAdmin
+                  .from('leads')
+                  .upsert(singleCopy, { onConflict: 'meta_lead_id', ignoreDuplicates: true });
+                if (!singleErr) {
+                  totalSaved++;
+                  singleSaved = true;
+                  break;
+                }
+                const errMsg = singleErr.message || '';
+                const match = errMsg.match(/Could not find the '([^']+)' column/i) || errMsg.match(/column "([^"]+)" of relation/i);
+                if (match && match[1]) {
+                  delete singleCopy[match[1]];
+                } else {
+                  break;
+                }
+              }
+              if (!singleSaved) failed++;
+            }
           }
         }
 
-        // ── Step 3: Update fb_lead_forms.leads_count ─────────────────────────
-        const { data: currentForm } = await supabaseAdmin
-          .from('fb_lead_forms')
-          .select('leads_count')
-          .eq('workspace_id', workspaceId)
-          .eq('form_id', form_id)
-          .single();
+        imported = totalSaved;
 
-        const newCount = (currentForm?.leads_count || 0) + imported;
+        // ── Step 4: Update Synced Count in meta_lead_forms & fb_lead_forms ────
+        try {
+          await supabaseAdmin
+            .from('meta_lead_forms')
+            .upsert({
+              workspace_id: workspaceId,
+              form_id: form_id,
+              page_id: page_id,
+              form_name: formName,
+              total_leads_count: totalSaved,
+              last_synced_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'workspace_id,form_id' });
+        } catch (_) {}
+
         await supabaseAdmin
           .from('fb_lead_forms')
-          .update({ leads_count: newCount, updated_at: new Date().toISOString() })
+          .update({
+            leads_count: totalSaved,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('workspace_id', workspaceId)
+          .eq('form_id', form_id);
+
+        await supabaseAdmin
+          .from('fb_form_mappings')
+          .update({
+            sync_count: totalSaved,
+            updated_at: new Date().toISOString(),
+          })
           .eq('workspace_id', workspaceId)
           .eq('form_id', form_id);
 

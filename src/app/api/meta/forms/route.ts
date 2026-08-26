@@ -69,23 +69,35 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const forms = allForms.map(f => {
-      const isFormEnabled = f.is_sync_enabled ?? f.is_enabled ?? false;
-      return {
-        form_id: f.form_id,
-        name: f.form_name,
-        form_name: f.form_name,
-        status: (f.status || 'ACTIVE').toUpperCase(),
-        page_id: f.page_id,
-        page_name: pageMap.get(f.page_id) || 'Facebook Page',
-        is_active: true,
-        is_enabled: isFormEnabled,
-        is_sync_enabled: isFormEnabled,
-        sync_count: f.leads_count || 0,
-        last_lead_time: f.created_time || 'Active',
-        questions_count: 5,
-      };
-    });
+    const forms = allForms
+      .map(f => {
+        const isFormEnabled = f.is_sync_enabled ?? f.is_enabled ?? false;
+        return {
+          form_id: f.form_id,
+          name: f.form_name,
+          form_name: f.form_name,
+          status: (f.status || 'ACTIVE').toUpperCase(),
+          page_id: f.page_id,
+          page_name: pageMap.get(f.page_id) || 'Facebook Page',
+          is_active: true,
+          is_enabled: isFormEnabled,
+          is_sync_enabled: isFormEnabled,
+          sync_count: f.leads_count || 0,
+          last_lead_time: f.created_time || 'Active',
+          created_time: f.created_time || f.created_at || new Date().toISOString(),
+          questions_count: 5,
+        };
+      })
+      .sort((a, b) => {
+        const aActive = Boolean(a.is_sync_enabled ?? a.is_enabled);
+        const bActive = Boolean(b.is_sync_enabled ?? b.is_enabled);
+        if (aActive === bActive) {
+          const aTime = a.created_time ? new Date(a.created_time).getTime() : 0;
+          const bTime = b.created_time ? new Date(b.created_time).getTime() : 0;
+          return bTime - aTime;
+        }
+        return aActive ? -1 : 1;
+      });
 
     return NextResponse.json({
       success: true,

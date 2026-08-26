@@ -503,6 +503,17 @@ export async function GET(req: NextRequest) {
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
 
+    const sortedForms = [...forms].sort((a, b) => {
+      const aActive = Boolean(a.is_sync_enabled ?? a.is_enabled);
+      const bActive = Boolean(b.is_sync_enabled ?? b.is_enabled);
+      if (aActive === bActive) {
+        const aTime = a.created_time ? new Date(a.created_time).getTime() : 0;
+        const bTime = b.created_time ? new Date(b.created_time).getTime() : 0;
+        return bTime - aTime;
+      }
+      return aActive ? -1 : 1;
+    });
+
     const finalResponse = {
       success: true,
       connection: {
@@ -517,13 +528,13 @@ export async function GET(req: NextRequest) {
         last_lead_time: lastLeadTime,
       },
       counts: {
-        total_forms: forms.length,
-        receiving_leads: forms.filter((f: any) => f.is_enabled !== false).length,
-        disabled_forms: forms.filter((f: any) => f.is_enabled === false).length,
-        total_leads: Math.max(totalLeadsCount, forms.reduce((acc: number, f: any) => acc + (f.leads_count || 0), 0)),
+        total_forms: sortedForms.length,
+        receiving_leads: sortedForms.filter((f: any) => f.is_enabled === true || f.is_sync_enabled === true).length,
+        disabled_forms: sortedForms.filter((f: any) => !(f.is_enabled === true || f.is_sync_enabled === true)).length,
+        total_leads: Math.max(totalLeadsCount, sortedForms.reduce((acc: number, f: any) => acc + (f.leads_count || 0), 0)),
       },
       pages,
-      forms,
+      forms: sortedForms,
       error_logs: [],
       sync_logs: allRealSyncLogs,
     };

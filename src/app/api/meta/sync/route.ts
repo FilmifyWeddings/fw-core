@@ -77,20 +77,22 @@ export async function POST(req: NextRequest) {
       if (formObj?.form_name) formName = formObj.form_name;
     }
 
-    let importedCount = 0;
-    let duplicateCount = 0;
-    let totalFetched = 0;
-    const insertedLeads: any[] = [];
-    let pageIterations = 0;
+    let allLeads: any[] = [];
+    let afterCursor: string | null = null;
+    let hasMore = true;
+    let pageNum = 0;
 
-    let nextUrl: string | null = `https://graph.facebook.com/v20.0/${form_id || '1193618092947278'}/leads?fields=id,created_time,field_data,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,form_id&limit=100${sinceQuery}&access_token=${pageToken}`;
+    while (hasMore && pageNum < 200) {
+      pageNum++;
+      let url = `https://graph.facebook.com/v20.0/${form_id || '1193618092947278'}/leads?fields=id,created_time,field_data,ad_name,campaign_name&limit=100${sinceQuery}&access_token=${pageToken}`;
+      if (afterCursor) {
+        url += `&after=${afterCursor}`;
+      }
 
-    while (nextUrl && pageIterations < 150) {
-      pageIterations++;
-      const graphRes = await fetch(nextUrl);
+      const graphRes = await fetch(url);
       if (!graphRes.ok) {
         const err = await graphRes.json().catch(() => ({}));
-        if (totalFetched === 0) {
+        if (allLeads.length === 0) {
           return NextResponse.json({
             success: false,
             error: err?.error?.message || `Meta Graph API Error: ${graphRes.status}`,
@@ -101,138 +103,172 @@ export async function POST(req: NextRequest) {
 
       const graphData = await graphRes.json();
       const leadsList = graphData.data || [];
-      totalFetched += leadsList.length;
 
-      for (const leadItem of leadsList) {
-        const leadgenId = leadItem.id;
-
-        // Deduplication check: check if already exists in DB
-        const { data: existing } = await supabaseAdmin
-          .from('leads')
-          .select('id')
-          .eq('workspace_id', workspaceId)
-          .or(`meta_lead_id.eq.${leadgenId},raw_payload->>leadgen_id.eq.${leadgenId}`)
-          .maybeSingle();
-
-        if (existing) {
-          duplicateCount++;
-          continue;
-        }
-
-        if (estimate_only) {
-          continue;
-        }
-
-        // Parse normalized field_data
-        const extracted = extractLeadFields(leadItem.field_data || []);
-
-        const newLeadPayload: Record<string, any> = {
-          workspace_id: workspaceId,
-          tenant_id: workspaceId,
-          name: extracted.fullName,
-          full_name: extracted.fullName,
-          phone: extracted.phone || null,
-          phone_number: extracted.phone || null,
-          email: extracted.email || null,
-          source: `Facebook Ads / ${formName}`,
-          status: 'new',
-          form_id: form_id || leadItem.form_id,
-          source_form_id: form_id || leadItem.form_id,
-          form_tag: formName,
-          meta_lead_id: leadgenId,
-          event_date: extracted.eventDate || null,
-          location: extracted.location || null,
-          city: extracted.location || null,
-          budget: extracted.budget || null,
-          raw_field_data: extracted.rawFieldMap,
-          created_at: leadItem.created_time || new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          raw_payload: {
-            leadgen_id: leadgenId,
-            meta_lead_id: leadgenId,
-            form_id: form_id || leadItem.form_id,
-            form_name: formName,
-            page_id: page_id,
-            campaign_name: leadItem.campaign_name || '',
-            adset_name: leadItem.adset_name || '',
-            ad_name: leadItem.ad_name || '',
-            field_data: leadItem.field_data || [],
-            synced_via: 'manual_bulk_sync',
-            ...extracted.rawFieldMap,
-          },
-        };
-
-        // Resilient dynamic column-stripping insert
-        let insertedItem: any = null;
-        let payloadCopy = { ...newLeadPayload };
-
-        for (let attempt = 0; attempt < 6; attempt++) {
-          const { data: ins, error: insertErr } = await supabaseAdmin
-            .from('leads')
-            .insert(payloadCopy)
-            .select('*')
-            .maybeSingle();
-
-          if (!insertErr && ins) {
-            insertedItem = ins;
-            break;
-          }
-
-          if (insertErr) {
-            const errMsg = insertErr.message || '';
-            const match = errMsg.match(/Could not find the '([^']+)' column/i) || errMsg.match(/column "([^"]+)" of relation/i);
-            if (match && match[1]) {
-              delete payloadCopy[match[1]];
-            } else {
-              console.warn('[Historical Lead Insert Notice]:', errMsg);
-              break;
-            }
-          }
-        }
-
-        if (insertedItem) {
-          importedCount++;
-          insertedLeads.push(insertedItem);
+      if (Array.isArray(leadsList) && leadsList.length > 0) {
+        allLeads.push(...leadsList);
+        if (graphData.paging?.cursors?.after && leadsList.length === 100) {
+          afterCursor = graphData.paging.cursors.after;
+        } else if (graphData.paging?.next) {
+          const match = graphData.paging.next.match(/after=([^&]+)/);
+          afterCursor = match ? match[1] : null;
+          if (!afterCursor) hasMore = false;
         } else {
-          duplicateCount++;
+          hasMore = false;
         }
-      }
-
-      nextUrl = graphData.paging?.next || null;
-      if (!nextUrl && graphData.paging?.cursors?.after && leadsList.length >= 100) {
-        nextUrl = `https://graph.facebook.com/v20.0/${form_id || '1193618092947278'}/leads?fields=id,created_time,field_data,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,form_id&limit=100${sinceQuery}&after=${graphData.paging.cursors.after}&access_token=${pageToken}`;
+      } else {
+        hasMore = false;
       }
     }
+
+    totalFetched = allLeads.length;
 
     if (estimate_only) {
       return NextResponse.json({
         success: true,
         estimated_total: totalFetched,
-        already_imported: duplicateCount,
-        duplicates: duplicateCount,
-        expected_new: Math.max(0, totalFetched - duplicateCount),
+        already_imported: 0,
+        duplicates: 0,
+        expected_new: totalFetched,
       });
     }
 
-    // Update sync count in `fb_lead_forms` & `fb_form_mappings`
-    if (importedCount > 0 && form_id) {
+    // Format all leads in memory
+    const formattedLeads: any[] = [];
+    for (const leadItem of allLeads) {
+      const leadgenId = leadItem.id;
+      if (!leadgenId) continue;
+
+      const extracted = extractLeadFields(leadItem.field_data || []);
+
+      formattedLeads.push({
+        workspace_id: workspaceId,
+        tenant_id: workspaceId,
+        name: extracted.fullName,
+        full_name: extracted.fullName,
+        phone: extracted.phone || null,
+        phone_number: extracted.phone || null,
+        email: extracted.email || null,
+        source: `Facebook Ads / ${formName}`,
+        status: 'new',
+        form_id: form_id || leadItem.form_id,
+        source_form_id: form_id || leadItem.form_id,
+        form_tag: formName,
+        meta_lead_id: leadgenId,
+        event_date: extracted.eventDate || null,
+        location: extracted.location || null,
+        city: extracted.location || null,
+        budget: extracted.budget || null,
+        raw_field_data: extracted.rawFieldMap,
+        created_at: leadItem.created_time || new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        raw_payload: {
+          leadgen_id: leadgenId,
+          meta_lead_id: leadgenId,
+          form_id: form_id || leadItem.form_id,
+          form_name: formName,
+          page_id: page_id,
+          campaign_name: leadItem.campaign_name || '',
+          ad_name: leadItem.ad_name || '',
+          field_data: leadItem.field_data || [],
+          synced_via: 'manual_bulk_sync',
+          ...extracted.rawFieldMap,
+        },
+      });
+    }
+
+    // Chunked Batch Upsert (50 records per chunk)
+    const chunkSize = 50;
+    let totalSaved = 0;
+
+    for (let i = 0; i < formattedLeads.length; i += chunkSize) {
+      const chunk = formattedLeads.slice(i, i + chunkSize);
+      let chunkToUpsert = [...chunk];
+      let chunkSuccess = false;
+
+      for (let attempt = 0; attempt < 6; attempt++) {
+        const { data: upsertData, error: upsertErr } = await supabaseAdmin
+          .from('leads')
+          .upsert(chunkToUpsert, { onConflict: 'meta_lead_id', ignoreDuplicates: true })
+          .select('id');
+
+        if (!upsertErr) {
+          const savedCount = upsertData?.length ?? chunk.length;
+          totalSaved += savedCount;
+          chunkSuccess = true;
+          break;
+        }
+
+        const errMsg = upsertErr.message || '';
+        const match = errMsg.match(/Could not find the '([^']+)' column/i) || errMsg.match(/column "([^"]+)" of relation/i);
+        if (match && match[1]) {
+          const badCol = match[1];
+          chunkToUpsert = chunkToUpsert.map(row => {
+            const copy = { ...row };
+            delete copy[badCol];
+            return copy;
+          });
+        } else {
+          console.error('[Bulk Sync Upsert Error]:', errMsg);
+          break;
+        }
+      }
+
+      if (!chunkSuccess) {
+        for (const singleLead of chunk) {
+          let singleCopy = { ...singleLead };
+          for (let attempt = 0; attempt < 6; attempt++) {
+            const { error: singleErr } = await supabaseAdmin
+              .from('leads')
+              .upsert(singleCopy, { onConflict: 'meta_lead_id', ignoreDuplicates: true });
+            if (!singleErr) {
+              totalSaved++;
+              break;
+            }
+            const errMsg = singleErr.message || '';
+            const match = errMsg.match(/Could not find the '([^']+)' column/i) || errMsg.match(/column "([^"]+)" of relation/i);
+            if (match && match[1]) {
+              delete singleCopy[match[1]];
+            } else {
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    importedCount = totalSaved;
+
+    // Update total synced count for the form
+    if (form_id) {
+      try {
+        await supabaseAdmin
+          .from('meta_lead_forms')
+          .upsert({
+            workspace_id: workspaceId,
+            form_id: form_id,
+            page_id: page_id,
+            form_name: formName,
+            total_leads_count: totalSaved,
+            last_synced_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'workspace_id,form_id' });
+      } catch (_) {}
+
       await supabaseAdmin
-        .from('fb_form_mappings')
-        .update({ sync_count: importedCount, updated_at: new Date().toISOString() })
+        .from('fb_lead_forms')
+        .update({
+          leads_count: totalSaved,
+          updated_at: new Date().toISOString()
+        })
         .eq('workspace_id', workspaceId)
         .eq('form_id', form_id);
 
-      const { data: curForm } = await supabaseAdmin
-        .from('fb_lead_forms')
-        .select('leads_count')
-        .eq('workspace_id', workspaceId)
-        .eq('form_id', form_id)
-        .maybeSingle();
-
-      const newCount = (curForm?.leads_count || 0) + importedCount;
       await supabaseAdmin
-        .from('fb_lead_forms')
-        .update({ leads_count: newCount, updated_at: new Date().toISOString() })
+        .from('fb_form_mappings')
+        .update({
+          sync_count: totalSaved,
+          updated_at: new Date().toISOString()
+        })
         .eq('workspace_id', workspaceId)
         .eq('form_id', form_id);
     }

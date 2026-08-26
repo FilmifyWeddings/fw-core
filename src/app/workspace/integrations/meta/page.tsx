@@ -193,7 +193,7 @@ function SyncCell({ formId, pageId, syncState, onSync }: {
   syncState: FormSyncState;
   onSync: (formId: string, pageId: string) => void;
 }) {
-  const { phase, imported, current, total } = syncState;
+  const { phase, imported, current, total, message } = syncState;
 
   if (phase === 'idle') {
     return (
@@ -209,42 +209,49 @@ function SyncCell({ formId, pageId, syncState, onSync }: {
   }
 
   if (phase === 'fetching' || phase === 'importing') {
-    const pct = total > 0 ? Math.round((current / total) * 100) : 30;
+    const pct = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 35;
     return (
-      <div className="space-y-1 min-w-[110px]">
+      <div className="space-y-1 min-w-[130px] text-right">
         <div className="flex items-center justify-between text-[10px] font-semibold text-slate-700">
           <span className="flex items-center gap-1">
             <Loader2 className="w-3 h-3 animate-spin text-[#0866FF]" />
-            {phase === 'fetching' ? 'Fetching…' : 'Syncing…'}
+            {phase === 'fetching' ? 'Fetching…' : 'Saving…'}
           </span>
-          <span className="font-mono">{current}/{total || '?'}</span>
+          <span className="font-mono text-[#0866FF] font-bold">
+            {phase === 'fetching' ? `${current} leads` : `${current}/${total || '?'}`}
+          </span>
         </div>
         <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
           <div className="h-full rounded-full bg-[#0866FF] transition-all duration-300" style={{ width: `${pct}%` }} />
         </div>
+        {message && (
+          <p className="text-[9px] text-slate-500 truncate max-w-[150px]" title={message}>
+            {message}
+          </p>
+        )}
       </div>
     );
   }
 
   if (phase === 'complete') {
     return (
-      <div className="space-y-0.5">
-        <div className="flex items-center gap-1 text-emerald-600 text-xs font-bold">
-          <CheckCircle2 className="w-3.5 h-3.5" /> Synced (+{imported})
+      <div className="space-y-0.5 text-right">
+        <div className="flex items-center justify-end gap-1 text-emerald-600 text-xs font-bold">
+          <CheckCircle2 className="w-3.5 h-3.5" /> Synced ({imported} leads)
         </div>
-        <button onClick={() => onSync(formId, pageId)} className="text-[10px] text-[#0866FF] font-semibold hover:underline flex items-center gap-0.5">
-          <RotateCcw className="w-2.5 h-2.5" /> Sync Again
+        <button onClick={() => onSync(formId, pageId)} className="text-[10px] text-[#0866FF] font-semibold hover:underline flex items-center justify-end gap-0.5 ml-auto cursor-pointer">
+          <RotateCcw className="w-2.5 h-2.5" /> Re-Sync
         </button>
       </div>
     );
   }
 
   return (
-    <div className="space-y-0.5">
-      <div className="flex items-center gap-1 text-red-600 text-xs font-bold">
+    <div className="space-y-0.5 text-right">
+      <div className="flex items-center justify-end gap-1 text-red-600 text-xs font-bold">
         <AlertCircle className="w-3.5 h-3.5" /> Failed
       </div>
-      <button onClick={() => onSync(formId, pageId)} className="text-[10px] text-[#0866FF] font-semibold hover:underline">Retry</button>
+      <button onClick={() => onSync(formId, pageId)} className="text-[10px] text-[#0866FF] font-semibold hover:underline cursor-pointer">Retry</button>
     </div>
   );
 }
@@ -616,7 +623,7 @@ export default function MetaIntegrationPage() {
     }
   }, []);
 
-  // Sync All Historical Leads Handler
+  // Sync All Historical Leads Handler (Sequential with Live SSE Stream)
   const handleSyncAllHistoricalLeads = useCallback(async () => {
     if (leadForms.length === 0) {
       showToast('No active Lead Forms discovered to sync.', 'error');
@@ -626,43 +633,25 @@ export default function MetaIntegrationPage() {
     showToast(`⚡ Initiating full historical sync for ${leadForms.length} form(s)...`);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const wsId = session?.user?.id || '';
-      const headers = await getAuthHeaders();
-
-      let totalImported = 0;
-      let totalSkipped = 0;
-
+      let formIdx = 0;
       for (const form of leadForms) {
+        formIdx++;
+        showToast(`Fetching leads (${formIdx}/${leadForms.length}): "${form.form_name || form.name}"…`);
         try {
-          const res = await fetch('/api/meta/sync', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-              workspace_id: wsId,
-              form_id: form.form_id,
-              page_id: form.page_id,
-              days: 'all',
-            }),
-          });
-          const data = await res.json().catch(() => ({}));
-          if (data.success) {
-            totalImported += (data.imported_count || 0);
-            totalSkipped += (data.duplicate_skipped_count || 0);
-          }
+          await handleSyncForm(form.form_id, form.page_id);
         } catch (formErr) {
           console.warn(`Sync form ${form.form_id} error:`, formErr);
         }
       }
 
-      showToast(`🎯 Historical Sync Complete! Imported ${totalImported} new lead(s) (${totalSkipped} existing duplicates skipped).`);
+      showToast(`🎯 Historical Sync Complete for all forms!`);
       fetchMetaSyncData();
     } catch (err: any) {
       showToast('Historical sync error: ' + err.message, 'error');
     } finally {
       setIsBulkSyncing(false);
     }
-  }, [leadForms, getAuthHeaders, fetchMetaSyncData, showToast]);
+  }, [leadForms, handleSyncForm, fetchMetaSyncData, showToast]);
 
   // Disconnect Handler
   const handleDisconnect = useCallback(async () => {
@@ -893,15 +882,26 @@ export default function MetaIntegrationPage() {
     showToast('Real activity logs exported as CSV ✓');
   };
 
-  // Filtered Forms
+  // Filtered & Priority-Sorted Forms (Active Toggled Forms Always on Top)
   const filteredForms = useMemo(() => {
-    return leadForms.filter(f => {
-      const n = (f.form_name || f.name || '').toLowerCase();
-      const matchSearch = n.includes(searchQuery.toLowerCase()) || f.form_id.includes(searchQuery);
-      const matchStatus = statusFilter === 'ALL' || (f.status || 'ACTIVE').toUpperCase() === statusFilter;
-      const matchPage = pageFilter === 'ALL' || f.page_id === pageFilter;
-      return matchSearch && matchStatus && matchPage;
-    });
+    return leadForms
+      .filter(f => {
+        const n = (f.form_name || f.name || '').toLowerCase();
+        const matchSearch = n.includes(searchQuery.toLowerCase()) || f.form_id.includes(searchQuery);
+        const matchStatus = statusFilter === 'ALL' || (f.status || 'ACTIVE').toUpperCase() === statusFilter;
+        const matchPage = pageFilter === 'ALL' || f.page_id === pageFilter;
+        return matchSearch && matchStatus && matchPage;
+      })
+      .sort((a, b) => {
+        const aActive = Boolean(a.is_sync_enabled ?? a.is_enabled);
+        const bActive = Boolean(b.is_sync_enabled ?? b.is_enabled);
+        if (aActive === bActive) {
+          const aTime = a.created_time || a.created_at ? new Date(a.created_time || a.created_at).getTime() : 0;
+          const bTime = b.created_time || b.created_at ? new Date(b.created_time || b.created_at).getTime() : 0;
+          return bTime - aTime;
+        }
+        return aActive ? -1 : 1;
+      });
   }, [leadForms, searchQuery, statusFilter, pageFilter]);
 
   // Filtered Logs
@@ -1194,8 +1194,19 @@ export default function MetaIntegrationPage() {
                       return (
                         <tr key={form.form_id} className="hover:bg-slate-50/80 transition-colors">
                           <td className="py-3.5 px-4">
-                            <div className="font-bold text-slate-900 text-xs sm:text-sm">{form.form_name || form.name || 'Instant Lead Form'}</div>
-                            <div className="text-[11px] text-slate-400 font-mono mt-0.5">Form ID: {form.form_id}</div>
+                            <div className="font-bold text-slate-900 text-xs sm:text-sm flex items-center gap-1.5">
+                              {form.form_name || form.name || 'Instant Lead Form'}
+                              {isEnabled && (
+                                <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                  ACTIVE
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-slate-500 font-medium mt-0.5 flex items-center gap-2 flex-wrap">
+                              <span className="font-mono text-slate-400">ID: {form.form_id}</span>
+                              <span>•</span>
+                              <span>Last Synced: <strong className="text-slate-700 font-semibold">{formatRelTime(form.last_lead_received || (form as any).last_synced_at)}</strong></span>
+                            </div>
                           </td>
 
                           <td className="py-3.5 px-4">
@@ -1206,9 +1217,12 @@ export default function MetaIntegrationPage() {
                           </td>
 
                           <td className="py-3.5 px-4 text-center">
-                            <span className="font-black text-[#0866FF] text-sm">
-                              {realLeadsCount} Leads
-                            </span>
+                            <div className="flex flex-col items-center">
+                              <span className="font-black text-[#0866FF] text-sm">
+                                {realLeadsCount} Leads
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-medium">Total Fetched</span>
+                            </div>
                           </td>
 
                           <td className="py-3.5 px-4 text-center">
@@ -1294,7 +1308,14 @@ export default function MetaIntegrationPage() {
                   <div key={form.form_id} className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-sm space-y-2.5">
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <h4 className="font-bold text-slate-900 text-xs">{form.form_name || form.name}</h4>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <h4 className="font-bold text-slate-900 text-xs">{form.form_name || form.name}</h4>
+                          {isEnabled && (
+                            <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[8px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
+                              ACTIVE
+                            </span>
+                          )}
+                        </div>
                         <p className="text-[10px] text-slate-400 font-mono mt-0.5">ID: {form.form_id}</p>
                       </div>
                       <FacebookToggleSwitch
@@ -1305,8 +1326,8 @@ export default function MetaIntegrationPage() {
                     </div>
 
                     <div className="flex items-center justify-between text-[11px] pt-2 border-t border-slate-100">
-                      <span className="text-slate-500">Real Synced Leads: <strong className="text-[#0866FF] font-bold">{realLeadsCount}</strong></span>
-                      <span className="text-slate-500 font-medium">{formatRelTime(form.last_lead_received)}</span>
+                      <span className="text-slate-600">Total Fetched: <strong className="text-[#0866FF] font-black">{realLeadsCount} Leads</strong></span>
+                      <span className="text-slate-500 font-medium">Last Synced: <strong>{formatRelTime(form.last_lead_received || (form as any).last_synced_at)}</strong></span>
                     </div>
 
                     <div className="flex items-center justify-between text-[11px] pt-2 border-t border-slate-100">
@@ -1384,6 +1405,8 @@ export default function MetaIntegrationPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {pages.map(page => {
                 const isPageLoading = pageToggleLoading.get(page.page_id) || false;
+                const pageForms = leadForms.filter(f => f.page_id === page.page_id);
+                const pageTotalLeads = pageForms.reduce((sum, f) => sum + (f.leads_count ?? f.sync_count ?? f.total_received ?? 0), 0);
 
                 return (
                   <div key={page.page_id} className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex items-start justify-between gap-3">
@@ -1396,12 +1419,16 @@ export default function MetaIntegrationPage() {
                         <p className="text-[11px] text-slate-500">{page.page_category || 'Photography and videography'}</p>
                         <p className="text-[10px] font-mono text-slate-400 mt-0.5">Page ID: {page.page_id}</p>
                         
-                        <div className="mt-2">
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
                           <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full ${
                             page.is_active ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'
                           }`}>
                             <span className={`w-1.5 h-1.5 rounded-full ${page.is_active ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
                             {page.is_active ? '🟢 Active Page' : '🔴 Disabled'}
+                          </span>
+
+                          <span className="inline-flex items-center gap-1 text-[11px] font-extrabold px-2.5 py-0.5 rounded-full bg-blue-50 text-[#0866FF] border border-blue-200">
+                            📊 Total Leads: {pageTotalLeads} ({pageForms.length} forms)
                           </span>
                         </div>
                       </div>
