@@ -139,8 +139,8 @@ export async function POST(req: NextRequest) {
 
     while (nextUrl && loopCount < 200) {
       loopCount++;
-      const res = await fetch(nextUrl);
-      const result = await res.json().catch(() => ({}));
+      const fetchRes: Response = await fetch(nextUrl);
+      const result: any = await fetchRes.json().catch(() => ({}));
 
       if (result.error) {
         console.error('[Meta Graph API sync-leads error]:', result.error);
@@ -165,18 +165,13 @@ export async function POST(req: NextRequest) {
 
         const parsed = safelyExtractFields(lead.field_data || []);
 
-        // 1. Check if lead already exists by leadgen_id in raw_payload
+        // 1. Check if lead already exists in this workspace
         const { data: existingLead } = await supabaseAdmin
           .from('leads')
           .select('id')
           .eq('workspace_id', workspaceId)
-          .contains('raw_payload', { leadgen_id: leadgenId })
+          .eq('meta_lead_id', leadgenId)
           .maybeSingle();
-
-        if (existingLead?.id) {
-          totalSaved++;
-          continue;
-        }
 
         const newLeadPayload: Record<string, any> = {
           workspace_id: workspaceId,
@@ -219,14 +214,17 @@ export async function POST(req: NextRequest) {
           raw_meta_payload: lead,
         };
 
-        // 2. Resilient column-stripping insert
+        // 2. Resilient column-stripping upsert with composite onConflict 'workspace_id,meta_lead_id'
         let payloadCopy = { ...newLeadPayload };
         let insertedId: string | null = null;
 
         for (let attempt = 0; attempt < 30; attempt++) {
           const { data: ins, error: insertErr } = await supabaseAdmin
             .from('leads')
-            .insert(payloadCopy)
+            .upsert(payloadCopy, {
+              onConflict: 'workspace_id,meta_lead_id',
+              ignoreDuplicates: false,
+            })
             .select('id')
             .maybeSingle();
 
@@ -237,11 +235,6 @@ export async function POST(req: NextRequest) {
           }
 
           if (insertErr) {
-            if (insertErr.code === '23505') {
-              // Duplicate key (constraint) -> already saved
-              totalSaved++;
-              break;
-            }
             const errMsg = insertErr.message || '';
             const match = 
               errMsg.match(/Could not find the '([^']+)' column/i) || 
@@ -254,16 +247,7 @@ export async function POST(req: NextRequest) {
               const badCol = match[1].replace(/^leads\./, '');
               delete payloadCopy[badCol];
             } else {
-              // Unknown error / constraint fallback -> insert base guaranteed columns
-              payloadCopy = {
-                workspace_id: workspaceId,
-                name: newLeadPayload.name,
-                phone: newLeadPayload.phone,
-                email: newLeadPayload.email,
-                source: newLeadPayload.source,
-                status: 'new',
-                raw_payload: newLeadPayload.raw_payload,
-              };
+              break;
             }
           }
         }

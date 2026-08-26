@@ -94,6 +94,11 @@ export async function POST(req: NextRequest) {
     let afterCursor: string | null = null;
     let hasMore = true;
     let pageNum = 0;
+    let totalFetched = 0;
+    let totalSaved = 0;
+    let importedCount = 0;
+    let duplicateCount = 0;
+    const insertedLeads: any[] = [];
 
     while (hasMore && pageNum < 200) {
       pageNum++;
@@ -150,7 +155,7 @@ export async function POST(req: NextRequest) {
       const leadgenId = leadItem.id;
       if (!leadgenId) continue;
 
-      const parsed = safelyExtractFields(leadItem.field_data || []);
+      const parsed = extractLeadFields(leadItem.field_data || []);
 
       // Check if lead already exists in this workspace
       const { data: existingLead } = await supabaseAdmin
@@ -168,13 +173,13 @@ export async function POST(req: NextRequest) {
         source_form_id: form_id || leadItem.form_id,
         name: parsed.fullName || 'Facebook Lead',
         full_name: parsed.fullName || 'Facebook Lead',
-        phone: parsed.phone !== '-' ? parsed.phone : (leadItem.phone || '-'),
-        phone_number: parsed.phone !== '-' ? parsed.phone : (leadItem.phone || '-'),
-        email: parsed.email !== '-' ? parsed.email : '',
-        city: parsed.city !== '-' ? parsed.city : '',
-        location: parsed.city !== '-' ? parsed.city : '',
-        budget: parsed.budget !== '-' ? parsed.budget : '',
-        event_date: parsed.eventDate !== '-' ? parsed.eventDate : '',
+        phone: parsed.phone || (leadItem.phone || '-'),
+        phone_number: parsed.phone || (leadItem.phone || '-'),
+        email: parsed.email || '',
+        city: parsed.location || '',
+        location: parsed.location || '',
+        budget: parsed.budget || '',
+        event_date: parsed.eventDate || '',
         source: leadItem.campaign_name ? `Facebook Ads / ${leadItem.campaign_name}` : `Facebook Ads / ${formName}`,
         status: 'new',
         score: 'Cold ❄️',
@@ -184,7 +189,7 @@ export async function POST(req: NextRequest) {
         created_at: leadItem.created_time ? new Date(leadItem.created_time).toISOString() : new Date().toISOString(),
         updated_at: new Date().toISOString(),
         raw_payload: {
-          leadgen_id,
+          leadgen_id: leadgenId,
           meta_lead_id: leadgenId,
           form_id: form_id || leadItem.form_id,
           form_name: formName,
@@ -193,7 +198,7 @@ export async function POST(req: NextRequest) {
           ad_name: leadItem.ad_name || '',
           field_data: leadItem.field_data || [],
           synced_via: 'manual_bulk_sync',
-          ...parsed,
+          ...parsed.rawFieldMap,
         },
         raw_meta_payload: leadItem,
       };
@@ -214,6 +219,8 @@ export async function POST(req: NextRequest) {
           totalSaved++;
           if (existingLead) {
             duplicateCount++;
+          } else {
+            insertedLeads.push(ins);
           }
           break;
         }

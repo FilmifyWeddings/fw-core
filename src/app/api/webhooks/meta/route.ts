@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     'bhamstra_meta_verify_token_2026',
   ].filter(Boolean);
 
-  if (mode === 'subscribe' && challenge && validTokens.includes(token)) {
+  if (mode === 'subscribe' && challenge && token && validTokens.includes(token)) {
     console.log('[Meta Webhook] GET Subscription Verified Successfully ✓');
     return new NextResponse(challenge, { status: 200 });
   }
@@ -197,7 +197,10 @@ async function processLeadgenEvent(pageId: string, leadgenId: string, formId?: s
     for (let attempt = 0; attempt < 6; attempt++) {
       const { data: ins, error: insertErr } = await supabaseAdmin
         .from('leads')
-        .insert(payloadToInsert)
+        .upsert(payloadToInsert, {
+          onConflict: 'workspace_id,meta_lead_id',
+          ignoreDuplicates: false,
+        })
         .select('*')
         .maybeSingle();
 
@@ -219,7 +222,7 @@ async function processLeadgenEvent(pageId: string, leadgenId: string, formId?: s
     }
 
     if (insertedLead) {
-      console.log(`[Meta Webhook SUCCESS] Ingested new lead "${fullName}" (${phone}) into workspace ${workspaceId}!`);
+      console.log(`[Meta Webhook SUCCESS] Ingested new lead "${extracted.fullName}" (${extracted.phone}) into workspace ${workspaceId}!`);
 
       // Auto update form lead count
       if (formId) {
@@ -243,7 +246,7 @@ async function processLeadgenEvent(pageId: string, leadgenId: string, formId?: s
         console.error('[Meta Webhook Google Contacts Error]:', e)
       );
 
-      forceWakeQueue().catch(() => {});
+      forceWakeQueue(supabaseAdmin, workspaceId).catch(() => {});
     }
   } catch (err: any) {
     console.error('[Meta Webhook Execution Error]:', err.message);

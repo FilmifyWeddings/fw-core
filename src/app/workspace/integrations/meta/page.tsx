@@ -70,12 +70,14 @@ interface LeadForm {
   page_name?: string;
   is_active: boolean;
   is_enabled: boolean;
+  is_sync_enabled?: boolean;
   contact_group_id?: string | null;
   sync_count: number;
   leads_count?: number;
   total_received?: number;
   last_lead_received?: string | null;
   created_time?: string;
+  created_at?: string;
 }
 
 type SyncPhase = 'idle' | 'fetching' | 'importing' | 'complete' | 'error';
@@ -677,6 +679,13 @@ export default function MetaIntegrationPage() {
       }
 
       fetchMetaSyncData();
+
+      // 🧹 Instant Lead CRM Cache Invalidation & Refetch
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('leads_updated', { detail: { workspaceId: wsId } }));
+        window.dispatchEvent(new CustomEvent('settings_updated', { detail: { workspaceId: wsId } }));
+        window.dispatchEvent(new Event('storage'));
+      }
     } catch (err: any) {
       setSyncStates(prev => new Map(prev).set(formId, {
         ...DEFAULT_SYNC,
@@ -831,96 +840,7 @@ export default function MetaIntegrationPage() {
     }
   }, [getAuthHeaders, showToast]);
 
-  // Per-Form Sync (SSE streaming)
-  const handleSyncForm = useCallback(async (formId: string, pageId: string) => {
-    abortRefs.current.get(formId)?.abort();
-    const controller = new AbortController();
-    abortRefs.current.set(formId, controller);
 
-    setSyncStates(prev => new Map(prev).set(formId, { phase: 'fetching', imported: 0, skipped: 0, failed: 0, total: 0, current: 0, message: 'Starting…' }));
-
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const wsId = session?.user?.id || '';
-      const headers = await getAuthHeaders();
-      const res = await fetch('/api/meta/forms/sync', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ form_id: formId, page_id: pageId, workspace_id: wsId }),
-        signal: controller.signal,
-      });
-
-      if (!res.ok || !res.body) {
-        const errData = await res.json().catch(() => ({}));
-        setSyncStates(prev => new Map(prev).set(formId, { ...DEFAULT_SYNC, phase: 'error', errorMessage: errData.error || `HTTP ${res.status}` }));
-        return;
-      }
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n\n');
-        buffer = lines.pop() || '';
-
-        for (const chunk of lines) {
-          const dataLine = chunk.split('\n').find(l => l.startsWith('data: '));
-          if (!dataLine) continue;
-
-          try {
-            const event = JSON.parse(dataLine.slice(6));
-            if (event.type === 'start') {
-              setSyncStates(prev => new Map(prev).set(formId, {
-                phase: 'fetching', imported: 0, skipped: 0, failed: 0,
-                total: event.total > 0 ? event.total : 0, current: 0,
-                message: `Fetching leads for "${event.form_name}"…`,
-              }));
-            } else if (event.type === 'progress') {
-              setSyncStates(prev => new Map(prev).set(formId, {
-                phase: event.phase === 'importing' ? 'importing' : 'fetching',
-                imported: event.imported, skipped: event.skipped, failed: event.failed,
-                total: event.total, current: event.current,
-                message: event.message || '',
-              }));
-            } else if (event.type === 'complete') {
-              setSyncStates(prev => new Map(prev).set(formId, {
-                phase: 'complete', imported: event.imported, skipped: event.skipped,
-                failed: event.failed, total: event.total, current: event.total,
-                message: 'Sync complete', durationMs: event.duration_ms,
-              }));
-              if (event.new_leads_count !== undefined) {
-                setLeadForms(prev => prev.map(f =>
-                  f.form_id === formId ? { ...f, leads_count: event.new_leads_count, sync_count: event.new_leads_count } : f
-                ));
-              }
-              fetchMetaSyncData();
-
-              // 🧹 Invalidate Lead CRM cache and refetch across dashboard
-              if (typeof window !== 'undefined') {
-                window.dispatchEvent(new CustomEvent('leads_updated', { detail: { workspaceId: wsId } }));
-                window.dispatchEvent(new CustomEvent('settings_updated', { detail: { workspaceId: wsId } }));
-                window.dispatchEvent(new Event('storage'));
-              }
-            } else if (event.type === 'error') {
-              setSyncStates(prev => new Map(prev).set(formId, {
-                ...DEFAULT_SYNC, phase: 'error',
-                errorMessage: event.message,
-              }));
-            }
-          } catch { /* skip */ }
-        }
-      }
-    } catch (err: any) {
-      if (err.name !== 'AbortError') {
-        setSyncStates(prev => new Map(prev).set(formId, { ...DEFAULT_SYNC, phase: 'error', errorMessage: err.message }));
-      }
-    }
-  }, [getAuthHeaders, fetchMetaSyncData]);
   // CSV Export for Real Activity Logs
   const handleExportLogsCSV = () => {
     if (realSyncLogs.length === 0) {
@@ -966,8 +886,10 @@ export default function MetaIntegrationPage() {
         const aActive = Boolean(a.is_sync_enabled ?? a.is_enabled);
         const bActive = Boolean(b.is_sync_enabled ?? b.is_enabled);
         if (aActive === bActive) {
-          const aTime = a.created_time || a.created_at ? new Date(a.created_time || a.created_at).getTime() : 0;
-          const bTime = b.created_time || b.created_at ? new Date(b.created_time || b.created_at).getTime() : 0;
+          const aStr = a.created_time || a.created_at;
+          const bStr = b.created_time || b.created_at;
+          const aTime = aStr ? new Date(aStr).getTime() : 0;
+          const bTime = bStr ? new Date(bStr).getTime() : 0;
           return bTime - aTime;
         }
         return aActive ? -1 : 1;

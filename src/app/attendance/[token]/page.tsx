@@ -182,6 +182,7 @@ export default function PersonalAttendancePage() {
         setLastExitTime(null);
         setGeofenceResult({
           isWithinGeofence: true,
+          closestLocation: validation.closestLocation || null,
           distanceMeters: validation.distanceMeters,
           allowedRadiusMeters: 99999,
           message: `✓ Remote Authorized (Punch allowed anywhere)`,
@@ -344,6 +345,7 @@ export default function PersonalAttendancePage() {
           setIsInsideGeofence(true);
           setGeofenceResult({
             isWithinGeofence: true,
+            closestLocation: res.closestLocation || null,
             distanceMeters: res.distanceMeters,
             allowedRadiusMeters: 99999,
             message: `✓ Remote Authorized (Punch allowed anywhere)`,

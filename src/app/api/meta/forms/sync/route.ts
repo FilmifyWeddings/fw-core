@@ -446,7 +446,7 @@ export async function POST(req: NextRequest) {
           imported, skipped, failed,
           total: totalFetched,
           duration_ms,
-          new_leads_count: newCount,
+          new_leads_count: totalSaved,
         }));
 
       } catch (err: any) {
