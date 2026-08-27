@@ -1858,7 +1858,7 @@ export default function ClientWorkspaceDetailPage() {
                   today.setHours(0, 0, 0, 0);
                   const todayStr = today.toISOString().split('T')[0];
                   const isOverdue = !isPaid && !!ms.due_date && !isNaN(new Date(ms.due_date).getTime()) && ms.due_date < todayStr;
-                  const overdueDays = isOverdue ? Math.max(1, Math.floor((today.getTime() - new Date(ms.due_date).getTime()) / (1000 * 60 * 60 * 24))) : 0;
+                  const overdueDays = isOverdue && ms.due_date ? Math.max(1, Math.floor((today.getTime() - new Date(ms.due_date).getTime()) / (1000 * 60 * 60 * 24))) : 0;
 
                   return (
                     <div
