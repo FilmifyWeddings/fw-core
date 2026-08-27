@@ -9,8 +9,9 @@ export async function GET(
   { params }: { params: Promise<{ key: string[] }> }
 ) {
   try {
-    const { key: keyArray } = await params;
-    const key = keyArray.join('/');
+    const resolvedParams = await params;
+    const keyArray = resolvedParams?.key || [];
+    const key = decodeURIComponent(keyArray.join('/'));
 
     if (!key) {
       return NextResponse.json({ error: 'Missing object key' }, { status: 400 });
@@ -18,33 +19,50 @@ export async function GET(
 
     const bucketName = process.env.R2_BUCKET_NAME || 'studiocore-madia';
 
+    let s3Response;
     try {
-      const response = await r2.send(
+      s3Response = await r2.send(
         new GetObjectCommand({
           Bucket: bucketName,
           Key: key,
         })
       );
-
-      const stream = response.Body as any;
-      const contentType = response.ContentType || 'image/webp';
-      const cacheControl = response.CacheControl || 'public, max-age=31536000, immutable';
-
-      return new NextResponse(stream, {
-        headers: {
-          'Content-Type': contentType,
-          'Cache-Control': cacheControl,
-          ...(response.ContentLength ? { 'Content-Length': response.ContentLength.toString() } : {}),
-        },
-      });
-    } catch (s3Error: any) {
-      if (s3Error.name === 'NoSuchKey' || s3Error.$metadata?.httpStatusCode === 404) {
-        return NextResponse.json({ error: 'Object not found' }, { status: 404 });
+    } catch (err: any) {
+      if (err.name === 'NoSuchKey' || err.$metadata?.httpStatusCode === 404) {
+        // Try fallback bucket if needed
+        const altBucket = bucketName === 'studiocore-media' ? 'studiocore-madia' : 'studiocore-media';
+        try {
+          s3Response = await r2.send(
+            new GetObjectCommand({
+              Bucket: altBucket,
+              Key: key,
+            })
+          );
+        } catch {
+          return NextResponse.json({ error: 'Object not found' }, { status: 404 });
+        }
+      } else {
+        throw err;
       }
-      throw s3Error;
     }
+
+    if (!s3Response || !s3Response.Body) {
+      return NextResponse.json({ error: 'Empty object stream' }, { status: 404 });
+    }
+
+    const byteArray = await (s3Response.Body as any).transformToByteArray();
+    const contentType = s3Response.ContentType || 'image/webp';
+    const cacheControl = 'public, max-age=31536000, immutable';
+
+    return new NextResponse(byteArray, {
+      headers: {
+        'Content-Type': contentType,
+        'Content-Length': byteArray.length.toString(),
+        'Cache-Control': cacheControl,
+      },
+    });
   } catch (error: any) {
-    console.error('[R2 Media Route Error]:', error);
-    return NextResponse.json({ error: error.message || 'Failed to fetch media' }, { status: 500 });
+    console.error('[R2 Media Streaming Route Error]:', error);
+    return NextResponse.json({ error: error.message || 'Failed to stream media' }, { status: 500 });
   }
 }
