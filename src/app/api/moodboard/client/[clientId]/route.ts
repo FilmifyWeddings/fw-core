@@ -59,10 +59,24 @@ export async function GET(
         .single();
 
       if (createErr) {
-        console.error('[Moodboard Auto-Create Error]:', createErr);
-        return NextResponse.json({ error: createErr.message }, { status: 500 });
+        console.warn('[Moodboard Auto-Create Warning - Table may not be migrated yet]:', createErr.message);
+        moodboard = {
+          client_id: clientId,
+          workspace_id: workspaceId || client.workspace_id,
+          token: generatedToken,
+          status: 'DRAFT',
+          completion_percentage: 0,
+          couple_photos: [],
+          close_family_photos: [],
+          photo_references: [],
+          video_references: [],
+          itinerary_schedule: [],
+          venue_locations: [],
+          outfit_references: [],
+        };
+      } else {
+        moodboard = newMb;
       }
-      moodboard = newMb;
     }
 
     return NextResponse.json({

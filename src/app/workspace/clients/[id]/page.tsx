@@ -153,7 +153,7 @@ export default function ClientWorkspaceDetailPage() {
       if (!foundClient) {
         let query = supabase.from('workspace_clients').select('*');
         if (workspaceId !== 'ws_demo') {
-          query = query.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
+          query = query.eq('workspace_id', workspaceId);
         }
         const { data: allClients } = await query;
         if (allClients) {
@@ -839,10 +839,10 @@ export default function ClientWorkspaceDetailPage() {
   const clientInitials = getClientInitials(name);
 
   // Group deliverables by category
-  const photoDeliverables = postProductionProject?.deliverables.filter(d => d.category === 'photos') || [];
-  const videoDeliverables = postProductionProject?.deliverables.filter(d => d.category === 'videos') || [];
-  const albumDeliverables = postProductionProject?.deliverables.filter(d => d.category === 'albums') || [];
-  const customDeliverables = postProductionProject?.deliverables.filter(d => !['photos', 'videos', 'albums'].includes(d.category)) || [];
+  const photoDeliverables = Array.isArray(postProductionProject?.deliverables) ? postProductionProject.deliverables.filter(d => d.category === 'photos') : [];
+  const videoDeliverables = Array.isArray(postProductionProject?.deliverables) ? postProductionProject.deliverables.filter(d => d.category === 'videos') : [];
+  const albumDeliverables = Array.isArray(postProductionProject?.deliverables) ? postProductionProject.deliverables.filter(d => d.category === 'albums') : [];
+  const customDeliverables = Array.isArray(postProductionProject?.deliverables) ? postProductionProject.deliverables.filter(d => !['photos', 'videos', 'albums'].includes(d.category)) : [];
 
   return (
     <div className="min-h-screen bg-[#FAF9F5] text-slate-900 pb-24 pt-2 px-4 sm:px-6 lg:px-8">
@@ -1618,8 +1618,8 @@ export default function ClientWorkspaceDetailPage() {
                   const today = new Date();
                   today.setHours(0, 0, 0, 0);
                   const todayStr = today.toISOString().split('T')[0];
-                  const isOverdue = !isPaid && ms.due_date && ms.due_date < todayStr;
-                  const overdueDays = isOverdue ? Math.max(1, Math.floor((today.getTime() - new Date(ms.due_date!).getTime()) / (1000 * 60 * 60 * 24))) : 0;
+                  const isOverdue = !isPaid && !!ms.due_date && !isNaN(new Date(ms.due_date).getTime()) && ms.due_date < todayStr;
+                  const overdueDays = isOverdue ? Math.max(1, Math.floor((today.getTime() - new Date(ms.due_date).getTime()) / (1000 * 60 * 60 * 24))) : 0;
 
                   return (
                     <div
