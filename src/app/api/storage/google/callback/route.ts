@@ -5,7 +5,9 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const code = searchParams.get('code');
   const workspaceId = searchParams.get('state') || '00000000-0000-0000-0000-000000000000';
-  const redirectOrigin = process.env.NEXT_PUBLIC_APP_URL || 'https://studiocore.in';
+  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'localhost:3000';
+  const proto = req.headers.get('x-forwarded-proto') || (host.includes('localhost') || host.includes('127.0.0.1') ? 'http' : 'https');
+  const redirectOrigin = process.env.NEXT_PUBLIC_APP_URL || `${proto}://${host}`;
 
   try {
     let email = 'studio.primary@gmail.com';

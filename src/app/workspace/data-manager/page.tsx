@@ -110,6 +110,18 @@ export default function DataManagerPage() {
 
   // Modals & Scanner States
   const [isScanModalOpen, setIsScanModalOpen] = useState(false);
+  const [isConnectDriveModalOpen, setIsConnectDriveModalOpen] = useState(false);
+  const [manualDriveEmail, setManualDriveEmail] = useState('');
+  const [manualDriveLabel, setManualDriveLabel] = useState('Primary Wedding Backup');
+  const [manualDriveCapacityGb, setManualDriveCapacityGb] = useState(2000);
+  const [driveConnectTab, setDriveConnectTab] = useState<'oauth' | 'manual'>('oauth');
+  const [currentOrigin, setCurrentOrigin] = useState('http://localhost:3000');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setCurrentOrigin(window.location.origin);
+    }
+  }, []);
   const [isAddDiskModalOpen, setIsAddDiskModalOpen] = useState(false);
   const [isAddMachineModalOpen, setIsAddMachineModalOpen] = useState(false);
   const [editingDisk, setEditingDisk] = useState<PhysicalDisk | null>(null);

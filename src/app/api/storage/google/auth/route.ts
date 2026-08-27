@@ -4,7 +4,11 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const workspaceId = searchParams.get('workspace_id') || '00000000-0000-0000-0000-000000000000';
-    const redirectOrigin = searchParams.get('origin') || process.env.NEXT_PUBLIC_APP_URL || 'https://studiocore.in';
+    const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'localhost:3000';
+    const proto = req.headers.get('x-forwarded-proto') || (host.includes('localhost') || host.includes('127.0.0.1') ? 'http' : 'https');
+    const detectedOrigin = `${proto}://${host}`;
+
+    const redirectOrigin = searchParams.get('origin') || process.env.NEXT_PUBLIC_APP_URL || detectedOrigin;
 
     const clientId = process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
     if (!clientId) {
