@@ -1276,6 +1276,177 @@ export default function DataManagerPage() {
       {/* ─────────────────────────────────────────────────────────────
           7. MANUAL DISK REGISTRATION MODAL
       ───────────────────────────────────────────────────────────── */}
+
+      {/* ─────────────────────────────────────────────────────────────
+          8. CONNECT GOOGLE DRIVE & OAUTH SETUP MODAL
+      ───────────────────────────────────────────────────────────── */}
+      {isConnectDriveModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full border border-zinc-200 shadow-2xl space-y-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600">
+                  <Cloud className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-zinc-900">Connect Google Drive</h3>
+                  <span className="text-xs text-zinc-400">Multi-Account Wedding Cloud Sync</span>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsConnectDriveModalOpen(false)}
+                className="p-1.5 text-zinc-400 hover:text-zinc-700 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Toggle OAuth vs Direct Connect */}
+            <div className="grid grid-cols-2 gap-1 bg-zinc-100 p-1 rounded-xl text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setDriveConnectTab('oauth')}
+                className={'py-2 rounded-lg transition-all cursor-pointer ' + (
+                  driveConnectTab === 'oauth' ? 'bg-white text-zinc-900 shadow-xs' : 'text-zinc-500'
+                )}
+              >
+                🔐 Google OAuth Login
+              </button>
+              <button
+                type="button"
+                onClick={() => setDriveConnectTab('manual')}
+                className={'py-2 rounded-lg transition-all cursor-pointer ' + (
+                  driveConnectTab === 'manual' ? 'bg-white text-zinc-900 shadow-xs' : 'text-zinc-500'
+                )}
+              >
+                ⚡ Instant Direct Link
+              </button>
+            </div>
+
+            {driveConnectTab === 'oauth' ? (
+              <div className="space-y-4">
+                <p className="text-xs text-zinc-600">
+                  Sign in with your Google Workspace or Gmail account to authorize read-only indexing for your wedding media.
+                </p>
+
+                <a
+                  href={'/api/storage/google/auth?origin=' + encodeURIComponent(currentOrigin) + '&workspace_id=' + effectiveWsId}
+                  className="w-full py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-600/20 transition flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Cloud className="w-4 h-4" />
+                  <span>Sign In with Google</span>
+                </a>
+
+                {/* Google Cloud Console Redirect URI Fix Info */}
+                <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200 text-xs space-y-2 text-amber-950">
+                  <div className="flex items-center gap-1.5 font-bold text-amber-900">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Seeing "Error 400: redirect_uri_mismatch"?</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-amber-900/90">
+                    In your Google Cloud Console, click your OAuth Client ID and add this exact URL under <strong>Authorized redirect URIs</strong>:
+                  </p>
+                  <div className="bg-white/90 p-2.5 rounded-xl font-mono text-[10.5px] border border-amber-300/80 flex items-center justify-between gap-2 text-zinc-800 break-all select-all">
+                    <span>{currentOrigin + '/api/storage/google/callback'}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(currentOrigin + '/api/storage/google/callback', 'oauth-uri')}
+                      className="p-1 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-700 shrink-0 transition cursor-pointer"
+                      title="Copy URL"
+                    >
+                      {copiedPathId === 'oauth-uri' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-amber-800">
+                    💡 Or switch to the <strong>"⚡ Instant Direct Link"</strong> tab above to connect immediately without configuring Google Cloud Console!
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!manualDriveEmail) return;
+                  try {
+                    const res = await fetch('/api/storage/google/accounts', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        workspace_id: effectiveWsId,
+                        account_email: manualDriveEmail,
+                        account_label: manualDriveLabel,
+                        total_storage_gb: manualDriveCapacityGb,
+                      }),
+                    });
+                    const json = await res.json();
+                    if (json.success) {
+                      setIsConnectDriveModalOpen(false);
+                      setManualDriveEmail('');
+                      await loadAllData();
+                      executeSearch(searchQuery, sourceFilter, categoryFilter);
+                    } else {
+                      alert(json.error || 'Failed to connect drive');
+                    }
+                  } catch (err: any) {
+                    alert(err?.message || 'Error connecting drive');
+                  }
+                }}
+                className="space-y-3.5"
+              >
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Google Account Email</label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="e.g. studio.deliverables@gmail.com"
+                    value={manualDriveEmail}
+                    onChange={(e) => setManualDriveEmail(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-zinc-50 rounded-xl border border-zinc-200 text-xs font-bold text-zinc-900 focus:bg-white focus:outline-hidden focus:border-zinc-900"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Drive Purpose / Label</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 2TB Wedding Deliverables Cloud"
+                    value={manualDriveLabel}
+                    onChange={(e) => setManualDriveLabel(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-zinc-50 rounded-xl border border-zinc-200 text-xs font-bold text-zinc-900 focus:bg-white focus:outline-hidden focus:border-zinc-900"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Allocated Capacity (GB)</label>
+                  <input
+                    type="number"
+                    value={manualDriveCapacityGb}
+                    onChange={(e) => setManualDriveCapacityGb(Number(e.target.value))}
+                    className="w-full px-3.5 py-2 bg-zinc-50 rounded-xl border border-zinc-200 text-xs font-bold text-zinc-900"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 pt-2">
+                  <button
+                    type="submit"
+                    className="flex-1 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition cursor-pointer"
+                  >
+                    Link Google Drive Account
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsConnectDriveModalOpen(false)}
+                    className="px-4 py-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-bold transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
       {isAddDiskModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
           <form onSubmit={handleCreateManualDisk} className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full border border-zinc-200 shadow-2xl space-y-4">
