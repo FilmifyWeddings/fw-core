@@ -10,7 +10,8 @@ import {
   Trash2, Edit3, MessageSquare, Send, Bell, Film, BookOpen, 
   Camera, Layers, Lock, ShieldCheck, Sparkles, MapPin, Users as UsersIcon,
   FileText, Download, Printer, RefreshCw, Key, MessageCircle, Link2,
-  ArrowLeft, CheckSquare, Play, ChevronRight, Crown, Eye, Pencil, CheckCheck
+  ArrowLeft, CheckSquare, Play, ChevronRight, Crown, Eye, Pencil, CheckCheck,
+  Heart
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import AiMicButton from '@/components/AiMicButton';
