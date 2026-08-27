@@ -3,8 +3,9 @@ import { NextResponse } from 'next/server';
 export async function GET() {
   try {
     const clientId = process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://studiocore.in';
-    const redirectUri = `${baseUrl.replace(/\/$/, '')}/api/storage/google/callback`;
+    const redirectUri = process.env.NEXT_PUBLIC_APP_URL?.startsWith('https://studiocore.in') 
+      ? 'https://studiocore.in/api/storage/google/callback'
+      : (process.env.NEXT_PUBLIC_APP_URL || 'https://studiocore.in').replace(/\/$/, '') + '/api/storage/google/callback';
 
     if (!clientId) {
       const mockRedirect = `${redirectUri}?code=mock_google_code_sample`;

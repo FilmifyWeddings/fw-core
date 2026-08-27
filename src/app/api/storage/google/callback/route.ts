@@ -6,7 +6,9 @@ export async function GET(req: NextRequest) {
   const code = searchParams.get('code');
   const workspaceId = searchParams.get('state') || '00000000-0000-0000-0000-000000000000';
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://studiocore.in';
-  const redirectUri = `${baseUrl.replace(/\/$/, '')}/api/storage/google/callback`;
+  const redirectUri = process.env.NEXT_PUBLIC_APP_URL?.startsWith('https://studiocore.in') 
+    ? 'https://studiocore.in/api/storage/google/callback'
+    : (process.env.NEXT_PUBLIC_APP_URL || 'https://studiocore.in').replace(/\/$/, '') + '/api/storage/google/callback';
 
   try {
     let email = 'studio.primary@gmail.com';
