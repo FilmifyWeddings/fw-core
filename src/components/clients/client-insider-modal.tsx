@@ -36,6 +36,10 @@ export interface ClientExtendedData {
   portal_token: string;
   portal_pin: string;
   portal_enabled: boolean;
+  project_manager_id?: string;
+  project_manager_name?: string;
+  project_manager_email?: string;
+  project_manager_phone?: string;
   events: ClientEventItem[];
   plain_notes: string;
 }
@@ -59,6 +63,11 @@ export function parseClientExtended(client: WorkspaceClient): ClientExtendedData
   let portal_token = defaultToken;
   let portal_pin = defaultPin;
   let portal_enabled = true;
+  let project_manager_id = client.project_manager_id || '';
+  let project_manager_name = client.project_manager_name || '';
+  let project_manager_email = client.project_manager_email || '';
+  let project_manager_phone = client.project_manager_phone || '';
+
   let events: ClientEventItem[] = [
     {
       id: 'ev_1',
@@ -83,6 +92,10 @@ export function parseClientExtended(client: WorkspaceClient): ClientExtendedData
       if (parsed.portal_token) portal_token = parsed.portal_token;
       if (parsed.portal_pin) portal_pin = parsed.portal_pin;
       if (parsed.portal_enabled !== undefined) portal_enabled = parsed.portal_enabled;
+      if (parsed.project_manager_id) project_manager_id = parsed.project_manager_id;
+      if (parsed.project_manager_name) project_manager_name = parsed.project_manager_name;
+      if (parsed.project_manager_email) project_manager_email = parsed.project_manager_email;
+      if (parsed.project_manager_phone) project_manager_phone = parsed.project_manager_phone;
       if (Array.isArray(parsed.events) && parsed.events.length > 0) events = parsed.events;
       if (parsed.notes !== undefined) plain_notes = parsed.notes;
     } catch (_) {}
@@ -95,6 +108,10 @@ export function parseClientExtended(client: WorkspaceClient): ClientExtendedData
     portal_token,
     portal_pin,
     portal_enabled,
+    project_manager_id,
+    project_manager_name,
+    project_manager_email,
+    project_manager_phone,
     events,
     plain_notes
   };
@@ -109,6 +126,10 @@ export function serializeClientExtended(data: Partial<ClientExtendedData>): stri
     portal_token: data.portal_token,
     portal_pin: data.portal_pin,
     portal_enabled: data.portal_enabled ?? true,
+    project_manager_id: data.project_manager_id,
+    project_manager_name: data.project_manager_name,
+    project_manager_email: data.project_manager_email,
+    project_manager_phone: data.project_manager_phone,
     events: data.events || []
   });
 }

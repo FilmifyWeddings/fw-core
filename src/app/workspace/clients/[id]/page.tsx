@@ -20,6 +20,7 @@ import { InvoiceModalDialog } from '@/components/finance/invoice-modal-dialog';
 import { 
   parseClientExtended, serializeClientExtended, type ClientEventItem, type ClientExtendedData 
 } from '@/components/clients/client-insider-modal';
+import { fetchWorkspaceTeamMembers, type WorkspaceMemberOption } from '@/lib/team-helpers';
 import type { 
   WorkspaceClient, PostProductionProject, DeliverableItem, ClientFinanceRecord, DeliverableStatus, DeliverableComment
 } from '@/types';
@@ -59,6 +60,7 @@ export default function ClientWorkspaceDetailPage() {
   const [loading, setLoading] = useState(true);
   const [client, setClient] = useState<WorkspaceClient | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [teamMembers, setTeamMembers] = useState<WorkspaceMemberOption[]>([]);
 
   // Active Tab
   const [activeTab, setActiveTab] = useState<'overview' | 'quotations' | 'events' | 'post_production' | 'finance' | 'moodboard'>('overview');
@@ -75,13 +77,17 @@ export default function ClientWorkspaceDetailPage() {
     plain_notes: ''
   });
 
-  // Profile Edit fields
+  // Profile Edit & PM fields
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [eventType, setEventType] = useState('');
   const [eventDate, setEventDate] = useState('');
   const [status, setStatus] = useState<'active' | 'completed' | 'archived'>('active');
+  const [projectManagerId, setProjectManagerId] = useState('');
+  const [projectManagerName, setProjectManagerName] = useState('');
+  const [projectManagerEmail, setProjectManagerEmail] = useState('');
+  const [projectManagerPhone, setProjectManagerPhone] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
@@ -262,6 +268,22 @@ export default function ClientWorkspaceDetailPage() {
       setEventType(foundClient.event_type || 'Wedding');
       setEventDate(foundClient.event_date || '');
       setStatus(foundClient.status || 'active');
+
+      const pmId = foundClient.project_manager_id || ext.project_manager_id || '';
+      const pmName = foundClient.project_manager_name || ext.project_manager_name || '';
+      const pmEmail = foundClient.project_manager_email || ext.project_manager_email || '';
+      const pmPhone = foundClient.project_manager_phone || ext.project_manager_phone || '';
+
+      setProjectManagerId(pmId);
+      setProjectManagerName(pmName);
+      setProjectManagerEmail(pmEmail);
+      setProjectManagerPhone(pmPhone);
+
+      // Fetch Workspace Team Members for PM Assignment
+      try {
+        const members = await fetchWorkspaceTeamMembers(foundClient.workspace_id);
+        setTeamMembers(members);
+      } catch (_) {}
 
       // Fetch All Tabs Data
       await Promise.all([
@@ -687,19 +709,36 @@ export default function ClientWorkspaceDetailPage() {
     }
   };
 
-  // Save Client Details
+  // Save Client Details & PM Assignment
   const handleSaveClientDetails = async () => {
     if (!client) return;
     setIsSaving(true);
     try {
-      const serializedNotes = serializeClientExtended(extended);
-      const updatedFields: Partial<WorkspaceClient> = {
+      const assignedPm = teamMembers.find(m => m.id === projectManagerId);
+      const updatedPmName = assignedPm ? assignedPm.name : (projectManagerId ? projectManagerName : '');
+      const updatedPmEmail = assignedPm ? (assignedPm.email || '') : (projectManagerId ? projectManagerEmail : '');
+      const updatedPmPhone = assignedPm ? (assignedPm.phone || '') : (projectManagerId ? projectManagerPhone : '');
+
+      const updatedExtended = {
+        ...extended,
+        project_manager_id: projectManagerId || undefined,
+        project_manager_name: updatedPmName || undefined,
+        project_manager_email: updatedPmEmail || undefined,
+        project_manager_phone: updatedPmPhone || undefined,
+      };
+
+      const serializedNotes = serializeClientExtended(updatedExtended);
+      const updatedFields: any = {
         name,
         phone,
         email: email.trim() || null,
         event_type: eventType,
         event_date: eventDate || null,
         status,
+        project_manager_id: projectManagerId || null,
+        project_manager_name: updatedPmName || null,
+        project_manager_email: updatedPmEmail || null,
+        project_manager_phone: updatedPmPhone || null,
         notes: serializedNotes,
         updated_at: new Date().toISOString()
       };
@@ -709,10 +748,24 @@ export default function ClientWorkspaceDetailPage() {
         .update(updatedFields)
         .eq('id', client.id);
 
-      if (error) throw error;
+      if (error) {
+        // Fallback update if direct columns are not yet in DB schema
+        delete updatedFields.project_manager_id;
+        delete updatedFields.project_manager_name;
+        delete updatedFields.project_manager_email;
+        delete updatedFields.project_manager_phone;
+        await supabase
+          .from('workspace_clients')
+          .update({ ...updatedFields, notes: serializedNotes })
+          .eq('id', client.id);
+      }
 
-      setClient(prev => prev ? ({ ...prev, ...updatedFields }) : null);
-      alert('Client details saved successfully!');
+      setExtended(updatedExtended);
+      setClient(prev => prev ? ({ ...prev, ...updatedFields, project_manager_name: updatedPmName }) : null);
+      setProjectManagerName(updatedPmName);
+      setProjectManagerEmail(updatedPmEmail);
+      setProjectManagerPhone(updatedPmPhone);
+      alert('Client details & Project Manager assignment saved successfully!');
     } catch (e: any) {
       console.error('Error saving client details:', e);
       alert(`Failed to save: ${e.message}`);
@@ -1187,6 +1240,110 @@ export default function ClientWorkspaceDetailPage() {
                     Save Client Details
                   </button>
                 </div>
+              </div>
+            </div>
+
+            {/* Project Manager & Access Control Card */}
+            <div className="bg-[#FFFDF9] p-6 rounded-3xl border border-[#EAE5DA] shadow-xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center border border-indigo-200 shadow-2xs">
+                    <Users className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900">Project Manager & Access Control</h3>
+                    <p className="text-[11px] text-slate-500 font-medium">Assign a dedicated PM from your team to manage this client workspace.</p>
+                  </div>
+                </div>
+
+                {projectManagerName && (
+                  <span className="px-3 py-1 bg-indigo-50 text-indigo-900 border border-indigo-200 rounded-full text-xs font-black self-start sm:self-auto">
+                    ✓ Managed by {projectManagerName}
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                {/* PM Selector */}
+                <div className="space-y-2">
+                  <label className="font-bold text-slate-700 block">Assign / Change Project Manager</label>
+                  <select
+                    value={projectManagerId}
+                    onChange={(e) => {
+                      const selectedId = e.target.value;
+                      setProjectManagerId(selectedId);
+                      const m = teamMembers.find(member => member.id === selectedId);
+                      if (m) {
+                        setProjectManagerName(m.name);
+                        setProjectManagerEmail(m.email || '');
+                        setProjectManagerPhone(m.phone || '');
+                      } else {
+                        setProjectManagerName('');
+                        setProjectManagerEmail('');
+                        setProjectManagerPhone('');
+                      }
+                    }}
+                    className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 cursor-pointer"
+                  >
+                    <option value="">-- No PM Assigned (Unassigned) --</option>
+                    {teamMembers.map((member) => (
+                      <option key={member.id} value={member.id}>
+                        👤 {member.name} ({member.role || 'Team Member'}) {member.email ? `• ${member.email}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-slate-500">
+                    Team members can be given restricted access to only view and operate on their assigned clients.
+                  </p>
+                </div>
+
+                {/* Assigned PM Profile Summary */}
+                <div className="p-4 bg-gradient-to-r from-indigo-50/70 via-purple-50/40 to-[#FFFDF9] rounded-2xl border border-indigo-200/80 flex items-center justify-between gap-3">
+                  {projectManagerName ? (
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-2xl bg-indigo-600 text-white font-black text-sm flex items-center justify-center shadow-xs">
+                        {projectManagerName.split(/\s+/).filter(Boolean).map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                      </div>
+                      <div className="space-y-0.5">
+                        <p className="font-black text-xs text-slate-900">{projectManagerName}</p>
+                        <p className="text-[11px] text-indigo-700 font-bold">Project Manager</p>
+                        {projectManagerPhone && (
+                          <p className="text-[10px] text-slate-600 font-medium">📞 {projectManagerPhone}</p>
+                        )}
+                        {projectManagerEmail && (
+                          <p className="text-[10px] text-slate-500 truncate max-w-[200px]">✉️ {projectManagerEmail}</p>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-slate-500 italic text-xs flex items-center gap-2">
+                      <User className="w-5 h-5 text-slate-400" />
+                      <span>No Project Manager assigned yet. Select a member from the dropdown.</span>
+                    </div>
+                  )}
+
+                  {projectManagerPhone && (
+                    <a
+                      href={`https://wa.me/${projectManagerPhone.replace(/[^0-9]/g, '')}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-3 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl flex items-center gap-1 shrink-0 text-xs shadow-2xs cursor-pointer"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
+                    </a>
+                  )}
+                </div>
+              </div>
+
+              <div className="pt-2 flex justify-end">
+                <button
+                  onClick={handleSaveClientDetails}
+                  disabled={isSaving}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 font-bold text-xs text-white rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer"
+                >
+                  {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  Update Assigned PM
+                </button>
               </div>
             </div>
 

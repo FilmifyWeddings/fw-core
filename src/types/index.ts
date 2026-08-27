@@ -837,6 +837,10 @@ export interface WorkspaceClient {
   total_package_amount: number;
   paid_amount: number;
   status: 'active' | 'completed' | 'archived';
+  project_manager_id?: string | null;
+  project_manager_name?: string | null;
+  project_manager_email?: string | null;
+  project_manager_phone?: string | null;
   notes?: string | null;
   created_at: string;
   updated_at: string;
