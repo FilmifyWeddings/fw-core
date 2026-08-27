@@ -68,19 +68,39 @@ export async function uploadToR2(
  * Deletes an object from Cloudflare R2 given its key or full public URL.
  */
 export async function deleteFromR2(keyOrUrl: string): Promise<boolean> {
+  if (!keyOrUrl) return false;
   try {
-    let key = keyOrUrl;
-    if (keyOrUrl.startsWith('http')) {
-      const urlObj = new URL(keyOrUrl);
-      key = urlObj.pathname.replace(/^\/+/, '').replace(/^api\/media\/r2\//, '');
+    let key = keyOrUrl.trim();
+    if (key.startsWith('http')) {
+      try {
+        const urlObj = new URL(key);
+        key = urlObj.pathname;
+      } catch {}
     }
+    // Strip leading slashes and proxy prefix
+    key = key.replace(/^\/+/, '').replace(/^api\/media\/r2\//, '');
 
-    await r2.send(
-      new DeleteObjectCommand({
-        Bucket: bucketName,
-        Key: key,
-      })
-    );
+    const targetBucket = bucketName;
+    try {
+      await r2.send(
+        new DeleteObjectCommand({
+          Bucket: targetBucket,
+          Key: key,
+        })
+      );
+    } catch (err: any) {
+      if (err.name === 'NoSuchBucket' || err.message?.includes('bucket does not exist')) {
+        const altBucket = targetBucket === 'studiocore-media' ? 'studiocore-madia' : 'studiocore-media';
+        await r2.send(
+          new DeleteObjectCommand({
+            Bucket: altBucket,
+            Key: key,
+          })
+        );
+      } else {
+        throw err;
+      }
+    }
     return true;
   } catch (err) {
     console.error('[R2 Delete Error]:', err);

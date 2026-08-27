@@ -443,6 +443,20 @@ export function MoodboardClientView({
     }
   }
 
+  // Delete image from Cloudflare R2 immediately to free up cloud storage
+  async function deleteImageFromStorage(url?: string) {
+    if (!url) return;
+    try {
+      await fetch('/api/upload/r2', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+    } catch (err) {
+      console.warn('[Failed to delete image from Cloudflare R2]:', err);
+    }
+  }
+
   // Pick Contact from Device Contact Book (Contact Picker API with Immediate Modal Fallback)
   async function handlePickContact(target: 'bride' | 'groom' | 'payment') {
     if (isLocked) return;
@@ -694,6 +708,7 @@ export function MoodboardClientView({
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
+                            deleteImageFromStorage(photo.url);
                             setCouplePhotos((prev) => prev.filter((_, i) => i !== idx));
                           }}
                           className="absolute top-1.5 right-1.5 p-1.5 bg-black/65 hover:bg-rose-600 text-white rounded-full transition cursor-pointer z-10"
@@ -1226,6 +1241,7 @@ export function MoodboardClientView({
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
+                              deleteImageFromStorage(fam.url);
                               setBrideFamilyPhotos((prev) => prev.filter((_, i) => i !== idx));
                             }}
                             className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-rose-600 text-white rounded-full transition z-10 cursor-pointer"
@@ -1374,6 +1390,7 @@ export function MoodboardClientView({
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
+                              deleteImageFromStorage(fam.url);
                               setGroomFamilyPhotos((prev) => prev.filter((_, i) => i !== idx));
                             }}
                             className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-rose-600 text-white rounded-full transition z-10 cursor-pointer"
@@ -1712,7 +1729,11 @@ export function MoodboardClientView({
 
                     {!isLocked && (
                       <button
-                        onClick={() => setItinerary((prev) => prev.filter((_, i) => i !== idx))}
+                        onClick={() => {
+                          if (item.bride_outfit_url) deleteImageFromStorage(item.bride_outfit_url);
+                          if (item.groom_outfit_url) deleteImageFromStorage(item.groom_outfit_url);
+                          setItinerary((prev) => prev.filter((_, i) => i !== idx));
+                        }}
                         className="text-slate-400 hover:text-rose-600 p-1.5 cursor-pointer"
                         title="Delete Event"
                       >
@@ -1867,6 +1888,7 @@ export function MoodboardClientView({
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
+                                deleteImageFromStorage(item.bride_outfit_url);
                                 setItinerary((prev) =>
                                   prev.map((it, i) => (i === idx ? { ...it, bride_outfit_url: undefined } : it))
                                 );
@@ -1935,6 +1957,7 @@ export function MoodboardClientView({
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
+                                deleteImageFromStorage(item.groom_outfit_url);
                                 setItinerary((prev) =>
                                   prev.map((it, i) => (i === idx ? { ...it, groom_outfit_url: undefined } : it))
                                 );

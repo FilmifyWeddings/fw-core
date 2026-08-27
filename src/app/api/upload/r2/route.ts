@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { uploadToR2 } from '@/lib/r2-storage';
+import { uploadToR2, deleteFromR2 } from '@/lib/r2-storage';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,3 +43,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message || 'Upload to R2 failed' }, { status: 500 });
   }
 }
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const body = await req.json().catch(() => ({}));
+    const urlOrKey = body.url || body.key;
+
+    if (!urlOrKey) {
+      return NextResponse.json({ error: 'Missing url or key parameter' }, { status: 400 });
+    }
+
+    const deleted = await deleteFromR2(urlOrKey);
+
+    return NextResponse.json({
+      success: true,
+      deleted,
+      message: 'File deleted from Cloudflare R2',
+    });
+  } catch (error: any) {
+    console.error('[R2 Delete API Error]:', error);
+    return NextResponse.json({ error: error.message || 'Delete from R2 failed' }, { status: 500 });
+  }
+}
+
