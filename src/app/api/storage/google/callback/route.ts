@@ -5,9 +5,8 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const code = searchParams.get('code');
   const workspaceId = searchParams.get('state') || '00000000-0000-0000-0000-000000000000';
-  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'localhost:3000';
-  const proto = req.headers.get('x-forwarded-proto') || (host.includes('localhost') || host.includes('127.0.0.1') ? 'http' : 'https');
-  const redirectOrigin = process.env.NEXT_PUBLIC_APP_URL || `${proto}://${host}`;
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://studiocore.in';
+  const redirectUri = `${baseUrl.replace(/\/$/, '')}/api/storage/google/callback`;
 
   try {
     let email = 'studio.primary@gmail.com';
@@ -20,7 +19,6 @@ export async function GET(req: NextRequest) {
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET || '';
 
     if (clientId && clientSecret && code && code !== 'mock_google_code_sample') {
-      const redirectUri = `${redirectOrigin}/api/storage/google/callback`;
       const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -119,9 +117,9 @@ export async function GET(req: NextRequest) {
 
     try { await supabase.from('storage_indexed_items').insert(sampleItems); } catch (_) {}
 
-    return NextResponse.redirect(`${redirectOrigin}/workspace/data-manager?connected=drive&email=${encodeURIComponent(email)}`);
+    return NextResponse.redirect(`${baseUrl.replace(/\/$/, '')}/workspace/data-manager?connected=drive&email=${encodeURIComponent(email)}`);
   } catch (err: any) {
     console.error('[GoogleDriveCallback] Exception:', err);
-    return NextResponse.redirect(`${redirectOrigin}/workspace/data-manager?error=${encodeURIComponent(err?.message || 'Failed')}`);
+    return NextResponse.redirect(`${baseUrl.replace(/\/$/, '')}/workspace/data-manager?error=${encodeURIComponent(err?.message || 'Failed')}`);
   }
 }
