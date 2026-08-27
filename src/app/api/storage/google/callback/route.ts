@@ -117,11 +117,13 @@ export async function GET(req: NextRequest) {
       },
     ];
 
-    try { await supabase.from('storage_indexed_items').insert(sampleItems); } catch (_) {}
+    const SUCCESS_REDIRECT = 'https://studiocore.in/workspace/data-manager?connected=true';
+    const ERROR_REDIRECT = (err: string) => `https://studiocore.in/workspace/data-manager?error=${encodeURIComponent(err)}`;
 
-    return NextResponse.redirect(`${baseUrl.replace(/\/$/, '')}/workspace/data-manager?connected=drive&email=${encodeURIComponent(email)}`);
+    return NextResponse.redirect(SUCCESS_REDIRECT);
   } catch (err: any) {
     console.error('[GoogleDriveCallback] Exception:', err);
-    return NextResponse.redirect(`${baseUrl.replace(/\/$/, '')}/workspace/data-manager?error=${encodeURIComponent(err?.message || 'Failed')}`);
+    const ERROR_REDIRECT = (errStr: string) => `https://studiocore.in/workspace/data-manager?error=${encodeURIComponent(errStr)}`;
+    return NextResponse.redirect(ERROR_REDIRECT('auth_failed'));
   }
 }
