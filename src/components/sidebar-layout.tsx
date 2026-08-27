@@ -309,34 +309,47 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   ] : [
     // PARTNER / FREELANCER WORKSPACE RESTRICTED NAVIGATION
     partnerPortalItem,
-    {
+    // 1. Leads
+    ...(permissions?.leads_access && permissions.leads_access !== 'NONE' ? [{
+      id: 'leads',
+      name: (permissions.leads_access === 'ALL_VIEW' || permissions.leads_access === 'ALL_EDIT') ? 'Leads & CRM' : 'Assigned Leads',
+      path: '/leads',
+      icon: Target,
+      iconBg: 'bg-[#E6F4EA] text-[#137333]',
+    }] : []),
+    // 2. Bookings & Team Manager
+    ...(permissions?.team_manager_access && permissions.team_manager_access !== 'NONE' ? [{
       id: 'bookings',
-      name: 'Assigned Shoots',
+      name: (permissions.team_manager_access === 'ALL_VIEW' || permissions.team_manager_access === 'ALL_MANAGE') ? 'Bookings & Events' : 'Assigned Shoots',
       path: '/team-manager',
       icon: Calendar,
       iconBg: 'bg-[#E0F2FE] text-[#0284C7]',
-    },
-    {
+    }] : []),
+    // 3. Quotations
+    ...(permissions?.quotations_access && permissions.quotations_access !== 'NONE' ? [{
+      id: 'quotations',
+      name: 'Quotations',
+      path: '/quotations',
+      icon: FileText,
+      iconBg: 'bg-[#FEF3C7] text-[#B45309]',
+    }] : []),
+    // 4. Post-Production
+    ...(permissions?.post_production_access && permissions.post_production_access !== 'NONE' ? [{
       id: 'post-production',
       name: 'Post-Production',
       path: '/workspace/post-production',
       icon: Film,
       iconBg: 'bg-[#FFE4E6] text-[#E11D48]',
-    },
-    ...(permissions?.team_manager_access && permissions.team_manager_access === 'MANAGE_ALL' ? [{
+    }] : []),
+    // 5. Team & Partners (Only for full manage)
+    ...(permissions?.team_manager_access === 'ALL_MANAGE' || permissions?.team_manager_access === 'MANAGE_ALL' ? [{
       id: 'team',
       name: 'Team & Partners',
       path: '/workspace/team',
       icon: Users2,
       iconBg: 'bg-[#EDE9FE] text-[#6366F1]',
     }] : []),
-    ...(permissions?.leads_access && permissions.leads_access !== 'NONE' ? [{
-      id: 'leads',
-      name: 'Leads (Assigned)',
-      path: '/leads',
-      icon: Target,
-      iconBg: 'bg-[#E6F4EA] text-[#137333]',
-    }] : []),
+    // 6. Finance
     ...(permissions?.finance_access && permissions.finance_access !== 'NONE' ? [{
       id: 'finance',
       name: 'Finance & Payments',

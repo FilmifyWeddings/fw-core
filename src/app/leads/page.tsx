@@ -3,9 +3,10 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Database, RefreshCw, Settings, Bell, Check, ArrowLeft, Globe, X, AlertTriangle } from 'lucide-react';
+import { Database, RefreshCw, Settings, Bell, Check, ArrowLeft, Globe, X, AlertTriangle, Lock, ShieldAlert } from 'lucide-react';
 import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
+import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { LeadTable } from '@/components/dashboard/lead-table';
 import { MasterSettingsHub } from '@/components/settings/master-settings-hub';
 import { extractFinancialsFromQuotation, findFinalQuotationForLead } from '@/lib/quotation-finance-sync';
@@ -117,6 +118,7 @@ const parseLeadComment = (comm: any): any => {
 
 export default function LeadsPage() {
   const router = useRouter();
+  const { workspaceId, workspaceName, isOwner, userRole, permissions } = useWorkspace();
   const [userId, setUserId] = useState<string>('');
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -127,6 +129,10 @@ export default function LeadsPage() {
   const [hasMore, setHasMore] = useState<boolean>(true);
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const PAGE_SIZE = 100;
+
+  const leadsAccess = isOwner ? 'ALL_EDIT' : (permissions?.leads_access || 'NONE');
+  const isReadOnly = !isOwner && (leadsAccess === 'ASSIGNED_VIEW' || leadsAccess === 'ALL_VIEW');
+  const isAssignedOnly = !isOwner && (leadsAccess === 'ASSIGNED_VIEW' || leadsAccess === 'ASSIGNED_EDIT');
   const [isDemoMode, setIsDemoMode] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeLeadId, setActiveLeadId] = useState<string | null>(null);
@@ -420,6 +426,18 @@ export default function LeadsPage() {
             };
           }) as Lead[];
         }
+      }
+
+      // Filter for Assigned Leads Only RBAC
+      if (isAssignedOnly) {
+        const { data: { session } } = await supabase.auth.getSession();
+        const uName = (session?.user?.user_metadata?.full_name || session?.user?.user_metadata?.name || '').trim().toLowerCase();
+        const uEmail = (session?.user?.email || '').trim().toLowerCase();
+        sanitizedLeads = sanitizedLeads.filter(l => {
+          const owner = ((l as any).owner || (l as any).lead_owner || (l as any).assigned_to || '').trim().toLowerCase();
+          if (!owner) return false;
+          return owner.includes(uName) || (uName && uName.includes(owner)) || owner === uEmail;
+        });
       }
 
       if (pageNum === 0) {
@@ -1008,6 +1026,25 @@ export default function LeadsPage() {
     }
   };
 
+  if (!isOwner && leadsAccess === 'NONE') {
+    return (
+      <div className="min-h-screen bg-[#FAF9F6] p-8 flex items-center justify-center">
+        <div className="bg-white rounded-3xl p-8 max-w-md w-full text-center border border-zinc-200 shadow-xl space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
+            <Lock className="w-7 h-7" />
+          </div>
+          <h2 className="text-lg font-black text-zinc-900">Leads CRM Access Restricted</h2>
+          <p className="text-xs text-zinc-500 leading-relaxed">
+            Aapke account ko is studio ke Leads &amp; CRM dekhne ki permission nahi hai. Kripya apne studio admin se contact karein.
+          </p>
+          <Link href="/team-manager" className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold inline-block transition">
+            Go to Bookings &amp; Events
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-screen overflow-hidden flex flex-col bg-slate-50 dark:bg-[#070708] text-slate-900 dark:text-white selection:bg-slate-100 dark:selection:bg-zinc-850 transition-colors duration-200">
       <div className="flex-1 min-h-0 min-w-0 w-full flex flex-col overflow-hidden">
@@ -1022,9 +1059,9 @@ export default function LeadsPage() {
             <LeadTable 
               leads={leads} 
               stages={stages}
-              onStatusChange={handleStatusChange} 
-              onLeadUpdate={handleLeadUpdate}
-              onCreateLead={handleCreateLead}
+              onStatusChange={isReadOnly ? undefined : handleStatusChange} 
+              onLeadUpdate={isReadOnly ? undefined : handleLeadUpdate}
+              onCreateLead={isReadOnly ? undefined : handleCreateLead}
               initialPreferences={preferences}
               onPreferencesChange={handlePreferencesChange}
               userEmail={userEmail}

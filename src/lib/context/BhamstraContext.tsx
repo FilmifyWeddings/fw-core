@@ -4,9 +4,9 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { supabase } from '@/lib/supabase';
 
 export interface MemberPermissions {
-  leads_access: 'NONE' | 'ASSIGNED_ONLY' | 'VIEW_ALL' | 'FULL_EDIT';
+  leads_access: 'NONE' | 'ASSIGNED_VIEW' | 'ASSIGNED_EDIT' | 'ALL_VIEW' | 'ALL_EDIT' | 'ASSIGNED_ONLY' | 'VIEW_ALL' | 'FULL_EDIT';
   quotations_access: 'NONE' | 'VIEW_ONLY' | 'MANAGE';
-  team_manager_access: 'NONE' | 'VIEW_ASSIGNED' | 'MANAGE_ALL';
+  team_manager_access: 'NONE' | 'ASSIGNED_ONLY_VIEW' | 'ASSIGNED_FULL_TEAM_VIEW' | 'ALL_VIEW' | 'ALL_MANAGE' | 'VIEW_ASSIGNED' | 'MANAGE_ALL';
   post_production_access: 'NONE' | 'ASSIGNED_ONLY' | 'FULL_ACCESS';
   finance_access: 'NONE' | 'VIEW_ONLY' | 'MANAGE';
 }
@@ -31,9 +31,9 @@ interface WorkspaceConfig {
 }
 
 export const DEFAULT_OWNER_PERMISSIONS: MemberPermissions = {
-  leads_access: 'FULL_EDIT',
+  leads_access: 'ALL_EDIT',
   quotations_access: 'MANAGE',
-  team_manager_access: 'MANAGE_ALL',
+  team_manager_access: 'ALL_MANAGE',
   post_production_access: 'FULL_ACCESS',
   finance_access: 'MANAGE',
 };
@@ -41,7 +41,7 @@ export const DEFAULT_OWNER_PERMISSIONS: MemberPermissions = {
 export const DEFAULT_MEMBER_PERMISSIONS: MemberPermissions = {
   leads_access: 'NONE',
   quotations_access: 'NONE',
-  team_manager_access: 'VIEW_ASSIGNED',
+  team_manager_access: 'ASSIGNED_ONLY_VIEW',
   post_production_access: 'ASSIGNED_ONLY',
   finance_access: 'NONE',
 };
@@ -49,6 +49,7 @@ export const DEFAULT_MEMBER_PERMISSIONS: MemberPermissions = {
 export interface BhamstraContextType {
   userId: string | null;
   userEmail: string | null;
+  userName?: string | null;
   workspaceId: string | null;
   workspaceName: string;
   activeWorkspace: WorkspaceOption | null;
@@ -98,6 +99,7 @@ const BhamstraContext = createContext<BhamstraContextType>(DEFAULT_FALLBACK_CONT
 export function BhamstraProvider({ children }: { children: React.ReactNode }) {
   const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [userName, setUserName] = useState<string | null>(null);
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [workspaceName, setWorkspaceName] = useState<string>('My Studio');
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceOption | null>(null);
@@ -117,6 +119,7 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
       if (!session?.user) {
         setUserId(null);
         setUserEmail(null);
+        setUserName(null);
         setWorkspaceId(null);
         setAvailableWorkspaces([]);
         setActiveWorkspace(null);
@@ -126,8 +129,10 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
 
       const uId = session.user.id;
       const uEmail = session.user.email || '';
+      const uName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || '';
       setUserId(uId);
       setUserEmail(uEmail || null);
+      setUserName(uName || null);
 
       // 1. Fetch user's own profile (Primary Studio)
       const { data: profile } = await supabase
@@ -236,6 +241,7 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
       value={{
         userId,
         userEmail,
+        userName,
         workspaceId,
         workspaceName,
         activeWorkspace,

@@ -8,7 +8,7 @@ import {
   Send, AlertCircle, Search, Filter, Loader2, Sparkles, MapPin, 
   Clock, CheckCircle, Info, Trash, ChevronDown, Edit2, TrendingUp, Award, Grid, Menu,
   Database, FileText, Layers, ArrowLeft, SlidersHorizontal, CheckSquare, Folder, Edit3, Pencil, Settings,
-  HardDrive, UserPlus, AlertTriangle, Zap
+  HardDrive, UserPlus, AlertTriangle, Zap, Lock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createPortal } from 'react-dom';
@@ -133,6 +133,11 @@ export default function TeamManagerPage() {
     return 'Studio Admin';
   }, [workspaceName]);
   
+  const tmAccess = isOwner ? 'ALL_MANAGE' : (permissions?.team_manager_access || 'ASSIGNED_ONLY_VIEW');
+  const isTmReadOnly = !isOwner && tmAccess !== 'ALL_MANAGE' && tmAccess !== 'MANAGE_ALL';
+  const isAssignedCardOnly = !isOwner && (tmAccess === 'ASSIGNED_ONLY_VIEW' || tmAccess === 'ASSIGNED_FULL_TEAM_VIEW');
+  const isSelfRoleOnly = !isOwner && tmAccess === 'ASSIGNED_ONLY_VIEW';
+  
   // Real Data State & Current User Workspace ID
   const [currentUserId, setCurrentUserId] = useState<string>('');
   const [projects, setProjects] = useState<FWProject[]>([]);
@@ -251,7 +256,49 @@ export default function TeamManagerPage() {
 
       const { data: projectsData, error: projectsErr } = await projectsQuery;
       if (projectsErr) console.warn('[TeamManager] fw_projects error:', projectsErr.message);
-      setProjects(projectsData || []);
+
+      let projectsDataToSet: any[] = projectsData || [];
+
+      if (!isOwner && isAssignedCardOnly) {
+        const { data: { session } } = await supabase.auth.getSession();
+        const uEmail = (session?.user?.email || '').trim().toLowerCase();
+        const uName = (session?.user?.user_metadata?.full_name || session?.user?.user_metadata?.name || '').trim().toLowerCase();
+
+        projectsDataToSet = projectsDataToSet
+          .map((proj: any) => {
+            const filteredSubEvents = (proj.fw_sub_events || []).filter((se: any) => {
+              const assignments = se.fw_assignments || [];
+              return assignments.some((a: any) => {
+                const mem = a.fw_team_members;
+                if (!mem) return false;
+                const mEmail = (mem.email || '').trim().toLowerCase();
+                const mName = (mem.name || '').trim().toLowerCase();
+                return (uEmail && mEmail === uEmail) || (uName && mName === uName) || mem.id === session?.user?.id;
+              });
+            });
+
+            if (filteredSubEvents.length === 0) return null;
+
+            if (isSelfRoleOnly) {
+              const processedSubEvents = filteredSubEvents.map((se: any) => {
+                const selfAssignments = (se.fw_assignments || []).filter((a: any) => {
+                  const mem = a.fw_team_members;
+                  if (!mem) return false;
+                  const mEmail = (mem.email || '').trim().toLowerCase();
+                  const mName = (mem.name || '').trim().toLowerCase();
+                  return (uEmail && mEmail === uEmail) || (uName && mName === uName) || mem.id === session?.user?.id;
+                });
+                return { ...se, fw_assignments: selfAssignments };
+              });
+              return { ...proj, fw_sub_events: processedSubEvents };
+            }
+
+            return { ...proj, fw_sub_events: filteredSubEvents };
+          })
+          .filter(Boolean);
+      }
+
+      setProjects(projectsDataToSet);
     } catch (err: any) {
       console.error('[TeamManager] fetchAllData Exception:', err);
       setError(err?.message || 'Failed to fetch operations data.');
@@ -671,6 +718,25 @@ export default function TeamManagerPage() {
     return true;
   });
 
+  if (!isOwner && tmAccess === 'NONE') {
+    return (
+      <div className="min-h-screen bg-[#FAF9F6] p-8 flex items-center justify-center">
+        <div className="bg-white rounded-3xl p-8 max-w-md w-full text-center border border-zinc-200 shadow-xl space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto">
+            <Lock className="w-7 h-7" />
+          </div>
+          <h2 className="text-lg font-black text-zinc-900">Bookings &amp; Shoot Schedule Restricted</h2>
+          <p className="text-xs text-zinc-500 leading-relaxed">
+            Aapke account ko is studio ke Bookings &amp; Shoot Schedule dekhne ki permission nahi hai. Kripya apne studio admin se contact karein.
+          </p>
+          <Link href="/workspace" className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold inline-block transition">
+            Back to Workspace
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full min-h-screen bg-slate-100 text-[#0B111E] font-sans antialiased selection:bg-[#6C5CE7]/15 px-4 sm:px-6 lg:px-8 py-6 space-y-6 pb-20 md:pb-6">
       {/* PC STICKY TOP TOOLBAR WRAPPER */}
@@ -716,36 +782,42 @@ export default function TeamManagerPage() {
                 />
               </div>
 
-              {/* + Member - desktop only */}
-              <button
-                onClick={() => {
-                  setActiveAssignmentForMember(null);
-                  setIsAddMemberOpen(true);
-                }}
-                className="hidden sm:flex bg-white border border-[#6C5CE7]/30 text-[#6C5CE7] text-xs font-extrabold py-2.5 px-3 rounded-2xl items-center justify-center gap-1.5 shadow-2xs shrink-0 cursor-pointer transition hover:border-[#6C5CE7]"
-              >
-                <UserPlus className="w-4 h-4" />
-                <span>+ Member</span>
-              </button>
+              {!isTmReadOnly && (
+                <>
+                  {/* + Member - desktop only */}
+                  <button
+                    onClick={() => {
+                      setActiveAssignmentForMember(null);
+                      setIsAddMemberOpen(true);
+                    }}
+                    className="hidden sm:flex bg-white border border-[#6C5CE7]/30 text-[#6C5CE7] text-xs font-extrabold py-2.5 px-3 rounded-2xl items-center justify-center gap-1.5 shadow-2xs shrink-0 cursor-pointer transition hover:border-[#6C5CE7]"
+                  >
+                    <UserPlus className="w-4 h-4" />
+                    <span>+ Member</span>
+                  </button>
 
-              {/* + Project - desktop only */}
-              <button
-                onClick={() => { setEditingProject(null); setIsAddProjectOpen(true); }}
-                className="hidden sm:flex bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-black py-2.5 px-4 rounded-2xl transition items-center justify-center gap-1.5 shadow-lg shadow-[#6C5CE7]/20 shrink-0 cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span>+ Project</span>
-              </button>
+                  {/* + Project - desktop only */}
+                  <button
+                    onClick={() => { setEditingProject(null); setIsAddProjectOpen(true); }}
+                    className="hidden sm:flex bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-black py-2.5 px-4 rounded-2xl transition items-center justify-center gap-1.5 shadow-lg shadow-[#6C5CE7]/20 shrink-0 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>+ Project</span>
+                  </button>
+                </>
+              )}
 
-              {/* Settings - always visible */}
-              <button
-                type="button"
-                onClick={() => setIsSettingsModalOpen(true)}
-                className="p-2.5 bg-white border border-slate-200 hover:border-indigo-500 rounded-2xl shadow-2xs text-indigo-600 transition-all cursor-pointer shrink-0"
-                title="Team & Operations Settings"
-              >
-                <Settings className="w-4 h-4"/>
-              </button>
+              {/* Settings - always visible for owner / admin */}
+              {isOwner && (
+                <button
+                  type="button"
+                  onClick={() => setIsSettingsModalOpen(true)}
+                  className="p-2.5 bg-white border border-slate-200 hover:border-indigo-500 rounded-2xl shadow-2xs text-indigo-600 transition-all cursor-pointer shrink-0"
+                  title="Team & Operations Settings"
+                >
+                  <Settings className="w-4 h-4"/>
+                </button>
+              )}
             </div>
           </div>
 
@@ -862,16 +934,18 @@ export default function TeamManagerPage() {
                             </span>
                           </div>
 
-                          <button 
-                            title="Edit Project"
-                            onClick={() => {
-                              setEditingProject(project);
-                              setIsAddProjectOpen(true);
-                            }}
-                            className="w-9 h-9 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-indigo-600 transition shadow-xs shrink-0 cursor-pointer"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
+                          {!isTmReadOnly && (
+                            <button 
+                              title="Edit Project"
+                              onClick={() => {
+                                setEditingProject(project);
+                                setIsAddProjectOpen(true);
+                              }}
+                              className="w-9 h-9 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-indigo-600 transition shadow-xs shrink-0 cursor-pointer"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
 
                         {/* HORIZONTAL MODERN GRADIENT SUB-EVENT CARDS STACK */}
@@ -997,6 +1071,7 @@ export default function TeamManagerPage() {
                                             <div
                                               data-assignment-id={assignment.id}
                                               onClick={(e) => {
+                                                if (isTmReadOnly) return;
                                                 const rect = e.currentTarget.getBoundingClientRect();
                                                 if (activeDropdownId === dropdownKey) {
                                                   setActiveDropdownId(null);
