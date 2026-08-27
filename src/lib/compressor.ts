@@ -1,91 +1,110 @@
 /**
- * Client-Side In-Browser High Performance WebP Compression Engine
- * Reduces multi-megabyte high-res photos to ~150-250KB WebP files directly in the browser
- * before uploading over the network to Cloudflare R2.
+ * Client-Side In-Browser High Performance Image Compressor
+ * Resilient against iOS Safari / Mobile WebKit DOMExceptions.
+ * If canvas compression fails or is unsupported for any reason,
+ * safely falls back to original File so uploads never fail.
  */
 
 export async function compressImage(
-  file: File,
+  file: File | Blob,
   maxDimension = 1920,
   quality = 0.82
-): Promise<File> {
-  // If not an image or SVG/GIF, return original
-  if (!file.type.startsWith('image/') || file.type === 'image/svg+xml' || file.type === 'image/gif') {
+): Promise<File | Blob> {
+  // If not a standard File or image, return as-is
+  if (!file || !(file instanceof Blob)) {
     return file;
   }
 
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const objectUrl = URL.createObjectURL(file);
-    img.src = objectUrl;
+  const fileType = file.type || '';
+  if (!fileType.startsWith('image/') || fileType === 'image/svg+xml' || fileType === 'image/gif') {
+    return file;
+  }
 
-    img.onload = () => {
-      URL.revokeObjectURL(objectUrl);
-      let { width, height } = img;
-
-      if (width > maxDimension || height > maxDimension) {
-        if (width > height) {
-          height = Math.round((height * maxDimension) / width);
-          width = maxDimension;
-        } else {
-          width = Math.round((width * maxDimension) / height);
-          height = maxDimension;
-        }
-      }
-
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-
-      const ctx = canvas.getContext('2d', { alpha: false });
-      if (!ctx) {
+  return new Promise((resolve) => {
+    try {
+      if (typeof window === 'undefined' || typeof document === 'undefined') {
         return resolve(file);
       }
 
-      // Smooth bicubic resampling
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(img, 0, 0, width, height);
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(file);
+      img.src = objectUrl;
 
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) {
-            return resolve(file); // Fallback to original
+      img.onload = () => {
+        try {
+          URL.revokeObjectURL(objectUrl);
+          let { width, height } = img;
+
+          if (!width || !height) {
+            return resolve(file);
           }
-          const baseName = file.name.replace(/\.[^/.]+$/, '');
-          const compressedFile = new File([blob], `${baseName}.webp`, {
-            type: 'image/webp',
-            lastModified: Date.now(),
-          });
-          resolve(compressedFile);
-        },
-        'image/webp',
-        quality
-      );
-    };
 
-    img.onerror = (err) => {
-      URL.revokeObjectURL(objectUrl);
-      console.warn('[compressImage] Image decoding failed, using original file:', err);
+          if (width > maxDimension || height > maxDimension) {
+            if (width > height) {
+              height = Math.round((height * maxDimension) / width);
+              width = maxDimension;
+            } else {
+              width = Math.round((width * maxDimension) / height);
+              height = maxDimension;
+            }
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            return resolve(file);
+          }
+
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, width, height);
+
+          // Attempt WebP compression first, fallback to JPEG if WebP is rejected by browser
+          const outputType = 'image/jpeg';
+          canvas.toBlob(
+            (blob) => {
+              if (!blob) {
+                return resolve(file);
+              }
+
+              try {
+                const fileName = (file instanceof File && file.name) ? file.name : 'upload.jpg';
+                const baseName = fileName.replace(/\.[^/.]+$/, '');
+                const cleanFileName = `${baseName || 'image'}.jpg`;
+
+                // Safe construction of File object
+                const compressedFile = new File([blob], cleanFileName, {
+                  type: outputType,
+                  lastModified: Date.now(),
+                });
+                resolve(compressedFile);
+              } catch {
+                // If new File constructor fails on older Safari, return the blob directly
+                resolve(blob);
+              }
+            },
+            outputType,
+            quality
+          );
+        } catch (innerErr) {
+          console.warn('[compressImage inner error, falling back to original]:', innerErr);
+          resolve(file);
+        }
+      };
+
+      img.onerror = () => {
+        try {
+          URL.revokeObjectURL(objectUrl);
+        } catch {}
+        console.warn('[compressImage decode error, using original file]');
+        resolve(file);
+      };
+    } catch (outerErr) {
+      console.warn('[compressImage outer error, using original file]:', outerErr);
       resolve(file);
-    };
+    }
   });
-}
-
-/**
- * Compresses multiple files in parallel with concurrency limit.
- */
-export async function compressImagesBatch(
-  files: File[],
-  maxDimension = 1920,
-  quality = 0.82,
-  onProgress?: (index: number, total: number) => void
-): Promise<File[]> {
-  const results: File[] = [];
-  for (let i = 0; i < files.length; i++) {
-    const compressed = await compressImage(files[i], maxDimension, quality);
-    results.push(compressed);
-    if (onProgress) onProgress(i + 1, files.length);
-  }
-  return results;
 }

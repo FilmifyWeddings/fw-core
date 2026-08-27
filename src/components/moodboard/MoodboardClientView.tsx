@@ -355,10 +355,17 @@ export function MoodboardClientView({
       setUploadingSection(sectionKey);
       for (let i = 0; i < filesToUpload.length; i++) {
         const file = filesToUpload[i];
-        const compressedFile = await compressImage(file, 1920, 0.82);
+        let fileToSend: File | Blob = file;
+        try {
+          fileToSend = await compressImage(file, 1920, 0.82);
+        } catch (compErr) {
+          console.warn('[Image compression skipped, uploading original]:', compErr);
+          fileToSend = file;
+        }
 
         const formData = new FormData();
-        formData.append('file', compressedFile);
+        const uploadName = (fileToSend instanceof File && fileToSend.name) ? fileToSend.name : (file.name || 'image.jpg');
+        formData.append('file', fileToSend, uploadName);
         formData.append('folder', `moodboards/${token}`);
 
         const uploadRes = await fetch('/api/upload/r2', {
@@ -374,7 +381,8 @@ export function MoodboardClientView({
         onUploaded(uploadData.url);
       }
     } catch (err: any) {
-      alert(`Upload failed: ${err.message || 'Network error'}`);
+      console.error('[Upload error]:', err);
+      alert(`Upload notice: ${err.message || 'Please try selecting the image again.'}`);
     } finally {
       setUploadingSection(null);
       event.target.value = '';
@@ -1115,13 +1123,15 @@ export function MoodboardClientView({
                       <div className="aspect-[4/3] rounded-xl overflow-hidden bg-slate-800 relative group">
                         <img src={getMediaUrl(fam.url)} alt="Bride Family" className="w-full h-full object-cover" />
                         
-                        <button
-                          onClick={() => setAnnotatingPhoto({ side: 'Bride', index: idx, url: getMediaUrl(fam.url) })}
-                          className="absolute bottom-2 left-2 px-2.5 py-1.5 bg-black/75 hover:bg-rose-600 text-white rounded-xl text-[11px] font-bold flex items-center gap-1 backdrop-blur-md transition shadow-sm cursor-pointer"
-                        >
-                          <Pencil className="w-3 h-3 text-amber-300" />
-                          <span>Draw & Tag Faces</span>
-                        </button>
+                        {!isLocked && (
+                          <button
+                            onClick={() => setAnnotatingPhoto({ side: 'Bride', index: idx, url: getMediaUrl(fam.url) })}
+                            className="absolute bottom-2 left-2 px-2.5 py-1.5 bg-black/75 hover:bg-rose-600 text-white rounded-xl text-[11px] font-bold flex items-center gap-1 backdrop-blur-md transition shadow-sm cursor-pointer"
+                          >
+                            <Pencil className="w-3 h-3 text-amber-300" />
+                            <span>Draw & Tag Faces</span>
+                          </button>
+                        )}
 
                         {!isLocked && (
                           <button
@@ -1243,13 +1253,15 @@ export function MoodboardClientView({
                       <div className="aspect-[4/3] rounded-xl overflow-hidden bg-slate-800 relative group">
                         <img src={getMediaUrl(fam.url)} alt="Groom Family" className="w-full h-full object-cover" />
                         
-                        <button
-                          onClick={() => setAnnotatingPhoto({ side: 'Groom', index: idx, url: getMediaUrl(fam.url) })}
-                          className="absolute bottom-2 left-2 px-2.5 py-1.5 bg-black/75 hover:bg-blue-600 text-white rounded-xl text-[11px] font-bold flex items-center gap-1 backdrop-blur-md transition shadow-sm cursor-pointer"
-                        >
-                          <Pencil className="w-3 h-3 text-amber-300" />
-                          <span>Draw & Tag Faces</span>
-                        </button>
+                        {!isLocked && (
+                          <button
+                            onClick={() => setAnnotatingPhoto({ side: 'Groom', index: idx, url: getMediaUrl(fam.url) })}
+                            className="absolute bottom-2 left-2 px-2.5 py-1.5 bg-black/75 hover:bg-blue-600 text-white rounded-xl text-[11px] font-bold flex items-center gap-1 backdrop-blur-md transition shadow-sm cursor-pointer"
+                          >
+                            <Pencil className="w-3 h-3 text-amber-300" />
+                            <span>Draw & Tag Faces</span>
+                          </button>
+                        )}
 
                         {!isLocked && (
                           <button

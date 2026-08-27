@@ -26,14 +26,15 @@ export async function POST(req: NextRequest) {
 
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+    const fileName = file.name || `photo_${Date.now()}.jpg`;
 
-    const { url, key } = await uploadToR2(buffer, file.name, mimeType, folder);
+    const { url, key } = await uploadToR2(buffer, fileName, mimeType, folder);
 
     return NextResponse.json({
       success: true,
       url,
       key,
-      name: file.name,
+      name: fileName,
       size: file.size,
       mimeType,
     });

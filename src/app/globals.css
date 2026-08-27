@@ -148,6 +148,13 @@ body {
   scrollbar-color: #cbd5e1 transparent;
 }
 
+/* Prevent iOS Safari Automatic Zoom on Input Focus */
+@media screen and (max-width: 768px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
+
 .dark * {
   scrollbar-color: #27272a transparent;
 }
