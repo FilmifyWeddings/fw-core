@@ -337,6 +337,11 @@ export default function DataManagerPage() {
     }
   };
 
+  // Direct Google Drive OAuth navigation
+  const handleConnectGoogleDrive = () => {
+    window.location.href = '/api/storage/google/auth';
+  };
+
   // Copy helper
   const handleCopy = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
@@ -1331,10 +1336,7 @@ export default function DataManagerPage() {
 
                 <button
                   type="button"
-                  onClick={() => {
-                    const targetUrl = '/api/storage/google/auth?origin=' + encodeURIComponent(window.location.origin) + '&workspace_id=' + effectiveWsId;
-                    window.location.assign(targetUrl);
-                  }}
+                  onClick={handleConnectGoogleDrive}
                   className="w-full py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-600/20 transition flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Cloud className="w-4 h-4" />
