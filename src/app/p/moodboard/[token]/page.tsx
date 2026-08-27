@@ -57,21 +57,39 @@ export default async function MoodboardPage({ params }: PageProps) {
         }
       }
 
-      // 3. Fetch Studio Profile Branding
+      // 3. Fetch Studio Profile Branding (check workspaces and profiles)
       if (moodboard.workspace_id) {
-        const { data: profile } = await supabaseAdmin
-          .from('profiles')
-          .select('workspace_name, business_name, company, logo_url')
+        let sName: string | null = null;
+        let sLogo: string | null = null;
+
+        const { data: ws } = await supabaseAdmin
+          .from('workspaces')
+          .select('name, logo_url, owner_id')
           .eq('id', moodboard.workspace_id)
           .maybeSingle();
 
-        if (profile) {
-          const sName = profile.business_name || profile.company || profile.workspace_name || null;
-          studioInfo = {
-            name: sName,
-            logo: profile.logo_url || null,
-          };
+        if (ws?.name) {
+          sName = ws.name;
+          sLogo = ws.logo_url;
         }
+
+        const profileId = ws?.owner_id || moodboard.workspace_id;
+        const { data: profile } = await supabaseAdmin
+          .from('profiles')
+          .select('workspace_name, business_name, company, logo_url, leads_table_preferences')
+          .eq('id', profileId)
+          .maybeSingle();
+
+        if (profile) {
+          const prefCompany = profile.leads_table_preferences?.invoice_company_name;
+          sName = sName || prefCompany || profile.business_name || profile.company || profile.workspace_name || null;
+          sLogo = sLogo || profile.logo_url || profile.leads_table_preferences?.invoice_logo_url || null;
+        }
+
+        studioInfo = {
+          name: sName,
+          logo: sLogo,
+        };
       }
     }
   } catch (e) {

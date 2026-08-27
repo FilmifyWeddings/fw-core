@@ -94,27 +94,50 @@ export async function GET(
       clientInfo = clientData;
     }
 
-    // 3. Fetch Studio Profile / Branding
+    // 3. Fetch Studio Profile / Branding (check workspaces and profiles)
     let studioInfo: any = {
-      name: 'StudioCore Photography',
+      name: null,
       logo: null,
       phone: null,
       email: null,
     };
 
-    const { data: profile } = await supabaseAdmin
-      .from('profiles')
-      .select('workspace_name, business_name, company, logo_url, phone, email')
-      .eq('id', moodboard.workspace_id)
-      .maybeSingle();
+    if (moodboard.workspace_id) {
+      let sName: string | null = null;
+      let sLogo: string | null = null;
 
-    if (profile) {
-      studioInfo = {
-        name: profile.business_name || profile.workspace_name || profile.company || 'StudioCore Photography',
-        logo: profile.logo_url || null,
-        phone: profile.phone || null,
-        email: profile.email || null,
-      };
+      const { data: ws } = await supabaseAdmin
+        .from('workspaces')
+        .select('name, logo_url, owner_id')
+        .eq('id', moodboard.workspace_id)
+        .maybeSingle();
+
+      if (ws?.name) {
+        sName = ws.name;
+        sLogo = ws.logo_url;
+      }
+
+      const profileId = ws?.owner_id || moodboard.workspace_id;
+      const { data: profile } = await supabaseAdmin
+        .from('profiles')
+        .select('workspace_name, business_name, company, logo_url, phone, email, leads_table_preferences')
+        .eq('id', profileId)
+        .maybeSingle();
+
+      if (profile) {
+        const prefCompany = profile.leads_table_preferences?.invoice_company_name;
+        sName = sName || prefCompany || profile.business_name || profile.company || profile.workspace_name || null;
+        sLogo = sLogo || profile.logo_url || profile.leads_table_preferences?.invoice_logo_url || null;
+        studioInfo = {
+          name: sName,
+          logo: sLogo,
+          phone: profile.phone || profile.leads_table_preferences?.invoice_phone || null,
+          email: profile.email || profile.leads_table_preferences?.invoice_email || null,
+        };
+      } else if (sName) {
+        studioInfo.name = sName;
+        studioInfo.logo = sLogo;
+      }
     }
 
     return NextResponse.json({
