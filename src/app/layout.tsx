@@ -48,6 +48,37 @@ export default function RootLayout({
             __html: `
               (function() {
                 try {
+                  // 1. Chunk load error & deployment mismatch auto-recovery
+                  window.addEventListener('error', function(e) {
+                    var target = e.target || e.srcElement;
+                    var isAsset = target && (target.tagName === 'SCRIPT' || target.tagName === 'LINK');
+                    var src = (target && (target.src || target.href)) || '';
+                    if (isAsset && src.indexOf('/_next/static/') !== -1) {
+                      console.warn('[StudioCore Recovery]: Stale chunk detected after deployment update. Refreshing...');
+                      var lastReload = sessionStorage.getItem('sc_chunk_reload');
+                      var now = Date.now();
+                      if (!lastReload || (now - parseInt(lastReload, 10)) > 8000) {
+                        sessionStorage.setItem('sc_chunk_reload', now.toString());
+                        window.location.reload();
+                      }
+                    }
+                  }, true);
+
+                  window.addEventListener('unhandledrejection', function(e) {
+                    var reason = e.reason;
+                    var msg = (reason && (reason.message || reason.name || '')) || '';
+                    if (msg.indexOf('ChunkLoadError') !== -1 || msg.indexOf('Loading chunk') !== -1 || msg.indexOf('Failed to fetch dynamically imported module') !== -1) {
+                      console.warn('[StudioCore Recovery]: ChunkLoadError caught. Refreshing to get latest app version...');
+                      var lastReload = sessionStorage.getItem('sc_chunk_reload');
+                      var now = Date.now();
+                      if (!lastReload || (now - parseInt(lastReload, 10)) > 8000) {
+                        sessionStorage.setItem('sc_chunk_reload', now.toString());
+                        window.location.reload();
+                      }
+                    }
+                  });
+
+                  // 2. Cookie cleanup for legacy token chunks
                   if (typeof document !== 'undefined' && document.cookie) {
                     var cookies = document.cookie.split(';');
                     var domain = window.location.hostname;
