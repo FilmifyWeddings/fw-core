@@ -9,7 +9,7 @@ import {
   Film, IndianRupee, Clock, Layers, BarChart3, Settings, 
   Headphones, LogOut, ChevronDown, ChevronRight, ChevronLeft, 
   Menu, X, Sparkles, UserCheck, Archive, UserX, CheckCircle2, 
-  ArrowUpRight, Bell, ShieldCheck, Crown, Briefcase
+  ArrowUpRight, Bell, ShieldCheck, Crown, Briefcase, HardDrive
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import StudioProfileEditModal from '@/components/workspace/StudioProfileEditModal';
@@ -284,6 +284,13 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       path: '/workspace/attendance',
       icon: Clock,
       iconBg: 'bg-[#DCFCE7] text-[#15803D]',
+    },
+    {
+      id: 'data-manager',
+      name: 'Data Manager',
+      path: '/workspace/data-manager',
+      icon: HardDrive,
+      iconBg: 'bg-[#FEF3C7] text-[#D97706]',
     },
     {
       id: 'integrations',
