@@ -59,7 +59,7 @@ export default function ClientWorkspaceDetailPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Active Tab
-  const [activeTab, setActiveTab] = useState<'overview' | 'quotations' | 'events' | 'post_production' | 'finance'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'quotations' | 'events' | 'post_production' | 'finance' | 'moodboard'>('overview');
 
   // Extended fields state
   const [extended, setExtended] = useState<ClientExtendedData>({
@@ -116,6 +116,12 @@ export default function ClientWorkspaceDetailPage() {
   const [payMode, setPayMode] = useState('UPI');
   const [payRef, setPayRef] = useState('');
   const [payDate, setPayDate] = useState(new Date().toISOString().split('T')[0]);
+
+  // Tab 6: Mood Board & Event Prep
+  const [moodboard, setMoodboard] = useState<any>(null);
+  const [loadingMoodboard, setLoadingMoodboard] = useState(false);
+  const [copiedMoodboardLink, setCopiedMoodboardLink] = useState(false);
+  const [updatingMbStatus, setUpdatingMbStatus] = useState(false);
 
   // Load client data by ID or Code
   useEffect(() => {
@@ -179,7 +185,8 @@ export default function ClientWorkspaceDetailPage() {
       await Promise.all([
         fetchLeadQuotationVersions(foundClient),
         fetchPostProduction(foundClient),
-        fetchFinanceAndSyncMilestones(foundClient)
+        fetchFinanceAndSyncMilestones(foundClient),
+        fetchMoodboard(foundClient)
       ]);
 
     } catch (e) {
@@ -526,6 +533,78 @@ export default function ClientWorkspaceDetailPage() {
     }
   };
 
+  // ─────────────────────────────────────────────────────────────
+  // 6. FETCH MOOD BOARD & EVENT PREP
+  // ─────────────────────────────────────────────────────────────
+  const fetchMoodboard = async (c: WorkspaceClient) => {
+    setLoadingMoodboard(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+      const res = await fetch(`/api/moodboard/client/${c.id}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        }
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.moodboard) {
+        setMoodboard(data.moodboard);
+      }
+    } catch (e) {
+      console.error('Error fetching moodboard:', e);
+    } finally {
+      setLoadingMoodboard(false);
+    }
+  };
+
+  const handleUpdateMoodboardStatus = async (newStatus: string) => {
+    if (!client) return;
+    setUpdatingMbStatus(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+      const res = await fetch(`/api/moodboard/client/${client.id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setMoodboard(data.moodboard);
+      }
+    } catch (e) {
+      console.error('Error updating moodboard status:', e);
+    } finally {
+      setUpdatingMbStatus(false);
+    }
+  };
+
+  const copyMoodboardLink = () => {
+    if (!moodboard?.token) return;
+    const url = `${window.location.origin}/p/moodboard/${moodboard.token}`;
+    navigator.clipboard.writeText(url);
+    setCopiedMoodboardLink(true);
+    setTimeout(() => setCopiedMoodboardLink(false), 2500);
+  };
+
+  const shareMoodboardOnWhatsApp = () => {
+    if (!moodboard?.token) return;
+    const cleanPhone = (phone || '').replace(/[^0-9]/g, '');
+    const publicUrl = `${window.location.origin}/p/moodboard/${moodboard.token}`;
+    const coupleName = name || 'there';
+    const text = `Hi ${coupleName}! ✨\n\nHere is your private *Wedding Mood Board & Event Prep Portal* from our studio:\n🔗 ${publicUrl}\n\nPlease add your couple photos, family references, outfits, and event timings so our photography crew can prepare your shot lists perfectly!\n\nLooking forward to capturing your big day! 📸`;
+
+    if (cleanPhone) {
+      window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`, '_blank');
+    } else {
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+    }
+  };
+
   // Save Client Details
   const handleSaveClientDetails = async () => {
     if (!client) return;
@@ -850,7 +929,8 @@ export default function ClientWorkspaceDetailPage() {
             { id: 'overview', label: 'Overview & Profile', icon: User },
             { id: 'quotations', label: 'Quotations & Versions', icon: FileText },
             { id: 'events', label: 'Events & Bookings', icon: Calendar },
-            { id: 'post_production', label: 'Post-Production Checklist', icon: Film },
+            { id: 'moodboard', label: 'Mood Board ✨', icon: Sparkles },
+            { id: 'post_production', label: 'Post-Production', icon: Film },
             { id: 'finance', label: 'Finance & Invoices', icon: DollarSign },
           ].map(tab => {
             const Icon = tab.icon;
@@ -1605,6 +1685,502 @@ export default function ClientWorkspaceDetailPage() {
             ) : (
               <div className="p-8 bg-[#FFFDF9] rounded-3xl border border-[#EAE5DA] text-center text-xs text-slate-500">
                 Standard client billing active. Use &quot;+ Record Payment&quot; to log incoming client payments.
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* ─────────────────────────────────────────────────────────────
+            TAB 6: CLIENT MOOD BOARD & WEDDING PREP PORTAL
+        ───────────────────────────────────────────────────────────── */}
+        {activeTab === 'moodboard' && (
+          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+            {loadingMoodboard ? (
+              <div className="p-16 bg-[#FFFDF9] rounded-3xl border border-[#EAE5DA] flex flex-col items-center justify-center text-center">
+                <RefreshCw className="w-8 h-8 text-amber-500 animate-spin mb-3" />
+                <p className="text-sm font-bold text-slate-700">Loading Client Mood Board & Vision...</p>
+              </div>
+            ) : !moodboard ? (
+              <div className="p-12 bg-[#FFFDF9] rounded-3xl border border-[#EAE5DA] text-center space-y-4">
+                <Sparkles className="w-12 h-12 text-amber-500 mx-auto" />
+                <h3 className="text-lg font-black text-slate-900">Initialize Client Mood Board</h3>
+                <p className="text-xs text-slate-500 max-w-md mx-auto">
+                  Generate a private magic link for this couple so they can upload their couple portraits, family references, outfits, and event timelines.
+                </p>
+                <button
+                  onClick={() => client && fetchMoodboard(client)}
+                  className="px-6 py-2.5 bg-amber-400 hover:bg-amber-500 text-slate-900 font-black text-xs rounded-xl shadow-xs transition cursor-pointer"
+                >
+                  Generate Mood Board Magic Link
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* ── TOP BANNER & MAGIC LINK SHARER ── */}
+                <div className="p-6 sm:p-7 bg-gradient-to-r from-amber-50 via-[#FFFDF9] to-amber-50/50 rounded-3xl border border-amber-200/80 shadow-sm space-y-5">
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="px-3 py-1 bg-amber-400/30 text-amber-900 border border-amber-300 rounded-full text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5">
+                          <Sparkles className="w-3.5 h-3.5" />
+                          Mood Board & Event Prep
+                        </span>
+                        <span className={`px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider ${
+                          moodboard.status === 'SUBMITTED'
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                            : moodboard.status === 'IN_REVIEW'
+                            ? 'bg-blue-100 text-blue-800 border border-blue-300'
+                            : 'bg-slate-100 text-slate-700 border border-slate-300'
+                        }`}>
+                          Status: {moodboard.status || 'DRAFT'} ({moodboard.completion_percentage || 0}%)
+                        </span>
+                      </div>
+                      <h2 className="text-xl sm:text-2xl font-black text-slate-900 font-serif">
+                        {client.name} • Creative Mood Board
+                      </h2>
+                      <p className="text-xs text-slate-600">
+                        Public Magic Token: <code className="font-mono bg-white px-2 py-0.5 rounded border border-amber-200 text-slate-800">{moodboard.token}</code>
+                      </p>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      {/* Copy Link */}
+                      <button
+                        onClick={copyMoodboardLink}
+                        className="px-4 py-2.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 font-bold text-xs rounded-xl shadow-2xs transition flex items-center gap-1.5 cursor-pointer"
+                      >
+                        {copiedMoodboardLink ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4 text-amber-600" />}
+                        <span>{copiedMoodboardLink ? 'Link Copied!' : 'Copy Magic Link'}</span>
+                      </button>
+
+                      {/* WhatsApp Share */}
+                      <button
+                        onClick={shareMoodboardOnWhatsApp}
+                        className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-black text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <MessageCircle className="w-4 h-4" />
+                        <span>Share on WhatsApp</span>
+                      </button>
+
+                      {/* Open Portal Preview */}
+                      <a
+                        href={`/p/moodboard/${moodboard.token}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-4 py-2.5 bg-amber-400 hover:bg-amber-500 text-slate-900 font-black text-xs rounded-xl shadow-xs transition flex items-center gap-1.5"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        <span>Open Client Portal</span>
+                      </a>
+                    </div>
+                  </div>
+
+                  {/* Progress bar & Studio review status switcher */}
+                  <div className="pt-2 border-t border-amber-200/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex-1 max-w-md">
+                      <div className="flex justify-between text-xs font-bold text-slate-600 mb-1">
+                        <span>Client Progress</span>
+                        <span className="text-amber-700 font-mono font-black">{moodboard.completion_percentage || 0}% Complete</span>
+                      </div>
+                      <div className="w-full h-2 bg-amber-100 rounded-full overflow-hidden border border-amber-200">
+                        <div
+                          className="h-full bg-gradient-to-r from-amber-400 to-amber-500 transition-all duration-500"
+                          style={{ width: `${moodboard.completion_percentage || 0}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-slate-600">Studio Review:</span>
+                      <select
+                        value={moodboard.status || 'DRAFT'}
+                        disabled={updatingMbStatus}
+                        onChange={(e) => handleUpdateMoodboardStatus(e.target.value)}
+                        className="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 outline-none cursor-pointer"
+                      >
+                        <option value="DRAFT">Draft (Awaiting Client)</option>
+                        <option value="IN_REVIEW">In Review (Crew Checking)</option>
+                        <option value="SUBMITTED">Submitted by Couple</option>
+                        <option value="APPROVED">Approved for Shoot</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── 10 STRUCTURED SECTIONS BREAKDOWN ── */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* 1. COUPLE PORTRAITS */}
+                  <div className="p-6 bg-[#FFFDF9] rounded-3xl border border-[#EAE5DA] shadow-xs space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-serif font-black text-base text-slate-900 flex items-center gap-2">
+                        <Camera className="w-4 h-4 text-amber-600" />
+                        1. Couple Photos & Chemistry ({Array.isArray(moodboard.couple_photos) ? moodboard.couple_photos.length : 0})
+                      </h3>
+                    </div>
+                    {Array.isArray(moodboard.couple_photos) && moodboard.couple_photos.length > 0 ? (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        {moodboard.couple_photos.map((photo: any, idx: number) => (
+                          <div key={idx} className="rounded-2xl overflow-hidden border border-slate-200 bg-slate-50 flex flex-col">
+                            <div className="aspect-[4/5] bg-slate-900 relative">
+                              <img src={photo.url} alt={`Couple ${idx}`} className="w-full h-full object-cover" />
+                            </div>
+                            {photo.caption && (
+                              <p className="p-2 text-[11px] text-slate-600 bg-white truncate" title={photo.caption}>
+                                {photo.caption}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400 italic py-3">No couple portraits uploaded yet.</p>
+                    )}
+                  </div>
+
+                  {/* 2. SOCIAL MEDIA HANDLES */}
+                  <div className="p-6 bg-[#FFFDF9] rounded-3xl border border-[#EAE5DA] shadow-xs space-y-4">
+                    <h3 className="font-serif font-black text-base text-slate-900 flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-amber-600" />
+                      2. Social Handles & Wedding Tag
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                      <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                        <span className="text-slate-500 font-bold block mb-1">Bride IG</span>
+                        {moodboard.bride_instagram ? (
+                          <a
+                            href={`https://instagram.com/${moodboard.bride_instagram}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-bold text-pink-600 hover:underline flex items-center gap-1"
+                          >
+                            @{moodboard.bride_instagram}
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </div>
+
+                      <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                        <span className="text-slate-500 font-bold block mb-1">Groom IG</span>
+                        {moodboard.groom_instagram ? (
+                          <a
+                            href={`https://instagram.com/${moodboard.groom_instagram}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-bold text-blue-600 hover:underline flex items-center gap-1"
+                          >
+                            @{moodboard.groom_instagram}
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </div>
+
+                      <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                        <span className="text-slate-500 font-bold block mb-1">Hashtag</span>
+                        <span className="font-bold text-amber-700 font-mono">
+                          {moodboard.couple_instagram ? `#${moodboard.couple_instagram}` : '—'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 3. COORDINATION CONTACTS */}
+                  <div className="p-6 bg-[#FFFDF9] rounded-3xl border border-[#EAE5DA] shadow-xs space-y-4">
+                    <h3 className="font-serif font-black text-base text-slate-900 flex items-center gap-2">
+                      <Phone className="w-4 h-4 text-amber-600" />
+                      3. Shoot-Day Coordinators
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      {/* Bride Side */}
+                      <div className="p-3.5 bg-rose-50/60 rounded-2xl border border-rose-200 space-y-1.5">
+                        <div className="font-black text-rose-900">👰 Bride Side Contact</div>
+                        <div className="font-bold text-slate-800">
+                          {moodboard.bride_coordinator?.name || 'Not provided'}
+                        </div>
+                        <div className="text-[11px] text-slate-500">
+                          Relation: {moodboard.bride_coordinator?.relation || '—'}
+                        </div>
+                        {moodboard.bride_coordinator?.phone && (
+                          <div className="pt-1 flex items-center gap-2">
+                            <a
+                              href={`tel:${moodboard.bride_coordinator.phone}`}
+                              className="px-2.5 py-1 bg-white border border-rose-200 rounded-lg font-bold text-rose-700 flex items-center gap-1"
+                            >
+                              <Phone className="w-3 h-3" /> Call
+                            </a>
+                            <a
+                              href={`https://wa.me/${moodboard.bride_coordinator.phone.replace(/[^0-9]/g, '')}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="px-2.5 py-1 bg-emerald-500 text-white rounded-lg font-bold flex items-center gap-1"
+                            >
+                              <MessageCircle className="w-3 h-3" /> WhatsApp
+                            </a>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Groom Side */}
+                      <div className="p-3.5 bg-blue-50/60 rounded-2xl border border-blue-200 space-y-1.5">
+                        <div className="font-black text-blue-900">🤵 Groom Side Contact</div>
+                        <div className="font-bold text-slate-800">
+                          {moodboard.groom_coordinator?.name || 'Not provided'}
+                        </div>
+                        <div className="text-[11px] text-slate-500">
+                          Relation: {moodboard.groom_coordinator?.relation || '—'}
+                        </div>
+                        {moodboard.groom_coordinator?.phone && (
+                          <div className="pt-1 flex items-center gap-2">
+                            <a
+                              href={`tel:${moodboard.groom_coordinator.phone}`}
+                              className="px-2.5 py-1 bg-white border border-blue-200 rounded-lg font-bold text-blue-700 flex items-center gap-1"
+                            >
+                              <Phone className="w-3 h-3" /> Call
+                            </a>
+                            <a
+                              href={`https://wa.me/${moodboard.groom_coordinator.phone.replace(/[^0-9]/g, '')}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="px-2.5 py-1 bg-emerald-500 text-white rounded-lg font-bold flex items-center gap-1"
+                            >
+                              <MessageCircle className="w-3 h-3" /> WhatsApp
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 4. CLOSE FAMILY PHOTOS (VIP SHOT LIST) */}
+                  <div className="p-6 bg-[#FFFDF9] rounded-3xl border border-[#EAE5DA] shadow-xs space-y-4">
+                    <h3 className="font-serif font-black text-base text-slate-900 flex items-center gap-2">
+                      <UsersIcon className="w-4 h-4 text-amber-600" />
+                      4. VIP Family Members Tagged List ({Array.isArray(moodboard.close_family_photos) ? moodboard.close_family_photos.length : 0})
+                    </h3>
+                    {Array.isArray(moodboard.close_family_photos) && moodboard.close_family_photos.length > 0 ? (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        {moodboard.close_family_photos.map((fam: any, idx: number) => (
+                          <div key={idx} className="p-2 bg-slate-50 rounded-2xl border border-slate-200 space-y-1.5">
+                            <div className="aspect-[4/3] rounded-xl overflow-hidden bg-slate-800">
+                              <img src={fam.url} alt="Family" className="w-full h-full object-cover" />
+                            </div>
+                            <div className="text-[11px] space-y-0.5">
+                              <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
+                                fam.side === 'Bride' ? 'bg-rose-100 text-rose-800' : fam.side === 'Groom' ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800'
+                              }`}>
+                                {fam.side} • {fam.relation || 'VIP'}
+                              </span>
+                              <div className="font-bold text-slate-800 truncate">{fam.names || 'Family Member'}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400 italic py-3">No family identification photos uploaded.</p>
+                    )}
+                  </div>
+
+                  {/* 5. VISUAL INSPIRATION & PINTEREST */}
+                  <div className="p-6 bg-[#FFFDF9] rounded-3xl border border-[#EAE5DA] shadow-xs space-y-4">
+                    <h3 className="font-serif font-black text-base text-slate-900 flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-amber-600" />
+                      5. Visual Mood Board & Poses ({Array.isArray(moodboard.photo_references) ? moodboard.photo_references.length : 0})
+                    </h3>
+                    {Array.isArray(moodboard.photo_references) && moodboard.photo_references.length > 0 ? (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        {moodboard.photo_references.map((inspo: any, idx: number) => (
+                          <div key={idx} className="rounded-2xl overflow-hidden border border-slate-200 bg-slate-50 flex flex-col">
+                            <div className="aspect-[4/5] bg-slate-900 relative">
+                              <img src={inspo.url} alt="Inspo" className="w-full h-full object-cover" />
+                              <span className="absolute bottom-1.5 left-1.5 px-2 py-0.5 bg-black/70 backdrop-blur-md rounded text-[9px] text-amber-300 font-bold">
+                                {inspo.category}
+                              </span>
+                            </div>
+                            {inspo.notes && (
+                              <p className="p-2 text-[10px] text-slate-600 bg-white truncate" title={inspo.notes}>
+                                {inspo.notes}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400 italic py-3">No aesthetic mood board items uploaded.</p>
+                    )}
+                  </div>
+
+                  {/* 6. VIDEO & REEL REFERENCES */}
+                  <div className="p-6 bg-[#FFFDF9] rounded-3xl border border-[#EAE5DA] shadow-xs space-y-4">
+                    <h3 className="font-serif font-black text-base text-slate-900 flex items-center gap-2">
+                      <Film className="w-4 h-4 text-amber-600" />
+                      6. Cinematic Video References ({Array.isArray(moodboard.video_references) ? moodboard.video_references.length : 0})
+                    </h3>
+                    {Array.isArray(moodboard.video_references) && moodboard.video_references.length > 0 ? (
+                      <div className="space-y-2 text-xs">
+                        {moodboard.video_references.map((vid: any, idx: number) => (
+                          <div key={idx} className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between gap-3">
+                            <div className="space-y-0.5 flex-1 min-w-0">
+                              <span className="text-[10px] font-black uppercase text-amber-700 bg-amber-100 px-2 py-0.5 rounded">
+                                {vid.type}
+                              </span>
+                              <div className="text-slate-800 font-bold truncate mt-1">{vid.notes || vid.url}</div>
+                            </div>
+                            {vid.url && (
+                              <a
+                                href={vid.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-3 py-1.5 bg-amber-400 hover:bg-amber-500 text-slate-900 font-bold rounded-xl flex items-center gap-1 shrink-0"
+                              >
+                                <Play className="w-3 h-3" /> Watch
+                              </a>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400 italic py-3">No video references added.</p>
+                    )}
+                  </div>
+
+                  {/* 7. EVENT ITINERARY */}
+                  <div className="p-6 bg-[#FFFDF9] rounded-3xl border border-[#EAE5DA] shadow-xs space-y-4">
+                    <h3 className="font-serif font-black text-base text-slate-900 flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-amber-600" />
+                      7. Event Schedule & Rituals ({Array.isArray(moodboard.itinerary_schedule) ? moodboard.itinerary_schedule.length : 0})
+                    </h3>
+                    {Array.isArray(moodboard.itinerary_schedule) && moodboard.itinerary_schedule.length > 0 ? (
+                      <div className="space-y-2.5 text-xs">
+                        {moodboard.itinerary_schedule.map((item: any, idx: number) => (
+                          <div key={idx} className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">
+                            <div className="flex items-center justify-between">
+                              <span className="font-black text-slate-900">{item.event_name}</span>
+                              <span className="font-mono text-slate-500">{item.date || 'Date TBD'}</span>
+                            </div>
+                            <div className="text-[11px] text-amber-800 font-bold">
+                              ⏰ {item.start_time} - {item.end_time}
+                            </div>
+                            {item.rituals_notes && (
+                              <p className="text-[11px] text-slate-600 bg-white p-2 rounded-xl border border-slate-100 mt-1">
+                                {item.rituals_notes}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400 italic py-3">No itinerary items scheduled.</p>
+                    )}
+                  </div>
+
+                  {/* 8. VENUES & MAPS */}
+                  <div className="p-6 bg-[#FFFDF9] rounded-3xl border border-[#EAE5DA] shadow-xs space-y-4">
+                    <h3 className="font-serif font-black text-base text-slate-900 flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-amber-600" />
+                      8. Venue Locations & Maps ({Array.isArray(moodboard.venue_locations) ? moodboard.venue_locations.length : 0})
+                    </h3>
+                    {Array.isArray(moodboard.venue_locations) && moodboard.venue_locations.length > 0 ? (
+                      <div className="space-y-2.5 text-xs">
+                        {moodboard.venue_locations.map((ven: any, idx: number) => (
+                          <div key={idx} className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between gap-3">
+                            <div className="space-y-0.5 flex-1 min-w-0">
+                              <div className="font-black text-slate-900">{ven.event_name || 'Event Venue'}</div>
+                              <div className="font-bold text-slate-700">{ven.venue_name}</div>
+                              <div className="text-[11px] text-slate-500 truncate">{ven.address}</div>
+                            </div>
+                            {ven.maps_url && (
+                              <a
+                                href={ven.maps_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="p-2 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded-xl"
+                                title="Open Google Maps"
+                              >
+                                <ExternalLink className="w-4 h-4" />
+                              </a>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400 italic py-3">No venue locations added.</p>
+                    )}
+                  </div>
+
+                  {/* 9. FINALIZED OUTFITS */}
+                  <div className="p-6 bg-[#FFFDF9] rounded-3xl border border-[#EAE5DA] shadow-xs space-y-4 col-span-full">
+                    <h3 className="font-serif font-black text-base text-slate-900 flex items-center gap-2">
+                      <Heart className="w-4 h-4 text-amber-600" />
+                      9. Finalized Outfits & Styling ({Array.isArray(moodboard.outfit_references) ? moodboard.outfit_references.length : 0})
+                    </h3>
+                    {Array.isArray(moodboard.outfit_references) && moodboard.outfit_references.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {moodboard.outfit_references.map((outfit: any, idx: number) => (
+                          <div key={idx} className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                            <div className="font-black text-sm text-slate-900">{outfit.event_name}</div>
+                            <div className="grid grid-cols-2 gap-2">
+                              {outfit.bride_outfit_url ? (
+                                <div className="space-y-1">
+                                  <span className="text-[10px] font-bold text-rose-700">Bride Outfit</span>
+                                  <img src={outfit.bride_outfit_url} alt="Bride" className="aspect-[4/3] rounded-xl object-cover border border-slate-200" />
+                                </div>
+                              ) : (
+                                <div className="aspect-[4/3] rounded-xl bg-slate-200/60 flex items-center justify-center text-[10px] text-slate-400">
+                                  No Bride Outfit
+                                </div>
+                              )}
+                              {outfit.groom_outfit_url ? (
+                                <div className="space-y-1">
+                                  <span className="text-[10px] font-bold text-blue-700">Groom Outfit</span>
+                                  <img src={outfit.groom_outfit_url} alt="Groom" className="aspect-[4/3] rounded-xl object-cover border border-slate-200" />
+                                </div>
+                              ) : (
+                                <div className="aspect-[4/3] rounded-xl bg-slate-200/60 flex items-center justify-center text-[10px] text-slate-400">
+                                  No Groom Outfit
+                                </div>
+                              )}
+                            </div>
+                            {outfit.notes && <p className="text-xs text-slate-600 bg-white p-2 rounded-xl border border-slate-100">{outfit.notes}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400 italic py-3">No outfit styling references uploaded.</p>
+                    )}
+                  </div>
+
+                  {/* 10. WEDDING DAY PAYMENT COORDINATOR */}
+                  <div className="p-6 bg-[#FFFDF9] rounded-3xl border border-[#EAE5DA] shadow-xs space-y-2 col-span-full">
+                    <h3 className="font-serif font-black text-base text-slate-900 flex items-center gap-2">
+                      <DollarSign className="w-4 h-4 text-amber-600" />
+                      10. Wedding-Day Vendor Payment Coordinator
+                    </h3>
+                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                      <div>
+                        <div className="font-bold text-slate-800 text-sm">
+                          {moodboard.payment_contact?.name || 'Not nominated yet'}
+                        </div>
+                        <div className="text-slate-500">
+                          Relation: {moodboard.payment_contact?.relation || '—'}
+                        </div>
+                      </div>
+                      {moodboard.payment_contact?.phone && (
+                        <div className="flex items-center gap-2">
+                          <a
+                            href={`tel:${moodboard.payment_contact.phone}`}
+                            className="px-3 py-1.5 bg-white border border-slate-200 rounded-xl font-bold text-slate-700 flex items-center gap-1"
+                          >
+                            <Phone className="w-3.5 h-3.5" /> {moodboard.payment_contact.phone}
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
           </motion.div>
