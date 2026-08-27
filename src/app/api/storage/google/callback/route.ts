@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
     let accessToken = 'gdrive_access_sample';
     let refreshToken = 'gdrive_refresh_sample';
 
-    const clientId = process.env.GOOGLE_CLIENT_ID || '666330539586-q0s8vvr4osdah4e60rd75s3keolfgmc0.apps.googleusercontent.com';
+    const clientId = '666330539586-q0s8vvr4osdah4e60rd75s3keolfgmc0.apps.googleusercontent.com';
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET || '';
 
     if (clientId && clientSecret && code && code !== 'mock_google_code_sample') {
