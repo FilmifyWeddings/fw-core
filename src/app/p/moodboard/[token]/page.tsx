@@ -30,7 +30,7 @@ export default async function MoodboardPage({ params }: PageProps) {
   let moodboard: any = null;
   let clientInfo: any = null;
   let studioInfo: any = {
-    name: 'StudioCore Photography',
+    name: null,
     logo: null,
   };
 
@@ -66,8 +66,9 @@ export default async function MoodboardPage({ params }: PageProps) {
           .maybeSingle();
 
         if (profile) {
+          const sName = profile.business_name || profile.company || profile.workspace_name || null;
           studioInfo = {
-            name: profile.business_name || profile.workspace_name || profile.company || 'StudioCore Photography',
+            name: sName,
             logo: profile.logo_url || null,
           };
         }

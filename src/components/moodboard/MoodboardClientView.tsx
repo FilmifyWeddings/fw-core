@@ -6,7 +6,8 @@ import {
   Camera, Hash, Phone, Users, Sparkles, Film, Calendar,
   Heart, Upload, Trash2, Plus, ChevronDown, ChevronUp,
   Check, Copy, RefreshCw, Send, CheckCircle2, Clock,
-  ExternalLink, Pencil, MapPin, MessageSquare, BookOpen, Share2
+  ExternalLink, Pencil, MapPin, MessageSquare, BookOpen,
+  Share2, Lock, Loader2
 } from 'lucide-react';
 import { compressImage } from '@/lib/compressor';
 import { getMediaUrl } from '@/lib/r2-storage';
@@ -39,7 +40,6 @@ export interface VideoRef {
 
 export interface EventItineraryItem {
   event_name: string;
-  event_type: string;
   date: string;
   start_time: string;
   end_time: string;
@@ -71,7 +71,7 @@ export function MoodboardClientView({
 }: MoodboardClientViewProps) {
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
-  const [submitted, setSubmitted] = useState(initialData?.status === 'SUBMITTED');
+  const [isLocked, setIsLocked] = useState(initialData?.status === 'SUBMITTED');
   const [showCelebration, setShowCelebration] = useState(false);
 
   // 1. Couple Portraits
@@ -79,7 +79,7 @@ export function MoodboardClientView({
     Array.isArray(initialData?.couple_photos) ? initialData.couple_photos : []
   );
 
-  // 2. Social Handles
+  // 2. Social Handles (Accepts Handle or Full URL)
   const [brideIg, setBrideIg] = useState<string>(initialData?.bride_instagram || '');
   const [groomIg, setGroomIg] = useState<string>(initialData?.groom_instagram || '');
   const [coupleIg, setCoupleIg] = useState<string>(initialData?.couple_instagram || '');
@@ -98,13 +98,21 @@ export function MoodboardClientView({
     normalizeCoordinators(initialData?.groom_coordinators || initialData?.groom_coordinator)
   );
 
-  // 4. Close Family Photos
-  const [familyPhotos, setFamilyPhotos] = useState<FamilyPhoto[]>(
-    Array.isArray(initialData?.close_family_photos) ? initialData.close_family_photos : []
+  // 4. Close Family Photos (Separated Bride & Groom Sides)
+  const allFamily = Array.isArray(initialData?.close_family_photos) ? initialData.close_family_photos : [];
+  const [brideFamilyPhotos, setBrideFamilyPhotos] = useState<FamilyPhoto[]>(
+    allFamily.filter((f: any) => f.side === 'Bride')
+  );
+  const [groomFamilyPhotos, setGroomFamilyPhotos] = useState<FamilyPhoto[]>(
+    allFamily.filter((f: any) => f.side !== 'Bride')
   );
 
   // Active Annotation Photo for Drawing Canvas
-  const [annotatingPhotoIndex, setAnnotatingPhotoIndex] = useState<number | null>(null);
+  const [annotatingPhoto, setAnnotatingPhoto] = useState<{
+    side: 'Bride' | 'Groom';
+    index: number;
+    url: string;
+  } | null>(null);
 
   // 5. Inspiration & Pose Ideas (Links Only)
   const normalizeInspirationLinks = (val: any): InspirationLink[] => {
@@ -125,7 +133,7 @@ export function MoodboardClientView({
     normalizeInspirationLinks(initialData?.photo_references || initialData?.inspiration_links)
   );
 
-  // 6. Video & Reels References (No type dropdown, clean url + notes)
+  // 6. Video & Reels References (Clean url + notes)
   const normalizeVideoRefs = (val: any): VideoRef[] => {
     if (Array.isArray(val)) {
       return val.map((v: any) => {
@@ -147,11 +155,10 @@ export function MoodboardClientView({
         const matchingVenue = legacyVenues?.[idx] || {};
         const matchingOutfit = legacyOutfits?.[idx] || {};
         return {
-          event_name: item.event_name || item.name || 'Wedding Event',
-          event_type: item.event_type || 'Wedding',
+          event_name: item.event_name || item.name || 'Wedding Ceremony',
           date: item.date || '',
-          start_time: item.start_time || '10:00 AM',
-          end_time: item.end_time || '02:00 PM',
+          start_time: item.start_time || '',
+          end_time: item.end_time || '',
           venue_name: item.venue_name || matchingVenue.venue_name || '',
           maps_url: item.maps_url || matchingVenue.maps_url || '',
           bride_outfit_url: item.bride_outfit_url || matchingOutfit.bride_outfit_url || '',
@@ -185,6 +192,8 @@ export function MoodboardClientView({
   const [completionPercentage, setCompletionPercentage] = useState<number>(
     initialData?.completion_percentage || 0
   );
+  
+  // Track ongoing uploads with animated loading placeholder
   const [uploadingSection, setUploadingSection] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
 
@@ -224,7 +233,7 @@ export function MoodboardClientView({
     if (couplePhotos.length > 0) score += 15;
     if (brideIg || groomIg || coupleIg) score += 10;
     if (brideCoordinators.length > 0 || groomCoordinators.length > 0) score += 15;
-    if (familyPhotos.length > 0) score += 15;
+    if (brideFamilyPhotos.length > 0 || groomFamilyPhotos.length > 0) score += 15;
     if (inspoLinks.length > 0) score += 15;
     if (videoRefs.length > 0) score += 10;
     if (itinerary.length > 0) score += 15;
@@ -233,13 +242,13 @@ export function MoodboardClientView({
     setCompletionPercentage(Math.min(100, score));
   }, [
     couplePhotos, brideIg, groomIg, coupleIg, brideCoordinators,
-    groomCoordinators, familyPhotos, inspoLinks, videoRefs, itinerary,
-    paymentContacts
+    groomCoordinators, brideFamilyPhotos, groomFamilyPhotos, inspoLinks,
+    videoRefs, itinerary, paymentContacts
   ]);
 
-  // Auto-Save Mechanism (Debounced by 1.8s)
+  // Auto-Save Mechanism (Debounced by 1.8s) - Only when not locked
   useEffect(() => {
-    if (!initialLoadDoneRef.current || !token) return;
+    if (!initialLoadDoneRef.current || !token || isLocked) return;
 
     setSaveStatus('unsaved');
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
@@ -253,8 +262,8 @@ export function MoodboardClientView({
     };
   }, [
     couplePhotos, brideIg, groomIg, coupleIg, brideCoordinators,
-    groomCoordinators, familyPhotos, inspoLinks, videoRefs, itinerary,
-    paymentContacts
+    groomCoordinators, brideFamilyPhotos, groomFamilyPhotos, inspoLinks,
+    videoRefs, itinerary, paymentContacts, isLocked
   ]);
 
   async function saveMoodboardData(isFinalSubmit = false) {
@@ -262,6 +271,8 @@ export function MoodboardClientView({
     try {
       setSaving(true);
       setSaveStatus('saving');
+
+      const mergedFamily = [...brideFamilyPhotos, ...groomFamilyPhotos];
 
       const payload = {
         couple_photos: couplePhotos,
@@ -272,7 +283,7 @@ export function MoodboardClientView({
         groom_coordinators: groomCoordinators,
         bride_coordinator: brideCoordinators[0] || null,
         groom_coordinator: groomCoordinators[0] || null,
-        close_family_photos: familyPhotos,
+        close_family_photos: mergedFamily,
         photo_references: inspoLinks,
         inspiration_links: inspoLinks,
         video_references: videoRefs,
@@ -280,6 +291,7 @@ export function MoodboardClientView({
         payment_contacts: paymentContacts,
         payment_contact: paymentContacts[0] || null,
         completion_percentage: completionPercentage,
+        status: isFinalSubmit ? 'SUBMITTED' : 'DRAFT',
         submit: isFinalSubmit,
       };
 
@@ -296,7 +308,7 @@ export function MoodboardClientView({
 
       setSaveStatus('saved');
       if (isFinalSubmit) {
-        setSubmitted(true);
+        setIsLocked(true);
         setShowCelebration(true);
         confetti({
           particleCount: 120,
@@ -313,12 +325,13 @@ export function MoodboardClientView({
     }
   }
 
-  // Handle Image Upload with In-Browser WebP Compression + Cloudflare R2
+  // Handle Image Upload with Live Spinner Animation + In-Browser WebP Compression + Cloudflare R2
   async function handleFileUpload(
     event: React.ChangeEvent<HTMLInputElement>,
     onUploaded: (url: string) => void,
     sectionKey: string
   ) {
+    if (isLocked) return;
     const files = event.target.files;
     if (!files || files.length === 0) return;
 
@@ -354,6 +367,7 @@ export function MoodboardClientView({
 
   // Pick Contact from Device Contact Book (Contact Picker API)
   async function handlePickContact(onContactAdded: (contact: ContactPerson) => void) {
+    if (isLocked) return;
     if (typeof navigator !== 'undefined' && 'contacts' in navigator && 'ContactsManager' in window) {
       try {
         const props = ['name', 'tel'];
@@ -371,11 +385,11 @@ export function MoodboardClientView({
           return;
         }
       } catch (err) {
-        console.log('[Contact Picker closed or cancelled]:', err);
+        console.log('[Contact Picker closed]:', err);
       }
     }
 
-    // Fallback if Contact Picker is not supported or cancelled
+    // Fallback if Contact Picker is not supported
     onContactAdded({
       name: '',
       phone: '',
@@ -391,27 +405,44 @@ export function MoodboardClientView({
     }
   };
 
-  const coupleTitle = client?.name || initialData?.client_name || 'Rohit Weds Priya';
-  const studioName = studio?.name || 'STUDIOCORE PHOTOGRAPHY';
+  // Format Aesthetic Couple Title
+  const rawCoupleTitle = client?.name || initialData?.client_name || 'Rohit & Priya';
+  const formatCoupleTitle = (nameStr: string) => {
+    const parts = nameStr.split(/\s+(?:weds|and|&)\s+/i);
+    if (parts.length === 2) {
+      return (
+        <>
+          <span className="capitalize">{parts[0]}</span>
+          <span className="font-serif italic font-normal text-amber-700/80 px-2 text-2xl sm:text-3xl">weds</span>
+          <span className="capitalize">{parts[1]}</span>
+        </>
+      );
+    }
+    return <span className="capitalize">{nameStr}</span>;
+  };
+
+  const studioName = studio?.name?.trim() || null;
 
   return (
     <div className="min-h-screen bg-[#FAF8F5] text-slate-800 font-sans antialiased selection:bg-amber-100 selection:text-amber-900">
       
       {/* ── Luxury Header Banner ── */}
       <header className="pt-8 pb-6 px-4 sm:px-8 max-w-5xl mx-auto">
-        {/* Studio Brand Tag */}
-        <div className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-widest text-amber-700 mb-2">
-          <span className="w-4 h-4 rounded-full border border-amber-500/40 bg-amber-50 flex items-center justify-center text-[10px] text-amber-600 font-bold">
-            ◎
-          </span>
-          <span>{studioName}</span>
-        </div>
+        {/* Studio Brand Tag (Only shown if studio name is provided by admin) */}
+        {studioName && (
+          <div className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-widest text-amber-700 mb-2.5">
+            <span className="w-4 h-4 rounded-full border border-amber-500/40 bg-amber-50 flex items-center justify-center text-[10px] text-amber-600 font-bold">
+              ◎
+            </span>
+            <span>{studioName}</span>
+          </div>
+        )}
 
         {/* Title Row & Top Action Buttons */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-3xl sm:text-4xl font-serif font-bold text-slate-900 tracking-tight">
-              {coupleTitle}
+            <h1 className="text-3xl sm:text-4xl font-serif font-black text-slate-900 tracking-tight drop-shadow-2xs flex items-baseline">
+              {formatCoupleTitle(rawCoupleTitle)}
             </h1>
             <span className="px-3 py-1 rounded-full bg-[#F3EFEA] border border-[#E5DFD7] text-slate-600 text-xs font-semibold">
               Mood Board
@@ -429,29 +460,33 @@ export function MoodboardClientView({
             </button>
 
             {/* Submit Vision Button */}
-            <button
-              onClick={() => saveMoodboardData(true)}
-              disabled={saving || submitted}
-              className={`px-5 py-2.5 rounded-2xl text-xs font-bold tracking-wide transition shadow-sm flex items-center gap-2 cursor-pointer active:scale-95 ${
-                submitted
-                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-300 cursor-default'
-                  : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-amber-500/20'
-              }`}
-            >
-              {submitted ? (
-                <>
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  <span>Submitted ✓</span>
-                </>
-              ) : (
-                <>
-                  <Send className="w-3.5 h-3.5" />
-                  <span>Submit Vision</span>
-                </>
-              )}
-            </button>
+            {!isLocked ? (
+              <button
+                onClick={() => saveMoodboardData(true)}
+                disabled={saving}
+                className="px-5 py-2.5 rounded-2xl text-xs font-bold tracking-wide transition shadow-sm flex items-center gap-2 cursor-pointer active:scale-95 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-amber-500/20"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>Submit Vision</span>
+              </button>
+            ) : (
+              <div className="px-4 py-2 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-2xl text-xs font-bold flex items-center gap-1.5 shadow-2xs">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>Vision Submitted & Locked ✓</span>
+              </div>
+            )}
           </div>
         </div>
+
+        {/* Locked Notice Banner */}
+        {isLocked && (
+          <div className="mt-4 p-3.5 bg-amber-50/90 border border-amber-200 rounded-2xl flex items-center gap-3 text-xs text-amber-900 font-medium">
+            <Lock className="w-4 h-4 text-amber-600 shrink-0" />
+            <p>
+              <strong>Mood Board Locked for Studio Review:</strong> Your details and photos have been received by the photography crew. If you wish to make further edits, please contact your studio manager.
+            </p>
+          </div>
+        )}
 
         {/* Global Progress Bar */}
         <div className="mt-5 space-y-1.5">
@@ -471,7 +506,7 @@ export function MoodboardClientView({
       </header>
 
       {/* ── Main Interactive Stepper & Cards Container ── */}
-      <main className="max-w-5xl mx-auto px-4 sm:px-8 pb-24">
+      <main className="max-w-5xl mx-auto px-4 sm:px-8 pb-28">
         <div className="relative">
 
           {/* Vertical Timeline Connector Line (Desktop) */}
@@ -502,66 +537,79 @@ export function MoodboardClientView({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
-                    <label className="cursor-pointer px-4 py-2 bg-white hover:bg-amber-50/60 border border-amber-300 text-amber-900 rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs active:scale-95">
-                      <Plus className="w-3.5 h-3.5 text-amber-600" />
-                      <span>{uploadingSection === 'couple' ? 'Uploading...' : 'Add Photos'}</span>
-                      <input
-                        type="file"
-                        multiple
-                        accept="image/*"
-                        className="hidden"
-                        disabled={uploadingSection === 'couple'}
-                        onChange={(e) => {
-                          openSection('01');
-                          handleFileUpload(
-                            e,
-                            (url) => setCouplePhotos((prev) => [...prev, { url, caption: '' }]),
-                            'couple'
-                          );
-                        }}
-                      />
-                    </label>
-                    <button
-                      onClick={() => toggleSection('01')}
-                      className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-600 transition"
-                    >
-                      {expandedSections['01'] ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                    </button>
-                  </div>
+                  {!isLocked && (
+                    <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                      <label className="cursor-pointer px-4 py-2 bg-white hover:bg-amber-50/60 border border-amber-300 text-amber-900 rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs active:scale-95">
+                        <Plus className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Add Photos</span>
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/*"
+                          className="hidden"
+                          disabled={uploadingSection === 'couple'}
+                          onChange={(e) => {
+                            openSection('01');
+                            handleFileUpload(
+                              e,
+                              (url) => setCouplePhotos((prev) => [...prev, { url, caption: '' }]),
+                              'couple'
+                            );
+                          }}
+                        />
+                      </label>
+                      <button
+                        onClick={() => toggleSection('01')}
+                        className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-600 transition"
+                      >
+                        {expandedSections['01'] ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {expandedSections['01'] && (
                   <div className="pt-1">
-                    {couplePhotos.length > 0 ? (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3.5">
-                        {couplePhotos.map((photo, idx) => (
-                          <div key={idx} className="group relative rounded-2xl overflow-hidden border border-[#EAE5DD] bg-slate-50 flex flex-col">
-                            <div className="aspect-[4/5] w-full bg-slate-100 relative overflow-hidden">
-                              <img src={getMediaUrl(photo.url)} alt={`Couple ${idx + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3.5">
+                      {couplePhotos.map((photo, idx) => (
+                        <div key={idx} className="group relative rounded-2xl overflow-hidden border border-[#EAE5DD] bg-slate-50 flex flex-col shadow-2xs">
+                          <div className="aspect-[4/5] w-full bg-slate-100 relative overflow-hidden">
+                            <img src={getMediaUrl(photo.url)} alt={`Couple ${idx + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+                            {!isLocked && (
                               <button
                                 onClick={() => setCouplePhotos((prev) => prev.filter((_, i) => i !== idx))}
                                 className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-rose-600 text-white rounded-full transition"
                               >
                                 <Trash2 className="w-3 h-3" />
                               </button>
-                            </div>
-                            <input
-                              type="text"
-                              placeholder="Add note/caption..."
-                              value={photo.caption || ''}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setCouplePhotos((prev) =>
-                                  prev.map((p, i) => (i === idx ? { ...p, caption: val } : p))
-                                );
-                              }}
-                              className="p-2 text-[11px] bg-white border-t border-[#EAE5DD] text-slate-700 outline-none placeholder-slate-400"
-                            />
+                            )}
                           </div>
-                        ))}
-                      </div>
-                    ) : (
+                          <input
+                            type="text"
+                            placeholder="Add note/caption..."
+                            disabled={isLocked}
+                            value={photo.caption || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setCouplePhotos((prev) =>
+                                prev.map((p, i) => (i === idx ? { ...p, caption: val } : p))
+                              );
+                            }}
+                            className="p-2 text-[11px] bg-white border-t border-[#EAE5DD] text-slate-700 outline-none placeholder-slate-400 disabled:bg-slate-50"
+                          />
+                        </div>
+                      ))}
+
+                      {/* Live Uploading Shimmer Spinner Card */}
+                      {uploadingSection === 'couple' && (
+                        <div className="rounded-2xl border-2 border-dashed border-amber-400 bg-amber-50/50 aspect-[4/5] flex flex-col items-center justify-center p-3 text-center animate-pulse space-y-2">
+                          <Loader2 className="w-6 h-6 text-amber-600 animate-spin" />
+                          <span className="text-[11px] font-bold text-amber-800">Compressing & Uploading...</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {couplePhotos.length === 0 && uploadingSection !== 'couple' && (
                       <div className="border border-dashed border-[#EAE4DC] rounded-2xl py-8 px-4 flex flex-col items-center justify-center text-center bg-[#FAF8F5]/60">
                         <div className="w-10 h-10 rounded-full bg-amber-100/60 text-amber-600 flex items-center justify-center mb-2">
                           <Camera className="w-5 h-5" />
@@ -576,7 +624,7 @@ export function MoodboardClientView({
             </div>
 
             {/* ═══════════════════════════════════════════════════════════ */}
-            {/* 02. SOCIAL HANDLES & HASHTAG                                */}
+            {/* 02. SOCIAL HANDLES & HASHTAG (ACCEPTS LINK OR @HANDLE)      */}
             {/* ═══════════════════════════════════════════════════════════ */}
             <div className="relative">
               <div className="hidden sm:flex absolute -left-16 top-6 w-10 h-10 rounded-full bg-[#F59E0B] text-white font-bold text-xs items-center justify-center shadow-xs border-2 border-white select-none">
@@ -592,7 +640,7 @@ export function MoodboardClientView({
                     <div>
                       <h2 className="text-base font-bold text-slate-900">Social Handles & Hashtag</h2>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        For tagging during teaser drops, same-day edits, and reel collaborations.
+                        Add @handle or paste profile links for tagging during teaser drops and reel collaborations.
                       </p>
                     </div>
                   </div>
@@ -607,44 +655,78 @@ export function MoodboardClientView({
 
                 {expandedSections['02'] && (
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
+                    {/* Bride Instagram */}
                     <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1.5">Bride's Instagram</label>
-                      <div className="relative">
-                        <span className="absolute left-3.5 top-2.5 text-slate-400 text-xs font-bold">@</span>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5 flex items-center gap-1.5">
+                        <Camera className="w-3.5 h-3.5 text-pink-600" />
+                        <span>Bride's Instagram</span>
+                      </label>
+                      <div className="relative flex items-center">
                         <input
                           type="text"
-                          placeholder="bride_handle"
+                          disabled={isLocked}
+                          placeholder="@handle or profile link"
                           value={brideIg}
-                          onChange={(e) => setBrideIg(e.target.value.replace(/^@/, ''))}
-                          className="w-full bg-[#FAF9F6] border border-[#EAE5DD] rounded-xl pl-8 pr-3 py-2 text-xs font-bold text-slate-800 outline-none focus:bg-white focus:border-amber-400 transition"
+                          onChange={(e) => setBrideIg(e.target.value)}
+                          className="w-full bg-[#FAF9F6] border border-[#EAE5DD] rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:bg-white focus:border-amber-400 transition pr-8 disabled:bg-slate-50"
                         />
+                        {brideIg && (
+                          <a
+                            href={brideIg.startsWith('http') ? brideIg : `https://instagram.com/${brideIg.replace(/^@/, '')}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="absolute right-2.5 text-slate-400 hover:text-pink-600"
+                            title="Open Profile"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        )}
                       </div>
                     </div>
 
+                    {/* Groom Instagram */}
                     <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1.5">Groom's Instagram</label>
-                      <div className="relative">
-                        <span className="absolute left-3.5 top-2.5 text-slate-400 text-xs font-bold">@</span>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5 flex items-center gap-1.5">
+                        <Camera className="w-3.5 h-3.5 text-blue-600" />
+                        <span>Groom's Instagram</span>
+                      </label>
+                      <div className="relative flex items-center">
                         <input
                           type="text"
-                          placeholder="groom_handle"
+                          disabled={isLocked}
+                          placeholder="@handle or profile link"
                           value={groomIg}
-                          onChange={(e) => setGroomIg(e.target.value.replace(/^@/, ''))}
-                          className="w-full bg-[#FAF9F6] border border-[#EAE5DD] rounded-xl pl-8 pr-3 py-2 text-xs font-bold text-slate-800 outline-none focus:bg-white focus:border-amber-400 transition"
+                          onChange={(e) => setGroomIg(e.target.value)}
+                          className="w-full bg-[#FAF9F6] border border-[#EAE5DD] rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:bg-white focus:border-amber-400 transition pr-8 disabled:bg-slate-50"
                         />
+                        {groomIg && (
+                          <a
+                            href={groomIg.startsWith('http') ? groomIg : `https://instagram.com/${groomIg.replace(/^@/, '')}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="absolute right-2.5 text-slate-400 hover:text-blue-600"
+                            title="Open Profile"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        )}
                       </div>
                     </div>
 
+                    {/* Couple / Wedding Hashtag */}
                     <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1.5">Couple / Wedding Hashtag</label>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5 flex items-center gap-1">
+                        <Hash className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Couple / Wedding Hashtag</span>
+                      </label>
                       <div className="relative">
-                        <span className="absolute left-3.5 top-2.5 text-amber-600 text-xs font-bold">#</span>
                         <input
                           type="text"
-                          placeholder="RohitWedsPriya"
+                          disabled={isLocked}
+                          placeholder="#RohitWedsPriya"
                           value={coupleIg}
-                          onChange={(e) => setCoupleIg(e.target.value.replace(/^#/, ''))}
-                          className="w-full bg-[#FAF9F6] border border-[#EAE5DD] rounded-xl pl-8 pr-3 py-2 text-xs font-bold text-slate-800 outline-none focus:bg-white focus:border-amber-400 transition"
+                          onChange={(e) => setCoupleIg(e.target.value.startsWith('#') ? e.target.value : `#${e.target.value}`)}
+                          className="w-full bg-[#FAF9F6] border border-[#EAE5DD] rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:bg-white focus:border-amber-400 transition disabled:bg-slate-50"
                         />
                       </div>
                     </div>
@@ -690,31 +772,33 @@ export function MoodboardClientView({
                     <div className="p-5 rounded-2xl bg-[#FFFDF9] border border-[#EAE5DD] space-y-3.5">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-rose-800">Bride's Side Coordinators ({brideCoordinators.length})</span>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            onClick={() =>
-                              handlePickContact((contact) =>
-                                setBrideCoordinators((prev) => [...prev, contact])
-                              )
-                            }
-                            className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
-                            title="Pick from phone contacts"
-                          >
-                            <BookOpen className="w-3 h-3" />
-                            <span>Contact Book</span>
-                          </button>
-                          <button
-                            onClick={() =>
-                              setBrideCoordinators((prev) => [
-                                ...prev,
-                                { name: '', phone: '', relation: '' },
-                              ])
-                            }
-                            className="p-1 bg-rose-100 hover:bg-rose-200 text-rose-800 rounded-lg transition"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                        {!isLocked && (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() =>
+                                handlePickContact((contact) =>
+                                  setBrideCoordinators((prev) => [...prev, contact])
+                                )
+                              }
+                              className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
+                              title="Pick from phone contacts"
+                            >
+                              <BookOpen className="w-3 h-3" />
+                              <span>Contact Book</span>
+                            </button>
+                            <button
+                              onClick={() =>
+                                setBrideCoordinators((prev) => [
+                                  ...prev,
+                                  { name: '', phone: '', relation: '' },
+                                ])
+                              }
+                              className="p-1 bg-rose-100 hover:bg-rose-200 text-rose-800 rounded-lg transition cursor-pointer"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </div>
 
                       {brideCoordinators.map((coord, idx) => (
@@ -722,6 +806,7 @@ export function MoodboardClientView({
                           <div className="flex items-center justify-between gap-2">
                             <input
                               type="text"
+                              disabled={isLocked}
                               placeholder="Full Name (e.g. Ananya Sharma)"
                               value={coord.name}
                               onChange={(e) => {
@@ -730,20 +815,23 @@ export function MoodboardClientView({
                                   prev.map((c, i) => (i === idx ? { ...c, name: val } : c))
                                 );
                               }}
-                              className="font-bold text-xs text-slate-800 bg-transparent flex-1 outline-none"
+                              className="font-bold text-xs text-slate-800 bg-transparent flex-1 outline-none disabled:text-slate-600"
                             />
-                            <button
-                              onClick={() => setBrideCoordinators((prev) => prev.filter((_, i) => i !== idx))}
-                              className="text-slate-400 hover:text-rose-600 p-1"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            {!isLocked && (
+                              <button
+                                onClick={() => setBrideCoordinators((prev) => prev.filter((_, i) => i !== idx))}
+                                className="text-slate-400 hover:text-rose-600 p-1"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
 
                           <div className="grid grid-cols-2 gap-2 text-xs">
                             <div className="relative flex items-center">
                               <input
                                 type="tel"
+                                disabled={isLocked}
                                 placeholder="Phone / WhatsApp"
                                 value={coord.phone}
                                 onChange={(e) => {
@@ -768,6 +856,7 @@ export function MoodboardClientView({
                             </div>
                             <input
                               type="text"
+                              disabled={isLocked}
                               placeholder="Relation (e.g. Sister, MUA)"
                               value={coord.relation}
                               onChange={(e) => {
@@ -791,31 +880,33 @@ export function MoodboardClientView({
                     <div className="p-5 rounded-2xl bg-[#FFFDF9] border border-[#EAE5DD] space-y-3.5">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-blue-800">Groom's Side Coordinators ({groomCoordinators.length})</span>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            onClick={() =>
-                              handlePickContact((contact) =>
-                                setGroomCoordinators((prev) => [...prev, contact])
-                              )
-                            }
-                            className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
-                            title="Pick from phone contacts"
-                          >
-                            <BookOpen className="w-3 h-3" />
-                            <span>Contact Book</span>
-                          </button>
-                          <button
-                            onClick={() =>
-                              setGroomCoordinators((prev) => [
-                                ...prev,
-                                { name: '', phone: '', relation: '' },
-                              ])
-                            }
-                            className="p-1 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-lg transition"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                        {!isLocked && (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() =>
+                                handlePickContact((contact) =>
+                                  setGroomCoordinators((prev) => [...prev, contact])
+                                )
+                              }
+                              className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
+                              title="Pick from phone contacts"
+                            >
+                              <BookOpen className="w-3 h-3" />
+                              <span>Contact Book</span>
+                            </button>
+                            <button
+                              onClick={() =>
+                                setGroomCoordinators((prev) => [
+                                  ...prev,
+                                  { name: '', phone: '', relation: '' },
+                                ])
+                              }
+                              className="p-1 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-lg transition cursor-pointer"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </div>
 
                       {groomCoordinators.map((coord, idx) => (
@@ -823,6 +914,7 @@ export function MoodboardClientView({
                           <div className="flex items-center justify-between gap-2">
                             <input
                               type="text"
+                              disabled={isLocked}
                               placeholder="Full Name (e.g. Rohan Nawale)"
                               value={coord.name}
                               onChange={(e) => {
@@ -831,20 +923,23 @@ export function MoodboardClientView({
                                   prev.map((c, i) => (i === idx ? { ...c, name: val } : c))
                                 );
                               }}
-                              className="font-bold text-xs text-slate-800 bg-transparent flex-1 outline-none"
+                              className="font-bold text-xs text-slate-800 bg-transparent flex-1 outline-none disabled:text-slate-600"
                             />
-                            <button
-                              onClick={() => setGroomCoordinators((prev) => prev.filter((_, i) => i !== idx))}
-                              className="text-slate-400 hover:text-rose-600 p-1"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            {!isLocked && (
+                              <button
+                                onClick={() => setGroomCoordinators((prev) => prev.filter((_, i) => i !== idx))}
+                                className="text-slate-400 hover:text-rose-600 p-1"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
 
                           <div className="grid grid-cols-2 gap-2 text-xs">
                             <div className="relative flex items-center">
                               <input
                                 type="tel"
+                                disabled={isLocked}
                                 placeholder="Phone / WhatsApp"
                                 value={coord.phone}
                                 onChange={(e) => {
@@ -869,6 +964,7 @@ export function MoodboardClientView({
                             </div>
                             <input
                               type="text"
+                              disabled={isLocked}
                               placeholder="Relation (e.g. Brother, Best Friend)"
                               value={coord.relation}
                               onChange={(e) => {
@@ -894,14 +990,14 @@ export function MoodboardClientView({
             </div>
 
             {/* ═══════════════════════════════════════════════════════════ */}
-            {/* 04. CLOSE FAMILY IDENTIFICATION PHOTOS (DRAW & TAG FACES)   */}
+            {/* 04. CLOSE FAMILY IDENTIFICATION PHOTOS (BRIDE & GROOM SPLIT)*/}
             {/* ═══════════════════════════════════════════════════════════ */}
             <div className="relative">
               <div className="hidden sm:flex absolute -left-16 top-6 w-10 h-10 rounded-full bg-emerald-600 text-white font-bold text-xs items-center justify-center shadow-xs border-2 border-white select-none">
                 04
               </div>
 
-              <div className="bg-white rounded-3xl border border-[#EFEBE4] shadow-xs p-6 sm:p-7 space-y-4">
+              <div className="bg-white rounded-3xl border border-[#EFEBE4] shadow-xs p-6 sm:p-7 space-y-5">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-start sm:items-center gap-3.5">
                     <div className="w-11 h-11 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
@@ -910,116 +1006,220 @@ export function MoodboardClientView({
                     <div>
                       <h2 className="text-base font-bold text-slate-900">Close Family Identification Photos</h2>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        Upload family group photos and tap <strong>Draw & Tag Faces</strong> to circle parents, grandparents, and VIPs with 4 colored brushes.
+                        Upload photos of Bride's and Groom's immediate family. Tap <strong>Draw & Tag Faces</strong> to circle VIP faces with colors.
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
-                    <label className="cursor-pointer px-4 py-2 bg-white hover:bg-amber-50/60 border border-amber-300 text-amber-900 rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs active:scale-95">
-                      <Plus className="w-3.5 h-3.5 text-amber-600" />
-                      <span>{uploadingSection === 'family' ? 'Uploading...' : 'Add Photos'}</span>
-                      <input
-                        type="file"
-                        multiple
-                        accept="image/*"
-                        className="hidden"
-                        disabled={uploadingSection === 'family'}
-                        onChange={(e) => {
-                          openSection('04');
-                          handleFileUpload(
-                            e,
-                            (url) =>
-                              setFamilyPhotos((prev) => [
-                                ...prev,
-                                { url, side: 'Bride', relation: 'Parents', names: '' },
-                              ]),
-                            'family'
-                          );
-                        }}
-                      />
-                    </label>
-                    <button
-                      onClick={() => toggleSection('04')}
-                      className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-600 transition"
-                    >
-                      {expandedSections['04'] ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => toggleSection('04')}
+                    className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-600 transition"
+                  >
+                    {expandedSections['04'] ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </button>
                 </div>
 
                 {expandedSections['04'] && (
-                  <div className="pt-2">
-                    {familyPhotos.length > 0 ? (
+                  <div className="space-y-6 pt-1">
+                    
+                    {/* ── Bride's Family Members ── */}
+                    <div className="p-5 rounded-3xl bg-[#FFFDF9] border border-[#EAE5DD] space-y-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-rose-800">👰 Bride's Family Members ({brideFamilyPhotos.length})</span>
+                        {!isLocked && (
+                          <label className="cursor-pointer px-3 py-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-800 rounded-xl text-xs font-bold transition flex items-center gap-1">
+                            <Plus className="w-3 h-3 text-rose-600" />
+                            <span>Add Bride Family Photo</span>
+                            <input
+                              type="file"
+                              multiple
+                              accept="image/*"
+                              className="hidden"
+                              disabled={uploadingSection === 'family-bride'}
+                              onChange={(e) =>
+                                handleFileUpload(
+                                  e,
+                                  (url) =>
+                                    setBrideFamilyPhotos((prev) => [
+                                      ...prev,
+                                      { url, side: 'Bride', relation: 'Parents', names: '' },
+                                    ]),
+                                  'family-bride'
+                                )
+                              }
+                            />
+                          </label>
+                        )}
+                      </div>
+
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                        {familyPhotos.map((fam, idx) => (
-                          <div key={idx} className="rounded-2xl border border-[#EAE5DD] bg-slate-50 p-3 space-y-2 shadow-2xs">
+                        {brideFamilyPhotos.map((fam, idx) => (
+                          <div key={idx} className="rounded-2xl border border-rose-200 bg-white p-3 space-y-2 shadow-2xs">
                             <div className="aspect-[4/3] rounded-xl overflow-hidden bg-slate-800 relative group">
-                              <img src={getMediaUrl(fam.url)} alt="Family" className="w-full h-full object-cover" />
+                              <img src={getMediaUrl(fam.url)} alt="Bride Family" className="w-full h-full object-cover" />
                               
-                              {/* Draw / Annotate Button */}
                               <button
-                                onClick={() => setAnnotatingPhotoIndex(idx)}
-                                className="absolute bottom-2 left-2 px-3 py-1.5 bg-black/75 hover:bg-amber-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 backdrop-blur-md transition shadow-sm cursor-pointer"
+                                onClick={() => setAnnotatingPhoto({ side: 'Bride', index: idx, url: getMediaUrl(fam.url) })}
+                                className="absolute bottom-2 left-2 px-3 py-1.5 bg-black/75 hover:bg-rose-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 backdrop-blur-md transition shadow-sm cursor-pointer"
                               >
                                 <Pencil className="w-3 h-3 text-amber-300" />
                                 <span>Draw & Tag Faces</span>
                               </button>
 
-                              <button
-                                onClick={() => setFamilyPhotos((prev) => prev.filter((_, i) => i !== idx))}
-                                className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-rose-600 text-white rounded-full transition"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
+                              {!isLocked && (
+                                <button
+                                  onClick={() => setBrideFamilyPhotos((prev) => prev.filter((_, i) => i !== idx))}
+                                  className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-rose-600 text-white rounded-full transition"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              )}
                             </div>
 
-                            <div className="flex gap-2 text-xs">
-                              <select
-                                value={fam.side}
-                                onChange={(e) => {
-                                  const val = e.target.value as any;
-                                  setFamilyPhotos((prev) =>
-                                    prev.map((f, i) => (i === idx ? { ...f, side: val } : f))
-                                  );
-                                }}
-                                className="bg-white border border-[#EAE5DD] rounded-lg px-2 py-1 text-slate-700 text-[11px] font-bold outline-none"
-                              >
-                                <option value="Bride">Bride Side</option>
-                                <option value="Groom">Groom Side</option>
-                                <option value="Combined">Both Sides</option>
-                              </select>
+                            <div className="grid grid-cols-2 gap-2 text-xs">
                               <input
                                 type="text"
-                                placeholder="Relation (e.g. Parents / Chacha)"
+                                disabled={isLocked}
+                                placeholder="Relation (e.g. Parents)"
                                 value={fam.relation}
                                 onChange={(e) => {
                                   const val = e.target.value;
-                                  setFamilyPhotos((prev) =>
+                                  setBrideFamilyPhotos((prev) =>
                                     prev.map((f, i) => (i === idx ? { ...f, relation: val } : f))
                                   );
                                 }}
-                                className="flex-1 bg-white border border-[#EAE5DD] rounded-lg px-2 py-1 text-[11px] text-slate-800 outline-none"
+                                className="bg-[#FAF9F6] border border-[#EAE5DD] rounded-lg px-2 py-1 text-[11px] font-bold text-slate-800 outline-none"
+                              />
+                              <input
+                                type="text"
+                                disabled={isLocked}
+                                placeholder="Names (e.g. Ramesh & Sunita)"
+                                value={fam.names}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setBrideFamilyPhotos((prev) =>
+                                    prev.map((f, i) => (i === idx ? { ...f, names: val } : f))
+                                  );
+                                }}
+                                className="bg-[#FAF9F6] border border-[#EAE5DD] rounded-lg px-2 py-1 text-[11px] text-slate-800 outline-none"
                               />
                             </div>
-                            <input
-                              type="text"
-                              placeholder="Names (e.g. Ramesh & Sita)"
-                              value={fam.names}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setFamilyPhotos((prev) =>
-                                  prev.map((f, i) => (i === idx ? { ...f, names: val } : f))
-                                );
-                              }}
-                              className="w-full bg-white border border-[#EAE5DD] rounded-lg px-2.5 py-1 text-[11px] text-slate-800 outline-none"
-                            />
                           </div>
                         ))}
+
+                        {/* Live Uploading Spinner */}
+                        {uploadingSection === 'family-bride' && (
+                          <div className="rounded-2xl border-2 border-dashed border-rose-300 bg-rose-50/50 aspect-[4/3] flex flex-col items-center justify-center p-3 text-center animate-pulse space-y-2">
+                            <Loader2 className="w-6 h-6 text-rose-600 animate-spin" />
+                            <span className="text-[11px] font-bold text-rose-800">Uploading Bride Family Photo...</span>
+                          </div>
+                        )}
                       </div>
-                    ) : (
-                      <p className="text-xs text-slate-400 italic py-2">No family photos added yet. Click 'Add Photos' above.</p>
-                    )}
+
+                      {brideFamilyPhotos.length === 0 && uploadingSection !== 'family-bride' && (
+                        <p className="text-[11px] text-slate-400 italic py-1">No Bride family photos uploaded yet.</p>
+                      )}
+                    </div>
+
+                    {/* ── Groom's Family Members ── */}
+                    <div className="p-5 rounded-3xl bg-[#FFFDF9] border border-[#EAE5DD] space-y-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-blue-800">🤵 Groom's Family Members ({groomFamilyPhotos.length})</span>
+                        {!isLocked && (
+                          <label className="cursor-pointer px-3 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-800 rounded-xl text-xs font-bold transition flex items-center gap-1">
+                            <Plus className="w-3 h-3 text-blue-600" />
+                            <span>Add Groom Family Photo</span>
+                            <input
+                              type="file"
+                              multiple
+                              accept="image/*"
+                              className="hidden"
+                              disabled={uploadingSection === 'family-groom'}
+                              onChange={(e) =>
+                                handleFileUpload(
+                                  e,
+                                  (url) =>
+                                    setGroomFamilyPhotos((prev) => [
+                                      ...prev,
+                                      { url, side: 'Groom', relation: 'Parents', names: '' },
+                                    ]),
+                                  'family-groom'
+                                )
+                              }
+                            />
+                          </label>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                        {groomFamilyPhotos.map((fam, idx) => (
+                          <div key={idx} className="rounded-2xl border border-blue-200 bg-white p-3 space-y-2 shadow-2xs">
+                            <div className="aspect-[4/3] rounded-xl overflow-hidden bg-slate-800 relative group">
+                              <img src={getMediaUrl(fam.url)} alt="Groom Family" className="w-full h-full object-cover" />
+                              
+                              <button
+                                onClick={() => setAnnotatingPhoto({ side: 'Groom', index: idx, url: getMediaUrl(fam.url) })}
+                                className="absolute bottom-2 left-2 px-3 py-1.5 bg-black/75 hover:bg-blue-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 backdrop-blur-md transition shadow-sm cursor-pointer"
+                              >
+                                <Pencil className="w-3 h-3 text-amber-300" />
+                                <span>Draw & Tag Faces</span>
+                              </button>
+
+                              {!isLocked && (
+                                <button
+                                  onClick={() => setGroomFamilyPhotos((prev) => prev.filter((_, i) => i !== idx))}
+                                  className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-rose-600 text-white rounded-full transition"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              <input
+                                type="text"
+                                disabled={isLocked}
+                                placeholder="Relation (e.g. Parents)"
+                                value={fam.relation}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setGroomFamilyPhotos((prev) =>
+                                    prev.map((f, i) => (i === idx ? { ...f, relation: val } : f))
+                                  );
+                                }}
+                                className="bg-[#FAF9F6] border border-[#EAE5DD] rounded-lg px-2 py-1 text-[11px] font-bold text-slate-800 outline-none"
+                              />
+                              <input
+                                type="text"
+                                disabled={isLocked}
+                                placeholder="Names (e.g. Rajesh & Rekha)"
+                                value={fam.names}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setGroomFamilyPhotos((prev) =>
+                                    prev.map((f, i) => (i === idx ? { ...f, names: val } : f))
+                                  );
+                                }}
+                                className="bg-[#FAF9F6] border border-[#EAE5DD] rounded-lg px-2 py-1 text-[11px] text-slate-800 outline-none"
+                              />
+                            </div>
+                          </div>
+                        ))}
+
+                        {/* Live Uploading Spinner */}
+                        {uploadingSection === 'family-groom' && (
+                          <div className="rounded-2xl border-2 border-dashed border-blue-300 bg-blue-50/50 aspect-[4/3] flex flex-col items-center justify-center p-3 text-center animate-pulse space-y-2">
+                            <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
+                            <span className="text-[11px] font-bold text-blue-800">Uploading Groom Family Photo...</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {groomFamilyPhotos.length === 0 && uploadingSection !== 'family-groom' && (
+                        <p className="text-[11px] text-slate-400 italic py-1">No Groom family photos uploaded yet.</p>
+                      )}
+                    </div>
+
                   </div>
                 )}
               </div>
@@ -1042,29 +1242,31 @@ export function MoodboardClientView({
                     <div>
                       <h2 className="text-base font-bold text-slate-900">Inspiration & Pose Ideas</h2>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        Add links to your <strong>Pinterest Boards</strong>, <strong>Instagram Saved Folders</strong>, or <strong>Google Drive / Dropbox folders</strong>.
+                        Add links to your <strong>Pinterest Boards</strong>, <strong>Instagram Saved Folders</strong>, or <strong>Google Drive folders</strong>.
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
-                    <button
-                      onClick={() => {
-                        openSection('05');
-                        setInspoLinks((prev) => [...prev, { url: '', platform: 'Pinterest', notes: '' }]);
-                      }}
-                      className="px-4 py-2 bg-white hover:bg-amber-50/60 border border-amber-300 text-amber-900 rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5 text-amber-600" />
-                      <span>Add Link</span>
-                    </button>
-                    <button
-                      onClick={() => toggleSection('05')}
-                      className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-600 transition"
-                    >
-                      {expandedSections['05'] ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                    </button>
-                  </div>
+                  {!isLocked && (
+                    <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                      <button
+                        onClick={() => {
+                          openSection('05');
+                          setInspoLinks((prev) => [...prev, { url: '', platform: 'Pinterest', notes: '' }]);
+                        }}
+                        className="px-4 py-2 bg-white hover:bg-amber-50/60 border border-amber-300 text-amber-900 rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Add Link</span>
+                      </button>
+                      <button
+                        onClick={() => toggleSection('05')}
+                        className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-600 transition"
+                      >
+                        {expandedSections['05'] ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {expandedSections['05'] && (
@@ -1076,6 +1278,7 @@ export function MoodboardClientView({
                         </div>
                         <input
                           type="url"
+                          disabled={isLocked}
                           placeholder="Paste Pinterest Board URL, Instagram Saved Folder, or Drive link..."
                           value={link.url}
                           onChange={(e) => {
@@ -1084,10 +1287,11 @@ export function MoodboardClientView({
                               prev.map((item, i) => (i === idx ? { ...item, url: val } : item))
                             );
                           }}
-                          className="flex-1 bg-white border border-[#EAE5DD] rounded-xl px-3.5 py-2 text-xs font-medium text-slate-800 outline-none focus:border-amber-400"
+                          className="flex-1 bg-white border border-[#EAE5DD] rounded-xl px-3.5 py-2 text-xs font-medium text-slate-800 outline-none focus:border-amber-400 disabled:bg-slate-50"
                         />
                         <input
                           type="text"
+                          disabled={isLocked}
                           placeholder="Notes (e.g. Royal aesthetic, candid smiles, varmala pose)"
                           value={link.notes || ''}
                           onChange={(e) => {
@@ -1096,7 +1300,7 @@ export function MoodboardClientView({
                               prev.map((item, i) => (i === idx ? { ...item, notes: val } : item))
                             );
                           }}
-                          className="w-full sm:w-64 bg-white border border-[#EAE5DD] rounded-xl px-3 py-2 text-xs text-slate-800 outline-none focus:border-amber-400"
+                          className="w-full sm:w-64 bg-white border border-[#EAE5DD] rounded-xl px-3 py-2 text-xs text-slate-800 outline-none focus:border-amber-400 disabled:bg-slate-50"
                         />
                         <div className="flex items-center gap-1 shrink-0 self-end sm:self-auto">
                           {link.url && (
@@ -1110,12 +1314,14 @@ export function MoodboardClientView({
                               <ExternalLink className="w-3.5 h-3.5" />
                             </a>
                           )}
-                          <button
-                            onClick={() => setInspoLinks((prev) => prev.filter((_, i) => i !== idx))}
-                            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {!isLocked && (
+                            <button
+                              onClick={() => setInspoLinks((prev) => prev.filter((_, i) => i !== idx))}
+                              className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -1150,24 +1356,26 @@ export function MoodboardClientView({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
-                    <button
-                      onClick={() => {
-                        openSection('06');
-                        setVideoRefs((prev) => [...prev, { url: '', notes: '' }]);
-                      }}
-                      className="px-4 py-2 bg-white hover:bg-amber-50/60 border border-amber-300 text-amber-900 rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5 text-amber-600" />
-                      <span>Add Video Link</span>
-                    </button>
-                    <button
-                      onClick={() => toggleSection('06')}
-                      className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-600 transition"
-                    >
-                      {expandedSections['06'] ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                    </button>
-                  </div>
+                  {!isLocked && (
+                    <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                      <button
+                        onClick={() => {
+                          openSection('06');
+                          setVideoRefs((prev) => [...prev, { url: '', notes: '' }]);
+                        }}
+                        className="px-4 py-2 bg-white hover:bg-amber-50/60 border border-amber-300 text-amber-900 rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Add Video Link</span>
+                      </button>
+                      <button
+                        onClick={() => toggleSection('06')}
+                        className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-600 transition"
+                      >
+                        {expandedSections['06'] ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {expandedSections['06'] && (
@@ -1179,6 +1387,7 @@ export function MoodboardClientView({
                         </div>
                         <input
                           type="url"
+                          disabled={isLocked}
                           placeholder="Paste Instagram Reel, YouTube, Vimeo, or Drive link..."
                           value={vid.url}
                           onChange={(e) => {
@@ -1187,10 +1396,11 @@ export function MoodboardClientView({
                               prev.map((v, i) => (i === idx ? { ...v, url: val } : v))
                             );
                           }}
-                          className="flex-1 bg-white border border-[#EAE5DD] rounded-xl px-3.5 py-2 text-xs font-medium text-slate-800 outline-none focus:border-amber-400"
+                          className="flex-1 bg-white border border-[#EAE5DD] rounded-xl px-3.5 py-2 text-xs font-medium text-slate-800 outline-none focus:border-amber-400 disabled:bg-slate-50"
                         />
                         <input
                           type="text"
+                          disabled={isLocked}
                           placeholder="Notes (e.g. cinematic grading, slow motion vibe, audio song)"
                           value={vid.notes || ''}
                           onChange={(e) => {
@@ -1199,7 +1409,7 @@ export function MoodboardClientView({
                               prev.map((v, i) => (i === idx ? { ...v, notes: val } : v))
                             );
                           }}
-                          className="w-full sm:w-72 bg-white border border-[#EAE5DD] rounded-xl px-3 py-2 text-xs text-slate-800 outline-none focus:border-amber-400"
+                          className="w-full sm:w-72 bg-white border border-[#EAE5DD] rounded-xl px-3 py-2 text-xs text-slate-800 outline-none focus:border-amber-400 disabled:bg-slate-50"
                         />
                         <div className="flex items-center gap-1 shrink-0 self-end sm:self-auto">
                           {vid.url && (
@@ -1213,12 +1423,14 @@ export function MoodboardClientView({
                               <ExternalLink className="w-3.5 h-3.5" />
                             </a>
                           )}
-                          <button
-                            onClick={() => setVideoRefs((prev) => prev.filter((_, i) => i !== idx))}
-                            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {!isLocked && (
+                            <button
+                              onClick={() => setVideoRefs((prev) => prev.filter((_, i) => i !== idx))}
+                              className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -1232,7 +1444,7 @@ export function MoodboardClientView({
             </div>
 
             {/* ═══════════════════════════════════════════════════════════ */}
-            {/* 07. EVENT ITINERARY & TIMINGS (CONSOLIDATED)                */}
+            {/* 07. EVENT ITINERARY & TIMINGS (CONSOLIDATED & TEXT INPUT)   */}
             {/* ═══════════════════════════════════════════════════════════ */}
             <div className="relative">
               <div className="hidden sm:flex absolute -left-16 top-6 w-10 h-10 rounded-full bg-indigo-600 text-white font-bold text-xs items-center justify-center shadow-xs border-2 border-white select-none">
@@ -1253,38 +1465,12 @@ export function MoodboardClientView({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
-                    <button
-                      onClick={() => {
-                        openSection('07');
-                        setItinerary((prev) => [
-                          ...prev,
-                          {
-                            event_name: 'Wedding Ceremony',
-                            event_type: 'Wedding',
-                            date: '',
-                            start_time: '10:00 AM',
-                            end_time: '02:00 PM',
-                            venue_name: '',
-                            maps_url: '',
-                            bride_outfit_url: '',
-                            groom_outfit_url: '',
-                            rituals_notes: '',
-                          },
-                        ]);
-                      }}
-                      className="px-4 py-2 bg-white hover:bg-amber-50/60 border border-amber-300 text-amber-900 rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5 text-amber-600" />
-                      <span>Add Event</span>
-                    </button>
-                    <button
-                      onClick={() => toggleSection('07')}
-                      className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-600 transition"
-                    >
-                      {expandedSections['07'] ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => toggleSection('07')}
+                    className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-600 transition"
+                  >
+                    {expandedSections['07'] ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </button>
                 </div>
 
                 {expandedSections['07'] && (
@@ -1292,35 +1478,16 @@ export function MoodboardClientView({
                     {itinerary.map((item, idx) => (
                       <div key={idx} className="p-5 rounded-3xl bg-[#FAF9F6] border border-[#EAE5DD] space-y-4 shadow-xs">
                         
-                        {/* Event Title & Type Header */}
+                        {/* Event Title Header (Clean Text Input - No Dropdown) */}
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-[#EAE5DD]">
                           <div className="flex items-center gap-2.5 flex-1">
-                            <span className="w-6 h-6 rounded-full bg-amber-500 text-white font-bold text-xs flex items-center justify-center">
+                            <span className="w-6 h-6 rounded-full bg-amber-500 text-white font-bold text-xs flex items-center justify-center shrink-0">
                               {idx + 1}
                             </span>
-                            <select
-                              value={item.event_type}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setItinerary((prev) =>
-                                  prev.map((it, i) => (i === idx ? { ...it, event_type: val, event_name: val } : it))
-                                );
-                              }}
-                              className="bg-white border border-[#EAE5DD] rounded-xl px-3 py-1.5 font-bold text-xs text-slate-800 outline-none"
-                            >
-                              <option value="Wedding">Wedding Ceremony</option>
-                              <option value="Sangeet">Sangeet & Cocktail</option>
-                              <option value="Haldi">Haldi & Chooda</option>
-                              <option value="Mehendi">Mehendi Ceremony</option>
-                              <option value="Reception">Grand Reception</option>
-                              <option value="Pool Party">Pool / Welcome Party</option>
-                              <option value="Engagement">Engagement / Ring Ceremony</option>
-                              <option value="Pre-Wedding">Pre-Wedding Shoot</option>
-                              <option value="Other">Custom Event</option>
-                            </select>
                             <input
                               type="text"
-                              placeholder="Event Label (e.g. Royal Wedding & Varmala)"
+                              disabled={isLocked}
+                              placeholder="Event Name (e.g. Haldi Morning, Sangeet & Cocktail, Wedding, Reception)"
                               value={item.event_name}
                               onChange={(e) => {
                                 const val = e.target.value;
@@ -1328,25 +1495,28 @@ export function MoodboardClientView({
                                   prev.map((it, i) => (i === idx ? { ...it, event_name: val } : it))
                                 );
                               }}
-                              className="font-bold text-xs text-slate-900 bg-white border border-[#EAE5DD] rounded-xl px-3 py-1.5 flex-1 outline-none"
+                              className="font-bold text-sm text-slate-900 bg-white border border-[#EAE5DD] rounded-xl px-3.5 py-2 flex-1 outline-none focus:border-amber-400 disabled:bg-slate-50"
                             />
                           </div>
 
-                          <button
-                            onClick={() => setItinerary((prev) => prev.filter((_, i) => i !== idx))}
-                            className="text-slate-400 hover:text-rose-600 p-1.5 self-end sm:self-auto"
-                            title="Delete Event"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {!isLocked && (
+                            <button
+                              onClick={() => setItinerary((prev) => prev.filter((_, i) => i !== idx))}
+                              className="text-slate-400 hover:text-rose-600 p-1.5 self-end sm:self-auto cursor-pointer"
+                              title="Delete Event"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
 
-                        {/* Date & Timings */}
+                        {/* Date & Native Time Pickers */}
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                           <div>
                             <label className="block text-[11px] font-bold text-slate-600 mb-1">Event Date</label>
                             <input
                               type="date"
+                              disabled={isLocked}
                               value={item.date}
                               onChange={(e) => {
                                 const val = e.target.value;
@@ -1354,14 +1524,17 @@ export function MoodboardClientView({
                                   prev.map((it, i) => (i === idx ? { ...it, date: val } : it))
                                 );
                               }}
-                              className="w-full bg-white border border-[#EAE5DD] rounded-xl px-3 py-2 text-slate-800 outline-none font-medium"
+                              className="w-full bg-white border border-[#EAE5DD] rounded-xl px-3 py-2 text-slate-800 outline-none font-medium disabled:bg-slate-50"
                             />
                           </div>
                           <div>
-                            <label className="block text-[11px] font-bold text-slate-600 mb-1">Start Time</label>
+                            <label className="block text-[11px] font-bold text-slate-600 mb-1 flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-indigo-600" />
+                              <span>Start Time</span>
+                            </label>
                             <input
-                              type="text"
-                              placeholder="e.g. 05:00 PM"
+                              type="time"
+                              disabled={isLocked}
                               value={item.start_time}
                               onChange={(e) => {
                                 const val = e.target.value;
@@ -1369,14 +1542,17 @@ export function MoodboardClientView({
                                   prev.map((it, i) => (i === idx ? { ...it, start_time: val } : it))
                                 );
                               }}
-                              className="w-full bg-white border border-[#EAE5DD] rounded-xl px-3 py-2 text-slate-800 outline-none font-medium"
+                              className="w-full bg-white border border-[#EAE5DD] rounded-xl px-3 py-2 text-slate-800 outline-none font-bold text-xs disabled:bg-slate-50 cursor-pointer"
                             />
                           </div>
                           <div>
-                            <label className="block text-[11px] font-bold text-slate-600 mb-1">End Time</label>
+                            <label className="block text-[11px] font-bold text-slate-600 mb-1 flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-indigo-600" />
+                              <span>End Time</span>
+                            </label>
                             <input
-                              type="text"
-                              placeholder="e.g. 11:30 PM"
+                              type="time"
+                              disabled={isLocked}
                               value={item.end_time}
                               onChange={(e) => {
                                 const val = e.target.value;
@@ -1384,7 +1560,7 @@ export function MoodboardClientView({
                                   prev.map((it, i) => (i === idx ? { ...it, end_time: val } : it))
                                 );
                               }}
-                              className="w-full bg-white border border-[#EAE5DD] rounded-xl px-3 py-2 text-slate-800 outline-none font-medium"
+                              className="w-full bg-white border border-[#EAE5DD] rounded-xl px-3 py-2 text-slate-800 outline-none font-bold text-xs disabled:bg-slate-50 cursor-pointer"
                             />
                           </div>
                         </div>
@@ -1397,6 +1573,7 @@ export function MoodboardClientView({
                               <MapPin className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
                               <input
                                 type="text"
+                                disabled={isLocked}
                                 placeholder="e.g. Grand Ballroom, Taj Lands End, Mumbai"
                                 value={item.venue_name}
                                 onChange={(e) => {
@@ -1405,7 +1582,7 @@ export function MoodboardClientView({
                                     prev.map((it, i) => (i === idx ? { ...it, venue_name: val } : it))
                                   );
                                 }}
-                                className="w-full bg-white border border-[#EAE5DD] rounded-xl pl-9 pr-3 py-2 text-slate-800 outline-none font-medium"
+                                className="w-full bg-white border border-[#EAE5DD] rounded-xl pl-9 pr-3 py-2 text-slate-800 outline-none font-medium disabled:bg-slate-50"
                               />
                             </div>
                           </div>
@@ -1414,6 +1591,7 @@ export function MoodboardClientView({
                             <div className="relative flex items-center">
                               <input
                                 type="url"
+                                disabled={isLocked}
                                 placeholder="https://maps.app.goo.gl/..."
                                 value={item.maps_url}
                                 onChange={(e) => {
@@ -1422,7 +1600,7 @@ export function MoodboardClientView({
                                     prev.map((it, i) => (i === idx ? { ...it, maps_url: val } : it))
                                   );
                                 }}
-                                className="w-full bg-white border border-[#EAE5DD] rounded-xl px-3 py-2 text-slate-800 outline-none font-medium pr-8"
+                                className="w-full bg-white border border-[#EAE5DD] rounded-xl px-3 py-2 text-slate-800 outline-none font-medium pr-8 disabled:bg-slate-50"
                               />
                               {item.maps_url && (
                                 <a
@@ -1448,18 +1626,25 @@ export function MoodboardClientView({
                             {item.bride_outfit_url ? (
                               <div className="aspect-[4/3] rounded-xl overflow-hidden relative group">
                                 <img src={getMediaUrl(item.bride_outfit_url)} alt="Bride Outfit" className="w-full h-full object-cover" />
-                                <button
-                                  onClick={() =>
-                                    setItinerary((prev) =>
-                                      prev.map((it, i) => (i === idx ? { ...it, bride_outfit_url: undefined } : it))
-                                    )
-                                  }
-                                  className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-rose-600 text-white rounded-full transition"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
+                                {!isLocked && (
+                                  <button
+                                    onClick={() =>
+                                      setItinerary((prev) =>
+                                        prev.map((it, i) => (i === idx ? { ...it, bride_outfit_url: undefined } : it))
+                                      )
+                                    }
+                                    className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-rose-600 text-white rounded-full transition"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                )}
                               </div>
-                            ) : (
+                            ) : uploadingSection === `event-bride-${idx}` ? (
+                              <div className="rounded-xl border-2 border-dashed border-rose-300 bg-rose-50/50 aspect-[4/3] flex flex-col items-center justify-center p-3 text-center animate-pulse space-y-2">
+                                <Loader2 className="w-5 h-5 text-rose-600 animate-spin" />
+                                <span className="text-[10px] font-bold text-rose-800">Uploading Bride Outfit...</span>
+                              </div>
+                            ) : !isLocked ? (
                               <label className="cursor-pointer border border-dashed border-[#EAE5DD] hover:border-amber-400 rounded-xl aspect-[4/3] flex flex-col items-center justify-center p-3 text-center transition bg-[#FAF8F5]/50">
                                 <Upload className="w-4 h-4 text-amber-600 mb-1" />
                                 <span className="text-[10px] text-slate-600 font-bold">Upload Bride Outfit Photo</span>
@@ -1479,6 +1664,10 @@ export function MoodboardClientView({
                                   }
                                 />
                               </label>
+                            ) : (
+                              <div className="aspect-[4/3] rounded-xl bg-slate-100 flex items-center justify-center text-[10px] text-slate-400">
+                                No outfit uploaded
+                              </div>
                             )}
                           </div>
 
@@ -1488,18 +1677,25 @@ export function MoodboardClientView({
                             {item.groom_outfit_url ? (
                               <div className="aspect-[4/3] rounded-xl overflow-hidden relative group">
                                 <img src={getMediaUrl(item.groom_outfit_url)} alt="Groom Outfit" className="w-full h-full object-cover" />
-                                <button
-                                  onClick={() =>
-                                    setItinerary((prev) =>
-                                      prev.map((it, i) => (i === idx ? { ...it, groom_outfit_url: undefined } : it))
-                                    )
-                                  }
-                                  className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-rose-600 text-white rounded-full transition"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
+                                {!isLocked && (
+                                  <button
+                                    onClick={() =>
+                                      setItinerary((prev) =>
+                                        prev.map((it, i) => (i === idx ? { ...it, groom_outfit_url: undefined } : it))
+                                      )
+                                    }
+                                    className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-rose-600 text-white rounded-full transition"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                )}
                               </div>
-                            ) : (
+                            ) : uploadingSection === `event-groom-${idx}` ? (
+                              <div className="rounded-xl border-2 border-dashed border-blue-300 bg-blue-50/50 aspect-[4/3] flex flex-col items-center justify-center p-3 text-center animate-pulse space-y-2">
+                                <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                                <span className="text-[10px] font-bold text-blue-800">Uploading Groom Outfit...</span>
+                              </div>
+                            ) : !isLocked ? (
                               <label className="cursor-pointer border border-dashed border-[#EAE5DD] hover:border-amber-400 rounded-xl aspect-[4/3] flex flex-col items-center justify-center p-3 text-center transition bg-[#FAF8F5]/50">
                                 <Upload className="w-4 h-4 text-blue-600 mb-1" />
                                 <span className="text-[10px] text-slate-600 font-bold">Upload Groom Outfit Photo</span>
@@ -1519,6 +1715,10 @@ export function MoodboardClientView({
                                   }
                                 />
                               </label>
+                            ) : (
+                              <div className="aspect-[4/3] rounded-xl bg-slate-100 flex items-center justify-center text-[10px] text-slate-400">
+                                No outfit uploaded
+                              </div>
                             )}
                           </div>
 
@@ -1531,6 +1731,7 @@ export function MoodboardClientView({
                           </label>
                           <textarea
                             rows={2}
+                            disabled={isLocked}
                             placeholder="e.g. Bride entry at 07:00 PM with Phoolon ki Chaadar, Varmala fireworks, Couple first dance song: 'Kesariya'..."
                             value={item.rituals_notes}
                             onChange={(e) => {
@@ -1539,15 +1740,41 @@ export function MoodboardClientView({
                                 prev.map((it, i) => (i === idx ? { ...it, rituals_notes: val } : it))
                               );
                             }}
-                            className="w-full bg-white border border-[#EAE5DD] rounded-xl p-3 text-xs text-slate-800 outline-none font-medium"
+                            className="w-full bg-white border border-[#EAE5DD] rounded-xl p-3 text-xs text-slate-800 outline-none font-medium disabled:bg-slate-50"
                           />
                         </div>
 
                       </div>
                     ))}
 
+                    {/* Prominent Bottom "+ Add Another Event" Button */}
+                    {!isLocked && (
+                      <button
+                        onClick={() => {
+                          setItinerary((prev) => [
+                            ...prev,
+                            {
+                              event_name: '',
+                              date: '',
+                              start_time: '',
+                              end_time: '',
+                              venue_name: '',
+                              maps_url: '',
+                              bride_outfit_url: '',
+                              groom_outfit_url: '',
+                              rituals_notes: '',
+                            },
+                          ]);
+                        }}
+                        className="w-full py-3.5 bg-amber-50 hover:bg-amber-100/80 border-2 border-dashed border-amber-300 hover:border-amber-400 text-amber-900 font-bold text-xs rounded-2xl transition flex items-center justify-center gap-2 cursor-pointer shadow-2xs"
+                      >
+                        <Plus className="w-4 h-4 text-amber-600" />
+                        <span>+ Add Another Event to Itinerary</span>
+                      </button>
+                    )}
+
                     {itinerary.length === 0 && (
-                      <p className="text-xs text-slate-400 italic py-2">No event schedule items added yet. Click 'Add Event' above.</p>
+                      <p className="text-xs text-slate-400 italic py-2 text-center">No event schedule items added yet. Click '+ Add Another Event' above.</p>
                     )}
                   </div>
                 )}
@@ -1576,39 +1803,41 @@ export function MoodboardClientView({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
-                    <button
-                      onClick={() =>
-                        handlePickContact((contact) =>
-                          setPaymentContacts((prev) => [...prev, contact])
-                        )
-                      }
-                      className="px-3.5 py-2 bg-pink-50 hover:bg-pink-100 border border-pink-200 text-pink-900 rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer"
-                      title="Import contact from phone"
-                    >
-                      <BookOpen className="w-3.5 h-3.5 text-pink-600" />
-                      <span>Contact Book</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        openSection('08');
-                        setPaymentContacts((prev) => [
-                          ...prev,
-                          { name: '', phone: '', relation: '' },
-                        ]);
-                      }}
-                      className="px-3.5 py-2 bg-white hover:bg-amber-50/60 border border-amber-300 text-amber-900 rounded-2xl text-xs font-bold transition flex items-center gap-1 shadow-2xs active:scale-95 cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5 text-amber-600" />
-                      <span>Add Manually</span>
-                    </button>
-                    <button
-                      onClick={() => toggleSection('08')}
-                      className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-600 transition"
-                    >
-                      {expandedSections['08'] ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                    </button>
-                  </div>
+                  {!isLocked && (
+                    <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                      <button
+                        onClick={() =>
+                          handlePickContact((contact) =>
+                            setPaymentContacts((prev) => [...prev, contact])
+                          )
+                        }
+                        className="px-3.5 py-2 bg-pink-50 hover:bg-pink-100 border border-pink-200 text-pink-900 rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer"
+                        title="Import contact from phone"
+                      >
+                        <BookOpen className="w-3.5 h-3.5 text-pink-600" />
+                        <span>Contact Book</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          openSection('08');
+                          setPaymentContacts((prev) => [
+                            ...prev,
+                            { name: '', phone: '', relation: '' },
+                          ]);
+                        }}
+                        className="px-3.5 py-2 bg-white hover:bg-amber-50/60 border border-amber-300 text-amber-900 rounded-2xl text-xs font-bold transition flex items-center gap-1 shadow-2xs active:scale-95 cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Add Manually</span>
+                      </button>
+                      <button
+                        onClick={() => toggleSection('08')}
+                        className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-600 transition"
+                      >
+                        {expandedSections['08'] ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {expandedSections['08'] && (
@@ -1617,6 +1846,7 @@ export function MoodboardClientView({
                       <div key={idx} className="p-3.5 rounded-2xl bg-[#FAF9F6] border border-[#EAE5DD] grid grid-cols-1 sm:grid-cols-3 gap-3 items-center shadow-2xs">
                         <input
                           type="text"
+                          disabled={isLocked}
                           placeholder="Full Name (e.g. Suresh Nawale)"
                           value={contact.name}
                           onChange={(e) => {
@@ -1625,11 +1855,12 @@ export function MoodboardClientView({
                               prev.map((c, i) => (i === idx ? { ...c, name: val } : c))
                             );
                           }}
-                          className="bg-white border border-[#EAE5DD] rounded-xl px-3.5 py-2 text-xs font-bold text-slate-800 outline-none"
+                          className="bg-white border border-[#EAE5DD] rounded-xl px-3.5 py-2 text-xs font-bold text-slate-800 outline-none disabled:bg-slate-50"
                         />
                         <div className="relative flex items-center">
                           <input
                             type="tel"
+                            disabled={isLocked}
                             placeholder="Phone Number"
                             value={contact.phone}
                             onChange={(e) => {
@@ -1638,7 +1869,7 @@ export function MoodboardClientView({
                                 prev.map((c, i) => (i === idx ? { ...c, phone: val } : c))
                               );
                             }}
-                            className="w-full bg-white border border-[#EAE5DD] rounded-xl px-3.5 py-2 text-xs font-medium text-slate-800 outline-none"
+                            className="w-full bg-white border border-[#EAE5DD] rounded-xl px-3.5 py-2 text-xs font-medium text-slate-800 outline-none disabled:bg-slate-50"
                           />
                           {contact.phone && (
                             <a
@@ -1655,6 +1886,7 @@ export function MoodboardClientView({
                         <div className="flex items-center gap-2">
                           <input
                             type="text"
+                            disabled={isLocked}
                             placeholder="Role/Relation (e.g. Father, Cash Handler, Planner)"
                             value={contact.relation}
                             onChange={(e) => {
@@ -1663,14 +1895,16 @@ export function MoodboardClientView({
                                 prev.map((c, i) => (i === idx ? { ...c, relation: val } : c))
                               );
                             }}
-                            className="flex-1 bg-white border border-[#EAE5DD] rounded-xl px-3.5 py-2 text-xs font-medium text-slate-800 outline-none"
+                            className="flex-1 bg-white border border-[#EAE5DD] rounded-xl px-3.5 py-2 text-xs font-medium text-slate-800 outline-none disabled:bg-slate-50"
                           />
-                          <button
-                            onClick={() => setPaymentContacts((prev) => prev.filter((_, i) => i !== idx))}
-                            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {!isLocked && (
+                            <button
+                              onClick={() => setPaymentContacts((prev) => prev.filter((_, i) => i !== idx))}
+                              className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -1687,7 +1921,7 @@ export function MoodboardClientView({
         </div>
       </main>
 
-      {/* ── Fixed Bottom Save Bar ── */}
+      {/* ── Fixed Bottom Save Bar (Hidden or Read-Only when Locked) ── */}
       <div className="fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-[#EAE5DD] py-3.5 px-4 sm:px-8 z-30 shadow-lg">
         <div className="max-w-5xl mx-auto flex items-center justify-between gap-4">
           <div className="flex items-center gap-2 text-xs text-slate-500">
@@ -1695,6 +1929,11 @@ export function MoodboardClientView({
               <>
                 <RefreshCw className="w-3.5 h-3.5 text-amber-500 animate-spin" />
                 <span>Auto-saving changes...</span>
+              </>
+            ) : isLocked ? (
+              <>
+                <Lock className="w-3.5 h-3.5 text-emerald-600" />
+                <span className="text-emerald-700 font-bold">Mood Board Submitted & Locked</span>
               </>
             ) : saveStatus === 'saved' ? (
               <>
@@ -1710,36 +1949,50 @@ export function MoodboardClientView({
           </div>
 
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => saveMoodboardData(false)}
-              disabled={saving}
-              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
-            >
-              Save Draft
-            </button>
-            <button
-              onClick={() => saveMoodboardData(true)}
-              disabled={saving || submitted}
-              className="px-6 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 active:scale-95 cursor-pointer"
-            >
-              <Send className="w-3.5 h-3.5" />
-              <span>{submitted ? 'Vision Submitted ✓' : 'Submit Mood Board to Studio'}</span>
-            </button>
+            {!isLocked ? (
+              <>
+                <button
+                  onClick={() => saveMoodboardData(false)}
+                  disabled={saving}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
+                >
+                  Save Draft
+                </button>
+                <button
+                  onClick={() => saveMoodboardData(true)}
+                  disabled={saving}
+                  className="px-6 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 active:scale-95 cursor-pointer"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Submit Mood Board to Studio</span>
+                </button>
+              </>
+            ) : (
+              <div className="text-xs text-slate-500 italic">
+                Submitted on {initialData?.updated_at ? new Date(initialData.updated_at).toLocaleDateString() : 'recently'}
+              </div>
+            )}
           </div>
         </div>
       </div>
 
       {/* ── Interactive Drawing & Face Tagging Modal ── */}
-      {annotatingPhotoIndex !== null && familyPhotos[annotatingPhotoIndex] && (
+      {annotatingPhoto !== null && (
         <PhotoDrawModal
-          imageUrl={getMediaUrl(familyPhotos[annotatingPhotoIndex].url)}
-          isOpen={annotatingPhotoIndex !== null}
-          onClose={() => setAnnotatingPhotoIndex(null)}
+          imageUrl={annotatingPhoto.url}
+          isOpen={annotatingPhoto !== null}
+          onClose={() => setAnnotatingPhoto(null)}
           token={token}
           onSaveAnnotatedImage={(newUrl) => {
-            setFamilyPhotos((prev) =>
-              prev.map((f, i) => (i === annotatingPhotoIndex ? { ...f, url: newUrl } : f))
-            );
+            if (annotatingPhoto.side === 'Bride') {
+              setBrideFamilyPhotos((prev) =>
+                prev.map((f, i) => (i === annotatingPhoto.index ? { ...f, url: newUrl } : f))
+              );
+            } else {
+              setGroomFamilyPhotos((prev) =>
+                prev.map((f, i) => (i === annotatingPhoto.index ? { ...f, url: newUrl } : f))
+              );
+            }
           }}
         />
       )}
@@ -1761,7 +2014,7 @@ export function MoodboardClientView({
                 Vision Successfully Submitted!
               </h3>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Thank you, <strong className="text-amber-800">{coupleTitle}</strong>! Our photography and cinematography team will review your references, tagged family photos, and schedule.
+                Thank you! Our photography and cinematography team will review your references, tagged family photos, and schedule.
               </p>
               <button
                 onClick={() => setShowCelebration(false)}
