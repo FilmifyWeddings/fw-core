@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const code = searchParams.get('code');
   const workspaceId = searchParams.get('state') || '00000000-0000-0000-0000-000000000000';
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://studiocore.in';
-  const redirectUri = process.env.NEXT_PUBLIC_APP_URL?.startsWith('https://studiocore.in') 
-    ? 'https://studiocore.in/api/storage/google/callback'
-    : (process.env.NEXT_PUBLIC_APP_URL || 'https://studiocore.in').replace(/\/$/, '') + '/api/storage/google/callback';
+  const redirectUri = 'https://studiocore.in/api/storage/google/callback';
 
   try {
     let email = 'studio.primary@gmail.com';
@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
     let accessToken = 'gdrive_access_sample';
     let refreshToken = 'gdrive_refresh_sample';
 
-    const clientId = process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
+    const clientId = process.env.GOOGLE_CLIENT_ID || '666330539586-q0s8vvr4osdah4e60rd75s3keolfgmc0.apps.googleusercontent.com';
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET || '';
 
     if (clientId && clientSecret && code && code !== 'mock_google_code_sample') {
