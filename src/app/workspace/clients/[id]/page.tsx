@@ -125,6 +125,86 @@ export default function ClientWorkspaceDetailPage() {
   const [copiedMoodboardLink, setCopiedMoodboardLink] = useState(false);
   const [updatingMbStatus, setUpdatingMbStatus] = useState(false);
 
+  // Full-Screen Image Lightbox / Modal for Moodboard
+  const [lightbox, setLightbox] = useState<{
+    isOpen: boolean;
+    items: Array<{ url: string; title?: string; subtitle?: string; notes?: string }>;
+    currentIndex: number;
+  }>({
+    isOpen: false,
+    items: [],
+    currentIndex: 0,
+  });
+
+  const openLightbox = (
+    items: Array<{ url: string; title?: string; subtitle?: string; notes?: string }>,
+    index: number = 0
+  ) => {
+    setLightbox({
+      isOpen: true,
+      items,
+      currentIndex: index,
+    });
+  };
+
+  // Helper date/time formatters
+  const formatEventDate = (dateStr?: string) => {
+    if (!dateStr) return 'Date TBD';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
+      const day = d.getDate().toString().padStart(2, '0');
+      const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+      return `${day} ${months[d.getMonth()]} ${d.getFullYear()}`;
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const formatEventTime = (timeStr?: string) => {
+    if (!timeStr) return '';
+    try {
+      const parts = timeStr.trim().split(':');
+      if (parts.length >= 2) {
+        let hours = parseInt(parts[0], 10);
+        const mins = parts[1].slice(0, 2);
+        if (isNaN(hours)) return timeStr;
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        hours = hours % 12;
+        if (hours === 0) hours = 12;
+        return `${hours.toString().padStart(2, '0')}:${mins} ${ampm}`;
+      }
+      return timeStr;
+    } catch {
+      return timeStr;
+    }
+  };
+
+  const computeMoodboardProgress = (mb: any): number => {
+    if (!mb) return 0;
+    let score = 0;
+    if (Array.isArray(mb.couple_photos) && mb.couple_photos.length > 0) score += 15;
+    if (mb.bride_instagram || mb.groom_instagram || mb.couple_instagram) score += 10;
+    if (
+      (Array.isArray(mb.bride_coordinators) && mb.bride_coordinators.length > 0) ||
+      (Array.isArray(mb.groom_coordinators) && mb.groom_coordinators.length > 0) ||
+      mb.bride_coordinator?.name ||
+      mb.groom_coordinator?.name
+    ) score += 15;
+    if (Array.isArray(mb.close_family_photos) && mb.close_family_photos.length > 0) score += 15;
+    if (
+      (Array.isArray(mb.photo_references) && mb.photo_references.length > 0) ||
+      (Array.isArray(mb.inspiration_links) && mb.inspiration_links.length > 0)
+    ) score += 15;
+    if (Array.isArray(mb.video_references) && mb.video_references.length > 0) score += 10;
+    if (Array.isArray(mb.itinerary_schedule) && mb.itinerary_schedule.length > 0) score += 15;
+    if (
+      (Array.isArray(mb.payment_contacts) && mb.payment_contacts.length > 0) ||
+      mb.payment_contact?.name
+    ) score += 5;
+    return Math.min(100, score);
+  };
+
   // Load client data by ID or Code
   useEffect(() => {
     fetchClientFullData();
@@ -1720,49 +1800,48 @@ export default function ClientWorkspaceDetailPage() {
               <div className="space-y-6">
                 {/* ── TOP BANNER & MAGIC LINK SHARER ── */}
                 <div className="p-6 sm:p-7 bg-gradient-to-r from-amber-50 via-[#FFFDF9] to-amber-50/50 rounded-3xl border border-amber-200/80 shadow-sm space-y-5">
-                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-[#EAE5DA]">
                     <div className="space-y-1.5">
-                      <div className="flex items-center gap-2">
-                        <span className="px-3 py-1 bg-amber-400/30 text-amber-900 border border-amber-300 rounded-full text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5">
-                          <Sparkles className="w-3.5 h-3.5" />
-                          Mood Board & Event Prep
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 font-sans">
+                          {client.name}
+                        </h2>
+                        <span className="px-3 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-900 font-bold text-xs">
+                          Mood Board & Prep
                         </span>
-                        <span className={`px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider ${
+                        <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider ${
                           moodboard.status === 'SUBMITTED'
                             ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                             : moodboard.status === 'IN_REVIEW'
                             ? 'bg-blue-100 text-blue-800 border border-blue-300'
                             : 'bg-slate-100 text-slate-700 border border-slate-300'
                         }`}>
-                          Status: {moodboard.status || 'DRAFT'} ({moodboard.completion_percentage || 0}%)
+                          {moodboard.status || 'DRAFT'} ({computeMoodboardProgress(moodboard)}%)
                         </span>
                       </div>
-                      <h2 className="text-xl sm:text-2xl font-black text-slate-900 font-serif">
-                        {client.name} • Creative Mood Board
-                      </h2>
-                      <p className="text-xs text-slate-600">
-                        Public Magic Token: <code className="font-mono bg-white px-2 py-0.5 rounded border border-amber-200 text-slate-800">{moodboard.token}</code>
+                      <p className="text-xs text-slate-500">
+                        Interactive client moodboard, VIP family tagging, and schedule coordination.
                       </p>
                     </div>
 
                     {/* Action Buttons */}
-                    <div className="flex flex-wrap items-center gap-2.5">
+                    <div className="flex flex-wrap items-center gap-2">
                       {/* Copy Link */}
                       <button
                         onClick={copyMoodboardLink}
-                        className="px-4 py-2.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 font-bold text-xs rounded-xl shadow-2xs transition flex items-center gap-1.5 cursor-pointer"
+                        className="px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 font-bold text-xs rounded-xl shadow-2xs transition flex items-center gap-1.5 cursor-pointer"
                       >
                         {copiedMoodboardLink ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4 text-amber-600" />}
-                        <span>{copiedMoodboardLink ? 'Link Copied!' : 'Copy Magic Link'}</span>
+                        <span>{copiedMoodboardLink ? 'Link Copied!' : 'Copy Link'}</span>
                       </button>
 
                       {/* WhatsApp Share */}
                       <button
                         onClick={shareMoodboardOnWhatsApp}
-                        className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-black text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                        className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
                       >
                         <MessageCircle className="w-4 h-4" />
-                        <span>Share on WhatsApp</span>
+                        <span>Share WhatsApp</span>
                       </button>
 
                       {/* Open Portal Preview */}
@@ -1770,7 +1849,7 @@ export default function ClientWorkspaceDetailPage() {
                         href={`/p/moodboard/${moodboard.token}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="px-4 py-2.5 bg-amber-400 hover:bg-amber-500 text-slate-900 font-black text-xs rounded-xl shadow-xs transition flex items-center gap-1.5"
+                        className="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-900 font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5"
                       >
                         <ExternalLink className="w-4 h-4" />
                         <span>Open Client Portal</span>
@@ -1782,50 +1861,72 @@ export default function ClientWorkspaceDetailPage() {
                   <div className="pt-2 border-t border-amber-200/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="flex-1 max-w-md">
                       <div className="flex justify-between text-xs font-bold text-slate-600 mb-1">
-                        <span>Client Progress</span>
-                        <span className="text-amber-700 font-mono font-black">{moodboard.completion_percentage || 0}% Complete</span>
+                        <span>Client Prep Completion</span>
+                        <span className="text-amber-800 font-mono font-bold">{computeMoodboardProgress(moodboard)}% Complete</span>
                       </div>
                       <div className="w-full h-2 bg-amber-100 rounded-full overflow-hidden border border-amber-200">
                         <div
                           className="h-full bg-gradient-to-r from-amber-400 to-amber-500 transition-all duration-500"
-                          style={{ width: `${moodboard.completion_percentage || 0}%` }}
+                          style={{ width: `${computeMoodboardProgress(moodboard)}%` }}
                         />
                       </div>
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-slate-600">Studio Review:</span>
+                      <span className="text-xs font-bold text-slate-600">Review Status:</span>
                       <select
                         value={moodboard.status || 'DRAFT'}
                         disabled={updatingMbStatus}
                         onChange={(e) => handleUpdateMoodboardStatus(e.target.value)}
                         className="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 outline-none cursor-pointer"
                       >
-                        <option value="DRAFT">Draft (Awaiting Client)</option>
+                        <option value="DRAFT">Draft (Client Can Edit)</option>
                         <option value="IN_REVIEW">In Review (Crew Checking)</option>
-                        <option value="SUBMITTED">Submitted by Couple</option>
+                        <option value="SUBMITTED">Submitted (Locked for Client)</option>
                         <option value="APPROVED">Approved for Shoot</option>
                       </select>
                     </div>
                   </div>
                 </div>
 
-                {/* ── 10 STRUCTURED SECTIONS BREAKDOWN ── */}
+                {/* ── 8 STRUCTURED SECTIONS BREAKDOWN ── */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  
                   {/* 1. COUPLE PORTRAITS */}
                   <div className="p-6 bg-[#FFFDF9] rounded-3xl border border-[#EAE5DA] shadow-xs space-y-4">
                     <div className="flex items-center justify-between">
-                      <h3 className="font-serif font-black text-base text-slate-900 flex items-center gap-2">
+                      <h3 className="font-bold text-sm sm:text-base text-slate-900 flex items-center gap-2">
                         <Camera className="w-4 h-4 text-amber-600" />
-                        1. Couple Photos & Chemistry ({Array.isArray(moodboard.couple_photos) ? moodboard.couple_photos.length : 0})
+                        <span>1. Couple Portraits</span>
+                        <span className="text-xs font-bold px-2 py-0.5 bg-orange-100 text-orange-800 rounded-full">
+                          {Array.isArray(moodboard.couple_photos) ? moodboard.couple_photos.length : 0} / 6
+                        </span>
                       </h3>
                     </div>
                     {Array.isArray(moodboard.couple_photos) && moodboard.couple_photos.length > 0 ? (
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                         {moodboard.couple_photos.map((photo: any, idx: number) => (
-                          <div key={idx} className="rounded-2xl overflow-hidden border border-slate-200 bg-slate-50 flex flex-col">
-                            <div className="aspect-[4/5] bg-slate-900 relative">
-                              <img src={getMediaUrl(photo.url)} alt={`Couple ${idx}`} className="w-full h-full object-cover" />
+                          <div
+                            key={idx}
+                            onClick={() =>
+                              openLightbox(
+                                moodboard.couple_photos.map((p: any, i: number) => ({
+                                  url: getMediaUrl(p.url),
+                                  title: `Couple Portrait ${i + 1}`,
+                                  notes: p.caption,
+                                })),
+                                idx
+                              )
+                            }
+                            className="group rounded-2xl overflow-hidden border border-slate-200 bg-slate-50 flex flex-col cursor-pointer shadow-2xs hover:border-amber-400 transition"
+                          >
+                            <div className="aspect-[4/5] bg-slate-900 relative overflow-hidden">
+                              <img src={getMediaUrl(photo.url)} alt={`Couple ${idx}`} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition flex items-center justify-center">
+                                <span className="opacity-0 group-hover:opacity-100 px-2 py-1 bg-black/75 text-white text-[10px] font-bold rounded-lg transition backdrop-blur-xs">
+                                  View Large
+                                </span>
+                              </div>
                             </div>
                             {photo.caption && (
                               <p className="p-2 text-[11px] text-slate-600 bg-white truncate" title={photo.caption}>
@@ -1842,22 +1943,22 @@ export default function ClientWorkspaceDetailPage() {
 
                   {/* 2. SOCIAL MEDIA HANDLES */}
                   <div className="p-6 bg-[#FFFDF9] rounded-3xl border border-[#EAE5DA] shadow-xs space-y-4">
-                    <h3 className="font-serif font-black text-base text-slate-900 flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-amber-600" />
-                      2. Social Handles & Wedding Tag
+                    <h3 className="font-bold text-sm sm:text-base text-slate-900 flex items-center gap-2">
+                      <Hash className="w-4 h-4 text-amber-600" />
+                      <span>2. Social Handles & Wedding Hashtag</span>
                     </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                       <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
                         <span className="text-slate-500 font-bold block mb-1">Bride IG</span>
                         {moodboard.bride_instagram ? (
                           <a
-                            href={`https://instagram.com/${moodboard.bride_instagram}`}
+                            href={moodboard.bride_instagram.startsWith('http') ? moodboard.bride_instagram : `https://instagram.com/${moodboard.bride_instagram.replace(/^@/, '')}`}
                             target="_blank"
                             rel="noreferrer"
-                            className="font-bold text-pink-600 hover:underline flex items-center gap-1"
+                            className="font-bold text-pink-600 hover:underline flex items-center gap-1 truncate"
                           >
-                            @{moodboard.bride_instagram}
-                            <ExternalLink className="w-3 h-3" />
+                            <span className="truncate">{moodboard.bride_instagram}</span>
+                            <ExternalLink className="w-3 h-3 shrink-0" />
                           </a>
                         ) : (
                           <span className="text-slate-400">—</span>
@@ -1868,13 +1969,13 @@ export default function ClientWorkspaceDetailPage() {
                         <span className="text-slate-500 font-bold block mb-1">Groom IG</span>
                         {moodboard.groom_instagram ? (
                           <a
-                            href={`https://instagram.com/${moodboard.groom_instagram}`}
+                            href={moodboard.groom_instagram.startsWith('http') ? moodboard.groom_instagram : `https://instagram.com/${moodboard.groom_instagram.replace(/^@/, '')}`}
                             target="_blank"
                             rel="noreferrer"
-                            className="font-bold text-blue-600 hover:underline flex items-center gap-1"
+                            className="font-bold text-blue-600 hover:underline flex items-center gap-1 truncate"
                           >
-                            @{moodboard.groom_instagram}
-                            <ExternalLink className="w-3 h-3" />
+                            <span className="truncate">{moodboard.groom_instagram}</span>
+                            <ExternalLink className="w-3 h-3 shrink-0" />
                           </a>
                         ) : (
                           <span className="text-slate-400">—</span>
@@ -1883,8 +1984,8 @@ export default function ClientWorkspaceDetailPage() {
 
                       <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
                         <span className="text-slate-500 font-bold block mb-1">Hashtag</span>
-                        <span className="font-bold text-amber-700 font-mono">
-                          {moodboard.couple_instagram ? `#${moodboard.couple_instagram}` : '—'}
+                        <span className="font-bold text-amber-800 font-mono truncate block">
+                          {moodboard.couple_instagram || '—'}
                         </span>
                       </div>
                     </div>
@@ -1892,14 +1993,14 @@ export default function ClientWorkspaceDetailPage() {
 
                   {/* 3. COORDINATION CONTACTS */}
                   <div className="p-6 bg-[#FFFDF9] rounded-3xl border border-[#EAE5DA] shadow-xs space-y-4">
-                    <h3 className="font-serif font-black text-base text-slate-900 flex items-center gap-2">
+                    <h3 className="font-bold text-sm sm:text-base text-slate-900 flex items-center gap-2">
                       <Phone className="w-4 h-4 text-amber-600" />
-                      3. Shoot-Day Coordinators
+                      <span>3. Shoot-Day Coordinators</span>
                     </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                       {/* Bride Side */}
                       <div className="p-4 bg-rose-50/60 rounded-2xl border border-rose-200 space-y-2.5">
-                        <div className="font-black text-rose-900">👰 Bride Side Coordinators</div>
+                        <div className="font-bold text-rose-900">👰 Bride Side Coordinators</div>
                         {(Array.isArray(moodboard.bride_coordinators) && moodboard.bride_coordinators.length > 0
                           ? moodboard.bride_coordinators
                           : moodboard.bride_coordinator?.name
@@ -1936,7 +2037,7 @@ export default function ClientWorkspaceDetailPage() {
 
                       {/* Groom Side */}
                       <div className="p-4 bg-blue-50/60 rounded-2xl border border-blue-200 space-y-2.5">
-                        <div className="font-black text-blue-900">🤵 Groom Side Coordinators</div>
+                        <div className="font-bold text-blue-900">🤵 Groom Side Coordinators</div>
                         {(Array.isArray(moodboard.groom_coordinators) && moodboard.groom_coordinators.length > 0
                           ? moodboard.groom_coordinators
                           : moodboard.groom_coordinator?.name
@@ -1975,19 +2076,42 @@ export default function ClientWorkspaceDetailPage() {
 
                   {/* 4. CLOSE FAMILY PHOTOS (VIP SHOT LIST) */}
                   <div className="p-6 bg-[#FFFDF9] rounded-3xl border border-[#EAE5DA] shadow-xs space-y-4">
-                    <h3 className="font-serif font-black text-base text-slate-900 flex items-center gap-2">
-                      <UsersIcon className="w-4 h-4 text-amber-600" />
-                      4. VIP Family Members Tagged List ({Array.isArray(moodboard.close_family_photos) ? moodboard.close_family_photos.length : 0})
-                    </h3>
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-bold text-sm sm:text-base text-slate-900 flex items-center gap-2">
+                        <Users className="w-4 h-4 text-amber-600" />
+                        <span>4. VIP Family Members Tagged List</span>
+                        <span className="text-xs font-bold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full">
+                          {Array.isArray(moodboard.close_family_photos) ? moodboard.close_family_photos.length : 0}
+                        </span>
+                      </h3>
+                    </div>
                     {Array.isArray(moodboard.close_family_photos) && moodboard.close_family_photos.length > 0 ? (
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                         {moodboard.close_family_photos.map((fam: any, idx: number) => (
-                          <div key={idx} className="p-2 bg-slate-50 rounded-2xl border border-slate-200 space-y-1.5 shadow-2xs">
+                          <div
+                            key={idx}
+                            onClick={() =>
+                              openLightbox(
+                                moodboard.close_family_photos.map((f: any) => ({
+                                  url: getMediaUrl(f.url),
+                                  title: `${f.side || 'VIP'} Family • ${f.relation || 'Relation'}`,
+                                  subtitle: f.names || 'Family Member',
+                                })),
+                                idx
+                              )
+                            }
+                            className="group p-2 bg-slate-50 hover:bg-amber-50/50 rounded-2xl border border-slate-200 hover:border-amber-400 transition cursor-pointer space-y-1.5 shadow-2xs"
+                          >
                             <div className="aspect-[4/3] rounded-xl overflow-hidden bg-slate-800 relative">
-                              <img src={getMediaUrl(fam.url)} alt="Family" className="w-full h-full object-cover" />
+                              <img src={getMediaUrl(fam.url)} alt="Family" className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition flex items-center justify-center">
+                                <span className="opacity-0 group-hover:opacity-100 px-2 py-0.5 bg-black/75 text-white text-[9px] font-bold rounded backdrop-blur-xs">
+                                  View Tagged
+                                </span>
+                              </div>
                             </div>
                             <div className="text-[11px] space-y-0.5">
-                              <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
+                              <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
                                 fam.side === 'Bride' ? 'bg-rose-100 text-rose-800' : fam.side === 'Groom' ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800'
                               }`}>
                                 {fam.side} • {fam.relation || 'VIP'}
@@ -2004,20 +2128,32 @@ export default function ClientWorkspaceDetailPage() {
 
                   {/* 5. INSPIRATION & POSE IDEAS */}
                   <div className="p-6 bg-[#FFFDF9] rounded-3xl border border-[#EAE5DA] shadow-xs space-y-4">
-                    <h3 className="font-serif font-black text-base text-slate-900 flex items-center gap-2">
+                    <h3 className="font-bold text-sm sm:text-base text-slate-900 flex items-center gap-2">
                       <Sparkles className="w-4 h-4 text-amber-600" />
-                      5. Inspiration & Pose Ideas ({Array.isArray(moodboard.photo_references || moodboard.inspiration_links) ? (moodboard.photo_references || moodboard.inspiration_links).length : 0})
+                      <span>5. Inspiration & Pose Ideas</span>
+                      <span className="text-xs font-bold px-2 py-0.5 bg-rose-100 text-rose-800 rounded-full">
+                        {Array.isArray(moodboard.photo_references || moodboard.inspiration_links) ? (moodboard.photo_references || moodboard.inspiration_links).length : 0}
+                      </span>
                     </h3>
                     {Array.isArray(moodboard.photo_references || moodboard.inspiration_links) && (moodboard.photo_references || moodboard.inspiration_links).length > 0 ? (
                       <div className="space-y-2.5 text-xs">
                         {(moodboard.photo_references || moodboard.inspiration_links).map((inspo: any, idx: number) => {
                           const url = typeof inspo === 'string' ? inspo : inspo.url || inspo.pinterest_url;
                           const notes = typeof inspo === 'object' ? inspo.notes : '';
+                          const isPinterest = url?.includes('pinterest');
+                          const isInsta = url?.includes('instagram');
                           return (
-                            <div key={idx} className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between gap-3 shadow-2xs">
-                              <div className="flex-1 min-w-0">
-                                <div className="font-bold text-slate-900 truncate">📌 {notes || url}</div>
-                                {notes && <div className="text-[11px] text-slate-500 truncate mt-0.5">{url}</div>}
+                            <div key={idx} className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between gap-3 shadow-2xs overflow-hidden">
+                              <div className="flex-1 min-w-0 pr-2">
+                                <div className="font-bold text-slate-900 truncate flex items-center gap-1.5">
+                                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                                    isPinterest ? 'bg-red-100 text-red-700' : isInsta ? 'bg-pink-100 text-pink-700' : 'bg-amber-100 text-amber-800'
+                                  }`}>
+                                    {isPinterest ? 'Pinterest' : isInsta ? 'Instagram' : 'Link'}
+                                  </span>
+                                  <span className="truncate">{notes || url}</span>
+                                </div>
+                                {notes && <div className="text-[11px] text-slate-500 truncate mt-0.5 break-all">{url}</div>}
                               </div>
                               {url && (
                                 <a
@@ -2026,7 +2162,7 @@ export default function ClientWorkspaceDetailPage() {
                                   rel="noreferrer"
                                   className="px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold rounded-xl flex items-center gap-1 shrink-0"
                                 >
-                                  <ExternalLink className="w-3.5 h-3.5" /> Open Link
+                                  <ExternalLink className="w-3.5 h-3.5" /> Open
                                 </a>
                               )}
                             </div>
@@ -2040,9 +2176,12 @@ export default function ClientWorkspaceDetailPage() {
 
                   {/* 6. VIDEO & REEL REFERENCES */}
                   <div className="p-6 bg-[#FFFDF9] rounded-3xl border border-[#EAE5DA] shadow-xs space-y-4">
-                    <h3 className="font-serif font-black text-base text-slate-900 flex items-center gap-2">
+                    <h3 className="font-bold text-sm sm:text-base text-slate-900 flex items-center gap-2">
                       <Film className="w-4 h-4 text-amber-600" />
-                      6. Cinematic Video References ({Array.isArray(moodboard.video_references) ? moodboard.video_references.length : 0})
+                      <span>6. Cinematic Video References</span>
+                      <span className="text-xs font-bold px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full">
+                        {Array.isArray(moodboard.video_references) ? moodboard.video_references.length : 0}
+                      </span>
                     </h3>
                     {Array.isArray(moodboard.video_references) && moodboard.video_references.length > 0 ? (
                       <div className="space-y-2 text-xs">
@@ -2050,10 +2189,10 @@ export default function ClientWorkspaceDetailPage() {
                           const url = typeof vid === 'string' ? vid : vid.url;
                           const notes = typeof vid === 'object' ? vid.notes : '';
                           return (
-                            <div key={idx} className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between gap-3 shadow-2xs">
-                              <div className="space-y-0.5 flex-1 min-w-0">
+                            <div key={idx} className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between gap-3 shadow-2xs overflow-hidden">
+                              <div className="space-y-0.5 flex-1 min-w-0 pr-2">
                                 <div className="text-slate-900 font-bold truncate">🎬 {notes || url}</div>
-                                {notes && <div className="text-[11px] text-slate-500 truncate">{url}</div>}
+                                {notes && <div className="text-[11px] text-slate-500 truncate break-all">{url}</div>}
                               </div>
                               {url && (
                                 <a
@@ -2076,9 +2215,12 @@ export default function ClientWorkspaceDetailPage() {
 
                   {/* 7. EVENT ITINERARY & TIMINGS (CONSOLIDATED) */}
                   <div className="p-6 bg-[#FFFDF9] rounded-3xl border border-[#EAE5DA] shadow-xs space-y-4 col-span-full">
-                    <h3 className="font-serif font-black text-base text-slate-900 flex items-center gap-2">
+                    <h3 className="font-bold text-sm sm:text-base text-slate-900 flex items-center gap-2">
                       <Calendar className="w-4 h-4 text-amber-600" />
-                      7. Event Schedule, Venues, Outfits & Rituals ({Array.isArray(moodboard.itinerary_schedule) ? moodboard.itinerary_schedule.length : 0})
+                      <span>7. Event Schedule, Venues, Outfits & Rituals</span>
+                      <span className="text-xs font-bold px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded-full">
+                        {Array.isArray(moodboard.itinerary_schedule) ? moodboard.itinerary_schedule.length : 0}
+                      </span>
                     </h3>
                     {Array.isArray(moodboard.itinerary_schedule) && moodboard.itinerary_schedule.length > 0 ? (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2086,9 +2228,9 @@ export default function ClientWorkspaceDetailPage() {
                           <div key={idx} className="p-4 bg-slate-50 rounded-3xl border border-slate-200 space-y-3 shadow-2xs">
                             <div className="flex items-center justify-between pb-2 border-b border-slate-200">
                               <div>
-                                <span className="font-black text-slate-900 text-sm">{item.event_name || item.event_type}</span>
+                                <span className="font-bold text-slate-900 text-sm">{item.event_name || item.event_type}</span>
                                 <div className="text-[11px] text-amber-800 font-bold mt-0.5">
-                                  📅 {item.date || 'Date TBD'} • ⏰ {item.start_time} - {item.end_time}
+                                  📅 {formatEventDate(item.date)} • ⏰ {formatEventTime(item.start_time)} - {formatEventTime(item.end_time)}
                                 </div>
                               </div>
                             </div>
@@ -2096,7 +2238,7 @@ export default function ClientWorkspaceDetailPage() {
                             {/* Venue & Map */}
                             {(item.venue_name || item.maps_url) && (
                               <div className="text-xs text-slate-700 flex items-center justify-between bg-white p-2.5 rounded-xl border border-slate-200/80">
-                                <div>
+                                <div className="truncate pr-2">
                                   <span className="font-bold">📍 {item.venue_name || 'Venue'}</span>
                                 </div>
                                 {item.maps_url && (
@@ -2104,7 +2246,7 @@ export default function ClientWorkspaceDetailPage() {
                                     href={item.maps_url}
                                     target="_blank"
                                     rel="noreferrer"
-                                    className="px-2 py-0.5 bg-indigo-50 text-indigo-700 font-bold rounded-lg flex items-center gap-1 text-[10px]"
+                                    className="px-2 py-0.5 bg-indigo-50 text-indigo-700 font-bold rounded-lg flex items-center gap-1 text-[10px] shrink-0"
                                   >
                                     <MapPin className="w-3 h-3" /> Map
                                   </a>
@@ -2112,12 +2254,25 @@ export default function ClientWorkspaceDetailPage() {
                               </div>
                             )}
 
-                            {/* Bride & Groom Outfits */}
+                            {/* Bride & Groom Outfits (Clickable for Popup) */}
                             <div className="grid grid-cols-2 gap-2">
                               {item.bride_outfit_url ? (
-                                <div className="space-y-1">
-                                  <span className="text-[10px] font-bold text-rose-700">Bride Outfit</span>
-                                  <img src={getMediaUrl(item.bride_outfit_url)} alt="Bride" className="aspect-[4/3] rounded-xl object-cover border border-slate-200" />
+                                <div
+                                  onClick={() =>
+                                    openLightbox([
+                                      {
+                                        url: getMediaUrl(item.bride_outfit_url),
+                                        title: `${item.event_name || 'Ceremony'} • Bride's Outfit`,
+                                        notes: item.rituals_notes,
+                                      },
+                                    ])
+                                  }
+                                  className="space-y-1 cursor-pointer group"
+                                >
+                                  <span className="text-[10px] font-bold text-rose-700">Bride Outfit (Click)</span>
+                                  <div className="aspect-[4/3] rounded-xl overflow-hidden border border-slate-200 relative">
+                                    <img src={getMediaUrl(item.bride_outfit_url)} alt="Bride" className="w-full h-full object-cover group-hover:scale-105 transition" />
+                                  </div>
                                 </div>
                               ) : (
                                 <div className="aspect-[4/3] rounded-xl bg-slate-200/50 flex items-center justify-center text-[10px] text-slate-400">
@@ -2125,9 +2280,22 @@ export default function ClientWorkspaceDetailPage() {
                                 </div>
                               )}
                               {item.groom_outfit_url ? (
-                                <div className="space-y-1">
-                                  <span className="text-[10px] font-bold text-blue-700">Groom Outfit</span>
-                                  <img src={getMediaUrl(item.groom_outfit_url)} alt="Groom" className="aspect-[4/3] rounded-xl object-cover border border-slate-200" />
+                                <div
+                                  onClick={() =>
+                                    openLightbox([
+                                      {
+                                        url: getMediaUrl(item.groom_outfit_url),
+                                        title: `${item.event_name || 'Ceremony'} • Groom's Outfit`,
+                                        notes: item.rituals_notes,
+                                      },
+                                    ])
+                                  }
+                                  className="space-y-1 cursor-pointer group"
+                                >
+                                  <span className="text-[10px] font-bold text-blue-700">Groom Outfit (Click)</span>
+                                  <div className="aspect-[4/3] rounded-xl overflow-hidden border border-slate-200 relative">
+                                    <img src={getMediaUrl(item.groom_outfit_url)} alt="Groom" className="w-full h-full object-cover group-hover:scale-105 transition" />
+                                  </div>
                                 </div>
                               ) : (
                                 <div className="aspect-[4/3] rounded-xl bg-slate-200/50 flex items-center justify-center text-[10px] text-slate-400">
@@ -2138,7 +2306,7 @@ export default function ClientWorkspaceDetailPage() {
 
                             {item.rituals_notes && (
                               <p className="text-[11px] text-slate-600 bg-white p-2.5 rounded-xl border border-slate-100">
-                                <strong>Rituals:</strong> {item.rituals_notes}
+                                <strong>Rituals & Highlights:</strong> {item.rituals_notes}
                               </p>
                             )}
                           </div>
@@ -2151,9 +2319,9 @@ export default function ClientWorkspaceDetailPage() {
 
                   {/* 8. VENDOR & PAYMENT COORDINATORS */}
                   <div className="p-6 bg-[#FFFDF9] rounded-3xl border border-[#EAE5DA] shadow-xs space-y-3 col-span-full">
-                    <h3 className="font-serif font-black text-base text-slate-900 flex items-center gap-2">
+                    <h3 className="font-bold text-sm sm:text-base text-slate-900 flex items-center gap-2">
                       <DollarSign className="w-4 h-4 text-pink-600" />
-                      8. Day-of Payment & Vendor Managers
+                      <span>8. Day-of Payment & Vendor Managers</span>
                     </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
                       {(Array.isArray(moodboard.payment_contacts) && moodboard.payment_contacts.length > 0
@@ -2520,6 +2688,96 @@ export default function ClientWorkspaceDetailPage() {
                     </>
                   )}
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ─────────────────────────────────────────────────────────────
+          FULL-SCREEN IMAGE LIGHTBOX / GALLERY MODAL (WITH NOTES & SWIPE)
+      ───────────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {lightbox.isOpen && lightbox.items.length > 0 && (
+          <div className="fixed inset-0 z-70 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="relative max-w-4xl w-full flex flex-col items-center justify-center space-y-3"
+            >
+              {/* Close Button */}
+              <button
+                onClick={() => setLightbox((prev) => ({ ...prev, isOpen: false }))}
+                className="absolute -top-12 right-0 p-2 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition cursor-pointer"
+              >
+                <X className="w-6 h-6" />
+              </button>
+
+              {/* Main Image Container */}
+              <div className="relative w-full aspect-[4/3] sm:aspect-[16/10] max-h-[75vh] bg-black/50 rounded-3xl overflow-hidden flex items-center justify-center border border-white/10 shadow-2xl">
+                <img
+                  src={lightbox.items[lightbox.currentIndex]?.url}
+                  alt="Enlarged"
+                  className="max-w-full max-h-full object-contain"
+                />
+
+                {/* Left Arrow */}
+                {lightbox.items.length > 1 && (
+                  <button
+                    onClick={() =>
+                      setLightbox((prev) => ({
+                        ...prev,
+                        currentIndex: (prev.currentIndex - 1 + prev.items.length) % prev.items.length,
+                      }))
+                    }
+                    className="absolute left-3 top-1/2 -translate-y-1/2 p-3 bg-black/60 hover:bg-black/90 text-white rounded-full transition backdrop-blur-xs cursor-pointer shadow-lg active:scale-95"
+                    title="Previous Photo"
+                  >
+                    <ChevronLeft className="w-6 h-6" />
+                  </button>
+                )}
+
+                {/* Right Arrow */}
+                {lightbox.items.length > 1 && (
+                  <button
+                    onClick={() =>
+                      setLightbox((prev) => ({
+                        ...prev,
+                        currentIndex: (prev.currentIndex + 1) % prev.items.length,
+                      }))
+                    }
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-3 bg-black/60 hover:bg-black/90 text-white rounded-full transition backdrop-blur-xs cursor-pointer shadow-lg active:scale-95"
+                    title="Next Photo"
+                  >
+                    <ChevronRight className="w-6 h-6" />
+                  </button>
+                )}
+              </div>
+
+              {/* Bottom Details Banner with Notes & Index */}
+              <div className="w-full bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/15 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                <div>
+                  <div className="font-bold text-sm text-amber-300">
+                    {lightbox.items[lightbox.currentIndex]?.title || 'Photo Preview'}
+                  </div>
+                  {lightbox.items[lightbox.currentIndex]?.subtitle && (
+                    <div className="text-white/90 font-medium">
+                      {lightbox.items[lightbox.currentIndex]?.subtitle}
+                    </div>
+                  )}
+                  {lightbox.items[lightbox.currentIndex]?.notes && (
+                    <p className="text-white/70 text-[11px] mt-0.5">
+                      {lightbox.items[lightbox.currentIndex]?.notes}
+                    </p>
+                  )}
+                </div>
+
+                {lightbox.items.length > 1 && (
+                  <span className="font-mono text-white/60 text-xs shrink-0 self-end sm:self-auto">
+                    {lightbox.currentIndex + 1} of {lightbox.items.length}
+                  </span>
+                )}
               </div>
             </motion.div>
           </div>

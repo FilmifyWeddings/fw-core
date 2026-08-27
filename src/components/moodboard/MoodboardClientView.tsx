@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Camera, Hash, Phone, Users, Sparkles, Film, Calendar,
-  Heart, Upload, Trash2, Plus, ChevronDown, ChevronUp,
+  Heart, Upload, Trash2, Plus, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
   Check, Copy, RefreshCw, Send, CheckCircle2, Clock,
   ExternalLink, Pencil, MapPin, MessageSquare, BookOpen,
   Share2, Lock, Loader2, UserPlus, X
@@ -220,6 +220,60 @@ export function MoodboardClientView({
 
   const openSection = (key: string) => {
     setExpandedSections((prev) => ({ ...prev, [key]: true }));
+  };
+
+  // Full-Screen Image Lightbox / Gallery Modal
+  const [lightbox, setLightbox] = useState<{
+    isOpen: boolean;
+    items: Array<{ url: string; title?: string; subtitle?: string; notes?: string }>;
+    currentIndex: number;
+  }>({
+    isOpen: false,
+    items: [],
+    currentIndex: 0,
+  });
+
+  const openLightbox = (
+    items: Array<{ url: string; title?: string; subtitle?: string; notes?: string }>,
+    index: number = 0
+  ) => {
+    setLightbox({
+      isOpen: true,
+      items,
+      currentIndex: index,
+    });
+  };
+
+  const formatEventDate = (dateStr?: string) => {
+    if (!dateStr) return '';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
+      const day = d.getDate().toString().padStart(2, '0');
+      const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+      return `${day} ${months[d.getMonth()]} ${d.getFullYear()}`;
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const formatEventTime = (timeStr?: string) => {
+    if (!timeStr) return '';
+    try {
+      const parts = timeStr.trim().split(':');
+      if (parts.length >= 2) {
+        let hours = parseInt(parts[0], 10);
+        const mins = parts[1].slice(0, 2);
+        if (isNaN(hours)) return timeStr;
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        hours = hours % 12;
+        if (hours === 0) hours = 12;
+        return `${hours.toString().padStart(2, '0')}:${mins} ${ampm}`;
+      }
+      return timeStr;
+    } catch {
+      return timeStr;
+    }
   };
 
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -616,13 +670,33 @@ export function MoodboardClientView({
 
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
                 {couplePhotos.map((photo, idx) => (
-                  <div key={idx} className="group relative rounded-2xl overflow-hidden border border-[#EAE5DD] bg-slate-50 flex flex-col shadow-2xs">
-                    <div className="aspect-[4/5] w-full bg-slate-100 relative overflow-hidden">
+                  <div key={idx} className="group relative rounded-2xl overflow-hidden border border-[#EAE5DD] bg-slate-50 flex flex-col shadow-2xs hover:border-amber-400 transition">
+                    <div
+                      onClick={() =>
+                        openLightbox(
+                          couplePhotos.map((p, i) => ({
+                            url: getMediaUrl(p.url),
+                            title: `Couple Portrait ${i + 1}`,
+                            notes: p.caption,
+                          })),
+                          idx
+                        )
+                      }
+                      className="aspect-[4/5] w-full bg-slate-100 relative overflow-hidden cursor-pointer"
+                    >
                       <img src={getMediaUrl(photo.url)} alt={`Couple ${idx + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition flex items-center justify-center">
+                        <span className="opacity-0 group-hover:opacity-100 px-2 py-0.5 bg-black/75 text-white text-[9px] font-bold rounded backdrop-blur-xs">
+                          View
+                        </span>
+                      </div>
                       {!isLocked && (
                         <button
-                          onClick={() => setCouplePhotos((prev) => prev.filter((_, i) => i !== idx))}
-                          className="absolute top-1.5 right-1.5 p-1.5 bg-black/65 hover:bg-rose-600 text-white rounded-full transition"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCouplePhotos((prev) => prev.filter((_, i) => i !== idx));
+                          }}
+                          className="absolute top-1.5 right-1.5 p-1.5 bg-black/65 hover:bg-rose-600 text-white rounded-full transition cursor-pointer z-10"
                         >
                           <Trash2 className="w-3 h-3" />
                         </button>
@@ -1120,13 +1194,28 @@ export function MoodboardClientView({
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
                   {brideFamilyPhotos.map((fam, idx) => (
                     <div key={idx} className="rounded-2xl border border-rose-200 bg-white p-3 space-y-2 shadow-2xs">
-                      <div className="aspect-[4/3] rounded-xl overflow-hidden bg-slate-800 relative group">
-                        <img src={getMediaUrl(fam.url)} alt="Bride Family" className="w-full h-full object-cover" />
+                      <div
+                        onClick={() =>
+                          openLightbox(
+                            brideFamilyPhotos.map((f, i) => ({
+                              url: getMediaUrl(f.url),
+                              title: `Bride Family • ${f.relation || 'VIP'}`,
+                              subtitle: f.names || 'Family Member',
+                            })),
+                            idx
+                          )
+                        }
+                        className="aspect-[4/3] rounded-xl overflow-hidden bg-slate-800 relative group cursor-pointer"
+                      >
+                        <img src={getMediaUrl(fam.url)} alt="Bride Family" className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
                         
                         {!isLocked && (
                           <button
-                            onClick={() => setAnnotatingPhoto({ side: 'Bride', index: idx, url: getMediaUrl(fam.url) })}
-                            className="absolute bottom-2 left-2 px-2.5 py-1.5 bg-black/75 hover:bg-rose-600 text-white rounded-xl text-[11px] font-bold flex items-center gap-1 backdrop-blur-md transition shadow-sm cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setAnnotatingPhoto({ side: 'Bride', index: idx, url: getMediaUrl(fam.url) });
+                            }}
+                            className="absolute bottom-2 left-2 px-2.5 py-1.5 bg-black/75 hover:bg-rose-600 text-white rounded-xl text-[11px] font-bold flex items-center gap-1 backdrop-blur-md transition shadow-sm cursor-pointer z-10"
                           >
                             <Pencil className="w-3 h-3 text-amber-300" />
                             <span>Draw & Tag Faces</span>
@@ -1135,8 +1224,11 @@ export function MoodboardClientView({
 
                         {!isLocked && (
                           <button
-                            onClick={() => setBrideFamilyPhotos((prev) => prev.filter((_, i) => i !== idx))}
-                            className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-rose-600 text-white rounded-full transition"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setBrideFamilyPhotos((prev) => prev.filter((_, i) => i !== idx));
+                            }}
+                            className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-rose-600 text-white rounded-full transition z-10 cursor-pointer"
                           >
                             <Trash2 className="w-3 h-3" />
                           </button>
@@ -1250,13 +1342,28 @@ export function MoodboardClientView({
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
                   {groomFamilyPhotos.map((fam, idx) => (
                     <div key={idx} className="rounded-2xl border border-blue-200 bg-white p-3 space-y-2 shadow-2xs">
-                      <div className="aspect-[4/3] rounded-xl overflow-hidden bg-slate-800 relative group">
-                        <img src={getMediaUrl(fam.url)} alt="Groom Family" className="w-full h-full object-cover" />
+                      <div
+                        onClick={() =>
+                          openLightbox(
+                            groomFamilyPhotos.map((f, i) => ({
+                              url: getMediaUrl(f.url),
+                              title: `Groom Family • ${f.relation || 'VIP'}`,
+                              subtitle: f.names || 'Family Member',
+                            })),
+                            idx
+                          )
+                        }
+                        className="aspect-[4/3] rounded-xl overflow-hidden bg-slate-800 relative group cursor-pointer"
+                      >
+                        <img src={getMediaUrl(fam.url)} alt="Groom Family" className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
                         
                         {!isLocked && (
                           <button
-                            onClick={() => setAnnotatingPhoto({ side: 'Groom', index: idx, url: getMediaUrl(fam.url) })}
-                            className="absolute bottom-2 left-2 px-2.5 py-1.5 bg-black/75 hover:bg-blue-600 text-white rounded-xl text-[11px] font-bold flex items-center gap-1 backdrop-blur-md transition shadow-sm cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setAnnotatingPhoto({ side: 'Groom', index: idx, url: getMediaUrl(fam.url) });
+                            }}
+                            className="absolute bottom-2 left-2 px-2.5 py-1.5 bg-black/75 hover:bg-blue-600 text-white rounded-xl text-[11px] font-bold flex items-center gap-1 backdrop-blur-md transition shadow-sm cursor-pointer z-10"
                           >
                             <Pencil className="w-3 h-3 text-amber-300" />
                             <span>Draw & Tag Faces</span>
@@ -1265,8 +1372,11 @@ export function MoodboardClientView({
 
                         {!isLocked && (
                           <button
-                            onClick={() => setGroomFamilyPhotos((prev) => prev.filter((_, i) => i !== idx))}
-                            className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-rose-600 text-white rounded-full transition"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setGroomFamilyPhotos((prev) => prev.filter((_, i) => i !== idx));
+                            }}
+                            className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-rose-600 text-white rounded-full transition z-10 cursor-pointer"
                           >
                             <Trash2 className="w-3 h-3" />
                           </button>
@@ -1611,6 +1721,16 @@ export function MoodboardClientView({
                     )}
                   </div>
 
+                  {/* Formatted Date & 12-Hour AM/PM Time Summary Badge */}
+                  {(item.date || item.start_time || item.end_time) && (
+                    <div className="flex items-center gap-2 flex-wrap text-xs font-bold text-amber-900 bg-amber-50/80 px-3 py-1.5 rounded-xl border border-amber-200 shadow-2xs">
+                      {item.date && <span>📅 {formatEventDate(item.date)}</span>}
+                      {(item.start_time || item.end_time) && (
+                        <span>⏰ {formatEventTime(item.start_time)}{item.end_time ? ` - ${formatEventTime(item.end_time)}` : ''}</span>
+                      )}
+                    </div>
+                  )}
+
                   {/* Date & Native Time Pickers */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                     <div>
@@ -1725,16 +1845,33 @@ export function MoodboardClientView({
                     <div className="p-3 bg-white rounded-xl border border-slate-300 space-y-2">
                       <span className="text-[11px] font-bold text-rose-800 block">Bride's Outfit / Styling</span>
                       {item.bride_outfit_url ? (
-                        <div className="aspect-[4/3] rounded-xl overflow-hidden relative group">
-                          <img src={getMediaUrl(item.bride_outfit_url)} alt="Bride Outfit" className="w-full h-full object-cover" />
+                        <div
+                          onClick={() =>
+                            openLightbox([
+                              {
+                                url: getMediaUrl(item.bride_outfit_url),
+                                title: `${item.event_name || 'Ceremony'} • Bride Outfit`,
+                                notes: item.rituals_notes,
+                              },
+                            ])
+                          }
+                          className="aspect-[4/3] rounded-xl overflow-hidden relative group cursor-pointer"
+                        >
+                          <img src={getMediaUrl(item.bride_outfit_url)} alt="Bride Outfit" className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition flex items-center justify-center">
+                            <span className="opacity-0 group-hover:opacity-100 px-2 py-0.5 bg-black/75 text-white text-[9px] font-bold rounded backdrop-blur-xs">
+                              View Outfit
+                            </span>
+                          </div>
                           {!isLocked && (
                             <button
-                              onClick={() =>
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 setItinerary((prev) =>
                                   prev.map((it, i) => (i === idx ? { ...it, bride_outfit_url: undefined } : it))
-                                )
-                              }
-                              className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-rose-600 text-white rounded-full transition"
+                                );
+                              }}
+                              className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-rose-600 text-white rounded-full transition z-10 cursor-pointer"
                             >
                               <Trash2 className="w-3 h-3" />
                             </button>
@@ -1776,16 +1913,33 @@ export function MoodboardClientView({
                     <div className="p-3 bg-white rounded-xl border border-slate-300 space-y-2">
                       <span className="text-[11px] font-bold text-blue-800 block">Groom's Outfit / Styling</span>
                       {item.groom_outfit_url ? (
-                        <div className="aspect-[4/3] rounded-xl overflow-hidden relative group">
-                          <img src={getMediaUrl(item.groom_outfit_url)} alt="Groom Outfit" className="w-full h-full object-cover" />
+                        <div
+                          onClick={() =>
+                            openLightbox([
+                              {
+                                url: getMediaUrl(item.groom_outfit_url),
+                                title: `${item.event_name || 'Ceremony'} • Groom Outfit`,
+                                notes: item.rituals_notes,
+                              },
+                            ])
+                          }
+                          className="aspect-[4/3] rounded-xl overflow-hidden relative group cursor-pointer"
+                        >
+                          <img src={getMediaUrl(item.groom_outfit_url)} alt="Groom Outfit" className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition flex items-center justify-center">
+                            <span className="opacity-0 group-hover:opacity-100 px-2 py-0.5 bg-black/75 text-white text-[9px] font-bold rounded backdrop-blur-xs">
+                              View Outfit
+                            </span>
+                          </div>
                           {!isLocked && (
                             <button
-                              onClick={() =>
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 setItinerary((prev) =>
                                   prev.map((it, i) => (i === idx ? { ...it, groom_outfit_url: undefined } : it))
-                                )
-                              }
-                              className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-rose-600 text-white rounded-full transition"
+                                );
+                              }}
+                              className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-rose-600 text-white rounded-full transition z-10 cursor-pointer"
                             >
                               <Trash2 className="w-3 h-3" />
                             </button>
@@ -1822,7 +1976,6 @@ export function MoodboardClientView({
                         </div>
                       )}
                     </div>
-
                   </div>
 
                   {/* Rituals & Notes */}
@@ -2217,6 +2370,94 @@ export function MoodboardClientView({
               >
                 Back to Mood Board
               </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Fullscreen Image Lightbox / Gallery Modal ── */}
+      <AnimatePresence>
+        {lightbox.isOpen && lightbox.items.length > 0 && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="relative max-w-4xl w-full flex flex-col items-center justify-center space-y-3"
+            >
+              {/* Close Button */}
+              <button
+                onClick={() => setLightbox((prev) => ({ ...prev, isOpen: false }))}
+                className="absolute -top-12 right-0 p-2 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition cursor-pointer"
+              >
+                <X className="w-6 h-6" />
+              </button>
+
+              {/* Main Image Container */}
+              <div className="relative w-full aspect-[4/3] sm:aspect-[16/10] max-h-[75vh] bg-black/50 rounded-3xl overflow-hidden flex items-center justify-center border border-white/10 shadow-2xl">
+                <img
+                  src={lightbox.items[lightbox.currentIndex]?.url}
+                  alt="Enlarged"
+                  className="max-w-full max-h-full object-contain"
+                />
+
+                {/* Left Arrow */}
+                {lightbox.items.length > 1 && (
+                  <button
+                    onClick={() =>
+                      setLightbox((prev) => ({
+                        ...prev,
+                        currentIndex: (prev.currentIndex - 1 + prev.items.length) % prev.items.length,
+                      }))
+                    }
+                    className="absolute left-3 top-1/2 -translate-y-1/2 p-3 bg-black/60 hover:bg-black/90 text-white rounded-full transition backdrop-blur-xs cursor-pointer shadow-lg active:scale-95"
+                    title="Previous Photo"
+                  >
+                    <ChevronLeft className="w-6 h-6" />
+                  </button>
+                )}
+
+                {/* Right Arrow */}
+                {lightbox.items.length > 1 && (
+                  <button
+                    onClick={() =>
+                      setLightbox((prev) => ({
+                        ...prev,
+                        currentIndex: (prev.currentIndex + 1) % prev.items.length,
+                      }))
+                    }
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-3 bg-black/60 hover:bg-black/90 text-white rounded-full transition backdrop-blur-xs cursor-pointer shadow-lg active:scale-95"
+                    title="Next Photo"
+                  >
+                    <ChevronRight className="w-6 h-6" />
+                  </button>
+                )}
+              </div>
+
+              {/* Bottom Details Banner with Notes & Index */}
+              <div className="w-full bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/15 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                <div>
+                  <div className="font-bold text-sm text-amber-300">
+                    {lightbox.items[lightbox.currentIndex]?.title || 'Photo Preview'}
+                  </div>
+                  {lightbox.items[lightbox.currentIndex]?.subtitle && (
+                    <div className="text-white/90 font-medium">
+                      {lightbox.items[lightbox.currentIndex]?.subtitle}
+                    </div>
+                  )}
+                  {lightbox.items[lightbox.currentIndex]?.notes && (
+                    <p className="text-white/70 text-[11px] mt-0.5">
+                      {lightbox.items[lightbox.currentIndex]?.notes}
+                    </p>
+                  )}
+                </div>
+
+                {lightbox.items.length > 1 && (
+                  <span className="font-mono text-white/60 text-xs shrink-0 self-end sm:self-auto">
+                    {lightbox.currentIndex + 1} of {lightbox.items.length}
+                  </span>
+                )}
+              </div>
             </motion.div>
           </div>
         )}
