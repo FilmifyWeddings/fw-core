@@ -59,8 +59,7 @@ export async function uploadToR2(
     }
   }
 
-  const publicBase = process.env.R2_PUBLIC_URL || 'https://pub-f09dec7674714bbca24a6462b8f8a1a6.r2.dev';
-  const url = `${publicBase.replace(/\/$/, '')}/${key}`;
+  const url = `/api/media/r2/${key}`;
 
   return { url, key };
 }
@@ -73,7 +72,7 @@ export async function deleteFromR2(keyOrUrl: string): Promise<boolean> {
     let key = keyOrUrl;
     if (keyOrUrl.startsWith('http')) {
       const urlObj = new URL(keyOrUrl);
-      key = urlObj.pathname.replace(/^\/+/, '');
+      key = urlObj.pathname.replace(/^\/+/, '').replace(/^api\/media\/r2\//, '');
     }
 
     await r2.send(
@@ -90,21 +89,35 @@ export async function deleteFromR2(keyOrUrl: string): Promise<boolean> {
 }
 
 /**
- * Normalizes any relative path, key, or proxy URL to the full Cloudflare R2 public CDN URL.
+ * Normalizes any relative path, key, or proxy URL to the full Cloudflare R2 streaming URL.
  */
 export function getMediaUrl(urlOrPath?: string | null): string {
   if (!urlOrPath) return '';
-  if (urlOrPath.startsWith('http://') || urlOrPath.startsWith('https://') || urlOrPath.startsWith('data:')) {
-    return urlOrPath;
+  if (urlOrPath.startsWith('data:')) return urlOrPath;
+
+  // Convert old broken pub-*.r2.dev URLs to working /api/media/r2/ streaming route
+  if (urlOrPath.includes('.r2.dev/') || urlOrPath.includes('r2.cloudflarestorage.com/')) {
+    const parts = urlOrPath.split('.dev/');
+    const pathPart = parts[1] || urlOrPath.split('.com/')[1] || '';
+    if (pathPart) {
+      return `/api/media/r2/${pathPart.replace(/^\/+/, '')}`;
+    }
   }
+
+  // External URLs (like Pinterest, Instagram, etc.)
+  if (urlOrPath.startsWith('http://') || urlOrPath.startsWith('https://')) {
+    if (!urlOrPath.includes('studiocore.in') && !urlOrPath.includes('localhost') && !urlOrPath.includes('.r2.')) {
+      return urlOrPath;
+    }
+  }
+
   const cleanPath = urlOrPath.replace(/^\/+/, '');
   if (cleanPath.startsWith('api/media/r2/')) {
-    const key = cleanPath.replace(/^api\/media\/r2\//, '');
-    return `https://pub-f09dec7674714bbca24a6462b8f8a1a6.r2.dev/${key}`;
+    return `/${cleanPath}`;
   }
   if (cleanPath.startsWith('moodboards/')) {
-    return `https://pub-f09dec7674714bbca24a6462b8f8a1a6.r2.dev/${cleanPath}`;
+    return `/api/media/r2/${cleanPath}`;
   }
-  return `https://pub-f09dec7674714bbca24a6462b8f8a1a6.r2.dev/moodboards/${cleanPath}`;
+  return `/api/media/r2/moodboards/${cleanPath}`;
 }
 
