@@ -1329,13 +1329,17 @@ export default function DataManagerPage() {
                   Sign in with your Google Workspace or Gmail account to authorize read-only indexing for your wedding media.
                 </p>
 
-                <a
-                  href={'/api/storage/google/auth?origin=' + encodeURIComponent(currentOrigin) + '&workspace_id=' + effectiveWsId}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const targetUrl = '/api/storage/google/auth?origin=' + encodeURIComponent(window.location.origin) + '&workspace_id=' + effectiveWsId;
+                    window.location.assign(targetUrl);
+                  }}
                   className="w-full py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-600/20 transition flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Cloud className="w-4 h-4" />
                   <span>Sign In with Google</span>
-                </a>
+                </button>
 
                 {/* Google Cloud Console Redirect URI Fix Info */}
                 <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200 text-xs space-y-2 text-amber-950">

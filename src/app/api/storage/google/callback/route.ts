@@ -16,8 +16,8 @@ export async function GET(req: NextRequest) {
     let accessToken = 'gdrive_access_sample';
     let refreshToken = 'gdrive_refresh_sample';
 
-    const clientId = process.env.GOOGLE_CLIENT_ID;
-    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    const clientId = process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET || '';
 
     if (clientId && clientSecret && code && code !== 'mock_google_code_sample') {
       const redirectUri = `${redirectOrigin}/api/storage/google/callback`;
