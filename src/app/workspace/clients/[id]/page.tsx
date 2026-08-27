@@ -14,6 +14,7 @@ import {
   Heart
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { getMediaUrl } from '@/lib/r2-storage';
 import AiMicButton from '@/components/AiMicButton';
 import { InvoiceModalDialog } from '@/components/finance/invoice-modal-dialog';
 import { 
@@ -1824,7 +1825,7 @@ export default function ClientWorkspaceDetailPage() {
                         {moodboard.couple_photos.map((photo: any, idx: number) => (
                           <div key={idx} className="rounded-2xl overflow-hidden border border-slate-200 bg-slate-50 flex flex-col">
                             <div className="aspect-[4/5] bg-slate-900 relative">
-                              <img src={photo.url} alt={`Couple ${idx}`} className="w-full h-full object-cover" />
+                              <img src={getMediaUrl(photo.url)} alt={`Couple ${idx}`} className="w-full h-full object-cover" />
                             </div>
                             {photo.caption && (
                               <p className="p-2 text-[11px] text-slate-600 bg-white truncate" title={photo.caption}>
@@ -1967,7 +1968,7 @@ export default function ClientWorkspaceDetailPage() {
                         {moodboard.close_family_photos.map((fam: any, idx: number) => (
                           <div key={idx} className="p-2 bg-slate-50 rounded-2xl border border-slate-200 space-y-1.5">
                             <div className="aspect-[4/3] rounded-xl overflow-hidden bg-slate-800">
-                              <img src={fam.url} alt="Family" className="w-full h-full object-cover" />
+                              <img src={getMediaUrl(fam.url)} alt="Family" className="w-full h-full object-cover" />
                             </div>
                             <div className="text-[11px] space-y-0.5">
                               <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
@@ -1996,7 +1997,7 @@ export default function ClientWorkspaceDetailPage() {
                         {moodboard.photo_references.map((inspo: any, idx: number) => (
                           <div key={idx} className="rounded-2xl overflow-hidden border border-slate-200 bg-slate-50 flex flex-col">
                             <div className="aspect-[4/5] bg-slate-900 relative">
-                              <img src={inspo.url} alt="Inspo" className="w-full h-full object-cover" />
+                              <img src={getMediaUrl(inspo.url)} alt="Inspo" className="w-full h-full object-cover" />
                               <span className="absolute bottom-1.5 left-1.5 px-2 py-0.5 bg-black/70 backdrop-blur-md rounded text-[9px] text-amber-300 font-bold">
                                 {inspo.category}
                               </span>
@@ -2127,7 +2128,7 @@ export default function ClientWorkspaceDetailPage() {
                               {outfit.bride_outfit_url ? (
                                 <div className="space-y-1">
                                   <span className="text-[10px] font-bold text-rose-700">Bride Outfit</span>
-                                  <img src={outfit.bride_outfit_url} alt="Bride" className="aspect-[4/3] rounded-xl object-cover border border-slate-200" />
+                                  <img src={getMediaUrl(outfit.bride_outfit_url)} alt="Bride" className="aspect-[4/3] rounded-xl object-cover border border-slate-200" />
                                 </div>
                               ) : (
                                 <div className="aspect-[4/3] rounded-xl bg-slate-200/60 flex items-center justify-center text-[10px] text-slate-400">
@@ -2137,7 +2138,7 @@ export default function ClientWorkspaceDetailPage() {
                               {outfit.groom_outfit_url ? (
                                 <div className="space-y-1">
                                   <span className="text-[10px] font-bold text-blue-700">Groom Outfit</span>
-                                  <img src={outfit.groom_outfit_url} alt="Groom" className="aspect-[4/3] rounded-xl object-cover border border-slate-200" />
+                                  <img src={getMediaUrl(outfit.groom_outfit_url)} alt="Groom" className="aspect-[4/3] rounded-xl object-cover border border-slate-200" />
                                 </div>
                               ) : (
                                 <div className="aspect-[4/3] rounded-xl bg-slate-200/60 flex items-center justify-center text-[10px] text-slate-400">

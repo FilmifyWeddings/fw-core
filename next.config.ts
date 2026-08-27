@@ -8,10 +8,14 @@ const nextConfig: any = {
   reactStrictMode: false,
   
   allowedDevOrigins: ['*.loca.lt', 'loca.lt', '*.lhr.life', 'lhr.life', '*.ngrok-free.dev', 'ngrok-free.dev'],
-  
-
-
-  // Server-side Node.js runtime external packages
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'pub-f09dec7674714bbca24a6462b8f8a1a6.r2.dev',
+      },
+    ],
+  },  // Server-side Node.js runtime external packages
   serverExternalPackages: [
     '@whiskeysockets/baileys',
     'bufferutil',

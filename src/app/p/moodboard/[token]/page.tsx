@@ -11,6 +11,7 @@ import {
   Eye, Clock, X
 } from 'lucide-react';
 import { compressImage } from '@/lib/compressor';
+import { getMediaUrl } from '@/lib/r2-storage';
 import confetti from 'canvas-confetti';
 
 interface CouplePhoto {
@@ -514,7 +515,7 @@ export default function PublicMoodboardPage() {
                         {couplePhotos.map((photo, idx) => (
                           <div key={idx} className="group relative rounded-2xl overflow-hidden border border-[#EAE5DD] bg-slate-50 flex flex-col">
                             <div className="aspect-[4/5] w-full bg-slate-100 relative overflow-hidden">
-                              <img src={photo.url} alt={`Couple ${idx + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+                              <img src={getMediaUrl(photo.url)} alt={`Couple ${idx + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
                               <button
                                 onClick={() => setCouplePhotos((prev) => prev.filter((_, i) => i !== idx))}
                                 className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-rose-600 text-white rounded-full transition"
@@ -786,7 +787,7 @@ export default function PublicMoodboardPage() {
                         {familyPhotos.map((fam, idx) => (
                           <div key={idx} className="rounded-2xl border border-[#EAE5DD] bg-slate-50 p-3 space-y-2">
                             <div className="aspect-[4/3] rounded-xl overflow-hidden bg-slate-200 relative">
-                              <img src={fam.url} alt="Family" className="w-full h-full object-cover" />
+                              <img src={getMediaUrl(fam.url)} alt="Family" className="w-full h-full object-cover" />
                               <button
                                 onClick={() => setFamilyPhotos((prev) => prev.filter((_, i) => i !== idx))}
                                 className="absolute top-1.5 right-1.5 p-1 bg-black/60 hover:bg-rose-600 text-white rounded-full"
@@ -908,7 +909,7 @@ export default function PublicMoodboardPage() {
                         {photoRefs.map((ref, idx) => (
                           <div key={idx} className="rounded-2xl border border-[#EAE5DD] bg-slate-50 overflow-hidden flex flex-col">
                             <div className="aspect-[4/5] bg-slate-200 relative">
-                              <img src={ref.url} alt="Inspo" className="w-full h-full object-cover" />
+                              <img src={getMediaUrl(ref.url)} alt="Inspo" className="w-full h-full object-cover" />
                               <button
                                 onClick={() => setPhotoRefs((prev) => prev.filter((_, i) => i !== idx))}
                                 className="absolute top-1.5 right-1.5 p-1 bg-black/60 hover:bg-rose-600 text-white rounded-full"
@@ -1376,7 +1377,7 @@ export default function PublicMoodboardPage() {
                             <span className="text-[11px] font-bold text-rose-700">Bride Outfit Photo</span>
                             {outfit.bride_outfit_url ? (
                               <div className="aspect-[4/3] rounded-lg overflow-hidden relative">
-                                <img src={outfit.bride_outfit_url} alt="Bride Outfit" className="w-full h-full object-cover" />
+                                <img src={getMediaUrl(outfit.bride_outfit_url)} alt="Bride Outfit" className="w-full h-full object-cover" />
                                 <button
                                   onClick={() =>
                                     setOutfits((prev) =>
@@ -1416,7 +1417,7 @@ export default function PublicMoodboardPage() {
                             <span className="text-[11px] font-bold text-blue-700">Groom Outfit Photo</span>
                             {outfit.groom_outfit_url ? (
                               <div className="aspect-[4/3] rounded-lg overflow-hidden relative">
-                                <img src={outfit.groom_outfit_url} alt="Groom Outfit" className="w-full h-full object-cover" />
+                                <img src={getMediaUrl(outfit.groom_outfit_url)} alt="Groom Outfit" className="w-full h-full object-cover" />
                                 <button
                                   onClick={() =>
                                     setOutfits((prev) =>

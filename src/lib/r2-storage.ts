@@ -59,8 +59,8 @@ export async function uploadToR2(
     }
   }
 
-  // Use fast Next.js edge media route or public URL base
-  const url = `/api/media/r2/${key}`;
+  const publicBase = process.env.R2_PUBLIC_URL || 'https://pub-f09dec7674714bbca24a6462b8f8a1a6.r2.dev';
+  const url = `${publicBase.replace(/\/$/, '')}/${key}`;
 
   return { url, key };
 }
@@ -88,3 +88,23 @@ export async function deleteFromR2(keyOrUrl: string): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Normalizes any relative path, key, or proxy URL to the full Cloudflare R2 public CDN URL.
+ */
+export function getMediaUrl(urlOrPath?: string | null): string {
+  if (!urlOrPath) return '';
+  if (urlOrPath.startsWith('http://') || urlOrPath.startsWith('https://') || urlOrPath.startsWith('data:')) {
+    return urlOrPath;
+  }
+  const cleanPath = urlOrPath.replace(/^\/+/, '');
+  if (cleanPath.startsWith('api/media/r2/')) {
+    const key = cleanPath.replace(/^api\/media\/r2\//, '');
+    return `https://pub-f09dec7674714bbca24a6462b8f8a1a6.r2.dev/${key}`;
+  }
+  if (cleanPath.startsWith('moodboards/')) {
+    return `https://pub-f09dec7674714bbca24a6462b8f8a1a6.r2.dev/${cleanPath}`;
+  }
+  return `https://pub-f09dec7674714bbca24a6462b8f8a1a6.r2.dev/moodboards/${cleanPath}`;
+}
+
