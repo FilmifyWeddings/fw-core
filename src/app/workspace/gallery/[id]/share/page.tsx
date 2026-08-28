@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -41,13 +41,14 @@ interface EventGallery {
   is_active: boolean;
 }
 
-export default function GalleryShareCenterPage() {
+function GalleryShareCenterContent() {
   const params = useParams();
   const router = useRouter();
-  const galleryId = params?.id as string;
+  const galleryId = (Array.isArray(params?.id) ? params?.id[0] : params?.id) as string;
 
   const [gallery, setGallery] = useState<EventGallery | null>(null);
   const [loading, setLoading] = useState(true);
+  const [origin, setOrigin] = useState('https://studiocore.in');
 
   // Toggle Controls
   const [guestAskPin, setGuestAskPin] = useState(false);
@@ -64,18 +65,39 @@ export default function GalleryShareCenterPage() {
   // Copy Feedback
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setOrigin(window.location.origin);
+    }
+  }, []);
+
   const loadGallery = useCallback(async () => {
     if (!galleryId) return;
     setLoading(true);
 
     try {
-      const gRes = await fetch(`/api/gallery/events?id=${galleryId}`);
-      const gJson = await gRes.json();
+      let gal: any = null;
+      try {
+        const gRes = await fetch(`/api/gallery/events?id=${galleryId}`);
+        const gJson = await gRes.json();
+        if (gJson.success && gJson.gallery) {
+          gal = gJson.gallery;
+        }
+      } catch (_) {}
 
-      if (!gJson.success || !gJson.gallery) {
-        throw new Error(gJson.error || 'Gallery not found');
+      if (!gal) {
+        const slugRes = await fetch(`/api/gallery/events?slug=${galleryId}`);
+        const slugJson = await slugRes.json();
+        if (slugJson.success && slugJson.gallery) {
+          gal = slugJson.gallery;
+        }
       }
-      const gal = gJson.gallery;
+
+      if (!gal) {
+        setGallery(null);
+        return;
+      }
+
       setGallery(gal);
       setGuestAskPin(!!gal.pin_code);
       setFullAccessAskPin(!!gal.pin_code);
@@ -90,26 +112,21 @@ export default function GalleryShareCenterPage() {
     loadGallery();
   }, [loadGallery]);
 
-  const getBaseOrigin = () => {
-    if (typeof window !== 'undefined') {
-      return window.location.origin;
-    }
-    return 'https://studiocore.in';
-  };
-
   const studioSlug = gallery?.studio_slug || 'studio';
   const eventIdentifier = gallery?.event_number || gallery?.id || gallery?.slug || 'event';
   const guestPin = gallery?.guest_pin || gallery?.pin_code || '700680';
   const passKey = gallery?.pass_key || gallery?.admin_pin || gallery?.pin_code || '518399';
 
   // Exact FotoOwl Link Structures
-  const guestAccessUrl = `${getBaseOrigin()}/g/${studioSlug}/gallery/${eventIdentifier}`;
-  const fullAccessUrl = `${getBaseOrigin()}/g/${studioSlug}/gallery/${eventIdentifier}?access=all`;
-  const photoSelectionUrl = `${getBaseOrigin()}/g/${studioSlug}/gallery/${eventIdentifier}?album_selection=true&pass_key=${passKey}`;
-  const vipAccessUrl = `${getBaseOrigin()}/g/${studioSlug}/gallery/${eventIdentifier}?vip-link=1&share_key=${guestPin}`;
+  const guestAccessUrl = `${origin}/g/${studioSlug}/gallery/${eventIdentifier}`;
+  const fullAccessUrl = `${origin}/g/${studioSlug}/gallery/${eventIdentifier}?access=all`;
+  const photoSelectionUrl = `${origin}/g/${studioSlug}/gallery/${eventIdentifier}?album_selection=true&pass_key=${passKey}`;
+  const vipAccessUrl = `${origin}/g/${studioSlug}/gallery/${eventIdentifier}?vip-link=1&share_key=${guestPin}`;
 
   const copyToClipboard = (text: string, key: string) => {
-    navigator.clipboard.writeText(text);
+    if (typeof navigator !== 'undefined') {
+      navigator.clipboard.writeText(text);
+    }
     setCopiedKey(key);
     setTimeout(() => setCopiedKey(null), 2500);
   };
@@ -119,7 +136,9 @@ export default function GalleryShareCenterPage() {
     const pinText = pin ? `\n🔐 PIN Code: *${pin}*` : '';
     const message = `✨ *${gallery.title}* ✨\n\n📸 Access your wedding photos instantly using the link below:\n👉 ${url}${pinText}\n\n_Find all your special moments with AI Selfie Search!_`;
 
-    navigator.clipboard.writeText(message);
+    if (typeof navigator !== 'undefined') {
+      navigator.clipboard.writeText(message);
+    }
     setCopiedKey(key);
     setTimeout(() => setCopiedKey(null), 2500);
   };
@@ -617,5 +636,19 @@ export default function GalleryShareCenterPage() {
       )}
 
     </div>
+  );
+}
+
+export default function GalleryShareCenterPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#FAF9F5] flex items-center justify-center p-6 text-zinc-500 text-xs font-bold">
+          Loading Share Links Center...
+        </div>
+      }
+    >
+      <GalleryShareCenterContent />
+    </Suspense>
   );
 }

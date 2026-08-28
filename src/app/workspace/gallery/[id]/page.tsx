@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -83,10 +83,10 @@ interface PhotoItem {
   created_at: string;
 }
 
-export default function AlbumStudioWorkspacePage() {
+function AlbumStudioContent() {
   const params = useParams();
   const router = useRouter();
-  const galleryId = params?.id as string;
+  const galleryId = (Array.isArray(params?.id) ? params?.id[0] : params?.id) as string;
 
   const [gallery, setGallery] = useState<EventGallery | null>(null);
   const [collections, setCollections] = useState<GalleryCollection[]>([]);
@@ -958,5 +958,23 @@ export default function AlbumStudioWorkspacePage() {
       )}
 
     </div>
+  );
+}
+
+export default function AlbumStudioPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#FAF9F5] flex flex-col items-center justify-center space-y-4 p-6">
+          <div className="w-16 h-16 rounded-3xl bg-amber-100 text-amber-700 flex items-center justify-center animate-pulse">
+            <Camera className="w-8 h-8" />
+          </div>
+          <p className="text-sm font-black text-zinc-800 tracking-tight">Loading Album Studio...</p>
+          <span className="text-xs text-zinc-400">Powered by StudioCore AI</span>
+        </div>
+      }
+    >
+      <AlbumStudioContent />
+    </Suspense>
   );
 }
