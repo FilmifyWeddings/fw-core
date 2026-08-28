@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPresignedUploadUrl } from '@/lib/r2';
+import { getPresignedUploadUrl, GALLERY_BUCKET_NAME } from '@/lib/r2';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,13 +17,13 @@ export async function POST(req: NextRequest) {
     const baseName = filename.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_');
 
     const originalKey = `events/${galleryId}/original/${timestamp}_${randomSuffix}_${baseName}.jpg`;
-    const previewKey = `events/${galleryId}/preview/${timestamp}_${randomSuffix}_${baseName}.webp`;
-    const thumbKey = `events/${galleryId}/thumb/${timestamp}_${randomSuffix}_${baseName}.webp`;
+    const previewKey = `events/${galleryId}/previews/${timestamp}_${randomSuffix}_${baseName}.webp`;
+    const thumbKey = `events/${galleryId}/thumbs/${timestamp}_${randomSuffix}_${baseName}.webp`;
 
     const [originalUploadUrl, previewUploadUrl, thumbUploadUrl] = await Promise.all([
-      getPresignedUploadUrl(originalKey, originalType, 3600),
-      getPresignedUploadUrl(previewKey, 'image/webp', 3600),
-      getPresignedUploadUrl(thumbKey, 'image/webp', 3600),
+      getPresignedUploadUrl(originalKey, originalType, 3600, GALLERY_BUCKET_NAME),
+      getPresignedUploadUrl(previewKey, 'image/webp', 3600, GALLERY_BUCKET_NAME),
+      getPresignedUploadUrl(thumbKey, 'image/webp', 3600, GALLERY_BUCKET_NAME),
     ]);
 
     return NextResponse.json({

@@ -390,16 +390,13 @@ export default function GalleryManagerPage() {
                     {/* Action Bar */}
                     <div className="space-y-2 pt-2 border-t border-zinc-100">
                       <div className="grid grid-cols-2 gap-2">
-                        <button
-                          onClick={() => {
-                            setSelectedGallery(gallery);
-                            setIsUploadModalOpen(true);
-                          }}
+                        <Link
+                          href={`/workspace/gallery/${gallery.id}`}
                           className="py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm shadow-amber-500/20 cursor-pointer"
                         >
-                          <Upload className="w-3.5 h-3.5" />
-                          <span>+ Upload Photos</span>
-                        </button>
+                          <ImageIcon className="w-3.5 h-3.5" />
+                          <span>Manage Collection</span>
+                        </Link>
 
                         <button
                           onClick={() => {
