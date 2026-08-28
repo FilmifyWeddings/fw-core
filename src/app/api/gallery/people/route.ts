@@ -11,7 +11,7 @@ interface FaceRecord {
   gallery_id: string;
   bounding_box: { x: number; y: number; w: number; h: number };
   embedding: number[];
-  confidence: number;
+  confidence?: number;
 }
 
 interface PhotoRecord {

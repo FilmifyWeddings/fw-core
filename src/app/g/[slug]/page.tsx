@@ -26,6 +26,7 @@ import {
   QrCode,
   Send,
   User,
+  Users,
   Phone,
   Mail,
   Smartphone,
@@ -86,6 +87,8 @@ export default function GuestGalleryPage() {
 
   // Face Matching State
   const [isFaceModalOpen, setIsFaceModalOpen] = useState(false);
+  const [people, setPeople] = useState<any[]>([]);
+  const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
   const [matchedPhotos, setMatchedPhotos] = useState<PhotoItem[]>([]);
   const [isMatching, setIsMatching] = useState(false);
   const [activeFilter, setActiveFilter] = useState<'all' | 'matched'>('all');
@@ -141,6 +144,14 @@ export default function GuestGalleryPage() {
       const pJson = await pRes.json();
       if (pJson.success && Array.isArray(pJson.photos)) {
         setPhotos(pJson.photos);
+        // Load People Clusters for Google Photos style row
+        try {
+          const peopleRes = await fetch(`/api/gallery/people?gallery_id=${gal.id}`);
+          const peopleJson = await peopleRes.json();
+          if (peopleJson.success && Array.isArray(peopleJson.people)) {
+            setPeople(peopleJson.people);
+          }
+        } catch (_) {}
 
         // If guestParamId is provided, filter for that guest
         if (guestParamId) {
@@ -617,6 +628,78 @@ export default function GuestGalleryPage() {
           </div>
         </div>
       </div>
+
+      {/* 1.5 GOOGLE PHOTOS PEOPLE AVATARS BAR */}
+      {people.length > 0 && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-8 mt-4">
+          <div className="bg-white rounded-3xl p-4 border border-[#E7E2D8] shadow-sm space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500 flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5 text-purple-600" />
+                <span>People in this Wedding ({people.length})</span>
+              </span>
+              <span className="text-[10px] text-zinc-400 hidden sm:inline">Tap any face to filter</span>
+            </div>
+
+            <div className="flex items-center gap-3 overflow-x-auto pb-1 scrollbar-thin">
+              <button
+                onClick={() => {
+                  setSelectedPersonId(null);
+                  setActiveFilter('all');
+                  setMatchNotice(null);
+                }}
+                className={'flex flex-col items-center gap-1 shrink-0 cursor-pointer transition ' + (
+                  selectedPersonId === null && activeFilter === 'all' ? 'scale-105' : 'opacity-70 hover:opacity-100'
+                )}
+              >
+                <div className={'w-12 h-12 rounded-full flex items-center justify-center border-2 ' + (
+                  selectedPersonId === null && activeFilter === 'all'
+                    ? 'border-amber-500 bg-amber-50 text-amber-800 ring-2 ring-amber-400/30'
+                    : 'border-zinc-200 bg-zinc-100 text-zinc-600'
+                )}>
+                  <Users className="w-5 h-5" />
+                </div>
+                <span className="text-[10px] font-black text-zinc-800">All</span>
+              </button>
+
+              {people.map(p => {
+                const isSel = selectedPersonId === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => {
+                      if (isSel) {
+                        setSelectedPersonId(null);
+                        setActiveFilter('all');
+                        setMatchNotice(null);
+                      } else {
+                        setSelectedPersonId(p.id);
+                        const pSet = new Set(p.photo_ids);
+                        const matched = photos.filter((ph: any) => pSet.has(ph.id));
+                        setMatchedPhotos(matched);
+                        setActiveFilter('matched');
+                        setMatchNotice(`Showing ${matched.length} photos of ${p.name}`);
+                      }
+                    }}
+                    className={'flex flex-col items-center gap-1 shrink-0 cursor-pointer transition ' + (
+                      isSel ? 'scale-105' : 'opacity-80 hover:opacity-100'
+                    )}
+                  >
+                    <div className={'relative w-12 h-12 rounded-full overflow-hidden border-2 ' + (
+                      isSel
+                        ? 'border-purple-600 ring-3 ring-purple-500/30'
+                        : 'border-zinc-200 hover:border-purple-400'
+                    )}>
+                      <img src={p.avatar_url} alt={p.name} className="w-full h-full object-cover object-top" />
+                    </div>
+                    <span className="text-[10px] font-bold text-zinc-700 max-w-[60px] truncate">{p.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 2. FLOATING FACE AI SEARCH BAR */}
       <div className="max-w-7xl mx-auto px-4 sm:px-8 -mt-8 relative z-20 space-y-4">
