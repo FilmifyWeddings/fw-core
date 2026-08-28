@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
     // 1. Fetch all faces in gallery
     const { data: rawFaces, error: faceErr } = await supabaseAdmin
       .from('photo_faces')
-      .select('id, photo_id, gallery_id, bounding_box, embedding, confidence')
+      .select('id, photo_id, gallery_id, bounding_box, embedding')
       .eq('gallery_id', galleryId);
 
     if (faceErr) {
