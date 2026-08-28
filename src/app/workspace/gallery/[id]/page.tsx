@@ -710,6 +710,69 @@ function AlbumStudioContent() {
             </div>
           </div>
 
+          {/* Google Photos "People & Faces" Horizontal Bar */}
+          {people.length > 0 && (
+            <div className="bg-white rounded-2xl border border-[#E7E2D8] p-4 shadow-2xs space-y-3 animate-in fade-in">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-700 flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-purple-600" />
+                  <span>People &amp; Faces Detected ({people.length} Unique People)</span>
+                </span>
+                {selectedPersonId && (
+                  <button
+                    onClick={() => setSelectedPersonId(null)}
+                    className="text-xs text-amber-600 hover:text-amber-700 font-bold cursor-pointer"
+                  >
+                    Clear Filter (Show All)
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-4 overflow-x-auto pb-2 scrollbar-thin">
+                <button
+                  onClick={() => setSelectedPersonId(null)}
+                  className={'flex flex-col items-center gap-1.5 shrink-0 cursor-pointer transition ' + (
+                    selectedPersonId === null ? 'scale-105' : 'opacity-70 hover:opacity-100'
+                  )}
+                >
+                  <div className={'w-14 h-14 rounded-full flex items-center justify-center border-2 ' + (
+                    selectedPersonId === null
+                      ? 'border-amber-500 bg-amber-50 text-amber-800 ring-4 ring-amber-400/20'
+                      : 'border-zinc-200 bg-zinc-100 text-zinc-600'
+                  )}>
+                    <Users className="w-6 h-6" />
+                  </div>
+                  <span className="text-[11px] font-black text-zinc-800">All ({photos.length})</span>
+                </button>
+
+                {people.map(p => {
+                  const isSel = selectedPersonId === p.id;
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => setSelectedPersonId(isSel ? null : p.id)}
+                      className={'flex flex-col items-center gap-1.5 shrink-0 cursor-pointer transition ' + (
+                        isSel ? 'scale-105' : 'opacity-80 hover:opacity-100'
+                      )}
+                    >
+                      <div className={'relative w-14 h-14 rounded-full overflow-hidden border-2 shadow-xs ' + (
+                        isSel
+                          ? 'border-purple-600 ring-4 ring-purple-500/30'
+                          : 'border-zinc-200 hover:border-purple-400'
+                      )}>
+                        <img src={p.avatar_url} alt={p.name} className="w-full h-full object-cover object-top" />
+                      </div>
+                      <div className="text-center">
+                        <span className="text-[11px] font-bold text-zinc-800 block max-w-[70px] truncate">{p.name}</span>
+                        <span className="text-[9.5px] font-mono text-zinc-400">{p.photo_count} photos</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Photo Masonry Grid */}
           {filteredPhotos.length === 0 ? (
             <div className="bg-white rounded-3xl p-16 text-center border border-zinc-200 space-y-4 shadow-2xs">
