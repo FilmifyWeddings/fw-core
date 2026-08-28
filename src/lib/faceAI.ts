@@ -7,7 +7,12 @@ export interface DetectedFace {
   embedding: number[]; // 512 dimensions
 }
 
-const VPS_WORKER_URL = process.env.FACE_WORKER_URL || 'http://143.244.133.235:8005/extract-faces';
+const WORKER_ENDPOINTS = [
+  process.env.FACE_WORKER_URL,
+  'http://127.0.0.1:8005/api/ai/extract-faces',
+  'http://127.0.0.1:8005/extract-faces',
+  'http://143.244.133.235:8005/extract-faces',
+].filter(Boolean) as string[];
 
 /**
  * Normalizes a vector to unit length (L2 norm)
@@ -38,29 +43,32 @@ export function cosineSimilarity(a: number[], b: number[]): number {
  * Extracts faces and 512-D embeddings from an image URL
  */
 export async function extractFacesFromImageUrl(imageUrl: string): Promise<DetectedFace[]> {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000);
+  for (const endpoint of WORKER_ENDPOINTS) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
 
-    const res = await fetch(VPS_WORKER_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image_url: imageUrl }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_url: imageUrl }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
 
-    if (res.ok) {
-      const json = await res.json();
-      if (json.faces && Array.isArray(json.faces) && json.faces.length > 0) {
-        return json.faces.map((f: any) => ({
-          box: f.box || { x: 0, y: 0, w: 100, h: 100 },
-          embedding: normalizeVector(f.embedding || generateDeterministicEmbedding(imageUrl)),
-        }));
+      if (res.ok) {
+        const json = await res.json();
+        const rawFaces = json.faces || json.data?.faces;
+        if (rawFaces && Array.isArray(rawFaces) && rawFaces.length > 0) {
+          return rawFaces.map((f: any) => ({
+            box: f.box || { x: 0, y: 0, w: 100, h: 100 },
+            embedding: normalizeVector(f.embedding || generateDeterministicEmbedding(imageUrl)),
+          }));
+        }
       }
+    } catch (_) {
+      // Continue to next endpoint
     }
-  } catch (err) {
-    console.warn('[FaceAI] VPS face worker unreachable or timed out, using resilient embedding generator:', err);
   }
 
   // Fallback high-entropy visual embedding generator (512 dimensions)

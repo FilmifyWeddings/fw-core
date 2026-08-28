@@ -19,19 +19,23 @@ import {
   X,
   Users,
   CheckSquare,
-  ShieldCheck,
   Crown,
-  Eye,
-  Settings,
+  Key,
+  KeyRound,
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
 
 interface EventGallery {
   id: string;
+  workspace_id?: string;
   title: string;
   slug: string;
   event_date: string;
   pin_code: string | null;
+  guest_pin?: string | null;
+  admin_pin?: string | null;
+  pass_key?: string | null;
+  studio_slug?: string | null;
+  event_number?: string | number | null;
   cover_url: string | null;
   allow_downloads: boolean;
   is_active: boolean;
@@ -45,15 +49,17 @@ export default function GalleryShareCenterPage() {
   const [gallery, setGallery] = useState<EventGallery | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Toggle States for Controls
+  // Toggle Controls
   const [guestAskPin, setGuestAskPin] = useState(false);
   const [fullAccessAskPin, setFullAccessAskPin] = useState(true);
   const [fullAccessRequireReg, setFullAccessRequireReg] = useState(false);
   const [selectionActive, setSelectionActive] = useState(true);
 
-  // Standee Modal State
+  // Standee Modal
   const [isStandeeModalOpen, setIsStandeeModalOpen] = useState(false);
-  const [standeeMode, setStandeeMode] = useState<string>('guest');
+  const [standeeUrl, setStandeeUrl] = useState<string>('');
+  const [standeeTitle, setStandeeTitle] = useState<string>('');
+  const [standeePin, setStandeePin] = useState<string | null>(null);
 
   // Copy Feedback
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -91,10 +97,16 @@ export default function GalleryShareCenterPage() {
     return 'https://studiocore.in';
   };
 
-  const getShareUrl = (mode: string) => {
-    if (!gallery) return '';
-    return `${getBaseOrigin()}/g/${gallery.slug}?mode=${mode}`;
-  };
+  const studioSlug = gallery?.studio_slug || 'studio';
+  const eventIdentifier = gallery?.event_number || gallery?.id || gallery?.slug || 'event';
+  const guestPin = gallery?.guest_pin || gallery?.pin_code || '700680';
+  const passKey = gallery?.pass_key || gallery?.admin_pin || gallery?.pin_code || '518399';
+
+  // Exact FotoOwl Link Structures
+  const guestAccessUrl = `${getBaseOrigin()}/g/${studioSlug}/gallery/${eventIdentifier}`;
+  const fullAccessUrl = `${getBaseOrigin()}/g/${studioSlug}/gallery/${eventIdentifier}?access=all`;
+  const photoSelectionUrl = `${getBaseOrigin()}/g/${studioSlug}/gallery/${eventIdentifier}?album_selection=true&pass_key=${passKey}`;
+  const vipAccessUrl = `${getBaseOrigin()}/g/${studioSlug}/gallery/${eventIdentifier}?vip-link=1&share_key=${guestPin}`;
 
   const copyToClipboard = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -102,11 +114,9 @@ export default function GalleryShareCenterPage() {
     setTimeout(() => setCopiedKey(null), 2500);
   };
 
-  const copyWhatsAppMessage = (title: string, mode: string, key: string) => {
+  const copyWhatsAppMessage = (title: string, url: string, pin: string | null, key: string) => {
     if (!gallery) return;
-    const url = getShareUrl(mode);
-    const pinText = gallery.pin_code ? `\n🔐 PIN Code: ${gallery.pin_code}` : '';
-
+    const pinText = pin ? `\n🔐 PIN Code: *${pin}*` : '';
     const message = `✨ *${gallery.title}* ✨\n\n📸 Access your wedding photos instantly using the link below:\n👉 ${url}${pinText}\n\n_Find all your special moments with AI Selfie Search!_`;
 
     navigator.clipboard.writeText(message);
@@ -139,35 +149,35 @@ export default function GalleryShareCenterPage() {
           <div>
             <div className="flex items-center gap-2">
               <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-black uppercase tracking-wider border border-amber-200">
-                Share Center
+                Share Links Center
               </span>
               <span className="text-xs font-bold text-zinc-400">
                 {gallery.title}
               </span>
             </div>
             <h1 className="text-2xl font-black text-zinc-900 tracking-tight">
-              Event Access &amp; Share Links
+              Event Access &amp; Dynamic Links
             </h1>
           </div>
         </div>
 
         <a
-          href={`/g/${gallery.slug}`}
+          href={guestAccessUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="px-4 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-md shadow-zinc-900/10 cursor-pointer shrink-0"
         >
           <ExternalLink className="w-4 h-4 text-amber-400" />
-          <span>Open Live Portal</span>
+          <span>Open Guest Portal</span>
         </a>
       </div>
 
       {/* ─────────────────────────────────────────────────────────────
-          2. THE 4 ACCESS CARDS
+          2. THE 4 FOTOOWL DYNAMIC ACCESS CARDS
       ───────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         
-        {/* CARD 1: GUEST ACCESS */}
+        {/* CARD 1: GUEST ACCESS (STRICT SELFIE SCAN) */}
         <div className="bg-white rounded-3xl p-6 border border-[#E7E2D8] shadow-2xs space-y-5 flex flex-col justify-between hover:border-amber-400 transition-all">
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -175,24 +185,42 @@ export default function GalleryShareCenterPage() {
                 <Camera className="w-5 h-5" />
               </div>
               <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-black">
-                ✨ Recommended for Guests
+                ✨ Guest Face Wall
               </span>
             </div>
 
             <div>
-              <h3 className="text-base font-black text-zinc-900">1. Guest Access (Selfie Search)</h3>
+              <h3 className="text-base font-black text-zinc-900">1. Guest Access</h3>
               <p className="text-xs text-zinc-500 font-medium mt-1">
-                Guests can take a selfie or upload a photo to find and view <strong>only their own photos</strong> with sub-second AI matching.
+                People with this link can see <strong>Only Their Own Photos (Selfie Scan Required)</strong>. Full gallery is hidden.
               </p>
             </div>
 
-            <div className="p-3 rounded-2xl bg-[#FBF9F5] border border-[#E7E2D8] text-xs font-mono text-zinc-700 truncate">
-              {getShareUrl('guest')}
+            <div className="p-3 rounded-2xl bg-[#FBF9F5] border border-[#E7E2D8] text-xs font-mono text-zinc-700 truncate select-all">
+              {guestAccessUrl}
+            </div>
+
+            {/* Dedicated PIN Box */}
+            <div className="p-3 rounded-2xl bg-amber-50/60 border border-amber-200/80 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Lock className="w-4 h-4 text-amber-700" />
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-amber-800 block">Guest PIN Code</span>
+                  <span className="text-xs font-mono font-black text-zinc-900">{guestPin}</span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => copyToClipboard(guestPin, 'pin_guest')}
+                className="px-2.5 py-1 rounded-lg bg-white border border-amber-200 text-[11px] font-bold text-amber-900 hover:bg-amber-100 transition cursor-pointer"
+              >
+                {copiedKey === 'pin_guest' ? 'Copied' : 'Copy PIN'}
+              </button>
             </div>
 
             {/* Controls */}
             <div className="pt-2 border-t border-zinc-100 flex items-center justify-between text-xs">
-              <span className="font-bold text-zinc-700">Do not ask PIN for selfie scan</span>
+              <span className="font-bold text-zinc-700">Do not ask PIN</span>
               <input
                 type="checkbox"
                 checked={!guestAskPin}
@@ -206,7 +234,7 @@ export default function GalleryShareCenterPage() {
           <div className="space-y-2 pt-3 border-t border-zinc-100">
             <div className="grid grid-cols-2 gap-2">
               <button
-                onClick={() => copyToClipboard(getShareUrl('guest'), 'guest_url')}
+                onClick={() => copyToClipboard(guestAccessUrl, 'guest_url')}
                 className="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
               >
                 {copiedKey === 'guest_url' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
@@ -214,17 +242,19 @@ export default function GalleryShareCenterPage() {
               </button>
 
               <button
-                onClick={() => copyWhatsAppMessage(gallery.title, 'guest', 'guest_wa')}
+                onClick={() => copyWhatsAppMessage(gallery.title, guestAccessUrl, guestAskPin ? guestPin : null, 'guest_wa')}
                 className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm shadow-emerald-600/20 cursor-pointer"
               >
                 {copiedKey === 'guest_wa' ? <Check className="w-3.5 h-3.5" /> : <MessageCircle className="w-3.5 h-3.5" />}
-                <span>{copiedKey === 'guest_wa' ? 'Copied Message' : 'WhatsApp Share'}</span>
+                <span>{copiedKey === 'guest_wa' ? 'Copied' : 'WhatsApp Share'}</span>
               </button>
             </div>
 
             <button
               onClick={() => {
-                setStandeeMode('guest');
+                setStandeeUrl(guestAccessUrl);
+                setStandeeTitle(gallery.title);
+                setStandeePin(guestAskPin ? guestPin : null);
                 setIsStandeeModalOpen(true);
               }}
               className="w-full py-2.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
@@ -243,19 +273,37 @@ export default function GalleryShareCenterPage() {
                 <Users className="w-5 h-5" />
               </div>
               <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-800 border border-blue-200 text-[10px] font-black">
-                Full Gallery
+                Full Event
               </span>
             </div>
 
             <div>
-              <h3 className="text-base font-black text-zinc-900">2. Full Access Link</h3>
+              <h3 className="text-base font-black text-zinc-900">2. Full Access</h3>
               <p className="text-xs text-zinc-500 font-medium mt-1">
-                People with this link can view <strong>all photos across all collections</strong> in the event.
+                People with this link can see <strong>All the event photos</strong> across all sub-events.
               </p>
             </div>
 
-            <div className="p-3 rounded-2xl bg-[#FBF9F5] border border-[#E7E2D8] text-xs font-mono text-zinc-700 truncate">
-              {getShareUrl('all')}
+            <div className="p-3 rounded-2xl bg-[#FBF9F5] border border-[#E7E2D8] text-xs font-mono text-zinc-700 truncate select-all">
+              {fullAccessUrl}
+            </div>
+
+            {/* Dedicated PIN Box */}
+            <div className="p-3 rounded-2xl bg-blue-50/60 border border-blue-200/80 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <KeyRound className="w-4 h-4 text-blue-700" />
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-blue-800 block">Access PIN Code</span>
+                  <span className="text-xs font-mono font-black text-zinc-900">{guestPin}</span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => copyToClipboard(guestPin, 'pin_full')}
+                className="px-2.5 py-1 rounded-lg bg-white border border-blue-200 text-[11px] font-bold text-blue-900 hover:bg-blue-100 transition cursor-pointer"
+              >
+                {copiedKey === 'pin_full' ? 'Copied' : 'Copy PIN'}
+              </button>
             </div>
 
             {/* Controls */}
@@ -271,7 +319,7 @@ export default function GalleryShareCenterPage() {
               </div>
 
               <div className="flex items-center justify-between">
-                <span className="font-bold text-zinc-700">Require Guest Registration</span>
+                <span className="font-bold text-zinc-700">Require Registration</span>
                 <input
                   type="checkbox"
                   checked={fullAccessRequireReg}
@@ -286,25 +334,27 @@ export default function GalleryShareCenterPage() {
           <div className="space-y-2 pt-3 border-t border-zinc-100">
             <div className="grid grid-cols-2 gap-2">
               <button
-                onClick={() => copyToClipboard(getShareUrl('all'), 'all_url')}
+                onClick={() => copyToClipboard(fullAccessUrl, 'full_url')}
                 className="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
               >
-                {copiedKey === 'all_url' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copiedKey === 'all_url' ? 'Copied Link' : 'Copy Link'}</span>
+                {copiedKey === 'full_url' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedKey === 'full_url' ? 'Copied Link' : 'Copy Link'}</span>
               </button>
 
               <button
-                onClick={() => copyWhatsAppMessage(gallery.title, 'all', 'all_wa')}
+                onClick={() => copyWhatsAppMessage(gallery.title, fullAccessUrl, fullAccessAskPin ? guestPin : null, 'full_wa')}
                 className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm shadow-emerald-600/20 cursor-pointer"
               >
-                {copiedKey === 'all_wa' ? <Check className="w-3.5 h-3.5" /> : <MessageCircle className="w-3.5 h-3.5" />}
-                <span>{copiedKey === 'all_wa' ? 'Copied Message' : 'WhatsApp Share'}</span>
+                {copiedKey === 'full_wa' ? <Check className="w-3.5 h-3.5" /> : <MessageCircle className="w-3.5 h-3.5" />}
+                <span>{copiedKey === 'full_wa' ? 'Copied' : 'WhatsApp Share'}</span>
               </button>
             </div>
 
             <button
               onClick={() => {
-                setStandeeMode('all');
+                setStandeeUrl(fullAccessUrl);
+                setStandeeTitle(gallery.title);
+                setStandeePin(fullAccessAskPin ? guestPin : null);
                 setIsStandeeModalOpen(true);
               }}
               className="w-full py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
@@ -323,19 +373,37 @@ export default function GalleryShareCenterPage() {
                 <CheckSquare className="w-5 h-5" />
               </div>
               <span className="px-2.5 py-1 rounded-full bg-purple-50 text-purple-800 border border-purple-200 text-[10px] font-black">
-                Album Selection
+                Album Selection ON
               </span>
             </div>
 
             <div>
-              <h3 className="text-base font-black text-zinc-900">3. Photo Selection Link</h3>
+              <h3 className="text-base font-black text-zinc-900">3. Photo Selection with Full Access</h3>
               <p className="text-xs text-zinc-500 font-medium mt-1">
-                Allows client to <strong>favorite and select photos</strong> for album print and final delivery.
+                People with this link can see All photos and the <strong>photo selection mode is ON</strong> for album prints.
               </p>
             </div>
 
-            <div className="p-3 rounded-2xl bg-[#FBF9F5] border border-[#E7E2D8] text-xs font-mono text-zinc-700 truncate">
-              {getShareUrl('selection')}
+            <div className="p-3 rounded-2xl bg-[#FBF9F5] border border-[#E7E2D8] text-xs font-mono text-zinc-700 truncate select-all">
+              {photoSelectionUrl}
+            </div>
+
+            {/* Dedicated Pass Key Box */}
+            <div className="p-3 rounded-2xl bg-purple-50/60 border border-purple-200/80 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Key className="w-4 h-4 text-purple-700" />
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-purple-800 block">Pass Key</span>
+                  <span className="text-xs font-mono font-black text-zinc-900">{passKey}</span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => copyToClipboard(passKey, 'pass_key_copy')}
+                className="px-2.5 py-1 rounded-lg bg-white border border-purple-200 text-[11px] font-bold text-purple-900 hover:bg-purple-100 transition cursor-pointer"
+              >
+                {copiedKey === 'pass_key_copy' ? 'Copied' : 'Copy Key'}
+              </button>
             </div>
 
             {/* Controls */}
@@ -354,7 +422,7 @@ export default function GalleryShareCenterPage() {
           <div className="space-y-2 pt-3 border-t border-zinc-100">
             <div className="grid grid-cols-2 gap-2">
               <button
-                onClick={() => copyToClipboard(getShareUrl('selection'), 'selection_url')}
+                onClick={() => copyToClipboard(photoSelectionUrl, 'selection_url')}
                 className="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
               >
                 {copiedKey === 'selection_url' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
@@ -362,17 +430,19 @@ export default function GalleryShareCenterPage() {
               </button>
 
               <button
-                onClick={() => copyWhatsAppMessage(gallery.title, 'selection', 'selection_wa')}
+                onClick={() => copyWhatsAppMessage(gallery.title, photoSelectionUrl, passKey, 'selection_wa')}
                 className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm shadow-emerald-600/20 cursor-pointer"
               >
                 {copiedKey === 'selection_wa' ? <Check className="w-3.5 h-3.5" /> : <MessageCircle className="w-3.5 h-3.5" />}
-                <span>{copiedKey === 'selection_wa' ? 'Copied Message' : 'WhatsApp Share'}</span>
+                <span>{copiedKey === 'selection_wa' ? 'Copied' : 'WhatsApp Share'}</span>
               </button>
             </div>
 
             <button
               onClick={() => {
-                setStandeeMode('selection');
+                setStandeeUrl(photoSelectionUrl);
+                setStandeeTitle(gallery.title);
+                setStandeePin(passKey);
                 setIsStandeeModalOpen(true);
               }}
               className="w-full py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
@@ -391,19 +461,37 @@ export default function GalleryShareCenterPage() {
                 <Crown className="w-5 h-5" />
               </div>
               <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black">
-                VIP Access
+                VIP Bypass
               </span>
             </div>
 
             <div>
               <h3 className="text-base font-black text-zinc-900">4. VIP Guest Access Link</h3>
               <p className="text-xs text-zinc-500 font-medium mt-1">
-                Instant access without asking for phone number or email before taking selfie.
+                <strong>No User Data will be asked for Face Search.</strong> Direct high-priority access.
               </p>
             </div>
 
-            <div className="p-3 rounded-2xl bg-[#FBF9F5] border border-[#E7E2D8] text-xs font-mono text-zinc-700 truncate">
-              {getShareUrl('vip')}
+            <div className="p-3 rounded-2xl bg-[#FBF9F5] border border-[#E7E2D8] text-xs font-mono text-zinc-700 truncate select-all">
+              {vipAccessUrl}
+            </div>
+
+            {/* Dedicated Share Key Box */}
+            <div className="p-3 rounded-2xl bg-amber-50/60 border border-amber-200/80 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Key className="w-4 h-4 text-amber-700" />
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-amber-800 block">Share Key</span>
+                  <span className="text-xs font-mono font-black text-zinc-900">{guestPin}</span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => copyToClipboard(guestPin, 'share_key_copy')}
+                className="px-2.5 py-1 rounded-lg bg-white border border-amber-200 text-[11px] font-bold text-amber-900 hover:bg-amber-100 transition cursor-pointer"
+              >
+                {copiedKey === 'share_key_copy' ? 'Copied' : 'Copy Key'}
+              </button>
             </div>
 
             <div className="pt-2 border-t border-zinc-100 flex items-center justify-between text-xs text-zinc-500">
@@ -416,7 +504,7 @@ export default function GalleryShareCenterPage() {
           <div className="space-y-2 pt-3 border-t border-zinc-100">
             <div className="grid grid-cols-2 gap-2">
               <button
-                onClick={() => copyToClipboard(getShareUrl('vip'), 'vip_url')}
+                onClick={() => copyToClipboard(vipAccessUrl, 'vip_url')}
                 className="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
               >
                 {copiedKey === 'vip_url' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
@@ -424,17 +512,19 @@ export default function GalleryShareCenterPage() {
               </button>
 
               <button
-                onClick={() => copyWhatsAppMessage(gallery.title, 'vip', 'vip_wa')}
+                onClick={() => copyWhatsAppMessage(gallery.title, vipAccessUrl, null, 'vip_wa')}
                 className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm shadow-emerald-600/20 cursor-pointer"
               >
                 {copiedKey === 'vip_wa' ? <Check className="w-3.5 h-3.5" /> : <MessageCircle className="w-3.5 h-3.5" />}
-                <span>{copiedKey === 'vip_wa' ? 'Copied Message' : 'WhatsApp Share'}</span>
+                <span>{copiedKey === 'vip_wa' ? 'Copied' : 'WhatsApp Share'}</span>
               </button>
             </div>
 
             <button
               onClick={() => {
-                setStandeeMode('vip');
+                setStandeeUrl(vipAccessUrl);
+                setStandeeTitle(gallery.title);
+                setStandeePin(null);
                 setIsStandeeModalOpen(true);
               }}
               className="w-full py-2.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
@@ -473,7 +563,7 @@ export default function GalleryShareCenterPage() {
                   ✨ Instant AI Guest Gallery
                 </span>
                 <h2 className="text-xl font-black text-zinc-900 tracking-tight pt-2">
-                  {gallery.title}
+                  {standeeTitle}
                 </h2>
                 <p className="text-xs text-zinc-500 font-serif italic">
                   Find all your wedding photos instantly with AI Selfie Search
@@ -482,7 +572,7 @@ export default function GalleryShareCenterPage() {
 
               <div className="w-44 h-44 bg-white p-3 rounded-2xl border-2 border-zinc-900 mx-auto shadow-md flex items-center justify-center">
                 <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(getShareUrl(standeeMode))}`}
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(standeeUrl)}`}
                   alt="Gallery QR Code"
                   className="w-full h-full object-contain"
                 />
@@ -491,9 +581,9 @@ export default function GalleryShareCenterPage() {
               <div className="space-y-1 text-xs">
                 <p className="font-bold text-zinc-800">1. Scan QR with your phone camera</p>
                 <p className="font-bold text-zinc-800">2. Take a quick selfie to find your photos</p>
-                {gallery.pin_code && standeeMode !== 'vip' && (
+                {standeePin && (
                   <p className="font-mono text-xs font-black text-amber-900 bg-amber-100 px-2 py-0.5 rounded-md inline-block border border-amber-300">
-                    PIN Code: {gallery.pin_code}
+                    PIN Code: {standeePin}
                   </p>
                 )}
               </div>
@@ -515,7 +605,7 @@ export default function GalleryShareCenterPage() {
 
               <button
                 type="button"
-                onClick={() => copyToClipboard(getShareUrl(standeeMode), 'standee_url')}
+                onClick={() => copyToClipboard(standeeUrl, 'standee_url')}
                 className="px-4 py-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer"
               >
                 {copiedKey === 'standee_url' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
