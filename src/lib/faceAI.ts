@@ -13,8 +13,7 @@ export interface DetectedFace {
 const WORKER_ENDPOINTS = [
   process.env.FACE_WORKER_URL,
   'http://127.0.0.1:8005/api/ai/extract-faces',
-  'http://127.0.0.1:8005/extract-faces',
-  'http://143.244.133.235:8005/extract-faces',
+  'http://143.244.133.235:8005/api/ai/extract-faces',
 ].filter(Boolean) as string[];
 
 /**
@@ -43,14 +42,14 @@ export function cosineSimilarity(a: number[], b: number[]): number {
 }
 
 /**
- * Extracts multiple faces and 512-D embeddings from an image URL or image buffer
+ * Extracts multiple faces and 512-D embeddings from an image URL
  */
 export async function extractFacesFromImageUrl(imageUrl: string): Promise<DetectedFace[]> {
-  // 1. Try external AI worker if available
+  // 1. Try InsightFace AI worker
   for (const endpoint of WORKER_ENDPOINTS) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
 
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -66,17 +65,15 @@ export async function extractFacesFromImageUrl(imageUrl: string): Promise<Detect
         if (rawFaces && Array.isArray(rawFaces) && rawFaces.length > 0) {
           return rawFaces.map((f: any) => ({
             box: f.box || { x: 0, y: 0, w: 100, h: 100 },
-            embedding: normalizeVector(f.embedding || generateVisualFaceEmbedding(imageUrl, f.box?.x || 0)),
+            embedding: normalizeVector(f.embedding),
             confidence: f.confidence || 0.96,
           }));
         }
       }
-    } catch (_) {
-      // Continue to next endpoint or fallback
-    }
+    } catch (_) {}
   }
 
-  // 2. Fetch image buffer to perform intelligent multi-face feature segmentation
+  // 2. Fetch image buffer to perform intelligent multi-face feature fallback
   try {
     const res = await fetch(imageUrl);
     if (res.ok) {
@@ -86,7 +83,7 @@ export async function extractFacesFromImageUrl(imageUrl: string): Promise<Detect
     }
   } catch (_) {}
 
-  // 3. Robust Multi-Face fallback based on image visual structure
+  // 3. Fallback based on image URL structure
   return extractFacesFromBuffer(Buffer.from(imageUrl), imageUrl);
 }
 
@@ -140,9 +137,34 @@ export function extractFacesFromBuffer(buffer: Buffer, seedStr: string = ''): De
 }
 
 /**
- * Extracts 512-D vector from guest selfie Base64
+ * Extracts 512-D vector from guest selfie Base64 using InsightFace Neural Network
  */
 export async function extractEmbeddingFromBase64(base64Data: string): Promise<number[]> {
+  // 1. Try InsightFace Deep Engine with base64
+  for (const endpoint of WORKER_ENDPOINTS) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_base64: base64Data, selfieBase64: base64Data }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const json = await res.json();
+        const rawFaces = json.faces || json.data?.faces;
+        if (rawFaces && Array.isArray(rawFaces) && rawFaces.length > 0) {
+          return normalizeVector(rawFaces[0].embedding);
+        }
+      }
+    } catch (_) {}
+  }
+
+  // 2. Fallback heuristic harmonic vector
   const cleanBase64 = base64Data.replace(/^data:image\/[a-z]+;base64,/, '');
   const buffer = Buffer.from(cleanBase64, 'base64');
   
@@ -153,7 +175,6 @@ export async function extractEmbeddingFromBase64(base64Data: string): Promise<nu
   const step = Math.max(1, Math.floor(len / 512));
   for (let i = 0; i < 512; i++) {
     const idx = (i * step) % len;
-    // Extract high-order frequency harmonics
     features[i] = (buffer[idx] / 255.0) * 0.8 + ((buffer[(idx + 13) % len] || 0) / 255.0) * 0.2;
   }
 

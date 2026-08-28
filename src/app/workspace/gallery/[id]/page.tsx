@@ -109,6 +109,9 @@ function AlbumStudioContent() {
   const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const [isGuestListModalOpen, setIsGuestListModalOpen] = useState(false);
+  const [people, setPeople] = useState<any[]>([]);
+  const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
+  const [copiedPersonId, setCopiedPersonId] = useState<string | null>(null);
   const [registeredGuests, setRegisteredGuests] = useState<any[]>([]);
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<any>(null);
@@ -207,6 +210,7 @@ function AlbumStudioContent() {
       }
 
       setCollections(fetchedCols);
+      loadPeople(gal.id);
 
       // Fetch Photos
       const pRes = await fetch(`/api/gallery/photos?gallery_id=${gal.id}`);
@@ -224,6 +228,16 @@ function AlbumStudioContent() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  const loadPeople = async (galId: string) => {
+    try {
+      const res = await fetch(`/api/gallery/people?gallery_id=${galId}`);
+      const json = await res.json();
+      if (json.success && Array.isArray(json.people)) {
+        setPeople(json.people);
+      }
+    } catch (_) {}
+  };
 
   const loadRegisteredGuests = async () => {
     if (!gallery) return;
