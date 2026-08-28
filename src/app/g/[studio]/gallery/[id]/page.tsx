@@ -1,33 +1,24 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
-import { useParams, useSearchParams, useRouter } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import {
   Camera,
   Sparkles,
-  Play,
-  Pause,
   Download,
-  Share2,
   Lock,
   Unlock,
   X,
-  ChevronLeft,
-  ChevronRight,
   Heart,
-  CheckCircle2,
   Image as ImageIcon,
   CheckSquare,
   Square,
   Crown,
   Copy,
   Check,
-  RefreshCw,
-  Sliders,
-  Folder,
-  Layers,
-  ArrowDownToLine,
   UserCheck,
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 import { getPublicGalleryUrl } from '@/lib/r2';
 
@@ -66,7 +57,6 @@ interface GalleryInfo {
 function StrictGuestGalleryContent() {
   const params = useParams();
   const searchParams = useSearchParams();
-  const router = useRouter();
 
   const studioSlug = params?.studio as string;
   const galleryIdOrSlug = params?.id as string;
@@ -81,7 +71,7 @@ function StrictGuestGalleryContent() {
   const [gallery, setGallery] = useState<GalleryInfo | null>(null);
   const [collections, setCollections] = useState<GalleryCollection[]>([]);
   const [selectedCollectionId, setSelectedCollectionId] = useState<string>('all');
-  const [photos, setPhotos] = useState<PhotoItem[]>([]);
+  const [fullPhotos, setFullPhotos] = useState<PhotoItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -90,7 +80,7 @@ function StrictGuestGalleryContent() {
   const [enteredPin, setEnteredPin] = useState('');
   const [pinError, setPinError] = useState(false);
 
-  // Strict Guest Face Matching State
+  // Strict Guest Face Search State
   const [guestScanned, setGuestScanned] = useState(false);
   const [matchedPhotos, setMatchedPhotos] = useState<PhotoItem[]>([]);
   const [isMatching, setIsMatching] = useState(false);
@@ -110,7 +100,9 @@ function StrictGuestGalleryContent() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // 1. Fetch Gallery Data & Collections
+  const isStrictGuestMode = !isFullAccess && !isSelectionMode;
+
+  // 1. Fetch Gallery Info
   const loadGalleryData = useCallback(async () => {
     if (!galleryIdOrSlug) return;
     setLoading(true);
@@ -118,9 +110,12 @@ function StrictGuestGalleryContent() {
 
     try {
       // Fetch gallery info (try ID first then Slug)
-      const gRes = await fetch(`/api/gallery/events?id=${galleryIdOrSlug}`);
-      const gJson = await gRes.json();
-      let gal = gJson.gallery;
+      let gal: any = null;
+      try {
+        const gRes = await fetch(`/api/gallery/events?id=${galleryIdOrSlug}`);
+        const gJson = await gRes.json();
+        gal = gJson.gallery;
+      } catch (_) {}
 
       if (!gal) {
         const slugRes = await fetch(`/api/gallery/events?slug=${galleryIdOrSlug}`);
@@ -152,25 +147,28 @@ function StrictGuestGalleryContent() {
         setIsUnlocked(true);
       }
 
-      // Fetch Collections
-      const cRes = await fetch(`/api/gallery/collections?gallery_id=${gal.id}`);
-      const cJson = await cRes.json();
-      if (cJson.success && Array.isArray(cJson.collections)) {
-        setCollections(cJson.collections);
-      }
+      // ONLY fetch full collection photos if in Full Access or Photo Selection mode
+      if (!isStrictGuestMode) {
+        // Fetch Collections
+        const cRes = await fetch(`/api/gallery/collections?gallery_id=${gal.id}`);
+        const cJson = await cRes.json();
+        if (cJson.success && Array.isArray(cJson.collections)) {
+          setCollections(cJson.collections);
+        }
 
-      // Fetch Photos
-      const pRes = await fetch(`/api/gallery/photos?gallery_id=${gal.id}`);
-      const pJson = await pRes.json();
-      if (pJson.success && Array.isArray(pJson.photos)) {
-        setPhotos(pJson.photos);
+        // Fetch Full Photos
+        const pRes = await fetch(`/api/gallery/photos?gallery_id=${gal.id}`);
+        const pJson = await pRes.json();
+        if (pJson.success && Array.isArray(pJson.photos)) {
+          setFullPhotos(pJson.photos);
+        }
       }
     } catch (err: any) {
       setError(err.message || 'Failed to load wedding gallery');
     } finally {
       setLoading(false);
     }
-  }, [galleryIdOrSlug, isFullAccess, isSelectionMode, isVipMode, passKeyParam, shareKeyParam]);
+  }, [galleryIdOrSlug, isFullAccess, isSelectionMode, isVipMode, isStrictGuestMode, passKeyParam, shareKeyParam]);
 
   useEffect(() => {
     loadGalleryData();
@@ -239,7 +237,7 @@ function StrictGuestGalleryContent() {
     await performFaceMatch(base64);
   };
 
-  // Handle Upload Selfie
+  // Handle Upload Selfie from Phone
   const handleUploadSelfie = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !gallery) return;
@@ -252,49 +250,44 @@ function StrictGuestGalleryContent() {
     reader.readAsDataURL(file);
   };
 
-  // Face Matching Vector RPC Request
+  // Strict Vector Search RPC Request
   const performFaceMatch = async (selfieBase64: string) => {
     if (!gallery) return;
     setIsMatching(true);
-    setMatchNotice('Scanning wedding moments with 512-D Face AI...');
+    setMatchNotice('Extracting 512-D Face Vector and querying pgvector...');
 
     try {
-      const res = await fetch('/api/gallery/face-match', {
+      // 1. Extract 512-D vector
+      const extractRes = await fetch('/api/ai/extract-faces', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selfieBase64 }),
+      });
+      const extractJson = await extractRes.json();
+      const embedding = extractJson.embedding;
+
+      // 2. Perform Strict Match RPC
+      const matchRes = await fetch('/api/gallery/match-face', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          galleryId: gallery.id,
+          gallery_id: gallery.id,
+          embedding,
           selfieBase64,
-          similarityThreshold: 0.45,
+          threshold: 0.45,
         }),
       });
 
-      const json = await res.json();
-      if (json.success && Array.isArray(json.matches)) {
-        const matchMap = new Map(json.matches.map((m: any) => [m.photoId, m]));
-        
-        const matched = photos
-          .filter(p => matchMap.has(p.id))
-          .map(p => {
-            const m = matchMap.get(p.id);
-            return {
-              ...p,
-              similarity: m.similarity,
-              confidencePercent: m.confidencePercent,
-            };
-          })
-          .sort((a, b) => (b.confidencePercent || 0) - (a.confidencePercent || 0));
+      const matchJson = await matchRes.json();
+      const matched = matchJson.photos || [];
 
-        setMatchedPhotos(matched);
-        setGuestScanned(true);
+      setMatchedPhotos(matched);
+      setGuestScanned(true);
 
-        if (matched.length > 0) {
-          setMatchNotice(`🎉 Found ${matched.length} photos of you!`);
-        } else {
-          setMatchNotice('No matching photos found with this selfie. Please try again with better lighting.');
-        }
+      if (matched.length > 0) {
+        setMatchNotice(`🎉 Found ${matched.length} photos of you!`);
       } else {
-        alert(json.error || 'Face match failed');
+        setMatchNotice('No matching photos found with this selfie. Try taking another clear selfie in good light.');
       }
     } catch (err: any) {
       alert(`Error during face search: ${err.message}`);
@@ -352,12 +345,10 @@ function StrictGuestGalleryContent() {
     });
   };
 
-  // Filter Photos according to Mode & Collection
-  const isStrictGuestMode = !isFullAccess && !isSelectionMode;
-
+  // Determine Active Photos to Display
   const displayedPhotos = isStrictGuestMode
     ? matchedPhotos
-    : photos.filter(p => {
+    : fullPhotos.filter(p => {
         if (selectedCollectionId !== 'all' && p.collection_id !== selectedCollectionId) {
           return false;
         }
@@ -595,7 +586,9 @@ function StrictGuestGalleryContent() {
               </div>
               <div>
                 <h3 className="text-sm font-black text-zinc-900">Your Personalized Face Wall</h3>
-                <p className="text-xs text-zinc-500">Found {matchedPhotos.length} photos containing your face</p>
+                <p className="text-xs text-zinc-500">
+                  {matchedPhotos.length > 0 ? `Found ${matchedPhotos.length} photos of you` : '0 matching photos found'}
+                </p>
               </div>
             </div>
 
@@ -607,26 +600,30 @@ function StrictGuestGalleryContent() {
                 }}
                 className="px-4 py-2.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer"
               >
-                <Camera className="w-3.5 h-3.5" />
+                <RefreshCw className="w-3.5 h-3.5" />
                 <span>Retake Selfie</span>
               </button>
             </div>
           </div>
 
-          {/* Matched Grid */}
+          {/* Strict Matched Grid (NO Fallback) */}
           {matchedPhotos.length === 0 ? (
-            <div className="bg-white rounded-3xl p-16 text-center border border-zinc-200 space-y-4">
-              <Camera className="w-12 h-12 text-zinc-300 mx-auto" />
-              <h3 className="text-base font-bold text-zinc-700">No Matching Photos Found</h3>
-              <p className="text-xs text-zinc-400 max-w-sm mx-auto">
-                We couldn't detect your face in the current uploaded photos. Try retaking your selfie with clear lighting.
-              </p>
+            <div className="bg-white rounded-3xl p-16 text-center border border-zinc-200 space-y-4 max-w-xl mx-auto shadow-sm">
+              <div className="w-16 h-16 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto">
+                <AlertCircle className="w-8 h-8" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-zinc-800">No Matching Photos Found</h3>
+                <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+                  Try taking another clear selfie in good light or upload a front-facing photo from your gallery.
+                </p>
+              </div>
               <button
                 onClick={() => {
                   setGuestScanned(false);
                   startCamera();
                 }}
-                className="px-6 py-3 rounded-2xl bg-zinc-900 text-white font-bold text-xs cursor-pointer"
+                className="px-6 py-3 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs cursor-pointer shadow-md transition"
               >
                 Retake Selfie
               </button>
@@ -697,11 +694,11 @@ function StrictGuestGalleryContent() {
                     : 'bg-white text-zinc-700 border border-zinc-200 hover:bg-zinc-50'
                 )}
               >
-                All Photos ({photos.length})
+                All Photos ({fullPhotos.length})
               </button>
 
               {collections.map(c => {
-                const count = photos.filter(p => p.collection_id === c.id).length;
+                const count = fullPhotos.filter(p => p.collection_id === c.id).length;
                 return (
                   <button
                     key={c.id}
