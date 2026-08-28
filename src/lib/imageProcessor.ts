@@ -143,7 +143,8 @@ export function uploadBlobToPresignedUrl(
 export async function batchUploadPhotos(
   galleryId: string,
   files: File[],
-  onProgress?: UploadProgressCallback
+  onProgress?: UploadProgressCallback,
+  collectionId?: string
 ): Promise<{ success: boolean; uploadedCount: number; errors: string[] }> {
   let completed = 0;
   const total = files.length;
@@ -198,6 +199,7 @@ export async function batchUploadPhotos(
           // 4. Collect for registration
           registeredPhotos.push({
             gallery_id: galleryId,
+            collection_id: collectionId || null,
             original_key: originalKey,
             preview_key: previewKey,
             thumbnail_key: thumbKey,

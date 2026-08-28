@@ -108,9 +108,50 @@ export async function POST(req: NextRequest) {
       throw error;
     }
 
+    // Automatically create default 'Highlights' collection
+    try {
+      await supabaseAdmin.from('gallery_collections').insert({
+        gallery_id: newGallery.id,
+        name: 'Highlights',
+      });
+    } catch (_) {}
+
     return NextResponse.json({ success: true, gallery: newGallery });
   } catch (err: any) {
     console.error('Error creating event gallery:', err);
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { id, title, event_date, is_active, pin_code, allow_downloads, cover_url } = body;
+
+    if (!id) {
+      return NextResponse.json({ success: false, error: 'Gallery ID is required' }, { status: 400 });
+    }
+
+    const updates: Record<string, any> = {};
+    if (title !== undefined) updates.title = title.trim();
+    if (event_date !== undefined) updates.event_date = event_date;
+    if (is_active !== undefined) updates.is_active = is_active;
+    if (pin_code !== undefined) updates.pin_code = pin_code ? String(pin_code).trim() : null;
+    if (allow_downloads !== undefined) updates.allow_downloads = allow_downloads;
+    if (cover_url !== undefined) updates.cover_url = cover_url;
+
+    const { data: updated, error } = await supabaseAdmin
+      .from('event_galleries')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return NextResponse.json({ success: true, gallery: updated });
+  } catch (err: any) {
+    console.error('Error updating event gallery:', err);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }

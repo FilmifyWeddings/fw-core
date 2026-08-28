@@ -59,13 +59,13 @@ export default function GalleryManagerPage() {
   const [standeeGallery, setStandeeGallery] = useState<EventGallery | null>(null);
   const [copiedUrl, setCopiedUrl] = useState(false);
 
-  // Create Form State
+  const router = useRouter();
+
+  // Create Form State (3 Fields only)
   const [createForm, setCreateForm] = useState({
     title: '',
     slug: '',
     event_date: new Date().toISOString().split('T')[0],
-    pin_code: '',
-    allow_downloads: true,
   });
   const [creating, setCreating] = useState(false);
 
@@ -100,7 +100,7 @@ export default function GalleryManagerPage() {
     fetchGalleries();
   }, [fetchGalleries]);
 
-  // Handle Create Gallery
+  // Handle Create Gallery -> Redirects straight to collection studio
   const handleCreateGallery = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!createForm.title.trim()) return;
@@ -115,17 +115,7 @@ export default function GalleryManagerPage() {
       const json = await res.json();
       if (json.success && json.gallery) {
         setIsCreateModalOpen(false);
-        setCreateForm({
-          title: '',
-          slug: '',
-          event_date: new Date().toISOString().split('T')[0],
-          pin_code: '',
-          allow_downloads: true,
-        });
-        await fetchGalleries();
-        // Automatically open upload modal for the newly created gallery
-        setSelectedGallery(json.gallery);
-        setIsUploadModalOpen(true);
+        router.push(`/workspace/gallery/${json.gallery.id}`);
       } else {
         alert(json.error || 'Failed to create gallery');
       }
@@ -497,40 +487,14 @@ export default function GalleryManagerPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-bold text-zinc-700 mb-1">Event Date</label>
-                <input
-                  type="date"
-                  value={createForm.event_date}
-                  onChange={(e) => setCreateForm({ ...createForm, event_date: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-zinc-50 rounded-xl border border-zinc-200 text-xs font-bold text-zinc-900"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-zinc-700 mb-1">Guest PIN (Optional)</label>
-                <input
-                  type="text"
-                  maxLength={6}
-                  placeholder="e.g. 2026"
-                  value={createForm.pin_code}
-                  onChange={(e) => setCreateForm({ ...createForm, pin_code: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-zinc-50 rounded-xl border border-zinc-200 text-xs font-mono font-bold text-zinc-900"
-                />
-              </div>
-            </div>
-
-            <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200 text-[11px] text-amber-950 flex items-center justify-between">
-              <div>
-                <span className="font-bold block">Allow High-Res Downloads</span>
-                <span className="text-[10px] text-amber-800">Guests can download full original photos directly from R2</span>
-              </div>
+            <div>
+              <label className="block text-xs font-bold text-zinc-700 mb-1">Event Date *</label>
               <input
-                type="checkbox"
-                checked={createForm.allow_downloads}
-                onChange={(e) => setCreateForm({ ...createForm, allow_downloads: e.target.checked })}
-                className="w-4 h-4 text-amber-600 rounded cursor-pointer"
+                type="date"
+                required
+                value={createForm.event_date}
+                onChange={(e) => setCreateForm({ ...createForm, event_date: e.target.value })}
+                className="w-full px-3.5 py-2.5 bg-zinc-50 rounded-xl border border-zinc-200 text-xs font-bold text-zinc-900"
               />
             </div>
 
@@ -541,7 +505,7 @@ export default function GalleryManagerPage() {
                 className="flex-1 py-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-md"
               >
                 {creating ? <RefreshCw className="w-4 h-4 animate-spin text-amber-400" /> : <Sparkles className="w-4 h-4 text-amber-400" />}
-                <span>{creating ? 'Creating Event...' : 'Create & Upload Photos'}</span>
+                <span>{creating ? 'Creating Album...' : 'Create Album & Open Studio'}</span>
               </button>
               <button
                 type="button"

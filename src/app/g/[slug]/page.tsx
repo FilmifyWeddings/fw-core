@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import {
   Camera,
   Sparkles,
@@ -14,17 +14,17 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
-  Maximize2,
-  Minimize2,
   Heart,
-  Eye,
   CheckCircle2,
-  RefreshCw,
-  Sliders,
-  Filter,
-  ArrowDownToLine,
   Image as ImageIcon,
+  CheckSquare,
+  Square,
+  Crown,
+  FileCheck,
+  Copy,
+  Check,
 } from 'lucide-react';
+import { getPublicGalleryUrl } from '@/lib/r2';
 
 interface PhotoItem {
   id: string;
@@ -51,7 +51,9 @@ interface GalleryInfo {
 
 export default function GuestGalleryPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const slug = params?.slug as string;
+  const mode = searchParams?.get('mode') || 'guest'; // 'guest' | 'all' | 'selection' | 'vip'
 
   const [gallery, setGallery] = useState<GalleryInfo | null>(null);
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
@@ -67,9 +69,13 @@ export default function GuestGalleryPage() {
   const [isFaceModalOpen, setIsFaceModalOpen] = useState(false);
   const [matchedPhotos, setMatchedPhotos] = useState<PhotoItem[]>([]);
   const [isMatching, setIsMatching] = useState(false);
-  const [activeFilter, setActiveFilter] = useState<'all' | 'matched'>('all');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'matched'>(mode === 'guest' ? 'all' : 'all');
   const [cameraActive, setCameraActive] = useState(false);
   const [matchNotice, setMatchNotice] = useState<string | null>(null);
+
+  // Album Selection Mode State
+  const [selectedPhotos, setSelectedPhotos] = useState<Set<string>>(new Set());
+  const [copiedSelection, setCopiedSelection] = useState(false);
 
   // Lightbox State
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
@@ -91,7 +97,6 @@ export default function GuestGalleryPage() {
     setError(null);
 
     try {
-      // Fetch gallery info
       const gRes = await fetch(`/api/gallery/events?slug=${slug}`);
       const gJson = await gRes.json();
       if (!gJson.success || !gJson.gallery) {
@@ -103,8 +108,8 @@ export default function GuestGalleryPage() {
       const gal = gJson.gallery;
       setGallery(gal);
 
-      // Check if unlocked in session
-      if (!gal.pin_code || sessionStorage.getItem(`gallery_unlocked_${gal.id}`) === 'true') {
+      // If VIP mode, or no PIN code, or unlocked in session -> unlock immediately
+      if (mode === 'vip' || !gal.pin_code || sessionStorage.getItem(`gallery_unlocked_${gal.id}`) === 'true') {
         setIsUnlocked(true);
       }
 
@@ -119,7 +124,7 @@ export default function GuestGalleryPage() {
     } finally {
       setLoading(false);
     }
-  }, [slug]);
+  }, [slug, mode]);
 
   useEffect(() => {
     loadGalleryData();
@@ -201,7 +206,7 @@ export default function GuestGalleryPage() {
   const performFaceMatch = async (selfieBase64: string) => {
     if (!gallery) return;
     setIsMatching(true);
-    setMatchNotice('Analyzing your face and searching thousands of wedding photos...');
+    setMatchNotice('Analyzing your face and searching wedding photos...');
 
     try {
       const res = await fetch('/api/gallery/face-match', {
@@ -218,7 +223,6 @@ export default function GuestGalleryPage() {
       if (json.success && Array.isArray(json.matches)) {
         const matchMap = new Map(json.matches.map((m: any) => [m.photoId, m]));
         
-        // Filter photos that matched
         const matched = photos
           .filter(p => matchMap.has(p.id))
           .map(p => {
@@ -236,7 +240,7 @@ export default function GuestGalleryPage() {
         setIsFaceModalOpen(false);
 
         if (matched.length > 0) {
-          setMatchNotice(`🎉 Found ${matched.length} photos of you! Showing your personalized gallery.`);
+          setMatchNotice(`🎉 Found ${matched.length} photos of you!`);
         } else {
           setMatchNotice('No matching photos found with your selfie. Showing all gallery photos.');
           setActiveFilter('all');
@@ -278,6 +282,17 @@ export default function GuestGalleryPage() {
     }
   };
 
+  // Toggle Selection in Selection Mode
+  const togglePhotoSelection = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSelectedPhotos(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   // Toggle Favorite
   const toggleFavorite = (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -288,24 +303,6 @@ export default function GuestGalleryPage() {
       return next;
     });
   };
-
-  // Slideshow Controller
-  useEffect(() => {
-    if (isSlideshow && displayedPhotos.length > 0) {
-      slideshowTimerRef.current = setInterval(() => {
-        setSelectedPhotoIndex(prev => {
-          if (prev === null) return 0;
-          return (prev + 1) % displayedPhotos.length;
-        });
-      }, 4000);
-    } else {
-      if (slideshowTimerRef.current) clearInterval(slideshowTimerRef.current);
-    }
-
-    return () => {
-      if (slideshowTimerRef.current) clearInterval(slideshowTimerRef.current);
-    };
-  }, [isSlideshow, photos.length]);
 
   const displayedPhotos = activeFilter === 'matched' && matchedPhotos.length > 0 ? matchedPhotos : photos;
 
@@ -328,13 +325,13 @@ export default function GuestGalleryPage() {
           <Lock className="w-8 h-8" />
         </div>
         <h1 className="text-xl font-black text-zinc-900">Gallery Not Available</h1>
-        <p className="text-xs text-zinc-500 max-w-sm">{error || 'This wedding gallery may be private or has been moved.'}</p>
+        <p className="text-xs text-zinc-500 max-w-sm">{error || 'This wedding gallery is not currently active.'}</p>
       </div>
     );
   }
 
-  // PIN Protected Gate
-  if (!isUnlocked && gallery.pin_code) {
+  // PIN Protection Gate
+  if (!isUnlocked && gallery.pin_code && mode !== 'vip') {
     return (
       <div className="min-h-screen bg-[#FAF9F5] flex items-center justify-center p-4">
         <div className="bg-white rounded-3xl p-8 max-w-sm w-full border border-[#E7E2D8] shadow-2xl text-center space-y-6">
@@ -387,7 +384,7 @@ export default function GuestGalleryPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#FAF9F5] text-zinc-900 font-sans pb-24 select-none">
+    <div className="min-h-screen bg-[#FAF9F5] text-zinc-900 font-sans pb-32 select-none">
       
       {/* ─────────────────────────────────────────────────────────────
           1. LUXURY WEDDING HERO BANNER
@@ -407,27 +404,19 @@ export default function GuestGalleryPage() {
 
         {/* Hero Text & Controls */}
         <div className="absolute inset-0 flex flex-col justify-between p-6 sm:p-12 max-w-7xl mx-auto">
-          {/* Top Brand Tag */}
           <div className="flex items-center justify-between">
             <span className="px-3.5 py-1 rounded-full bg-white/20 backdrop-blur-md text-white text-[11px] font-black uppercase tracking-wider border border-white/20">
               ✨ StudioCore AI Gallery
             </span>
 
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  setSelectedPhotoIndex(0);
-                  setIsSlideshow(true);
-                }}
-                className="px-3 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md text-white text-xs font-bold transition flex items-center gap-1.5 border border-white/20 cursor-pointer"
-              >
-                <Play className="w-3.5 h-3.5 text-amber-300" />
-                <span>Slideshow</span>
-              </button>
-            </div>
+            {mode === 'vip' && (
+              <span className="px-3 py-1 rounded-full bg-amber-500 text-white text-[10px] font-black flex items-center gap-1 shadow-md">
+                <Crown className="w-3 h-3" />
+                <span>VIP Direct Access</span>
+              </span>
+            )}
           </div>
 
-          {/* Center Wedding Title */}
           <div className="text-center space-y-2 max-w-2xl mx-auto pb-4">
             <h1 className="text-3xl sm:text-5xl font-black tracking-tight text-white drop-shadow-md">
               {gallery.title}
@@ -438,7 +427,7 @@ export default function GuestGalleryPage() {
                 day: 'numeric',
                 month: 'long',
                 year: 'numeric',
-              })} • {photos.length} Captured Memories
+              })} • {photos.length} Captured Moments
             </p>
           </div>
         </div>
@@ -448,8 +437,6 @@ export default function GuestGalleryPage() {
           2. FLOATING ACTION CONTROLS & FACE AI SEARCH BAR
       ───────────────────────────────────────────────────────────── */}
       <div className="max-w-7xl mx-auto px-4 sm:px-8 -mt-8 relative z-20 space-y-4">
-        
-        {/* Main Floating Gold Action Card */}
         <div className="bg-white rounded-3xl p-4 sm:p-6 border border-[#E7E2D8] shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-md shadow-amber-500/30 shrink-0">
@@ -461,21 +448,19 @@ export default function GuestGalleryPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={() => {
-                setIsFaceModalOpen(true);
-                startCamera();
-              }}
-              className="flex-1 sm:flex-none px-6 py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-black text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-amber-500/25 cursor-pointer"
-            >
-              <Camera className="w-4 h-4" />
-              <span>📸 Find My Photos (AI)</span>
-            </button>
-          </div>
+          <button
+            onClick={() => {
+              setIsFaceModalOpen(true);
+              startCamera();
+            }}
+            className="px-6 py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-black text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-amber-500/25 cursor-pointer shrink-0"
+          >
+            <Camera className="w-4 h-4" />
+            <span>📸 Find My Photos (AI)</span>
+          </button>
         </div>
 
-        {/* Filter Pills (All vs Matched) */}
+        {/* Filter Pills */}
         {matchedPhotos.length > 0 && (
           <div className="flex items-center justify-between p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-900">
             <div className="flex items-center gap-2">
@@ -513,19 +498,28 @@ export default function GuestGalleryPage() {
         {displayedPhotos.length === 0 ? (
           <div className="bg-white rounded-3xl p-16 text-center border border-zinc-200 space-y-3">
             <ImageIcon className="w-12 h-12 text-zinc-300 mx-auto" />
-            <h3 className="text-base font-bold text-zinc-700">No Photos Uploaded Yet</h3>
-            <p className="text-xs text-zinc-400">Photos will appear here as soon as the photographer uploads them.</p>
+            <h3 className="text-base font-bold text-zinc-700">No Photos Found</h3>
+            <p className="text-xs text-zinc-400">Photos will appear here as soon as they are uploaded.</p>
           </div>
         ) : (
           <div className="columns-2 sm:columns-3 lg:columns-4 gap-4 space-y-4">
             {displayedPhotos.map((photo, idx) => {
               const isFav = favorites.has(photo.id);
+              const isSelected = selectedPhotos.has(photo.id);
 
               return (
                 <div
                   key={photo.id}
-                  onClick={() => setSelectedPhotoIndex(idx)}
-                  className="break-inside-avoid relative rounded-2xl overflow-hidden bg-zinc-100 border border-zinc-200/80 shadow-2xs group cursor-pointer hover:shadow-lg transition-all"
+                  onClick={() => {
+                    if (mode === 'selection') {
+                      togglePhotoSelection(photo.id);
+                    } else {
+                      setSelectedPhotoIndex(idx);
+                    }
+                  }}
+                  className={'break-inside-avoid relative rounded-2xl overflow-hidden bg-zinc-100 border shadow-2xs group cursor-pointer hover:shadow-lg transition-all ' + (
+                    isSelected ? 'ring-4 ring-purple-500 border-purple-500' : 'border-zinc-200/80'
+                  )}
                 >
                   <img
                     src={photo.thumbnail_url}
@@ -541,6 +535,17 @@ export default function GuestGalleryPage() {
                   {photo.confidencePercent && (
                     <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-emerald-500 text-white text-[10px] font-black shadow-md">
                       {photo.confidencePercent}% Match
+                    </div>
+                  )}
+
+                  {/* Selection Mode Checkbox */}
+                  {mode === 'selection' && (
+                    <div className="absolute top-2 right-2 p-1.5 rounded-full bg-black/50 text-white backdrop-blur-md">
+                      {isSelected ? (
+                        <CheckSquare className="w-5 h-5 text-purple-400 fill-purple-400" />
+                      ) : (
+                        <Square className="w-5 h-5 text-white" />
+                      )}
                     </div>
                   )}
 
@@ -574,7 +579,38 @@ export default function GuestGalleryPage() {
       </div>
 
       {/* ─────────────────────────────────────────────────────────────
-          4. "FIND MY PHOTOS" FACE AI MODAL
+          4. SELECTION MODE FLOATING BOTTOM TRAY
+      ───────────────────────────────────────────────────────────── */}
+      {mode === 'selection' && (
+        <div className="fixed bottom-6 inset-x-4 max-w-md mx-auto z-40 bg-zinc-900/95 backdrop-blur-md text-white rounded-3xl p-4 shadow-2xl border border-zinc-700 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-purple-600 text-white flex items-center justify-center font-black text-sm">
+              {selectedPhotos.size}
+            </div>
+            <div>
+              <p className="text-xs font-black">Photos Selected</p>
+              <p className="text-[10.5px] text-zinc-400">For Album Printing</p>
+            </div>
+          </div>
+
+          <button
+            disabled={selectedPhotos.size === 0}
+            onClick={() => {
+              const list = Array.from(selectedPhotos).join('\n');
+              navigator.clipboard.writeText(`Selected Photos for ${gallery.title}:\n${list}`);
+              setCopiedSelection(true);
+              setTimeout(() => setCopiedSelection(false), 2500);
+            }}
+            className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:bg-zinc-700 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+          >
+            {copiedSelection ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+            <span>{copiedSelection ? 'Copied List' : 'Export Selection'}</span>
+          </button>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          5. "FIND MY PHOTOS" FACE AI MODAL
       ───────────────────────────────────────────────────────────── */}
       {isFaceModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
@@ -597,7 +633,6 @@ export default function GuestGalleryPage() {
 
             {!isMatching ? (
               <div className="space-y-5">
-                {/* Camera Viewfinder */}
                 {cameraActive ? (
                   <div className="relative w-56 h-56 mx-auto rounded-full overflow-hidden border-4 border-amber-500 shadow-xl bg-black">
                     <video
@@ -656,7 +691,6 @@ export default function GuestGalleryPage() {
                 </div>
               </div>
             ) : (
-              /* Scanning Animation */
               <div className="py-8 space-y-4">
                 <div className="w-20 h-20 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto animate-pulse">
                   <Sparkles className="w-10 h-10" />
@@ -672,11 +706,10 @@ export default function GuestGalleryPage() {
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          5. LUXURY LIGHTBOX & SLIDESHOW VIEWER
+          6. LIGHTBOX MODAL
       ───────────────────────────────────────────────────────────── */}
       {selectedPhotoIndex !== null && displayedPhotos[selectedPhotoIndex] && (
         <div className="fixed inset-0 z-50 bg-black/95 flex flex-col justify-between text-white p-4 sm:p-6 backdrop-blur-md">
-          {/* Lightbox Top Bar */}
           <div className="flex items-center justify-between z-10">
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-zinc-400">
@@ -690,21 +723,6 @@ export default function GuestGalleryPage() {
             </div>
 
             <div className="flex items-center gap-3">
-              <button
-                onClick={() => setIsSlideshow(!isSlideshow)}
-                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 transition cursor-pointer"
-                title={isSlideshow ? 'Pause Slideshow' : 'Play Slideshow'}
-              >
-                {isSlideshow ? <Pause className="w-5 h-5 text-amber-400" /> : <Play className="w-5 h-5 text-white" />}
-              </button>
-
-              <button
-                onClick={() => toggleFavorite(displayedPhotos[selectedPhotoIndex].id)}
-                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 transition cursor-pointer"
-              >
-                <Heart className={'w-5 h-5 ' + (favorites.has(displayedPhotos[selectedPhotoIndex].id) ? 'fill-rose-500 text-rose-500' : 'text-white')} />
-              </button>
-
               {gallery.allow_downloads && (
                 <button
                   disabled={downloadingId === displayedPhotos[selectedPhotoIndex].id}
@@ -717,10 +735,7 @@ export default function GuestGalleryPage() {
               )}
 
               <button
-                onClick={() => {
-                  setIsSlideshow(false);
-                  setSelectedPhotoIndex(null);
-                }}
+                onClick={() => setSelectedPhotoIndex(null)}
                 className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-zinc-300 hover:text-white transition cursor-pointer"
               >
                 <X className="w-5 h-5" />
@@ -728,15 +743,13 @@ export default function GuestGalleryPage() {
             </div>
           </div>
 
-          {/* Main Photo Center */}
           <div className="relative flex-1 flex items-center justify-center p-2 sm:p-6 overflow-hidden">
             <img
               src={displayedPhotos[selectedPhotoIndex].preview_url}
-              alt="Fullscreen Wedding Moment"
+              alt="Fullscreen"
               className="max-h-[85vh] max-w-full object-contain rounded-2xl shadow-2xl transition-all duration-300"
             />
 
-            {/* Left / Right Nav Arrows */}
             {displayedPhotos.length > 1 && (
               <>
                 <button
@@ -754,21 +767,6 @@ export default function GuestGalleryPage() {
                 </button>
               </>
             )}
-          </div>
-
-          {/* Bottom Thumbnail Strip */}
-          <div className="flex items-center justify-center gap-2 overflow-x-auto py-2 max-w-3xl mx-auto no-scrollbar">
-            {displayedPhotos.slice(Math.max(0, selectedPhotoIndex - 4), selectedPhotoIndex + 5).map((p, i) => (
-              <div
-                key={p.id}
-                onClick={() => setSelectedPhotoIndex(photos.findIndex(x => x.id === p.id))}
-                className={'w-12 h-12 rounded-xl overflow-hidden cursor-pointer border-2 transition-all ' + (
-                  p.id === displayedPhotos[selectedPhotoIndex].id ? 'border-amber-400 scale-110' : 'border-transparent opacity-60 hover:opacity-100'
-                )}
-              >
-                <img src={p.thumbnail_url} alt="Thumb" className="w-full h-full object-cover" />
-              </div>
-            ))}
           </div>
         </div>
       )}

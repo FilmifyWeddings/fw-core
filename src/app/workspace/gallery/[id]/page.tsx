@@ -27,6 +27,19 @@ import {
   Copy,
   Check,
   Star,
+  Edit2,
+  Folder,
+  FolderPlus,
+  CheckSquare,
+  Square,
+  Search,
+  Filter,
+  SlidersHorizontal,
+  ChevronRight,
+  UserCheck,
+  Tag,
+  Clock,
+  Layers,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { batchUploadPhotos } from '@/lib/imageProcessor';
@@ -45,9 +58,19 @@ interface EventGallery {
   created_at: string;
 }
 
+interface GalleryCollection {
+  id: string;
+  gallery_id: string;
+  name: string;
+  cover_url: string | null;
+  photo_count?: number;
+  created_at: string;
+}
+
 interface PhotoItem {
   id: string;
   gallery_id: string;
+  collection_id: string | null;
   original_key: string;
   preview_key: string;
   thumbnail_key: string;
@@ -60,17 +83,35 @@ interface PhotoItem {
   created_at: string;
 }
 
-export default function GalleryCollectionPage() {
+export default function AlbumStudioWorkspacePage() {
   const params = useParams();
   const router = useRouter();
   const galleryId = params?.id as string;
 
   const [gallery, setGallery] = useState<EventGallery | null>(null);
+  const [collections, setCollections] = useState<GalleryCollection[]>([]);
+  const [selectedCollectionId, setSelectedCollectionId] = useState<string>('all');
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Inline Title Editing
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleInput, setTitleInput] = useState('');
+
+  // Selected Photos for Bulk Actions
+  const [selectedPhotoIds, setSelectedPhotoIds] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState<'newest' | 'oldest'>('newest');
+
+  // Modals
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [isAddCollectionModalOpen, setIsAddCollectionModalOpen] = useState(false);
+  const [newCollectionName, setNewCollectionName] = useState('');
+  const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
+
   // Uploader State
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const [uploadTargetCollection, setUploadTargetCollection] = useState<string>('all');
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; percentage: number; status: string }>({
     current: 0,
@@ -79,50 +120,113 @@ export default function GalleryCollectionPage() {
     status: '',
   });
 
-  // Modals & Lightbox
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-  const [isStandeeModalOpen, setIsStandeeModalOpen] = useState(false);
-  const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
-  const [copiedUrl, setCopiedUrl] = useState(false);
-
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 1. Fetch Gallery Info & Photos
-  const loadGalleryAndPhotos = useCallback(async () => {
+  // 1. Fetch Gallery, Collections, and Photos
+  const loadData = useCallback(async () => {
     if (!galleryId) return;
     setLoading(true);
 
     try {
-      // Fetch gallery info
+      // Fetch Gallery Info
       const { data: gal, error: gError } = await supabase
         .from('event_galleries')
         .select('*')
         .eq('id', galleryId)
         .single();
 
-      if (gError || !gal) {
-        throw new Error(gError?.message || 'Gallery not found');
-      }
+      if (gError || !gal) throw new Error(gError?.message || 'Gallery not found');
       setGallery(gal);
+      setTitleInput(gal.title);
 
-      // Fetch photos via API
+      // Fetch Collections
+      const cRes = await fetch(`/api/gallery/collections?gallery_id=${galleryId}`);
+      const cJson = await cRes.json();
+      if (cJson.success && Array.isArray(cJson.collections)) {
+        setCollections(cJson.collections);
+      }
+
+      // Fetch Photos
       const pRes = await fetch(`/api/gallery/photos?gallery_id=${galleryId}`);
       const pJson = await pRes.json();
       if (pJson.success && Array.isArray(pJson.photos)) {
         setPhotos(pJson.photos);
       }
     } catch (err: any) {
-      console.error('Failed to load gallery collection:', err);
+      console.error('Error loading album workspace:', err);
     } finally {
       setLoading(false);
     }
   }, [galleryId]);
 
   useEffect(() => {
-    loadGalleryAndPhotos();
-  }, [loadGalleryAndPhotos]);
+    loadData();
+  }, [loadData]);
 
-  // 2. Direct R2 Batch Uploader with Instant Zero-Reload Rendering
+  // 2. Publish / Unpublish Toggle
+  const handleTogglePublish = async () => {
+    if (!gallery) return;
+    const nextState = !gallery.is_active;
+
+    setGallery(prev => (prev ? { ...prev, is_active: nextState } : null));
+
+    try {
+      await fetch('/api/gallery/events', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: gallery.id, is_active: nextState }),
+      });
+    } catch (err) {
+      console.error('Failed to update publish state:', err);
+    }
+  };
+
+  // 3. Save Edited Title
+  const handleSaveTitle = async () => {
+    if (!gallery || !titleInput.trim()) return;
+    const newTitle = titleInput.trim();
+    setIsEditingTitle(false);
+    setGallery(prev => (prev ? { ...prev, title: newTitle } : null));
+
+    try {
+      await fetch('/api/gallery/events', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: gallery.id, title: newTitle }),
+      });
+    } catch (err) {
+      console.error('Failed to update title:', err);
+    }
+  };
+
+  // 4. Create New Collection / Sub-Event
+  const handleCreateCollection = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!gallery || !newCollectionName.trim()) return;
+
+    try {
+      const res = await fetch('/api/gallery/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gallery_id: gallery.id,
+          name: newCollectionName.trim(),
+        }),
+      });
+
+      const json = await res.json();
+      if (json.success && json.collection) {
+        setCollections(prev => [...prev, { ...json.collection, photo_count: 0 }]);
+        setSelectedCollectionId(json.collection.id);
+        setNewCollectionName('');
+        setIsAddCollectionModalOpen(false);
+      }
+    } catch (err: any) {
+      alert(`Error creating collection: ${err.message}`);
+    }
+  };
+
+  // 5. Batch Direct-to-R2 Upload with Instant UI Rendering
   const handleStartUpload = async () => {
     if (!gallery || uploadFiles.length === 0) return;
 
@@ -134,21 +238,24 @@ export default function GalleryCollectionPage() {
       status: 'Generating WebP previews & thumbnails in browser...',
     });
 
+    const targetCol = uploadTargetCollection !== 'all' ? uploadTargetCollection : (collections[0]?.id || undefined);
+
     try {
-      const result = await batchUploadPhotos(gallery.id, uploadFiles, (current, total, percentage, status) => {
-        setUploadProgress({ current, total, percentage, status });
-      });
+      const result = await batchUploadPhotos(
+        gallery.id,
+        uploadFiles,
+        (current, total, percentage, status) => {
+          setUploadProgress({ current, total, percentage, status });
+        },
+        targetCol
+      );
 
       if (result.success || result.uploadedCount > 0) {
         setUploadFiles([]);
         setIsUploadModalOpen(false);
 
-        // Instantly reload photos without full page reload
-        const pRes = await fetch(`/api/gallery/photos?gallery_id=${gallery.id}`);
-        const pJson = await pRes.json();
-        if (pJson.success && Array.isArray(pJson.photos)) {
-          setPhotos(pJson.photos);
-        }
+        // Reload data to show photos instantly
+        await loadData();
       }
     } catch (err: any) {
       alert(`Upload error: ${err.message}`);
@@ -157,24 +264,7 @@ export default function GalleryCollectionPage() {
     }
   };
 
-  // 3. Set Cover Photo
-  const handleSetCover = async (photo: PhotoItem) => {
-    if (!gallery) return;
-    const coverUrl = photo.preview_url;
-
-    try {
-      await supabase
-        .from('event_galleries')
-        .update({ cover_url: coverUrl })
-        .eq('id', gallery.id);
-
-      setGallery(prev => (prev ? { ...prev, cover_url: coverUrl } : null));
-    } catch (err: any) {
-      alert(`Failed to set cover: ${err.message}`);
-    }
-  };
-
-  // 4. Delete Single Photo
+  // 6. Delete Photos
   const handleDeletePhoto = async (photoId: string) => {
     if (!confirm('Are you sure you want to delete this photo?')) return;
 
@@ -189,36 +279,40 @@ export default function GalleryCollectionPage() {
     }
   };
 
-  // 5. Download Original High-Res
-  const handleDownloadOriginal = async (photo: PhotoItem) => {
+  // 7. Set Cover Photo
+  const handleSetCover = async (photo: PhotoItem) => {
+    if (!gallery) return;
+    const coverUrl = photo.preview_url;
+
     try {
-      const res = await fetch('/api/gallery/download-url', {
-        method: 'POST',
+      await fetch('/api/gallery/events', {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ originalKey: photo.original_key, previewKey: photo.preview_url }),
+        body: JSON.stringify({ id: gallery.id, cover_url: coverUrl }),
       });
-      const json = await res.json();
-      if (json.success && json.downloadUrl) {
-        const a = document.createElement('a');
-        a.href = json.downloadUrl;
-        a.download = `wedding_photo_${photo.id}.jpg`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      } else {
-        window.open(photo.preview_url, '_blank');
-      }
-    } catch (err) {
-      window.open(photo.preview_url, '_blank');
+
+      setGallery(prev => (prev ? { ...prev, cover_url: coverUrl } : null));
+    } catch (err: any) {
+      alert(`Failed to set cover: ${err.message}`);
     }
   };
 
-  const getPublicUrl = (slug: string) => {
-    if (typeof window !== 'undefined') {
-      return `${window.location.origin}/g/${slug}`;
+  // Filter & Sort Photos
+  const filteredPhotos = photos.filter(p => {
+    if (selectedCollectionId !== 'all' && p.collection_id !== selectedCollectionId) {
+      return false;
     }
-    return `https://studiocore.in/g/${slug}`;
-  };
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      return p.original_key.toLowerCase().includes(q) || p.preview_url.toLowerCase().includes(q);
+    }
+    return true;
+  }).sort((a, b) => {
+    if (sortBy === 'oldest') {
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    }
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
 
   const totalFaces = photos.reduce((acc, p) => acc + (p.face_count || 0), 0);
   const totalSizeBytes = photos.reduce((acc, p) => acc + (Number(p.size_bytes) || 0), 0);
@@ -226,17 +320,17 @@ export default function GalleryCollectionPage() {
 
   if (loading && !gallery) {
     return (
-      <div className="min-h-screen bg-[#FAF9F6] flex flex-col items-center justify-center p-8 space-y-3">
+      <div className="min-h-screen bg-[#FAF9F5] flex flex-col items-center justify-center p-8 space-y-3">
         <RefreshCw className="w-8 h-8 animate-spin text-amber-500" />
-        <p className="text-xs font-bold text-zinc-600">Loading Gallery Collection...</p>
+        <p className="text-xs font-bold text-zinc-600">Loading Album Studio Workspace...</p>
       </div>
     );
   }
 
   if (!gallery) {
     return (
-      <div className="min-h-screen bg-[#FAF9F6] p-8 text-center space-y-4">
-        <h2 className="text-xl font-bold text-zinc-800">Gallery Not Found</h2>
+      <div className="min-h-screen bg-[#FAF9F5] p-8 text-center space-y-4">
+        <h2 className="text-xl font-bold text-zinc-800">Album Not Found</h2>
         <Link href="/workspace/gallery" className="text-xs font-bold text-amber-600 hover:underline">
           &larr; Back to AI Galleries
         </Link>
@@ -245,188 +339,333 @@ export default function GalleryCollectionPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#FAF9F6] text-slate-900 font-sans p-4 sm:p-8 space-y-6 max-w-7xl mx-auto">
+    <div className="min-h-screen bg-[#FAF9F5] text-slate-900 font-sans flex flex-col">
       
       {/* ─────────────────────────────────────────────────────────────
-          1. NAVIGATION & GALLERY HEADER
+          1. TOP LUXURY STUDIO HEADER BAR
       ───────────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <Link
-          href="/workspace/gallery"
-          className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-500 hover:text-zinc-900 transition"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Back to All AI Galleries</span>
-        </Link>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setIsStandeeModalOpen(true)}
-            className="px-3.5 py-2 rounded-xl bg-white border border-zinc-200 hover:border-zinc-300 text-zinc-800 text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+      <header className="bg-white border-b border-[#E7E2D8] sticky top-0 z-30 px-4 sm:px-8 py-3.5 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-2xs">
+        {/* Left: Back & Editable Event Title */}
+        <div className="flex items-center gap-4">
+          <Link
+            href="/workspace/gallery"
+            className="p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-500 hover:text-zinc-900 transition shrink-0"
+            title="Back to All Albums"
           >
-            <QrCode className="w-4 h-4 text-amber-600" />
-            <span>Table Standee</span>
+            <ArrowLeft className="w-4 h-4" />
+          </Link>
+
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2">
+              {isEditingTitle ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={titleInput}
+                    autoFocus
+                    onChange={(e) => setTitleInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSaveTitle()}
+                    className="px-2.5 py-1 bg-zinc-50 border border-amber-400 rounded-lg text-sm font-black text-zinc-900 focus:outline-hidden"
+                  />
+                  <button
+                    onClick={handleSaveTitle}
+                    className="p-1 text-emerald-600 hover:bg-emerald-50 rounded-md"
+                  >
+                    <Check className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      setTitleInput(gallery.title);
+                      setIsEditingTitle(false);
+                    }}
+                    className="p-1 text-zinc-400 hover:bg-zinc-100 rounded-md"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setIsEditingTitle(true)}>
+                  <h1 className="text-base sm:text-lg font-black text-zinc-900 tracking-tight">
+                    {gallery.title}
+                  </h1>
+                  <Edit2 className="w-3.5 h-3.5 text-zinc-400 group-hover:text-amber-600 transition" />
+                </div>
+              )}
+
+              {/* Live Publish Status Badge */}
+              <button
+                onClick={handleTogglePublish}
+                className={'px-2.5 py-0.5 rounded-full text-[10.5px] font-black tracking-wide flex items-center gap-1.5 transition cursor-pointer border ' + (
+                  gallery.is_active
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                    : 'bg-zinc-100 text-zinc-600 border-zinc-300'
+                )}
+              >
+                <span className={'w-2 h-2 rounded-full ' + (gallery.is_active ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-400')} />
+                <span>{gallery.is_active ? 'Published' : 'Draft / Private'}</span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3 text-xs text-zinc-400 font-medium">
+              <span className="flex items-center gap-1">
+                <Calendar className="w-3 h-3 text-zinc-400" />
+                {new Date(gallery.event_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+              </span>
+              <span>•</span>
+              <span className="text-zinc-600 font-bold">{photos.length} Photos</span>
+              <span>•</span>
+              <span className="text-blue-600 font-bold">{totalFaces} Faces</span>
+              <span>•</span>
+              <span className="text-purple-600 font-bold">{totalSizeMb} MB</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Right: Actions */}
+        <div className="flex items-center gap-2 shrink-0">
+          <Link
+            href={`/workspace/gallery/${gallery.id}/share`}
+            className="px-4 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-md shadow-zinc-900/10 cursor-pointer"
+          >
+            <Share2 className="w-4 h-4 text-amber-400" />
+            <span>Share Links Center</span>
+          </Link>
+
+          <button
+            onClick={() => {
+              setUploadTargetCollection(selectedCollectionId);
+              setIsUploadModalOpen(true);
+            }}
+            className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-md shadow-amber-500/20 cursor-pointer"
+          >
+            <Upload className="w-4 h-4" />
+            <span>Upload Photos</span>
           </button>
 
           <a
             href={`/g/${gallery.slug}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="px-3.5 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-zinc-900/10 cursor-pointer"
+            className="p-2.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 transition cursor-pointer"
+            title="Open Public Guest Portal"
           >
-            <ExternalLink className="w-4 h-4 text-amber-400" />
-            <span>View Guest Portal</span>
+            <ExternalLink className="w-4 h-4" />
           </a>
         </div>
-      </div>
-
-      {/* Gallery Showcase Card */}
-      <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#E7E2D8] shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-6 relative overflow-hidden">
-        <div className="flex items-start gap-4">
-          <div className="w-20 h-20 rounded-2xl bg-zinc-900 border border-zinc-200 overflow-hidden shrink-0 shadow-sm">
-            {gallery.cover_url ? (
-              <img src={gallery.cover_url} alt={gallery.title} className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-zinc-500 bg-zinc-800">
-                <Camera className="w-8 h-8 text-zinc-600" />
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl sm:text-2xl font-black text-zinc-900 tracking-tight">
-                {gallery.title}
-              </h1>
-              {gallery.pin_code && (
-                <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-black border border-amber-200 flex items-center gap-1">
-                  <Lock className="w-3 h-3 text-amber-600" />
-                  <span>PIN: {gallery.pin_code}</span>
-                </span>
-              )}
-            </div>
-
-            <p className="text-xs text-zinc-500 font-mono">
-              Public Link: <span className="text-blue-600 font-bold">{getPublicUrl(gallery.slug)}</span>
-            </p>
-
-            <div className="flex items-center gap-4 text-xs font-bold text-zinc-500 pt-1">
-              <span className="flex items-center gap-1">
-                <Calendar className="w-3.5 h-3.5 text-zinc-400" />
-                {new Date(gallery.event_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-              </span>
-              <span className="text-emerald-700 font-bold">{photos.length} Photos</span>
-              <span className="text-blue-700 font-bold">{totalFaces} Faces Indexed</span>
-              <span className="text-purple-700 font-bold">{totalSizeMb} MB Storage</span>
-            </div>
-          </div>
-        </div>
-
-        <button
-          onClick={() => setIsUploadModalOpen(true)}
-          className="px-5 py-3 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 cursor-pointer shrink-0"
-        >
-          <Upload className="w-4 h-4" />
-          <span>+ Upload Photos (WebP Direct R2)</span>
-        </button>
-      </div>
+      </header>
 
       {/* ─────────────────────────────────────────────────────────────
-          2. PHOTOS GRID & INSTANT CDN PREVIEWS
+          2. STUDIO SPLIT VIEWPORT (LEFT SIDEBAR & MAIN GALLERY)
       ───────────────────────────────────────────────────────────── */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-base font-black text-zinc-900">Gallery Media Collection</h2>
-            <p className="text-xs text-zinc-400">Streamed with sub-second latency from dedicated Cloudflare R2 CDN.</p>
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden max-w-7xl w-full mx-auto p-4 sm:p-6 gap-6">
+        
+        {/* LEFT STUDIO SIDEBAR */}
+        <aside className="w-full md:w-64 shrink-0 space-y-6">
+          
+          {/* Cover Card */}
+          <div className="bg-white rounded-2xl border border-[#E7E2D8] p-3 shadow-2xs space-y-2">
+            <div className="relative aspect-video rounded-xl overflow-hidden bg-zinc-900">
+              {gallery.cover_url ? (
+                <img src={gallery.cover_url} alt="Cover" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center text-zinc-500">
+                  <Camera className="w-6 h-6 mb-1" />
+                  <span className="text-[10px] uppercase font-bold">No Cover</span>
+                </div>
+              )}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+              <div className="absolute bottom-2 left-2 right-2 text-white text-[11px] font-black truncate">
+                Event Cover
+              </div>
+            </div>
+            <span className="text-[10.5px] text-zinc-400 block text-center">
+              Hover on any photo to set as cover
+            </span>
           </div>
 
-          <button
-            onClick={loadGalleryAndPhotos}
-            className="p-2 rounded-xl bg-white border border-zinc-200 text-zinc-600 hover:text-zinc-900 transition cursor-pointer"
-            title="Refresh Photos"
-          >
-            <RefreshCw className={'w-4 h-4 ' + (loading ? 'animate-spin' : '')} />
-          </button>
-        </div>
+          {/* Collections Section */}
+          <div className="bg-white rounded-2xl border border-[#E7E2D8] p-4 shadow-2xs space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-black uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-amber-600" />
+                Collections
+              </span>
+              <button
+                onClick={() => setIsAddCollectionModalOpen(true)}
+                className="p-1 rounded-lg text-amber-600 hover:bg-amber-50 transition cursor-pointer"
+                title="Add Sub-Event Collection"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
 
-        {photos.length === 0 ? (
-          <div className="bg-white rounded-3xl p-16 text-center border border-zinc-200 space-y-4 shadow-2xs">
-            <div className="w-16 h-16 rounded-3xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center mx-auto">
-              <ImageIcon className="w-8 h-8" />
-            </div>
-            <div className="space-y-1">
-              <h3 className="text-base font-bold text-zinc-800">No Photos in this Gallery Yet</h3>
-              <p className="text-xs text-zinc-400 max-w-sm mx-auto">
-                Drag and drop your wedding photos to compress and stream directly to Cloudflare R2 bucket.
-              </p>
-            </div>
-            <button
-              onClick={() => setIsUploadModalOpen(true)}
-              className="px-6 py-3 rounded-2xl bg-amber-500 text-white text-xs font-bold inline-flex items-center gap-2 hover:bg-amber-600 transition cursor-pointer shadow-md"
-            >
-              <Upload className="w-4 h-4" />
-              <span>Upload Photos Now</span>
-            </button>
+            <nav className="space-y-1">
+              <button
+                onClick={() => setSelectedCollectionId('all')}
+                className={'w-full px-3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-between cursor-pointer ' + (
+                  selectedCollectionId === 'all'
+                    ? 'bg-amber-50 text-amber-900 font-black border border-amber-200'
+                    : 'text-zinc-600 hover:bg-zinc-50'
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <ImageIcon className="w-3.5 h-3.5 text-zinc-400" />
+                  <span>All Photos</span>
+                </div>
+                <span className="text-[10.5px] font-mono bg-zinc-100 px-2 py-0.5 rounded-full text-zinc-600">
+                  {photos.length}
+                </span>
+              </button>
+
+              {collections.map(col => {
+                const count = photos.filter(p => p.collection_id === col.id).length;
+
+                return (
+                  <button
+                    key={col.id}
+                    onClick={() => setSelectedCollectionId(col.id)}
+                    className={'w-full px-3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-between cursor-pointer ' + (
+                      selectedCollectionId === col.id
+                        ? 'bg-amber-50 text-amber-900 font-black border border-amber-200'
+                        : 'text-zinc-600 hover:bg-zinc-50'
+                    )}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Folder className="w-3.5 h-3.5 text-amber-500" />
+                      <span className="truncate">{col.name}</span>
+                    </div>
+                    <span className="text-[10.5px] font-mono bg-zinc-100 px-2 py-0.5 rounded-full text-zinc-600">
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </nav>
           </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
-            {photos.map((photo, idx) => {
-              const isCover = gallery.cover_url === photo.preview_url;
 
-              return (
-                <div
-                  key={photo.id}
-                  onClick={() => setSelectedPhotoIndex(idx)}
-                  className="group relative aspect-square bg-zinc-100 rounded-2xl overflow-hidden border border-zinc-200 shadow-2xs cursor-pointer hover:shadow-md transition-all"
-                >
-                  <img
-                    src={photo.thumbnail_url}
-                    alt="Gallery thumbnail"
-                    loading="lazy"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                  />
+          {/* People & Face AI Section */}
+          <div className="bg-white rounded-2xl border border-[#E7E2D8] p-4 shadow-2xs space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-black uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5 text-blue-600" />
+                AI Faces Detected
+              </span>
+              <span className="text-xs font-black text-blue-600">{totalFaces}</span>
+            </div>
 
-                  {/* Gradient Overlay */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+            <p className="text-[11px] text-zinc-400 leading-relaxed">
+              Faces are automatically indexed into 512-D vectors for sub-second guest selfie matching.
+            </p>
+          </div>
+        </aside>
 
-                  {/* Badges */}
-                  {isCover && (
-                    <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-amber-500 text-white text-[9px] font-black shadow-sm flex items-center gap-1">
-                      <Star className="w-2.5 h-2.5 fill-white" />
-                      <span>Cover</span>
-                    </div>
-                  )}
+        {/* MAIN PHOTO VIEWPORT */}
+        <main className="flex-1 space-y-4">
+          
+          {/* Controls Bar */}
+          <div className="bg-white rounded-2xl border border-[#E7E2D8] p-3 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                placeholder="Search photos by filename..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3.5 py-1.5 bg-[#FBF9F5] rounded-xl border border-zinc-200 text-xs font-medium text-zinc-800 focus:bg-white focus:outline-hidden focus:border-amber-400"
+              />
+            </div>
 
-                  {photo.face_count > 0 && (
-                    <div className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-md text-white text-[9px] font-bold border border-white/20">
-                      👥 {photo.face_count} {photo.face_count === 1 ? 'Face' : 'Faces'}
-                    </div>
-                  )}
+            <div className="flex items-center gap-2">
+              <select
+                value={sortBy}
+                onChange={(e: any) => setSortBy(e.target.value)}
+                className="px-3 py-1.5 bg-[#FBF9F5] rounded-xl border border-zinc-200 text-xs font-bold text-zinc-700 cursor-pointer"
+              >
+                <option value="newest">Newest First</option>
+                <option value="oldest">Oldest First</option>
+              </select>
 
-                  {/* Actions on Hover */}
-                  <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity text-white">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleSetCover(photo);
-                      }}
-                      className="p-1.5 rounded-lg bg-black/50 hover:bg-amber-500 transition cursor-pointer text-[10px] font-bold"
-                      title="Set as Cover"
-                    >
-                      <Star className="w-3.5 h-3.5" />
-                    </button>
+              <button
+                onClick={loadData}
+                className="p-2 rounded-xl bg-[#FBF9F5] border border-zinc-200 text-zinc-600 hover:text-zinc-900 transition cursor-pointer"
+                title="Refresh Grid"
+              >
+                <RefreshCw className={'w-4 h-4 ' + (loading ? 'animate-spin' : '')} />
+              </button>
+            </div>
+          </div>
 
-                    <div className="flex items-center gap-1">
+          {/* Photo Masonry Grid */}
+          {filteredPhotos.length === 0 ? (
+            <div className="bg-white rounded-3xl p-16 text-center border border-zinc-200 space-y-4 shadow-2xs">
+              <div className="w-16 h-16 rounded-3xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center mx-auto">
+                <ImageIcon className="w-8 h-8" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-zinc-800">
+                  {selectedCollectionId === 'all' ? 'No Photos in this Album Yet' : 'No Photos in this Collection'}
+                </h3>
+                <p className="text-xs text-zinc-400 max-w-sm mx-auto">
+                  Drag and drop wedding photos to compress in the browser and stream directly to Cloudflare R2.
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setUploadTargetCollection(selectedCollectionId);
+                  setIsUploadModalOpen(true);
+                }}
+                className="px-6 py-3 rounded-2xl bg-amber-500 text-white text-xs font-bold inline-flex items-center gap-2 hover:bg-amber-600 transition cursor-pointer shadow-md"
+              >
+                <Upload className="w-4 h-4" />
+                <span>Upload Photos Now</span>
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3.5">
+              {filteredPhotos.map((photo, idx) => {
+                const isCover = gallery.cover_url === photo.preview_url;
+
+                return (
+                  <div
+                    key={photo.id}
+                    onClick={() => setSelectedPhotoIndex(idx)}
+                    className="group relative aspect-square bg-zinc-100 rounded-2xl overflow-hidden border border-zinc-200 shadow-2xs cursor-pointer hover:shadow-md transition-all"
+                  >
+                    <img
+                      src={photo.thumbnail_url}
+                      alt="Thumbnail"
+                      loading="lazy"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+
+                    {/* Gradient Overlay */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+
+                    {/* Badges */}
+                    {isCover && (
+                      <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-amber-500 text-white text-[9px] font-black shadow-sm flex items-center gap-1">
+                        <Star className="w-2.5 h-2.5 fill-white" />
+                        <span>Cover</span>
+                      </div>
+                    )}
+
+                    {photo.face_count > 0 && (
+                      <div className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-md text-white text-[9px] font-bold border border-white/20">
+                        👥 {photo.face_count} {photo.face_count === 1 ? 'Face' : 'Faces'}
+                      </div>
+                    )}
+
+                    {/* Actions on Hover */}
+                    <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity text-white">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleDownloadOriginal(photo);
+                          handleSetCover(photo);
                         }}
-                        className="p-1.5 rounded-lg bg-black/50 hover:bg-black/70 transition cursor-pointer"
-                        title="Download Original"
+                        className="p-1.5 rounded-lg bg-black/50 hover:bg-amber-500 transition cursor-pointer"
+                        title="Set as Event Cover"
                       >
-                        <Download className="w-3.5 h-3.5" />
+                        <Star className="w-3.5 h-3.5" />
                       </button>
 
                       <button
@@ -441,23 +680,75 @@ export default function GalleryCollectionPage() {
                       </button>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          )}
+        </main>
       </div>
 
       {/* ─────────────────────────────────────────────────────────────
-          3. BATCH PHOTO UPLOADER MODAL (CLIENT WEBP + DIRECT R2)
+          3. ADD COLLECTION MODAL
+      ───────────────────────────────────────────────────────────── */}
+      {isAddCollectionModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <form onSubmit={handleCreateCollection} className="bg-white rounded-3xl p-6 max-w-sm w-full border border-zinc-200 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FolderPlus className="w-5 h-5 text-amber-600" />
+                <h3 className="text-base font-black text-zinc-900">Add Sub-Event</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddCollectionModalOpen(false)}
+                className="p-1.5 text-zinc-400 hover:text-zinc-700 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-zinc-700 mb-1">Collection Name *</label>
+              <input
+                type="text"
+                required
+                autoFocus
+                placeholder="e.g. Haldi, Sangeet, Reception"
+                value={newCollectionName}
+                onChange={(e) => setNewCollectionName(e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-zinc-50 rounded-xl border border-zinc-200 text-xs font-bold text-zinc-900 focus:bg-white focus:outline-hidden focus:border-amber-500"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="submit"
+                className="flex-1 py-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition cursor-pointer"
+              >
+                Create Collection
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsAddCollectionModalOpen(false)}
+                className="px-4 py-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs transition cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          4. BATCH PHOTO UPLOADER MODAL
       ───────────────────────────────────────────────────────────── */}
       {isUploadModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-xl w-full border border-zinc-200 shadow-2xl space-y-5">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-base font-black text-zinc-900">Upload Photos to Gallery</h3>
-                <span className="text-xs text-zinc-400">Direct-to-Cloudflare R2 Bucket Pipeline</span>
+                <h3 className="text-base font-black text-zinc-900">Upload Photos</h3>
+                <span className="text-xs text-zinc-400">Direct-to-R2 WebP Pipeline</span>
               </div>
               <button
                 type="button"
@@ -471,6 +762,21 @@ export default function GalleryCollectionPage() {
 
             {!uploading ? (
               <div className="space-y-4">
+                {/* Target Collection Selector */}
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Target Collection</label>
+                  <select
+                    value={uploadTargetCollection}
+                    onChange={(e) => setUploadTargetCollection(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-zinc-50 rounded-xl border border-zinc-200 text-xs font-bold text-zinc-800 cursor-pointer"
+                  >
+                    <option value="all">Default / Main Album</option>
+                    {collections.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+
                 <div
                   onClick={() => fileInputRef.current?.click()}
                   className="border-2 border-dashed border-zinc-300 hover:border-amber-500 bg-[#FBF9F5] rounded-3xl p-8 text-center cursor-pointer transition-all space-y-3"
@@ -483,7 +789,7 @@ export default function GalleryCollectionPage() {
                       Click or Drag &amp; Drop Wedding Photos
                     </p>
                     <p className="text-[11px] text-zinc-400 mt-0.5">
-                      RAW / JPEG / PNG files will be converted to high-speed WebP and sent directly to R2
+                      RAW / JPEG / PNG files are compressed locally and streamed to R2
                     </p>
                   </div>
                   <input
@@ -504,7 +810,7 @@ export default function GalleryCollectionPage() {
                   <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between text-xs text-emerald-900 font-bold">
                     <div className="flex items-center gap-2">
                       <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                      <span>{uploadFiles.length} photos queued for direct upload</span>
+                      <span>{uploadFiles.length} photos ready for upload</span>
                     </div>
                     <button
                       type="button"
@@ -569,119 +875,26 @@ export default function GalleryCollectionPage() {
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          4. TABLE STANDEE & QR CODE MODAL
-      ───────────────────────────────────────────────────────────── */}
-      {isStandeeModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full border border-zinc-200 shadow-2xl space-y-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <QrCode className="w-5 h-5 text-amber-600" />
-                <h3 className="text-base font-black text-zinc-900">Printable Wedding Table Standee</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsStandeeModalOpen(false)}
-                className="p-1.5 text-zinc-400 hover:text-zinc-700 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div id="standee-print-card" className="bg-[#FAF9F5] border-2 border-amber-400/60 rounded-3xl p-8 text-center space-y-5 shadow-inner">
-              <div className="space-y-1">
-                <span className="text-[10px] font-black uppercase tracking-widest text-amber-800 bg-amber-100/80 px-3 py-1 rounded-full border border-amber-300">
-                  ✨ Instant AI Guest Gallery
-                </span>
-                <h2 className="text-xl font-black text-zinc-900 tracking-tight pt-2">
-                  {gallery.title}
-                </h2>
-                <p className="text-xs text-zinc-500 font-serif italic">
-                  Find all your wedding photos instantly with AI Selfie Search
-                </p>
-              </div>
-
-              <div className="w-44 h-44 bg-white p-3 rounded-2xl border-2 border-zinc-900 mx-auto shadow-md flex items-center justify-center">
-                <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(getPublicUrl(gallery.slug))}`}
-                  alt="Gallery QR Code"
-                  className="w-full h-full object-contain"
-                />
-              </div>
-
-              <div className="space-y-1 text-xs">
-                <p className="font-bold text-zinc-800">1. Scan QR with your phone camera</p>
-                <p className="font-bold text-zinc-800">2. Take a quick selfie to find your photos</p>
-                {gallery.pin_code && (
-                  <p className="font-mono text-xs font-black text-amber-900 bg-amber-100 px-2 py-0.5 rounded-md inline-block border border-amber-300">
-                    PIN Code: {gallery.pin_code}
-                  </p>
-                )}
-              </div>
-
-              <div className="pt-2 text-[10px] font-bold text-zinc-400 tracking-wider uppercase border-t border-zinc-200">
-                Powered by StudioCore AI
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="flex-1 py-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-md"
-              >
-                <Printer className="w-4 h-4 text-amber-400" />
-                <span>Print Standee Card</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  navigator.clipboard.writeText(getPublicUrl(gallery.slug));
-                  setCopiedUrl(true);
-                  setTimeout(() => setCopiedUrl(false), 2000);
-                }}
-                className="px-4 py-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer"
-              >
-                {copiedUrl ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                <span>{copiedUrl ? 'Copied' : 'Copy Link'}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ─────────────────────────────────────────────────────────────
           5. LIGHTBOX MODAL
       ───────────────────────────────────────────────────────────── */}
-      {selectedPhotoIndex !== null && photos[selectedPhotoIndex] && (
+      {selectedPhotoIndex !== null && filteredPhotos[selectedPhotoIndex] && (
         <div className="fixed inset-0 z-50 bg-black/95 flex flex-col justify-between text-white p-4 sm:p-6 backdrop-blur-md">
           <div className="flex items-center justify-between z-10">
             <span className="text-xs font-bold text-zinc-400">
-              {selectedPhotoIndex + 1} of {photos.length}
+              {selectedPhotoIndex + 1} of {filteredPhotos.length}
             </span>
 
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => handleDownloadOriginal(photos[selectedPhotoIndex])}
-                className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs transition flex items-center gap-1.5 cursor-pointer shadow-md"
-              >
-                <Download className="w-4 h-4" />
-                <span>Download Original</span>
-              </button>
-
-              <button
-                onClick={() => setSelectedPhotoIndex(null)}
-                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-zinc-300 hover:text-white transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+            <button
+              onClick={() => setSelectedPhotoIndex(null)}
+              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-zinc-300 hover:text-white transition cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
 
           <div className="relative flex-1 flex items-center justify-center p-2 sm:p-6 overflow-hidden">
             <img
-              src={photos[selectedPhotoIndex].preview_url}
+              src={filteredPhotos[selectedPhotoIndex].preview_url}
               alt="Preview"
               className="max-h-[85vh] max-w-full object-contain rounded-2xl shadow-2xl"
             />

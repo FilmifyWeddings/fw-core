@@ -8,6 +8,7 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const galleryId = searchParams.get('gallery_id');
+    const collectionId = searchParams.get('collection_id');
     const slug = searchParams.get('slug');
 
     let targetGalleryId = galleryId;
@@ -26,17 +27,24 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'gallery_id or slug is required' }, { status: 400 });
     }
 
-    const { data: photos, error } = await supabaseAdmin
+    let query = supabaseAdmin
       .from('gallery_photos')
       .select('*')
       .eq('gallery_id', targetGalleryId)
       .order('created_at', { ascending: false });
+
+    if (collectionId && collectionId !== 'all') {
+      query = query.eq('collection_id', collectionId);
+    }
+
+    const { data: photos, error } = await query;
 
     if (error) throw error;
 
     const enriched = (photos || []).map(p => ({
       id: p.id,
       gallery_id: p.gallery_id,
+      collection_id: p.collection_id,
       preview_url: getR2PublicUrl(p.preview_key),
       thumbnail_url: getR2PublicUrl(p.thumbnail_key),
       original_key: p.original_key,
