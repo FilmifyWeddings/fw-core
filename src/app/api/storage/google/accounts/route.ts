@@ -1,19 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const workspaceId = searchParams.get('workspace_id');
 
-    let query = supabase.from('storage_drive_accounts').select('*').order('created_at', { ascending: false });
+    let query = supabaseAdmin
+      .from('storage_drive_accounts')
+      .select('*')
+      .eq('is_active', true)
+      .order('created_at', { ascending: false });
+
     if (workspaceId && workspaceId !== '00000000-0000-0000-0000-000000000000') {
-      query = query.eq('workspace_id', workspaceId);
+      query = query.or(`workspace_id.eq.${workspaceId},workspace_id.eq.00000000-0000-0000-0000-000000000000`);
     }
 
     let { data, error } = await query;
-    if ((!data || data.length === 0)) {
-      const fallback = await supabase.from('storage_drive_accounts').select('*').order('created_at', { ascending: false });
+    if (!data || data.length === 0) {
+      const fallback = await supabaseAdmin
+        .from('storage_drive_accounts')
+        .select('*')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false });
       if (fallback.data && fallback.data.length > 0) {
         data = fallback.data;
       }
@@ -35,16 +46,17 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { workspace_id, account_email, account_label, total_storage_gb, used_storage_gb } = body;
 
-    if (!workspace_id || !account_email) {
-      return NextResponse.json({ success: false, error: 'workspace_id and account_email are required' }, { status: 400 });
+    if (!account_email) {
+      return NextResponse.json({ success: false, error: 'account_email is required' }, { status: 400 });
     }
 
+    const effectiveWs = workspace_id || '00000000-0000-0000-0000-000000000000';
     const totalBytes = (total_storage_gb || 2000) * 1024 * 1024 * 1024;
-    const usedBytes = (used_storage_gb || 650) * 1024 * 1024 * 1024;
+    const usedBytes = (used_storage_gb || 0) * 1024 * 1024 * 1024;
 
     const driveAccountPayload = {
-      workspace_id,
-      account_email,
+      workspace_id: effectiveWs,
+      account_email: account_email.trim(),
       account_label: account_label || 'Wedding Deliverables Drive',
       total_storage_bytes: totalBytes,
       used_storage_bytes: usedBytes,
@@ -53,7 +65,7 @@ export async function POST(req: NextRequest) {
       updated_at: new Date().toISOString(),
     };
 
-    const { data: insertedAccount, error: dbErr } = await supabase
+    const { data: insertedAccount, error: dbErr } = await supabaseAdmin
       .from('storage_drive_accounts')
       .upsert([driveAccountPayload], { onConflict: 'workspace_id,account_email' })
       .select()
@@ -76,8 +88,8 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Account ID required' }, { status: 400 });
     }
 
-    await supabase.from('storage_drive_accounts').delete().eq('id', accountId);
-    await supabase.from('storage_indexed_items').delete().eq('drive_account_id', accountId);
+    await supabaseAdmin.from('storage_drive_accounts').delete().eq('id', accountId);
+    await supabaseAdmin.from('storage_indexed_items').delete().eq('drive_account_id', accountId);
 
     return NextResponse.json({ success: true });
   } catch (err: any) {

@@ -115,12 +115,26 @@ export default function DataManagerPage() {
   const [manualDriveEmail, setManualDriveEmail] = useState('');
   const [manualDriveLabel, setManualDriveLabel] = useState('Primary Wedding Backup');
   const [manualDriveCapacityGb, setManualDriveCapacityGb] = useState(2000);
+  const [manualDriveUsedGb, setManualDriveUsedGb] = useState(0);
   const [driveConnectTab, setDriveConnectTab] = useState<'oauth' | 'manual'>('oauth');
   const [currentOrigin, setCurrentOrigin] = useState('http://localhost:3000');
+  const [urlNotice, setUrlNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setCurrentOrigin(window.location.origin);
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('connected') === 'true') {
+        setUrlNotice({ type: 'success', message: '🎉 Google Drive connected successfully and synced with your studio hub!' });
+      } else if (params.get('error')) {
+        const err = params.get('error');
+        setUrlNotice({
+          type: 'error',
+          message: err === 'token_failed' 
+            ? '⚠️ Google OAuth token verification requires Google Client Secret in production. You can use the "⚡ Instant Direct Link" tab to link your Google Drive in 1 second!'
+            : `⚠️ Google Drive connection notice: ${err}. Please use the "⚡ Instant Direct Link" tab below.`
+        });
+      }
     }
   }, []);
   const [isAddDiskModalOpen, setIsAddDiskModalOpen] = useState(false);
@@ -147,32 +161,43 @@ export default function DataManagerPage() {
   const loadAllData = useCallback(async () => {
     setLoading(true);
     try {
-      // 1. Fetch live Google Drive Accounts directly from Supabase storage_drive_accounts
-      let driveQuery = supabase
-        .from('storage_drive_accounts')
-        .select('*')
-        .eq('is_active', true)
-        .order('created_at', { ascending: false });
+      // 1. Fetch live Google Drive Accounts from API route (which uses supabaseAdmin)
+      let accounts: DriveAccount[] = [];
+      try {
+        const drivesRes = await fetch('/api/storage/google/accounts?workspace_id=' + effectiveWsId).then(r => r.json());
+        if (drivesRes.success && Array.isArray(drivesRes.accounts)) {
+          accounts = drivesRes.accounts;
+        }
+      } catch (_) {}
 
-      if (effectiveWsId && effectiveWsId !== '00000000-0000-0000-0000-000000000000') {
-        driveQuery = driveQuery.or(`workspace_id.eq.${effectiveWsId},workspace_id.eq.00000000-0000-0000-0000-000000000000`);
+      // Direct Supabase fallback
+      if (accounts.length === 0) {
+        let driveQuery = supabase
+          .from('storage_drive_accounts')
+          .select('*')
+          .eq('is_active', true)
+          .order('created_at', { ascending: false });
+
+        if (effectiveWsId && effectiveWsId !== '00000000-0000-0000-0000-000000000000') {
+          driveQuery = driveQuery.or(`workspace_id.eq.${effectiveWsId},workspace_id.eq.00000000-0000-0000-0000-000000000000`);
+        }
+
+        const { data: dbAccounts } = await driveQuery;
+        if (dbAccounts && Array.isArray(dbAccounts)) {
+          accounts = dbAccounts;
+        }
       }
 
-      const [driveRes, disksRes, machinesRes] = await Promise.all([
-        driveQuery,
+      // Filter out any demo placeholders
+      const liveDrives = accounts.filter(
+        (d: any) => !d.account_email?.includes('primary@gmail.com') && !d.account_email?.includes('studio.drive.914')
+      );
+      setDriveAccounts(liveDrives);
+
+      const [disksRes, machinesRes] = await Promise.all([
         fetch('/api/storage/physical/list?workspace_id=' + effectiveWsId).then(r => r.json()),
         fetch('/api/agent/machines?workspace_id=' + effectiveWsId).then(r => r.json()),
       ]);
-
-      if (driveRes.data && Array.isArray(driveRes.data)) {
-        // Exclude any demo / dummy placeholder accounts
-        const liveDrives = driveRes.data.filter(
-          (d: any) => !d.account_email?.includes('primary@gmail.com') && !d.account_email?.includes('studio.drive.914')
-        );
-        setDriveAccounts(liveDrives);
-      } else {
-        setDriveAccounts([]);
-      }
 
       if (disksRes.success && Array.isArray(disksRes.disks)) {
         setPhysicalDisks(disksRes.disks);
@@ -358,7 +383,7 @@ export default function DataManagerPage() {
 
   // Direct Google Drive OAuth navigation
   const handleConnectGoogleDrive = () => {
-    window.location.href = '/api/storage/google/auth';
+    window.location.href = `/api/storage/google/auth?workspace_id=${encodeURIComponent(effectiveWsId)}`;
   };
 
   // Copy helper
@@ -370,6 +395,43 @@ export default function DataManagerPage() {
 
   return (
     <div className="min-h-screen bg-[#FAF9F6] text-slate-900 font-sans p-4 sm:p-8 space-y-6 max-w-7xl mx-auto">
+
+      {/* URL Notification Banner (OAuth feedback / Direct Link suggestion) */}
+      {urlNotice && (
+        <div className={`p-4 rounded-2xl border flex items-center justify-between gap-3 text-xs font-bold shadow-2xs ${
+          urlNotice.type === 'success'
+            ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
+            : 'bg-amber-50 text-amber-950 border-amber-300'
+        }`}>
+          <div className="flex items-center gap-2">
+            {urlNotice.type === 'success' ? (
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+            ) : (
+              <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+            )}
+            <span>{urlNotice.message}</span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {urlNotice.type === 'error' && (
+              <button
+                onClick={() => {
+                  setDriveConnectTab('manual');
+                  setIsConnectDriveModalOpen(true);
+                }}
+                className="px-3 py-1.5 rounded-xl bg-amber-600 text-white font-bold hover:bg-amber-700 transition cursor-pointer"
+              >
+                ⚡ Open Instant Direct Link
+              </button>
+            )}
+            <button
+              onClick={() => setUrlNotice(null)}
+              className="p-1 text-zinc-500 hover:text-zinc-800 rounded-lg cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
       
       {/* ─────────────────────────────────────────────────────────────
           1. HEADER & ACTION CONTROLS
@@ -1416,22 +1478,28 @@ export default function DataManagerPage() {
               <form
                 onSubmit={async (e) => {
                   e.preventDefault();
-                  if (!manualDriveEmail) return;
+                  if (!manualDriveEmail.trim()) return;
                   try {
                     const res = await fetch('/api/storage/google/accounts', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
                         workspace_id: effectiveWsId,
-                        account_email: manualDriveEmail,
-                        account_label: manualDriveLabel,
+                        account_email: manualDriveEmail.trim(),
+                        account_label: manualDriveLabel.trim(),
                         total_storage_gb: manualDriveCapacityGb,
+                        used_storage_gb: manualDriveUsedGb,
                       }),
                     });
                     const json = await res.json();
-                    if (json.success) {
+                    if (json.success && json.account) {
+                      setDriveAccounts(prev => [json.account, ...prev.filter(a => a.id !== json.account.id)]);
                       setIsConnectDriveModalOpen(false);
                       setManualDriveEmail('');
+                      setUrlNotice({
+                        type: 'success',
+                        message: `🎉 Google Drive (${json.account.account_email}) connected successfully with ${manualDriveCapacityGb} GB storage!`,
+                      });
                       await loadAllData();
                       executeSearch(searchQuery, sourceFilter, categoryFilter);
                     } else {
@@ -1467,21 +1535,61 @@ export default function DataManagerPage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-zinc-700 mb-1">Allocated Capacity (GB)</label>
-                  <input
-                    type="number"
-                    value={manualDriveCapacityGb}
-                    onChange={(e) => setManualDriveCapacityGb(Number(e.target.value))}
-                    className="w-full px-3.5 py-2 bg-zinc-50 rounded-xl border border-zinc-200 text-xs font-bold text-zinc-900"
-                  />
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Total Account Capacity</label>
+                  <div className="grid grid-cols-4 gap-1.5 mb-2">
+                    {[
+                      { label: '15 GB (Free)', value: 15 },
+                      { label: '100 GB', value: 100 },
+                      { label: '2 TB (2000 GB)', value: 2000 },
+                      { label: '5 TB (5000 GB)', value: 5000 },
+                    ].map(preset => (
+                      <button
+                        key={preset.value}
+                        type="button"
+                        onClick={() => setManualDriveCapacityGb(preset.value)}
+                        className={'py-1.5 px-2 rounded-lg text-[10px] font-bold border transition cursor-pointer text-center ' + (
+                          manualDriveCapacityGb === preset.value
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-zinc-50 hover:bg-zinc-100 text-zinc-700 border-zinc-200'
+                        )}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      value={manualDriveCapacityGb}
+                      onChange={(e) => setManualDriveCapacityGb(Number(e.target.value))}
+                      className="w-full px-3.5 py-2 bg-zinc-50 rounded-xl border border-zinc-200 text-xs font-bold text-zinc-900"
+                    />
+                    <span className="text-xs font-bold text-zinc-500 shrink-0">GB Total</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Current Used Space (Optional)</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      value={manualDriveUsedGb}
+                      onChange={(e) => setManualDriveUsedGb(Number(e.target.value))}
+                      placeholder="0"
+                      className="w-full px-3.5 py-2 bg-zinc-50 rounded-xl border border-zinc-200 text-xs font-bold text-zinc-900"
+                    />
+                    <span className="text-xs font-bold text-zinc-500 shrink-0">GB Used</span>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-2 pt-2">
                   <button
                     type="submit"
-                    className="flex-1 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition cursor-pointer"
+                    className="flex-1 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition cursor-pointer shadow-md shadow-blue-600/20"
                   >
-                    Link Google Drive Account
+                    ⚡ Link Google Drive Now
                   </button>
                   <button
                     type="button"

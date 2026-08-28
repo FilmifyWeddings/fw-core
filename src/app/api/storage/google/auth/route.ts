@@ -1,9 +1,14 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const workspaceId = searchParams.get('workspace_id') || '00000000-0000-0000-0000-000000000000';
+
   const clientId = '666330539586-q0s8vvr4osdah4e60rd75s3keolfgmc0.apps.googleusercontent.com';
+  
+  // Prefer studiocore.in production redirect_uri
   const redirectUri = 'https://studiocore.in/api/storage/google/callback';
 
   const scopes = [
@@ -20,6 +25,7 @@ export async function GET() {
   googleAuthUrl.searchParams.set('scope', scopes);
   googleAuthUrl.searchParams.set('access_type', 'offline');
   googleAuthUrl.searchParams.set('prompt', 'consent');
+  googleAuthUrl.searchParams.set('state', workspaceId);
 
   return NextResponse.redirect(googleAuthUrl.toString());
 }
