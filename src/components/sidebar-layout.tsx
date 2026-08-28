@@ -286,13 +286,6 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       iconBg: 'bg-[#DCFCE7] text-[#15803D]',
     },
     {
-      id: 'data-manager',
-      name: 'Data Manager',
-      path: '/workspace/data-manager',
-      icon: HardDrive,
-      iconBg: 'bg-[#FEF3C7] text-[#D97706]',
-    },
-    {
       id: 'integrations',
       name: 'Integrations Hub',
       path: '/workspace/integrations',
