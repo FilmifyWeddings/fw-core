@@ -1,12 +1,11 @@
 /**
- * High-Speed Client-Side Image Compressor & Direct R2 Uploader
+ * High-Speed Client-Side WebP Compression & Direct Cloudflare R2 Pipeline
  */
 
-export interface ProcessedPhotoVariants {
-  file: File;
-  originalBlob: Blob;
-  previewBlob: Blob;
-  thumbBlob: Blob;
+export interface ImageVariants {
+  original: File;
+  preview: Blob;
+  thumb: Blob;
   width: number;
   height: number;
   sizeBytes: number;
@@ -18,61 +17,118 @@ export interface UploadProgressCallback {
 }
 
 /**
- * Compresses an image file in the browser to WebP at specified max dimension & quality
+ * Generates 1920px Preview (WebP 80%) and 400px Thumbnail (WebP 70%) in the browser
  */
-export async function createWebPVariant(
-  file: File,
-  maxDimension: number,
-  quality: number
-): Promise<{ blob: Blob; width: number; height: number }> {
+export async function generateImageVariants(file: File): Promise<ImageVariants> {
+  let width = 1920;
+  let height = 1080;
+
+  try {
+    if (typeof createImageBitmap === 'function') {
+      const bitmap = await createImageBitmap(file);
+      width = bitmap.width;
+      height = bitmap.height;
+
+      // 1. Generate 1920px Preview Blob (WebP 80% quality ~200KB)
+      const previewCanvas = document.createElement('canvas');
+      const previewScale = Math.min(1920 / Math.max(bitmap.width, bitmap.height), 1);
+      previewCanvas.width = Math.max(1, Math.round(bitmap.width * previewScale));
+      previewCanvas.height = Math.max(1, Math.round(bitmap.height * previewScale));
+      const pCtx = previewCanvas.getContext('2d', { alpha: false });
+      if (pCtx) {
+        pCtx.imageSmoothingEnabled = true;
+        pCtx.imageSmoothingQuality = 'high';
+        pCtx.drawImage(bitmap, 0, 0, previewCanvas.width, previewCanvas.height);
+      }
+      const previewBlob = await new Promise<Blob>((resolve, reject) => {
+        previewCanvas.toBlob(
+          (b) => (b ? resolve(b) : reject(new Error('Preview conversion failed'))),
+          'image/webp',
+          0.8
+        );
+      });
+
+      // 2. Generate 400px Grid Thumbnail Blob (WebP 70% quality ~30KB)
+      const thumbCanvas = document.createElement('canvas');
+      const thumbScale = Math.min(400 / Math.max(bitmap.width, bitmap.height), 1);
+      thumbCanvas.width = Math.max(1, Math.round(bitmap.width * thumbScale));
+      thumbCanvas.height = Math.max(1, Math.round(bitmap.height * thumbScale));
+      const tCtx = thumbCanvas.getContext('2d', { alpha: false });
+      if (tCtx) {
+        tCtx.imageSmoothingEnabled = true;
+        tCtx.imageSmoothingQuality = 'medium';
+        tCtx.drawImage(bitmap, 0, 0, thumbCanvas.width, thumbCanvas.height);
+      }
+      const thumbBlob = await new Promise<Blob>((resolve, reject) => {
+        thumbCanvas.toBlob(
+          (b) => (b ? resolve(b) : reject(new Error('Thumbnail conversion failed'))),
+          'image/webp',
+          0.7
+        );
+      });
+
+      bitmap.close?.();
+
+      return {
+        original: file,
+        preview: previewBlob,
+        thumb: thumbBlob,
+        width,
+        height,
+        sizeBytes: file.size,
+        filename: file.name.replace(/\.[^/.]+$/, ''),
+      };
+    }
+  } catch (bitmapErr) {
+    console.warn('[ImageProcessor] createImageBitmap fallback to Image element:', bitmapErr);
+  }
+
+  // Fallback using HTML Image element
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
 
-    img.onload = () => {
+    img.onload = async () => {
       URL.revokeObjectURL(url);
-      let { width, height } = img;
+      width = img.naturalWidth || img.width;
+      height = img.naturalHeight || img.height;
 
-      if (width > maxDimension || height > maxDimension) {
-        if (width > height) {
-          height = Math.round((height * maxDimension) / width);
-          width = maxDimension;
-        } else {
-          width = Math.round((width * maxDimension) / height);
-          height = maxDimension;
-        }
-      }
-
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d', { alpha: false });
-
-      if (!ctx) {
-        reject(new Error('Failed to get 2D canvas context'));
-        return;
-      }
-
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(img, 0, 0, width, height);
-
-      canvas.toBlob(
-        (blob) => {
-          if (blob) {
-            resolve({ blob, width, height });
-          } else {
-            reject(new Error('Canvas toBlob conversion failed'));
-          }
-        },
-        'image/webp',
-        quality
+      // 1. Preview
+      const previewCanvas = document.createElement('canvas');
+      const pScale = Math.min(1920 / Math.max(width, height), 1);
+      previewCanvas.width = Math.max(1, Math.round(width * pScale));
+      previewCanvas.height = Math.max(1, Math.round(height * pScale));
+      const pCtx = previewCanvas.getContext('2d', { alpha: false });
+      pCtx?.drawImage(img, 0, 0, previewCanvas.width, previewCanvas.height);
+      const previewBlob = await new Promise<Blob>((res) =>
+        previewCanvas.toBlob((b) => res(b!), 'image/webp', 0.8)
       );
+
+      // 2. Thumb
+      const thumbCanvas = document.createElement('canvas');
+      const tScale = Math.min(400 / Math.max(width, height), 1);
+      thumbCanvas.width = Math.max(1, Math.round(width * tScale));
+      thumbCanvas.height = Math.max(1, Math.round(height * tScale));
+      const tCtx = thumbCanvas.getContext('2d', { alpha: false });
+      tCtx?.drawImage(img, 0, 0, thumbCanvas.width, thumbCanvas.height);
+      const thumbBlob = await new Promise<Blob>((res) =>
+        thumbCanvas.toBlob((b) => res(b!), 'image/webp', 0.7)
+      );
+
+      resolve({
+        original: file,
+        preview: previewBlob,
+        thumb: thumbBlob,
+        width,
+        height,
+        sizeBytes: file.size,
+        filename: file.name.replace(/\.[^/.]+$/, ''),
+      });
     };
 
     img.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error('Failed to load image for client-side processing'));
+      reject(new Error('Failed to load image file'));
     };
 
     img.src = url;
@@ -80,28 +136,7 @@ export async function createWebPVariant(
 }
 
 /**
- * Processes a single photo into original, preview, and thumbnail variants
- */
-export async function processPhotoFile(file: File): Promise<ProcessedPhotoVariants> {
-  const [preview, thumb] = await Promise.all([
-    createWebPVariant(file, 1920, 0.82),
-    createWebPVariant(file, 400, 0.70),
-  ]);
-
-  return {
-    file,
-    originalBlob: file,
-    previewBlob: preview.blob,
-    thumbBlob: thumb.blob,
-    width: preview.width,
-    height: preview.height,
-    sizeBytes: file.size,
-    filename: file.name.replace(/\.[^/.]+$/, ''),
-  };
-}
-
-/**
- * Uploads a blob to a presigned S3/R2 URL with progress tracking
+ * Uploads a blob directly to a presigned Cloudflare R2 URL
  */
 export function uploadBlobToPresignedUrl(
   url: string,
@@ -126,7 +161,7 @@ export function uploadBlobToPresignedUrl(
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve();
       } else {
-        reject(new Error(`Direct R2 upload failed with status ${xhr.status}: ${xhr.statusText}`));
+        reject(new Error(`Direct R2 upload failed with status ${xhr.status}`));
       }
     };
 
@@ -138,7 +173,7 @@ export function uploadBlobToPresignedUrl(
 }
 
 /**
- * Batch processes and uploads a queue of photos directly to Cloudflare R2
+ * Batch processes and uploads photos directly to Cloudflare R2
  */
 export async function batchUploadPhotos(
   galleryId: string,
@@ -163,8 +198,8 @@ export async function batchUploadPhotos(
             onProgress(completed, total, Math.round((completed / total) * 100), `Optimizing ${file.name}...`);
           }
 
-          // 1. Client-Side WebP Conversion
-          const processed = await processPhotoFile(file);
+          // 1. High-Speed Client-Side WebP Conversion
+          const variants = await generateImageVariants(file);
 
           // 2. Fetch Presigned URLs from API
           const cleanName = encodeURIComponent(file.name.replace(/[^a-zA-Z0-9._-]/g, '_'));
@@ -189,11 +224,11 @@ export async function batchUploadPhotos(
             onProgress(completed, total, Math.round((completed / total) * 100), `Uploading ${file.name} to R2...`);
           }
 
-          // 3. Direct R2 Parallel Uploads
+          // 3. Direct S3/R2 Parallel Uploads
           await Promise.all([
-            uploadBlobToPresignedUrl(originalUploadUrl, processed.originalBlob, file.type || 'image/jpeg'),
-            uploadBlobToPresignedUrl(previewUploadUrl, processed.previewBlob, 'image/webp'),
-            uploadBlobToPresignedUrl(thumbUploadUrl, processed.thumbBlob, 'image/webp'),
+            uploadBlobToPresignedUrl(originalUploadUrl, variants.original, file.type || 'image/jpeg'),
+            uploadBlobToPresignedUrl(previewUploadUrl, variants.preview, 'image/webp'),
+            uploadBlobToPresignedUrl(thumbUploadUrl, variants.thumb, 'image/webp'),
           ]);
 
           // 4. Collect for registration
@@ -203,9 +238,9 @@ export async function batchUploadPhotos(
             original_key: originalKey,
             preview_key: previewKey,
             thumbnail_key: thumbKey,
-            width: processed.width,
-            height: processed.height,
-            size_bytes: processed.sizeBytes,
+            width: variants.width,
+            height: variants.height,
+            size_bytes: variants.sizeBytes,
           });
 
           completed++;
@@ -220,7 +255,7 @@ export async function batchUploadPhotos(
     );
   }
 
-  // 5. Batch Register photos into database and trigger face indexing
+  // 5. Batch Register photos into database and trigger background face indexing
   if (registeredPhotos.length > 0) {
     try {
       await fetch('/api/gallery/photos/register', {
