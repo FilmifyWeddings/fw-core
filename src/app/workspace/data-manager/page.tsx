@@ -117,6 +117,7 @@ export default function DataManagerPage() {
   const [manualDriveCapacityGb, setManualDriveCapacityGb] = useState(2000);
   const [manualDriveUsedGb, setManualDriveUsedGb] = useState(0);
   const [driveConnectTab, setDriveConnectTab] = useState<'oauth' | 'manual'>('oauth');
+  const [currentOrigin, setCurrentOrigin] = useState('https://studiocore.in');
   const [urlNotice, setUrlNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [isConnectingOAuth, setIsConnectingOAuth] = useState(false);
   const [oauthStatusText, setOauthStatusText] = useState('');
