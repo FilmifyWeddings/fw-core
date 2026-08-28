@@ -10,32 +10,61 @@ export async function GET(req: NextRequest) {
     const slug = searchParams.get('slug');
     const id = searchParams.get('id') || searchParams.get('gallery_id');
 
+    // 1. Fetch single gallery by ID
     if (id) {
       const { data: single, error } = await supabaseAdmin
         .from('event_galleries')
         .select('*')
         .eq('id', id)
         .maybeSingle();
-      if (error) throw error;
-      return NextResponse.json({ success: true, gallery: single });
+
+      if (error) {
+        console.error('Error fetching event gallery by ID:', error);
+        return NextResponse.json({ success: false, error: error.message, gallery: null, events: [] }, { status: 200 });
+      }
+
+      return NextResponse.json({ success: true, gallery: single, events: single ? [single] : [] });
     }
 
+    // 2. Fetch single gallery by Slug
     if (slug) {
       const { data: single, error } = await supabaseAdmin
         .from('event_galleries')
         .select('*')
         .eq('slug', slug)
         .maybeSingle();
-      if (error) throw error;
-      return NextResponse.json({ success: true, gallery: single });
+
+      if (error) {
+        console.error('Error fetching event gallery by Slug:', error);
+        return NextResponse.json({ success: false, error: error.message, gallery: null, events: [] }, { status: 200 });
+      }
+
+      return NextResponse.json({ success: true, gallery: single, events: single ? [single] : [] });
     }
+
+    // 3. Fetch all galleries
+    let query = supabaseAdmin
+      .from('event_galleries')
+      .select(`
+        *,
+        gallery_photos (
+          id,
+          size_bytes,
+          face_count
+        )
+      `)
+      .order('created_at', { ascending: false });
 
     if (workspaceId && workspaceId !== '00000000-0000-0000-0000-000000000000') {
       query = query.or(`workspace_id.eq.${workspaceId},workspace_id.eq.00000000-0000-0000-0000-000000000000`);
     }
 
     const { data: galleries, error } = await query;
-    if (error) throw error;
+
+    if (error) {
+      console.error('Error fetching event galleries:', error);
+      return NextResponse.json({ success: false, error: error.message, galleries: [], events: [] }, { status: 200 });
+    }
 
     // Calculate aggregated metrics
     const enriched = (galleries || []).map(g => {
@@ -54,10 +83,10 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json({ success: true, galleries: enriched });
+    return NextResponse.json({ success: true, galleries: enriched, events: enriched });
   } catch (err: any) {
-    console.error('Error fetching event galleries:', err);
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    console.error('Events GET Exception:', err);
+    return NextResponse.json({ success: false, error: err.message, galleries: [], events: [] }, { status: 200 });
   }
 }
 
@@ -115,10 +144,11 @@ export async function POST(req: NextRequest) {
       await supabaseAdmin.from('gallery_collections').insert({
         gallery_id: newGallery.id,
         name: 'Highlights',
+        slug: 'highlights',
       });
     } catch (_) {}
 
-    return NextResponse.json({ success: true, gallery: newGallery });
+    return NextResponse.json({ success: true, gallery: newGallery, event: newGallery });
   } catch (err: any) {
     console.error('Error creating event gallery:', err);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
@@ -151,7 +181,7 @@ export async function PATCH(req: NextRequest) {
 
     if (error) throw error;
 
-    return NextResponse.json({ success: true, gallery: updated });
+    return NextResponse.json({ success: true, gallery: updated, event: updated });
   } catch (err: any) {
     console.error('Error updating event gallery:', err);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
