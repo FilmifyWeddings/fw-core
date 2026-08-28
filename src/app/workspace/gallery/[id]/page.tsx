@@ -128,14 +128,14 @@ export default function AlbumStudioWorkspacePage() {
     setLoading(true);
 
     try {
-      // Fetch Gallery Info
-      const { data: gal, error: gError } = await supabase
-        .from('event_galleries')
-        .select('*')
-        .eq('id', galleryId)
-        .single();
+      // Fetch Gallery Info via API
+      const gRes = await fetch(`/api/gallery/events?id=${galleryId}`);
+      const gJson = await gRes.json();
 
-      if (gError || !gal) throw new Error(gError?.message || 'Gallery not found');
+      if (!gJson.success || !gJson.gallery) {
+        throw new Error(gJson.error || 'Gallery not found');
+      }
+      const gal = gJson.gallery;
       setGallery(gal);
       setTitleInput(gal.title);
 

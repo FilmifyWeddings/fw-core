@@ -8,22 +8,24 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const workspaceId = searchParams.get('workspace_id');
     const slug = searchParams.get('slug');
+    const id = searchParams.get('id') || searchParams.get('gallery_id');
 
-    let query = supabaseAdmin
-      .from('event_galleries')
-      .select(`
-        *,
-        gallery_photos (
-          id,
-          size_bytes,
-          face_count
-        )
-      `)
-      .order('created_at', { ascending: false });
+    if (id) {
+      const { data: single, error } = await supabaseAdmin
+        .from('event_galleries')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+      if (error) throw error;
+      return NextResponse.json({ success: true, gallery: single });
+    }
 
     if (slug) {
-      query = query.eq('slug', slug);
-      const { data: single, error } = await query.maybeSingle();
+      const { data: single, error } = await supabaseAdmin
+        .from('event_galleries')
+        .select('*')
+        .eq('slug', slug)
+        .maybeSingle();
       if (error) throw error;
       return NextResponse.json({ success: true, gallery: single });
     }

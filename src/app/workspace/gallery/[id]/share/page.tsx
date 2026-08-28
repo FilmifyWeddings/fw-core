@@ -63,13 +63,13 @@ export default function GalleryShareCenterPage() {
     setLoading(true);
 
     try {
-      const { data: gal, error } = await supabase
-        .from('event_galleries')
-        .select('*')
-        .eq('id', galleryId)
-        .single();
+      const gRes = await fetch(`/api/gallery/events?id=${galleryId}`);
+      const gJson = await gRes.json();
 
-      if (error || !gal) throw new Error(error?.message || 'Gallery not found');
+      if (!gJson.success || !gJson.gallery) {
+        throw new Error(gJson.error || 'Gallery not found');
+      }
+      const gal = gJson.gallery;
       setGallery(gal);
       setGuestAskPin(!!gal.pin_code);
       setFullAccessAskPin(!!gal.pin_code);
