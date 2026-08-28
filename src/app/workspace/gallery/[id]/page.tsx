@@ -106,6 +106,13 @@ function AlbumStudioContent() {
   // Modals
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isAddCollectionModalOpen, setIsAddCollectionModalOpen] = useState(false);
+  const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
+  const [isGuestListModalOpen, setIsGuestListModalOpen] = useState(false);
+  const [registeredGuests, setRegisteredGuests] = useState<any[]>([]);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [publishResult, setPublishResult] = useState<any>(null);
+  const [copiedQrLink, setCopiedQrLink] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
 
@@ -217,6 +224,45 @@ function AlbumStudioContent() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  const loadRegisteredGuests = async () => {
+    if (!gallery) return;
+    try {
+      const res = await fetch(`/api/gallery/guest/list?gallery_id=${gallery.id}`);
+      const json = await res.json();
+      if (json.success && Array.isArray(json.guests)) {
+        setRegisteredGuests(json.guests);
+      }
+    } catch (_) {}
+  };
+
+  const handlePublishAndNotify = async () => {
+    if (!gallery) return;
+    setIsPublishing(true);
+    try {
+      const res = await fetch('/api/gallery/events/publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          galleryId: gallery.id,
+          similarityThreshold: 0.40,
+          notifyChannels: ['WHATSAPP', 'EMAIL'],
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setPublishResult(json);
+        setGallery(prev => prev ? { ...prev, is_active: true } : null);
+        await loadRegisteredGuests();
+      } else {
+        alert(json.error || 'Failed to publish');
+      }
+    } catch (err: any) {
+      alert(`Publish error: ${err.message}`);
+    } finally {
+      setIsPublishing(false);
+    }
+  };
 
   // 2. Publish / Unpublish Toggle
   const handleTogglePublish = async () => {
