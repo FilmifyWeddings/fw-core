@@ -122,32 +122,87 @@ export default function AlbumStudioWorkspacePage() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 1. Fetch Gallery, Collections, and Photos
+  // 1. Safe Multi-Tier Gallery Fetch & Auto-Highlights Initialization
   const loadData = useCallback(async () => {
     if (!galleryId) return;
     setLoading(true);
 
     try {
-      // Fetch Gallery Info via API
-      const gRes = await fetch(`/api/gallery/events?id=${galleryId}`);
-      const gJson = await gRes.json();
+      let gal: any = null;
 
-      if (!gJson.success || !gJson.gallery) {
-        throw new Error(gJson.error || 'Gallery not found');
+      // Tier 1: Service Role API Fetch by ID
+      try {
+        const gRes = await fetch(`/api/gallery/events?id=${galleryId}`);
+        const gJson = await gRes.json();
+        if (gJson.success && gJson.gallery) {
+          gal = gJson.gallery;
+        }
+      } catch (_) {}
+
+      // Tier 2: Direct Supabase maybeSingle (Safe, no coerce error)
+      if (!gal) {
+        const { data, error } = await supabase
+          .from('event_galleries')
+          .select('*')
+          .eq('id', galleryId)
+          .maybeSingle();
+
+        if (data) {
+          gal = data;
+        } else {
+          // Tier 3: Lookup by slug as fallback
+          const { data: slugData } = await supabase
+            .from('event_galleries')
+            .select('*')
+            .eq('slug', galleryId)
+            .maybeSingle();
+
+          if (slugData) {
+            gal = slugData;
+          }
+        }
       }
-      const gal = gJson.gallery;
+
+      if (!gal) {
+        setGallery(null);
+        setLoading(false);
+        return;
+      }
+
       setGallery(gal);
       setTitleInput(gal.title);
 
-      // Fetch Collections
-      const cRes = await fetch(`/api/gallery/collections?gallery_id=${galleryId}`);
+      // Fetch or Auto-Initialize Collections
+      const cRes = await fetch(`/api/gallery/collections?gallery_id=${gal.id}`);
       const cJson = await cRes.json();
+      let fetchedCols: GalleryCollection[] = [];
+
       if (cJson.success && Array.isArray(cJson.collections)) {
-        setCollections(cJson.collections);
+        fetchedCols = cJson.collections;
       }
 
+      // If no collection exists yet, auto-create default 'Highlights'
+      if (fetchedCols.length === 0) {
+        try {
+          const createColRes = await fetch('/api/gallery/collections', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              gallery_id: gal.id,
+              name: 'Highlights',
+            }),
+          });
+          const createColJson = await createColRes.json();
+          if (createColJson.success && createColJson.collection) {
+            fetchedCols = [{ ...createColJson.collection, photo_count: 0 }];
+          }
+        } catch (_) {}
+      }
+
+      setCollections(fetchedCols);
+
       // Fetch Photos
-      const pRes = await fetch(`/api/gallery/photos?gallery_id=${galleryId}`);
+      const pRes = await fetch(`/api/gallery/photos?gallery_id=${gal.id}`);
       const pJson = await pRes.json();
       if (pJson.success && Array.isArray(pJson.photos)) {
         setPhotos(pJson.photos);
