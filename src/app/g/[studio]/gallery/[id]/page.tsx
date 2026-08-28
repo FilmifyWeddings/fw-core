@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import {
   Camera,
@@ -63,7 +63,7 @@ interface GalleryInfo {
   allow_downloads: boolean;
 }
 
-export default function StrictGuestGalleryPage() {
+function StrictGuestGalleryContent() {
   const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -857,5 +857,23 @@ export default function StrictGuestGalleryPage() {
       )}
 
     </div>
+  );
+}
+
+export default function StrictGuestGalleryPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#FAF9F5] flex flex-col items-center justify-center space-y-4 p-6">
+          <div className="w-16 h-16 rounded-3xl bg-amber-100 text-amber-700 flex items-center justify-center animate-pulse">
+            <Camera className="w-8 h-8" />
+          </div>
+          <p className="text-sm font-black text-zinc-800 tracking-tight">Loading Wedding Portal...</p>
+          <span className="text-xs text-zinc-400">Powered by StudioCore AI</span>
+        </div>
+      }
+    >
+      <StrictGuestGalleryContent />
+    </Suspense>
   );
 }

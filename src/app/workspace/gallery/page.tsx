@@ -27,7 +27,6 @@ import {
   Sliders,
   ChevronRight,
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
 import { batchUploadPhotos } from '@/lib/imageProcessor';
 
 interface EventGallery {
