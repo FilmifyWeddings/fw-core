@@ -9,8 +9,9 @@ export const GALLERY_BUCKET_NAME = process.env.R2_GALLERY_BUCKET_NAME || 'studio
 export const R2_GALLERY_BUCKET_NAME = GALLERY_BUCKET_NAME;
 export const CRM_BUCKET_NAME = process.env.R2_BUCKET_NAME || 'studiocore-madia';
 export const R2_BUCKET_NAME = GALLERY_BUCKET_NAME;
-export const NEXT_PUBLIC_R2_GALLERY_CDN_URL = process.env.NEXT_PUBLIC_R2_GALLERY_CDN_URL || 'https://pub-fdc2498fa52b42cdb2890a14906b1b66.r2.dev';
-export const R2_PUBLIC_URL = NEXT_PUBLIC_R2_GALLERY_CDN_URL;
+export const GALLERY_CDN_URL = process.env.NEXT_PUBLIC_R2_GALLERY_CDN_URL || 'https://gallery-cdn.studiocore.in';
+export const NEXT_PUBLIC_R2_GALLERY_CDN_URL = GALLERY_CDN_URL;
+export const R2_PUBLIC_URL = GALLERY_CDN_URL;
 
 export const r2Client = new S3Client({
   region: 'auto',
@@ -61,7 +62,7 @@ export async function getPresignedDownloadUrl(
 export function getPublicGalleryUrl(key: string): string {
   if (!key) return '';
   if (key.startsWith('http://') || key.startsWith('https://')) return key;
-  const base = (process.env.NEXT_PUBLIC_R2_GALLERY_CDN_URL || 'https://pub-fdc2498fa52b42cdb2890a14906b1b66.r2.dev').replace(/\/+$/, '');
+  const base = GALLERY_CDN_URL.replace(/\/+$/, '');
   const cleanKey = key.replace(/^\/+/, '');
   return `${base}/${cleanKey}`;
 }
