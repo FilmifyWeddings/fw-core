@@ -143,24 +143,37 @@ export default function DataManagerPage() {
     assigned_to_user_name: '',
   });
 
-  // Load All Storage Data
+  // Load All Storage Data & Live Google Drive Accounts
   const loadAllData = useCallback(async () => {
     setLoading(true);
     try {
-      const [drivesRes, disksRes, machinesRes] = await Promise.all([
-        fetch('/api/storage/google/accounts?workspace_id=' + effectiveWsId).then(r => r.json()),
+      // 1. Fetch live Google Drive Accounts directly from Supabase storage_drive_accounts
+      let driveQuery = supabase
+        .from('storage_drive_accounts')
+        .select('*')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false });
+
+      if (effectiveWsId && effectiveWsId !== '00000000-0000-0000-0000-000000000000') {
+        driveQuery = driveQuery.or(`workspace_id.eq.${effectiveWsId},workspace_id.eq.00000000-0000-0000-0000-000000000000`);
+      }
+
+      const [driveRes, disksRes, machinesRes] = await Promise.all([
+        driveQuery,
         fetch('/api/storage/physical/list?workspace_id=' + effectiveWsId).then(r => r.json()),
         fetch('/api/agent/machines?workspace_id=' + effectiveWsId).then(r => r.json()),
       ]);
 
-      let accounts = drivesRes.success && Array.isArray(drivesRes.accounts) ? drivesRes.accounts : [];
-      if (accounts.length === 0) {
-        const { data: dbAccounts } = await supabase.from('storage_drive_accounts').select('*').order('created_at', { ascending: false });
-        if (dbAccounts && dbAccounts.length > 0) {
-          accounts = dbAccounts;
-        }
+      if (driveRes.data && Array.isArray(driveRes.data)) {
+        // Exclude any demo / dummy placeholder accounts
+        const liveDrives = driveRes.data.filter(
+          (d: any) => !d.account_email?.includes('primary@gmail.com') && !d.account_email?.includes('studio.drive.914')
+        );
+        setDriveAccounts(liveDrives);
+      } else {
+        setDriveAccounts([]);
       }
-      setDriveAccounts(accounts);
+
       if (disksRes.success && Array.isArray(disksRes.disks)) {
         setPhysicalDisks(disksRes.disks);
       }
@@ -421,13 +434,13 @@ export default function DataManagerPage() {
             <span>🔌 Scan Hard Disk (Browser)</span>
           </button>
 
-          <Link
-            href="/api/storage/google/auth"
-            className="px-4 py-2.5 rounded-2xl bg-white border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-700 text-xs font-bold transition flex items-center gap-2 shadow-2xs"
+          <button
+            onClick={() => setIsConnectDriveModalOpen(true)}
+            className="px-4 py-2.5 rounded-2xl bg-white border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-700 text-xs font-bold transition flex items-center gap-2 shadow-2xs cursor-pointer"
           >
             <Cloud className="w-4 h-4 text-blue-500" />
             <span>+ Connect Google Drive</span>
-          </Link>
+          </button>
 
           <button
             onClick={() => {
@@ -803,71 +816,96 @@ export default function DataManagerPage() {
               <p className="text-xs text-zinc-500">Attach multiple Gmail / Google Workspace accounts for unlimited segmented storage.</p>
             </div>
 
-            <Link
-              href="/api/storage/google/auth"
-              className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm shadow-blue-600/20"
+            <button
+              onClick={() => setIsConnectDriveModalOpen(true)}
+              className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm shadow-blue-600/20 cursor-pointer"
             >
               <Cloud className="w-4 h-4" />
               <span>+ Connect Another Google Account</span>
-            </Link>
+            </button>
           </div>
 
           {driveAccounts.length === 0 ? (
-            <div className="bg-white rounded-3xl p-12 text-center border border-zinc-200 space-y-3">
-              <Cloud className="w-12 h-12 text-blue-300 mx-auto" />
-              <h3 className="text-base font-bold text-zinc-800">No Google Drive Connected</h3>
-              <p className="text-xs text-zinc-400 max-w-sm mx-auto">
-                Connect your studio's Google Workspace or personal Drive to automatically index client deliverables and wedding films.
-              </p>
-              <Link
-                href="/api/storage/google/auth"
-                className="px-5 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-bold inline-block hover:bg-blue-700 transition"
+            <div className="bg-white rounded-3xl p-12 text-center border border-zinc-200 space-y-4 shadow-2xs">
+              <div className="w-14 h-14 rounded-2xl bg-blue-50 text-blue-600 border border-blue-200 flex items-center justify-center mx-auto">
+                <Cloud className="w-7 h-7" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-zinc-800">No Google Drive Connected</h3>
+                <p className="text-xs text-zinc-400 max-w-sm mx-auto">
+                  Connect your studio's Google Workspace or personal Drive to automatically index client deliverables and wedding films.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsConnectDriveModalOpen(true)}
+                className="px-5 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-bold inline-flex items-center gap-2 hover:bg-blue-700 transition cursor-pointer shadow-sm shadow-blue-600/20"
               >
-                Connect First Google Drive
-              </Link>
+                <Plus className="w-4 h-4" />
+                <span>+ Connect First Google Drive</span>
+              </button>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {driveAccounts.map(acc => {
-                const total = acc.total_storage_bytes || (2 * 1024 * 1024 * 1024 * 1024);
-                const used = acc.used_storage_bytes || 0;
-                const percentage = total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
-                const isNearFull = percentage >= 85;
+              {driveAccounts.map(account => {
+                const totalBytes = Number(account.total_storage_bytes) || (15 * 1024 * 1024 * 1024);
+                const usedBytes = Number(account.used_storage_bytes) || 0;
+                const usedGb = (usedBytes / (1024 ** 3)).toFixed(1);
+                const totalGb = (totalBytes / (1024 ** 3)).toFixed(1);
+                const progressPercent = Math.min(100, Math.round((usedBytes / (totalBytes || 1)) * 100));
+                const isNearFull = progressPercent >= 85;
 
                 return (
                   <div
-                    key={acc.id}
-                    className="bg-white rounded-3xl p-5 border border-zinc-200 shadow-2xs space-y-4 flex flex-col justify-between"
+                    key={account.id}
+                    className="bg-white rounded-3xl p-5 border border-zinc-200 shadow-2xs space-y-4 flex flex-col justify-between hover:border-blue-300 transition-all group"
                   >
                     <div className="space-y-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600">
+                          <div className="w-10 h-10 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shrink-0">
                             <Cloud className="w-5 h-5" />
                           </div>
-                          <div>
-                            <h3 className="text-sm font-black text-zinc-900 truncate">{acc.account_email}</h3>
-                            <span className="text-[10px] font-bold text-zinc-400">{acc.account_label || 'Cloud Storage'}</span>
+                          <div className="min-w-0">
+                            <h3 className="text-sm font-black text-zinc-900 truncate" title={account.account_email}>
+                              {account.account_email}
+                            </h3>
+                            <span className="text-[10px] font-bold text-zinc-400 block truncate">
+                              {account.account_label || 'Cloud Storage'}
+                            </span>
                           </div>
                         </div>
 
-                        <span className={'px-2 py-0.5 rounded-md text-[10px] font-bold border ' + (
-                          isNearFull
-                            ? 'bg-rose-50 text-rose-700 border-rose-200'
-                            : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                        )}>
-                          {percentage}% Used
-                        </span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className={'px-2 py-0.5 rounded-md text-[10px] font-bold border ' + (
+                            isNearFull
+                              ? 'bg-rose-50 text-rose-700 border-rose-200'
+                              : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          )}>
+                            {progressPercent}% Used
+                          </span>
+
+                          <button
+                            onClick={async () => {
+                              if (!confirm(`Are you sure you want to disconnect ${account.account_email}?`)) return;
+                              await supabase.from('storage_drive_accounts').delete().eq('id', account.id);
+                              await loadAllData();
+                            }}
+                            className="p-1 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                            title="Disconnect Account"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
 
                       <div className="space-y-1.5">
                         <div className="flex items-center justify-between text-xs font-bold">
-                          <span className="text-zinc-600">{formatBytes(used)} used</span>
-                          <span className="text-zinc-400">Total: {formatBytes(total)}</span>
+                          <span className="text-zinc-700 font-mono">{usedGb} GB used</span>
+                          <span className="text-zinc-400 font-mono">Total: {totalGb} GB</span>
                         </div>
                         <div className="w-full h-2.5 bg-zinc-100 rounded-full overflow-hidden">
                           <div
-                            style={{ width: percentage + '%' }}
+                            style={{ width: `${progressPercent}%` }}
                             className={'h-full rounded-full transition-all ' + (
                               isNearFull ? 'bg-rose-500' : 'bg-blue-600'
                             )}
@@ -879,7 +917,7 @@ export default function DataManagerPage() {
                     <div className="pt-3 border-t border-zinc-100 flex items-center justify-between text-xs">
                       <span className="text-[11px] text-zinc-400 flex items-center gap-1">
                         <Clock className="w-3.5 h-3.5" />
-                        Synced {acc.last_synced_at ? new Date(acc.last_synced_at).toLocaleDateString('en-IN') : 'Just now'}
+                        Synced {account.last_synced_at ? new Date(account.last_synced_at).toLocaleDateString('en-IN') : 'Just now'}
                       </span>
 
                       <button
@@ -887,11 +925,11 @@ export default function DataManagerPage() {
                           await fetch('/api/storage/google/sync', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ account_id: acc.id, workspace_id: effectiveWsId }),
+                            body: JSON.stringify({ account_id: account.id, workspace_id: effectiveWsId }),
                           });
                           await loadAllData();
                         }}
-                        className="px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs transition cursor-pointer flex items-center gap-1"
+                        className="px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-blue-50 hover:text-blue-700 text-zinc-700 font-bold text-xs transition cursor-pointer flex items-center gap-1"
                       >
                         <RefreshCw className="w-3 h-3" />
                         <span>Sync Now</span>

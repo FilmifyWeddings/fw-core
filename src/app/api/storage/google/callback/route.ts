@@ -82,43 +82,6 @@ export async function GET(req: NextRequest) {
       console.error('DB upsert error:', upsertErr);
     }
 
-    // Insert initial catalog items for instant search
-    const driveId = insertedAccount?.id || '00000000-0000-0000-0000-000000000001';
-    try {
-      await supabaseAdmin.from('storage_indexed_items').upsert([
-        {
-          workspace_id: workspaceId,
-          storage_source_type: 'GOOGLE_DRIVE',
-          drive_account_id: driveId,
-          client_name: 'Ananya & Rohan Wedding',
-          folder_name: 'Ananya_Rohan_Master_Deliverables',
-          folder_path: `Google Drive (${email})/Weddings 2026/Ananya_Rohan/Final_Deliverables`,
-          web_view_link: 'https://drive.google.com',
-          total_size_bytes: Math.round(usedBytes * 0.6) || 12000000000,
-          photo_count: 1420,
-          video_count: 4,
-          other_files_count: 2,
-          event_category: 'DELIVERABLES',
-          tags: ['deliverables', 'album master', '4k film'],
-        },
-        {
-          workspace_id: workspaceId,
-          storage_source_type: 'GOOGLE_DRIVE',
-          drive_account_id: driveId,
-          client_name: 'Pooja & Siddharth Sangeet',
-          folder_name: 'Pooja_Sid_Teaser_Edits',
-          folder_path: `Google Drive (${email})/Weddings 2026/Pooja_Sid/Teaser_Edits`,
-          web_view_link: 'https://drive.google.com',
-          total_size_bytes: Math.round(usedBytes * 0.3) || 5000000000,
-          photo_count: 350,
-          video_count: 6,
-          other_files_count: 0,
-          event_category: 'EDITS',
-          tags: ['edits', 'teaser', 'cinematic'],
-        }
-      ]);
-    } catch (_) {}
-
     return NextResponse.redirect('https://studiocore.in/workspace/data-manager?connected=true');
   } catch (err) {
     console.error('Callback error:', err);
