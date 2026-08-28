@@ -9,7 +9,7 @@ import {
   Film, IndianRupee, Clock, Layers, BarChart3, Settings, 
   Headphones, LogOut, ChevronDown, ChevronRight, ChevronLeft, 
   Menu, X, Sparkles, UserCheck, Archive, UserX, CheckCircle2, 
-  ArrowUpRight, Bell, ShieldCheck, Crown, Briefcase, HardDrive
+  ArrowUpRight, Bell, ShieldCheck, Crown, Briefcase, HardDrive, Camera
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import StudioProfileEditModal from '@/components/workspace/StudioProfileEditModal';
@@ -242,6 +242,13 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       path: '/workspace/clients',
       icon: Users,
       iconBg: 'bg-[#F3E8FF] text-[#7E22CE]',
+    },
+    {
+      id: 'gallery',
+      name: 'AI Galleries',
+      path: '/workspace/gallery',
+      icon: Camera,
+      iconBg: 'bg-[#FEF3C7] text-[#D97706]',
     },
     {
       id: 'quotations',
