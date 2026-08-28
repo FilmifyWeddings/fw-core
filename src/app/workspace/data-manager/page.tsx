@@ -175,38 +175,24 @@ export default function DataManagerPage() {
   const loadAllData = useCallback(async () => {
     setLoading(true);
     try {
-      // 1. Fetch live Google Drive Accounts from API route (which uses supabaseAdmin)
-      let accounts: DriveAccount[] = [];
-      try {
-        const drivesRes = await fetch('/api/storage/google/accounts?workspace_id=' + effectiveWsId).then(r => r.json());
-        if (drivesRes.success && Array.isArray(drivesRes.accounts)) {
-          accounts = drivesRes.accounts;
-        }
-      } catch (_) {}
+      // 1. Fetch live connected Google Drive accounts directly from storage_drive_accounts
+      const { data: dbAccounts, error } = await supabase
+        .from('storage_drive_accounts')
+        .select('*')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false });
 
-      // Direct Supabase fallback
-      if (accounts.length === 0) {
-        let driveQuery = supabase
-          .from('storage_drive_accounts')
-          .select('*')
-          .eq('is_active', true)
-          .order('created_at', { ascending: false });
-
-        if (effectiveWsId && effectiveWsId !== '00000000-0000-0000-0000-000000000000') {
-          driveQuery = driveQuery.or(`workspace_id.eq.${effectiveWsId},workspace_id.eq.00000000-0000-0000-0000-000000000000`);
-        }
-
-        const { data: dbAccounts } = await driveQuery;
-        if (dbAccounts && Array.isArray(dbAccounts)) {
-          accounts = dbAccounts;
-        }
+      if (!error && dbAccounts) {
+        setDriveAccounts(dbAccounts);
+      } else {
+        // API fallback with admin role
+        try {
+          const drivesRes = await fetch('/api/storage/google/accounts?workspace_id=' + effectiveWsId).then(r => r.json());
+          if (drivesRes.success && Array.isArray(drivesRes.accounts)) {
+            setDriveAccounts(drivesRes.accounts);
+          }
+        } catch (_) {}
       }
-
-      // Filter out any demo placeholders
-      const liveDrives = accounts.filter(
-        (d: any) => !d.account_email?.includes('primary@gmail.com') && !d.account_email?.includes('studio.drive.914')
-      );
-      setDriveAccounts(liveDrives);
 
       const [disksRes, machinesRes] = await Promise.all([
         fetch('/api/storage/physical/list?workspace_id=' + effectiveWsId).then(r => r.json()),
@@ -220,7 +206,7 @@ export default function DataManagerPage() {
         setMachines(machinesRes.machines);
       }
     } catch (err) {
-      console.error('[DataManager] Load error:', err);
+      console.error('Failed to load storage data:', err);
     } finally {
       setLoading(false);
     }
@@ -395,100 +381,9 @@ export default function DataManagerPage() {
     }
   };
 
-  // Automated Google Drive OAuth flow (Client GIS Popup with live quota auto-detection)
+  // Direct Google Drive OAuth navigation
   const handleConnectGoogleDrive = () => {
-    if (typeof window !== 'undefined' && (window as any).google?.accounts?.oauth2) {
-      try {
-        setIsConnectingOAuth(true);
-        setOauthStatusText('Opening Google Account Chooser...');
-
-        const client = (window as any).google.accounts.oauth2.initTokenClient({
-          client_id: '666330539586-q0s8vvr4osdah4e60rd75s3keolfgmc0.apps.googleusercontent.com',
-          scope: 'openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/drive.metadata.readonly https://www.googleapis.com/auth/drive.readonly',
-          callback: async (resp: any) => {
-            if (resp.error) {
-              setIsConnectingOAuth(false);
-              setOauthStatusText('');
-              if (resp.error !== 'popup_closed_by_user') {
-                alert('Google Sign-In notice: ' + (resp.error_description || resp.error));
-              }
-              return;
-            }
-
-            if (resp.access_token) {
-              try {
-                setOauthStatusText('Reading Google profile & email...');
-                const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-                  headers: { Authorization: `Bearer ${resp.access_token}` },
-                });
-                const userData = await userRes.json();
-                const email = userData.email || 'studio.drive@gmail.com';
-                const name = userData.name || email.split('@')[0];
-
-                setOauthStatusText('Detecting real Google Drive storage quota...');
-                const aboutRes = await fetch('https://www.googleapis.com/drive/v3/about?fields=storageQuota,user', {
-                  headers: { Authorization: `Bearer ${resp.access_token}` },
-                });
-                const aboutData = await aboutRes.json();
-                const quota = aboutData.storageQuota || {};
-                
-                let totalBytes = 15 * 1024 * 1024 * 1024;
-                let usedBytes = 0;
-                if (quota.limit) {
-                  const parsed = parseInt(String(quota.limit), 10);
-                  if (!isNaN(parsed) && parsed > 0) totalBytes = parsed;
-                }
-                if (quota.usage) {
-                  const parsed = parseInt(String(quota.usage), 10);
-                  if (!isNaN(parsed) && parsed >= 0) usedBytes = parsed;
-                }
-
-                setOauthStatusText('Linking connected Drive to Studio Hub...');
-                const saveRes = await fetch('/api/storage/google/accounts', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    workspace_id: effectiveWsId,
-                    account_email: email,
-                    account_label: name,
-                    total_storage_gb: Number((totalBytes / (1024 ** 3)).toFixed(1)),
-                    used_storage_gb: Number((usedBytes / (1024 ** 3)).toFixed(1)),
-                    access_token: resp.access_token,
-                  }),
-                });
-
-                const json = await saveRes.json();
-                if (json.success && json.account) {
-                  setDriveAccounts(prev => [json.account, ...prev.filter(a => a.id !== json.account.id)]);
-                  setIsConnectDriveModalOpen(false);
-                  setUrlNotice({
-                    type: 'success',
-                    message: `🎉 Google Drive (${email}) connected & storage detected automatically! (${(usedBytes / (1024 ** 3)).toFixed(1)} GB used of ${(totalBytes / (1024 ** 3)).toFixed(1)} GB)`
-                  });
-                  await loadAllData();
-                } else {
-                  alert(json.error || 'Failed to link Google Drive');
-                }
-              } catch (err: any) {
-                console.error('OAuth auto-detect exception:', err);
-                alert('Failed to detect Google Drive quota: ' + err.message);
-              } finally {
-                setIsConnectingOAuth(false);
-                setOauthStatusText('');
-              }
-            }
-          },
-        });
-
-        client.requestAccessToken({ prompt: 'consent' });
-        return;
-      } catch (err) {
-        console.warn('GIS Token Client init failed, falling back to full redirect:', err);
-      }
-    }
-
-    // Fallback to server-side full redirect OAuth flow
-    window.location.href = `/api/storage/google/auth?workspace_id=${encodeURIComponent(effectiveWsId)}`;
+    window.location.href = '/api/storage/google/auth';
   };
 
   // Copy helper
@@ -501,7 +396,7 @@ export default function DataManagerPage() {
   return (
     <div className="min-h-screen bg-[#FAF9F6] text-slate-900 font-sans p-4 sm:p-8 space-y-6 max-w-7xl mx-auto">
 
-      {/* URL Notification Banner (OAuth feedback / Direct Link suggestion) */}
+      {/* URL Notification Banner */}
       {urlNotice && (
         <div className={`p-4 rounded-2xl border flex items-center justify-between gap-3 text-xs font-bold shadow-2xs ${
           urlNotice.type === 'success'
@@ -516,25 +411,12 @@ export default function DataManagerPage() {
             )}
             <span>{urlNotice.message}</span>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {urlNotice.type === 'error' && (
-              <button
-                onClick={() => {
-                  setDriveConnectTab('manual');
-                  setIsConnectDriveModalOpen(true);
-                }}
-                className="px-3 py-1.5 rounded-xl bg-amber-600 text-white font-bold hover:bg-amber-700 transition cursor-pointer"
-              >
-                ⚡ Open Instant Direct Link
-              </button>
-            )}
-            <button
-              onClick={() => setUrlNotice(null)}
-              className="p-1 text-zinc-500 hover:text-zinc-800 rounded-lg cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+          <button
+            onClick={() => setUrlNotice(null)}
+            className="p-1 text-zinc-500 hover:text-zinc-800 rounded-lg cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
       
@@ -561,27 +443,27 @@ export default function DataManagerPage() {
           </p>
 
           {/* Navigation Tabs */}
-          <div className="flex items-center gap-1.5 pt-3 overflow-x-auto">
+          <div className="flex items-center gap-1.5 pt-3 overflow-x-auto no-scrollbar">
             {[
               { id: 'search', label: '🔍 Universal Search', count: searchResults.length },
               { id: 'cloud', label: '☁️ Google Drives', count: driveAccounts.length },
-              { id: 'disks', label: '💾 Physical Disks', count: physicalDisks.length },
-              { id: 'machines', label: '🖥️ Studio PCs & Agents', count: machines.length },
-              { id: 'matrix', label: '👥 Client Data Matrix', count: null },
+              { id: 'disks', label: '💽 Hard Disks & SSDs', count: physicalDisks.length },
+              { id: 'machines', label: '🖥️ Editing Machines', count: machines.length },
+              { id: 'matrix', label: '📊 Storage Matrix', count: null },
             ].map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={'px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap ' + (
+                className={'px-4 py-2 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 shrink-0 cursor-pointer ' + (
                   activeTab === tab.id
-                    ? 'bg-zinc-900 text-white shadow-xs'
-                    : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+                    ? 'bg-zinc-900 text-white shadow-md shadow-zinc-900/10'
+                    : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 hover:text-zinc-900'
                 )}
               >
                 <span>{tab.label}</span>
                 {tab.count !== null && (
-                  <span className={'text-[10px] px-1.5 py-0.2 rounded-md font-mono ' + (
-                    activeTab === tab.id ? 'bg-zinc-700 text-zinc-200' : 'bg-zinc-200 text-zinc-600'
+                  <span className={'px-1.5 py-0.2 text-[10px] rounded-full ' + (
+                    activeTab === tab.id ? 'bg-white/20 text-white' : 'bg-zinc-200 text-zinc-700'
                   )}>
                     {tab.count}
                   </span>
@@ -602,7 +484,7 @@ export default function DataManagerPage() {
           </button>
 
           <button
-            onClick={() => setIsConnectDriveModalOpen(true)}
+            onClick={handleConnectGoogleDrive}
             className="px-4 py-2.5 rounded-2xl bg-white border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-700 text-xs font-bold transition flex items-center gap-2 shadow-2xs cursor-pointer"
           >
             <Cloud className="w-4 h-4 text-blue-500" />
@@ -984,7 +866,7 @@ export default function DataManagerPage() {
             </div>
 
             <button
-              onClick={() => setIsConnectDriveModalOpen(true)}
+              onClick={handleConnectGoogleDrive}
               className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm shadow-blue-600/20 cursor-pointer"
             >
               <Cloud className="w-4 h-4" />
@@ -1004,7 +886,7 @@ export default function DataManagerPage() {
                 </p>
               </div>
               <button
-                onClick={() => setIsConnectDriveModalOpen(true)}
+                onClick={handleConnectGoogleDrive}
                 className="px-5 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-bold inline-flex items-center gap-2 hover:bg-blue-700 transition cursor-pointer shadow-sm shadow-blue-600/20"
               >
                 <Plus className="w-4 h-4" />
