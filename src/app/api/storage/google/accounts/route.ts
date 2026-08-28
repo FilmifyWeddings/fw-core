@@ -7,12 +7,19 @@ export async function GET(req: NextRequest) {
     const workspaceId = searchParams.get('workspace_id');
 
     let query = supabase.from('storage_drive_accounts').select('*').order('created_at', { ascending: false });
-    if (workspaceId) {
+    if (workspaceId && workspaceId !== '00000000-0000-0000-0000-000000000000') {
       query = query.eq('workspace_id', workspaceId);
     }
 
-    const { data, error } = await query;
-    if (error) {
+    let { data, error } = await query;
+    if ((!data || data.length === 0)) {
+      const fallback = await supabase.from('storage_drive_accounts').select('*').order('created_at', { ascending: false });
+      if (fallback.data && fallback.data.length > 0) {
+        data = fallback.data;
+      }
+    }
+
+    if (error && (!data || data.length === 0)) {
       console.warn('[GoogleAccounts API] DB error:', error.message);
       return NextResponse.json({ success: true, accounts: [] });
     }

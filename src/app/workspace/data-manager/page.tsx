@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { promptAndScanDirectory, formatBytes } from '@/lib/storage/disk-scanner';
+import { supabase } from '@/lib/supabase';
 
 interface DriveAccount {
   id: string;
@@ -152,9 +153,14 @@ export default function DataManagerPage() {
         fetch('/api/agent/machines?workspace_id=' + effectiveWsId).then(r => r.json()),
       ]);
 
-      if (drivesRes.success && Array.isArray(drivesRes.accounts)) {
-        setDriveAccounts(drivesRes.accounts);
+      let accounts = drivesRes.success && Array.isArray(drivesRes.accounts) ? drivesRes.accounts : [];
+      if (accounts.length === 0) {
+        const { data: dbAccounts } = await supabase.from('storage_drive_accounts').select('*').order('created_at', { ascending: false });
+        if (dbAccounts && dbAccounts.length > 0) {
+          accounts = dbAccounts;
+        }
       }
+      setDriveAccounts(accounts);
       if (disksRes.success && Array.isArray(disksRes.disks)) {
         setPhysicalDisks(disksRes.disks);
       }
