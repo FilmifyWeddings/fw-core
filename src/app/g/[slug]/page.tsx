@@ -226,11 +226,11 @@ export default function GuestGalleryPage() {
         const matched = photos
           .filter(p => matchMap.has(p.id))
           .map(p => {
-            const m = matchMap.get(p.id);
+            const m = matchMap.get(p.id) as any;
             return {
               ...p,
-              similarity: m.similarity,
-              confidencePercent: m.confidencePercent,
+              similarity: m?.similarity,
+              confidencePercent: m?.confidencePercent,
             };
           })
           .sort((a, b) => (b.confidencePercent || 0) - (a.confidencePercent || 0));

@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
     const similarityMap = new Map((matches || []).map((m: any) => [m.photo_id, m.similarity]));
 
     const formattedPhotos = (matchedPhotos || []).map((p: any) => {
-      const sim = similarityMap.get(p.id) || 0.5;
+      const sim = Number(similarityMap.get(p.id) || 0.5);
       return {
         id: p.id,
         gallery_id: p.gallery_id,
