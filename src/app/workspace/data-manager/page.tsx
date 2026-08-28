@@ -1517,61 +1517,230 @@ export default function DataManagerPage() {
               </button>
             </div>
 
-            {/* Automated Google OAuth Section */}
-            <div className="space-y-4">
-              <div className="p-4 rounded-2xl bg-blue-50/70 border border-blue-100 space-y-2">
-                <div className="flex items-center gap-2 text-blue-900 font-bold text-xs">
-                  <Cloud className="w-4 h-4 text-blue-600 shrink-0" />
-                  <span>100% Automated Storage Detection</span>
-                </div>
-                <p className="text-[11.5px] leading-relaxed text-blue-900/80">
-                  Sign in with your Google account. StudioCore will automatically read your account email, calculate used GB, total capacity, and show your live Drive storage card immediately.
-                </p>
-              </div>
-
+            {/* Mode Switcher */}
+            <div className="grid grid-cols-2 gap-1 bg-zinc-100 p-1 rounded-xl text-xs font-bold">
               <button
                 type="button"
-                disabled={isConnectingOAuth}
-                onClick={handleConnectGoogleDrive}
-                className="w-full py-4 rounded-2xl bg-zinc-900 hover:bg-zinc-800 disabled:bg-zinc-700 text-white font-bold text-xs shadow-lg shadow-zinc-900/20 transition flex items-center justify-center gap-3 cursor-pointer"
-              >
-                {isConnectingOAuth ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin text-blue-400" />
-                    <span>{oauthStatusText || 'Connecting to Google Drive...'}</span>
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
-                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-                    </svg>
-                    <span>Sign In with Google</span>
-                  </>
+                onClick={() => setDriveConnectTab('oauth')}
+                className={'py-2 rounded-lg transition-all cursor-pointer ' + (
+                  driveConnectTab === 'oauth' ? 'bg-white text-zinc-900 shadow-xs' : 'text-zinc-500'
                 )}
+              >
+                🔐 Google OAuth Login
               </button>
+              <button
+                type="button"
+                onClick={() => setDriveConnectTab('manual')}
+                className={'py-2 rounded-lg transition-all cursor-pointer ' + (
+                  driveConnectTab === 'manual' ? 'bg-white text-zinc-900 shadow-xs' : 'text-zinc-500'
+                )}
+              >
+                ⚡ Instant Direct Link
+              </button>
+            </div>
 
-              {/* Google Cloud Console Redirect URI Info */}
-              <div className="p-3.5 rounded-2xl bg-zinc-50 border border-zinc-200 text-xs space-y-1.5 text-zinc-600">
-                <div className="flex items-center justify-between text-[11px] font-bold text-zinc-800">
-                  <span>Authorized Callback URL:</span>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(currentOrigin + '/api/storage/google/callback', 'oauth-uri')}
-                    className="p-1 rounded-lg bg-zinc-200/80 hover:bg-zinc-300 text-zinc-800 shrink-0 transition cursor-pointer flex items-center gap-1 text-[10px]"
-                    title="Copy URL"
-                  >
-                    {copiedPathId === 'oauth-uri' ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                    <span>{copiedPathId === 'oauth-uri' ? 'Copied' : 'Copy'}</span>
-                  </button>
+            {driveConnectTab === 'oauth' ? (
+              <div className="space-y-4">
+                <div className="p-4 rounded-2xl bg-blue-50/70 border border-blue-100 space-y-2">
+                  <div className="flex items-center gap-2 text-blue-900 font-bold text-xs">
+                    <Cloud className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span>100% Automated Storage Detection</span>
+                  </div>
+                  <p className="text-[11.5px] leading-relaxed text-blue-900/80">
+                    Sign in with your Google account. StudioCore will automatically detect your account email, live storage quota, and show your drive card immediately.
+                  </p>
                 </div>
-                <div className="bg-white p-2 rounded-xl font-mono text-[10px] border border-zinc-200 text-zinc-700 break-all select-all">
-                  {currentOrigin + '/api/storage/google/callback'}
+
+                <button
+                  type="button"
+                  disabled={isConnectingOAuth}
+                  onClick={handleConnectGoogleDrive}
+                  className="w-full py-4 rounded-2xl bg-zinc-900 hover:bg-zinc-800 disabled:bg-zinc-700 text-white font-bold text-xs shadow-lg shadow-zinc-900/20 transition flex items-center justify-center gap-3 cursor-pointer"
+                >
+                  {isConnectingOAuth ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin text-blue-400" />
+                      <span>{oauthStatusText || 'Connecting to Google Drive...'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                      </svg>
+                      <span>Sign In with Google</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Google Cloud Console Setup Guide */}
+                <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200 text-xs space-y-2.5 text-amber-950">
+                  <div className="flex items-center gap-1.5 font-bold text-amber-900">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Seeing "Error 401: no registered origin"?</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-amber-900/90">
+                    In your <strong>Google Cloud Console &gt; APIs &amp; Services &gt; Credentials</strong>, click your OAuth Client ID and add these:
+                  </p>
+                  
+                  <div className="space-y-1.5 font-mono text-[10.5px]">
+                    <div className="bg-white/90 p-2 rounded-xl border border-amber-300 flex items-center justify-between gap-2 text-zinc-800 break-all select-all">
+                      <span className="truncate"><strong>Origin:</strong> {currentOrigin}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(currentOrigin, 'origin-uri')}
+                        className="px-2 py-0.5 rounded-md bg-amber-100 hover:bg-amber-200 text-amber-900 font-sans text-[10px] font-bold shrink-0 cursor-pointer"
+                      >
+                        {copiedPathId === 'origin-uri' ? 'Copied!' : 'Copy'}
+                      </button>
+                    </div>
+
+                    <div className="bg-white/90 p-2 rounded-xl border border-amber-300 flex items-center justify-between gap-2 text-zinc-800 break-all select-all">
+                      <span className="truncate"><strong>Callback:</strong> {currentOrigin + '/api/storage/google/callback'}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(currentOrigin + '/api/storage/google/callback', 'oauth-uri')}
+                        className="px-2 py-0.5 rounded-md bg-amber-100 hover:bg-amber-200 text-amber-900 font-sans text-[10px] font-bold shrink-0 cursor-pointer"
+                      >
+                        {copiedPathId === 'oauth-uri' ? 'Copied!' : 'Copy'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <p className="text-[10.5px] text-amber-800 pt-1">
+                    💡 Or switch to <strong>"⚡ Instant Direct Link"</strong> above to link immediately without opening Google Cloud Console!
+                  </p>
                 </div>
               </div>
-            </div>
+            ) : (
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!manualDriveEmail.trim()) return;
+                  try {
+                    const res = await fetch('/api/storage/google/accounts', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        workspace_id: effectiveWsId,
+                        account_email: manualDriveEmail.trim(),
+                        account_label: manualDriveLabel.trim(),
+                        total_storage_gb: manualDriveCapacityGb,
+                        used_storage_gb: manualDriveUsedGb,
+                      }),
+                    });
+                    const json = await res.json();
+                    if (json.success && json.account) {
+                      setDriveAccounts(prev => [json.account, ...prev.filter(a => a.id !== json.account.id)]);
+                      setIsConnectDriveModalOpen(false);
+                      setManualDriveEmail('');
+                      setUrlNotice({
+                        type: 'success',
+                        message: `🎉 Google Drive (${json.account.account_email}) connected successfully with ${manualDriveCapacityGb} GB storage!`,
+                      });
+                      await loadAllData();
+                      executeSearch(searchQuery, sourceFilter, categoryFilter);
+                    } else {
+                      alert(json.error || 'Failed to connect drive');
+                    }
+                  } catch (err: any) {
+                    alert(err?.message || 'Error connecting drive');
+                  }
+                }}
+                className="space-y-3.5"
+              >
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Google Account Email</label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="e.g. sushantnawale007@gmail.com"
+                    value={manualDriveEmail}
+                    onChange={(e) => setManualDriveEmail(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-zinc-50 rounded-xl border border-zinc-200 text-xs font-bold text-zinc-900 focus:bg-white focus:outline-hidden focus:border-zinc-900"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Drive Purpose / Label</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 2TB Wedding Deliverables Cloud"
+                    value={manualDriveLabel}
+                    onChange={(e) => setManualDriveLabel(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-zinc-50 rounded-xl border border-zinc-200 text-xs font-bold text-zinc-900 focus:bg-white focus:outline-hidden focus:border-zinc-900"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Total Account Capacity</label>
+                  <div className="grid grid-cols-4 gap-1.5 mb-2">
+                    {[
+                      { label: '15 GB (Free)', value: 15 },
+                      { label: '100 GB', value: 100 },
+                      { label: '2 TB (2000 GB)', value: 2000 },
+                      { label: '5 TB (5000 GB)', value: 5000 },
+                    ].map(preset => (
+                      <button
+                        key={preset.value}
+                        type="button"
+                        onClick={() => setManualDriveCapacityGb(preset.value)}
+                        className={'py-1.5 px-2 rounded-lg text-[10px] font-bold border transition cursor-pointer text-center ' + (
+                          manualDriveCapacityGb === preset.value
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-zinc-50 hover:bg-zinc-100 text-zinc-700 border-zinc-200'
+                        )}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      value={manualDriveCapacityGb}
+                      onChange={(e) => setManualDriveCapacityGb(Number(e.target.value))}
+                      className="w-full px-3.5 py-2 bg-zinc-50 rounded-xl border border-zinc-200 text-xs font-bold text-zinc-900"
+                    />
+                    <span className="text-xs font-bold text-zinc-500 shrink-0">GB Total</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Current Used Space (Optional)</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      value={manualDriveUsedGb}
+                      onChange={(e) => setManualDriveUsedGb(Number(e.target.value))}
+                      placeholder="0"
+                      className="w-full px-3.5 py-2 bg-zinc-50 rounded-xl border border-zinc-200 text-xs font-bold text-zinc-900"
+                    />
+                    <span className="text-xs font-bold text-zinc-500 shrink-0">GB Used</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-2">
+                  <button
+                    type="submit"
+                    className="flex-1 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition cursor-pointer shadow-md shadow-blue-600/20"
+                  >
+                    ⚡ Link Google Drive Now
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsConnectDriveModalOpen(false)}
+                    className="px-4 py-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-bold transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
