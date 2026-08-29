@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
-import { extractFinancialsFromQuotation } from '@/lib/quotation-finance-sync';
+import { extractFinancialsFromQuotation, syncQuotationToTeamManagerEvents } from '@/lib/quotation-finance-sync';
 
 export const runtime = 'nodejs';
 
@@ -186,6 +186,18 @@ export async function POST(req: NextRequest) {
               .from('client_finance_records')
               .insert([{ ...finPayload, created_at: now }]);
           }
+
+          // 5. Synchronize Sub-Events, Timings, Dates, Venue, and Crew into Team Manager / Bookings & Events
+          const clientName = lc.name || leadData?.name || 'Client';
+          await syncQuotationToTeamManagerEvents(
+            supabaseAdmin,
+            leadId,
+            finalDoc.content_json,
+            clientName,
+            lc.workspace_id || effectiveWorkspaceId,
+            calcFin.event_date || lc.event_date,
+            leadData?.city || leadData?.location || null
+          );
         }
       }
     }
@@ -193,7 +205,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       quotationId,
-      message: 'Quotation marked as Final and synced with Finance & Payments!'
+      message: 'Quotation marked as Final and synced with Finance & Team Manager Bookings!'
     });
   } catch (err: any) {
     console.error('[POST /api/quotations/set-final Error]:', err);

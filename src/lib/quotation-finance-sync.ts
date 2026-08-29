@@ -397,3 +397,271 @@ export async function syncLeadQuotationToFinance(
     return null;
   }
 }
+
+export interface ExtractedSubEvent {
+  event_title: string;
+  event_date: string;
+  venue_name?: string | null;
+  venue_map_link?: string | null;
+  roll_call_time?: string | null;
+  dismissal_estimate_time?: string | null;
+  shift_hours_slot?: string | null;
+  operational_notes?: string | null;
+  roles: string[];
+}
+
+/**
+ * Extracts structured sub-events, dates, timings, venues, slots, notes, and crew
+ * from any quotation content_json payload (Airy proposal, classic, or custom).
+ */
+export function extractSubEventsFromQuotation(
+  contentJson: any,
+  fallbackEventDate?: string | null,
+  fallbackVenue?: string | null
+): ExtractedSubEvent[] {
+  if (!contentJson || typeof contentJson !== 'object') return [];
+
+  const subEvents: ExtractedSubEvent[] = [];
+
+  // 1. Functions Page (Modern Quotation Builder)
+  const funcPage = contentJson.functionsPage || contentJson.functions || {};
+  const funcItems = Array.isArray(funcPage.items) ? funcPage.items : (Array.isArray(funcPage) ? funcPage : []);
+
+  if (funcItems.length > 0) {
+    for (const item of funcItems) {
+      const title = String(item.name || item.title || item.event_title || 'Wedding Event').trim();
+      const date = item.date ? normalizeToIsoDate(item.date, fallbackEventDate) : (fallbackEventDate || new Date().toISOString().split('T')[0]);
+      const venue = String(item.location || item.venue || fallbackVenue || '').trim();
+      const startTime = String(item.startTime || item.start_time || item.time || '10:00 AM').trim();
+      const endTime = String(item.endTime || item.end_time || '06:00 PM').trim();
+      const slot = String(item.durationSlot || item.slot || item.shift || 'Full Day').trim();
+      const notes = String(item.notes || item.description || '').trim();
+
+      // Extract required crew roles
+      const roles: string[] = [];
+      if (Array.isArray(item.requirements)) {
+        item.requirements.forEach((req: any) => {
+          if (typeof req === 'string') {
+            roles.push(req);
+          } else if (typeof req === 'object' && req !== null) {
+            const roleName = String(req.name || req.role || req.title || 'Crew').trim();
+            const qty = Math.max(1, parseInt(String(req.qty || req.count || 1), 10) || 1);
+            for (let i = 0; i < qty; i++) {
+              roles.push(roleName);
+            }
+          }
+        });
+      } else if (Array.isArray(item.crew)) {
+        roles.push(...item.crew);
+      } else if (Array.isArray(item.roles)) {
+        roles.push(...item.roles);
+      }
+
+      subEvents.push({
+        event_title: title,
+        event_date: date,
+        venue_name: venue || null,
+        roll_call_time: startTime,
+        dismissal_estimate_time: endTime,
+        shift_hours_slot: slot,
+        operational_notes: notes || null,
+        roles: roles.length > 0 ? roles : ['Traditional Photographer', 'Cinematographer']
+      });
+    }
+  }
+
+  // 2. Shoot Details Page (Pre-Wedding Shoot) if configured and not already in functionsPage
+  if (contentJson.shootDetails && (contentJson.shootDetails.heading || contentJson.shootDetails.daysText)) {
+    const shoot = contentJson.shootDetails;
+    const shootTitle = String(shoot.heading || 'Pre-Wedding Shoot').trim();
+    const alreadyExists = subEvents.some(s => s.event_title.toLowerCase() === shootTitle.toLowerCase());
+    if (!alreadyExists) {
+      const shootRoles: string[] = [];
+      if (shoot.crewText) {
+        const lines = String(shoot.crewText).split('\n').map(l => l.trim()).filter(Boolean);
+        shootRoles.push(...lines);
+      }
+
+      subEvents.push({
+        event_title: shootTitle,
+        event_date: fallbackEventDate || new Date().toISOString().split('T')[0],
+        venue_name: fallbackVenue || null,
+        roll_call_time: '09:00 AM',
+        dismissal_estimate_time: '06:00 PM',
+        shift_hours_slot: shoot.daysText || '1 Day Shoot',
+        operational_notes: shoot.deliverablesText || null,
+        roles: shootRoles.length > 0 ? shootRoles : ['Candid Photographer', 'Cinematographer']
+      });
+    }
+  }
+
+  // 3. Fallback: Classic events / event_schedule / wedding_events
+  if (subEvents.length === 0) {
+    const rawList = contentJson.events || contentJson.event_schedule || contentJson.wedding_events || [];
+    if (Array.isArray(rawList) && rawList.length > 0) {
+      for (const ev of rawList) {
+        const title = String(ev.title || ev.name || ev.event_name || 'Wedding Event').trim();
+        const date = ev.date || ev.event_date ? normalizeToIsoDate(ev.date || ev.event_date, fallbackEventDate) : (fallbackEventDate || new Date().toISOString().split('T')[0]);
+        const venue = String(ev.venue || ev.location || fallbackVenue || '').trim();
+        const startTime = String(ev.start_time || ev.time || '10:00 AM').trim();
+        const endTime = String(ev.end_time || '06:00 PM').trim();
+        const slot = String(ev.slot || ev.shift || 'Full Day').trim();
+        const notes = String(ev.notes || ev.description || '').trim();
+        const roles = Array.isArray(ev.crew) ? ev.crew : (Array.isArray(ev.roles) ? ev.roles : ['Traditional Photographer', 'Cinematographer']);
+
+        subEvents.push({
+          event_title: title,
+          event_date: date,
+          venue_name: venue || null,
+          roll_call_time: startTime,
+          dismissal_estimate_time: endTime,
+          shift_hours_slot: slot,
+          operational_notes: notes || null,
+          roles: roles
+        });
+      }
+    }
+  }
+
+  return subEvents;
+}
+
+/**
+ * Synchronizes quotation sub-events (dates, timings, venue, slots, notes, crew)
+ * into Team Manager / Bookings & Events (fw_projects + fw_sub_events + fw_assignments).
+ */
+export async function syncQuotationToTeamManagerEvents(
+  supabaseClient: any,
+  leadId: string,
+  contentJson: any,
+  clientName: string,
+  workspaceId: string,
+  fallbackEventDate?: string | null,
+  fallbackVenue?: string | null
+) {
+  if (!clientName || !contentJson) return null;
+
+  try {
+    const extractedEvents = extractSubEventsFromQuotation(contentJson, fallbackEventDate, fallbackVenue);
+    if (extractedEvents.length === 0) return null;
+
+    // 1. Find or create master project in fw_projects
+    let targetProjectId: string | null = null;
+
+    const { data: existingProjects } = await supabaseClient
+      .from('fw_projects')
+      .select('id, client_name, project_manager_name, project_manager_id')
+      .ilike('client_name', `%${clientName}%`);
+
+    const firstSubEventDate = extractedEvents[0]?.event_date || fallbackEventDate || new Date().toISOString().split('T')[0];
+    const firstSubEventVenue = extractedEvents[0]?.venue_name || fallbackVenue || null;
+
+    if (existingProjects && existingProjects.length > 0) {
+      targetProjectId = existingProjects[0].id;
+      // Update main date & venue if updated
+      await supabaseClient
+        .from('fw_projects')
+        .update({
+          main_date: firstSubEventDate,
+          main_venue: firstSubEventVenue,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', targetProjectId);
+    } else {
+      const { data: newProj, error: projErr } = await supabaseClient
+        .from('fw_projects')
+        .insert([{
+          client_name: clientName,
+          main_date: firstSubEventDate,
+          main_venue: firstSubEventVenue,
+          user_id: workspaceId,
+          status: 'active'
+        }])
+        .select()
+        .single();
+
+      if (projErr) throw projErr;
+      if (newProj) targetProjectId = newProj.id;
+    }
+
+    if (!targetProjectId) return null;
+
+    // 2. Fetch existing sub-events & assignments to preserve existing crew assignments if any
+    const { data: existingSubEvents } = await supabaseClient
+      .from('fw_sub_events')
+      .select('id, event_title')
+      .eq('project_id', targetProjectId);
+
+    const existingAssignedMap: Record<string, string> = {};
+
+    if (existingSubEvents && existingSubEvents.length > 0) {
+      const subEventIds = existingSubEvents.map(e => e.id);
+      const { data: existingAssignments } = await supabaseClient
+        .from('fw_assignments')
+        .select('sub_event_id, required_role, assigned_member_id')
+        .in('sub_event_id', subEventIds)
+        .not('assigned_member_id', 'is', null);
+
+      if (existingAssignments) {
+        existingAssignments.forEach((a: any) => {
+          const se = existingSubEvents.find(e => e.id === a.sub_event_id);
+          if (se && a.assigned_member_id) {
+            const key = `${se.event_title}|${a.required_role}`;
+            existingAssignedMap[key] = a.assigned_member_id;
+          }
+        });
+      }
+
+      // Delete old assignments and sub_events to cleanly sync with final quotation events
+      await supabaseClient.from('fw_assignments').delete().in('sub_event_id', subEventIds);
+      await supabaseClient.from('fw_sub_events').delete().eq('project_id', targetProjectId);
+    }
+
+    // 3. Insert fresh sub-events and restore assignments where applicable
+    for (const ev of extractedEvents) {
+      const subEventPayload = {
+        project_id: targetProjectId,
+        event_title: ev.event_title,
+        event_date: ev.event_date,
+        venue_name: ev.venue_name || null,
+        venue_map_link: ev.venue_map_link || null,
+        roll_call_time: ev.roll_call_time || '10:00 AM',
+        dismissal_estimate_time: ev.dismissal_estimate_time || '06:00 PM',
+        shift_hours_slot: ev.shift_hours_slot || 'Full Day',
+        operational_notes: ev.operational_notes || null,
+        roles: ev.roles,
+        user_id: workspaceId
+      };
+
+      const { data: insertedSubEvent, error: seErr } = await supabaseClient
+        .from('fw_sub_events')
+        .insert([subEventPayload])
+        .select()
+        .single();
+
+      if (!seErr && insertedSubEvent && ev.roles.length > 0) {
+        const assignmentsPayload = ev.roles.map(role => {
+          const preservedMember = existingAssignedMap[`${ev.event_title}|${role}`] || null;
+          return {
+            project_id: targetProjectId,
+            sub_event_id: insertedSubEvent.id,
+            sub_event_name: ev.event_title,
+            sub_event_date: ev.event_date,
+            start_time: ev.roll_call_time || '10:00 AM',
+            end_time: ev.dismissal_estimate_time || '06:00 PM',
+            required_role: role,
+            assigned_member_id: preservedMember,
+            status: preservedMember ? 'assigned' : 'pending'
+          };
+        });
+
+        await supabaseClient.from('fw_assignments').insert(assignmentsPayload);
+      }
+    }
+
+    return targetProjectId;
+  } catch (err) {
+    console.error('[QuotationSync] Error syncing quotation to team manager:', err);
+    return null;
+  }
+}

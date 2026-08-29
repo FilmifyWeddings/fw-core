@@ -9,7 +9,7 @@ import { supabase } from '@/lib/supabase';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { LeadTable } from '@/components/dashboard/lead-table';
 import { MasterSettingsHub } from '@/components/settings/master-settings-hub';
-import { extractFinancialsFromQuotation, findFinalQuotationForLead } from '@/lib/quotation-finance-sync';
+import { extractFinancialsFromQuotation, findFinalQuotationForLead, syncQuotationToTeamManagerEvents } from '@/lib/quotation-finance-sync';
 
 const MOCK_WORKSPACE_ID = '00000000-0000-0000-0000-000000000000';
 
@@ -813,99 +813,66 @@ export default function LeadsPage() {
         }
       }
 
-      // 5. Auto-create Team Manager Bookings & Event Cards (fw_projects + fw_sub_events + fw_assignments)
+      // 5. Auto-create / Sync Team Manager Bookings & Event Cards (fw_projects + fw_sub_events + fw_assignments)
       try {
-        const { data: existingFwProjects } = await supabase
-          .from('fw_projects')
-          .select('id')
-          .ilike('client_name', `%${clientName}%`);
-
-        if (!existingFwProjects || existingFwProjects.length === 0) {
-          const mainVenue = raw.venue || raw.location || raw.city || '';
-          
-          // 5.1 Insert master project
-          const { data: newFwProj, error: fwProjErr } = await supabase
+        const mainVenue = raw.venue || raw.location || raw.city || '';
+        if (latestQuote?.content_json) {
+          await syncQuotationToTeamManagerEvents(
+            supabase,
+            leadId,
+            latestQuote.content_json,
+            clientName,
+            currentWorkspaceId,
+            parsedEventDate,
+            mainVenue
+          );
+        } else {
+          // Fallback if no quotation is attached yet: create project + default event from lead
+          const { data: existingFwProjects } = await supabase
             .from('fw_projects')
-            .insert([{
-              client_name: clientName,
-              main_date: parsedEventDate,
-              main_venue: mainVenue || null,
-              user_id: currentWorkspaceId,
-              status: 'active'
-            }])
-            .select()
-            .single();
+            .select('id')
+            .ilike('client_name', `%${clientName}%`);
 
-          if (!fwProjErr && newFwProj) {
-            console.log('[LeadToTeamManager] Successfully created FW Project:', newFwProj.id);
+          if (!existingFwProjects || existingFwProjects.length === 0) {
+            const { data: newFwProj, error: fwProjErr } = await supabase
+              .from('fw_projects')
+              .insert([{
+                client_name: clientName,
+                main_date: parsedEventDate,
+                main_venue: mainVenue || null,
+                user_id: currentWorkspaceId,
+                status: 'active'
+              }])
+              .select()
+              .single();
 
-            // 5.2 Extract sub-events from quotation or lead
-            const rawEvents = latestQuote?.content_json?.events || 
-                              latestQuote?.content_json?.event_schedule || 
-                              latestQuote?.content_json?.wedding_events || 
-                              [];
-
-            const eventsToCreate: any[] = [];
-
-            if (Array.isArray(rawEvents) && rawEvents.length > 0) {
-              rawEvents.forEach((ev: any) => {
-                const title = ev.title || ev.name || ev.event_name || 'Wedding Event';
-                const date = ev.date || ev.event_date || parsedEventDate || new Date().toISOString().split('T')[0];
-                const venue = ev.venue || ev.location || mainVenue || '';
-                const startTime = ev.start_time || ev.time || '10:00';
-                const endTime = ev.end_time || '18:00';
-                const slot = ev.slot || ev.shift || 'Full Day';
-                const notes = ev.notes || ev.description || '';
-                const roles = Array.isArray(ev.crew) 
-                  ? ev.crew 
-                  : (Array.isArray(ev.roles) ? ev.roles : ['Traditional Photographer', 'Cinematographer']);
-
-                eventsToCreate.push({
-                  project_id: newFwProj.id,
-                  event_title: title,
-                  event_date: date,
-                  venue_name: venue || null,
-                  roll_call_time: startTime,
-                  dismissal_estimate_time: endTime,
-                  shift_hours_slot: slot,
-                  operational_notes: notes || null,
-                  roles: roles,
-                  user_id: currentWorkspaceId
-                });
-              });
-            } else {
-              // Create default event from lead shoot type
+            if (!fwProjErr && newFwProj) {
               const defaultRoles = ['Traditional Photographer', 'Candid Photographer', 'Cinematographer'];
-              eventsToCreate.push({
-                project_id: newFwProj.id,
-                event_title: eventType || 'Main Wedding Ceremony',
-                event_date: parsedEventDate || new Date().toISOString().split('T')[0],
-                venue_name: mainVenue || null,
-                roll_call_time: '10:00',
-                dismissal_estimate_time: '18:00',
-                shift_hours_slot: 'Full Day',
-                operational_notes: raw.notes || raw.special_notes || null,
-                roles: defaultRoles,
-                user_id: currentWorkspaceId
-              });
-            }
-
-            // 5.3 Insert Sub-Events & Unassigned Crew Role Assignments
-            for (const evPayload of eventsToCreate) {
-              const { data: insertedSubEvent, error: subErr } = await supabase
+              const { data: insertedSubEvent } = await supabase
                 .from('fw_sub_events')
-                .insert([evPayload])
+                .insert([{
+                  project_id: newFwProj.id,
+                  event_title: eventType || 'Main Wedding Ceremony',
+                  event_date: parsedEventDate || new Date().toISOString().split('T')[0],
+                  venue_name: mainVenue || null,
+                  roll_call_time: '10:00 AM',
+                  dismissal_estimate_time: '06:00 PM',
+                  shift_hours_slot: 'Full Day',
+                  operational_notes: raw.notes || raw.special_notes || null,
+                  roles: defaultRoles,
+                  user_id: currentWorkspaceId
+                }])
                 .select()
                 .single();
 
-              if (!subErr && insertedSubEvent && Array.isArray(evPayload.roles) && evPayload.roles.length > 0) {
-                const assignmentsPayload = evPayload.roles.map((role: string) => ({
+              if (insertedSubEvent) {
+                const assignmentsPayload = defaultRoles.map((role: string) => ({
                   project_id: newFwProj.id,
                   sub_event_id: insertedSubEvent.id,
-                  sub_event_name: evPayload.event_title,
-                  sub_event_date: evPayload.event_date,
-                  start_time: evPayload.roll_call_time || '10:00',
-                  end_time: evPayload.dismissal_estimate_time || '18:00',
+                  sub_event_name: eventType || 'Main Wedding Ceremony',
+                  sub_event_date: parsedEventDate || new Date().toISOString().split('T')[0],
+                  start_time: '10:00 AM',
+                  end_time: '06:00 PM',
                   required_role: role,
                   assigned_member_id: null,
                   status: 'pending'
