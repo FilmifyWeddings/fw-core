@@ -132,23 +132,9 @@ const STATUS_OPTIONS: { value: DeliverableStatus; label: string; badgeClass: str
   { value: 'completed', label: 'Done', badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200', dotClass: 'bg-emerald-600' },
 ];
 
-// Initial default Team PMs and Editors
-const INITIAL_PMS = [
-  'Sushant (Lead Manager)',
-  'Pooja (Post Manager)',
-  'Rahul Sharma (Production Lead)',
-  'Amit Verma (Studio Head)'
-];
-
-const INITIAL_EDITORS = [
-  'Vikram (Photo Retoucher)',
-  'Rahul (Video Editor & Teasers)',
-  'Amit (Senior Video Editor)',
-  'Priya (Reels Specialist)',
-  'Suresh (Traditional Editor)',
-  'Rohan (Album Designer)',
-  'Kunal (Colorist)'
-];
+// Initial Team PMs and Editors (dynamically populated from Team & Partners)
+const INITIAL_PMS: string[] = [];
+const INITIAL_EDITORS: string[] = [];
 
 export default function PostProductionPage() {
   const [projects, setProjects] = useState<PostProductionProject[]>([]);
@@ -160,9 +146,9 @@ export default function PostProductionPage() {
   // Expanded cards set (holds project IDs that are currently expanded)
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
 
-  // PM and Editor lists
-  const [pmList, setPmList] = useState<string[]>(INITIAL_PMS);
-  const [editorList, setEditorList] = useState<string[]>(INITIAL_EDITORS);
+  // PM and Editor lists from Team & Partners
+  const [pmList, setPmList] = useState<string[]>([]);
+  const [editorList, setEditorList] = useState<string[]>([]);
 
   // Modals state
   const [showAddProjectModal, setShowAddProjectModal] = useState(false);
@@ -220,7 +206,7 @@ export default function PostProductionPage() {
         title: 'Edited Photos',
         category: 'photos',
         count: '500 Photos',
-        assigned_to: 'Vikram (Photo Retoucher)',
+        assigned_to: '',
         deadline: eventDateStr ? new Date(new Date(eventDateStr).getTime() + 15 * 86400000).toISOString().split('T')[0] : '',
         status: 'pending',
         drive_link: '',
@@ -231,7 +217,7 @@ export default function PostProductionPage() {
         title: 'Save the Date Photo',
         category: 'photos',
         count: '5 Photos',
-        assigned_to: 'Vikram (Photo Retoucher)',
+        assigned_to: '',
         deadline: eventDateStr ? new Date(new Date(eventDateStr).getTime() - 10 * 86400000).toISOString().split('T')[0] : '',
         status: 'pending',
         drive_link: '',
@@ -242,7 +228,7 @@ export default function PostProductionPage() {
         title: 'Instagram Posts',
         category: 'photos',
         count: '10 Posts',
-        assigned_to: 'Vikram (Photo Retoucher)',
+        assigned_to: '',
         deadline: eventDateStr ? new Date(new Date(eventDateStr).getTime() + 5 * 86400000).toISOString().split('T')[0] : '',
         status: 'pending',
         drive_link: '',
@@ -255,7 +241,7 @@ export default function PostProductionPage() {
         title: 'Cinematic Film',
         category: 'videos',
         count: '25 Mins',
-        assigned_to: 'Amit (Senior Video Editor)',
+        assigned_to: '',
         deadline: eventDateStr ? new Date(new Date(eventDateStr).getTime() + 30 * 86400000).toISOString().split('T')[0] : '',
         status: 'pending',
         drive_link: '',
@@ -266,9 +252,9 @@ export default function PostProductionPage() {
         title: 'Cinematic Teaser',
         category: 'videos',
         count: '1 Min',
-        assigned_to: 'Rahul (Video Editor & Teasers)',
+        assigned_to: '',
         deadline: eventDateStr ? new Date(new Date(eventDateStr).getTime() + 7 * 86400000).toISOString().split('T')[0] : '',
-        status: 'in_progress',
+        status: 'pending',
         drive_link: '',
         comments: []
       },
@@ -277,7 +263,7 @@ export default function PostProductionPage() {
         title: 'Traditional Full Video',
         category: 'videos',
         count: '2 Hours',
-        assigned_to: 'Suresh (Traditional Editor)',
+        assigned_to: '',
         deadline: eventDateStr ? new Date(new Date(eventDateStr).getTime() + 45 * 86400000).toISOString().split('T')[0] : '',
         status: 'pending',
         drive_link: '',
@@ -288,7 +274,7 @@ export default function PostProductionPage() {
         title: 'Viral Instagram Reels',
         category: 'videos',
         count: '3 Reels',
-        assigned_to: 'Priya (Reels Specialist)',
+        assigned_to: '',
         deadline: eventDateStr ? new Date(new Date(eventDateStr).getTime() + 10 * 86400000).toISOString().split('T')[0] : '',
         status: 'pending',
         drive_link: '',
@@ -301,7 +287,7 @@ export default function PostProductionPage() {
         title: 'Main Wedding Album',
         category: 'albums',
         count: '40 Pages',
-        assigned_to: 'Rohan (Album Designer)',
+        assigned_to: '',
         deadline: eventDateStr ? new Date(new Date(eventDateStr).getTime() + 60 * 86400000).toISOString().split('T')[0] : '',
         status: 'pending',
         drive_link: '',
@@ -312,7 +298,7 @@ export default function PostProductionPage() {
         title: 'Parent / Mini Album',
         category: 'albums',
         count: '20 Pages',
-        assigned_to: 'Rohan (Album Designer)',
+        assigned_to: '',
         deadline: eventDateStr ? new Date(new Date(eventDateStr).getTime() + 60 * 86400000).toISOString().split('T')[0] : '',
         status: 'pending',
         drive_link: '',
@@ -321,7 +307,7 @@ export default function PostProductionPage() {
     ];
   };
 
-  // Fetch projects and clients from Supabase
+  // Fetch projects, clients and real Team & Partners from Supabase
   useEffect(() => {
     fetchPostProductionData();
   }, []);
@@ -331,6 +317,51 @@ export default function PostProductionPage() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const workspaceId = session?.user?.id || 'ws_demo';
+
+      // 0. Fetch real Team & Partners from DB / API
+      const dynamicTeamNames: string[] = [];
+
+      try {
+        const token = session?.access_token;
+        const res = await fetch(`/api/workspace/members?workspace_id=${workspaceId}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        const json = await res.json();
+        if (json.success && Array.isArray(json.members)) {
+          json.members.forEach((m: any) => {
+            const cleanName = m.name?.trim();
+            if (cleanName && !dynamicTeamNames.includes(cleanName)) {
+              dynamicTeamNames.push(cleanName);
+            }
+          });
+        }
+      } catch (_) {}
+
+      try {
+        const { data: fwData } = await supabase
+          .from('fw_team_members')
+          .select('name')
+          .eq('user_id', workspaceId);
+
+        if (fwData && fwData.length > 0) {
+          fwData.forEach((f: any) => {
+            const cleanName = f.name?.trim();
+            if (cleanName && !dynamicTeamNames.includes(cleanName)) {
+              dynamicTeamNames.push(cleanName);
+            }
+          });
+        }
+      } catch (_) {}
+
+      // Get workspace owner's name / full name
+      const ownerName = session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'Studio Lead';
+      if (!dynamicTeamNames.some(t => t.toLowerCase() === ownerName.toLowerCase())) {
+        dynamicTeamNames.unshift(ownerName);
+      }
+
+      setPmList(dynamicTeamNames);
+      setEditorList(dynamicTeamNames);
+      const defaultPM = dynamicTeamNames[0] || ownerName;
 
       // 1. Fetch clients for current workspace
       let clientQuery = supabase
@@ -379,6 +410,7 @@ export default function PostProductionPage() {
           finalProjects.push({
             ...existingProj,
             client: c,
+            project_manager_name: existingProj.project_manager_name || defaultPM,
             deliverables: Array.isArray(existingProj.deliverables) && existingProj.deliverables.length > 0 
               ? existingProj.deliverables 
               : generateDefaultDeliverables(c.event_date)
@@ -392,7 +424,7 @@ export default function PostProductionPage() {
             workspace_id: workspaceId,
             client_id: c.id,
             client: c,
-            project_manager_name: 'Sushant (Lead Manager)',
+            project_manager_name: defaultPM,
             overall_status: 'active',
             deliverables: defaultDelivs,
             created_at: c.created_at || new Date().toISOString(),
@@ -404,7 +436,7 @@ export default function PostProductionPage() {
             user_id: workspaceId,
             workspace_id: workspaceId,
             client_id: c.id,
-            project_manager_name: 'Sushant (Lead Manager)',
+            project_manager_name: defaultPM,
             overall_status: 'active',
             deliverables: defaultDelivs
           });
@@ -991,14 +1023,17 @@ export default function PostProductionPage() {
                             <User className="w-3.5 h-3.5 text-amber-700" />
                             <span className="text-slate-500 font-bold">PM:</span>
                             <select
-                              value={project.project_manager_name || 'Sushant (Lead Manager)'}
+                              value={project.project_manager_name || pmList[0] || ''}
                               onChange={(e) => handlePMChange(project.id, e.target.value)}
-                              className="px-2 py-1 text-xs font-bold text-amber-900 bg-amber-50/90 border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 cursor-pointer"
+                              className="px-2.5 py-1 text-xs font-bold text-amber-950 bg-amber-50/90 border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 cursor-pointer max-w-[200px]"
                             >
+                              {project.project_manager_name && !pmList.includes(project.project_manager_name) && (
+                                <option value={project.project_manager_name}>{project.project_manager_name}</option>
+                              )}
                               {pmList.map(pm => (
                                 <option key={pm} value={pm}>{pm}</option>
                               ))}
-                              <option value="__ADD_NEW__" className="font-bold text-amber-800">+ Add New Project Manager</option>
+                              <option value="__ADD_NEW__" className="font-bold text-amber-800">+ Add Team Member</option>
                             </select>
                           </div>
                         </div>
