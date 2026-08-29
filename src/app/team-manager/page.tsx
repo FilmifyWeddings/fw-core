@@ -21,6 +21,7 @@ import TeamSettingsModal from './components/TeamSettingsModal';
 import MonthListView from './components/MonthListView';
 import Professional3DCalendar from './components/Professional3DCalendar';
 import { EventBlockData } from './components/EventBlock';
+import { WorkspaceCrewRole, fetchWorkspaceCrewRoles, fetchWorkspaceEventTypes, getRoleShortCode, DEFAULT_CREW_ROLES } from '@/lib/workspace-settings';
 
 // 1. Deterministic Client Gradient Consistency based on Project ID / Name Hash
 const getGradientByProjectId = (id: string) => {
@@ -154,8 +155,9 @@ export default function TeamManagerPage() {
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number } | null>(null);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
   const [eventTypesList, setEventTypesList] = useState<string[]>([
-    "Pre-wedding", "Haldi", "Sangeet", "Wedding Ceremony", "Reception"
+    "Wedding Ceremony", "Haldi", "Sangeet", "Mehendi", "Reception", "Pre-Wedding Shoot"
   ]);
+  const [customCrewRoles, setCustomCrewRoles] = useState<WorkspaceCrewRole[]>(DEFAULT_CREW_ROLES);
   const [activeAssignmentForMember, setActiveAssignmentForMember] = useState<{
     assignmentId?: string;
     role?: string;
@@ -368,7 +370,17 @@ export default function TeamManagerPage() {
       }
 
       setProjects(projectsDataToSet);
-    } catch (err: any) {
+
+      // Fetch Workspace Event Types & Crew Roles for consistent dropdowns & short codes
+      try {
+        const fetchedRoles = await fetchWorkspaceCrewRoles(uid);
+        if (fetchedRoles && fetchedRoles.length > 0) setCustomCrewRoles(fetchedRoles);
+
+        const fetchedEvTypes = await fetchWorkspaceEventTypes(uid);
+        if (fetchedEvTypes && fetchedEvTypes.length > 0) setEventTypesList(fetchedEvTypes.map(e => e.name));
+      } catch (wsErr) {
+        console.warn('[TeamManager] Error fetching workspace event types/roles:', wsErr);
+      }
       console.error('[TeamManager] fetchAllData Exception:', err);
       setError(err?.message || 'Failed to fetch operations data.');
     } finally {
@@ -1255,9 +1267,6 @@ export default function TeamManagerPage() {
                                                     src={memberObj.avatar_url} 
                                                     alt={cleanName} 
                                                     className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm ring-2 ring-emerald-400 group-hover:scale-105 transition shrink-0" 
-                                                    onError={(e) => {
-                                                      (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName || role)}`;
-                                                    }}
                                                   />
                                                 ) : (
                                                   <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-xs flex items-center justify-center shadow-sm border-2 border-white ring-2 ring-indigo-200 group-hover:scale-105 transition shrink-0">
@@ -1266,14 +1275,14 @@ export default function TeamManagerPage() {
                                                 )
                                               ) : (
                                                 <div className="w-12 h-12 rounded-full border-2 border-dashed border-red-500 bg-red-50/90 text-red-600 font-black flex items-center justify-center shadow-xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
-                                                  <Plus className="w-5 h-5 text-red-600 stroke-[3]" />
+                                                  <span className="text-xs font-black tracking-tight">{getRoleShortCode(role, customCrewRoles)}</span>
                                                 </div>
                                               )}
 
                                               <span className={`font-bold text-[11px] uppercase tracking-wide block text-center mt-1.5 leading-none ${
                                                 isAssigned ? 'text-indigo-600' : 'text-red-600 font-extrabold'
                                               }`}>
-                                                {role}
+                                                {isAssigned ? role : getRoleShortCode(role, customCrewRoles)}
                                               </span>
 
                                               {isAssigned && (
@@ -1536,7 +1545,7 @@ export default function TeamManagerPage() {
                                                 )
                                               ) : (
                                                 <div className="w-10 h-10 rounded-full border-2 border-dashed border-red-500 bg-red-50 text-red-600 font-black flex items-center justify-center shadow-2xs shrink-0">
-                                                  <Plus className="w-4 h-4 text-red-600 stroke-[3]" />
+                                                  <span className="text-[10px] font-black tracking-tight">{getRoleShortCode(role, customCrewRoles)}</span>
                                                 </div>
                                               )}
                                             </div>
@@ -1544,7 +1553,7 @@ export default function TeamManagerPage() {
                                             <span className={`font-bold text-[9px] uppercase tracking-wide block text-center leading-none ${
                                               isAssigned ? 'text-indigo-600' : 'text-red-600 font-extrabold'
                                             }`}>
-                                              {role}
+                                              {isAssigned ? role : getRoleShortCode(role, customCrewRoles)}
                                             </span>
 
                                             {isAssigned && (

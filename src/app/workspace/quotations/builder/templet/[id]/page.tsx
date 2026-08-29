@@ -34,6 +34,7 @@ const AiQuotationModal = dynamic(
 import { paginateFunctionsPageItems } from '@/lib/functions-paginator';
 import { paginateDeliverablesPageItems, paginateSpecialValueAdditionsPageItems } from '@/lib/deliverables-paginator';
 import { resolveFunctionTitle } from '@/components/QuotationDocumentCanvas';
+import { fetchWorkspaceEventTypes, fetchWorkspaceCrewRoles, saveWorkspaceEventType, saveWorkspaceCrewRole, getRoleShortCode } from '@/lib/workspace-settings';
 
 // Using imported BirdsSVG and MonogramSVG from QuotationSVGs
 
@@ -2609,6 +2610,36 @@ function StudioCoreAiryBuilderContent() {
     if (data.secondaryFont) registerFontFace({ name: data.secondaryFont.replace(/['"]/g, '').split(',')[0], family: data.secondaryFont, category: 'Minimal Sans-Serif' });
   }, [data.primaryFont, data.secondaryFont]);
 
+  // Load functions & crew roles from centralized settings and keep synced
+  useEffect(() => {
+    const loadGlobalSettings = async () => {
+      try {
+        const effectiveUid = userId && userId !== 'PUBLIC_USER' ? userId : undefined;
+        const evTypes = await fetchWorkspaceEventTypes(effectiveUid);
+        if (evTypes && evTypes.length > 0) {
+          const names = evTypes.map(e => e.name);
+          setAvailableFunctionNames(prev => Array.from(new Set([...prev, ...names])));
+        }
+        const roles = await fetchWorkspaceCrewRoles(effectiveUid);
+        if (roles && roles.length > 0) {
+          const roleNames = roles.map(r => r.name);
+          setAvailableRequirements(prev => Array.from(new Set([...prev, ...roleNames])));
+        }
+      } catch (err) {
+        console.warn('[TemplateBuilder] Error loading global workspace settings:', err);
+      }
+    };
+    loadGlobalSettings();
+
+    const handleEvtUpdate = () => loadGlobalSettings();
+    window.addEventListener('workspace_event_types_updated', handleEvtUpdate);
+    window.addEventListener('workspace_crew_roles_updated', handleEvtUpdate);
+    return () => {
+      window.removeEventListener('workspace_event_types_updated', handleEvtUpdate);
+      window.removeEventListener('workspace_crew_roles_updated', handleEvtUpdate);
+    };
+  }, [userId]);
+
   // Handle Event Type Selection
   const handleEventTypeChange = (val: string) => {
     if (val === '__ADD_NEW__') {
@@ -3669,7 +3700,10 @@ function StudioCoreAiryBuilderContent() {
                       const filtered = (data.functionsPage?.items || []).filter((_: any, i: number) => i !== fIdx);
                       setData({ ...data, functionsPage: { ...data.functionsPage, items: filtered } });
                     }}
-                    onAddCustomFunctionName={(newName) => setAvailableFunctionNames(prev => Array.from(new Set([...prev, newName])))}
+                    onAddCustomFunctionName={(newName) => {
+                      setAvailableFunctionNames(prev => Array.from(new Set([...prev, newName])));
+                      if (userId && userId !== 'PUBLIC_USER') saveWorkspaceEventType(userId, newName);
+                    }}
                     onEditCustomFunctionName={(oldName, newName) => {
                       setAvailableFunctionNames(prev => prev.map(n => n === oldName ? newName : n));
                     }}
@@ -3677,7 +3711,10 @@ function StudioCoreAiryBuilderContent() {
                       setAvailableFunctionNames(prev => prev.filter(n => n !== nameToDelete));
                     }}
                     onAddCustomDuration={(newDur) => setAvailableDurationSlots(prev => Array.from(new Set([...prev, newDur])))}
-                    onAddCustomRequirement={(newReq) => setAvailableRequirements(prev => Array.from(new Set([...prev, newReq])))}
+                    onAddCustomRequirement={(newReq) => {
+                      setAvailableRequirements(prev => Array.from(new Set([...prev, newReq])));
+                      if (userId && userId !== 'PUBLIC_USER') saveWorkspaceCrewRole(userId, newReq, getRoleShortCode(newReq));
+                    }}
                     onEditCustomRequirement={(oldReq, newReq) => {
                       setAvailableRequirements(prev => prev.map(r => r === oldReq ? newReq : r));
                     }}

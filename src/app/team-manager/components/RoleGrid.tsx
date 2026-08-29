@@ -1,14 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Users, UserPlus, Layers, Plus, X, Check } from 'lucide-react';
-
-const DEFAULT_ROLES = [
-  'TM', 'Ass', 'TP', 'TV', 'CP', 'CV', 'Dron', 'Makeup Art',
-  'Cine 2', 'Candid 2', 'Face AI', 'Social Media', 'Reel',
-  'Family Photographer', 'CV 2nd Gim', '2 Ass', 'Live Camera',
-];
+import { WorkspaceCrewRole, fetchWorkspaceCrewRoles, saveWorkspaceCrewRole, getRoleShortCode, DEFAULT_CREW_ROLES } from '@/lib/workspace-settings';
 
 interface RoleGridProps {
   selectedRoles: string[];
@@ -19,19 +14,36 @@ interface RoleGridProps {
 export default function RoleGrid({ selectedRoles, onToggle, onAddCustom }: RoleGridProps) {
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [customRole, setCustomRole] = useState('');
+  const [customRoleCode, setCustomRoleCode] = useState('');
+  const [dbRoles, setDbRoles] = useState<WorkspaceCrewRole[]>(DEFAULT_CREW_ROLES);
 
-  const handleAddRole = (e?: React.FormEvent) => {
+  useEffect(() => {
+    const loadRoles = async () => {
+      const fetched = await fetchWorkspaceCrewRoles();
+      if (fetched && fetched.length > 0) setDbRoles(fetched);
+    };
+    loadRoles();
+    window.addEventListener('workspace_crew_roles_updated', loadRoles);
+    return () => window.removeEventListener('workspace_crew_roles_updated', loadRoles);
+  }, []);
+
+  const handleAddRole = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (customRole.trim()) {
       const newRole = customRole.trim();
+      const code = customRoleCode.trim() || getRoleShortCode(newRole);
       onAddCustom(newRole);
+      await saveWorkspaceCrewRole('', newRole, code);
       setCustomRole('');
+      setCustomRoleCode('');
       setShowCustomInput(false);
     }
   };
 
-  // Combine default roles and any custom selected roles to ensure 100% visible pills
-  const allRoles = Array.from(new Set([...DEFAULT_ROLES, ...selectedRoles]));
+  // Combine loaded roles (full names and short codes) and selected roles
+  const standardRoleNames = dbRoles.map(r => r.name);
+  const standardRoleCodes = dbRoles.map(r => r.short_code);
+  const allRoles = Array.from(new Set([...standardRoleCodes, ...standardRoleNames, ...selectedRoles]));
 
   return (
     <div className="space-y-2 pt-2">

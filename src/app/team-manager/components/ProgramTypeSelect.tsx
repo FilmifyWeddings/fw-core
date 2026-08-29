@@ -3,18 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, X, Plus, Search } from 'lucide-react';
-
-const DEFAULT_PROGRAMS = [
-  'Wedding Ceremony',
-  'Pre-wedding Shoot',
-  'Haldi Program',
-  'Sangeet / Cocktails',
-  'Reception Ceremony',
-  'Engagement Ring',
-  'Nikah Ceremony',
-  'Haldi / Sangeet',
-  'Bidai / Home Rituals',
-];
+import { WorkspaceEventType, fetchWorkspaceEventTypes, saveWorkspaceEventType, DEFAULT_EVENT_TYPES } from '@/lib/workspace-settings';
 
 interface ProgramTypeSelectProps {
   selected: string[];
@@ -28,7 +17,18 @@ export default function ProgramTypeSelect({ selected, onChange, onAddCustom, has
   const [searchFilter, setSearchFilter] = useState('');
   const [customInput, setCustomInput] = useState('');
   const [showCustomInput, setShowCustomInput] = useState(false);
+  const [dbPrograms, setDbPrograms] = useState<WorkspaceEventType[]>(DEFAULT_EVENT_TYPES);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const loadPrograms = async () => {
+      const fetched = await fetchWorkspaceEventTypes();
+      if (fetched && fetched.length > 0) setDbPrograms(fetched);
+    };
+    loadPrograms();
+    window.addEventListener('workspace_event_types_updated', loadPrograms);
+    return () => window.removeEventListener('workspace_event_types_updated', loadPrograms);
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -53,16 +53,23 @@ export default function ProgramTypeSelect({ selected, onChange, onAddCustom, has
     onChange(selected.filter(p => p !== program));
   };
 
-  const handleAddCustom = () => {
+  const handleAddCustom = async () => {
     if (customInput.trim()) {
-      onAddCustom(customInput.trim());
-      onChange([...selected, customInput.trim()]);
+      const clean = customInput.trim();
+      onAddCustom(clean);
+      onChange([...selected, clean]);
+      await saveWorkspaceEventType('', clean);
       setCustomInput('');
       setShowCustomInput(false);
     }
   };
 
-  const filteredPrograms = DEFAULT_PROGRAMS.filter(p => 
+  const availableProgramsList = Array.from(new Set([
+    ...dbPrograms.map(p => p.name),
+    ...selected
+  ]));
+
+  const filteredPrograms = availableProgramsList.filter(p => 
     p.toLowerCase().includes(searchFilter.toLowerCase())
   );
 

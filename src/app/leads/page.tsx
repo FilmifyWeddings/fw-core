@@ -827,14 +827,14 @@ export default function LeadsPage() {
             mainVenue
           );
         } else {
-          // Fallback if no quotation is attached yet: create project + default event from lead
+          // Create an EMPTY master project in Team Manager (0 sub-events) so user can add manually or wait for final quotation
           const { data: existingFwProjects } = await supabase
             .from('fw_projects')
             .select('id')
             .ilike('client_name', `%${clientName}%`);
 
           if (!existingFwProjects || existingFwProjects.length === 0) {
-            const { data: newFwProj, error: fwProjErr } = await supabase
+            await supabase
               .from('fw_projects')
               .insert([{
                 client_name: clientName,
@@ -842,45 +842,7 @@ export default function LeadsPage() {
                 main_venue: mainVenue || null,
                 user_id: currentWorkspaceId,
                 status: 'active'
-              }])
-              .select()
-              .single();
-
-            if (!fwProjErr && newFwProj) {
-              const defaultRoles = ['Traditional Photographer', 'Candid Photographer', 'Cinematographer'];
-              const { data: insertedSubEvent } = await supabase
-                .from('fw_sub_events')
-                .insert([{
-                  project_id: newFwProj.id,
-                  event_title: eventType || 'Main Wedding Ceremony',
-                  event_date: parsedEventDate || new Date().toISOString().split('T')[0],
-                  venue_name: mainVenue || null,
-                  roll_call_time: '10:00 AM',
-                  dismissal_estimate_time: '06:00 PM',
-                  shift_hours_slot: 'Full Day',
-                  operational_notes: raw.notes || raw.special_notes || null,
-                  roles: defaultRoles,
-                  user_id: currentWorkspaceId
-                }])
-                .select()
-                .single();
-
-              if (insertedSubEvent) {
-                const assignmentsPayload = defaultRoles.map((role: string) => ({
-                  project_id: newFwProj.id,
-                  sub_event_id: insertedSubEvent.id,
-                  sub_event_name: eventType || 'Main Wedding Ceremony',
-                  sub_event_date: parsedEventDate || new Date().toISOString().split('T')[0],
-                  start_time: '10:00 AM',
-                  end_time: '06:00 PM',
-                  required_role: role,
-                  assigned_member_id: null,
-                  status: 'pending'
-                }));
-
-                await supabase.from('fw_assignments').insert(assignmentsPayload);
-              }
-            }
+              }]);
           }
         }
       } catch (fwErr) {
@@ -897,8 +859,58 @@ export default function LeadsPage() {
   };
 
   const handleLeadUpdate = async (leadId: string, updatedFields: Partial<Lead>) => {
-    // Optimistic UI Update
     const currentLead = leads.find(l => l.id === leadId);
+
+    // Check if moving out of "Booked"
+    const wasBooked = currentLead && (
+      (currentLead.stage_id && currentLead.stage_id.toLowerCase().includes('book')) ||
+      (typeof currentLead.status === 'string' && currentLead.status.toLowerCase().includes('book')) ||
+      (currentLead.stage_id && stages.some(s => s.id === currentLead.stage_id && s.name.toLowerCase().includes('book')))
+    );
+
+    const isNowBooked = 
+      (updatedFields.stage_id && updatedFields.stage_id.toLowerCase().includes('book')) ||
+      (typeof updatedFields.status === 'string' && updatedFields.status.toLowerCase().includes('book')) ||
+      (updatedFields.stage_id && stages.some(s => s.id === updatedFields.stage_id && s.name.toLowerCase().includes('book')));
+
+    if (wasBooked && !isNowBooked && ('stage_id' in updatedFields || 'status' in updatedFields)) {
+      const confirmRemove = confirm(
+        `Are you sure you want to move this lead out of 'Booked'?\n\nThis will remove the linked Client Directory card, Finance Ledger, and Bookings & Events card.`
+      );
+      if (!confirmRemove) {
+        // Revert local UI
+        return;
+      }
+
+      // User confirmed un-booking: clean up client and bookings
+      try {
+        const clientName = currentLead?.name || '';
+        // 1. Delete or deactivate linked client & finance
+        if (currentLead?.client_id) {
+          await supabase.from('workspace_clients').delete().eq('id', currentLead.client_id);
+          await supabase.from('client_finance_records').delete().eq('client_id', currentLead.client_id);
+        }
+        await supabase.from('workspace_clients').delete().eq('lead_id', leadId);
+        
+        // 2. Delete linked fw_projects
+        if (clientName) {
+          const { data: projs } = await supabase.from('fw_projects').select('id').ilike('client_name', `%${clientName}%`);
+          if (projs && projs.length > 0) {
+            const pIds = projs.map(p => p.id);
+            const { data: subEvs } = await supabase.from('fw_sub_events').select('id').in('project_id', pIds);
+            if (subEvs && subEvs.length > 0) {
+              await supabase.from('fw_assignments').delete().in('sub_event_id', subEvs.map(s => s.id));
+              await supabase.from('fw_sub_events').delete().in('project_id', pIds);
+            }
+            await supabase.from('fw_projects').delete().in('id', pIds);
+          }
+        }
+      } catch (cleanErr) {
+        console.warn('[handleLeadUpdate] Error cleaning unbooked records:', cleanErr);
+      }
+    }
+
+    // Optimistic UI Update
     setLeads(prev => prev.map(l => l.id === leadId ? { ...l, ...updatedFields, updated_at: new Date().toISOString() } : l));
 
     if (!isDemoMode) {
@@ -935,12 +947,7 @@ export default function LeadsPage() {
         }).catch(err => console.error('[handleLeadUpdate API error]:', err));
 
         // AUTO-CONVERT TO CLIENT WHEN STAGE IS "BOOKED"
-        const isBooked = 
-          (updatedFields.stage_id && updatedFields.stage_id.toLowerCase().includes('book')) ||
-          (typeof updatedFields.status === 'string' && updatedFields.status.toLowerCase().includes('book')) ||
-          (updatedFields.stage_id && stages.some(s => s.id === updatedFields.stage_id && s.name.toLowerCase().includes('book')));
-
-        if (isBooked && currentLead) {
+        if (isNowBooked && currentLead) {
           await autoSyncBookedLeadToClient(leadId, currentLead, updatedFields);
         }
       } catch (err) {

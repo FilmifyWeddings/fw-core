@@ -6,9 +6,20 @@ import {
   X, Check, Plus, Trash2, ArrowUp, ArrowDown, Settings, 
   Layers, Palette, Tag, Briefcase, FileSpreadsheet, AlertCircle, 
   Database, RefreshCw, BarChart2, FileText, Calendar, Lock,
-  Coins, FileCheck, ClipboardList, ShieldAlert, ArrowRight, User
+  Coins, FileCheck, ClipboardList, ShieldAlert, ArrowRight, User,
+  Users, Sparkles
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { 
+  WorkspaceEventType, 
+  WorkspaceCrewRole, 
+  fetchWorkspaceEventTypes, 
+  fetchWorkspaceCrewRoles, 
+  saveWorkspaceEventType, 
+  saveWorkspaceCrewRole, 
+  DEFAULT_EVENT_TYPES, 
+  DEFAULT_CREW_ROLES 
+} from '@/lib/workspace-settings';
 
 interface MasterSettingsHubProps {
   isOpen: boolean;
@@ -93,8 +104,8 @@ const DEFAULT_STUDIO_SETTINGS = {
 
 export function MasterSettingsHub({ isOpen, onClose, workspaceId, onStagesUpdated }: MasterSettingsHubProps) {
   const [activeMenu, setActiveMenu] = useState<
-    'sequences' | 'leads' | 'team_members' | 'projects' | 'invoices' | 'expenses' | 'services' | 'packages' | 'deliverables' | 'pdf_quote' | 'pdf_invoice' | 'pdf_contract' | 'workflow'
-  >('sequences');
+    'sequences' | 'leads' | 'team_members' | 'projects' | 'invoices' | 'expenses' | 'services' | 'packages' | 'deliverables' | 'pdf_quote' | 'pdf_invoice' | 'pdf_contract' | 'workflow' | 'functions' | 'crew_roles'
+  >('functions');
   const [loading, setLoading] = useState(false);
 
   // Schema state from DB
@@ -110,6 +121,15 @@ export function MasterSettingsHub({ isOpen, onClose, workspaceId, onStagesUpdate
     { id: '3', name: 'Sushant Nawale', email: 'sushant@filmifyweddings.com', role: 'Lead Owner' },
     { id: '4', name: 'Rahul Sharma', email: 'rahul@filmifyweddings.com', role: 'Team Member' }
   ]);
+
+  // Functions (Event Types) & Crew Roles (with Short Codes) State
+  const [eventTypes, setEventTypes] = useState<WorkspaceEventType[]>(DEFAULT_EVENT_TYPES);
+  const [crewRoles, setCrewRoles] = useState<WorkspaceCrewRole[]>(DEFAULT_CREW_ROLES);
+  const [newEventTypeName, setNewEventTypeName] = useState('');
+  const [newEventTypeCat, setNewEventTypeCat] = useState('Wedding');
+  const [newRoleName, setNewRoleName] = useState('');
+  const [newRoleCode, setNewRoleCode] = useState('');
+  const [newRoleCat, setNewRoleCat] = useState('Photography');
 
   const [newMemberName, setNewMemberName] = useState('');
   const [newMemberEmail, setNewMemberEmail] = useState('');
@@ -221,18 +241,77 @@ export function MasterSettingsHub({ isOpen, onClose, workspaceId, onStagesUpdate
         }
       }
 
-      // 6. Fetch Team Members from LocalStorage / Profile
-      const savedMembers = localStorage.getItem(`leads_team_members_${workspaceId}`);
-      if (savedMembers) {
-        try {
-          setTeamMembers(JSON.parse(savedMembers));
-        } catch (_) {}
-      }
+      // 8. Fetch Workspace Event Types (Functions) & Crew Roles (with Short Codes)
+      const fetchedEvTypes = await fetchWorkspaceEventTypes(workspaceId);
+      if (fetchedEvTypes && fetchedEvTypes.length > 0) setEventTypes(fetchedEvTypes);
+
+      const fetchedCrewRoles = await fetchWorkspaceCrewRoles(workspaceId);
+      if (fetchedCrewRoles && fetchedCrewRoles.length > 0) setCrewRoles(fetchedCrewRoles);
     } catch (err) {
       console.error('Failed to load settings:', err);
     } finally {
       setLoading(false);
     }
+  };
+
+  // --- Functions (Event Types) Management ---
+  const handleAddEventType = async () => {
+    if (!newEventTypeName.trim()) return;
+    const clean = newEventTypeName.trim();
+    const created = await saveWorkspaceEventType(workspaceId, clean, newEventTypeCat);
+    if (created) {
+      const updated = [...eventTypes.filter(e => e.name.toLowerCase() !== clean.toLowerCase()), created];
+      setEventTypes(updated);
+      try {
+        localStorage.setItem(`wg_custom_event_types_${workspaceId}`, JSON.stringify(updated));
+        window.dispatchEvent(new Event('workspace_event_types_updated'));
+      } catch (_) {}
+      setNewEventTypeName('');
+    }
+  };
+
+  const handleDeleteEventType = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to delete function '${name}'?`)) return;
+    try {
+      await supabase.from('workspace_event_types').delete().eq('workspace_id', workspaceId).eq('name', name);
+    } catch (_) {}
+    const updated = eventTypes.filter(e => e.id !== id && e.name.toLowerCase() !== name.toLowerCase());
+    setEventTypes(updated);
+    try {
+      localStorage.setItem(`wg_custom_event_types_${workspaceId}`, JSON.stringify(updated));
+      window.dispatchEvent(new Event('workspace_event_types_updated'));
+    } catch (_) {}
+  };
+
+  // --- Crew Roles & Short Codes Management ---
+  const handleAddCrewRole = async () => {
+    if (!newRoleName.trim()) return;
+    const cleanName = newRoleName.trim();
+    const cleanCode = (newRoleCode.trim() || cleanName.slice(0, 2)).toUpperCase();
+    const created = await saveWorkspaceCrewRole(workspaceId, cleanName, cleanCode, newRoleCat);
+    if (created) {
+      const updated = [...crewRoles.filter(r => r.name.toLowerCase() !== cleanName.toLowerCase()), created];
+      setCrewRoles(updated);
+      try {
+        localStorage.setItem(`wg_custom_crew_roles_${workspaceId}`, JSON.stringify(updated));
+        window.dispatchEvent(new Event('workspace_crew_roles_updated'));
+      } catch (_) {}
+      setNewRoleName('');
+      setNewRoleCode('');
+    }
+  };
+
+  const handleDeleteCrewRole = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to delete crew role '${name}'?`)) return;
+    try {
+      await supabase.from('workspace_crew_roles').delete().eq('workspace_id', workspaceId).eq('name', name);
+    } catch (_) {}
+    const updated = crewRoles.filter(r => r.id !== id && r.name.toLowerCase() !== name.toLowerCase());
+    setCrewRoles(updated);
+    try {
+      localStorage.setItem(`wg_custom_crew_roles_${workspaceId}`, JSON.stringify(updated));
+      window.dispatchEvent(new Event('workspace_crew_roles_updated'));
+    } catch (_) {}
   };
 
   const saveStudioSettings = async (nextSettings: any) => {
@@ -553,6 +632,34 @@ export function MasterSettingsHub({ isOpen, onClose, workspaceId, onStagesUpdate
             {/* Sidebar Navigation - Page-Wise Modular Settings */}
             <div className="w-64 border-r border-slate-200 dark:border-zinc-900 bg-white dark:bg-zinc-950/40 p-4 overflow-y-auto space-y-5 select-none">
               
+              {/* Page 0: Wedding Functions & Crew Roles Settings */}
+              <div className="space-y-1">
+                <span className="text-[9px] uppercase font-black text-amber-700 dark:text-amber-400 tracking-wider block px-2.5 mb-1.5 flex items-center gap-1">
+                  💍 FUNCTIONS & CREW ROLES
+                </span>
+                {[
+                  { id: 'functions', label: 'Functions & Events', icon: Calendar },
+                  { id: 'crew_roles', label: 'Crew Roles & Codes', icon: Users }
+                ].map(item => {
+                  const Icon = item.icon;
+                  const active = activeMenu === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => setActiveMenu(item.id as any)}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-xl transition-all ${
+                        active 
+                          ? 'bg-slate-900 dark:bg-zinc-900 text-white shadow-sm border border-amber-500/30' 
+                          : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-900/60 hover:text-slate-900 dark:hover:text-zinc-200'
+                      }`}
+                    >
+                      <Icon className={`w-4 h-4 ${active ? 'text-amber-500' : 'text-zinc-400'}`} />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
               {/* Page 1: Leads Page Settings */}
               <div className="space-y-1">
                 <span className="text-[9px] uppercase font-black text-amber-700 dark:text-amber-400 tracking-wider block px-2.5 mb-1.5 flex items-center gap-1">
@@ -707,6 +814,216 @@ export function MasterSettingsHub({ isOpen, onClose, workspaceId, onStagesUpdate
               ) : (
                 <div className="max-w-2xl mx-auto space-y-6 text-xs text-slate-700 dark:text-zinc-300">
                   
+                  {/* --- TAB: FUNCTIONS & WEDDING EVENTS --- */}
+                  {activeMenu === 'functions' && (
+                    <div className="space-y-5">
+                      <div>
+                        <h4 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                          <Calendar className="w-4.5 h-4.5 text-amber-500" />
+                          Functions & Wedding Events Catalog
+                        </h4>
+                        <p className="text-[10px] text-slate-400 mt-0.5">
+                          Manage standard wedding functions. These automatically sync across Quotation Builder, Team Manager bookings, and client portals.
+                        </p>
+                      </div>
+
+                      {/* Add Function Form */}
+                      <div className="bg-slate-50 dark:bg-zinc-900/30 border border-slate-200 dark:border-zinc-850 p-4 rounded-2xl space-y-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div className="sm:col-span-2 space-y-1">
+                            <label className="text-[9px] uppercase font-bold text-slate-400">Function Name</label>
+                            <input 
+                              type="text" 
+                              placeholder="e.g. Cocktail & Sangeet, Pool Party"
+                              value={newEventTypeName}
+                              onChange={(e) => setNewEventTypeName(e.target.value)}
+                              onKeyDown={(e) => e.key === 'Enter' && handleAddEventType()}
+                              className="w-full bg-white dark:bg-zinc-950 border border-slate-250 dark:border-zinc-800 p-2.5 rounded-xl text-xs font-semibold"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] uppercase font-bold text-slate-400">Category</label>
+                            <select
+                              value={newEventTypeCat}
+                              onChange={(e) => setNewEventTypeCat(e.target.value)}
+                              className="w-full bg-white dark:bg-zinc-950 border border-slate-250 dark:border-zinc-800 p-2.5 rounded-xl text-xs font-medium"
+                            >
+                              <option value="Main Wedding">Main Wedding</option>
+                              <option value="Pre-Wedding">Pre-Wedding</option>
+                              <option value="Post-Wedding">Post-Wedding</option>
+                              <option value="Shoots">Shoots</option>
+                              <option value="Party">Party</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="flex justify-end pt-1">
+                          <button
+                            type="button"
+                            onClick={handleAddEventType}
+                            className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow-sm transition"
+                          >
+                            <Plus className="w-4 h-4" />
+                            <span>Add Wedding Function</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Functions List */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-[10px] font-black uppercase text-slate-400 tracking-wider px-1">
+                          <span>Available Functions ({eventTypes.length})</span>
+                          <span>Auto-synced across system</span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {eventTypes.map((ev) => (
+                            <div 
+                              key={ev.id} 
+                              className="flex items-center justify-between p-3 bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl shadow-xs hover:border-amber-400 transition"
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                                <div className="min-w-0">
+                                  <p className="font-bold text-slate-900 dark:text-white text-xs truncate">{ev.name}</p>
+                                  <span className="text-[9px] text-slate-400 font-medium">{ev.category || 'Wedding'}</span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {ev.is_default && (
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-zinc-800 text-slate-500 font-semibold">
+                                    Default
+                                  </span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteEventType(ev.id, ev.name)}
+                                  className="p-1 text-slate-400 hover:text-red-500 transition"
+                                  title="Delete function"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* --- TAB: CREW ROLES & SHORT CODES --- */}
+                  {activeMenu === 'crew_roles' && (
+                    <div className="space-y-5">
+                      <div>
+                        <h4 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                          <Users className="w-4.5 h-4.5 text-indigo-500" />
+                          Crew Roles & Short Codes Roster
+                        </h4>
+                        <p className="text-[10px] text-slate-400 mt-0.5">
+                          Define crew roles with short codes (e.g. Traditional Photographer $\rightarrow$ TP). Short forms display inside red unassigned nodes in Team Manager, and full names display on hover.
+                        </p>
+                      </div>
+
+                      {/* Add Crew Role Form */}
+                      <div className="bg-slate-50 dark:bg-zinc-900/30 border border-slate-200 dark:border-zinc-850 p-4 rounded-2xl space-y-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                          <div className="sm:col-span-2 space-y-1">
+                            <label className="text-[9px] uppercase font-bold text-slate-400">Role Full Name</label>
+                            <input 
+                              type="text" 
+                              placeholder="e.g. Drone Pilot 2, Candid Cinematographer"
+                              value={newRoleName}
+                              onChange={(e) => setNewRoleName(e.target.value)}
+                              className="w-full bg-white dark:bg-zinc-950 border border-slate-250 dark:border-zinc-800 p-2.5 rounded-xl text-xs font-semibold"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] uppercase font-bold text-slate-400">Short Code</label>
+                            <input 
+                              type="text" 
+                              maxLength={4}
+                              placeholder="e.g. DP2, CC"
+                              value={newRoleCode}
+                              onChange={(e) => setNewRoleCode(e.target.value.toUpperCase())}
+                              className="w-full bg-white dark:bg-zinc-950 border border-slate-250 dark:border-zinc-800 p-2.5 rounded-xl text-xs font-mono font-black uppercase text-indigo-600"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] uppercase font-bold text-slate-400">Category</label>
+                            <select
+                              value={newRoleCat}
+                              onChange={(e) => setNewRoleCat(e.target.value)}
+                              className="w-full bg-white dark:bg-zinc-950 border border-slate-250 dark:border-zinc-800 p-2.5 rounded-xl text-xs font-medium"
+                            >
+                              <option value="Photography">Photography</option>
+                              <option value="Cinematography">Cinematography</option>
+                              <option value="Drone">Drone</option>
+                              <option value="Post-Production">Post-Production</option>
+                              <option value="Assistance">Assistance</option>
+                              <option value="Social Media">Social Media</option>
+                              <option value="Live Tech">Live Tech</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="flex justify-end pt-1">
+                          <button
+                            type="button"
+                            onClick={handleAddCrewRole}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow-sm transition"
+                          >
+                            <Plus className="w-4 h-4" />
+                            <span>Add Crew Role</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Crew Roles List */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-[10px] font-black uppercase text-slate-400 tracking-wider px-1">
+                          <span>Active Crew Roles ({crewRoles.length})</span>
+                          <span>Short Code $\rightarrow$ Team Manager Display</span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {crewRoles.map((role) => (
+                            <div 
+                              key={role.id} 
+                              className="flex items-center justify-between p-3 bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-850 rounded-xl shadow-xs hover:border-indigo-400 transition"
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-mono font-black text-xs flex items-center justify-center shrink-0">
+                                  {role.short_code}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="font-bold text-slate-900 dark:text-white text-xs truncate">{role.name}</p>
+                                  <span className="text-[9px] text-slate-400 font-medium">{role.category || 'Role'}</span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {role.is_default && (
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-zinc-800 text-slate-500 font-semibold">
+                                    Default
+                                  </span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteCrewRole(role.id, role.name)}
+                                  className="p-1 text-slate-400 hover:text-red-500 transition"
+                                  title="Delete role"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* --- TAB: SEQUENCE IDS --- */}
                   {activeMenu === 'sequences' && (
                     <div className="space-y-5">
