@@ -261,7 +261,7 @@ function StrictZeroKnowledgeGuestContent() {
         body: JSON.stringify({
           galleryId: gallery.id,
           selfieBase64: data.selfieBase64,
-          threshold: 0.35,
+          threshold: 0.38,
         }),
       });
 
