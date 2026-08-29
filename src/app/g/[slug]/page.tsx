@@ -100,12 +100,11 @@ function GuestSlugGalleryContent() {
   const [isFaceScannerOpen, setIsFaceScannerOpen] = useState(false);
   const [isMatching, setIsMatching] = useState(false);
   const [isVerified, setIsVerified] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
   const [matchedPhotos, setMatchedPhotos] = useState<PhotoItem[]>([]);
   const [guestName, setGuestName] = useState('');
   const [guestPhone, setGuestPhone] = useState('');
   const [guestEmail, setGuestEmail] = useState('');
-  const [noMatchModalOpen, setNoMatchModalOpen] = useState(false);
-  const [showUnpublishedModal, setShowUnpublishedModal] = useState(false);
 
   // Lightbox & Selection State
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
@@ -225,13 +224,8 @@ function GuestSlugGalleryContent() {
     setGuestPhone(data.phone);
     setGuestEmail(data.email);
 
-    const isPublished =
-      gallery.is_published === true ||
-      gallery.status?.toUpperCase() === 'PUBLISHED' ||
-      (gallery.is_active !== false && gallery.status?.toUpperCase() !== 'UNPUBLISHED' && gallery.status?.toUpperCase() !== 'DRAFT');
-
     try {
-      // 1. Register Guest in CRM in background
+      // 1. Register Guest in CRM in background (non-blocking)
       try {
         fetch('/api/gallery/guest/register', {
           method: 'POST',
@@ -248,17 +242,7 @@ function GuestSlugGalleryContent() {
         console.warn('Guest registration error:', regErr);
       }
 
-      // 2. Dual-Mode Routing
-      if (!isPublished) {
-        // CASE B: UNPUBLISHED EVENT (Show Registration Confirmation Modal)
-        setIsFaceScannerOpen(false);
-        setShowUnpublishedModal(true);
-        setShowPinModal(false);
-        setIsMatching(false);
-        return;
-      }
-
-      // CASE A: PUBLISHED EVENT -> Neural Vector Match
+      // 2. Neural ArcFace Vector Match
       const res = await fetch('/api/gallery/match-face', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -272,25 +256,22 @@ function GuestSlugGalleryContent() {
 
       const json = await res.json();
       setIsFaceScannerOpen(false);
-      setShowUnpublishedModal(false); // DO NOT OPEN REGISTRATION POPUP
 
       if (json.success && Array.isArray(json.photos)) {
-        if (json.photos.length > 0) {
-          // Direct On-Screen Render: NO blocking popup
-          setMatchedPhotos(json.photos);
-          setIsVerified(true);
-          setNoMatchModalOpen(false);
-        } else {
-          // 0 Matches on Published Album
-          setMatchedPhotos([]);
-          setIsVerified(false);
-          setNoMatchModalOpen(true);
-        }
+        setMatchedPhotos(json.photos);
+        setHasSearched(true);
+        setIsVerified(true);
       } else {
-        alert(json.error || 'Face search failed');
+        setMatchedPhotos([]);
+        setHasSearched(true);
+        setIsVerified(true);
       }
     } catch (err: any) {
-      alert(`Search error: ${err.message}`);
+      console.error('Face matching error:', err);
+      setIsFaceScannerOpen(false);
+      setMatchedPhotos([]);
+      setHasSearched(true);
+      setIsVerified(true);
     } finally {
       setIsMatching(false);
     }
@@ -414,8 +395,8 @@ function GuestSlugGalleryContent() {
       {/* 2. MAIN CONTENT AREA */}
       <div className="max-w-6xl mx-auto px-4 sm:px-8 -mt-6 relative z-10 space-y-8">
         
-        {/* CASE A: ZERO-KNOWLEDGE LOCKED HERO FOR GUESTS */}
-        {!isPrivilegedMode && !isVerified && (
+        {/* CASE A: STRICT ZERO-KNOWLEDGE LOCKED HERO (Before Face Search) */}
+        {!isPrivilegedMode && !hasSearched && (
           <div className="bg-white rounded-3xl sm:rounded-4xl p-8 sm:p-12 border border-[#E7E2D8] shadow-xl text-center space-y-6 max-w-2xl mx-auto">
             <div className="w-20 h-20 rounded-3xl bg-amber-50 border-2 border-amber-200 text-amber-700 flex items-center justify-center mx-auto shadow-inner">
               <Lock className="w-9 h-9 text-amber-600" />
@@ -429,7 +410,7 @@ function GuestSlugGalleryContent() {
                 Your Wedding Memories Await
               </h2>
               <p className="text-xs sm:text-sm text-zinc-500 max-w-md mx-auto leading-relaxed">
-                To respect guest privacy, photos are locked. Take a quick selfie, and our AI will instantly find only your photos and send your album to WhatsApp.
+                To respect guest privacy, photos are locked. Take a quick selfie, and our AI will instantly find and display all your photos on screen.
               </p>
             </div>
 
@@ -457,8 +438,8 @@ function GuestSlugGalleryContent() {
           </div>
         )}
 
-        {/* CASE B: MATCHED PHOTOS (Strictly Matched Photos Only) */}
-        {(!isPrivilegedMode && isVerified && matchedPhotos.length > 0) && (
+        {/* CASE B1: MATCHED PHOTOS FOUND */}
+        {(!isPrivilegedMode && hasSearched && matchedPhotos.length > 0) && (
           <div className="space-y-6">
             <div className="bg-white rounded-3xl p-6 border border-emerald-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="space-y-1">
@@ -492,7 +473,7 @@ function GuestSlugGalleryContent() {
                   className="px-3.5 py-2.5 rounded-xl bg-[#FAF9F5] hover:bg-zinc-100 text-zinc-700 border border-[#E7E2D8] font-bold text-xs flex items-center gap-1.5 transition cursor-pointer"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Scan Another</span>
+                  <span>Scan Again</span>
                 </button>
               </div>
             </div>
@@ -535,6 +516,33 @@ function GuestSlugGalleryContent() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* CASE B2: NO MATCHES FOUND */}
+        {(!isPrivilegedMode && hasSearched && matchedPhotos.length === 0) && (
+          <div className="bg-white rounded-3xl p-8 sm:p-12 border border-[#E7E2D8] shadow-sm text-center space-y-5 max-w-md mx-auto">
+            <div className="w-16 h-16 rounded-3xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto shadow-xs">
+              <Camera className="w-8 h-8" />
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-xl font-black text-zinc-900">
+                No Matching Photos Found
+              </h3>
+              <p className="text-xs text-zinc-500 leading-relaxed">
+                We couldn&apos;t find clear matches for this selfie in this album. Try capturing another close-up photo in brighter lighting.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsFaceScannerOpen(true)}
+              className="px-6 py-3.5 rounded-2xl bg-amber-600 hover:bg-amber-500 text-white font-black text-xs transition cursor-pointer shadow-md inline-flex items-center gap-2"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span>Scan Again with Better Light</span>
+            </button>
           </div>
         )}
 
@@ -652,88 +660,7 @@ function GuestSlugGalleryContent() {
         isProcessing={isMatching}
       />
 
-      {/* 4. ZERO MATCH FALLBACK MODAL */}
-      {noMatchModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full border border-zinc-200 shadow-2xl text-center space-y-5 animate-in fade-in zoom-in">
-            <div className="w-16 h-16 rounded-3xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto shadow-sm">
-              <Camera className="w-8 h-8" />
-            </div>
-
-            <div className="space-y-2">
-              <h3 className="text-lg font-black text-zinc-900">
-                Registration Saved, {guestName || 'Guest'}!
-              </h3>
-              <p className="text-xs text-zinc-500 leading-relaxed">
-                No matching photos found in the processed set yet. The photographer might still be uploading more photos.
-              </p>
-              {guestPhone && (
-                <p className="text-xs font-bold text-amber-900 bg-amber-50 p-2.5 rounded-2xl border border-amber-200">
-                  📲 We will automatically send your personal album link to WhatsApp ({guestPhone}) as soon as your photos are ready!
-                </p>
-              )}
-            </div>
-
-            <div className="flex items-center gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setNoMatchModalOpen(false);
-                  setIsFaceScannerOpen(true);
-                }}
-                className="flex-1 py-3 rounded-2xl bg-amber-600 hover:bg-amber-500 text-white font-black text-xs transition cursor-pointer shadow-md"
-              >
-                Retake Clear Selfie
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setNoMatchModalOpen(false)}
-                className="px-5 py-3 rounded-2xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs transition cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 4B. UNPUBLISHED EVENT REGISTRATION CONFIRMATION MODAL */}
-      {showUnpublishedModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full border border-zinc-200 shadow-2xl text-center space-y-5 animate-in fade-in zoom-in">
-            <div className="w-16 h-16 rounded-3xl bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto shadow-sm">
-              <CheckCircle2 className="w-8 h-8 text-emerald-600" />
-            </div>
-
-            <div className="space-y-2">
-              <span className="text-[10px] font-black uppercase tracking-widest text-emerald-800 bg-emerald-100 px-3 py-1 rounded-full border border-emerald-200">
-                ✓ Registration Saved
-              </span>
-              <h3 className="text-xl font-black text-zinc-900 pt-1">
-                Thank You, {guestName || 'Guest'}!
-              </h3>
-              <p className="text-xs text-zinc-600 leading-relaxed">
-                This event is currently private/unpublished while the photographer prepares and edits the photos.
-              </p>
-              <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-xs font-bold text-amber-900 space-y-1">
-                <p>📲 Your personal photos will be sent to your WhatsApp ({guestPhone}) as soon as the photographer publishes the event!</p>
-                {guestEmail && <p className="text-[11px] font-normal text-amber-800">Copy will also be sent to: {guestEmail}</p>}
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setShowUnpublishedModal(false)}
-              className="w-full py-3.5 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white font-black text-xs transition cursor-pointer shadow-md"
-            >
-              Done / Got It
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* 5. PIN UNLOCK MODAL */}
+      {/* 4. PIN UNLOCK MODAL */}
       {showPinModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full border border-zinc-200 shadow-2xl space-y-4 animate-in fade-in">
