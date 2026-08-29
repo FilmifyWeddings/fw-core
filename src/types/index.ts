@@ -277,6 +277,8 @@ export interface FWProject {
   id: string;
   user_id?: string | null;
   client_name: string;
+  project_manager_id?: string | null;
+  project_manager_name?: string | null;
   status?: string;
   shipping_hdd_status?: string;
   shipping_hdd_state?: string;

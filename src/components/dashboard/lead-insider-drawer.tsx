@@ -1039,14 +1039,58 @@ export function LeadInsiderDrawer({
             {commentsOnlyMode ? 'Comments & Reminders' : 'Details'}
           </h3>
 
-          <button
-            type="button"
-            className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-600 dark:text-zinc-300 transition-colors cursor-pointer"
-            title="More Options"
-          >
-            <MoreVertical className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1">
+            {lead.raw_payload?.is_archived ? (
+              <button
+                type="button"
+                onClick={() => {
+                  const updated = { ...lead.raw_payload, is_archived: false };
+                  handleFieldChange({ raw_payload: updated });
+                }}
+                className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[11px] font-black flex items-center gap-1 cursor-pointer"
+                title="Restore to Active Pipeline"
+              >
+                <FolderOpen className="w-3.5 h-3.5" />
+                <span>Restore Lead</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm('Archive this lead? It will be moved to the Archived Leads Vault.')) {
+                    const updated = { ...lead.raw_payload, is_archived: true };
+                    handleFieldChange({ raw_payload: updated });
+                  }
+                }}
+                className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 transition-colors cursor-pointer"
+                title="Archive Lead"
+              >
+                <Archive className="w-4 h-4" />
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* Prominent Banner if Lead is Archived */}
+        {lead.raw_payload?.is_archived && (
+          <div className="bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-800/40 px-5 py-3 flex items-center justify-between gap-3 text-amber-900 dark:text-amber-200">
+            <div className="flex items-center gap-2 text-xs font-black">
+              <Archive className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span>This lead is Archived in the Vault.</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const updated = { ...lead.raw_payload, is_archived: false };
+                handleFieldChange({ raw_payload: updated });
+              }}
+              className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-black text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer shrink-0"
+            >
+              <FolderOpen className="w-3.5 h-3.5" />
+              <span>Unarchive Lead</span>
+            </button>
+          </div>
+        )}
 
         {/* Tab Selection */}
         {!commentsOnlyMode && (

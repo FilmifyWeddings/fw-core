@@ -1471,17 +1471,19 @@ export function LeadTable({
     const owner = lead.raw_payload?.lead_owner || (lead as any).lead_owner || 'Unassigned';
     const matchesOwner = ownerFilter === 'all' || owner === ownerFilter;
 
-    // Sidebar Filter logic
+    // Sidebar & Stage Filter logic
     const isLeadLost = lead.stage_id === 'lost' || (lead.status?.toLowerCase() || '').includes('lost');
     const isLeadArchived = lead.raw_payload?.is_archived === true;
 
     let matchesSidebar = true;
-    if (sidebarFilter === 'overview') {
-      if (isLeadLost || isLeadArchived) matchesSidebar = false;
-    } else if (sidebarFilter === 'lost') {
-      if (!isLeadLost || isLeadArchived) matchesSidebar = false;
-    } else if (sidebarFilter === 'archive') {
+    if (statusFilter === 'archived' || sidebarFilter === 'archive') {
       if (!isLeadArchived) matchesSidebar = false;
+    } else if (statusFilter === 'lost' || sidebarFilter === 'lost') {
+      if (!isLeadLost || isLeadArchived) matchesSidebar = false;
+    } else {
+      if (sidebarFilter === 'overview') {
+        if (isLeadLost || isLeadArchived) matchesSidebar = false;
+      }
     }
 
     // Column-level Google Sheets-style multi-select filters check
@@ -2058,12 +2060,14 @@ export function LeadTable({
                   placeholder="Stages: All"
                   allowCustomAdd={false}
                   options={[
-                    { value: 'all', label: 'Stages: All' },
+                    { value: 'all', label: 'Stages: All Active' },
                     ...stagesState.map(s => ({
                       value: s.id,
                       label: s.name,
                       color: s.color,
-                    }))
+                    })),
+                    { value: 'archived', label: '🗄️ Archived Leads Vault', color: '#6366f1' },
+                    { value: 'lost', label: '❌ Lost Leads Vault', color: '#ef4444' }
                   ]}
                   onChange={(val) => setStatusFilter(val)}
                 />

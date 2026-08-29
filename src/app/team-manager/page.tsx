@@ -168,11 +168,44 @@ export default function TeamManagerPage() {
 
   // Active Dropdown Target: assignmentId -> boolean
   const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null);
+  const [activePmDropdownProjectId, setActivePmDropdownProjectId] = useState<string | null>(null);
 
   // Filter state
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedRoleFilter, setSelectedRoleFilter] = useState<string>('All');
   const [instantAlerts, setInstantAlerts] = useState<boolean>(true);
+
+  // Close popovers on outside click
+  useEffect(() => {
+    const handleGlobalClick = () => {
+      if (activePmDropdownProjectId) setActivePmDropdownProjectId(null);
+    };
+    window.addEventListener('click', handleGlobalClick);
+    return () => window.removeEventListener('click', handleGlobalClick);
+  }, [activePmDropdownProjectId]);
+
+  // Handle PM Assignment Update
+  const handleProjectPMChange = async (projectId: string, memberId: string | null, memberName: string | null) => {
+    setProjects(prev => prev.map(p => {
+      if (p.id === projectId) {
+        return { ...p, project_manager_id: memberId, project_manager_name: memberName };
+      }
+      return p;
+    }));
+
+    try {
+      await supabase
+        .from('fw_projects')
+        .update({
+          project_manager_id: memberId,
+          project_manager_name: memberName,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', projectId);
+    } catch (err) {
+      console.error('[TeamManager] Error updating PM:', err);
+    }
+  };
 
   // ─────────────────────────────────────────────────────────────
   // DYNAMIC SCROLL TRACKING FOR ASSIGNMENT POPOVER
@@ -221,7 +254,33 @@ export default function TeamManagerPage() {
       } catch (e) {
         // Bucket initialized or skipped
       }
-      // 1. Fetch Team Members for active workspace
+
+      // 1. Fetch Team Members for active workspace from both workspace_members and fw_team_members
+      const combinedMembers: FWTeamMember[] = [];
+
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        const res = await fetch(`/api/workspace/members?workspace_id=${uid}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        const json = await res.json();
+        if (json.success && Array.isArray(json.members)) {
+          json.members.forEach((m: any) => {
+            combinedMembers.push({
+              id: m.id,
+              user_id: uid,
+              name: m.name || 'Team Member',
+              primary_role: m.primary_role || 'Crew',
+              phone_number: m.phone || '',
+              email: m.email || '',
+              avatar_url: m.avatar_url || '',
+              is_active: m.status === 'ACTIVE'
+            });
+          });
+        }
+      } catch (_) {}
+
       let membersQuery = supabase
         .from('fw_team_members')
         .select('*')
@@ -233,7 +292,17 @@ export default function TeamManagerPage() {
 
       const { data: membersData, error: membersErr } = await membersQuery;
       if (membersErr) console.warn('[TeamManager] fw_team_members error:', membersErr.message);
-      setTeamMembers(membersData || []);
+
+      if (membersData && membersData.length > 0) {
+        membersData.forEach((f: any) => {
+          const exists = combinedMembers.some(c => c.name.toLowerCase() === f.name.toLowerCase());
+          if (!exists) {
+            combinedMembers.push(f);
+          }
+        });
+      }
+
+      setTeamMembers(combinedMembers);
 
       // 2. Fetch Projects for active workspace
       let projectsQuery = supabase
@@ -924,8 +993,8 @@ export default function TeamManagerPage() {
                         className="bg-white border-2 border-slate-300/90 shadow-lg shadow-slate-200/50 rounded-3xl p-6 space-y-4 mb-8"
                       >
                         {/* MASTER CLIENT CARD HEADER */}
-                        <div className="flex items-center justify-between gap-4 border-b border-slate-200/80 pb-3">
-                          <div className="flex items-center gap-3">
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-3.5">
+                          <div className="flex items-center gap-3 flex-wrap">
                             <h3 className="text-2xl font-black tracking-tight" style={{ color: '#1E1B4B' }}>
                               {project.client_name}
                             </h3>
@@ -934,18 +1003,109 @@ export default function TeamManagerPage() {
                             </span>
                           </div>
 
-                          {!isTmReadOnly && (
-                            <button 
-                              title="Edit Project"
-                              onClick={() => {
-                                setEditingProject(project);
-                                setIsAddProjectOpen(true);
-                              }}
-                              className="w-9 h-9 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-indigo-600 transition shadow-xs shrink-0 cursor-pointer"
-                            >
-                              <Pencil className="w-4 h-4" />
-                            </button>
-                          )}
+                          <div className="flex items-center gap-3">
+                            {/* PROJECT MANAGER (PM) DROPDOWN WITH AVATARS */}
+                            <div className="relative" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                type="button"
+                                onClick={() => setActivePmDropdownProjectId(activePmDropdownProjectId === project.id ? null : project.id)}
+                                className="px-3 py-1.5 rounded-2xl bg-amber-50 hover:bg-amber-100/80 border border-amber-200 text-amber-950 text-xs font-bold flex items-center gap-2 transition shadow-xs cursor-pointer group"
+                              >
+                                <span className="text-[10px] font-black uppercase tracking-wider text-amber-800">PM:</span>
+                                {project.project_manager_name ? (
+                                  <div className="flex items-center gap-1.5">
+                                    <div className="w-5 h-5 rounded-full bg-amber-600 text-white font-black text-[9px] flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
+                                      {(() => {
+                                        const assignedMem = teamMembers.find(m => m.id === project.project_manager_id || m.name === project.project_manager_name);
+                                        if (assignedMem?.avatar_url) {
+                                          return <img src={assignedMem.avatar_url} alt="" className="w-full h-full object-cover" />;
+                                        }
+                                        return getInitials(project.project_manager_name);
+                                      })()}
+                                    </div>
+                                    <span className="font-extrabold text-amber-950 max-w-[130px] truncate">{project.project_manager_name}</span>
+                                  </div>
+                                ) : (
+                                  <span className="text-amber-700/80 italic font-semibold">Assign PM</span>
+                                )}
+                                <ChevronDown className="w-3 h-3 text-amber-700 group-hover:translate-y-0.5 transition-transform" />
+                              </button>
+
+                              {/* Popover Dropdown */}
+                              {activePmDropdownProjectId === project.id && (
+                                <div 
+                                  className="absolute right-0 mt-2 z-[9999] w-64 max-h-72 overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl p-2 space-y-1 text-slate-800"
+                                >
+                                  <div className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 flex items-center justify-between">
+                                    <span>Assign Project Manager</span>
+                                    {project.project_manager_name && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          handleProjectPMChange(project.id, null, null);
+                                          setActivePmDropdownProjectId(null);
+                                        }}
+                                        className="text-rose-500 hover:underline cursor-pointer"
+                                      >
+                                        Clear PM
+                                      </button>
+                                    )}
+                                  </div>
+
+                                  {teamMembers.length === 0 ? (
+                                    <div className="p-3 text-center text-xs text-slate-400 font-medium">
+                                      No team members found in Directory.
+                                    </div>
+                                  ) : (
+                                    teamMembers.map(m => {
+                                      const isSelected = project.project_manager_id === m.id || project.project_manager_name === m.name;
+                                      return (
+                                        <button
+                                          key={m.id}
+                                          type="button"
+                                          onClick={() => {
+                                            handleProjectPMChange(project.id, m.id, m.name);
+                                            setActivePmDropdownProjectId(null);
+                                          }}
+                                          className={`w-full flex items-center justify-between gap-2.5 p-2 rounded-xl text-left transition cursor-pointer ${
+                                            isSelected ? 'bg-amber-50 text-amber-950 font-bold border border-amber-200' : 'hover:bg-slate-50 text-slate-700'
+                                          }`}
+                                        >
+                                          <div className="flex items-center gap-2 min-w-0">
+                                            <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-amber-500 to-amber-600 text-white font-black text-[10px] flex items-center justify-center shrink-0 overflow-hidden shadow-xs">
+                                              {m.avatar_url ? (
+                                                <img src={m.avatar_url} alt="" className="w-full h-full object-cover" />
+                                              ) : (
+                                                getInitials(m.name)
+                                              )}
+                                            </div>
+                                            <div className="min-w-0">
+                                              <p className="text-xs font-black truncate">{m.name}</p>
+                                              <p className="text-[10px] text-slate-400 font-semibold truncate">{m.primary_role || 'Team Member'}</p>
+                                            </div>
+                                          </div>
+                                          {isSelected && <Check className="w-4 h-4 text-amber-600 shrink-0" />}
+                                        </button>
+                                      );
+                                    })
+                                  )}
+                                </div>
+                              )}
+                            </div>
+
+                            {!isTmReadOnly && (
+                              <button 
+                                title="Edit Project"
+                                onClick={() => {
+                                  setEditingProject(project);
+                                  setIsAddProjectOpen(true);
+                                }}
+                                className="w-9 h-9 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-indigo-600 transition shadow-xs shrink-0 cursor-pointer"
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
                         </div>
 
                         {/* HORIZONTAL MODERN GRADIENT SUB-EVENT CARDS STACK */}
@@ -1149,31 +1309,120 @@ export default function TeamManagerPage() {
                         className="bg-white rounded-3xl border-2 border-slate-200/90 shadow-md shadow-slate-200/40 overflow-hidden flex flex-col hover:border-indigo-300 transition duration-200 group"
                       >
                         {/* CLIENT CARD HEADER BAR */}
-                        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-4 flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-2xl bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center shadow-2xs shrink-0">
-                              {getInitials(project.client_name)}
+                        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-4 flex flex-col gap-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-9 h-9 rounded-2xl bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center shadow-2xs shrink-0">
+                                {getInitials(project.client_name)}
+                              </div>
+                              <div className="min-w-0">
+                                <h3 className="text-sm font-black text-white tracking-tight truncate">
+                                  {project.client_name}
+                                </h3>
+                                <span className="text-[10px] font-bold text-slate-300">
+                                  {subEvents.length} Sub-Event{subEvents.length === 1 ? '' : 's'} Configured
+                                </span>
+                              </div>
                             </div>
-                            <div>
-                              <h3 className="text-sm font-black text-white tracking-tight flex items-center gap-2">
-                                {project.client_name}
-                              </h3>
-                              <span className="text-[10px] font-bold text-slate-300">
-                                {subEvents.length} Sub-Event{subEvents.length === 1 ? '' : 's'} Configured
-                              </span>
-                            </div>
+
+                            {!isTmReadOnly && (
+                              <button
+                                onClick={() => {
+                                  setEditingProject(project);
+                                  setIsAddProjectOpen(true);
+                                }}
+                                className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-xl transition cursor-pointer shrink-0"
+                                title="Edit Project Configuration"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
 
-                          <button
-                            onClick={() => {
-                              setEditingProject(project);
-                              setIsAddProjectOpen(true);
-                            }}
-                            className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-xl transition cursor-pointer"
-                            title="Edit Project Configuration"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
+                          {/* Mobile PM Assignment Row */}
+                          <div className="pt-2 border-t border-white/10 flex items-center justify-between relative" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-black uppercase tracking-wider text-amber-300">PM:</span>
+                              <button
+                                type="button"
+                                onClick={() => setActivePmDropdownProjectId(activePmDropdownProjectId === `m_${project.id}` ? null : `m_${project.id}`)}
+                                className="px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/20 text-white text-[11px] font-bold flex items-center gap-1.5 transition cursor-pointer border border-white/15"
+                              >
+                                {project.project_manager_name ? (
+                                  <>
+                                    <div className="w-4 h-4 rounded-full bg-amber-500 text-slate-950 font-black text-[8px] flex items-center justify-center overflow-hidden shrink-0">
+                                      {(() => {
+                                        const assignedMem = teamMembers.find(m => m.id === project.project_manager_id || m.name === project.project_manager_name);
+                                        if (assignedMem?.avatar_url) {
+                                          return <img src={assignedMem.avatar_url} alt="" className="w-full h-full object-cover" />;
+                                        }
+                                        return getInitials(project.project_manager_name);
+                                      })()}
+                                    </div>
+                                    <span className="truncate max-w-[140px]">{project.project_manager_name}</span>
+                                  </>
+                                ) : (
+                                  <span className="text-amber-200/80 italic text-[10px]">Assign Project Manager</span>
+                                )}
+                                <ChevronDown className="w-3 h-3 text-amber-300" />
+                              </button>
+                            </div>
+
+                            {/* Mobile PM Dropdown Modal/Popover */}
+                            {activePmDropdownProjectId === `m_${project.id}` && (
+                              <div 
+                                className="absolute left-0 right-0 top-full mt-2 z-[9999] max-h-64 overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl p-2 space-y-1 text-slate-800"
+                              >
+                                <div className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 flex items-center justify-between">
+                                  <span>Select Project Manager</span>
+                                  {project.project_manager_name && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        handleProjectPMChange(project.id, null, null);
+                                        setActivePmDropdownProjectId(null);
+                                      }}
+                                      className="text-rose-500 hover:underline text-[10px] font-bold"
+                                    >
+                                      Clear PM
+                                    </button>
+                                  )}
+                                </div>
+
+                                {teamMembers.map(m => {
+                                  const isSelected = project.project_manager_id === m.id || project.project_manager_name === m.name;
+                                  return (
+                                    <button
+                                      key={m.id}
+                                      type="button"
+                                      onClick={() => {
+                                        handleProjectPMChange(project.id, m.id, m.name);
+                                        setActivePmDropdownProjectId(null);
+                                      }}
+                                      className={`w-full flex items-center justify-between gap-2.5 p-2 rounded-xl text-left transition ${
+                                        isSelected ? 'bg-amber-50 text-amber-950 font-bold border border-amber-200' : 'hover:bg-slate-50 text-slate-700'
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <div className="w-6 h-6 rounded-full bg-amber-500 text-white font-black text-[9px] flex items-center justify-center shrink-0 overflow-hidden">
+                                          {m.avatar_url ? (
+                                            <img src={m.avatar_url} alt="" className="w-full h-full object-cover" />
+                                          ) : (
+                                            getInitials(m.name)
+                                          )}
+                                        </div>
+                                        <div className="min-w-0">
+                                          <p className="text-xs font-black truncate text-slate-900">{m.name}</p>
+                                          <p className="text-[9px] text-slate-400 font-semibold truncate">{m.primary_role || 'Crew'}</p>
+                                        </div>
+                                      </div>
+                                      {isSelected && <Check className="w-3.5 h-3.5 text-amber-600 shrink-0" />}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
                         </div>
 
                         {/* SUB-EVENTS LIST */}
