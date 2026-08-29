@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
       galleryId,
       embedding,
       selfieBase64,
-      threshold = 0.40,
+      threshold = 0.33,
       match_threshold,
       similarityThreshold,
     } = body;
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     }
 
     const normalizedQuery = normalizeVector(queryEmbedding);
-    const finalThreshold = match_threshold ?? threshold ?? similarityThreshold ?? 0.40;
+    const finalThreshold = match_threshold ?? threshold ?? similarityThreshold ?? 0.33;
 
     let matchedPhotoMap = new Map<string, number>(); // photo_id -> max similarity
 
