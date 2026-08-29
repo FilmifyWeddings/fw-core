@@ -52,6 +52,9 @@ export async function POST(req: NextRequest) {
             const previewUrl = getR2PublicUrl(p.preview_key);
             const faces = await extractFacesFromImageUrl(previewUrl);
 
+            // 1. Delete previous face vectors for this photo to avoid duplicates
+            await supabaseAdmin.from('photo_faces').delete().eq('photo_id', p.id);
+
             if (faces && faces.length > 0) {
               const faceRecords = faces.map(f => ({
                 photo_id: p.id,
@@ -59,17 +62,19 @@ export async function POST(req: NextRequest) {
                 workspace_id: workspaceId,
                 bounding_box: f.box,
                 embedding: f.embedding,
-                confidence: f.confidence || 0.95,
               }));
 
-              // Delete previous face vectors for this photo to avoid duplicates
-              await supabaseAdmin.from('photo_faces').delete().eq('photo_id', p.id);
               await supabaseAdmin.from('photo_faces').insert(faceRecords);
 
               // Update photo with true detected face count
               await supabaseAdmin
                 .from('gallery_photos')
                 .update({ face_count: faces.length })
+                .eq('id', p.id);
+            } else {
+              await supabaseAdmin
+                .from('gallery_photos')
+                .update({ face_count: 0 })
                 .eq('id', p.id);
             }
           } catch (faceErr) {

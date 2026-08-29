@@ -20,6 +20,7 @@ const WORKER_ENDPOINTS = [
  * Normalizes a 512-D vector to unit length (L2 norm)
  */
 export function normalizeVector(vec: number[]): number[] {
+  if (!vec || !Array.isArray(vec) || vec.length === 0) return [];
   let sumSq = 0;
   for (let i = 0; i < vec.length; i++) {
     sumSq += vec[i] * vec[i];
@@ -42,19 +43,38 @@ export function cosineSimilarity(a: number[], b: number[]): number {
 }
 
 /**
- * Extracts multiple faces and 512-D embeddings from an image URL
+ * Extracts multiple faces and 512-D embeddings from an image URL or buffer
  */
 export async function extractFacesFromImageUrl(imageUrl: string): Promise<DetectedFace[]> {
-  // 1. Try InsightFace AI worker
+  if (!imageUrl) return [];
+
+  // 1. Fetch image buffer in Node.js first to prevent Python network fetch issues
+  let base64Payload: string | null = null;
+  try {
+    const imgRes = await fetch(imageUrl);
+    if (imgRes.ok) {
+      const arrayBuf = await imgRes.arrayBuffer();
+      const buf = Buffer.from(arrayBuf);
+      base64Payload = `data:image/jpeg;base64,${buf.toString('base64')}`;
+    }
+  } catch (fetchErr) {
+    console.warn('[FaceAI] Could not fetch image buffer locally:', fetchErr);
+  }
+
+  // 2. Query InsightFace AI worker
   for (const endpoint of WORKER_ENDPOINTS) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+      const requestBody = base64Payload
+        ? { image_base64: base64Payload, image_url: imageUrl }
+        : { image_url: imageUrl };
 
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image_url: imageUrl }),
+        body: JSON.stringify(requestBody),
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
@@ -66,85 +86,29 @@ export async function extractFacesFromImageUrl(imageUrl: string): Promise<Detect
           return rawFaces.map((f: any) => ({
             box: f.box || { x: 0, y: 0, w: 100, h: 100 },
             embedding: normalizeVector(f.embedding),
-            confidence: f.confidence || 0.96,
+            confidence: f.confidence || 0.95,
           }));
         }
       }
-    } catch (_) {}
-  }
-
-  // 2. Fetch image buffer to perform intelligent multi-face feature fallback
-  try {
-    const res = await fetch(imageUrl);
-    if (res.ok) {
-      const arrayBuffer = await res.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      return extractFacesFromBuffer(buffer, imageUrl);
+    } catch (err: any) {
+      console.warn(`[FaceAI] Worker ${endpoint} error:`, err.message);
     }
-  } catch (_) {}
-
-  // 3. Fallback based on image URL structure
-  return extractFacesFromBuffer(Buffer.from(imageUrl), imageUrl);
-}
-
-/**
- * Intelligent Multi-Face Detection & Vector Extraction from Image Buffer
- */
-export function extractFacesFromBuffer(buffer: Buffer, seedStr: string = ''): DetectedFace[] {
-  const len = buffer.length;
-  if (len === 0) {
-    return [{
-      box: { x: 20, y: 20, w: 120, h: 120 },
-      embedding: generateVisualFaceEmbedding(seedStr, 0),
-      confidence: 0.95,
-    }];
   }
 
-  // Analyze byte distribution and entropy to determine face count (1 to 8 faces)
-  let entropy = 0;
-  for (let i = 0; i < Math.min(len, 2048); i += 8) {
-    entropy += buffer[i];
-  }
-
-  // Estimate number of people from entropy & filename heuristics
-  let estimatedFaces = 1;
-  const lowerSeed = seedStr.toLowerCase();
-  if (lowerSeed.includes('couple') || lowerSeed.includes('pair') || lowerSeed.includes('sangeet') || lowerSeed.includes('wedding')) {
-    estimatedFaces = 2;
-  }
-  if (lowerSeed.includes('group') || lowerSeed.includes('family') || lowerSeed.includes('friends') || lowerSeed.includes('party')) {
-    estimatedFaces = 4;
-  }
-  if (entropy % 7 === 0) estimatedFaces = Math.max(estimatedFaces, 3);
-  if (entropy % 11 === 0) estimatedFaces = Math.max(estimatedFaces, 4);
-
-  const detected: DetectedFace[] = [];
-  const spacing = Math.floor(800 / (estimatedFaces + 1));
-
-  for (let f = 0; f < estimatedFaces; f++) {
-    const boxX = spacing * (f + 1) - 40;
-    const boxY = 80 + (f % 2) * 20;
-    const faceSeed = seedStr + '_face_' + f + '_' + (entropy % 997);
-
-    detected.push({
-      box: { x: boxX, y: boxY, w: 100, h: 120 },
-      embedding: generateVisualFaceEmbedding(faceSeed, f),
-      confidence: 0.94 + (f * 0.01),
-    });
-  }
-
-  return detected;
+  return [];
 }
 
 /**
  * Extracts 512-D vector from guest selfie Base64 using InsightFace Neural Network
  */
 export async function extractEmbeddingFromBase64(base64Data: string): Promise<number[]> {
-  // 1. Try InsightFace Deep Engine with base64
+  if (!base64Data) return [];
+
+  // Query InsightFace Deep Engine with base64
   for (const endpoint of WORKER_ENDPOINTS) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
 
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -161,43 +125,10 @@ export async function extractEmbeddingFromBase64(base64Data: string): Promise<nu
           return normalizeVector(rawFaces[0].embedding);
         }
       }
-    } catch (_) {}
+    } catch (err: any) {
+      console.warn(`[FaceAI] Worker ${endpoint} base64 error:`, err.message);
+    }
   }
 
-  // 2. Fallback heuristic harmonic vector
-  const cleanBase64 = base64Data.replace(/^data:image\/[a-z]+;base64,/, '');
-  const buffer = Buffer.from(cleanBase64, 'base64');
-  
-  const features: number[] = new Array(512).fill(0);
-  const len = buffer.length;
-  if (len === 0) return normalizeVector(features);
-
-  const step = Math.max(1, Math.floor(len / 512));
-  for (let i = 0; i < 512; i++) {
-    const idx = (i * step) % len;
-    features[i] = (buffer[idx] / 255.0) * 0.8 + ((buffer[(idx + 13) % len] || 0) / 255.0) * 0.2;
-  }
-
-  return normalizeVector(features);
-}
-
-/**
- * Generates distinct 512-D facial feature embeddings
- */
-function generateVisualFaceEmbedding(seedStr: string, faceIndex: number = 0): number[] {
-  const vec: number[] = new Array(512).fill(0);
-  let hash = 0;
-  for (let i = 0; i < seedStr.length; i++) {
-    hash = (hash << 5) - hash + seedStr.charCodeAt(i);
-    hash |= 0;
-  }
-
-  const prime = 31 + faceIndex * 17;
-  for (let i = 0; i < 512; i++) {
-    const angle = (hash + i * prime) * 0.017453292519943295;
-    const pseudo = Math.sin(angle) * Math.cos(angle * 1.5 + faceIndex);
-    vec[i] = pseudo;
-  }
-
-  return normalizeVector(vec);
+  return [];
 }

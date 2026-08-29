@@ -118,6 +118,7 @@ function AlbumStudioContent() {
   const [copiedQrLink, setCopiedQrLink] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
+  const [isReindexing, setIsReindexing] = useState(false);
 
   // Uploader State
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
@@ -248,6 +249,27 @@ function AlbumStudioContent() {
         setRegisteredGuests(json.guests);
       }
     } catch (_) {}
+  };
+
+  const handleReindexFaces = async () => {
+    if (!gallery || isReindexing) return;
+    setIsReindexing(true);
+    try {
+      const res = await fetch(`/api/gallery/reindex?gallery_id=${gallery.id}`, {
+        method: 'POST',
+      });
+      const json = await res.json();
+      if (json.success) {
+        await loadData();
+        alert(`Face AI indexing complete! Found ${json.totalFacesFound || 0} faces across ${json.indexedCount || 0} photos.`);
+      } else {
+        alert(json.error || 'Failed to re-index faces');
+      }
+    } catch (err: any) {
+      alert(`Re-index error: ${err.message}`);
+    } finally {
+      setIsReindexing(false);
+    }
   };
 
   const handlePublishAndNotify = async () => {
@@ -543,6 +565,16 @@ function AlbumStudioContent() {
 
         {/* Right: Actions */}
         <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={handleReindexFaces}
+            disabled={isReindexing}
+            className="px-3.5 py-2.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200 font-bold text-xs transition flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-60"
+            title="Scan photos with AI and cluster unique people"
+          >
+            <Sparkles className={`w-4 h-4 text-purple-600 ${isReindexing ? 'animate-spin' : ''}`} />
+            <span>{isReindexing ? 'Scanning Faces...' : 'AI Scan Faces'}</span>
+          </button>
+
           <Link
             href={`/workspace/gallery/${gallery.id}/share`}
             className="px-4 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-md shadow-zinc-900/10 cursor-pointer"
