@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams, useParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  FileText, Sparkles, Save, Upload, Trash2, Plus, Check, Edit3, 
+  FileText, Sparkles, Save, Upload, Trash2, Plus, Check, Edit3, Search, 
   ArrowLeft, ArrowRight, Eye, Share2, Copy, Percent, DollarSign, 
   Palette, Type, Layout, ShieldCheck, Film, Video, Camera, BookOpen, 
   Calendar, MapPin, Users, AlertCircle, CheckCircle2, ChevronRight, 
@@ -53,6 +53,11 @@ import {
   saveWorkspaceQuotationDefaultFunction,
   updateWorkspaceQuotationDefaultFunction,
   deleteWorkspaceQuotationDefaultFunction,
+  saveWorkspacePaymentStepName,
+  updateWorkspacePaymentStepName,
+  deleteWorkspacePaymentStepName,
+  reorderWorkspacePaymentStepNames,
+  DEFAULT_QUOTATION_PAYMENT_STEPS,
   WorkspaceQuotationSettings 
 } from '@/lib/workspace-settings';
 
@@ -1282,6 +1287,7 @@ function ThreeDCurvedMultiSelect({
   onEditOption?: (oldItem: string, newItem: string) => void;
   onDeleteOption?: (itemToDelete: string) => void;
 }) {
+  const [multiSearchTerm, setMultiSearchTerm] = useState('');
   const toggleItem = (item: string) => {
     let newSelected: string[];
     if (selectedItems.includes(item)) {
@@ -1327,11 +1333,25 @@ function ThreeDCurvedMultiSelect({
         </button>
       </div>
 
+      {/* Sticky Top Instant Search */}
+      <div className="sticky top-0 z-10 bg-white/95 backdrop-blur-xs py-1">
+        <div className="relative flex items-center">
+          <Search className="w-3 h-3 text-zinc-400 absolute left-2" />
+          <input
+            type="text"
+            placeholder={`🔍 Search ${title.toLowerCase()}...`}
+            value={multiSearchTerm}
+            onChange={e => setMultiSearchTerm(e.target.value)}
+            className="w-full pl-7 pr-2.5 py-1 bg-white border border-amber-200 rounded-lg text-[11px] font-medium text-zinc-800 placeholder:text-zinc-400 focus:outline-none focus:border-amber-500"
+          />
+        </div>
+      </div>
+
       <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
-        {sortedOptions.length === 0 ? (
+        {sortedOptions.filter((item: any) => (item || '').toLowerCase().includes(multiSearchTerm.toLowerCase())).length === 0 ? (
           <div className="text-[11px] text-zinc-400 italic p-2 text-center">No options available. Click + Add to create one.</div>
         ) : (
-          sortedOptions.map((item: any) => {
+          sortedOptions.filter((item: any) => (item || '').toLowerCase().includes(multiSearchTerm.toLowerCase())).map((item: any) => {
             const isSelected = selectedItems.includes(item);
             return (
               <div
@@ -2506,6 +2526,18 @@ function StudioCoreAiryBuilderContent() {
     'Portable Changing Room',
   ]);
 
+  // Payment Step Names state (Synced with Workspace Settings)
+  const [availablePaymentSteps, setAvailablePaymentSteps] = useState<string[]>([
+    'Token Amount',
+    'Advance Amount',
+    'On Wedding Day',
+    'After Event',
+  ]);
+
+  // Sidebar Filter Searches (Sticky Search Bars)
+  const [sidebarFunctionSearch, setSidebarFunctionSearch] = useState('');
+  const [sidebarAddOnSearch, setSidebarAddOnSearch] = useState('');
+  const [sidebarPaymentStepSearch, setSidebarPaymentStepSearch] = useState('');
   const [availableDeliverables, setAvailableDeliverables] = useState<string[]>([
     'Full Ultra HD Super-Fine Raw Photos',
     'Approx. 50 High Resolution Edited Images',
@@ -2531,6 +2563,9 @@ function StudioCoreAiryBuilderContent() {
           }
           if (Array.isArray(qSettings.durationSlots) && qSettings.durationSlots.length > 0) {
             setAvailableDurationSlots(qSettings.durationSlots);
+          }
+          if (Array.isArray(qSettings.paymentSteps) && qSettings.paymentSteps.length > 0) {
+            setAvailablePaymentSteps(qSettings.paymentSteps);
           }
           const evTypes = await fetchWorkspaceEventTypes(userId);
           if (evTypes && evTypes.length > 0) {
@@ -4353,8 +4388,24 @@ function StudioCoreAiryBuilderContent() {
                 </div>
               </div>
                       
+              {/* Sticky Top Search Bar for Payment Steps */}
+              <div className="sticky top-0 z-10 bg-white/95 backdrop-blur-xs py-1.5 border-b border-amber-100 mb-2">
+                <div className="relative flex items-center">
+                  <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-2.5" />
+                  <input
+                    type="text"
+                    placeholder="🔍 Search payment steps & installments..."
+                    value={sidebarPaymentStepSearch}
+                    onChange={e => setSidebarPaymentStepSearch(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1.5 bg-[#FAF9F5] border border-amber-200 rounded-lg text-xs font-medium text-zinc-800 placeholder:text-zinc-400 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+              </div>
+
               <div className="space-y-2">
-                {(data.paymentTermsPage?.steps || DEFAULT_AIRY_PROPOSAL.paymentTermsPage.steps).map((step: any, idx: number) => (
+                {(data.paymentTermsPage?.steps || DEFAULT_AIRY_PROPOSAL.paymentTermsPage.steps)
+                  .filter((step: any) => (step.stepName || step.name || '').toLowerCase().includes(sidebarPaymentStepSearch.toLowerCase()))
+                  .map((step: any, idx: number) => (
                   <div key={step?.id || `pt_${idx}`} className="p-2.5 rounded-xl border border-amber-200/80 bg-amber-50/30 space-y-2 relative">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-black uppercase text-amber-950">Installment #{idx + 1}</span>
@@ -4400,18 +4451,63 @@ function StudioCoreAiryBuilderContent() {
                     </div>
 
                     <div className="space-y-1">
-                      <label className="block text-[9px] uppercase font-bold text-zinc-500">Step / Stage Name</label>
-                      <input
-                        type="text"
-                        value={step?.stepName || step?.name || ''}
-                        onChange={(e) => {
-                          const steps = data.paymentTermsPage?.steps || [];
-                          const updated = steps.map((s: any, sIdx: number) => sIdx === idx ? { ...s, stepName: e.target.value, name: e.target.value } : s);
-                          const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
-                          setData({ ...data, paymentTermsPage: { ...currentObj, steps: updated } });
-                        }}
-                        className="w-full p-2 rounded-xl bg-white border border-zinc-200 text-zinc-900 font-bold text-xs"
-                      />
+                      <label className="block text-[9px] uppercase font-bold text-zinc-500">Step / Stage Name (Preset or Custom)</label>
+                      <div className="flex gap-1.5 items-center">
+                        <select
+                          value={availablePaymentSteps.includes(step?.stepName || step?.name || '') ? (step?.stepName || step?.name) : '__CUSTOM__'}
+                          onChange={async (e) => {
+                            const val = e.target.value;
+                            if (val === '__ADD_NEW__') {
+                              const customName = prompt('Enter custom Step Name (e.g. Token Amount, Final Settlement):');
+                              if (customName && customName.trim()) {
+                                const clean = customName.trim();
+                                await saveWorkspacePaymentStepName(userId || '', clean);
+                                setAvailablePaymentSteps(prev => Array.from(new Set([...prev, clean])));
+                                const steps = data.paymentTermsPage?.steps || [];
+                                const updated = steps.map((s: any, sIdx: number) => sIdx === idx ? { ...s, stepName: clean, name: clean } : s);
+                                const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
+                                setData({ ...data, paymentTermsPage: { ...currentObj, steps: updated } });
+                              }
+                              return;
+                            }
+                            if (val === '__CUSTOM__') {
+                              return;
+                            }
+                            const steps = data.paymentTermsPage?.steps || [];
+                            const updated = steps.map((s: any, sIdx: number) => sIdx === idx ? { ...s, stepName: val, name: val } : s);
+                            const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
+                            setData({ ...data, paymentTermsPage: { ...currentObj, steps: updated } });
+                          }}
+                          className="flex-1 p-2 rounded-xl bg-white border border-amber-300 text-zinc-900 font-bold text-xs focus:outline-none focus:border-amber-500 cursor-pointer shadow-2xs"
+                        >
+                          {availablePaymentSteps.map((sName, sIdx) => (
+                            <option key={sIdx} value={sName}>{sName}</option>
+                          ))}
+                          {!availablePaymentSteps.includes(step?.stepName || step?.name || '') && (
+                            <option value="__CUSTOM__">{step?.stepName || step?.name || 'Custom Step'}</option>
+                          )}
+                          <option value="__ADD_NEW__">+ Add Custom Step Name...</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const customName = prompt('Edit or type custom step name:', step?.stepName || step?.name || '');
+                            if (customName && customName.trim()) {
+                              const clean = customName.trim();
+                              await saveWorkspacePaymentStepName(userId || '', clean);
+                              setAvailablePaymentSteps(prev => Array.from(new Set([...prev, clean])));
+                              const steps = data.paymentTermsPage?.steps || [];
+                              const updated = steps.map((s: any, sIdx: number) => sIdx === idx ? { ...s, stepName: clean, name: clean } : s);
+                              const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
+                              setData({ ...data, paymentTermsPage: { ...currentObj, steps: updated } });
+                            }
+                          }}
+                          className="p-2 rounded-xl bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-950 text-xs font-bold shrink-0"
+                          title="Custom Edit"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">
@@ -4576,7 +4672,23 @@ function StudioCoreAiryBuilderContent() {
               </div>
 
               <div className="space-y-2">
-                {(data.addOnsPage?.items || DEFAULT_AIRY_PROPOSAL.addOnsPage.items).map((item: any, idx: number) => (
+                {/* Sticky Top Search Bar for Add-Ons */}
+                <div className="sticky top-0 z-10 bg-white/95 backdrop-blur-xs py-1.5 border-b border-amber-100 mb-2">
+                  <div className="relative flex items-center">
+                    <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-2.5" />
+                    <input
+                      type="text"
+                      placeholder="🔍 Search add-ons & upgrades..."
+                      value={sidebarAddOnSearch}
+                      onChange={e => setSidebarAddOnSearch(e.target.value)}
+                      className="w-full pl-8 pr-3 py-1.5 bg-[#FAF9F5] border border-amber-200 rounded-lg text-xs font-medium text-zinc-800 placeholder:text-zinc-400 focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                </div>
+
+                {(data.addOnsPage?.items || DEFAULT_AIRY_PROPOSAL.addOnsPage.items)
+                  .filter((item: any) => (item.title || '').toLowerCase().includes(sidebarAddOnSearch.toLowerCase()))
+                  .map((item: any, idx: number) => (
                   <div key={item?.id || idx} className="p-2.5 rounded-xl border border-amber-200/80 bg-zinc-50/80 space-y-2">
                     <div className="flex items-center justify-between">
                       <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -6283,13 +6395,9 @@ function StudioCoreAiryBuilderContent() {
                               />
                             )}
 
-                            <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-12 ${
-                              data.termsPage?.frameShape === 'full-width' || (data.termsPage?.imagePosition as string) === 'full' 
-                                ? 'px-0' 
-                                : 'px-12'
-                            } justify-between`}>
+                            <div className={`relative z-10 mx-auto flex flex-col h-full w-full p-8 justify-start`}>
                               
-                              <div className={`flex flex-col items-center justify-start w-full ${data.termsPage?.frameShape === 'full-width' || (data.termsPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
+                              <div className="flex flex-col items-center justify-start w-full max-w-[730px] mx-auto flex-1">
                                 {/* TOP IMAGE POSITION - Only on 1st Page */}
                                 {chunkIdx === 0 && data.termsPage?.photo && data.termsPage?.frameShape !== 'background' && data.termsPage?.imagePosition === 'top' && (
                                   <SectionImageRenderer
@@ -6302,10 +6410,10 @@ function StudioCoreAiryBuilderContent() {
                                   />
                                 )}
 
-                                <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap mb-2" style={{ color: kickerColor }}>
+                                <span className="text-xs tracking-[0.25em] font-bold uppercase block whitespace-nowrap mb-1.5" style={{ color: kickerColor }}>
                                   {data.termsPage?.kicker || 'POLICIES & RULES'} {termsChunks.length > 1 ? `(${chunkIdx + 1}/${termsChunks.length})` : ''}
                                 </span>
-                                <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap mb-6" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                                <h2 className="text-3xl uppercase tracking-widest font-normal whitespace-nowrap mb-4" style={{ color: textColor, fontFamily: data.primaryFont }}>
                                   {data.termsPage?.heading || 'TERMS & CONDITIONS'}
                                 </h2>
 
@@ -6321,12 +6429,12 @@ function StudioCoreAiryBuilderContent() {
                                   />
                                 )}
 
-                                <div className="w-full max-w-xl mx-auto space-y-4 my-0 text-left">
+                                <div className="w-full max-w-[730px] mx-auto flex-1 flex flex-col text-left my-0">
                                   <div 
-                                    className="p-6 rounded-2xl border shadow-xs leading-relaxed space-y-3"
+                                    className="p-6 sm:p-7 rounded-2xl border shadow-xs leading-relaxed flex-1 flex flex-col justify-start"
                                     style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}
                                   >
-                                    <p className="text-xs whitespace-pre-line leading-relaxed opacity-90 font-medium">
+                                    <p className="text-xs whitespace-pre-line leading-relaxed opacity-95 font-medium flex-1">
                                       {termsChunk.join('\n\n')}
                                     </p>
                                   </div>

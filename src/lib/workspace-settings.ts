@@ -56,6 +56,12 @@ export interface WorkspaceQuotationDefaultFunction {
   display_order?: number;
 }
 
+export interface WorkspaceQuotationPaymentStep {
+  id: string;
+  name: string;
+  display_order?: number;
+}
+
 export interface WorkspaceQuotationSettings {
   deliverables: WorkspaceQuotationDeliverable[];
   specialAddons: WorkspaceQuotationSpecialAddon[];
@@ -64,6 +70,7 @@ export interface WorkspaceQuotationSettings {
   requirements: string[];
   preWeddingDeliverables: string[];
   durationSlots: string[];
+  paymentSteps: string[];
   pdfTheme?: string;
   quoteTerms?: string;
   contractClauses?: string;
@@ -217,6 +224,13 @@ export const DEFAULT_DURATION_SLOTS: string[] = [
   'Full Day',
 ];
 
+export const DEFAULT_QUOTATION_PAYMENT_STEPS: string[] = [
+  'Token Amount',
+  'Advance Amount',
+  'On Wedding Day',
+  'After Event',
+];
+
 export const DEFAULT_WORKSPACE_QUOTATION_SETTINGS: WorkspaceQuotationSettings = {
   deliverables: DEFAULT_QUOTATION_DELIVERABLES,
   specialAddons: DEFAULT_QUOTATION_SPECIAL_ADDONS,
@@ -225,6 +239,7 @@ export const DEFAULT_WORKSPACE_QUOTATION_SETTINGS: WorkspaceQuotationSettings = 
   requirements: DEFAULT_PRE_WEDDING_REQUIREMENTS,
   preWeddingDeliverables: DEFAULT_PRE_WEDDING_DELIVERABLES,
   durationSlots: DEFAULT_DURATION_SLOTS,
+  paymentSteps: DEFAULT_QUOTATION_PAYMENT_STEPS,
   pdfTheme: 'royal_gold',
   quoteTerms: 'Deliverables will be compiled and sent within 45 days of wedding event completion.',
   contractClauses: '1. Standard contract terms apply for all assignments.\\n2. Final deliverables delivered post clearance.\\n3. Studio retains copyright for portfolio presentation.',
@@ -654,6 +669,7 @@ export async function fetchWorkspaceQuotationSettings(workspaceId?: string): Pro
           requirements: Array.isArray(s.requirements) && s.requirements.length > 0 ? s.requirements : DEFAULT_PRE_WEDDING_REQUIREMENTS,
           preWeddingDeliverables: Array.isArray(s.preWeddingDeliverables) && s.preWeddingDeliverables.length > 0 ? s.preWeddingDeliverables : DEFAULT_PRE_WEDDING_DELIVERABLES,
           durationSlots: Array.isArray(s.durationSlots) && s.durationSlots.length > 0 ? s.durationSlots : DEFAULT_DURATION_SLOTS,
+          paymentSteps: Array.isArray(s.paymentSteps) && s.paymentSteps.length > 0 ? s.paymentSteps : DEFAULT_QUOTATION_PAYMENT_STEPS,
           pdfTheme: s.pdfTheme || DEFAULT_WORKSPACE_QUOTATION_SETTINGS.pdfTheme,
           quoteTerms: s.quoteTerms || DEFAULT_WORKSPACE_QUOTATION_SETTINGS.quoteTerms,
           contractClauses: s.contractClauses || DEFAULT_WORKSPACE_QUOTATION_SETTINGS.contractClauses,
@@ -975,4 +991,105 @@ export async function deleteWorkspaceQuotationDefaultFunction(
   const updatedFunctions = current.defaultFunctions.filter(f => f.id !== id);
   await saveAllWorkspaceQuotationSettings(workspaceId, { defaultFunctions: updatedFunctions });
   return true;
+}
+
+// ==============================================================================
+// REORDERING & PAYMENT STEP NAMES CRUD
+// ==============================================================================
+
+/**
+ * Reorder Deliverables in Workspace Settings
+ */
+export async function reorderWorkspaceQuotationDeliverables(
+  reorderedList: WorkspaceQuotationDeliverable[],
+  workspaceId?: string
+): Promise<WorkspaceQuotationDeliverable[]> {
+  const normalized = reorderedList.map((item, idx) => ({ ...item, display_order: idx + 1 }));
+  await saveAllWorkspaceQuotationSettings(workspaceId, { deliverables: normalized });
+  return normalized;
+}
+
+/**
+ * Reorder Special Add-ons in Workspace Settings
+ */
+export async function reorderWorkspaceQuotationSpecialAddons(
+  reorderedList: WorkspaceQuotationSpecialAddon[],
+  workspaceId?: string
+): Promise<WorkspaceQuotationSpecialAddon[]> {
+  const normalized = reorderedList.map((item, idx) => ({ ...item, display_order: idx + 1 }));
+  await saveAllWorkspaceQuotationSettings(workspaceId, { specialAddons: normalized });
+  return normalized;
+}
+
+/**
+ * Reorder Extra Paid Add-ons in Workspace Settings
+ */
+export async function reorderWorkspaceQuotationPaidAddons(
+  reorderedList: WorkspaceQuotationPaidAddon[],
+  workspaceId?: string
+): Promise<WorkspaceQuotationPaidAddon[]> {
+  const normalized = reorderedList.map((item, idx) => ({ ...item, display_order: idx + 1 }));
+  await saveAllWorkspaceQuotationSettings(workspaceId, { paidAddons: normalized });
+  return normalized;
+}
+
+/**
+ * Save / Add Payment Step Name
+ */
+export async function saveWorkspacePaymentStepName(
+  workspaceId?: string,
+  stepName?: string
+): Promise<string[] | null> {
+  const cleanName = (stepName || '').trim();
+  if (!cleanName) return null;
+  const current = await fetchWorkspaceQuotationSettings(workspaceId);
+  const steps = Array.isArray(current.paymentSteps) ? current.paymentSteps : DEFAULT_QUOTATION_PAYMENT_STEPS;
+  if (!steps.includes(cleanName)) {
+    const updated = [...steps, cleanName];
+    await saveAllWorkspaceQuotationSettings(workspaceId, { paymentSteps: updated });
+    return updated;
+  }
+  return steps;
+}
+
+/**
+ * Update Payment Step Name
+ */
+export async function updateWorkspacePaymentStepName(
+  oldName: string,
+  newName: string,
+  workspaceId?: string
+): Promise<string[] | null> {
+  const cleanNew = newName.trim();
+  if (!cleanNew) return null;
+  const current = await fetchWorkspaceQuotationSettings(workspaceId);
+  const steps = Array.isArray(current.paymentSteps) ? current.paymentSteps : DEFAULT_QUOTATION_PAYMENT_STEPS;
+  const updated = steps.map((s: string) => s === oldName ? cleanNew : s);
+  await saveAllWorkspaceQuotationSettings(workspaceId, { paymentSteps: updated });
+  return updated;
+}
+
+/**
+ * Delete Payment Step Name
+ */
+export async function deleteWorkspacePaymentStepName(
+  nameToDelete: string,
+  workspaceId?: string
+): Promise<string[]> {
+  const current = await fetchWorkspaceQuotationSettings(workspaceId);
+  const steps = Array.isArray(current.paymentSteps) ? current.paymentSteps : DEFAULT_QUOTATION_PAYMENT_STEPS;
+  const updated = steps.filter((s: string) => s !== nameToDelete);
+  await saveAllWorkspaceQuotationSettings(workspaceId, { paymentSteps: updated });
+  return updated;
+}
+
+/**
+ * Reorder Payment Step Names
+ */
+export async function reorderWorkspacePaymentStepNames(
+  reorderedSteps: string[],
+  workspaceId?: string
+): Promise<string[]> {
+  await saveAllWorkspaceQuotationSettings(workspaceId, { paymentSteps: reorderedSteps });
+  return reorderedSteps;
 }
