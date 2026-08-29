@@ -29,8 +29,6 @@ const nextConfig: NextConfig = {
     optimizePackageImports: [
       'lucide-react',
       'framer-motion',
-      '@supabase/supabase-js',
-      'canvas-confetti',
     ],
   },
 };
