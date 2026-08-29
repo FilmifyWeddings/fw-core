@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { getPublicGalleryUrl } from '@/lib/r2';
 import { FaceScannerModal } from '@/components/gallery/FaceScannerModal';
+import { PremagicLightbox } from '@/components/gallery/PremagicLightbox';
 
 interface PhotoItem {
   id: string;
@@ -478,36 +479,44 @@ function GuestSlugGalleryContent() {
               </div>
             </div>
 
-            {/* Matched Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4">
+            {/* Matched Justified Multi-Column Grid */}
+            <div className="columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-3.5 space-y-3.5">
               {matchedPhotos.map((photo, idx) => (
                 <div
                   key={photo.id}
                   onClick={() => setSelectedPhotoIndex(idx)}
-                  className="group relative aspect-square rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border border-[#E7E2D8] shadow-2xs hover:shadow-lg transition-all duration-300 cursor-pointer"
+                  className="group relative break-inside-avoid rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border border-[#E7E2D8] shadow-2xs hover:shadow-lg transition-all duration-300 cursor-pointer"
                 >
                   <img
                     src={photo.thumbnail_url || photo.preview_url}
                     alt="Matched Photo"
                     loading="lazy"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    className="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-500"
                   />
 
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/30 opacity-0 group-hover:opacity-100 transition-opacity" />
 
-                  <div className="absolute bottom-2.5 inset-x-2.5 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity">
+                  {/* Badges Top Right */}
+                  <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5">
                     {photo.confidencePercent && (
                       <span className="px-2 py-0.5 rounded-full bg-emerald-950/80 backdrop-blur-md text-[10px] font-black text-emerald-300 border border-emerald-500/40">
                         {photo.confidencePercent}% Match
                       </span>
                     )}
+                  </div>
+
+                  {/* Actions Bottom Bar */}
+                  <div className="absolute bottom-2.5 inset-x-2.5 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity">
+                    <span className="text-[10px] font-mono text-zinc-300">
+                      Photo #{idx + 1}
+                    </span>
 
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         handleDownloadPhoto(photo);
                       }}
-                      className="p-1.5 rounded-full bg-white text-zinc-900 hover:bg-amber-400 transition shadow-md"
+                      className="p-1.5 rounded-full bg-amber-500 hover:bg-amber-400 text-zinc-950 transition shadow-md cursor-pointer"
                       title="Download High-Res"
                     >
                       <Download className="w-3.5 h-3.5" />
@@ -579,7 +588,8 @@ function GuestSlugGalleryContent() {
               </div>
             )}
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4">
+            {/* Privileged Full Photo Justified Multi-Column Grid */}
+            <div className="columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-3.5 space-y-3.5">
               {displayedPhotos.map((photo, idx) => {
                 const isSelected = selectedForAlbum.has(photo.id);
                 return (
@@ -595,7 +605,7 @@ function GuestSlugGalleryContent() {
                         setSelectedPhotoIndex(idx);
                       }
                     }}
-                    className={`group relative aspect-square rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border transition-all duration-300 cursor-pointer ${
+                    className={`group relative break-inside-avoid rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border transition-all duration-300 cursor-pointer ${
                       isSelected
                         ? 'border-amber-500 ring-4 ring-amber-500/20'
                         : 'border-[#E7E2D8] hover:shadow-lg'
@@ -605,7 +615,7 @@ function GuestSlugGalleryContent() {
                       src={photo.thumbnail_url || photo.preview_url}
                       alt="Wedding photo"
                       loading="lazy"
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      className="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-500"
                     />
 
                     {isSelectionMode && (
@@ -622,21 +632,21 @@ function GuestSlugGalleryContent() {
                       </div>
                     )}
 
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/30 opacity-0 group-hover:opacity-100 transition-opacity" />
 
                     <div className="absolute bottom-2.5 inset-x-2.5 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity">
-                      {photo.face_count > 0 && (
+                      {photo.face_count > 0 ? (
                         <span className="px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-md text-[10px] font-bold text-white">
-                          {photo.face_count} {photo.face_count === 1 ? 'Face' : 'Faces'}
+                          👥 {photo.face_count}
                         </span>
-                      )}
+                      ) : <span />}
 
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           handleDownloadPhoto(photo);
                         }}
-                        className="p-1.5 rounded-full bg-white text-zinc-900 hover:bg-amber-400 transition shadow-md"
+                        className="p-1.5 rounded-full bg-amber-500 hover:bg-amber-400 text-zinc-950 transition shadow-md cursor-pointer"
                         title="Download High-Res"
                       >
                         <Download className="w-3.5 h-3.5" />
@@ -656,8 +666,12 @@ function GuestSlugGalleryContent() {
         isOpen={isFaceScannerOpen}
         onClose={() => setIsFaceScannerOpen(false)}
         onSubmit={handleFaceScanSubmit}
-        galleryTitle={gallery.title}
-        isProcessing={isMatching}
+        isMatching={isMatching}
+        galleryId={gallery.id}
+        onScanComplete={(photos) => {
+          setMatchedPhotos(photos);
+          setHasSearched(true);
+        }}
       />
 
       {/* 4. PIN UNLOCK MODAL */}
@@ -708,58 +722,16 @@ function GuestSlugGalleryContent() {
         </div>
       )}
 
-      {/* 6. LIGHTBOX MODAL */}
+      {/* 6. PREMAGIC / FOTOOWL TOUCH-SWIPE LIGHTBOX WITH SMART HD ZOOM */}
       {selectedPhotoIndex !== null && displayedPhotos[selectedPhotoIndex] && (
-        <div className="fixed inset-0 z-50 bg-black/95 flex flex-col justify-between text-white p-4 sm:p-6 backdrop-blur-md select-none">
-          <div className="flex items-center justify-between z-10">
-            <span className="text-xs font-bold text-zinc-400">
-              {selectedPhotoIndex + 1} of {displayedPhotos.length}
-            </span>
-
-            <button
-              onClick={() => setSelectedPhotoIndex(null)}
-              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-zinc-300 hover:text-white transition cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          <div className="relative flex-1 flex items-center justify-center p-2 sm:p-6 overflow-hidden">
-            {selectedPhotoIndex > 0 && (
-              <button
-                onClick={() => setSelectedPhotoIndex(selectedPhotoIndex - 1)}
-                className="absolute left-2 sm:left-4 p-3 rounded-full bg-black/60 hover:bg-black/90 text-white transition z-10 cursor-pointer"
-              >
-                <ChevronLeft className="w-6 h-6" />
-              </button>
-            )}
-
-            <img
-              src={displayedPhotos[selectedPhotoIndex].preview_url}
-              alt="Wedding preview"
-              className="max-h-[85vh] max-w-full object-contain rounded-2xl shadow-2xl"
-            />
-
-            {selectedPhotoIndex < displayedPhotos.length - 1 && (
-              <button
-                onClick={() => setSelectedPhotoIndex(selectedPhotoIndex + 1)}
-                className="absolute right-2 sm:right-4 p-3 rounded-full bg-black/60 hover:bg-black/90 text-white transition z-10 cursor-pointer"
-              >
-                <ChevronRight className="w-6 h-6" />
-              </button>
-            )}
-          </div>
-
-          <div className="flex items-center justify-center gap-3 z-10 pb-2">
-            <button
-              onClick={() => handleDownloadPhoto(displayedPhotos[selectedPhotoIndex])}
-              className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-black text-xs transition flex items-center gap-2 shadow-lg cursor-pointer"
-            >
-              <Download className="w-4 h-4" />
-              <span>Download High-Res Original</span>
-            </button>
-          </div>
-        </div>
+        <PremagicLightbox
+          photos={displayedPhotos}
+          currentIndex={selectedPhotoIndex}
+          onClose={() => setSelectedPhotoIndex(null)}
+          onNavigate={(idx) => setSelectedPhotoIndex(idx)}
+          onDownload={handleDownloadPhoto}
+          allowDownloads={gallery.allow_downloads ?? true}
+        />
       )}
 
     </div>

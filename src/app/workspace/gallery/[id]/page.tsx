@@ -44,6 +44,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { batchUploadPhotos } from '@/lib/imageProcessor';
 import { getPublicGalleryUrl } from '@/lib/r2';
+import { PremagicLightbox } from '@/components/gallery/PremagicLightbox';
 
 interface EventGallery {
   id: string;
@@ -434,6 +435,66 @@ function AlbumStudioContent() {
     }
   };
 
+  // 8. Download High-Res Original Photo
+  const handleDownloadPhoto = async (photo: PhotoItem) => {
+    try {
+      const res = await fetch(
+        `/api/gallery/download-url?key=${encodeURIComponent(photo.original_key || photo.preview_url)}&name=wedding_${photo.id}.jpg`
+      );
+      const json = await res.json();
+      if (json.success && json.downloadUrl) {
+        const link = document.createElement('a');
+        link.href = json.downloadUrl;
+        link.download = `photo_${photo.id.slice(0, 8)}.jpg`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else {
+        window.open(photo.preview_url, '_blank');
+      }
+    } catch (_) {
+      window.open(photo.preview_url, '_blank');
+    }
+  };
+
+  // 9. Photo Selection Handlers
+  const togglePhotoSelection = (id: string) => {
+    setSelectedPhotoIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedPhotoIds.size === filteredPhotos.length) {
+      setSelectedPhotoIds(new Set());
+    } else {
+      setSelectedPhotoIds(new Set(filteredPhotos.map(p => p.id)));
+    }
+  };
+
+  const handleBulkDownload = async () => {
+    const selected = filteredPhotos.filter(p => selectedPhotoIds.has(p.id));
+    for (const photo of selected) {
+      await handleDownloadPhoto(photo);
+      await new Promise(r => setTimeout(r, 350));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!confirm(`Are you sure you want to delete ${selectedPhotoIds.size} selected photos?`)) return;
+    const ids = Array.from(selectedPhotoIds);
+    for (const id of ids) {
+      try {
+        await fetch(`/api/gallery/photos?photo_id=${id}`, { method: 'DELETE' });
+      } catch (_) {}
+    }
+    setPhotos(prev => prev.filter(p => !selectedPhotoIds.has(p.id)));
+    setSelectedPhotoIds(new Set());
+  };
+
   const selectedPerson = people.find(p => p.id === selectedPersonId);
 
   // Filter & Sort Photos
@@ -797,95 +858,92 @@ function AlbumStudioContent() {
             </div>
           </div>
 
-          {/* Google Photos "People & Faces" Horizontal Bar */}
-          {people.length > 0 && (
-            <div className="bg-white rounded-2xl border border-[#E7E2D8] p-4 shadow-2xs space-y-3 animate-in fade-in">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-700 flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-purple-600" />
-                  <span>👥 {people.length} Unique People Detected</span>
-                </span>
-
-                {selectedPersonId && selectedPerson && (
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => {
-                        const origin = typeof window !== 'undefined' ? window.location.origin : 'https://studiocore.in';
-                        const link = `${origin}/g/${gallery.slug}?person=${selectedPerson.id}`;
-                        navigator.clipboard.writeText(link);
-                        setCopiedPersonId(selectedPerson.id);
-                        setTimeout(() => setCopiedPersonId(null), 2500);
-                      }}
-                      className="px-3 py-1 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
-                    >
-                      {copiedPersonId === selectedPerson.id ? (
-                        <>
-                          <Check className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>Link Copied!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Share2 className="w-3.5 h-3.5 text-purple-600" />
-                          <span>Share {selectedPerson.name}&apos;s Link</span>
-                        </>
-                      )}
-                    </button>
-                    <button
-                      onClick={() => setSelectedPersonId(null)}
-                      className="text-xs text-amber-600 hover:text-amber-700 font-bold cursor-pointer underline"
-                    >
-                      Show All Photos
-                    </button>
-                  </div>
-                )}
+          {/* Filter Indicator when Person is Selected */}
+          {selectedPersonId && selectedPerson && (
+            <div className="bg-purple-50 rounded-2xl border border-purple-200 p-3.5 flex items-center justify-between animate-in fade-in">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full overflow-hidden border border-purple-300">
+                  <img src={selectedPerson.avatar_url} alt={selectedPerson.name} className="w-full h-full object-cover" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-black text-purple-950">
+                    Showing photos of {selectedPerson.name} ({filteredPhotos.length} photos)
+                  </h4>
+                  <span className="text-[10px] text-purple-700">Filtered by AI facial clustering</span>
+                </div>
               </div>
 
-              <div className="flex items-center gap-4 overflow-x-auto pb-2 scrollbar-thin">
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setSelectedPersonId(null)}
-                  className={'flex flex-col items-center gap-1.5 shrink-0 cursor-pointer transition ' + (
-                    selectedPersonId === null ? 'scale-105' : 'opacity-70 hover:opacity-100'
-                  )}
+                  onClick={() => {
+                    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://studiocore.in';
+                    const link = `${origin}/g/${gallery.slug}?person=${selectedPerson.id}`;
+                    navigator.clipboard.writeText(link);
+                    setCopiedPersonId(selectedPerson.id);
+                    setTimeout(() => setCopiedPersonId(null), 2500);
+                  }}
+                  className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs"
                 >
-                  <div className={'w-14 h-14 rounded-full flex items-center justify-center border-2 ' + (
-                    selectedPersonId === null
-                      ? 'border-amber-500 bg-amber-50 text-amber-800 ring-4 ring-amber-400/20'
-                      : 'border-zinc-200 bg-zinc-100 text-zinc-600'
-                  )}>
-                    <Users className="w-6 h-6" />
-                  </div>
-                  <span className="text-[11px] font-black text-zinc-800">All ({photos.length})</span>
+                  {copiedPersonId === selectedPerson.id ? (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Link Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Share2 className="w-3.5 h-3.5" />
+                      <span>Copy Person Link</span>
+                    </>
+                  )}
                 </button>
 
-                {people.map(p => {
-                  const isSel = selectedPersonId === p.id;
-                  return (
-                    <button
-                      key={p.id}
-                      onClick={() => setSelectedPersonId(isSel ? null : p.id)}
-                      className={'flex flex-col items-center gap-1.5 shrink-0 cursor-pointer transition ' + (
-                        isSel ? 'scale-105' : 'opacity-80 hover:opacity-100'
-                      )}
-                    >
-                      <div className={'relative w-14 h-14 rounded-full overflow-hidden border-2 shadow-xs ' + (
-                        isSel
-                          ? 'border-purple-600 ring-4 ring-purple-500/30'
-                          : 'border-zinc-200 hover:border-purple-400'
-                      )}>
-                        <img src={p.avatar_url} alt={p.name} className="w-full h-full object-cover object-top" />
-                      </div>
-                      <div className="text-center">
-                        <span className="text-[11px] font-bold text-zinc-800 block max-w-[70px] truncate">{p.name}</span>
-                        <span className="text-[9.5px] font-mono text-zinc-400">{p.photo_count} photos</span>
-                      </div>
-                    </button>
-                  );
-                })}
+                <button
+                  onClick={() => setSelectedPersonId(null)}
+                  className="p-1.5 rounded-lg text-purple-700 hover:bg-purple-100 transition cursor-pointer"
+                  title="Clear Person Filter"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
             </div>
           )}
 
-          {/* Photo Masonry Grid */}
+          {/* Bulk Selection Toolbar */}
+          {selectedPhotoIds.size > 0 && (
+            <div className="sticky top-2 z-30 bg-zinc-900 text-white rounded-2xl p-3 shadow-xl border border-zinc-800 flex items-center justify-between animate-in slide-in-from-top duration-200">
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-black text-amber-400 bg-zinc-800 px-3 py-1 rounded-xl">
+                  {selectedPhotoIds.size} Selected
+                </span>
+                <button
+                  onClick={handleSelectAll}
+                  className="text-xs text-zinc-300 hover:text-white font-bold cursor-pointer underline"
+                >
+                  {selectedPhotoIds.size === filteredPhotos.length ? 'Deselect All' : 'Select All'}
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleBulkDownload}
+                  className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-sm"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download Selected</span>
+                </button>
+
+                <button
+                  onClick={handleBulkDelete}
+                  className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-sm"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Premagic / FotoOwl Justified Dynamic Multi-Column Photo Grid */}
           {filteredPhotos.length === 0 ? (
             <div className="bg-white rounded-3xl p-16 text-center border border-zinc-200 space-y-4 shadow-2xs">
               <div className="w-16 h-16 rounded-3xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center mx-auto">
@@ -911,52 +969,84 @@ function AlbumStudioContent() {
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3.5">
+            <div className="columns-2 sm:columns-3 md:columns-3 lg:columns-4 xl:columns-5 gap-3.5 space-y-3.5">
               {filteredPhotos.map((photo, idx) => {
                 const isCover = gallery.cover_url === photo.preview_url;
+                const isSelected = selectedPhotoIds.has(photo.id);
 
                 return (
                   <div
                     key={photo.id}
                     onClick={() => setSelectedPhotoIndex(idx)}
-                    className="group relative aspect-square bg-zinc-100 rounded-2xl overflow-hidden border border-zinc-200 shadow-2xs cursor-pointer hover:shadow-md transition-all"
+                    className={`group relative break-inside-avoid bg-zinc-100 rounded-2xl overflow-hidden border ${
+                      isSelected ? 'border-amber-500 ring-2 ring-amber-400/50 shadow-md' : 'border-zinc-200 shadow-2xs hover:shadow-lg'
+                    } cursor-pointer transition-all duration-300`}
                   >
                     <img
-                      src={photo.thumbnail_url}
-                      alt="Thumbnail"
+                      src={photo.thumbnail_url || photo.preview_url}
+                      alt={photo.original_key}
                       loading="lazy"
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      className="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-500"
                     />
 
-                    {/* Gradient Overlay */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                    {/* Gradient Overlays */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
 
-                    {/* Badges */}
-                    {isCover && (
-                      <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-amber-500 text-white text-[9px] font-black shadow-sm flex items-center gap-1">
-                        <Star className="w-2.5 h-2.5 fill-white" />
-                        <span>Cover</span>
+                    {/* Top Left: Selection Checkbox */}
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        togglePhotoSelection(photo.id);
+                      }}
+                      className={`absolute top-2.5 left-2.5 p-1 rounded-lg transition ${
+                        isSelected ? 'bg-amber-500 text-white' : 'bg-black/40 backdrop-blur-md text-white/80 hover:bg-black/70 opacity-0 group-hover:opacity-100'
+                      }`}
+                      title="Select photo"
+                    >
+                      {isSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                    </div>
+
+                    {/* Top Right: Badges */}
+                    <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5">
+                      {isCover && (
+                        <div className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[9px] font-black shadow-sm flex items-center gap-1">
+                          <Star className="w-2.5 h-2.5 fill-white" />
+                          <span>Cover</span>
+                        </div>
+                      )}
+                      {photo.face_count > 0 && (
+                        <div className="px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-md text-white text-[9px] font-bold border border-white/20">
+                          👥 {photo.face_count}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Bottom Action Bar */}
+                    <div className="absolute bottom-2.5 inset-x-2.5 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity text-white">
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSetCover(photo);
+                          }}
+                          className={`p-1.5 rounded-lg transition cursor-pointer ${
+                            isCover ? 'bg-amber-500 text-white' : 'bg-black/50 hover:bg-amber-500'
+                          }`}
+                          title="Set as Event Cover"
+                        >
+                          <Star className={`w-3.5 h-3.5 ${isCover ? 'fill-white' : ''}`} />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDownloadPhoto(photo);
+                          }}
+                          className="p-1.5 rounded-lg bg-black/50 hover:bg-amber-500 transition cursor-pointer"
+                          title="Download High-Res Original"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </button>
                       </div>
-                    )}
-
-                    {photo.face_count > 0 && (
-                      <div className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-md text-white text-[9px] font-bold border border-white/20">
-                        👥 {photo.face_count} {photo.face_count === 1 ? 'Face' : 'Faces'}
-                      </div>
-                    )}
-
-                    {/* Actions on Hover */}
-                    <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity text-white">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleSetCover(photo);
-                        }}
-                        className="p-1.5 rounded-lg bg-black/50 hover:bg-amber-500 transition cursor-pointer"
-                        title="Set as Event Cover"
-                      >
-                        <Star className="w-3.5 h-3.5" />
-                      </button>
 
                       <button
                         onClick={(e) => {
@@ -1165,31 +1255,22 @@ function AlbumStudioContent() {
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          5. LIGHTBOX MODAL
+          5. PREMAGIC / FOTOOWL TOUCH-SWIPE LIGHTBOX WITH SMART HD ZOOM
       ───────────────────────────────────────────────────────────── */}
-      {selectedPhotoIndex !== null && filteredPhotos[selectedPhotoIndex] && (
-        <div className="fixed inset-0 z-50 bg-black/95 flex flex-col justify-between text-white p-4 sm:p-6 backdrop-blur-md">
-          <div className="flex items-center justify-between z-10">
-            <span className="text-xs font-bold text-zinc-400">
-              {selectedPhotoIndex + 1} of {filteredPhotos.length}
-            </span>
-
-            <button
-              onClick={() => setSelectedPhotoIndex(null)}
-              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-zinc-300 hover:text-white transition cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          <div className="relative flex-1 flex items-center justify-center p-2 sm:p-6 overflow-hidden">
-            <img
-              src={filteredPhotos[selectedPhotoIndex].preview_url}
-              alt="Preview"
-              className="max-h-[85vh] max-w-full object-contain rounded-2xl shadow-2xl"
-            />
-          </div>
-        </div>
+      {selectedPhotoIndex !== null && (
+        <PremagicLightbox
+          photos={filteredPhotos}
+          currentIndex={selectedPhotoIndex}
+          onClose={() => setSelectedPhotoIndex(null)}
+          onNavigate={(idx) => setSelectedPhotoIndex(idx)}
+          onDownload={handleDownloadPhoto}
+          onToggleSelect={togglePhotoSelection}
+          isSelected={filteredPhotos[selectedPhotoIndex] ? selectedPhotoIds.has(filteredPhotos[selectedPhotoIndex].id) : false}
+          onSetCover={handleSetCover}
+          isCover={filteredPhotos[selectedPhotoIndex] ? gallery.cover_url === filteredPhotos[selectedPhotoIndex].preview_url : false}
+          onDelete={handleDeletePhoto}
+          allowDownloads={gallery.allow_downloads ?? true}
+        />
       )}
 
     </div>
