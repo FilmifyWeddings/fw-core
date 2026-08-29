@@ -19,12 +19,14 @@ import {
 interface FaceScannerModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (data: {
+  onSubmit?: (data: {
     name: string;
     phone: string;
     email: string;
     selfieBase64: string;
   }) => Promise<void> | void;
+  onScanComplete?: (matchedPhotos: any[], guestData: { name: string; phone: string; email: string }) => Promise<void> | void;
+  galleryId?: string;
   galleryTitle?: string;
   isProcessing?: boolean;
 }
@@ -43,6 +45,8 @@ export function FaceScannerModal({
   isOpen,
   onClose,
   onSubmit,
+  onScanComplete,
+  galleryId,
   galleryTitle,
   isProcessing = false,
 }: FaceScannerModalProps) {
@@ -378,22 +382,59 @@ export function FaceScannerModal({
     }
   };
 
+  const [internalProcessing, setInternalProcessing] = useState(false);
+
   // Form Validation
   const isEmailValid = guestEmail.trim().length > 3 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail.trim());
   const isPhoneValid = guestPhone.replace(/[^0-9]/g, '').length >= 10;
   const isNameValid = guestName.trim().length >= 2;
-  const isReadyToSubmit = isNameValid && isPhoneValid && isEmailValid && !!capturedSelfie && !isProcessing;
+  const isSubmitting = isProcessing || internalProcessing;
+  const isReadyToSubmit = isNameValid && isPhoneValid && isEmailValid && !!capturedSelfie && !isSubmitting;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isReadyToSubmit || !capturedSelfie) return;
 
-    await onSubmit({
-      name: guestName.trim(),
-      phone: guestPhone.trim(),
-      email: guestEmail.trim(),
-      selfieBase64: capturedSelfie,
-    });
+    if (onSubmit) {
+      await onSubmit({
+        name: guestName.trim(),
+        phone: guestPhone.trim(),
+        email: guestEmail.trim(),
+        selfieBase64: capturedSelfie,
+      });
+      return;
+    }
+
+    if (onScanComplete) {
+      setInternalProcessing(true);
+      try {
+        const matchRes = await fetch('/api/gallery/match-face', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            gallery_id: galleryId,
+            galleryId: galleryId,
+            selfieBase64: capturedSelfie,
+            image_base64: capturedSelfie,
+            threshold: 0.35,
+          }),
+        });
+
+        const matchJson = await matchRes.json();
+        const matchedPhotos = matchJson.photos || [];
+
+        await onScanComplete(matchedPhotos, {
+          name: guestName.trim(),
+          phone: guestPhone.trim(),
+          email: guestEmail.trim(),
+        });
+        onClose();
+      } catch (err: any) {
+        alert(`Face search error: ${err.message}`);
+      } finally {
+        setInternalProcessing(false);
+      }
+    }
   };
 
   if (!isOpen) return null;
