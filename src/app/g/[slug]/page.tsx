@@ -226,14 +226,14 @@ function GuestSlugGalleryContent() {
     setGuestEmail(data.email);
 
     const isPublished =
-      gallery.status?.toLowerCase() === 'published' ||
-      (gallery as any).is_published === true ||
-      (gallery.status !== 'UNPUBLISHED' && gallery.status !== 'unpublished' && gallery.status !== 'DRAFT' && gallery.status !== 'draft');
+      gallery.is_published === true ||
+      gallery.status?.toUpperCase() === 'PUBLISHED' ||
+      (gallery.is_active !== false && gallery.status?.toUpperCase() !== 'UNPUBLISHED' && gallery.status?.toUpperCase() !== 'DRAFT');
 
     try {
-      // 1. Register Guest in CRM
+      // 1. Register Guest in CRM in background
       try {
-        await fetch('/api/gallery/guest/register', {
+        fetch('/api/gallery/guest/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -243,16 +243,17 @@ function GuestSlugGalleryContent() {
             guest_email: data.email,
             selfieBase64: data.selfieBase64,
           }),
-        });
+        }).catch(() => {});
       } catch (regErr) {
         console.warn('Guest registration error:', regErr);
       }
 
       // 2. Dual-Mode Routing
       if (!isPublished) {
-        // CASE B: UNPUBLISHED EVENT
+        // CASE B: UNPUBLISHED EVENT (Show Registration Confirmation Modal)
         setIsFaceScannerOpen(false);
         setShowUnpublishedModal(true);
+        setShowPinModal(false);
         setIsMatching(false);
         return;
       }
@@ -262,6 +263,7 @@ function GuestSlugGalleryContent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          gallery_id: gallery.id,
           galleryId: gallery.id,
           selfieBase64: data.selfieBase64,
           threshold: 0.38,
@@ -270,6 +272,7 @@ function GuestSlugGalleryContent() {
 
       const json = await res.json();
       setIsFaceScannerOpen(false);
+      setShowUnpublishedModal(false); // DO NOT OPEN REGISTRATION POPUP
 
       if (json.success && Array.isArray(json.photos)) {
         if (json.photos.length > 0) {
