@@ -12,17 +12,22 @@ export async function POST(req: NextRequest) {
       gallery_id,
       galleryId,
       embedding,
+      query_embedding,
+      queryEmbedding: rawQueryEmbedding,
       selfieBase64,
-      threshold = 0.38,
+      image_base64,
+      image,
+      threshold = 0.35,
       match_threshold,
       similarityThreshold,
     } = body;
 
     const targetGalleryId = gallery_id || galleryId;
-    let queryEmbedding = embedding;
+    let queryEmbedding = embedding || query_embedding || rawQueryEmbedding;
+    const base64Input = selfieBase64 || image_base64 || image;
 
-    if (!queryEmbedding && selfieBase64) {
-      queryEmbedding = await extractEmbeddingFromBase64(selfieBase64);
+    if (!queryEmbedding && base64Input) {
+      queryEmbedding = await extractEmbeddingFromBase64(base64Input);
     }
 
     if (!targetGalleryId || !queryEmbedding) {
@@ -30,7 +35,7 @@ export async function POST(req: NextRequest) {
     }
 
     const normalizedQuery = normalizeVector(queryEmbedding);
-    const finalThreshold = match_threshold ?? threshold ?? similarityThreshold ?? 0.38;
+    const finalThreshold = match_threshold ?? threshold ?? similarityThreshold ?? 0.35;
 
     let matchedPhotoMap = new Map<string, number>(); // photo_id -> max similarity
 

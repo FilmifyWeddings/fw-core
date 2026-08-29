@@ -412,8 +412,13 @@ function AlbumStudioContent() {
     }
   };
 
+  const selectedPerson = people.find(p => p.id === selectedPersonId);
+
   // Filter & Sort Photos
   const filteredPhotos = photos.filter(p => {
+    if (selectedPersonId && selectedPerson) {
+      if (!selectedPerson.photo_ids?.includes(p.id)) return false;
+    }
     if (selectedCollectionId !== 'all' && p.collection_id !== selectedCollectionId) {
       return false;
     }
@@ -713,18 +718,43 @@ function AlbumStudioContent() {
           {/* Google Photos "People & Faces" Horizontal Bar */}
           {people.length > 0 && (
             <div className="bg-white rounded-2xl border border-[#E7E2D8] p-4 shadow-2xs space-y-3 animate-in fade-in">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-700 flex items-center gap-1.5">
                   <Sparkles className="w-4 h-4 text-purple-600" />
-                  <span>People &amp; Faces Detected ({people.length} Unique People)</span>
+                  <span>👥 {people.length} Unique People Detected</span>
                 </span>
-                {selectedPersonId && (
-                  <button
-                    onClick={() => setSelectedPersonId(null)}
-                    className="text-xs text-amber-600 hover:text-amber-700 font-bold cursor-pointer"
-                  >
-                    Clear Filter (Show All)
-                  </button>
+
+                {selectedPersonId && selectedPerson && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        const origin = typeof window !== 'undefined' ? window.location.origin : 'https://studiocore.in';
+                        const link = `${origin}/g/${gallery.slug}?person=${selectedPerson.id}`;
+                        navigator.clipboard.writeText(link);
+                        setCopiedPersonId(selectedPerson.id);
+                        setTimeout(() => setCopiedPersonId(null), 2500);
+                      }}
+                      className="px-3 py-1 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                    >
+                      {copiedPersonId === selectedPerson.id ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Link Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Share2 className="w-3.5 h-3.5 text-purple-600" />
+                          <span>Share {selectedPerson.name}&apos;s Link</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => setSelectedPersonId(null)}
+                      className="text-xs text-amber-600 hover:text-amber-700 font-bold cursor-pointer underline"
+                    >
+                      Show All Photos
+                    </button>
+                  </div>
                 )}
               </div>
 

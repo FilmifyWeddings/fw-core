@@ -55,8 +55,8 @@ export async function GET(req: NextRequest) {
     const photoMap = new Map<string, PhotoRecord>();
     (rawPhotos || []).forEach((p: any) => photoMap.set(p.id, p));
 
-    // 3. Cluster faces into unique people (Cosine Similarity threshold >= 0.52)
-    const CLUSTER_THRESHOLD = 0.52;
+    // 3. Cluster faces into unique people (Cosine Similarity threshold >= 0.44 for realistic wedding grouping)
+    const CLUSTER_THRESHOLD = 0.44;
     const clusters: {
       id: string;
       representativeFace: FaceRecord;

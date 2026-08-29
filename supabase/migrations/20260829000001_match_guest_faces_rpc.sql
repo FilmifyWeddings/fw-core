@@ -7,7 +7,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE OR REPLACE FUNCTION match_guest_faces(
   query_embedding vector(512),
   match_gallery_id UUID,
-  match_threshold FLOAT DEFAULT 0.40,
+  match_threshold FLOAT DEFAULT 0.35,
   match_limit INT DEFAULT 250
 )
 RETURNS TABLE (
