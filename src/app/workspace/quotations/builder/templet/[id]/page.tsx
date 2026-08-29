@@ -2618,12 +2618,12 @@ function StudioCoreAiryBuilderContent() {
         const evTypes = await fetchWorkspaceEventTypes(effectiveUid);
         if (evTypes && evTypes.length > 0) {
           const names = evTypes.map(e => e.name);
-          setAvailableFunctionNames(prev => Array.from(new Set([...prev, ...names])));
+          setAvailableFunctionNames(names);
         }
         const roles = await fetchWorkspaceCrewRoles(effectiveUid);
         if (roles && roles.length > 0) {
           const roleNames = roles.map(r => r.name);
-          setAvailableRequirements(prev => Array.from(new Set([...prev, ...roleNames])));
+          setAvailableRequirements(roleNames);
         }
       } catch (err) {
         console.warn('[TemplateBuilder] Error loading global workspace settings:', err);

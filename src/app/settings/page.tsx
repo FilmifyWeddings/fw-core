@@ -6,7 +6,8 @@ import {
   Settings as SettingsIcon, RefreshCw, Check, Save, ArrowLeft, Target,
   FileText, Coins, Clock, Globe, Users, Plus, Trash2, Phone, Mail, MessageSquare, Send,
   UserCheck, AlertCircle, ChevronDown, GripVertical, CheckCircle2, Table, ArrowUp, ArrowDown,
-  QrCode, Sparkles, Upload, Image as ImageIcon, Building2, CreditCard, Lock, Unlock, ShieldCheck, Key
+  QrCode, Sparkles, Upload, Image as ImageIcon, Building2, CreditCard, Lock, Unlock, ShieldCheck, Key,
+  Pencil, X
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { 
@@ -15,8 +16,10 @@ import {
   fetchWorkspaceEventTypes, 
   fetchWorkspaceCrewRoles, 
   saveWorkspaceEventType, 
+  updateWorkspaceEventType,
   deleteWorkspaceEventType, 
   saveWorkspaceCrewRole, 
+  updateWorkspaceCrewRole,
   deleteWorkspaceCrewRole, 
   DEFAULT_EVENT_TYPES, 
   DEFAULT_CREW_ROLES, 
@@ -57,12 +60,17 @@ export default function SettingsPage() {
   const [eventTypes, setEventTypes] = useState<WorkspaceEventType[]>(DEFAULT_EVENT_TYPES);
   const [crewRoles, setCrewRoles] = useState<WorkspaceCrewRole[]>(DEFAULT_CREW_ROLES);
   const [newEventName, setNewEventName] = useState('');
-  const [newEventCategory, setNewEventCategory] = useState('Pre-Wedding');
   const [newRoleName, setNewRoleName] = useState('');
   const [newRoleCode, setNewRoleCode] = useState('');
-  const [newRoleCategory, setNewRoleCategory] = useState('Photography');
   const [eventSearch, setEventSearch] = useState('');
   const [roleSearch, setRoleSearch] = useState('');
+
+  // Editing Modals State
+  const [editingFunction, setEditingFunction] = useState<WorkspaceEventType | null>(null);
+  const [editFunctionName, setEditFunctionName] = useState('');
+  const [editingCrewRole, setEditingCrewRole] = useState<WorkspaceCrewRole | null>(null);
+  const [editRoleName, setEditRoleName] = useState('');
+  const [editRoleCode, setEditRoleCode] = useState('');
 
   // 1. Leads Page Settings
   const [leadOwners, setLeadOwners] = useState<DropdownItem[]>([
@@ -858,7 +866,7 @@ export default function SettingsPage() {
                     <div>
                       <h2 className="text-lg font-extrabold text-slate-900">Functions & Wedding Events Settings</h2>
                       <p className="text-xs font-medium text-slate-500">
-                        Manage standardized wedding event names. Synced automatically with Quotations and Team Manager.
+                        Manage standardized wedding event names. Synced automatically across Quotations and Team Manager.
                       </p>
                     </div>
                   </div>
@@ -878,7 +886,7 @@ export default function SettingsPage() {
                 {/* Add New Function Form */}
                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
                   <h4 className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">
-                    + Add New Wedding Function
+                    + Add New Function
                   </h4>
                   <div className="flex flex-col sm:flex-row items-center gap-3">
                     <input
@@ -886,33 +894,34 @@ export default function SettingsPage() {
                       placeholder="Event Name (e.g. Ring Ceremony, Cocktail, Pool Party)..."
                       value={newEventName}
                       onChange={e => setNewEventName(e.target.value)}
+                      onKeyDown={async e => {
+                        if (e.key === 'Enter' && newEventName.trim()) {
+                          const clean = newEventName.trim();
+                          const created = await saveWorkspaceEventType(workspaceId, clean, 'General');
+                          if (created) {
+                            setEventTypes(prev => [...prev.filter(ev => ev.name.toLowerCase() !== clean.toLowerCase()), created]);
+                            setNewEventName('');
+                            setSaveToast(`Function "${clean}" added & synced!`);
+                            setTimeout(() => setSaveToast(null), 3000);
+                          }
+                        }
+                      }}
                       className="flex-1 px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58] shadow-xs"
                     />
-                    <select
-                      value={newEventCategory}
-                      onChange={e => setNewEventCategory(e.target.value)}
-                      className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:border-[#0F9D58] shadow-xs"
-                    >
-                      <option value="Pre-Wedding">Pre-Wedding</option>
-                      <option value="Main Wedding">Main Wedding</option>
-                      <option value="Post-Wedding">Post-Wedding</option>
-                      <option value="Shoots">Shoots</option>
-                      <option value="Custom">Custom</option>
-                    </select>
                     <button
                       type="button"
                       onClick={async () => {
                         if (!newEventName.trim()) return;
                         const clean = newEventName.trim();
-                        const { data: { session } } = await supabase.auth.getSession();
-                        const uid = session?.user?.id || workspaceId;
-                        const created = await saveWorkspaceEventType(uid, clean, newEventCategory);
-                        setEventTypes(prev => [...prev.filter(e => e.name.toLowerCase() !== clean.toLowerCase()), created]);
-                        setNewEventName('');
-                        setSaveToast(`Function "${clean}" added & synced across system!`);
-                        setTimeout(() => setSaveToast(null), 3000);
+                        const created = await saveWorkspaceEventType(workspaceId, clean, 'General');
+                        if (created) {
+                          setEventTypes(prev => [...prev.filter(ev => ev.name.toLowerCase() !== clean.toLowerCase()), created]);
+                          setNewEventName('');
+                          setSaveToast(`Function "${clean}" added & synced!`);
+                          setTimeout(() => setSaveToast(null), 3000);
+                        }
                       }}
-                      className="w-full sm:w-auto px-5 py-2 bg-[#0F9D58] hover:bg-[#0B8043] text-white font-extrabold text-xs rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                      className="w-full sm:w-auto px-6 py-2 bg-[#0F9D58] hover:bg-[#0B8043] text-white font-extrabold text-xs rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
                     >
                       <Plus className="w-4 h-4" />
                       <span>Add Function</span>
@@ -945,11 +954,20 @@ export default function SettingsPage() {
                           )}
                           <button
                             type="button"
+                            onClick={() => {
+                              setEditingFunction(item);
+                              setEditFunctionName(item.name);
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-indigo-600 transition rounded-lg hover:bg-indigo-50 cursor-pointer"
+                            title="Edit Function"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
                             onClick={async () => {
                               if (!confirm(`Delete function "${item.name}"?`)) return;
-                              const { data: { session } } = await supabase.auth.getSession();
-                              const uid = session?.user?.id || workspaceId;
-                              await deleteWorkspaceEventType(item.id, uid);
+                              await deleteWorkspaceEventType(item.id, workspaceId);
                               setEventTypes(prev => prev.filter(e => e.id !== item.id));
                               setSaveToast(`Function "${item.name}" removed`);
                               setTimeout(() => setSaveToast(null), 3000);
@@ -963,6 +981,54 @@ export default function SettingsPage() {
                       </div>
                     ))}
                 </div>
+
+                {/* Edit Function Modal */}
+                {editingFunction && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+                    <div className="bg-white rounded-2xl p-5 max-w-sm w-full border border-slate-200 shadow-2xl space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-extrabold text-slate-900">Edit Function Name</h3>
+                        <button
+                          onClick={() => setEditingFunction(null)}
+                          className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <input
+                        type="text"
+                        value={editFunctionName}
+                        onChange={e => setEditFunctionName(e.target.value)}
+                        placeholder="Function Name..."
+                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58]"
+                      />
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => setEditingFunction(null)}
+                          className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:bg-slate-100 rounded-xl"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (!editFunctionName.trim()) return;
+                            const clean = editFunctionName.trim();
+                            const updated = await updateWorkspaceEventType(editingFunction.id, clean, editingFunction.category, workspaceId);
+                            if (updated) {
+                              setEventTypes(prev => prev.map(ev => ev.id === editingFunction.id ? { ...ev, name: clean } : ev));
+                              setSaveToast(`Function updated to "${clean}"!`);
+                              setTimeout(() => setSaveToast(null), 3000);
+                            }
+                            setEditingFunction(null);
+                          }}
+                          className="px-4 py-1.5 bg-[#0F9D58] hover:bg-[#0B8043] text-white text-xs font-extrabold rounded-xl shadow-xs"
+                        >
+                          Save Changes
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -977,7 +1043,7 @@ export default function SettingsPage() {
                     <div>
                       <h2 className="text-lg font-extrabold text-slate-900">Crew Roles & Short Codes Settings</h2>
                       <p className="text-xs font-medium text-slate-500">
-                        Configure crew roles with 2-letter short codes (TP, CP, CV, DP) for compact roster cards in Team Manager.
+                        Configure crew roles with short codes (TP, CP, CV, DP) for compact roster cards in Team Manager.
                       </p>
                     </div>
                   </div>
@@ -1014,7 +1080,6 @@ export default function SettingsPage() {
                       <input
                         type="text"
                         placeholder="Short Code (e.g. CP)..."
-                        maxLength={4}
                         value={newRoleCode}
                         onChange={e => setNewRoleCode(e.target.value.toUpperCase())}
                         className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black text-indigo-600 uppercase focus:outline-none focus:border-[#0F9D58] shadow-xs"
@@ -1026,14 +1091,14 @@ export default function SettingsPage() {
                         if (!newRoleName.trim()) return;
                         const cleanName = newRoleName.trim();
                         const cleanCode = newRoleCode.trim().toUpperCase() || getRoleShortCode(cleanName);
-                        const { data: { session } } = await supabase.auth.getSession();
-                        const uid = session?.user?.id || workspaceId;
-                        const created = await saveWorkspaceCrewRole(uid, cleanName, cleanCode, newRoleCategory);
-                        setCrewRoles(prev => [...prev.filter(r => r.name.toLowerCase() !== cleanName.toLowerCase()), created]);
-                        setNewRoleName('');
-                        setNewRoleCode('');
-                        setSaveToast(`Crew Role "${cleanName} (${cleanCode})" added & synced!`);
-                        setTimeout(() => setSaveToast(null), 3000);
+                        const created = await saveWorkspaceCrewRole(workspaceId, cleanName, cleanCode, 'Photography');
+                        if (created) {
+                          setCrewRoles(prev => [...prev.filter(r => r.name.toLowerCase() !== cleanName.toLowerCase()), created]);
+                          setNewRoleName('');
+                          setNewRoleCode('');
+                          setSaveToast(`Crew Role "${cleanName} (${cleanCode})" added & synced!`);
+                          setTimeout(() => setSaveToast(null), 3000);
+                        }
                       }}
                       className="w-full px-5 py-2 bg-[#0F9D58] hover:bg-[#0B8043] text-white font-extrabold text-xs rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
                     >
@@ -1070,11 +1135,21 @@ export default function SettingsPage() {
                           )}
                           <button
                             type="button"
+                            onClick={() => {
+                              setEditingCrewRole(item);
+                              setEditRoleName(item.name);
+                              setEditRoleCode(item.short_code);
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-indigo-600 transition rounded-lg hover:bg-indigo-50 cursor-pointer"
+                            title="Edit Role & Code"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
                             onClick={async () => {
                               if (!confirm(`Delete crew role "${item.name}"?`)) return;
-                              const { data: { session } } = await supabase.auth.getSession();
-                              const uid = session?.user?.id || workspaceId;
-                              await deleteWorkspaceCrewRole(item.id, uid);
+                              await deleteWorkspaceCrewRole(item.id, workspaceId);
                               setCrewRoles(prev => prev.filter(r => r.id !== item.id));
                               setSaveToast(`Crew role "${item.name}" removed`);
                               setTimeout(() => setSaveToast(null), 3000);
@@ -1088,6 +1163,70 @@ export default function SettingsPage() {
                       </div>
                     ))}
                 </div>
+
+                {/* Edit Crew Role Modal */}
+                {editingCrewRole && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+                    <div className="bg-white rounded-2xl p-5 max-w-sm w-full border border-slate-200 shadow-2xl space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-extrabold text-slate-900">Edit Crew Role</h3>
+                        <button
+                          onClick={() => setEditingCrewRole(null)}
+                          className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <div className="space-y-3">
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Full Role Name</label>
+                          <input
+                            type="text"
+                            value={editRoleName}
+                            onChange={e => setEditRoleName(e.target.value)}
+                            placeholder="Role Name..."
+                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58]"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Short Code (Any Length)</label>
+                          <input
+                            type="text"
+                            value={editRoleCode}
+                            onChange={e => setEditRoleCode(e.target.value.toUpperCase())}
+                            placeholder="Short Code (e.g. CP, CINE, DRONE)..."
+                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-black text-indigo-600 uppercase focus:outline-none focus:border-[#0F9D58]"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-end gap-2 pt-2">
+                        <button
+                          onClick={() => setEditingCrewRole(null)}
+                          className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:bg-slate-100 rounded-xl"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (!editRoleName.trim()) return;
+                            const cleanName = editRoleName.trim();
+                            const cleanCode = editRoleCode.trim().toUpperCase() || getRoleShortCode(cleanName);
+                            const updated = await updateWorkspaceCrewRole(editingCrewRole.id, cleanName, cleanCode, editingCrewRole.category, workspaceId);
+                            if (updated) {
+                              setCrewRoles(prev => prev.map(r => r.id === editingCrewRole.id ? { ...r, name: cleanName, short_code: cleanCode } : r));
+                              setSaveToast(`Crew role updated to "${cleanName} (${cleanCode})"!`);
+                              setTimeout(() => setSaveToast(null), 3000);
+                            }
+                            setEditingCrewRole(null);
+                          }}
+                          className="px-4 py-1.5 bg-[#0F9D58] hover:bg-[#0B8043] text-white text-xs font-extrabold rounded-xl shadow-xs"
+                        >
+                          Save Changes
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

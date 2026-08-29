@@ -485,10 +485,13 @@ export function extractSubEventsFromQuotation(
         shootRoles.push(...lines);
       }
 
+      const rawShootDate = shoot.date || shoot.eventDate || shoot.shootDate || null;
+      const shootDate = rawShootDate ? normalizeToIsoDate(rawShootDate, fallbackEventDate) : 'Date Not Fixed';
+
       subEvents.push({
         event_title: shootTitle,
-        event_date: fallbackEventDate || new Date().toISOString().split('T')[0],
-        venue_name: fallbackVenue || null,
+        event_date: shootDate,
+        venue_name: shoot.location || shoot.venue || fallbackVenue || null,
         roll_call_time: '09:00 AM',
         dismissal_estimate_time: '06:00 PM',
         shift_hours_slot: shoot.daysText || '1 Day Shoot',

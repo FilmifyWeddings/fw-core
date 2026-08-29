@@ -171,6 +171,7 @@ export default function TeamManagerPage() {
   // Active Dropdown Target: assignmentId -> boolean
   const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null);
   const [activePmDropdownProjectId, setActivePmDropdownProjectId] = useState<string | null>(null);
+  const [pmSearchQuery, setPmSearchQuery] = useState<string>('');
 
   // Filter state
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -180,7 +181,10 @@ export default function TeamManagerPage() {
   // Close popovers on outside click
   useEffect(() => {
     const handleGlobalClick = () => {
-      if (activePmDropdownProjectId) setActivePmDropdownProjectId(null);
+      if (activePmDropdownProjectId) {
+        setActivePmDropdownProjectId(null);
+        setPmSearchQuery('');
+      }
     };
     window.addEventListener('click', handleGlobalClick);
     return () => window.removeEventListener('click', handleGlobalClick);
@@ -196,7 +200,7 @@ export default function TeamManagerPage() {
     }));
 
     try {
-      await supabase
+      const { error } = await supabase
         .from('fw_projects')
         .update({
           project_manager_id: memberId,
@@ -204,6 +208,10 @@ export default function TeamManagerPage() {
           updated_at: new Date().toISOString()
         })
         .eq('id', projectId);
+
+      if (error) {
+        console.error('[TeamManager] Error updating PM in Supabase:', error);
+      }
     } catch (err) {
       console.error('[TeamManager] Error updating PM:', err);
     }
@@ -1046,7 +1054,7 @@ export default function TeamManagerPage() {
                               {/* Popover Dropdown */}
                               {activePmDropdownProjectId === project.id && (
                                 <div 
-                                  className="absolute right-0 mt-2 z-[9999] w-64 max-h-72 overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl p-2 space-y-1 text-slate-800"
+                                  className="absolute right-0 mt-2 z-[9999] w-64 max-h-80 overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl p-2 space-y-1.5 text-slate-800"
                                 >
                                   <div className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 flex items-center justify-between">
                                     <span>Assign Project Manager</span>
@@ -1056,12 +1064,27 @@ export default function TeamManagerPage() {
                                         onClick={() => {
                                           handleProjectPMChange(project.id, null, null);
                                           setActivePmDropdownProjectId(null);
+                                          setPmSearchQuery('');
                                         }}
-                                        className="text-rose-500 hover:underline cursor-pointer"
+                                        className="text-rose-500 hover:underline cursor-pointer font-bold"
                                       >
                                         Clear PM
                                       </button>
                                     )}
+                                  </div>
+
+                                  {/* Search Input for PMs */}
+                                  <div className="relative px-1 pt-1 pb-0.5">
+                                    <input
+                                      type="text"
+                                      placeholder="Search team member..."
+                                      value={pmSearchQuery}
+                                      onChange={e => setPmSearchQuery(e.target.value)}
+                                      onClick={e => e.stopPropagation()}
+                                      className="w-full pl-7 pr-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-amber-500 focus:bg-white"
+                                      autoFocus
+                                    />
+                                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
                                   </div>
 
                                   {teamMembers.length === 0 ? (
@@ -1069,37 +1092,44 @@ export default function TeamManagerPage() {
                                       No team members found in Directory.
                                     </div>
                                   ) : (
-                                    teamMembers.map(m => {
-                                      const isSelected = project.project_manager_id === m.id || project.project_manager_name === m.name;
-                                      return (
-                                        <button
-                                          key={m.id}
-                                          type="button"
-                                          onClick={() => {
-                                            handleProjectPMChange(project.id, m.id, m.name);
-                                            setActivePmDropdownProjectId(null);
-                                          }}
-                                          className={`w-full flex items-center justify-between gap-2.5 p-2 rounded-xl text-left transition cursor-pointer ${
-                                            isSelected ? 'bg-amber-50 text-amber-950 font-bold border border-amber-200' : 'hover:bg-slate-50 text-slate-700'
-                                          }`}
-                                        >
-                                          <div className="flex items-center gap-2 min-w-0">
-                                            <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-amber-500 to-amber-600 text-white font-black text-[10px] flex items-center justify-center shrink-0 overflow-hidden shadow-xs">
-                                              {m.avatar_url ? (
-                                                <img src={m.avatar_url} alt="" className="w-full h-full object-cover" />
-                                              ) : (
-                                                getInitials(m.name)
-                                              )}
+                                    teamMembers
+                                      .filter(m => 
+                                        !pmSearchQuery.trim() || 
+                                        m.name.toLowerCase().includes(pmSearchQuery.toLowerCase()) || 
+                                        (m.primary_role || '').toLowerCase().includes(pmSearchQuery.toLowerCase())
+                                      )
+                                      .map(m => {
+                                        const isSelected = project.project_manager_id === m.id || project.project_manager_name === m.name;
+                                        return (
+                                          <button
+                                            key={m.id}
+                                            type="button"
+                                            onClick={() => {
+                                              handleProjectPMChange(project.id, m.id, m.name);
+                                              setActivePmDropdownProjectId(null);
+                                              setPmSearchQuery('');
+                                            }}
+                                            className={`w-full flex items-center justify-between gap-2.5 p-2 rounded-xl text-left transition cursor-pointer ${
+                                              isSelected ? 'bg-amber-50 text-amber-950 font-bold border border-amber-200' : 'hover:bg-slate-50 text-slate-700'
+                                            }`}
+                                          >
+                                            <div className="flex items-center gap-2 min-w-0">
+                                              <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-amber-500 to-amber-600 text-white font-black text-[10px] flex items-center justify-center shrink-0 overflow-hidden shadow-xs">
+                                                {m.avatar_url ? (
+                                                  <img src={m.avatar_url} alt="" className="w-full h-full object-cover" />
+                                                ) : (
+                                                  getInitials(m.name)
+                                                )}
+                                              </div>
+                                              <div className="min-w-0">
+                                                <p className="text-xs font-black truncate">{m.name}</p>
+                                                <p className="text-[10px] text-slate-400 font-semibold truncate">{m.primary_role || 'Team Member'}</p>
+                                              </div>
                                             </div>
-                                            <div className="min-w-0">
-                                              <p className="text-xs font-black truncate">{m.name}</p>
-                                              <p className="text-[10px] text-slate-400 font-semibold truncate">{m.primary_role || 'Team Member'}</p>
-                                            </div>
-                                          </div>
-                                          {isSelected && <Check className="w-4 h-4 text-amber-600 shrink-0" />}
-                                        </button>
-                                      );
-                                    })
+                                            {isSelected && <Check className="w-4 h-4 text-amber-600 shrink-0" />}
+                                          </button>
+                                        );
+                                      })
                                   )}
                                 </div>
                               )}
@@ -1123,18 +1153,23 @@ export default function TeamManagerPage() {
                         {/* HORIZONTAL MODERN GRADIENT SUB-EVENT CARDS STACK */}
                         <div className="space-y-4">
                           {project.fw_sub_events?.map((subEvent) => {
+                            const isDateNotFixed = !subEvent.event_date || 
+                              subEvent.event_date.toLowerCase().includes('not fix') || 
+                              subEvent.event_date.toLowerCase().includes('tbd') || 
+                              isNaN(new Date(subEvent.event_date).getTime());
+
                             const eventDate = new Date(subEvent.event_date);
-                            const dayName = isNaN(eventDate.getTime()) 
-                              ? 'DAY' 
+                            const dayName = isDateNotFixed 
+                              ? 'DATE' 
                               : eventDate.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
-                            const monthAbbr = isNaN(eventDate.getTime()) 
-                              ? 'MMM' 
+                            const monthAbbr = isDateNotFixed 
+                              ? 'NOT' 
                               : eventDate.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
-                            const dayNumber = isNaN(eventDate.getTime()) 
-                              ? '00' 
+                            const dayNumber = isDateNotFixed 
+                              ? 'TBD' 
                               : eventDate.getDate().toString().padStart(2, '0');
-                            const yearStr = isNaN(eventDate.getTime()) 
-                              ? '2026' 
+                            const yearStr = isDateNotFixed 
+                              ? 'FIXED' 
                               : eventDate.getFullYear().toString();
 
                             // Robust assignment resolver ensuring roles are fetched via fw_assignments relation
@@ -1151,7 +1186,7 @@ export default function TeamManagerPage() {
                                     <span className="text-xs font-bold text-white/80 uppercase tracking-wider block">
                                       {dayName}
                                     </span>
-                                    <span className="text-2xl font-black text-white leading-none my-1 block">
+                                    <span className={`font-black text-white leading-none my-1 block ${isDateNotFixed ? 'text-lg' : 'text-2xl'}`}>
                                       {dayNumber}
                                     </span>
                                     <span className="text-xs font-extrabold text-white/90 uppercase tracking-wider block">
@@ -1171,9 +1206,16 @@ export default function TeamManagerPage() {
                                 <div className="flex-1 p-4 flex flex-col justify-between space-y-3">
                                   <div>
                                     <div className="flex items-start justify-between gap-3 mb-1">
-                                      <h4 className="font-black text-slate-900 text-base tracking-tight" style={{ color: '#1E1B4B' }}>
-                                        {subEvent.event_title}
-                                      </h4>
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <h4 className="font-black text-slate-900 text-base tracking-tight" style={{ color: '#1E1B4B' }}>
+                                          {subEvent.event_title}
+                                        </h4>
+                                        {isDateNotFixed && (
+                                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black">
+                                            ⚠️ Date Not Fixed (Click Edit to set date)
+                                          </span>
+                                        )}
+                                      </div>
                                     </div>
 
                                     <div className="flex items-center gap-3 text-xs font-bold text-slate-500 flex-wrap">
@@ -1380,7 +1422,7 @@ export default function TeamManagerPage() {
                             {/* Mobile PM Dropdown Modal/Popover */}
                             {activePmDropdownProjectId === `m_${project.id}` && (
                               <div 
-                                className="absolute left-0 right-0 top-full mt-2 z-[9999] max-h-64 overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl p-2 space-y-1 text-slate-800"
+                                className="absolute left-0 right-0 top-full mt-2 z-[9999] max-h-72 overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl p-2 space-y-1.5 text-slate-800"
                               >
                                 <div className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 flex items-center justify-between">
                                   <span>Select Project Manager</span>
@@ -1390,45 +1432,67 @@ export default function TeamManagerPage() {
                                       onClick={() => {
                                         handleProjectPMChange(project.id, null, null);
                                         setActivePmDropdownProjectId(null);
+                                        setPmSearchQuery('');
                                       }}
-                                      className="text-rose-500 hover:underline text-[10px] font-bold"
+                                      className="text-rose-500 hover:underline text-[10px] font-bold cursor-pointer"
                                     >
                                       Clear PM
                                     </button>
                                   )}
                                 </div>
 
-                                {teamMembers.map(m => {
-                                  const isSelected = project.project_manager_id === m.id || project.project_manager_name === m.name;
-                                  return (
-                                    <button
-                                      key={m.id}
-                                      type="button"
-                                      onClick={() => {
-                                        handleProjectPMChange(project.id, m.id, m.name);
-                                        setActivePmDropdownProjectId(null);
-                                      }}
-                                      className={`w-full flex items-center justify-between gap-2.5 p-2 rounded-xl text-left transition ${
-                                        isSelected ? 'bg-amber-50 text-amber-950 font-bold border border-amber-200' : 'hover:bg-slate-50 text-slate-700'
-                                      }`}
-                                    >
-                                      <div className="flex items-center gap-2 min-w-0">
-                                        <div className="w-6 h-6 rounded-full bg-amber-500 text-white font-black text-[9px] flex items-center justify-center shrink-0 overflow-hidden">
-                                          {m.avatar_url ? (
-                                            <img src={m.avatar_url} alt="" className="w-full h-full object-cover" />
-                                          ) : (
-                                            getInitials(m.name)
-                                          )}
+                                {/* Search Input for Mobile */}
+                                <div className="relative px-1 pt-0.5">
+                                  <input
+                                    type="text"
+                                    placeholder="Search team member..."
+                                    value={pmSearchQuery}
+                                    onChange={e => setPmSearchQuery(e.target.value)}
+                                    onClick={e => e.stopPropagation()}
+                                    className="w-full pl-7 pr-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-amber-500 focus:bg-white"
+                                    autoFocus
+                                  />
+                                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                                </div>
+
+                                {teamMembers
+                                  .filter(m => 
+                                    !pmSearchQuery.trim() || 
+                                    m.name.toLowerCase().includes(pmSearchQuery.toLowerCase()) || 
+                                    (m.primary_role || '').toLowerCase().includes(pmSearchQuery.toLowerCase())
+                                  )
+                                  .map(m => {
+                                    const isSelected = project.project_manager_id === m.id || project.project_manager_name === m.name;
+                                    return (
+                                      <button
+                                        key={m.id}
+                                        type="button"
+                                        onClick={() => {
+                                          handleProjectPMChange(project.id, m.id, m.name);
+                                          setActivePmDropdownProjectId(null);
+                                          setPmSearchQuery('');
+                                        }}
+                                        className={`w-full flex items-center justify-between gap-2.5 p-2 rounded-xl text-left transition ${
+                                          isSelected ? 'bg-amber-50 text-amber-950 font-bold border border-amber-200' : 'hover:bg-slate-50 text-slate-700'
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <div className="w-6 h-6 rounded-full bg-amber-500 text-white font-black text-[9px] flex items-center justify-center shrink-0 overflow-hidden">
+                                            {m.avatar_url ? (
+                                              <img src={m.avatar_url} alt="" className="w-full h-full object-cover" />
+                                            ) : (
+                                              getInitials(m.name)
+                                            )}
+                                          </div>
+                                          <div className="min-w-0">
+                                            <p className="text-xs font-black truncate text-slate-900">{m.name}</p>
+                                            <p className="text-[9px] text-slate-400 font-semibold truncate">{m.primary_role || 'Crew'}</p>
+                                          </div>
                                         </div>
-                                        <div className="min-w-0">
-                                          <p className="text-xs font-black truncate text-slate-900">{m.name}</p>
-                                          <p className="text-[9px] text-slate-400 font-semibold truncate">{m.primary_role || 'Crew'}</p>
-                                        </div>
-                                      </div>
-                                      {isSelected && <Check className="w-3.5 h-3.5 text-amber-600 shrink-0" />}
-                                    </button>
-                                  );
-                                })}
+                                        {isSelected && <Check className="w-3.5 h-3.5 text-amber-600 shrink-0" />}
+                                      </button>
+                                    );
+                                  })}
                               </div>
                             )}
                           </div>
@@ -1440,6 +1504,11 @@ export default function TeamManagerPage() {
                             <div className="text-center py-4 text-xs text-slate-400 italic">No sub-events added yet.</div>
                           ) : (
                             subEvents.map((subEvent) => {
+                              const isDateNotFixed = !subEvent.event_date || 
+                                subEvent.event_date.toLowerCase().includes('not fix') || 
+                                subEvent.event_date.toLowerCase().includes('tbd') || 
+                                isNaN(new Date(subEvent.event_date).getTime());
+
                               const assignments = resolveSubEventAssignments(subEvent, teamMembers);
                               const assignedCount = assignments.filter((a: any) => a.assigned_member_id !== null).length;
                               const totalSlots = assignments.length;
@@ -1454,9 +1523,15 @@ export default function TeamManagerPage() {
                                       <h4 className="font-extrabold text-slate-900 text-xs">
                                         {subEvent.event_title}
                                       </h4>
-                                      <span className="text-[10px] font-bold text-slate-500 block mt-0.5">
-                                        {subEvent.event_date} ({getCountdownBadge(subEvent.event_date)})
-                                      </span>
+                                      {isDateNotFixed ? (
+                                        <span className="text-[10px] font-black text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full inline-block mt-0.5 border border-amber-300">
+                                          ⚠️ Date Not Fixed (Edit to set)
+                                        </span>
+                                      ) : (
+                                        <span className="text-[10px] font-bold text-slate-500 block mt-0.5">
+                                          {subEvent.event_date} ({getCountdownBadge(subEvent.event_date)})
+                                        </span>
+                                      )}
                                     </div>
 
                                     <span className="px-2 py-0.5 rounded-xl bg-indigo-50 text-indigo-700 font-extrabold text-[10px] border border-indigo-100">

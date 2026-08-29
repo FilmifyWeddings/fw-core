@@ -130,50 +130,98 @@ export async function POST(req: NextRequest) {
 }
 
 /**
- * Standardized Crew Role Normalization Dictionary
+ * Standardized Crew Role Normalization Dictionary with Intelligent Fuzzy Matching
  */
 function normalizeCrewRoleName(rawRole: string): string {
   if (!rawRole) return 'Candid Photographer';
   const s = rawRole.toLowerCase().trim();
-  if (s.includes('cinematog') || s === 'cv' || s.includes('cine video') || s.includes('cinematic video') || s === 'cinematic') {
+
+  // 1. Cinematographer & all variations / spelling mistakes
+  if (
+    s.includes('cinematog') || 
+    s.includes('cinematrap') ||
+    s.includes('cinematraf') ||
+    s.includes('cinematic') || 
+    s.includes('cinema') || 
+    s.includes('cine video') || 
+    s.includes('cine') || 
+    s === 'cv'
+  ) {
     return 'Cinematographer';
   }
-  if (s.includes('traditional photo') || s === 'tp' || s.includes('trad photo') || s.includes('tred photo') || s.includes('treational photo')) {
-    return 'Traditional Photographer';
-  }
-  if (s.includes('candid photo') || s === 'cp' || s.includes('candid photog') || s.includes('candid photos')) {
+
+  // 2. Candid Photographer & spelling mistakes
+  if (
+    s.includes('candid photo') || 
+    s.includes('candid photog') || 
+    s.includes('candid') || 
+    s.includes('candit') || 
+    s.includes('kandid') || 
+    s === 'cp'
+  ) {
     return 'Candid Photographer';
   }
-  if (s.includes('traditional video') || s === 'tv' || s.includes('trad video') || s.includes('tred video') || s.includes('tred videography')) {
+
+  // 3. Traditional Photographer
+  if (
+    s.includes('traditional photo') || 
+    s.includes('trad photo') || 
+    s.includes('tred photo') || 
+    s.includes('treational photo') ||
+    s.includes('trad photog') ||
+    s === 'tp'
+  ) {
+    return 'Traditional Photographer';
+  }
+
+  // 4. Traditional Videographer
+  if (
+    s.includes('traditional video') || 
+    s.includes('trad video') || 
+    s.includes('tred video') || 
+    s.includes('tred videography') ||
+    s.includes('trad videop') ||
+    s === 'tv'
+  ) {
     return 'Traditional Videographer';
   }
-  if (s.includes('social media') || s.includes('story creator') || s.includes('social media manager')) {
-    return 'Social Media Person';
-  }
-  if (s.includes('semi cine') || s.includes('semi-cine') || s.includes('sami cinematic')) {
-    return 'Semi Cinematic';
-  }
-  if (s.includes('reel') || s.includes('reels') || s.includes('reel person') || s.includes('reel creator') || s.includes('reel maker')) {
-    return 'Reel Creator';
-  }
-  if (s.includes('live') || s.includes('streaming') || s.includes('led') || s.includes('live videography')) {
-    return 'Live Videography';
-  }
-  if (s.includes('drone') || s.includes('aerial')) {
+
+  // 5. Drone Pilot
+  if (s.includes('drone') || s.includes('dron') || s.includes('aerial') || s === 'dp') {
     return 'Drone Pilot';
   }
-  if (s.includes('assistant') || s === 'ass' || s.includes('helper') || s.includes('light boy')) {
-    return 'Assistant';
+
+  // 6. Assistant / Helper
+  if (s.includes('assistant') || s.includes('asistant') || s === 'ass' || s.includes('helper') || s.includes('light boy') || s.includes('lightman')) {
+    return 'Assistant / Helper';
   }
-  if (s.includes('team manager') || s === 'tm' || s.includes('coordinator') || s.includes('event manager')) {
-    return 'Team Manager';
+
+  // 7. Social Media / Reels
+  if (s.includes('social media') || s.includes('story creator') || s.includes('reel') || s.includes('reels') || s === 'rc') {
+    return 'Social Media Reels Creator';
   }
-  if (s.includes('makeup') || s === 'mua' || s.includes('makup artist')) {
-    return 'Makeup Artist';
+
+  // 8. Live streaming
+  if (s.includes('live') || s.includes('streaming') || s.includes('led') || s === 'ls') {
+    return 'Live Stream Operator';
   }
-  if (s.includes('family photo') || s.includes('family photography') || s.includes('family photos')) {
-    return 'Family Photographer';
+
+  // 9. Teaser
+  if (s.includes('teaser') || s === 'ts') {
+    return 'Teaser Specialist';
   }
+
+  // 10. Editors
+  if (s.includes('photo edit') || s.includes('retouch') || s === 'pe') {
+    return 'Photo Editor / Retoucher';
+  }
+  if (s.includes('video edit') || s === 've') {
+    return 'Video Editor';
+  }
+  if (s.includes('album') || s === 'ad') {
+    return 'Album Designer';
+  }
+
   // Capitalize custom role nicely
   return rawRole.trim().replace(/\b\w/g, l => l.toUpperCase());
 }

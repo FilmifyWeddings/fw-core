@@ -92,19 +92,33 @@ export function getRoleShortCode(roleName?: string | null, customRoles?: Workspa
 }
 
 /**
+ * Resolves active authenticated workspace ID safely
+ */
+export async function resolveWorkspaceId(workspaceId?: string): Promise<string> {
+  if (workspaceId && workspaceId.trim() && workspaceId !== 'default' && workspaceId !== 'PUBLIC_USER') {
+    return workspaceId.trim();
+  }
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user?.id) return session.user.id;
+  } catch (_) {}
+  return '';
+}
+
+/**
  * Fetch workspace event types from Supabase with fallback to DEFAULT_EVENT_TYPES
  */
 export async function fetchWorkspaceEventTypes(workspaceId?: string): Promise<WorkspaceEventType[]> {
+  const wsId = await resolveWorkspaceId(workspaceId);
   try {
-    if (workspaceId) {
+    if (wsId) {
       const { data, error } = await supabase
         .from('workspace_event_types')
         .select('*')
-        .eq('workspace_id', workspaceId)
+        .eq('workspace_id', wsId)
         .order('display_order', { ascending: true });
 
       if (!error && data && data.length > 0) {
-        // Merge with defaults to ensure complete list
         const customNames = new Set(data.map(d => d.name.toLowerCase()));
         const merged = [...data];
         DEFAULT_EVENT_TYPES.forEach(def => {
@@ -122,7 +136,7 @@ export async function fetchWorkspaceEventTypes(workspaceId?: string): Promise<Wo
   // Fallback to localStorage if available
   if (typeof window !== 'undefined') {
     try {
-      const local = localStorage.getItem(`wg_custom_event_types_${workspaceId || 'default'}`);
+      const local = localStorage.getItem(`wg_custom_event_types_${wsId || 'default'}`);
       if (local) {
         const parsed = JSON.parse(local);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -139,12 +153,13 @@ export async function fetchWorkspaceEventTypes(workspaceId?: string): Promise<Wo
  * Fetch workspace crew roles with short codes from Supabase with fallback to DEFAULT_CREW_ROLES
  */
 export async function fetchWorkspaceCrewRoles(workspaceId?: string): Promise<WorkspaceCrewRole[]> {
+  const wsId = await resolveWorkspaceId(workspaceId);
   try {
-    if (workspaceId) {
+    if (wsId) {
       const { data, error } = await supabase
         .from('workspace_crew_roles')
         .select('*')
-        .eq('workspace_id', workspaceId)
+        .eq('workspace_id', wsId)
         .order('display_order', { ascending: true });
 
       if (!error && data && data.length > 0) {
@@ -165,7 +180,7 @@ export async function fetchWorkspaceCrewRoles(workspaceId?: string): Promise<Wor
   // Fallback to localStorage
   if (typeof window !== 'undefined') {
     try {
-      const local = localStorage.getItem(`wg_custom_crew_roles_${workspaceId || 'default'}`);
+      const local = localStorage.getItem(`wg_custom_crew_roles_${wsId || 'default'}`);
       if (local) {
         const parsed = JSON.parse(local);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -182,16 +197,18 @@ export async function fetchWorkspaceCrewRoles(workspaceId?: string): Promise<Wor
  * Save new event type to workspace
  */
 export async function saveWorkspaceEventType(
-  workspaceId: string,
-  name: string,
-  category = 'Wedding'
+  workspaceId?: string,
+  name?: string,
+  category = 'General'
 ): Promise<WorkspaceEventType | null> {
-  const cleanName = name.trim();
+  const cleanName = (name || '').trim();
   if (!cleanName) return null;
+
+  const wsId = await resolveWorkspaceId(workspaceId);
 
   const newType: WorkspaceEventType = {
     id: `ev_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-    workspace_id: workspaceId,
+    workspace_id: wsId || undefined,
     name: cleanName,
     category,
     is_default: false,
@@ -199,11 +216,11 @@ export async function saveWorkspaceEventType(
   };
 
   try {
-    if (workspaceId) {
+    if (wsId) {
       const { data, error } = await supabase
         .from('workspace_event_types')
         .upsert([{
-          workspace_id: workspaceId,
+          workspace_id: wsId,
           name: cleanName,
           category,
           is_default: false,
@@ -214,6 +231,9 @@ export async function saveWorkspaceEventType(
         .single();
 
       if (!error && data) {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('workspace_event_types_updated'));
+        }
         return data;
       }
     }
@@ -221,25 +241,73 @@ export async function saveWorkspaceEventType(
     console.warn('[WorkspaceSettings] Error saving workspace_event_type:', err);
   }
 
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('workspace_event_types_updated'));
+  }
   return newType;
+}
+
+/**
+ * Update existing event type
+ */
+export async function updateWorkspaceEventType(
+  id: string,
+  name: string,
+  category = 'General',
+  workspaceId?: string
+): Promise<WorkspaceEventType | null> {
+  const cleanName = name.trim();
+  if (!cleanName) return null;
+  const wsId = await resolveWorkspaceId(workspaceId);
+
+  try {
+    if (wsId && !id.startsWith('def_')) {
+      const { data, error } = await supabase
+        .from('workspace_event_types')
+        .update({
+          name: cleanName,
+          category,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (!error && data) {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('workspace_event_types_updated'));
+        }
+        return data;
+      }
+    }
+  } catch (err) {
+    console.warn('[WorkspaceSettings] Error updating workspace_event_type:', err);
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('workspace_event_types_updated'));
+  }
+  return { id, workspace_id: wsId, name: cleanName, category };
 }
 
 /**
  * Save new crew role with short code to workspace
  */
 export async function saveWorkspaceCrewRole(
-  workspaceId: string,
-  name: string,
-  shortCode: string,
+  workspaceId?: string,
+  name?: string,
+  shortCode?: string,
   category = 'Photography'
 ): Promise<WorkspaceCrewRole | null> {
-  const cleanName = name.trim();
-  const cleanCode = (shortCode.trim() || cleanName.slice(0, 2)).toUpperCase();
+  const cleanName = (name || '').trim();
   if (!cleanName) return null;
+  const cleanCode = (shortCode ? shortCode.trim() : getRoleShortCode(cleanName)).toUpperCase();
+
+  const wsId = await resolveWorkspaceId(workspaceId);
 
   const newRole: WorkspaceCrewRole = {
     id: `role_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-    workspace_id: workspaceId,
+    workspace_id: wsId || undefined,
     name: cleanName,
     short_code: cleanCode,
     category,
@@ -248,11 +316,11 @@ export async function saveWorkspaceCrewRole(
   };
 
   try {
-    if (workspaceId) {
+    if (wsId) {
       const { data, error } = await supabase
         .from('workspace_crew_roles')
         .upsert([{
-          workspace_id: workspaceId,
+          workspace_id: wsId,
           name: cleanName,
           short_code: cleanCode,
           category,
@@ -264,6 +332,9 @@ export async function saveWorkspaceCrewRole(
         .single();
 
       if (!error && data) {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('workspace_crew_roles_updated'));
+        }
         return data;
       }
     }
@@ -271,7 +342,56 @@ export async function saveWorkspaceCrewRole(
     console.warn('[WorkspaceSettings] Error saving workspace_crew_role:', err);
   }
 
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('workspace_crew_roles_updated'));
+  }
   return newRole;
+}
+
+/**
+ * Update existing crew role
+ */
+export async function updateWorkspaceCrewRole(
+  id: string,
+  name: string,
+  shortCode: string,
+  category = 'Photography',
+  workspaceId?: string
+): Promise<WorkspaceCrewRole | null> {
+  const cleanName = name.trim();
+  if (!cleanName) return null;
+  const cleanCode = (shortCode ? shortCode.trim() : getRoleShortCode(cleanName)).toUpperCase();
+  const wsId = await resolveWorkspaceId(workspaceId);
+
+  try {
+    if (wsId && !id.startsWith('def_')) {
+      const { data, error } = await supabase
+        .from('workspace_crew_roles')
+        .update({
+          name: cleanName,
+          short_code: cleanCode,
+          category,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (!error && data) {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('workspace_crew_roles_updated'));
+        }
+        return data;
+      }
+    }
+  } catch (err) {
+    console.warn('[WorkspaceSettings] Error updating workspace_crew_role:', err);
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('workspace_crew_roles_updated'));
+  }
+  return { id, workspace_id: wsId, name: cleanName, short_code: cleanCode, category };
 }
 
 /**
@@ -281,12 +401,16 @@ export async function deleteWorkspaceEventType(
   id: string,
   workspaceId?: string
 ): Promise<boolean> {
+  const wsId = await resolveWorkspaceId(workspaceId);
   try {
-    if (workspaceId && !id.startsWith('def_')) {
+    if (wsId && !id.startsWith('def_')) {
       await supabase
         .from('workspace_event_types')
         .delete()
         .eq('id', id);
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('workspace_event_types_updated'));
     }
     return true;
   } catch (err) {
@@ -302,12 +426,16 @@ export async function deleteWorkspaceCrewRole(
   id: string,
   workspaceId?: string
 ): Promise<boolean> {
+  const wsId = await resolveWorkspaceId(workspaceId);
   try {
-    if (workspaceId && !id.startsWith('def_')) {
+    if (wsId && !id.startsWith('def_')) {
       await supabase
         .from('workspace_crew_roles')
         .delete()
         .eq('id', id);
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('workspace_crew_roles_updated'));
     }
     return true;
   } catch (err) {
