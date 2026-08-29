@@ -19,6 +19,58 @@ export interface WorkspaceCrewRole {
   display_order?: number;
 }
 
+export interface WorkspaceQuotationDeliverable {
+  id: string;
+  title: string;
+  category?: string;
+  is_default?: boolean;
+  display_order?: number;
+}
+
+export interface WorkspaceQuotationSpecialAddon {
+  id: string;
+  title: string;
+  category?: string;
+  is_default?: boolean;
+  display_order?: number;
+}
+
+export interface WorkspaceQuotationPaidAddon {
+  id: string;
+  title: string;
+  price: number;
+  category?: string;
+  is_default?: boolean;
+  display_order?: number;
+}
+
+export interface WorkspaceQuotationDefaultFunction {
+  id: string;
+  name: string;
+  startTime?: string;
+  endTime?: string;
+  durationSlot?: string;
+  location?: string;
+  requirements: Array<{ name: string; qty: number }>;
+  notes?: string;
+  display_order?: number;
+}
+
+export interface WorkspaceQuotationSettings {
+  deliverables: WorkspaceQuotationDeliverable[];
+  specialAddons: WorkspaceQuotationSpecialAddon[];
+  paidAddons: WorkspaceQuotationPaidAddon[];
+  defaultFunctions: WorkspaceQuotationDefaultFunction[];
+  requirements: string[];
+  preWeddingDeliverables: string[];
+  durationSlots: string[];
+  pdfTheme?: string;
+  quoteTerms?: string;
+  contractClauses?: string;
+  quoteExpiryDays?: number;
+  currency?: string;
+}
+
 export const DEFAULT_EVENT_TYPES: WorkspaceEventType[] = [
   { id: 'def_ev_1', name: 'Wedding Ceremony', category: 'Main Wedding', is_default: true, display_order: 1 },
   { id: 'def_ev_2', name: 'Haldi', category: 'Pre-Wedding', is_default: true, display_order: 2 },
@@ -48,11 +100,140 @@ export const DEFAULT_CREW_ROLES: WorkspaceCrewRole[] = [
   { id: 'def_role_12', name: 'Social Media Reels Creator', short_code: 'RC', category: 'Social Media', is_default: true, display_order: 12 },
 ];
 
+export const DEFAULT_QUOTATION_DELIVERABLES: WorkspaceQuotationDeliverable[] = [
+  { id: 'deliv_1', title: '1 Teaser Video (1-2 Min)', category: 'Video', is_default: true, display_order: 1 },
+  { id: 'deliv_2', title: '1 Main Highlight Film (15-20 Min)', category: 'Video', is_default: true, display_order: 2 },
+  { id: 'deliv_3', title: '3 Instagram Reels', category: 'Social Media', is_default: true, display_order: 3 },
+  { id: 'deliv_4', title: 'All Raw Photos & Footage in Hard Drive', category: 'Data', is_default: true, display_order: 4 },
+  { id: 'deliv_5', title: '75-80 Retouched High-Res Images', category: 'Photo', is_default: true, display_order: 5 },
+  { id: 'deliv_6', title: 'Pre-Wedding Teaser Video', category: 'Video', is_default: true, display_order: 6 },
+  { id: 'deliv_7', title: 'Traditional Long Video (2-3 Hours)', category: 'Video', is_default: true, display_order: 7 },
+  { id: 'deliv_8', title: 'Custom Printed Coffee Table Album', category: 'Album', is_default: true, display_order: 8 },
+  { id: 'deliv_9', title: 'Full Ultra HD Super-Fine Raw Photos', category: 'Photo', is_default: true, display_order: 9 },
+  { id: 'deliv_10', title: 'Approx. 50 High Resolution Edited Images', category: 'Photo', is_default: true, display_order: 10 },
+  { id: 'deliv_11', title: '3 Save The Dates Photos', category: 'Photo', is_default: true, display_order: 11 },
+  { id: 'deliv_12', title: '1 Countdown Reel', category: 'Social Media', is_default: true, display_order: 12 },
+];
+
+export const DEFAULT_QUOTATION_SPECIAL_ADDONS: WorkspaceQuotationSpecialAddon[] = [
+  { id: 'sp_1', title: 'Complimentary Pre-Wedding Session (1 Day)', category: 'Shoots', is_default: true, display_order: 1 },
+  { id: 'sp_2', title: 'Free Luxury Album Upgrade (40 Pages)', category: 'Album', is_default: true, display_order: 2 },
+  { id: 'sp_3', title: 'Drone Coverage Included for Wedding & Sangeet', category: 'Drone', is_default: true, display_order: 3 },
+  { id: 'sp_4', title: 'Same Day Edit Reel for Instagram', category: 'Social Media', is_default: true, display_order: 4 },
+  { id: 'sp_5', title: 'Free Raw Data Hard Drive (1TB)', category: 'Data', is_default: true, display_order: 5 },
+  { id: 'sp_6', title: 'Complimentary LED Wall Feed Live Output', category: 'Live Output', is_default: true, display_order: 6 },
+];
+
+export const DEFAULT_QUOTATION_PAID_ADDONS: WorkspaceQuotationPaidAddon[] = [
+  { id: 'paid_1', title: 'Additional Candid Photographer', price: 15000, category: 'Photography', is_default: true, display_order: 1 },
+  { id: 'paid_2', title: 'Additional Cinematographer', price: 22000, category: 'Cinematography', is_default: true, display_order: 2 },
+  { id: 'paid_3', title: 'FPV Drone Pilot (Per Event)', price: 18000, category: 'Drone', is_default: true, display_order: 3 },
+  { id: 'paid_4', title: 'Live Streaming Setup (Per Event)', price: 25000, category: 'Live Tech', is_default: true, display_order: 4 },
+  { id: 'paid_5', title: 'Extra Album Pages (Per 10 Pages)', price: 5000, category: 'Album', is_default: true, display_order: 5 },
+  { id: 'paid_6', title: 'Express 7-Day Video Edit Delivery', price: 20000, category: 'Post-Production', is_default: true, display_order: 6 },
+  { id: 'paid_7', title: 'Same-Day Edit Video Reel', price: 12000, category: 'Social Media', is_default: true, display_order: 7 },
+  { id: 'paid_8', title: 'Crane / Jimmy Jib Setup', price: 35000, category: 'Equipment', is_default: true, display_order: 8 },
+];
+
+export const DEFAULT_QUOTATION_FUNCTIONS: WorkspaceQuotationDefaultFunction[] = [
+  {
+    id: 'qfunc_1',
+    name: 'Haldi & Sangeet',
+    startTime: '10:00 AM',
+    endTime: '05:00 PM',
+    durationSlot: '7 Hours',
+    location: 'JW MARRIOTT, MUMBAI',
+    requirements: [
+      { name: 'Candid Photography', qty: 2 },
+      { name: 'Cinematography', qty: 2 },
+      { name: 'Drone', qty: 1 },
+    ],
+    notes: 'Includes traditional setup & evening sangeet performances coverage.',
+    display_order: 1
+  },
+  {
+    id: 'qfunc_2',
+    name: 'Wedding',
+    startTime: '04:00 PM',
+    endTime: '11:00 PM',
+    durationSlot: '7 Hours',
+    location: 'PALACE GROUNDS, MUMBAI',
+    requirements: [
+      { name: 'Candid Photography', qty: 2 },
+      { name: 'Cinematography', qty: 2 },
+      { name: 'Drone', qty: 1 },
+      { name: 'Traditional Video', qty: 1 },
+    ],
+    notes: 'Varmala & Pheras high speed cinema capture.',
+    display_order: 2
+  },
+  {
+    id: 'qfunc_3',
+    name: 'Reception',
+    startTime: '07:00 PM',
+    endTime: '11:30 PM',
+    durationSlot: '5 Hours',
+    location: 'TAJ LANDS END, MUMBAI',
+    requirements: [
+      { name: 'Candid Photography', qty: 1 },
+      { name: 'Cinematography', qty: 1 },
+      { name: 'Traditional Video', qty: 1 },
+    ],
+    notes: 'Stage couple portraits & guest greeting coverage.',
+    display_order: 3
+  }
+];
+
+export const DEFAULT_PRE_WEDDING_REQUIREMENTS: string[] = [
+  'Candid Photography',
+  'Cinematography',
+  'Drone',
+  'Traditional Video',
+  'Pre-Wedding Film',
+  'Portable Changing Room',
+];
+
+export const DEFAULT_PRE_WEDDING_DELIVERABLES: string[] = [
+  'Full Ultra HD Super-Fine Raw Photos',
+  'Approx. 50 High Resolution Edited Images',
+  '3 Save The Dates Photos',
+  '1 Countdown Reel',
+  '1 Video Reel',
+  'Teaser Video (1-2 Min)',
+  'Main Highlight Film (15-20 Min)',
+];
+
+export const DEFAULT_DURATION_SLOTS: string[] = [
+  'None',
+  '2 Hours',
+  '3 Hours',
+  '4 Hours',
+  '5 Hours',
+  '6 Hours',
+  '7 Hours',
+  '8 Hours',
+  '10 Hours',
+  '12 Hours',
+  'Full Day',
+];
+
+export const DEFAULT_WORKSPACE_QUOTATION_SETTINGS: WorkspaceQuotationSettings = {
+  deliverables: DEFAULT_QUOTATION_DELIVERABLES,
+  specialAddons: DEFAULT_QUOTATION_SPECIAL_ADDONS,
+  paidAddons: DEFAULT_QUOTATION_PAID_ADDONS,
+  defaultFunctions: DEFAULT_QUOTATION_FUNCTIONS,
+  requirements: DEFAULT_PRE_WEDDING_REQUIREMENTS,
+  preWeddingDeliverables: DEFAULT_PRE_WEDDING_DELIVERABLES,
+  durationSlots: DEFAULT_DURATION_SLOTS,
+  pdfTheme: 'royal_gold',
+  quoteTerms: 'Deliverables will be compiled and sent within 45 days of wedding event completion.',
+  contractClauses: '1. Standard contract terms apply for all assignments.\\n2. Final deliverables delivered post clearance.\\n3. Studio retains copyright for portfolio presentation.',
+  quoteExpiryDays: 14,
+  currency: 'INR',
+};
+
 /**
  * Resolves short code for any given role name (custom or default).
- * E.g. "Traditional Photographer" -> "TP"
- * "Candid Photo" -> "CP"
- * "Drone" -> "DP"
  */
 export function getRoleShortCode(roleName?: string | null, customRoles?: WorkspaceCrewRole[]): string {
   if (!roleName) return 'CRW';
@@ -83,8 +264,8 @@ export function getRoleShortCode(roleName?: string | null, customRoles?: Workspa
   if (lower.includes('edit') && lower.includes('photo')) return 'PE';
   if (lower.includes('edit') && lower.includes('vid')) return 'VE';
 
-  // 4. Generate initials from words (e.g. "Candid Cinematography 2" -> "CC2")
-  const words = clean.split(/[\s\-_]+/);
+  // 4. Generate initials from words
+  const words = clean.split(/[\\s\\-_]+/);
   if (words.length >= 2) {
     return (words[0][0] + words[1][0]).toUpperCase();
   }
@@ -133,7 +314,7 @@ export async function fetchWorkspaceEventTypes(workspaceId?: string): Promise<Wo
     console.warn('[WorkspaceSettings] Error fetching workspace_event_types:', err);
   }
 
-  // Fallback to localStorage if available
+  // Fallback to localStorage
   if (typeof window !== 'undefined') {
     try {
       const local = localStorage.getItem(`wg_custom_event_types_${wsId || 'default'}`);
@@ -442,4 +623,356 @@ export async function deleteWorkspaceCrewRole(
     console.warn('[WorkspaceSettings] Error deleting workspace_crew_role:', err);
     return false;
   }
+}
+
+// ==============================================================================
+// QUOTATION SETTINGS (DELIVERABLES, SPECIAL ADDONS, PAID ADDONS, DEFAULT FUNCTIONS)
+// ==============================================================================
+
+/**
+ * Fetch full workspace quotation settings from Supabase with localStorage & defaults fallback
+ */
+export async function fetchWorkspaceQuotationSettings(workspaceId?: string): Promise<WorkspaceQuotationSettings> {
+  const wsId = await resolveWorkspaceId(workspaceId);
+  let result: WorkspaceQuotationSettings = { ...DEFAULT_WORKSPACE_QUOTATION_SETTINGS };
+
+  try {
+    if (wsId) {
+      const { data, error } = await supabase
+        .from('workspace_quotation_settings')
+        .select('settings')
+        .eq('workspace_id', wsId)
+        .maybeSingle();
+
+      if (!error && data?.settings && typeof data.settings === 'object') {
+        const s = data.settings;
+        result = {
+          deliverables: Array.isArray(s.deliverables) && s.deliverables.length > 0 ? s.deliverables : DEFAULT_QUOTATION_DELIVERABLES,
+          specialAddons: Array.isArray(s.specialAddons) && s.specialAddons.length > 0 ? s.specialAddons : DEFAULT_QUOTATION_SPECIAL_ADDONS,
+          paidAddons: Array.isArray(s.paidAddons) && s.paidAddons.length > 0 ? s.paidAddons : DEFAULT_QUOTATION_PAID_ADDONS,
+          defaultFunctions: Array.isArray(s.defaultFunctions) && s.defaultFunctions.length > 0 ? s.defaultFunctions : DEFAULT_QUOTATION_FUNCTIONS,
+          requirements: Array.isArray(s.requirements) && s.requirements.length > 0 ? s.requirements : DEFAULT_PRE_WEDDING_REQUIREMENTS,
+          preWeddingDeliverables: Array.isArray(s.preWeddingDeliverables) && s.preWeddingDeliverables.length > 0 ? s.preWeddingDeliverables : DEFAULT_PRE_WEDDING_DELIVERABLES,
+          durationSlots: Array.isArray(s.durationSlots) && s.durationSlots.length > 0 ? s.durationSlots : DEFAULT_DURATION_SLOTS,
+          pdfTheme: s.pdfTheme || DEFAULT_WORKSPACE_QUOTATION_SETTINGS.pdfTheme,
+          quoteTerms: s.quoteTerms || DEFAULT_WORKSPACE_QUOTATION_SETTINGS.quoteTerms,
+          contractClauses: s.contractClauses || DEFAULT_WORKSPACE_QUOTATION_SETTINGS.contractClauses,
+          quoteExpiryDays: s.quoteExpiryDays ?? DEFAULT_WORKSPACE_QUOTATION_SETTINGS.quoteExpiryDays,
+          currency: s.currency || DEFAULT_WORKSPACE_QUOTATION_SETTINGS.currency,
+        };
+        // Cache to localStorage
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(`wg_quote_settings_${wsId}`, JSON.stringify(result));
+        }
+        return result;
+      }
+    }
+  } catch (err) {
+    console.warn('[WorkspaceSettings] Error fetching workspace_quotation_settings:', err);
+  }
+
+  // Fallback to localStorage
+  if (typeof window !== 'undefined') {
+    try {
+      const local = localStorage.getItem(`wg_quote_settings_${wsId || 'default'}`);
+      if (local) {
+        const parsed = JSON.parse(local);
+        if (parsed && typeof parsed === 'object') {
+          return {
+            ...DEFAULT_WORKSPACE_QUOTATION_SETTINGS,
+            ...parsed
+          };
+        }
+      }
+    } catch (_) {}
+  }
+
+  return result;
+}
+
+/**
+ * Save complete workspace quotation settings
+ */
+export async function saveAllWorkspaceQuotationSettings(
+  workspaceId?: string,
+  settings?: Partial<WorkspaceQuotationSettings>
+): Promise<WorkspaceQuotationSettings> {
+  const wsId = await resolveWorkspaceId(workspaceId);
+  const existing = await fetchWorkspaceQuotationSettings(wsId);
+  const updated: WorkspaceQuotationSettings = {
+    ...existing,
+    ...settings
+  };
+
+  // 1. Cache to localStorage immediately
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(`wg_quote_settings_${wsId || 'default'}`, JSON.stringify(updated));
+      window.dispatchEvent(new CustomEvent('workspace_quotation_settings_updated', { detail: updated }));
+    } catch (_) {}
+  }
+
+  // 2. Persist to Supabase
+  try {
+    if (wsId) {
+      await supabase
+        .from('workspace_quotation_settings')
+        .upsert([{
+          workspace_id: wsId,
+          settings: updated,
+          updated_at: new Date().toISOString()
+        }], { onConflict: 'workspace_id' });
+    }
+  } catch (err) {
+    console.warn('[WorkspaceSettings] Error saving workspace_quotation_settings:', err);
+  }
+
+  return updated;
+}
+
+/**
+ * Deliverables CRUD
+ */
+export async function saveWorkspaceQuotationDeliverable(
+  workspaceId?: string,
+  title?: string,
+  category = 'General'
+): Promise<WorkspaceQuotationDeliverable | null> {
+  const cleanTitle = (title || '').trim();
+  if (!cleanTitle) return null;
+  const current = await fetchWorkspaceQuotationSettings(workspaceId);
+
+  const existingIdx = current.deliverables.findIndex(d => d.title.toLowerCase() === cleanTitle.toLowerCase());
+  if (existingIdx !== -1) {
+    return current.deliverables[existingIdx];
+  }
+
+  const newDeliverable: WorkspaceQuotationDeliverable = {
+    id: `deliv_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    title: cleanTitle,
+    category,
+    is_default: false,
+    display_order: current.deliverables.length + 1
+  };
+
+  const updatedDeliverables = [...current.deliverables, newDeliverable];
+  await saveAllWorkspaceQuotationSettings(workspaceId, { deliverables: updatedDeliverables });
+  return newDeliverable;
+}
+
+export async function updateWorkspaceQuotationDeliverable(
+  id: string,
+  title: string,
+  category = 'General',
+  workspaceId?: string
+): Promise<WorkspaceQuotationDeliverable | null> {
+  const cleanTitle = title.trim();
+  if (!cleanTitle) return null;
+  const current = await fetchWorkspaceQuotationSettings(workspaceId);
+
+  const updatedDeliverables = current.deliverables.map(d => 
+    d.id === id || d.title.toLowerCase() === id.toLowerCase() ? { ...d, title: cleanTitle, category } : d
+  );
+
+  await saveAllWorkspaceQuotationSettings(workspaceId, { deliverables: updatedDeliverables });
+  return { id, title: cleanTitle, category };
+}
+
+export async function deleteWorkspaceQuotationDeliverable(
+  idOrTitle: string,
+  workspaceId?: string
+): Promise<boolean> {
+  const current = await fetchWorkspaceQuotationSettings(workspaceId);
+  const updatedDeliverables = current.deliverables.filter(d => 
+    d.id !== idOrTitle && d.title.toLowerCase() !== idOrTitle.toLowerCase()
+  );
+  await saveAllWorkspaceQuotationSettings(workspaceId, { deliverables: updatedDeliverables });
+  return true;
+}
+
+/**
+ * Special Value Additions (Complimentary Add-ons) CRUD
+ */
+export async function saveWorkspaceQuotationSpecialAddon(
+  workspaceId?: string,
+  title?: string,
+  category = 'Complimentary'
+): Promise<WorkspaceQuotationSpecialAddon | null> {
+  const cleanTitle = (title || '').trim();
+  if (!cleanTitle) return null;
+  const current = await fetchWorkspaceQuotationSettings(workspaceId);
+
+  const existingIdx = current.specialAddons.findIndex(s => s.title.toLowerCase() === cleanTitle.toLowerCase());
+  if (existingIdx !== -1) {
+    return current.specialAddons[existingIdx];
+  }
+
+  const newAddon: WorkspaceQuotationSpecialAddon = {
+    id: `sp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    title: cleanTitle,
+    category,
+    is_default: false,
+    display_order: current.specialAddons.length + 1
+  };
+
+  const updatedSpecial = [...current.specialAddons, newAddon];
+  await saveAllWorkspaceQuotationSettings(workspaceId, { specialAddons: updatedSpecial });
+  return newAddon;
+}
+
+export async function updateWorkspaceQuotationSpecialAddon(
+  id: string,
+  title: string,
+  category = 'Complimentary',
+  workspaceId?: string
+): Promise<WorkspaceQuotationSpecialAddon | null> {
+  const cleanTitle = title.trim();
+  if (!cleanTitle) return null;
+  const current = await fetchWorkspaceQuotationSettings(workspaceId);
+
+  const updatedSpecial = current.specialAddons.map(s => 
+    s.id === id || s.title.toLowerCase() === id.toLowerCase() ? { ...s, title: cleanTitle, category } : s
+  );
+
+  await saveAllWorkspaceQuotationSettings(workspaceId, { specialAddons: updatedSpecial });
+  return { id, title: cleanTitle, category };
+}
+
+export async function deleteWorkspaceQuotationSpecialAddon(
+  idOrTitle: string,
+  workspaceId?: string
+): Promise<boolean> {
+  const current = await fetchWorkspaceQuotationSettings(workspaceId);
+  const updatedSpecial = current.specialAddons.filter(s => 
+    s.id !== idOrTitle && s.title.toLowerCase() !== idOrTitle.toLowerCase()
+  );
+  await saveAllWorkspaceQuotationSettings(workspaceId, { specialAddons: updatedSpecial });
+  return true;
+}
+
+/**
+ * Paid Add-Ons & Upgrades CRUD
+ */
+export async function saveWorkspaceQuotationPaidAddon(
+  workspaceId?: string,
+  title?: string,
+  price = 10000,
+  category = 'Extra Service'
+): Promise<WorkspaceQuotationPaidAddon | null> {
+  const cleanTitle = (title || '').trim();
+  if (!cleanTitle) return null;
+  const current = await fetchWorkspaceQuotationSettings(workspaceId);
+
+  const existingIdx = current.paidAddons.findIndex(p => p.title.toLowerCase() === cleanTitle.toLowerCase());
+  if (existingIdx !== -1) {
+    return current.paidAddons[existingIdx];
+  }
+
+  const newPaidAddon: WorkspaceQuotationPaidAddon = {
+    id: `paid_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    title: cleanTitle,
+    price: Number(price) || 0,
+    category,
+    is_default: false,
+    display_order: current.paidAddons.length + 1
+  };
+
+  const updatedPaid = [...current.paidAddons, newPaidAddon];
+  await saveAllWorkspaceQuotationSettings(workspaceId, { paidAddons: updatedPaid });
+  return newPaidAddon;
+}
+
+export async function updateWorkspaceQuotationPaidAddon(
+  id: string,
+  title: string,
+  price: number,
+  category = 'Extra Service',
+  workspaceId?: string
+): Promise<WorkspaceQuotationPaidAddon | null> {
+  const cleanTitle = title.trim();
+  if (!cleanTitle) return null;
+  const current = await fetchWorkspaceQuotationSettings(workspaceId);
+
+  const updatedPaid = current.paidAddons.map(p => 
+    p.id === id || p.title.toLowerCase() === id.toLowerCase() ? { ...p, title: cleanTitle, price: Number(price) || 0, category } : p
+  );
+
+  await saveAllWorkspaceQuotationSettings(workspaceId, { paidAddons: updatedPaid });
+  return { id, title: cleanTitle, price: Number(price) || 0, category };
+}
+
+export async function deleteWorkspaceQuotationPaidAddon(
+  idOrTitle: string,
+  workspaceId?: string
+): Promise<boolean> {
+  const current = await fetchWorkspaceQuotationSettings(workspaceId);
+  const updatedPaid = current.paidAddons.filter(p => 
+    p.id !== idOrTitle && p.title.toLowerCase() !== idOrTitle.toLowerCase()
+  );
+  await saveAllWorkspaceQuotationSettings(workspaceId, { paidAddons: updatedPaid });
+  return true;
+}
+
+/**
+ * Default Functions CRUD (Functions template pre-loaded for new quotations)
+ */
+export async function saveWorkspaceQuotationDefaultFunction(
+  workspaceId?: string,
+  func?: Partial<WorkspaceQuotationDefaultFunction>
+): Promise<WorkspaceQuotationDefaultFunction | null> {
+  const cleanName = (func?.name || '').trim();
+  if (!cleanName) return null;
+  const current = await fetchWorkspaceQuotationSettings(workspaceId);
+
+  const newFunc: WorkspaceQuotationDefaultFunction = {
+    id: func?.id || `qfunc_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    name: cleanName,
+    startTime: func?.startTime || '10:00 AM',
+    endTime: func?.endTime || '05:00 PM',
+    durationSlot: func?.durationSlot || '7 Hours',
+    location: func?.location || 'VENUE / HOTEL NAME',
+    requirements: Array.isArray(func?.requirements) ? func!.requirements : [
+      { name: 'Candid Photography', qty: 2 },
+      { name: 'Cinematography', qty: 2 }
+    ],
+    notes: func?.notes || '',
+    display_order: current.defaultFunctions.length + 1
+  };
+
+  const updatedFunctions = [...current.defaultFunctions, newFunc];
+  await saveAllWorkspaceQuotationSettings(workspaceId, { defaultFunctions: updatedFunctions });
+  return newFunc;
+}
+
+export async function updateWorkspaceQuotationDefaultFunction(
+  id: string,
+  updatedData: Partial<WorkspaceQuotationDefaultFunction>,
+  workspaceId?: string
+): Promise<WorkspaceQuotationDefaultFunction | null> {
+  const current = await fetchWorkspaceQuotationSettings(workspaceId);
+
+  const updatedFunctions = current.defaultFunctions.map(f => {
+    if (f.id === id) {
+      return {
+        ...f,
+        ...updatedData,
+        name: (updatedData.name || f.name).trim(),
+      };
+    }
+    return f;
+  });
+
+  await saveAllWorkspaceQuotationSettings(workspaceId, { defaultFunctions: updatedFunctions });
+  const found = updatedFunctions.find(f => f.id === id);
+  return found || null;
+}
+
+export async function deleteWorkspaceQuotationDefaultFunction(
+  id: string,
+  workspaceId?: string
+): Promise<boolean> {
+  const current = await fetchWorkspaceQuotationSettings(workspaceId);
+  const updatedFunctions = current.defaultFunctions.filter(f => f.id !== id);
+  await saveAllWorkspaceQuotationSettings(workspaceId, { defaultFunctions: updatedFunctions });
+  return true;
 }

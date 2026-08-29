@@ -601,7 +601,7 @@ export async function syncQuotationToTeamManagerEvents(
     const existingAssignedMap: Record<string, string> = {};
 
     if (existingSubEvents && existingSubEvents.length > 0) {
-      const subEventIds = existingSubEvents.map(e => e.id);
+      const subEventIds = existingSubEvents.map((e: any) => e.id);
       const { data: existingAssignments } = await supabaseClient
         .from('fw_assignments')
         .select('sub_event_id, required_role, assigned_member_id')
@@ -610,7 +610,7 @@ export async function syncQuotationToTeamManagerEvents(
 
       if (existingAssignments) {
         existingAssignments.forEach((a: any) => {
-          const se = existingSubEvents.find(e => e.id === a.sub_event_id);
+          const se = existingSubEvents.find((e: any) => e.id === a.sub_event_id);
           if (se && a.assigned_member_id) {
             const key = `${se.event_title}|${a.required_role}`;
             existingAssignedMap[key] = a.assigned_member_id;

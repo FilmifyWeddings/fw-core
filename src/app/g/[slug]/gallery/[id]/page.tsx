@@ -699,7 +699,6 @@ function StrictZeroKnowledgeGuestContent() {
         isOpen={isFaceScannerOpen}
         onClose={() => setIsFaceScannerOpen(false)}
         onSubmit={handleFaceScanSubmit}
-        isMatching={isMatching}
         galleryId={gallery.id}
         onScanComplete={(photos) => {
           setMatchedPhotos(photos);
@@ -762,7 +761,7 @@ function StrictZeroKnowledgeGuestContent() {
           currentIndex={selectedPhotoIndex}
           onClose={() => setSelectedPhotoIndex(null)}
           onNavigate={(idx) => setSelectedPhotoIndex(idx)}
-          onDownload={handleDownloadPhoto}
+          onDownload={handleDownloadPhoto as any}
           allowDownloads={gallery.allow_downloads ?? true}
         />
       )}

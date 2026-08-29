@@ -19,6 +19,7 @@ import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manag
 import { cacheDocumentLocal, getCachedDocumentLocal, queueOfflineMutation, flushOfflineOutbox } from '@/lib/indexeddb-cache';
 import { downloadServerChromiumPdf } from '@/lib/pdf-export-engine';
 import { CanvaFontSelector } from '@/components/CanvaFontSelector';
+import { BirdsSVG, MonogramSVG } from '@/components/QuotationSVGs';
 import { loadCustomFontsFromAPI, registerFontFace, ensureFontsReady, preloadActiveFont } from '@/lib/font-loader';
 
 const MasterMediaModal = dynamic(
@@ -27,7 +28,27 @@ const MasterMediaModal = dynamic(
 );
 import { paginateFunctionsPageItems } from '@/lib/functions-paginator';
 import { paginateDeliverablesPageItems, paginateSpecialValueAdditionsPageItems } from '@/lib/deliverables-paginator';
-import { fetchWorkspaceEventTypes, fetchWorkspaceCrewRoles, saveWorkspaceEventType, saveWorkspaceCrewRole, getRoleShortCode } from '@/lib/workspace-settings';
+import { 
+  fetchWorkspaceEventTypes, 
+  fetchWorkspaceCrewRoles, 
+  saveWorkspaceEventType, 
+  saveWorkspaceCrewRole, 
+  getRoleShortCode,
+  fetchWorkspaceQuotationSettings,
+  saveWorkspaceQuotationDeliverable,
+  updateWorkspaceQuotationDeliverable,
+  deleteWorkspaceQuotationDeliverable,
+  saveWorkspaceQuotationSpecialAddon,
+  updateWorkspaceQuotationSpecialAddon,
+  deleteWorkspaceQuotationSpecialAddon,
+  saveWorkspaceQuotationPaidAddon,
+  updateWorkspaceQuotationPaidAddon,
+  deleteWorkspaceQuotationPaidAddon,
+  saveWorkspaceQuotationDefaultFunction,
+  updateWorkspaceQuotationDefaultFunction,
+  deleteWorkspaceQuotationDefaultFunction,
+  WorkspaceQuotationSettings 
+} from '@/lib/workspace-settings';
 
 // Using imported BirdsSVG and MonogramSVG from QuotationSVGs
 
@@ -2288,6 +2309,51 @@ function StudioCoreAiryBuilderContent() {
     'Full Day',
   ]);
 
+  // Load workspace quotation settings (Deliverables, Special Add-ons, Extra Paid Add-ons, Functions) with 2-way sync
+  useEffect(() => {
+    async function loadQuotationWorkspaceSettings() {
+      if (!userId) return;
+      try {
+        const qSettings = await fetchWorkspaceQuotationSettings(userId);
+        if (qSettings) {
+          if (Array.isArray(qSettings.deliverables) && qSettings.deliverables.length > 0) {
+            setAvailableDeliverables(qSettings.deliverables.map(d => d.title));
+          }
+          if (Array.isArray(qSettings.requirements) && qSettings.requirements.length > 0) {
+            setAvailableRequirements(qSettings.requirements);
+          }
+          if (Array.isArray(qSettings.durationSlots) && qSettings.durationSlots.length > 0) {
+            setAvailableDurationSlots(qSettings.durationSlots);
+          }
+          const evTypes = await fetchWorkspaceEventTypes(userId);
+          if (evTypes && evTypes.length > 0) {
+            setAvailableFunctionNames(evTypes.map(e => e.name));
+            setCustomEventTypes(evTypes.map(e => e.name));
+          }
+        }
+      } catch (err) {
+        console.warn('[Quotation Builder] Error loading workspace settings:', err);
+      }
+    }
+
+    loadQuotationWorkspaceSettings();
+
+    // Listen for live cross-tab/modal settings updates
+    const handleSettingsUpdate = () => {
+      loadQuotationWorkspaceSettings();
+    };
+
+    window.addEventListener('workspace_quotation_settings_updated', handleSettingsUpdate);
+    window.addEventListener('workspace_event_types_updated', handleSettingsUpdate);
+    window.addEventListener('workspace_crew_roles_updated', handleSettingsUpdate);
+
+    return () => {
+      window.removeEventListener('workspace_quotation_settings_updated', handleSettingsUpdate);
+      window.removeEventListener('workspace_event_types_updated', handleSettingsUpdate);
+      window.removeEventListener('workspace_crew_roles_updated', handleSettingsUpdate);
+    };
+  }, [userId]);
+
   // Mobile Bottom Sheet Drawer State
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
   // Viewport Zoom & Scaling Engine (Device-Specific Persistence: Mobile=45%, Desktop=90%)
@@ -3523,6 +3589,8 @@ function StudioCoreAiryBuilderContent() {
                       }
                     });
                   }
+                  // 2-Way Sync to Workspace Settings
+                  saveWorkspaceQuotationDeliverable(userId || '', newItem);
                 }}
                 onEditOption={(oldItem, newItem) => {
                   const currentObj = data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage;
@@ -3536,6 +3604,8 @@ function StudioCoreAiryBuilderContent() {
                       selectedItems: sel,
                     }
                   });
+                  // 2-Way Sync to Workspace Settings
+                  updateWorkspaceQuotationDeliverable(oldItem, newItem, 'General', userId || '');
                 }}
                 onDeleteOption={(itemToDelete) => {
                   const currentObj = data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage;
@@ -3549,6 +3619,8 @@ function StudioCoreAiryBuilderContent() {
                       selectedItems: sel,
                     }
                   });
+                  // 2-Way Sync to Workspace Settings
+                  deleteWorkspaceQuotationDeliverable(itemToDelete, userId || '');
                 }}
               />
 
@@ -3580,6 +3652,8 @@ function StudioCoreAiryBuilderContent() {
                       }
                     });
                   }
+                  // 2-Way Sync to Workspace Settings
+                  saveWorkspaceQuotationSpecialAddon(userId || '', newItem);
                 }}
                 onEditOption={(oldItem, newItem) => {
                   const currentObj = data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions;
@@ -3593,6 +3667,8 @@ function StudioCoreAiryBuilderContent() {
                       selectedItems: sel,
                     }
                   });
+                  // 2-Way Sync to Workspace Settings
+                  updateWorkspaceQuotationSpecialAddon(oldItem, newItem, 'Complimentary', userId || '');
                 }}
                 onDeleteOption={(itemToDelete) => {
                   const currentObj = data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions;
@@ -3606,6 +3682,8 @@ function StudioCoreAiryBuilderContent() {
                       selectedItems: sel,
                     }
                   });
+                  // 2-Way Sync to Workspace Settings
+                  deleteWorkspaceQuotationSpecialAddon(itemToDelete, userId || '');
                 }}
               />
 

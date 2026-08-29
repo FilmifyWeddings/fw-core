@@ -34,7 +34,27 @@ const AiQuotationModal = dynamic(
 import { paginateFunctionsPageItems } from '@/lib/functions-paginator';
 import { paginateDeliverablesPageItems, paginateSpecialValueAdditionsPageItems } from '@/lib/deliverables-paginator';
 import { resolveFunctionTitle } from '@/components/QuotationDocumentCanvas';
-import { fetchWorkspaceEventTypes, fetchWorkspaceCrewRoles, saveWorkspaceEventType, saveWorkspaceCrewRole, getRoleShortCode } from '@/lib/workspace-settings';
+import { 
+  fetchWorkspaceEventTypes, 
+  fetchWorkspaceCrewRoles, 
+  saveWorkspaceEventType, 
+  saveWorkspaceCrewRole, 
+  getRoleShortCode,
+  fetchWorkspaceQuotationSettings,
+  saveWorkspaceQuotationDeliverable,
+  updateWorkspaceQuotationDeliverable,
+  deleteWorkspaceQuotationDeliverable,
+  saveWorkspaceQuotationSpecialAddon,
+  updateWorkspaceQuotationSpecialAddon,
+  deleteWorkspaceQuotationSpecialAddon,
+  saveWorkspaceQuotationPaidAddon,
+  updateWorkspaceQuotationPaidAddon,
+  deleteWorkspaceQuotationPaidAddon,
+  saveWorkspaceQuotationDefaultFunction,
+  updateWorkspaceQuotationDefaultFunction,
+  deleteWorkspaceQuotationDefaultFunction,
+  WorkspaceQuotationSettings 
+} from '@/lib/workspace-settings';
 
 // Using imported BirdsSVG and MonogramSVG from QuotationSVGs
 
@@ -2496,6 +2516,51 @@ function StudioCoreAiryBuilderContent() {
     'Main Highlight Film (15-20 Min)',
   ]);
 
+  // Load workspace quotation settings (Deliverables, Special Add-ons, Extra Paid Add-ons, Functions) with 2-way sync
+  useEffect(() => {
+    async function loadQuotationWorkspaceSettings() {
+      if (!userId || userId === 'PUBLIC_USER') return;
+      try {
+        const qSettings = await fetchWorkspaceQuotationSettings(userId);
+        if (qSettings) {
+          if (Array.isArray(qSettings.deliverables) && qSettings.deliverables.length > 0) {
+            setAvailableDeliverables(qSettings.deliverables.map(d => d.title));
+          }
+          if (Array.isArray(qSettings.requirements) && qSettings.requirements.length > 0) {
+            setAvailableRequirements(qSettings.requirements);
+          }
+          if (Array.isArray(qSettings.durationSlots) && qSettings.durationSlots.length > 0) {
+            setAvailableDurationSlots(qSettings.durationSlots);
+          }
+          const evTypes = await fetchWorkspaceEventTypes(userId);
+          if (evTypes && evTypes.length > 0) {
+            setAvailableFunctionNames(evTypes.map(e => e.name));
+            setCustomEventTypes(evTypes.map(e => e.name));
+          }
+        }
+      } catch (err) {
+        console.warn('[Quotation Builder] Error loading workspace settings:', err);
+      }
+    }
+
+    loadQuotationWorkspaceSettings();
+
+    // Listen for live cross-tab/modal settings updates
+    const handleSettingsUpdate = () => {
+      loadQuotationWorkspaceSettings();
+    };
+
+    window.addEventListener('workspace_quotation_settings_updated', handleSettingsUpdate);
+    window.addEventListener('workspace_event_types_updated', handleSettingsUpdate);
+    window.addEventListener('workspace_crew_roles_updated', handleSettingsUpdate);
+
+    return () => {
+      window.removeEventListener('workspace_quotation_settings_updated', handleSettingsUpdate);
+      window.removeEventListener('workspace_event_types_updated', handleSettingsUpdate);
+      window.removeEventListener('workspace_crew_roles_updated', handleSettingsUpdate);
+    };
+  }, [userId]);
+
   // Dynamically derived Deliverables options list (Single Source of Truth)
   const dynamicDeliverablesMenu = (
     Array.isArray(data?.deliverablesPage?.selectedItems) && data.deliverablesPage.selectedItems.length > 0
@@ -3783,6 +3848,8 @@ function StudioCoreAiryBuilderContent() {
                       availableOptions: updatedOpts
                     }
                   });
+                  // 2-Way Sync to Workspace Settings
+                  saveWorkspaceQuotationDeliverable(userId || '', newItem);
                 }}
                 onEditOption={(oldItem, newItem) => {
                   const currentObj = data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage;
@@ -3796,6 +3863,8 @@ function StudioCoreAiryBuilderContent() {
                       availableOptions: currentOpts
                     }
                   });
+                  // 2-Way Sync to Workspace Settings
+                  updateWorkspaceQuotationDeliverable(oldItem, newItem, 'General', userId || '');
                 }}
                 onDeleteOption={(itemToDelete) => {
                   const currentObj = data.deliverablesPage || DEFAULT_AIRY_PROPOSAL.deliverablesPage;
@@ -3809,6 +3878,8 @@ function StudioCoreAiryBuilderContent() {
                       availableOptions: currentOpts
                     }
                   });
+                  // 2-Way Sync to Workspace Settings
+                  deleteWorkspaceQuotationDeliverable(itemToDelete, userId || '');
                 }}
               />
 
@@ -3844,6 +3915,8 @@ function StudioCoreAiryBuilderContent() {
                       availableOptions: updatedOpts
                     }
                   });
+                  // 2-Way Sync to Workspace Settings
+                  saveWorkspaceQuotationSpecialAddon(userId || '', newItem);
                 }}
                 onEditOption={(oldItem, newItem) => {
                   const currentObj = data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions;
@@ -3857,6 +3930,8 @@ function StudioCoreAiryBuilderContent() {
                       availableOptions: currentOpts
                     }
                   });
+                  // 2-Way Sync to Workspace Settings
+                  updateWorkspaceQuotationSpecialAddon(oldItem, newItem, 'Complimentary', userId || '');
                 }}
                 onDeleteOption={(itemToDelete) => {
                   const currentObj = data.specialValueAdditions || DEFAULT_AIRY_PROPOSAL.specialValueAdditions;
@@ -3870,6 +3945,8 @@ function StudioCoreAiryBuilderContent() {
                       availableOptions: currentOpts
                     }
                   });
+                  // 2-Way Sync to Workspace Settings
+                  deleteWorkspaceQuotationSpecialAddon(itemToDelete, userId || '');
                 }}
               />
 

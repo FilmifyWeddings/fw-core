@@ -1295,12 +1295,12 @@ function AlbumStudioContent() {
           currentIndex={selectedPhotoIndex}
           onClose={() => setSelectedPhotoIndex(null)}
           onNavigate={(idx) => setSelectedPhotoIndex(idx)}
-          onDownload={handleDownloadPhoto}
-          onToggleSelect={togglePhotoSelection}
+          onDownload={handleDownloadPhoto as any}
+          onToggleSelect={togglePhotoSelection as any}
           isSelected={filteredPhotos[selectedPhotoIndex] ? selectedPhotoIds.has(filteredPhotos[selectedPhotoIndex].id) : false}
-          onSetCover={handleSetCover}
+          onSetCover={handleSetCover as any}
           isCover={filteredPhotos[selectedPhotoIndex] ? gallery.cover_url === filteredPhotos[selectedPhotoIndex].preview_url : false}
-          onDelete={handleDeletePhoto}
+          onDelete={handleDeletePhoto as any}
           allowDownloads={gallery.allow_downloads ?? true}
         />
       )}

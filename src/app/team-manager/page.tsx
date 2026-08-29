@@ -389,6 +389,7 @@ export default function TeamManagerPage() {
       } catch (wsErr) {
         console.warn('[TeamManager] Error fetching workspace event types/roles:', wsErr);
       }
+    } catch (err: any) {
       console.error('[TeamManager] fetchAllData Exception:', err);
       setError(err?.message || 'Failed to fetch operations data.');
     } finally {

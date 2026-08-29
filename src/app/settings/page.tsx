@@ -13,18 +13,40 @@ import { supabase } from '@/lib/supabase';
 import { 
   WorkspaceEventType, 
   WorkspaceCrewRole, 
+  WorkspaceQuotationDeliverable,
+  WorkspaceQuotationSpecialAddon,
+  WorkspaceQuotationPaidAddon,
+  WorkspaceQuotationDefaultFunction,
+  WorkspaceQuotationSettings,
   fetchWorkspaceEventTypes, 
   fetchWorkspaceCrewRoles, 
+  fetchWorkspaceQuotationSettings,
   saveWorkspaceEventType, 
   updateWorkspaceEventType,
   deleteWorkspaceEventType, 
   saveWorkspaceCrewRole, 
   updateWorkspaceCrewRole,
   deleteWorkspaceCrewRole, 
+  saveWorkspaceQuotationDeliverable,
+  updateWorkspaceQuotationDeliverable,
+  deleteWorkspaceQuotationDeliverable,
+  saveWorkspaceQuotationSpecialAddon,
+  updateWorkspaceQuotationSpecialAddon,
+  deleteWorkspaceQuotationSpecialAddon,
+  saveWorkspaceQuotationPaidAddon,
+  updateWorkspaceQuotationPaidAddon,
+  deleteWorkspaceQuotationPaidAddon,
+  saveWorkspaceQuotationDefaultFunction,
+  updateWorkspaceQuotationDefaultFunction,
+  deleteWorkspaceQuotationDefaultFunction,
+  saveAllWorkspaceQuotationSettings,
   DEFAULT_EVENT_TYPES, 
   DEFAULT_CREW_ROLES, 
+  DEFAULT_WORKSPACE_QUOTATION_SETTINGS,
+  DEFAULT_DURATION_SLOTS,
   getRoleShortCode 
 } from '@/lib/workspace-settings';
+import { PackageCheck, Gift, Layers, ListPlus, SlidersHorizontal, Edit2 } from 'lucide-react';
 
 type SettingsTab = 'leads' | 'functions' | 'crew_roles' | 'quotations' | 'finance' | 'attendance' | 'integrations' | 'team';
 
@@ -71,6 +93,49 @@ export default function SettingsPage() {
   const [editingCrewRole, setEditingCrewRole] = useState<WorkspaceCrewRole | null>(null);
   const [editRoleName, setEditRoleName] = useState('');
   const [editRoleCode, setEditRoleCode] = useState('');
+
+  // Quotation Settings Suite States
+  const [quoteSubTab, setQuoteSubTab] = useState<'deliverables' | 'special_addons' | 'paid_addons' | 'default_functions' | 'theme_terms'>('deliverables');
+  const [quotationSettings, setQuotationSettings] = useState<WorkspaceQuotationSettings>(DEFAULT_WORKSPACE_QUOTATION_SETTINGS);
+  
+  // Deliverables states
+  const [newDelivTitle, setNewDelivTitle] = useState('');
+  const [newDelivCat, setNewDelivCat] = useState('Video');
+  const [delivSearch, setDelivSearch] = useState('');
+  const [editingDeliv, setEditingDeliv] = useState<WorkspaceQuotationDeliverable | null>(null);
+  const [editDelivTitle, setEditDelivTitle] = useState('');
+  const [editDelivCat, setEditDelivCat] = useState('Video');
+
+  // Special Addons states
+  const [newSpecialTitle, setNewSpecialTitle] = useState('');
+  const [newSpecialCat, setNewSpecialCat] = useState('Shoots');
+  const [specialSearch, setSpecialSearch] = useState('');
+  const [editingSpecial, setEditingSpecial] = useState<WorkspaceQuotationSpecialAddon | null>(null);
+  const [editSpecialTitle, setEditSpecialTitle] = useState('');
+  const [editSpecialCat, setEditSpecialCat] = useState('Shoots');
+
+  // Paid Addons states
+  const [newPaidTitle, setNewPaidTitle] = useState('');
+  const [newPaidPrice, setNewPaidPrice] = useState('10000');
+  const [newPaidCat, setNewPaidCat] = useState('Photography');
+  const [paidSearch, setPaidSearch] = useState('');
+  const [editingPaid, setEditingPaid] = useState<WorkspaceQuotationPaidAddon | null>(null);
+  const [editPaidTitle, setEditPaidTitle] = useState('');
+  const [editPaidPrice, setEditPaidPrice] = useState('10000');
+  const [editPaidCat, setEditPaidCat] = useState('Photography');
+
+  // Default Functions states
+  const [newDefaultFuncName, setNewDefaultFuncName] = useState('');
+  const [newDefaultFuncDuration, setNewDefaultFuncDuration] = useState('7 Hours');
+  const [newDefaultFuncNotes, setNewDefaultFuncNotes] = useState('');
+  const [newDefaultFuncLocation, setNewDefaultFuncLocation] = useState('VENUE / HOTEL NAME');
+  const [defaultFuncSearch, setDefaultFuncSearch] = useState('');
+  const [editingDefaultFunc, setEditingDefaultFunc] = useState<WorkspaceQuotationDefaultFunction | null>(null);
+  const [editDefaultFuncName, setEditDefaultFuncName] = useState('');
+  const [editDefaultFuncDuration, setEditDefaultFuncDuration] = useState('7 Hours');
+  const [editDefaultFuncNotes, setEditDefaultFuncNotes] = useState('');
+  const [editDefaultFuncLocation, setEditDefaultFuncLocation] = useState('');
+  const [editDefaultFuncReqs, setEditDefaultFuncReqs] = useState<Array<{ name: string; qty: number }>>([]);
 
   // 1. Leads Page Settings
   const [leadOwners, setLeadOwners] = useState<DropdownItem[]>([
@@ -265,6 +330,10 @@ export default function SettingsPage() {
 
       const headers = await getAuthHeaders();
       const res = await fetch(`/api/settings?workspace_id=${wId}`, { headers });
+
+      // Fetch full workspace quotation settings
+      const qSettings = await fetchWorkspaceQuotationSettings(wId);
+      setQuotationSettings(qSettings);
 
       if (res.ok) {
         const data = await res.json();
@@ -486,6 +555,20 @@ export default function SettingsPage() {
             }], { onConflict: 'workspace_id' });
         } catch (secSaveErr) {
           console.warn('Finance vault save note:', secSaveErr);
+        }
+
+        // Persist quotation settings
+        try {
+          await saveAllWorkspaceQuotationSettings(wId, {
+            ...quotationSettings,
+            pdfTheme,
+            quoteTerms,
+            contractClauses,
+            quoteExpiryDays,
+            currency
+          });
+        } catch (qErr) {
+          console.warn('Quotation settings save note:', qErr);
         }
 
         setSaveToast('Settings saved & synchronized live across all pages! ✓');
@@ -1233,94 +1316,1085 @@ export default function SettingsPage() {
             {/* 2. QUOTATIONS PAGE SETTINGS */}
             {activeTab === 'quotations' && (
               <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-6">
-                <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
-                  <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-                    <FileText className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h2 className="text-lg font-extrabold text-slate-900">Quotations & Proposals Settings (`/workspace/quotations`)</h2>
-                    <p className="text-xs font-medium text-slate-500">Configure PDF themes, default terms, expiry duration, and contract clauses</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {/* PDF Theme Dropdown */}
-                  <div>
-                    <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
-                      PDF Document Theme
-                    </label>
-                    <div className="relative">
-                      <select
-                        value={pdfTheme}
-                        onChange={e => setPdfTheme(e.target.value)}
-                        className="w-full appearance-none px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58] cursor-pointer"
-                      >
-                        <option value="royal_gold">👑 Royal Gold & Obsidian</option>
-                        <option value="minimal_dark">🖤 Minimal Dark Studio</option>
-                        <option value="airy_clean">✨ Airy Clean White</option>
-                      </select>
-                      <ChevronDown className="w-4 h-4 text-slate-500 absolute right-3 top-2.5 pointer-events-none" />
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                      <FileText className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-extrabold text-slate-900">Quotations & Proposals Suite (`/workspace/quotations`)</h2>
+                      <p className="text-xs font-medium text-slate-500">Manage Deliverables, Special Add-ons, Extra Paid Add-ons, Default Functions, and Themes with 2-Way Sync</p>
                     </div>
                   </div>
 
-                  {/* Expiry Days */}
-                  <div>
-                    <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
-                      Quotation Validity (Days)
-                    </label>
-                    <input
-                      type="number"
-                      value={quoteExpiryDays}
-                      onChange={e => setQuoteExpiryDays(Number(e.target.value))}
-                      className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58]"
-                    />
-                  </div>
+                  {/* Quotation Sub-Tabs Navigation Pills */}
+                  <div className="flex items-center gap-1.5 p-1 bg-slate-100/80 rounded-xl overflow-x-auto">
+                    <button
+                      type="button"
+                      onClick={() => setQuoteSubTab('deliverables')}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                        quoteSubTab === 'deliverables' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <PackageCheck className="w-3.5 h-3.5" />
+                      <span>Deliverables</span>
+                      <span className="px-1.5 py-0.2 bg-blue-100 text-blue-800 text-[10px] rounded-full font-black">
+                        {quotationSettings.deliverables.length}
+                      </span>
+                    </button>
 
-                  {/* Currency Dropdown */}
-                  <div>
-                    <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
-                      Default Currency
-                    </label>
-                    <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setQuoteSubTab('special_addons')}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                        quoteSubTab === 'special_addons' ? 'bg-white text-purple-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <Gift className="w-3.5 h-3.5" />
+                      <span>Special Add-ons</span>
+                      <span className="px-1.5 py-0.2 bg-purple-100 text-purple-800 text-[10px] rounded-full font-black">
+                        {quotationSettings.specialAddons.length}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setQuoteSubTab('paid_addons')}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                        quoteSubTab === 'paid_addons' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <CreditCard className="w-3.5 h-3.5" />
+                      <span>Extra Paid Add-ons</span>
+                      <span className="px-1.5 py-0.2 bg-emerald-100 text-emerald-800 text-[10px] rounded-full font-black">
+                        {quotationSettings.paidAddons.length}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setQuoteSubTab('default_functions')}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                        quoteSubTab === 'default_functions' ? 'bg-white text-amber-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Default Functions</span>
+                      <span className="px-1.5 py-0.2 bg-amber-100 text-amber-800 text-[10px] rounded-full font-black">
+                        {quotationSettings.defaultFunctions.length}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setQuoteSubTab('theme_terms')}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                        quoteSubTab === 'theme_terms' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <SlidersHorizontal className="w-3.5 h-3.5" />
+                      <span>Theme & Terms</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* SUBTAB 1: OUTPUT DELIVERABLES */}
+                {quoteSubTab === 'deliverables' && (
+                  <div className="space-y-4">
+                    <div className="p-4 bg-blue-50/60 border border-blue-100 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-xs font-black text-blue-950 uppercase tracking-wider">📦 Output Deliverables Catalog</h3>
+                        <p className="text-[11px] text-blue-800 font-medium">Deliverables managed here sync automatically with the Quotation Builder dropdowns and client proposals.</p>
+                      </div>
+                      <span className="px-3 py-1 bg-white border border-blue-200 text-blue-900 text-xs font-extrabold rounded-full shadow-2xs">
+                        {quotationSettings.deliverables.length} Deliverables Available
+                      </span>
+                    </div>
+
+                    {/* Quick Add Bar */}
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex flex-col sm:flex-row items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="Enter Deliverable title (e.g. 10 Drone 4K Highlight Clips)..."
+                        value={newDelivTitle}
+                        onChange={e => setNewDelivTitle(e.target.value)}
+                        onKeyDown={async e => {
+                          if (e.key === 'Enter' && newDelivTitle.trim()) {
+                            await saveWorkspaceQuotationDeliverable(workspaceId, newDelivTitle, newDelivCat);
+                            const updated = await fetchWorkspaceQuotationSettings(workspaceId);
+                            setQuotationSettings(updated);
+                            setNewDelivTitle('');
+                          }
+                        }}
+                        className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-600"
+                      />
                       <select
-                        value={currency}
-                        onChange={e => setCurrency(e.target.value)}
-                        className="w-full appearance-none px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58] cursor-pointer"
+                        value={newDelivCat}
+                        onChange={e => setNewDelivCat(e.target.value)}
+                        className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 cursor-pointer"
                       >
-                        <option value="INR">₹ INR (Indian Rupee)</option>
-                        <option value="USD">$ USD (US Dollar)</option>
-                        <option value="AED">AED (UAE Dirham)</option>
+                        <option value="Video">Video</option>
+                        <option value="Photo">Photo</option>
+                        <option value="Social Media">Social Media</option>
+                        <option value="Album">Album</option>
+                        <option value="Data">Data</option>
+                        <option value="General">General</option>
                       </select>
-                      <ChevronDown className="w-4 h-4 text-slate-500 absolute right-3 top-2.5 pointer-events-none" />
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (newDelivTitle.trim()) {
+                            await saveWorkspaceQuotationDeliverable(workspaceId, newDelivTitle, newDelivCat);
+                            const updated = await fetchWorkspaceQuotationSettings(workspaceId);
+                            setQuotationSettings(updated);
+                            setNewDelivTitle('');
+                          }
+                        }}
+                        className="w-full sm:w-auto px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold rounded-lg shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Add Deliverable</span>
+                      </button>
+                    </div>
+
+                    {/* Search & List */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-4">
+                        <input
+                          type="text"
+                          placeholder="🔍 Search deliverables..."
+                          value={delivSearch}
+                          onChange={e => setDelivSearch(e.target.value)}
+                          className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-800 w-64 focus:outline-none focus:border-blue-500"
+                        />
+                        <span className="text-[11px] font-bold text-slate-400">
+                          Showing {quotationSettings.deliverables.filter(d => d.title.toLowerCase().includes(delivSearch.toLowerCase())).length} items
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-96 overflow-y-auto pr-1">
+                        {quotationSettings.deliverables
+                          .filter(d => d.title.toLowerCase().includes(delivSearch.toLowerCase()))
+                          .map((d, idx) => (
+                            <div
+                              key={d.id || idx}
+                              className="p-3 bg-white border border-slate-200 hover:border-blue-300 rounded-xl flex items-center justify-between gap-2 shadow-2xs transition-all group"
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                <span className="w-6 h-6 rounded-lg bg-blue-50 text-blue-700 text-[10px] font-black flex items-center justify-center shrink-0">
+                                  #{idx + 1}
+                                </span>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-xs font-bold text-slate-900 truncate">{d.title}</p>
+                                  <span className="inline-block mt-0.5 px-2 py-0.5 bg-slate-100 text-slate-600 text-[9px] font-black rounded-md uppercase tracking-wider">
+                                    {d.category || 'General'}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingDeliv(d);
+                                    setEditDelivTitle(d.title);
+                                    setEditDelivCat(d.category || 'General');
+                                  }}
+                                  className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all cursor-pointer"
+                                  title="Edit Deliverable"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    await deleteWorkspaceQuotationDeliverable(d.id, workspaceId);
+                                    const updated = await fetchWorkspaceQuotationSettings(workspaceId);
+                                    setQuotationSettings(updated);
+                                  }}
+                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+                                  title="Delete Deliverable"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
 
-                {/* Terms */}
-                <div>
-                  <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
-                    Default Quotation Terms & Conditions
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={quoteTerms}
-                    onChange={e => setQuoteTerms(e.target.value)}
-                    className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-[#0F9D58]"
-                  />
-                </div>
+                {/* SUBTAB 2: SPECIAL VALUE ADDITIONS (COMPLIMENTARY) */}
+                {quoteSubTab === 'special_addons' && (
+                  <div className="space-y-4">
+                    <div className="p-4 bg-purple-50/60 border border-purple-100 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-xs font-black text-purple-950 uppercase tracking-wider">✨ Special Value Additions (Complimentary)</h3>
+                        <p className="text-[11px] text-purple-800 font-medium">Free perks and value-added services offered to entice clients in proposals.</p>
+                      </div>
+                      <span className="px-3 py-1 bg-white border border-purple-200 text-purple-900 text-xs font-extrabold rounded-full shadow-2xs">
+                        {quotationSettings.specialAddons.length} Special Addons
+                      </span>
+                    </div>
 
-                {/* Contract Clauses */}
-                <div>
-                  <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
-                    Standard Contract Clauses
-                  </label>
-                  <textarea
-                    rows={4}
-                    value={contractClauses}
-                    onChange={e => setContractClauses(e.target.value)}
-                    className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:border-[#0F9D58]"
-                  />
-                </div>
+                    {/* Quick Add Bar */}
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex flex-col sm:flex-row items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="Enter Special Addon title (e.g. Free Drone Coverage for Sangeet)..."
+                        value={newSpecialTitle}
+                        onChange={e => setNewSpecialTitle(e.target.value)}
+                        onKeyDown={async e => {
+                          if (e.key === 'Enter' && newSpecialTitle.trim()) {
+                            await saveWorkspaceQuotationSpecialAddon(workspaceId, newSpecialTitle, newSpecialCat);
+                            const updated = await fetchWorkspaceQuotationSettings(workspaceId);
+                            setQuotationSettings(updated);
+                            setNewSpecialTitle('');
+                          }
+                        }}
+                        className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-purple-600"
+                      />
+                      <select
+                        value={newSpecialCat}
+                        onChange={e => setNewSpecialCat(e.target.value)}
+                        className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 cursor-pointer"
+                      >
+                        <option value="Shoots">Shoots</option>
+                        <option value="Album">Album</option>
+                        <option value="Drone">Drone</option>
+                        <option value="Social Media">Social Media</option>
+                        <option value="Data">Data</option>
+                        <option value="Live Output">Live Output</option>
+                        <option value="Complimentary">Complimentary</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (newSpecialTitle.trim()) {
+                            await saveWorkspaceQuotationSpecialAddon(workspaceId, newSpecialTitle, newSpecialCat);
+                            const updated = await fetchWorkspaceQuotationSettings(workspaceId);
+                            setQuotationSettings(updated);
+                            setNewSpecialTitle('');
+                          }
+                        }}
+                        className="w-full sm:w-auto px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-extrabold rounded-lg shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Add Special Addon</span>
+                      </button>
+                    </div>
+
+                    {/* Search & List */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-4">
+                        <input
+                          type="text"
+                          placeholder="🔍 Search special addons..."
+                          value={specialSearch}
+                          onChange={e => setSpecialSearch(e.target.value)}
+                          className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-800 w-64 focus:outline-none focus:border-purple-500"
+                        />
+                        <span className="text-[11px] font-bold text-slate-400">
+                          Showing {quotationSettings.specialAddons.filter(s => s.title.toLowerCase().includes(specialSearch.toLowerCase())).length} items
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-96 overflow-y-auto pr-1">
+                        {quotationSettings.specialAddons
+                          .filter(s => s.title.toLowerCase().includes(specialSearch.toLowerCase()))
+                          .map((s, idx) => (
+                            <div
+                              key={s.id || idx}
+                              className="p-3 bg-white border border-slate-200 hover:border-purple-300 rounded-xl flex items-center justify-between gap-2 shadow-2xs transition-all group"
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                <span className="w-6 h-6 rounded-lg bg-purple-50 text-purple-700 text-[10px] font-black flex items-center justify-center shrink-0">
+                                  #{idx + 1}
+                                </span>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-xs font-bold text-slate-900 truncate">{s.title}</p>
+                                  <span className="inline-block mt-0.5 px-2 py-0.5 bg-purple-100 text-purple-800 text-[9px] font-black rounded-md uppercase tracking-wider">
+                                    {s.category || 'Complimentary'}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingSpecial(s);
+                                    setEditSpecialTitle(s.title);
+                                    setEditSpecialCat(s.category || 'Complimentary');
+                                  }}
+                                  className="p-1.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-all cursor-pointer"
+                                  title="Edit Special Addon"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    await deleteWorkspaceQuotationSpecialAddon(s.id, workspaceId);
+                                    const updated = await fetchWorkspaceQuotationSettings(workspaceId);
+                                    setQuotationSettings(updated);
+                                  }}
+                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+                                  title="Delete Special Addon"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* SUBTAB 3: PAID ADD-ONS & UPGRADES */}
+                {quoteSubTab === 'paid_addons' && (
+                  <div className="space-y-4">
+                    <div className="p-4 bg-emerald-50/60 border border-emerald-100 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-xs font-black text-emerald-950 uppercase tracking-wider">💳 Extra Paid Add-ons & Upgrades</h3>
+                        <p className="text-[11px] text-emerald-800 font-medium">Additional billable crew, services & upgrades that clients can opt for with standard base pricing.</p>
+                      </div>
+                      <span className="px-3 py-1 bg-white border border-emerald-200 text-emerald-900 text-xs font-extrabold rounded-full shadow-2xs">
+                        {quotationSettings.paidAddons.length} Paid Add-ons Available
+                      </span>
+                    </div>
+
+                    {/* Quick Add Bar */}
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex flex-col sm:flex-row items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="Add-on Title (e.g. FPV Drone Pilot)..."
+                        value={newPaidTitle}
+                        onChange={e => setNewPaidTitle(e.target.value)}
+                        className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-emerald-600"
+                      />
+                      <div className="relative flex items-center w-36">
+                        <span className="absolute left-2.5 text-xs font-bold text-emerald-700">₹</span>
+                        <input
+                          type="number"
+                          placeholder="Price (₹)"
+                          value={newPaidPrice}
+                          onChange={e => setNewPaidPrice(e.target.value)}
+                          className="w-full pl-6 pr-2 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:border-emerald-600"
+                        />
+                      </div>
+                      <select
+                        value={newPaidCat}
+                        onChange={e => setNewPaidCat(e.target.value)}
+                        className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 cursor-pointer"
+                      >
+                        <option value="Photography">Photography</option>
+                        <option value="Cinematography">Cinematography</option>
+                        <option value="Drone">Drone</option>
+                        <option value="Live Tech">Live Tech</option>
+                        <option value="Album">Album</option>
+                        <option value="Post-Production">Post-Production</option>
+                        <option value="Social Media">Social Media</option>
+                        <option value="Equipment">Equipment</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (newPaidTitle.trim()) {
+                            await saveWorkspaceQuotationPaidAddon(workspaceId, newPaidTitle, Number(newPaidPrice) || 0, newPaidCat);
+                            const updated = await fetchWorkspaceQuotationSettings(workspaceId);
+                            setQuotationSettings(updated);
+                            setNewPaidTitle('');
+                            setNewPaidPrice('10000');
+                          }
+                        }}
+                        className="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold rounded-lg shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Add Paid Add-on</span>
+                      </button>
+                    </div>
+
+                    {/* Search & List */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-4">
+                        <input
+                          type="text"
+                          placeholder="🔍 Search paid add-ons..."
+                          value={paidSearch}
+                          onChange={e => setPaidSearch(e.target.value)}
+                          className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-800 w-64 focus:outline-none focus:border-emerald-500"
+                        />
+                        <span className="text-[11px] font-bold text-slate-400">
+                          Showing {quotationSettings.paidAddons.filter(p => p.title.toLowerCase().includes(paidSearch.toLowerCase())).length} items
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-96 overflow-y-auto pr-1">
+                        {quotationSettings.paidAddons
+                          .filter(p => p.title.toLowerCase().includes(paidSearch.toLowerCase()))
+                          .map((p, idx) => (
+                            <div
+                              key={p.id || idx}
+                              className="p-3 bg-white border border-slate-200 hover:border-emerald-300 rounded-xl flex items-center justify-between gap-2 shadow-2xs transition-all group"
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                <span className="w-6 h-6 rounded-lg bg-emerald-50 text-emerald-700 text-[10px] font-black flex items-center justify-center shrink-0">
+                                  #{idx + 1}
+                                </span>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-xs font-bold text-slate-900 truncate">{p.title}</p>
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    <span className="text-xs font-extrabold text-emerald-700">
+                                      ₹{Number(p.price || 0).toLocaleString('en-IN')}
+                                    </span>
+                                    <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-[9px] font-black rounded-md uppercase tracking-wider">
+                                      {p.category || 'Extra Service'}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingPaid(p);
+                                    setEditPaidTitle(p.title);
+                                    setEditPaidPrice(String(p.price || 0));
+                                    setEditPaidCat(p.category || 'Extra Service');
+                                  }}
+                                  className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all cursor-pointer"
+                                  title="Edit Paid Add-on"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    await deleteWorkspaceQuotationPaidAddon(p.id, workspaceId);
+                                    const updated = await fetchWorkspaceQuotationSettings(workspaceId);
+                                    setQuotationSettings(updated);
+                                  }}
+                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+                                  title="Delete Paid Add-on"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* SUBTAB 4: DEFAULT WEDDING FUNCTIONS & COVERAGE */}
+                {quoteSubTab === 'default_functions' && (
+                  <div className="space-y-4">
+                    <div className="p-4 bg-amber-50/60 border border-amber-100 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-xs font-black text-amber-950 uppercase tracking-wider">📅 Default Quotation Functions & Events</h3>
+                        <p className="text-[11px] text-amber-800 font-medium">Pre-configure standard wedding functions with default crew counts, duration, and notes. When creating a new Quotation Proposal, these functions will load automatically!</p>
+                      </div>
+                      <span className="px-3 py-1 bg-white border border-amber-200 text-amber-900 text-xs font-extrabold rounded-full shadow-2xs">
+                        {quotationSettings.defaultFunctions.length} Default Functions Active
+                      </span>
+                    </div>
+
+                    {/* Quick Add Function Bar */}
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <input
+                          type="text"
+                          placeholder="Function Name (e.g. Sangeet & Cocktail)..."
+                          value={newDefaultFuncName}
+                          onChange={e => setNewDefaultFuncName(e.target.value)}
+                          className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-amber-600"
+                        />
+                        <select
+                          value={newDefaultFuncDuration}
+                          onChange={e => setNewDefaultFuncDuration(e.target.value)}
+                          className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 cursor-pointer"
+                        >
+                          {DEFAULT_DURATION_SLOTS.map(slot => (
+                            <option key={slot} value={slot}>{slot}</option>
+                          ))}
+                        </select>
+                        <input
+                          type="text"
+                          placeholder="Default Venue / City..."
+                          value={newDefaultFuncLocation}
+                          onChange={e => setNewDefaultFuncLocation(e.target.value)}
+                          className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-amber-600"
+                        />
+                      </div>
+                      <div className="flex flex-col sm:flex-row items-center gap-2">
+                        <input
+                          type="text"
+                          placeholder="Optional notes (e.g. Includes stage performances & couple entry coverage)..."
+                          value={newDefaultFuncNotes}
+                          onChange={e => setNewDefaultFuncNotes(e.target.value)}
+                          className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-amber-600"
+                        />
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (newDefaultFuncName.trim()) {
+                              await saveWorkspaceQuotationDefaultFunction(workspaceId, {
+                                name: newDefaultFuncName,
+                                durationSlot: newDefaultFuncDuration,
+                                location: newDefaultFuncLocation,
+                                notes: newDefaultFuncNotes,
+                                requirements: [
+                                  { name: 'Candid Photography', qty: 2 },
+                                  { name: 'Cinematography', qty: 2 },
+                                  { name: 'Drone', qty: 1 }
+                                ]
+                              });
+                              const updated = await fetchWorkspaceQuotationSettings(workspaceId);
+                              setQuotationSettings(updated);
+                              setNewDefaultFuncName('');
+                              setNewDefaultFuncNotes('');
+                            }
+                          }}
+                          className="w-full sm:w-auto px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-extrabold rounded-lg shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>Add Default Function</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Functions List */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-4">
+                        <input
+                          type="text"
+                          placeholder="🔍 Search default functions..."
+                          value={defaultFuncSearch}
+                          onChange={e => setDefaultFuncSearch(e.target.value)}
+                          className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-800 w-64 focus:outline-none focus:border-amber-500"
+                        />
+                        <span className="text-[11px] font-bold text-slate-400">
+                          {quotationSettings.defaultFunctions.length} Functions configured
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {quotationSettings.defaultFunctions
+                          .filter(f => f.name.toLowerCase().includes(defaultFuncSearch.toLowerCase()))
+                          .map((f, idx) => (
+                            <div
+                              key={f.id || idx}
+                              className="p-4 bg-white border border-slate-200 hover:border-amber-300 rounded-2xl shadow-2xs space-y-2.5 transition-all group"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="w-6 h-6 rounded-lg bg-amber-100 text-amber-900 text-xs font-black flex items-center justify-center">
+                                    {idx + 1}
+                                  </span>
+                                  <h4 className="text-sm font-extrabold text-slate-900">{f.name}</h4>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <span className="px-2.5 py-0.5 bg-amber-50 border border-amber-200 text-amber-900 text-[10px] font-bold rounded-full">
+                                    ⏱ {f.durationSlot || '7 Hours'}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingDefaultFunc(f);
+                                      setEditDefaultFuncName(f.name);
+                                      setEditDefaultFuncDuration(f.durationSlot || '7 Hours');
+                                      setEditDefaultFuncLocation(f.location || '');
+                                      setEditDefaultFuncNotes(f.notes || '');
+                                      setEditDefaultFuncReqs(f.requirements || []);
+                                    }}
+                                    className="p-1 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all"
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      await deleteWorkspaceQuotationDefaultFunction(f.id, workspaceId);
+                                      const updated = await fetchWorkspaceQuotationSettings(workspaceId);
+                                      setQuotationSettings(updated);
+                                    }}
+                                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Crew requirements tags */}
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                {(f.requirements || []).map((req, rIdx) => (
+                                  <span
+                                    key={rIdx}
+                                    className="px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-800 text-[10px] font-extrabold rounded-md flex items-center gap-1"
+                                  >
+                                    <span>{req.qty}x</span>
+                                    <span>{req.name}</span>
+                                    <span className="px-1 py-0.2 bg-blue-100 text-blue-800 text-[8px] font-black rounded">
+                                      {getRoleShortCode(req.name)}
+                                    </span>
+                                  </span>
+                                ))}
+                              </div>
+
+                              {f.notes && (
+                                <p className="text-[11px] text-slate-500 italic bg-slate-50 p-2 rounded-lg border border-slate-100">
+                                  "{f.notes}"
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* SUBTAB 5: THEME, EXPIRY & TERMS */}
+                {quoteSubTab === 'theme_terms' && (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      {/* PDF Theme Dropdown */}
+                      <div>
+                        <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
+                          PDF Document Theme
+                        </label>
+                        <div className="relative">
+                          <select
+                            value={pdfTheme}
+                            onChange={e => setPdfTheme(e.target.value)}
+                            className="w-full appearance-none px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58] cursor-pointer"
+                          >
+                            <option value="royal_gold">👑 Royal Gold & Obsidian</option>
+                            <option value="minimal_dark">🖤 Minimal Dark Studio</option>
+                            <option value="airy_clean">✨ Airy Clean White</option>
+                          </select>
+                          <ChevronDown className="w-4 h-4 text-slate-500 absolute right-3 top-2.5 pointer-events-none" />
+                        </div>
+                      </div>
+
+                      {/* Expiry Days */}
+                      <div>
+                        <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
+                          Quotation Validity (Days)
+                        </label>
+                        <input
+                          type="number"
+                          value={quoteExpiryDays}
+                          onChange={e => setQuoteExpiryDays(Number(e.target.value))}
+                          className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58]"
+                        />
+                      </div>
+
+                      {/* Currency Dropdown */}
+                      <div>
+                        <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
+                          Default Currency
+                        </label>
+                        <div className="relative">
+                          <select
+                            value={currency}
+                            onChange={e => setCurrency(e.target.value)}
+                            className="w-full appearance-none px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58] cursor-pointer"
+                          >
+                            <option value="INR">₹ INR (Indian Rupee)</option>
+                            <option value="USD">$ USD (US Dollar)</option>
+                            <option value="AED">AED (UAE Dirham)</option>
+                          </select>
+                          <ChevronDown className="w-4 h-4 text-slate-500 absolute right-3 top-2.5 pointer-events-none" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Terms */}
+                    <div>
+                      <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
+                        Default Quotation Terms & Conditions
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={quoteTerms}
+                        onChange={e => setQuoteTerms(e.target.value)}
+                        className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-[#0F9D58]"
+                      />
+                    </div>
+
+                    {/* Contract Clauses */}
+                    <div>
+                      <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
+                        Standard Contract Clauses
+                      </label>
+                      <textarea
+                        rows={4}
+                        value={contractClauses}
+                        onChange={e => setContractClauses(e.target.value)}
+                        className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:border-[#0F9D58]"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* EDITING MODALS */}
+                {/* 1. Edit Deliverable Modal */}
+                {editingDeliv && (
+                  <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl max-w-md w-full p-5 space-y-4 shadow-xl border border-slate-200">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <h3 className="text-sm font-extrabold text-slate-900">Edit Deliverable</h3>
+                        <button type="button" onClick={() => setEditingDeliv(null)} className="text-slate-400 hover:text-slate-600">
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <div className="space-y-3">
+                        <div>
+                          <label className="text-xs font-bold text-slate-700 block mb-1">Deliverable Title</label>
+                          <input
+                            type="text"
+                            value={editDelivTitle}
+                            onChange={e => setEditDelivTitle(e.target.value)}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-bold text-slate-700 block mb-1">Category</label>
+                          <select
+                            value={editDelivCat}
+                            onChange={e => setEditDelivCat(e.target.value)}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 cursor-pointer"
+                          >
+                            <option value="Video">Video</option>
+                            <option value="Photo">Photo</option>
+                            <option value="Social Media">Social Media</option>
+                            <option value="Album">Album</option>
+                            <option value="Data">Data</option>
+                            <option value="General">General</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-end gap-2 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setEditingDeliv(null)}
+                          className="px-3 py-1.5 bg-slate-100 text-slate-700 text-xs font-bold rounded-xl"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (editDelivTitle.trim()) {
+                              await updateWorkspaceQuotationDeliverable(editingDeliv.id, editDelivTitle, editDelivCat, workspaceId);
+                              const updated = await fetchWorkspaceQuotationSettings(workspaceId);
+                              setQuotationSettings(updated);
+                              setEditingDeliv(null);
+                            }
+                          }}
+                          className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs"
+                        >
+                          Save Changes
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. Edit Special Addon Modal */}
+                {editingSpecial && (
+                  <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl max-w-md w-full p-5 space-y-4 shadow-xl border border-slate-200">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <h3 className="text-sm font-extrabold text-slate-900">Edit Special Addon</h3>
+                        <button type="button" onClick={() => setEditingSpecial(null)} className="text-slate-400 hover:text-slate-600">
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <div className="space-y-3">
+                        <div>
+                          <label className="text-xs font-bold text-slate-700 block mb-1">Special Addon Title</label>
+                          <input
+                            type="text"
+                            value={editSpecialTitle}
+                            onChange={e => setEditSpecialTitle(e.target.value)}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-bold text-slate-700 block mb-1">Category</label>
+                          <select
+                            value={editSpecialCat}
+                            onChange={e => setEditSpecialCat(e.target.value)}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 cursor-pointer"
+                          >
+                            <option value="Shoots">Shoots</option>
+                            <option value="Album">Album</option>
+                            <option value="Drone">Drone</option>
+                            <option value="Social Media">Social Media</option>
+                            <option value="Data">Data</option>
+                            <option value="Live Output">Live Output</option>
+                            <option value="Complimentary">Complimentary</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-end gap-2 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setEditingSpecial(null)}
+                          className="px-3 py-1.5 bg-slate-100 text-slate-700 text-xs font-bold rounded-xl"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (editSpecialTitle.trim()) {
+                              await updateWorkspaceQuotationSpecialAddon(editingSpecial.id, editSpecialTitle, editSpecialCat, workspaceId);
+                              const updated = await fetchWorkspaceQuotationSettings(workspaceId);
+                              setQuotationSettings(updated);
+                              setEditingSpecial(null);
+                            }
+                          }}
+                          className="px-4 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-xs"
+                        >
+                          Save Changes
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. Edit Paid Addon Modal */}
+                {editingPaid && (
+                  <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl max-w-md w-full p-5 space-y-4 shadow-xl border border-slate-200">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <h3 className="text-sm font-extrabold text-slate-900">Edit Paid Add-on Service</h3>
+                        <button type="button" onClick={() => setEditingPaid(null)} className="text-slate-400 hover:text-slate-600">
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <div className="space-y-3">
+                        <div>
+                          <label className="text-xs font-bold text-slate-700 block mb-1">Add-on Title</label>
+                          <input
+                            type="text"
+                            value={editPaidTitle}
+                            onChange={e => setEditPaidTitle(e.target.value)}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-bold text-slate-700 block mb-1">Price (₹)</label>
+                          <div className="relative flex items-center">
+                            <span className="absolute left-3 text-xs font-bold text-emerald-700">₹</span>
+                            <input
+                              type="number"
+                              value={editPaidPrice}
+                              onChange={e => setEditPaidPrice(e.target.value)}
+                              className="w-full pl-7 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-xs font-bold text-slate-700 block mb-1">Category</label>
+                          <select
+                            value={editPaidCat}
+                            onChange={e => setEditPaidCat(e.target.value)}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 cursor-pointer"
+                          >
+                            <option value="Photography">Photography</option>
+                            <option value="Cinematography">Cinematography</option>
+                            <option value="Drone">Drone</option>
+                            <option value="Live Tech">Live Tech</option>
+                            <option value="Album">Album</option>
+                            <option value="Post-Production">Post-Production</option>
+                            <option value="Social Media">Social Media</option>
+                            <option value="Equipment">Equipment</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-end gap-2 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setEditingPaid(null)}
+                          className="px-3 py-1.5 bg-slate-100 text-slate-700 text-xs font-bold rounded-xl"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (editPaidTitle.trim()) {
+                              await updateWorkspaceQuotationPaidAddon(editingPaid.id, editPaidTitle, Number(editPaidPrice) || 0, editPaidCat, workspaceId);
+                              const updated = await fetchWorkspaceQuotationSettings(workspaceId);
+                              setQuotationSettings(updated);
+                              setEditingPaid(null);
+                            }
+                          }}
+                          className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs"
+                        >
+                          Save Changes
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 4. Edit Default Function Modal */}
+                {editingDefaultFunc && (
+                  <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl max-w-lg w-full p-5 space-y-4 shadow-xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <h3 className="text-sm font-extrabold text-slate-900">Edit Default Function Template</h3>
+                        <button type="button" onClick={() => setEditingDefaultFunc(null)} className="text-slate-400 hover:text-slate-600">
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <div className="space-y-3">
+                        <div>
+                          <label className="text-xs font-bold text-slate-700 block mb-1">Function Name</label>
+                          <input
+                            type="text"
+                            value={editDefaultFuncName}
+                            onChange={e => setEditDefaultFuncName(e.target.value)}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-xs font-bold text-slate-700 block mb-1">Duration Slot</label>
+                            <select
+                              value={editDefaultFuncDuration}
+                              onChange={e => setEditDefaultFuncDuration(e.target.value)}
+                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 cursor-pointer"
+                            >
+                              {DEFAULT_DURATION_SLOTS.map(slot => (
+                                <option key={slot} value={slot}>{slot}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-xs font-bold text-slate-700 block mb-1">Default Venue / Location</label>
+                            <input
+                              type="text"
+                              value={editDefaultFuncLocation}
+                              onChange={e => setEditDefaultFuncLocation(e.target.value)}
+                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Crew allocations editor */}
+                        <div className="space-y-2 pt-2 border-t border-slate-100">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">Default Crew Requirements</label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditDefaultFuncReqs([
+                                  ...editDefaultFuncReqs,
+                                  { name: 'Candid Photography', qty: 1 }
+                                ]);
+                              }}
+                              className="text-[10px] font-black text-amber-700 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded-md border border-amber-200"
+                            >
+                              + Add Crew Role
+                            </button>
+                          </div>
+
+                          <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                            {editDefaultFuncReqs.map((req, rIdx) => (
+                              <div key={rIdx} className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-200">
+                                <select
+                                  value={req.name}
+                                  onChange={e => {
+                                    const updated = [...editDefaultFuncReqs];
+                                    updated[rIdx] = { ...updated[rIdx], name: e.target.value };
+                                    setEditDefaultFuncReqs(updated);
+                                  }}
+                                  className="flex-1 px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800"
+                                >
+                                  {DEFAULT_CREW_ROLES.map(cr => (
+                                    <option key={cr.id} value={cr.name}>{cr.name} ({cr.short_code})</option>
+                                  ))}
+                                </select>
+                                <div className="flex items-center gap-1">
+                                  <span className="text-xs font-bold text-slate-500">Qty:</span>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    value={req.qty}
+                                    onChange={e => {
+                                      const updated = [...editDefaultFuncReqs];
+                                      updated[rIdx] = { ...updated[rIdx], qty: Math.max(1, Number(e.target.value) || 1) };
+                                      setEditDefaultFuncReqs(updated);
+                                    }}
+                                    className="w-14 px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-900 text-center"
+                                  />
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditDefaultFuncReqs(editDefaultFuncReqs.filter((_, i) => i !== rIdx));
+                                  }}
+                                  className="p-1 text-slate-400 hover:text-rose-600"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-xs font-bold text-slate-700 block mb-1">Coverage Notes</label>
+                          <textarea
+                            rows={2}
+                            value={editDefaultFuncNotes}
+                            onChange={e => setEditDefaultFuncNotes(e.target.value)}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                        <button
+                          type="button"
+                          onClick={() => setEditingDefaultFunc(null)}
+                          className="px-3 py-1.5 bg-slate-100 text-slate-700 text-xs font-bold rounded-xl"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (editDefaultFuncName.trim()) {
+                              await updateWorkspaceQuotationDefaultFunction(editingDefaultFunc.id, {
+                                name: editDefaultFuncName,
+                                durationSlot: editDefaultFuncDuration,
+                                location: editDefaultFuncLocation,
+                                notes: editDefaultFuncNotes,
+                                requirements: editDefaultFuncReqs
+                              }, workspaceId);
+                              const updated = await fetchWorkspaceQuotationSettings(workspaceId);
+                              setQuotationSettings(updated);
+                              setEditingDefaultFunc(null);
+                            }
+                          }}
+                          className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-xs"
+                        >
+                          Save Changes
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
