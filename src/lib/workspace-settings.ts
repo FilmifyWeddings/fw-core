@@ -273,3 +273,45 @@ export async function saveWorkspaceCrewRole(
 
   return newRole;
 }
+
+/**
+ * Delete event type from workspace
+ */
+export async function deleteWorkspaceEventType(
+  id: string,
+  workspaceId?: string
+): Promise<boolean> {
+  try {
+    if (workspaceId && !id.startsWith('def_')) {
+      await supabase
+        .from('workspace_event_types')
+        .delete()
+        .eq('id', id);
+    }
+    return true;
+  } catch (err) {
+    console.warn('[WorkspaceSettings] Error deleting workspace_event_type:', err);
+    return false;
+  }
+}
+
+/**
+ * Delete crew role from workspace
+ */
+export async function deleteWorkspaceCrewRole(
+  id: string,
+  workspaceId?: string
+): Promise<boolean> {
+  try {
+    if (workspaceId && !id.startsWith('def_')) {
+      await supabase
+        .from('workspace_crew_roles')
+        .delete()
+        .eq('id', id);
+    }
+    return true;
+  } catch (err) {
+    console.warn('[WorkspaceSettings] Error deleting workspace_crew_role:', err);
+    return false;
+  }
+}

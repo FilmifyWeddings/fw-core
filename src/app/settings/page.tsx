@@ -9,8 +9,21 @@ import {
   QrCode, Sparkles, Upload, Image as ImageIcon, Building2, CreditCard, Lock, Unlock, ShieldCheck, Key
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { 
+  WorkspaceEventType, 
+  WorkspaceCrewRole, 
+  fetchWorkspaceEventTypes, 
+  fetchWorkspaceCrewRoles, 
+  saveWorkspaceEventType, 
+  deleteWorkspaceEventType, 
+  saveWorkspaceCrewRole, 
+  deleteWorkspaceCrewRole, 
+  DEFAULT_EVENT_TYPES, 
+  DEFAULT_CREW_ROLES, 
+  getRoleShortCode 
+} from '@/lib/workspace-settings';
 
-type SettingsTab = 'leads' | 'quotations' | 'finance' | 'attendance' | 'integrations' | 'team';
+type SettingsTab = 'leads' | 'functions' | 'crew_roles' | 'quotations' | 'finance' | 'attendance' | 'integrations' | 'team';
 
 interface DropdownItem {
   id: string;
@@ -39,6 +52,17 @@ export default function SettingsPage() {
   const [saveToast, setSaveToast] = useState<string | null>(null);
   const [workspaceId, setWorkspaceId] = useState('');
   const [activeColorPickerId, setActiveColorPickerId] = useState<string | null>(null);
+
+  // Functions & Crew Roles States
+  const [eventTypes, setEventTypes] = useState<WorkspaceEventType[]>(DEFAULT_EVENT_TYPES);
+  const [crewRoles, setCrewRoles] = useState<WorkspaceCrewRole[]>(DEFAULT_CREW_ROLES);
+  const [newEventName, setNewEventName] = useState('');
+  const [newEventCategory, setNewEventCategory] = useState('Pre-Wedding');
+  const [newRoleName, setNewRoleName] = useState('');
+  const [newRoleCode, setNewRoleCode] = useState('');
+  const [newRoleCategory, setNewRoleCategory] = useState('Photography');
+  const [eventSearch, setEventSearch] = useState('');
+  const [roleSearch, setRoleSearch] = useState('');
 
   // 1. Leads Page Settings
   const [leadOwners, setLeadOwners] = useState<DropdownItem[]>([
@@ -352,6 +376,14 @@ export default function SettingsPage() {
 
           syncToLocalStorage(wId, s);
         }
+      }
+
+      // Fetch Workspace Event Types and Crew Roles
+      if (wId) {
+        const ev = await fetchWorkspaceEventTypes(wId);
+        if (ev && ev.length > 0) setEventTypes(ev);
+        const cr = await fetchWorkspaceCrewRoles(wId);
+        if (cr && cr.length > 0) setCrewRoles(cr);
       }
     } catch (err) {
       console.error('Failed to load settings:', err);
@@ -685,11 +717,13 @@ export default function SettingsPage() {
         <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-slate-200 scrollbar-none">
           {[
             { id: 'leads', label: '🎯 Leads & Pipeline', icon: Target },
+            { id: 'functions', label: '💍 Functions & Events', icon: Sparkles },
+            { id: 'crew_roles', label: '👥 Crew Roles & Codes', icon: Users },
             { id: 'quotations', label: '📄 Quotations & Proposals', icon: FileText },
             { id: 'finance', label: '💰 Finance & Invoices', icon: Coins },
             { id: 'attendance', label: '⏰ Attendance & Geofence', icon: Clock },
             { id: 'integrations', label: '🔌 Meta & Integrations', icon: Globe },
-            { id: 'team', label: '👥 Team & Owners', icon: Users },
+            { id: 'team', label: '🛡️ Team & Owners', icon: ShieldCheck },
           ].map(tab => {
             const isActive = activeTab === tab.id;
             return (
@@ -809,6 +843,250 @@ export default function SettingsPage() {
                     Lead Budget Filter Options
                   </label>
                   {renderGoogleOptionList(budgetRanges, setBudgetRanges, 'budget', 'Add another item')}
+                </div>
+              </div>
+            )}
+
+            {/* 1.5 FUNCTIONS & WEDDING EVENTS SETTINGS */}
+            {activeTab === 'functions' && (
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+                      <Sparkles className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-extrabold text-slate-900">Functions & Wedding Events Settings</h2>
+                      <p className="text-xs font-medium text-slate-500">
+                        Manage standardized wedding event names. Synced automatically with Quotations and Team Manager.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="relative min-w-[220px]">
+                    <input
+                      type="text"
+                      placeholder="Search functions..."
+                      value={eventSearch}
+                      onChange={e => setEventSearch(e.target.value)}
+                      className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:border-[#0F9D58]"
+                    />
+                    <Sparkles className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                  </div>
+                </div>
+
+                {/* Add New Function Form */}
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                  <h4 className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">
+                    + Add New Wedding Function
+                  </h4>
+                  <div className="flex flex-col sm:flex-row items-center gap-3">
+                    <input
+                      type="text"
+                      placeholder="Event Name (e.g. Ring Ceremony, Cocktail, Pool Party)..."
+                      value={newEventName}
+                      onChange={e => setNewEventName(e.target.value)}
+                      className="flex-1 px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58] shadow-xs"
+                    />
+                    <select
+                      value={newEventCategory}
+                      onChange={e => setNewEventCategory(e.target.value)}
+                      className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:border-[#0F9D58] shadow-xs"
+                    >
+                      <option value="Pre-Wedding">Pre-Wedding</option>
+                      <option value="Main Wedding">Main Wedding</option>
+                      <option value="Post-Wedding">Post-Wedding</option>
+                      <option value="Shoots">Shoots</option>
+                      <option value="Custom">Custom</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!newEventName.trim()) return;
+                        const clean = newEventName.trim();
+                        const { data: { session } } = await supabase.auth.getSession();
+                        const uid = session?.user?.id || workspaceId;
+                        const created = await saveWorkspaceEventType(uid, clean, newEventCategory);
+                        setEventTypes(prev => [...prev.filter(e => e.name.toLowerCase() !== clean.toLowerCase()), created]);
+                        setNewEventName('');
+                        setSaveToast(`Function "${clean}" added & synced across system!`);
+                        setTimeout(() => setSaveToast(null), 3000);
+                      }}
+                      className="w-full sm:w-auto px-5 py-2 bg-[#0F9D58] hover:bg-[#0B8043] text-white font-extrabold text-xs rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Add Function</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Event Types List */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-2">
+                  {eventTypes
+                    .filter(e => e.name.toLowerCase().includes(eventSearch.toLowerCase()))
+                    .map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between p-3.5 bg-white border border-slate-200 rounded-xl shadow-2xs hover:border-slate-300 transition group"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                          <div className="min-w-0">
+                            <span className="text-xs font-black text-slate-900 block truncate">{item.name}</span>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{item.category || 'General'}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          {item.is_default && (
+                            <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md">
+                              Default
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!confirm(`Delete function "${item.name}"?`)) return;
+                              const { data: { session } } = await supabase.auth.getSession();
+                              const uid = session?.user?.id || workspaceId;
+                              await deleteWorkspaceEventType(item.id, uid);
+                              setEventTypes(prev => prev.filter(e => e.id !== item.id));
+                              setSaveToast(`Function "${item.name}" removed`);
+                              setTimeout(() => setSaveToast(null), 3000);
+                            }}
+                            className="p-1.5 text-slate-300 hover:text-rose-600 transition rounded-lg hover:bg-rose-50 cursor-pointer opacity-0 group-hover:opacity-100"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* 1.6 CREW ROLES & SHORT CODES SETTINGS */}
+            {activeTab === 'crew_roles' && (
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                      <Users className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-extrabold text-slate-900">Crew Roles & Short Codes Settings</h2>
+                      <p className="text-xs font-medium text-slate-500">
+                        Configure crew roles with 2-letter short codes (TP, CP, CV, DP) for compact roster cards in Team Manager.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="relative min-w-[220px]">
+                    <input
+                      type="text"
+                      placeholder="Search roles or codes..."
+                      value={roleSearch}
+                      onChange={e => setRoleSearch(e.target.value)}
+                      className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:border-[#0F9D58]"
+                    />
+                    <Users className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                  </div>
+                </div>
+
+                {/* Add New Crew Role Form */}
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                  <h4 className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">
+                    + Add New Crew Role & Short Code
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                    <input
+                      type="text"
+                      placeholder="Full Role Name (e.g. Candid Photographer)..."
+                      value={newRoleName}
+                      onChange={e => {
+                        setNewRoleName(e.target.value);
+                        if (!newRoleCode) setNewRoleCode(getRoleShortCode(e.target.value));
+                      }}
+                      className="sm:col-span-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#0F9D58] shadow-xs"
+                    />
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Short Code (e.g. CP)..."
+                        maxLength={4}
+                        value={newRoleCode}
+                        onChange={e => setNewRoleCode(e.target.value.toUpperCase())}
+                        className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black text-indigo-600 uppercase focus:outline-none focus:border-[#0F9D58] shadow-xs"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!newRoleName.trim()) return;
+                        const cleanName = newRoleName.trim();
+                        const cleanCode = newRoleCode.trim().toUpperCase() || getRoleShortCode(cleanName);
+                        const { data: { session } } = await supabase.auth.getSession();
+                        const uid = session?.user?.id || workspaceId;
+                        const created = await saveWorkspaceCrewRole(uid, cleanName, cleanCode, newRoleCategory);
+                        setCrewRoles(prev => [...prev.filter(r => r.name.toLowerCase() !== cleanName.toLowerCase()), created]);
+                        setNewRoleName('');
+                        setNewRoleCode('');
+                        setSaveToast(`Crew Role "${cleanName} (${cleanCode})" added & synced!`);
+                        setTimeout(() => setSaveToast(null), 3000);
+                      }}
+                      className="w-full px-5 py-2 bg-[#0F9D58] hover:bg-[#0B8043] text-white font-extrabold text-xs rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Add Role</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Crew Roles List */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 pt-2">
+                  {crewRoles
+                    .filter(r => r.name.toLowerCase().includes(roleSearch.toLowerCase()) || r.short_code.toLowerCase().includes(roleSearch.toLowerCase()))
+                    .map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between p-3.5 bg-white border border-slate-200 rounded-xl shadow-2xs hover:border-slate-300 transition group"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 font-black text-xs flex items-center justify-center shrink-0">
+                            {item.short_code}
+                          </div>
+                          <div className="min-w-0">
+                            <span className="text-xs font-black text-slate-900 block truncate">{item.name}</span>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{item.category || 'Crew'}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          {item.is_default && (
+                            <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded-md">
+                              Def
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!confirm(`Delete crew role "${item.name}"?`)) return;
+                              const { data: { session } } = await supabase.auth.getSession();
+                              const uid = session?.user?.id || workspaceId;
+                              await deleteWorkspaceCrewRole(item.id, uid);
+                              setCrewRoles(prev => prev.filter(r => r.id !== item.id));
+                              setSaveToast(`Crew role "${item.name}" removed`);
+                              setTimeout(() => setSaveToast(null), 3000);
+                            }}
+                            className="p-1.5 text-slate-300 hover:text-rose-600 transition rounded-lg hover:bg-rose-50 cursor-pointer opacity-0 group-hover:opacity-100"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                 </div>
               </div>
             )}
