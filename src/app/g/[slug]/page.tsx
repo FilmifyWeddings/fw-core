@@ -103,7 +103,9 @@ function GuestSlugGalleryContent() {
   const [matchedPhotos, setMatchedPhotos] = useState<PhotoItem[]>([]);
   const [guestName, setGuestName] = useState('');
   const [guestPhone, setGuestPhone] = useState('');
+  const [guestEmail, setGuestEmail] = useState('');
   const [noMatchModalOpen, setNoMatchModalOpen] = useState(false);
+  const [showUnpublishedModal, setShowUnpublishedModal] = useState(false);
 
   // Lightbox & Selection State
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
@@ -221,9 +223,15 @@ function GuestSlugGalleryContent() {
     setIsMatching(true);
     setGuestName(data.name);
     setGuestPhone(data.phone);
+    setGuestEmail(data.email);
+
+    const isPublished =
+      gallery.status?.toLowerCase() === 'published' ||
+      (gallery as any).is_published === true ||
+      (gallery.status !== 'UNPUBLISHED' && gallery.status !== 'unpublished' && gallery.status !== 'DRAFT' && gallery.status !== 'draft');
 
     try {
-      // Step A: Register Guest
+      // 1. Register Guest in CRM
       try {
         await fetch('/api/gallery/guest/register', {
           method: 'POST',
@@ -240,7 +248,16 @@ function GuestSlugGalleryContent() {
         console.warn('Guest registration error:', regErr);
       }
 
-      // Step B: Neural ArcFace Vector Match
+      // 2. Dual-Mode Routing
+      if (!isPublished) {
+        // CASE B: UNPUBLISHED EVENT
+        setIsFaceScannerOpen(false);
+        setShowUnpublishedModal(true);
+        setIsMatching(false);
+        return;
+      }
+
+      // CASE A: PUBLISHED EVENT -> Neural Vector Match
       const res = await fetch('/api/gallery/match-face', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -252,14 +269,16 @@ function GuestSlugGalleryContent() {
       });
 
       const json = await res.json();
+      setIsFaceScannerOpen(false);
 
       if (json.success && Array.isArray(json.photos)) {
-        setIsFaceScannerOpen(false);
-
         if (json.photos.length > 0) {
+          // Direct On-Screen Render: NO blocking popup
           setMatchedPhotos(json.photos);
           setIsVerified(true);
+          setNoMatchModalOpen(false);
         } else {
+          // 0 Matches on Published Album
           setMatchedPhotos([]);
           setIsVerified(false);
           setNoMatchModalOpen(true);
@@ -672,6 +691,41 @@ function GuestSlugGalleryContent() {
                 Close
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4B. UNPUBLISHED EVENT REGISTRATION CONFIRMATION MODAL */}
+      {showUnpublishedModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full border border-zinc-200 shadow-2xl text-center space-y-5 animate-in fade-in zoom-in">
+            <div className="w-16 h-16 rounded-3xl bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto shadow-sm">
+              <CheckCircle2 className="w-8 h-8 text-emerald-600" />
+            </div>
+
+            <div className="space-y-2">
+              <span className="text-[10px] font-black uppercase tracking-widest text-emerald-800 bg-emerald-100 px-3 py-1 rounded-full border border-emerald-200">
+                ✓ Registration Saved
+              </span>
+              <h3 className="text-xl font-black text-zinc-900 pt-1">
+                Thank You, {guestName || 'Guest'}!
+              </h3>
+              <p className="text-xs text-zinc-600 leading-relaxed">
+                This event is currently private/unpublished while the photographer prepares and edits the photos.
+              </p>
+              <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-xs font-bold text-amber-900 space-y-1">
+                <p>📲 Your personal photos will be sent to your WhatsApp ({guestPhone}) as soon as the photographer publishes the event!</p>
+                {guestEmail && <p className="text-[11px] font-normal text-amber-800">Copy will also be sent to: {guestEmail}</p>}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowUnpublishedModal(false)}
+              className="w-full py-3.5 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white font-black text-xs transition cursor-pointer shadow-md"
+            >
+              Done / Got It
+            </button>
           </div>
         </div>
       )}

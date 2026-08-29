@@ -262,18 +262,18 @@ export function FaceScannerModal({
         const avgLuma = totalLuma / (w * h);
         const skinRatio = skinPixels / Math.max(centralFacePixels, 1);
 
-        // 1. Lighting validation
-        if (avgLuma < 45) {
+        // 1. Lighting validation (Lowered to 35 for indoor ambient light)
+        if (avgLuma < 35) {
           setGuidance('too_dark');
           setGuidanceMessage('🔴 Too Dark - Move to better light');
-        } else if (avgLuma > 242) {
+        } else if (avgLuma > 248) {
           setGuidance('too_bright');
           setGuidanceMessage('🔴 Too Bright / Glare - Reduce direct light');
-        } else if (skinRatio < 0.25) {
-          // Hand / Wall / Object in frame fails skin ratio in oval
+        } else if (skinRatio < 0.15) {
+          // No face / hand or object in frame
           setGuidance('no_face');
           setGuidanceMessage('🔴 No face detected. Keep face in frame');
-        } else if (skinRatio < 0.38) {
+        } else if (skinRatio < 0.22) {
           setGuidance('not_centered');
           setGuidanceMessage('🟡 Center your face inside the oval');
         } else {
@@ -281,17 +281,17 @@ export function FaceScannerModal({
           const eyeDifference = Math.abs(leftEyeRegionDarkness - rightEyeRegionDarkness);
           const maxEyeDarkness = Math.max(leftEyeRegionDarkness, rightEyeRegionDarkness, 1);
 
-          if (eyeDifference / maxEyeDarkness > 0.75 && maxEyeDarkness > 15) {
+          if (eyeDifference / maxEyeDarkness > 0.85 && maxEyeDarkness > 20) {
             setGuidance('looking_away');
             setGuidanceMessage('🟡 Look straight at the camera');
           } else {
             setGuidance('ready');
-            setGuidanceMessage('🟢 Face Detected! Click Capture');
+            setGuidanceMessage('🟢 Ready to Capture');
           }
         }
       } catch (_) {
         setGuidance('ready');
-        setGuidanceMessage('🟢 Ready to capture');
+        setGuidanceMessage('🟢 Ready to Capture');
       }
     }
 
@@ -323,8 +323,8 @@ export function FaceScannerModal({
   // Capture Snapshot from Video
   const handleSnap = () => {
     if (!videoRef.current) return;
-    if (guidance !== 'ready') {
-      alert('Please center your face and ensure good lighting before capturing.');
+    if (guidance === 'too_dark') {
+      alert('Lighting is too dark. Please move to better light before capturing.');
       return;
     }
 
@@ -545,15 +545,15 @@ export function FaceScannerModal({
                     <button
                       type="button"
                       onClick={handleSnap}
-                      disabled={guidance !== 'ready'}
+                      disabled={guidance === 'too_dark'}
                       className={`px-5 py-2.5 rounded-2xl font-black text-xs flex items-center gap-2 shadow-xl transition-all cursor-pointer ${
                         guidance === 'ready'
                           ? 'bg-emerald-500 hover:bg-emerald-400 text-zinc-950 scale-105 shadow-emerald-500/30'
-                          : 'bg-zinc-800/80 text-zinc-500 border border-zinc-700 cursor-not-allowed'
+                          : 'bg-zinc-900/90 text-white hover:bg-zinc-800 border border-zinc-700'
                       }`}
                     >
                       <Camera className="w-4 h-4" />
-                      <span>{guidance === 'ready' ? 'Face Detected! Click Capture' : 'Position Face to Capture'}</span>
+                      <span>{guidance === 'ready' ? 'Ready to Capture' : 'Capture Selfie'}</span>
                     </button>
                   </div>
                 </>
