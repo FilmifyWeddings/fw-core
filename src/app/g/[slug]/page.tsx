@@ -1,14 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import {
   Camera,
   Sparkles,
-  Play,
-  Pause,
   Download,
-  Share2,
   Lock,
   Unlock,
   X,
@@ -20,23 +17,27 @@ import {
   CheckSquare,
   Square,
   Crown,
-  FileCheck,
   Copy,
   Check,
   QrCode,
-  Send,
   User,
   Users,
   Phone,
   Mail,
   Smartphone,
   ShieldCheck,
+  Calendar,
+  KeyRound,
+  RefreshCw,
+  Zap,
 } from 'lucide-react';
 import { getPublicGalleryUrl } from '@/lib/r2';
+import { FaceScannerModal } from '@/components/gallery/FaceScannerModal';
 
 interface PhotoItem {
   id: string;
   gallery_id: string;
+  collection_id?: string | null;
   preview_url: string;
   thumbnail_url: string;
   original_key: string;
@@ -47,309 +48,247 @@ interface PhotoItem {
   confidencePercent?: number;
 }
 
+interface GalleryCollection {
+  id: string;
+  name: string;
+  photo_count?: number;
+}
+
 interface GalleryInfo {
   id: string;
   title: string;
   slug: string;
   event_date: string;
   pin_code: string | null;
+  guest_pin?: string | null;
+  admin_pin?: string | null;
   cover_url: string | null;
   allow_downloads: boolean;
-  status?: string; // 'UNPUBLISHED' | 'PUBLISHED' | 'DRAFT'
+  status?: string;
+  studio_slug?: string;
 }
 
-export default function GuestGalleryPage() {
+function GuestSlugGalleryContent() {
   const params = useParams();
   const searchParams = useSearchParams();
+
   const slug = params?.slug as string;
-  const mode = searchParams?.get('mode') || 'guest';
-  const isRegisterParam = searchParams?.get('register') === '1' || mode === 'register';
-  const guestParamId = searchParams?.get('guest');
+
+  // Search parameters for access modes
+  const isFullAccess = searchParams?.get('access') === 'all' || searchParams?.get('access') === 'full';
+  const isSelectionMode = searchParams?.get('album_selection') === 'true';
+  const isVipMode = searchParams?.get('vip-link') === '1';
+  const passKeyParam = searchParams?.get('pass_key');
+  const shareKeyParam = searchParams?.get('share_key');
+
+  const isPrivilegedMode = isFullAccess || isSelectionMode || isVipMode;
 
   const [gallery, setGallery] = useState<GalleryInfo | null>(null);
-  const [photos, setPhotos] = useState<PhotoItem[]>([]);
+  const [collections, setCollections] = useState<GalleryCollection[]>([]);
+  const [selectedCollectionId, setSelectedCollectionId] = useState<string>('all');
+  const [fullPhotos, setFullPhotos] = useState<PhotoItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Pre-Event Registration State
-  const [isRegisterMode, setIsRegisterMode] = useState(isRegisterParam);
-  const [guestName, setGuestName] = useState('');
-  const [guestPhone, setGuestPhone] = useState('');
-  const [guestEmail, setGuestEmail] = useState('');
-  const [selfieData, setSelfieData] = useState<string | null>(null);
-  const [isRegistering, setIsRegistering] = useState(false);
-  const [registrationSuccess, setRegistrationSuccess] = useState(false);
-
-  // PIN Protection State
+  // PIN / PassKey State for Privileged Access
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [enteredPin, setEnteredPin] = useState('');
   const [pinError, setPinError] = useState(false);
+  const [showPinModal, setShowPinModal] = useState(false);
 
-  // Face Matching State
-  const [isFaceModalOpen, setIsFaceModalOpen] = useState(false);
-  const [people, setPeople] = useState<any[]>([]);
-  const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
-  const [matchedPhotos, setMatchedPhotos] = useState<PhotoItem[]>([]);
+  // Zero-Knowledge Guest State
+  const [isFaceScannerOpen, setIsFaceScannerOpen] = useState(false);
   const [isMatching, setIsMatching] = useState(false);
-  const [activeFilter, setActiveFilter] = useState<'all' | 'matched'>('all');
-  const [cameraActive, setCameraActive] = useState(false);
-  const [matchNotice, setMatchNotice] = useState<string | null>(null);
+  const [isVerified, setIsVerified] = useState(false);
+  const [matchedPhotos, setMatchedPhotos] = useState<PhotoItem[]>([]);
+  const [guestName, setGuestName] = useState('');
+  const [guestPhone, setGuestPhone] = useState('');
+  const [noMatchModalOpen, setNoMatchModalOpen] = useState(false);
 
-  // Album Selection Mode State
-  const [selectedPhotos, setSelectedPhotos] = useState<Set<string>>(new Set());
-  const [copiedSelection, setCopiedSelection] = useState(false);
-
-  // Lightbox State
+  // Lightbox & Selection State
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
-  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [selectedForAlbum, setSelectedForAlbum] = useState<Set<string>>(new Set());
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [isDownloadingAll, setIsDownloadingAll] = useState(false);
 
-  // Slideshow State
-  const [isSlideshow, setIsSlideshow] = useState(false);
-  const slideshowTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Video Camera Stream Ref
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  // 1. Fetch Gallery Data & Photos
+  // 1. Fetch Gallery Data
   const loadGalleryData = useCallback(async () => {
     if (!slug) return;
     setLoading(true);
     setError(null);
 
     try {
-      const gRes = await fetch(`/api/gallery/events?slug=${slug}`);
-      const gJson = await gRes.json();
-      if (!gJson.success || !gJson.gallery) {
-        setError('Gallery not found or inactive');
+      let gal: any = null;
+      try {
+        const slugRes = await fetch(`/api/gallery/events?slug=${slug}`);
+        const slugJson = await slugRes.json();
+        if (slugJson.success && slugJson.gallery) {
+          gal = slugJson.gallery;
+        }
+      } catch (_) {}
+
+      if (!gal) {
+        const gRes = await fetch(`/api/gallery/events?id=${slug}`);
+        const gJson = await gRes.json();
+        if (gJson.success && gJson.gallery) {
+          gal = gJson.gallery;
+        }
+      }
+
+      if (!gal) {
+        setError('This wedding gallery was not found or is currently inactive.');
         setLoading(false);
         return;
       }
 
-      const gal = gJson.gallery;
       setGallery(gal);
 
-      if (gal.status === 'UNPUBLISHED' || isRegisterParam) {
-        setIsRegisterMode(true);
-      }
+      // Check unlock permissions
+      const requiredPin = isSelectionMode
+        ? (gal.admin_pin || gal.pin_code)
+        : (gal.guest_pin || gal.pin_code);
 
-      // If VIP mode, or no PIN code, or unlocked in session -> unlock immediately
-      if (mode === 'vip' || !gal.pin_code || sessionStorage.getItem(`gallery_unlocked_${gal.id}`) === 'true') {
+      const passedKey = isSelectionMode ? passKeyParam : shareKeyParam;
+
+      const hasValidPin =
+        isVipMode ||
+        !requiredPin ||
+        passedKey === requiredPin ||
+        (typeof window !== 'undefined' && sessionStorage.getItem(`unlocked_${gal.id}`) === 'true');
+
+      if (hasValidPin) {
         setIsUnlocked(true);
       }
 
-      // Fetch photos
-      const pRes = await fetch(`/api/gallery/photos?gallery_id=${gal.id}`);
-      const pJson = await pRes.json();
-      if (pJson.success && Array.isArray(pJson.photos)) {
-        setPhotos(pJson.photos);
-        // Load People Clusters for Google Photos style row
+      // ONLY fetch full collections & photos if in PRIVILEGED mode and UNLOCKED
+      if (isPrivilegedMode && hasValidPin) {
         try {
-          const peopleRes = await fetch(`/api/gallery/people?gallery_id=${gal.id}`);
-          const peopleJson = await peopleRes.json();
-          if (peopleJson.success && Array.isArray(peopleJson.people)) {
-            setPeople(peopleJson.people);
+          const cRes = await fetch(`/api/gallery/collections?gallery_id=${gal.id}`);
+          const cJson = await cRes.json();
+          if (cJson.success && Array.isArray(cJson.collections)) {
+            setCollections(cJson.collections);
           }
         } catch (_) {}
 
-        // If guestParamId is provided, filter for that guest
-        if (guestParamId) {
-          const guestRes = await fetch(`/api/gallery/guest/list?gallery_id=${gal.id}`);
-          const guestJson = await guestRes.json();
-          if (guestJson.success && Array.isArray(guestJson.guests)) {
-            const currentGuest = guestJson.guests.find((g: any) => g.id === guestParamId);
-            if (currentGuest && Array.isArray(currentGuest.matched_photo_ids) && currentGuest.matched_photo_ids.length > 0) {
-              const matchedSet = new Set(currentGuest.matched_photo_ids);
-              const matched = pJson.photos.filter((p: any) => matchedSet.has(p.id));
-              if (matched.length > 0) {
-                setMatchedPhotos(matched);
-                setActiveFilter('matched');
-                setMatchNotice(`🎉 Welcome ${currentGuest.guest_name}! Here are your ${matched.length} photos.`);
-              }
-            }
-          }
+        const pRes = await fetch(`/api/gallery/photos?gallery_id=${gal.id}`);
+        const pJson = await pRes.json();
+        if (pJson.success && Array.isArray(pJson.photos)) {
+          setFullPhotos(pJson.photos);
         }
       }
     } catch (err: any) {
+      console.error('Error loading gallery:', err);
       setError(err.message || 'Failed to load gallery');
     } finally {
       setLoading(false);
     }
-  }, [slug, mode, isRegisterParam, guestParamId]);
+  }, [slug, isSelectionMode, passKeyParam, shareKeyParam, isVipMode, isPrivilegedMode]);
 
   useEffect(() => {
     loadGalleryData();
   }, [loadGalleryData]);
 
   // Handle PIN Unlock
-  const handleUnlockWithPin = (e: React.FormEvent) => {
+  const handlePinSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!gallery) return;
 
-    if (gallery.pin_code && enteredPin.trim() === gallery.pin_code.trim()) {
+    const requiredPin = isSelectionMode
+      ? (gallery.admin_pin || gallery.pin_code)
+      : (gallery.guest_pin || gallery.pin_code);
+
+    if (!requiredPin || enteredPin.trim() === requiredPin.trim()) {
       setIsUnlocked(true);
       setPinError(false);
-      sessionStorage.setItem(`gallery_unlocked_${gallery.id}`, 'true');
+      setShowPinModal(false);
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(`unlocked_${gallery.id}`, 'true');
+      }
+      loadGalleryData();
     } else {
       setPinError(true);
     }
   };
 
-  // Camera Management
-  const startCamera = async () => {
-    try {
-      setCameraActive(true);
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 640 } },
-        audio: false,
-      });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
-      }
-    } catch (err) {
-      console.warn('Camera access denied or unavailable:', err);
-      setCameraActive(false);
-    }
-  };
-
-  const stopCamera = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach(t => t.stop());
-      videoRef.current.srcObject = null;
-    }
-    setCameraActive(false);
-  };
-
-  // Capture Selfie from Camera
-  const captureSelfieAndMatch = async () => {
-    if (!videoRef.current || !gallery) return;
-
-    const video = videoRef.current;
-    const canvas = canvasRef.current || document.createElement('canvas');
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 640;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const base64 = canvas.toDataURL('image/jpeg', 0.85);
-
-    stopCamera();
-
-    if (isRegisterMode) {
-      setSelfieData(base64);
-    } else {
-      await performFaceMatch(base64);
-    }
-  };
-
-  // Handle File Upload Selfie
-  const handleUploadSelfie = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !gallery) return;
-
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const base64 = reader.result as string;
-      if (isRegisterMode) {
-        setSelfieData(base64);
-      } else {
-        await performFaceMatch(base64);
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
-  // Pre-Event Guest Registration Submission
-  const handleGuestRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!gallery || !guestName.trim() || !guestPhone.trim()) {
-      alert('Please enter your Name and WhatsApp Number');
-      return;
-    }
-
-    setIsRegistering(true);
-    try {
-      const res = await fetch('/api/gallery/guest/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          gallery_id: gallery.id,
-          guest_name: guestName.trim(),
-          guest_phone: guestPhone.trim(),
-          guest_email: guestEmail.trim() || undefined,
-          selfieBase64: selfieData,
-        }),
-      });
-
-      const json = await res.json();
-      if (json.success) {
-        setRegistrationSuccess(true);
-      } else {
-        alert(json.error || 'Registration failed');
-      }
-    } catch (err: any) {
-      alert(`Registration error: ${err.message}`);
-    } finally {
-      setIsRegistering(false);
-    }
-  };
-
-  // Perform Real Face Match API Request
-  const performFaceMatch = async (selfieBase64: string) => {
+  // 2. Handle 3D Face Scanner Submission
+  const handleFaceScanSubmit = async (data: {
+    name: string;
+    phone: string;
+    email: string;
+    selfieBase64: string;
+  }) => {
     if (!gallery) return;
     setIsMatching(true);
-    setMatchNotice('Analyzing your face and searching wedding moments...');
+    setGuestName(data.name);
+    setGuestPhone(data.phone);
 
     try {
+      // Step A: Register Guest
+      try {
+        await fetch('/api/gallery/guest/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            gallery_id: gallery.id,
+            guest_name: data.name,
+            guest_phone: data.phone,
+            guest_email: data.email,
+            selfieBase64: data.selfieBase64,
+          }),
+        });
+      } catch (regErr) {
+        console.warn('Guest registration error:', regErr);
+      }
+
+      // Step B: Neural ArcFace Vector Match
       const res = await fetch('/api/gallery/match-face', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           galleryId: gallery.id,
-          selfieBase64,
-          threshold: 0.40,
+          selfieBase64: data.selfieBase64,
+          threshold: 0.35,
         }),
       });
 
       const json = await res.json();
+
       if (json.success && Array.isArray(json.photos)) {
-        setMatchedPhotos(json.photos);
-        setActiveFilter('matched');
-        setIsFaceModalOpen(false);
+        setIsFaceScannerOpen(false);
 
         if (json.photos.length > 0) {
-          setMatchNotice(`🎉 Found ${json.photos.length} photos of you!`);
+          setMatchedPhotos(json.photos);
+          setIsVerified(true);
         } else {
-          setMatchNotice('No matching photos found with this selfie. Showing all wedding photos.');
-          setActiveFilter('all');
+          setMatchedPhotos([]);
+          setIsVerified(false);
+          setNoMatchModalOpen(true);
         }
       } else {
-        alert(json.error || 'Face match failed');
+        alert(json.error || 'Face search failed');
       }
     } catch (err: any) {
-      alert(`Error during face search: ${err.message}`);
+      alert(`Search error: ${err.message}`);
     } finally {
       setIsMatching(false);
     }
   };
 
-  // Download High-Res Original from R2
+  // Download High-Res Photo
   const handleDownloadPhoto = async (photo: PhotoItem) => {
     setDownloadingId(photo.id);
     try {
-      const res = await fetch(`/api/gallery/download-url?key=${encodeURIComponent(photo.original_key || photo.preview_url)}&name=wedding_${photo.id}.jpg`);
+      const res = await fetch(
+        `/api/gallery/download-url?key=${encodeURIComponent(photo.original_key || photo.preview_url)}&name=wedding_${photo.id}.jpg`
+      );
       const json = await res.json();
       if (json.success && json.downloadUrl) {
-        const a = document.createElement('a');
-        a.href = json.downloadUrl;
-        a.download = `wedding_${photo.id}.jpg`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        const link = document.createElement('a');
+        link.href = json.downloadUrl;
+        link.download = `wedding_photo_${photo.id.slice(0, 8)}.jpg`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
       } else {
         window.open(photo.preview_url, '_blank');
       }
@@ -360,32 +299,27 @@ export default function GuestGalleryPage() {
     }
   };
 
-  const toggleFavorite = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setFavorites(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  // Batch Download All Matched Photos
+  const handleDownloadAllMyPhotos = async () => {
+    if (matchedPhotos.length === 0) return;
+    setIsDownloadingAll(true);
+    for (const photo of matchedPhotos) {
+      await handleDownloadPhoto(photo);
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    setIsDownloadingAll(false);
   };
 
-  const toggleSelectPhoto = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setSelectedPhotos(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const displayedPhotos = activeFilter === 'matched' && matchedPhotos.length > 0 ? matchedPhotos : photos;
+  const displayedPhotos = isPrivilegedMode && isUnlocked
+    ? (selectedCollectionId === 'all'
+        ? fullPhotos
+        : fullPhotos.filter((p) => p.collection_id === selectedCollectionId))
+    : matchedPhotos;
 
   if (loading) {
     return (
       <div className="min-h-screen bg-[#FAF9F5] flex flex-col items-center justify-center space-y-4 p-6">
-        <div className="w-16 h-16 rounded-3xl bg-amber-100 text-amber-700 flex items-center justify-center animate-pulse">
+        <div className="w-16 h-16 rounded-3xl bg-amber-100 text-amber-700 flex items-center justify-center animate-pulse shadow-md">
           <Camera className="w-8 h-8" />
         </div>
         <p className="text-sm font-black text-zinc-800 tracking-tight">Loading Wedding Gallery...</p>
@@ -397,512 +331,471 @@ export default function GuestGalleryPage() {
   if (error || !gallery) {
     return (
       <div className="min-h-screen bg-[#FAF9F5] flex flex-col items-center justify-center text-center p-6 space-y-4">
-        <div className="w-16 h-16 rounded-3xl bg-rose-100 text-rose-600 flex items-center justify-center">
+        <div className="w-16 h-16 rounded-3xl bg-rose-100 text-rose-600 flex items-center justify-center shadow-md">
           <Lock className="w-8 h-8" />
         </div>
-        <h1 className="text-xl font-black text-zinc-900">Gallery Not Available</h1>
-        <p className="text-xs text-zinc-500 max-w-sm">{error || 'This wedding gallery is not currently active.'}</p>
+        <h1 className="text-xl font-black text-zinc-900">Gallery Not Found</h1>
+        <p className="text-xs text-zinc-500 max-w-sm">{error || 'This gallery is currently inactive.'}</p>
       </div>
     );
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // PRE-EVENT GUEST QR REGISTRATION SCREEN
-  // ─────────────────────────────────────────────────────────────
-  if (isRegisterMode || gallery.status === 'UNPUBLISHED') {
-    return (
-      <div className="min-h-screen bg-[#FAF9F5] text-zinc-900 flex flex-col justify-between p-4 sm:p-8">
-        <div className="max-w-lg w-full mx-auto space-y-6 pt-4">
-          
-          {/* Header Badge */}
-          <div className="text-center space-y-2">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 text-amber-900 text-xs font-black uppercase tracking-wider border border-amber-200">
-              <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-              <span>AI Face Registration</span>
-            </span>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-zinc-900">
-              {gallery.title}
-            </h1>
-            <p className="text-xs text-zinc-500 font-serif italic">
-              Register with a quick selfie to receive your wedding photos directly on WhatsApp!
-            </p>
-          </div>
-
-          {registrationSuccess ? (
-            <div className="bg-white rounded-3xl p-8 border border-emerald-200 shadow-xl text-center space-y-5 animate-in fade-in zoom-in">
-              <div className="w-16 h-16 rounded-3xl bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto shadow-inner">
-                <CheckCircle2 className="w-10 h-10" />
-              </div>
-              <div className="space-y-2">
-                <h2 className="text-xl font-black text-zinc-900">You're All Set, {guestName}!</h2>
-                <p className="text-xs text-zinc-500 leading-relaxed max-w-sm mx-auto">
-                  Your face has been registered in StudioCore AI. As soon as the photographer publishes the official wedding photos, your personalized album will be delivered straight to your WhatsApp (<strong>{guestPhone}</strong>).
-                </p>
-              </div>
-              <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-200 text-[11px] text-emerald-800 font-bold flex items-center justify-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                <span>Instant Auto-Dispatch Enabled</span>
-              </div>
-            </div>
-          ) : (
-            <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#E7E2D8] shadow-xl space-y-6">
-              
-              {/* Selfie Capture Box */}
-              <div className="space-y-2 text-center">
-                <label className="text-xs font-black text-zinc-800 uppercase tracking-wider block">
-                  1. Take a 1-Second Selfie
-                </label>
-                
-                {selfieData ? (
-                  <div className="relative w-40 h-40 mx-auto rounded-3xl overflow-hidden border-2 border-emerald-500 shadow-md">
-                    <img src={selfieData} alt="Selfie preview" className="w-full h-full object-cover" />
-                    <button
-                      type="button"
-                      onClick={() => setSelfieData(null)}
-                      className="absolute top-2 right-2 p-1.5 rounded-full bg-black/60 text-white hover:bg-black transition cursor-pointer"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                    <span className="absolute bottom-2 inset-x-2 text-center text-[10px] font-black text-emerald-400 bg-black/70 py-0.5 rounded-lg">
-                      ✓ Face Captured
-                    </span>
-                  </div>
-                ) : cameraActive ? (
-                  <div className="relative w-full max-w-xs mx-auto aspect-square rounded-3xl overflow-hidden border-2 border-amber-500 shadow-md bg-black">
-                    <video ref={videoRef} playsInline autoPlay muted className="w-full h-full object-cover scale-x-[-1]" />
-                    <button
-                      type="button"
-                      onClick={captureSelfieAndMatch}
-                      className="absolute bottom-4 inset-x-8 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-black transition flex items-center justify-center gap-2 shadow-lg cursor-pointer"
-                    >
-                      <Camera className="w-4 h-4" />
-                      <span>Capture Selfie</span>
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-                    <button
-                      type="button"
-                      onClick={startCamera}
-                      className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-sm"
-                    >
-                      <Camera className="w-4 h-4 text-amber-400" />
-                      <span>Open Camera</span>
-                    </button>
-
-                    <label className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer border border-zinc-200">
-                      <ImageIcon className="w-4 h-4 text-zinc-500" />
-                      <span>Upload Photo</span>
-                      <input type="file" accept="image/*" onChange={handleUploadSelfie} className="hidden" />
-                    </label>
-                  </div>
-                )}
-              </div>
-
-              {/* Guest Details Form */}
-              <form onSubmit={handleGuestRegister} className="space-y-4 pt-2 border-t border-zinc-100">
-                <div>
-                  <label className="text-[11px] font-black text-zinc-700 uppercase tracking-wider block mb-1">
-                    2. Full Name
-                  </label>
-                  <div className="relative">
-                    <User className="w-4 h-4 text-zinc-400 absolute left-3.5 top-3.5" />
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Rahul Sharma"
-                      value={guestName}
-                      onChange={e => setGuestName(e.target.value)}
-                      className="w-full pl-10 pr-4 py-3 bg-[#FBF9F5] rounded-2xl border border-zinc-300 text-xs font-bold focus:bg-white focus:outline-hidden focus:border-amber-500"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[11px] font-black text-zinc-700 uppercase tracking-wider block mb-1">
-                    3. WhatsApp Mobile Number (For Instant Photos)
-                  </label>
-                  <div className="relative">
-                    <Phone className="w-4 h-4 text-emerald-600 absolute left-3.5 top-3.5" />
-                    <input
-                      type="tel"
-                      required
-                      placeholder="+91 98765 43210"
-                      value={guestPhone}
-                      onChange={e => setGuestPhone(e.target.value)}
-                      className="w-full pl-10 pr-4 py-3 bg-[#FBF9F5] rounded-2xl border border-zinc-300 text-xs font-bold focus:bg-white focus:outline-hidden focus:border-emerald-500"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[11px] font-black text-zinc-700 uppercase tracking-wider block mb-1">
-                    4. Email Address (Optional)
-                  </label>
-                  <div className="relative">
-                    <Mail className="w-4 h-4 text-zinc-400 absolute left-3.5 top-3.5" />
-                    <input
-                      type="email"
-                      placeholder="rahul@gmail.com"
-                      value={guestEmail}
-                      onChange={e => setGuestEmail(e.target.value)}
-                      className="w-full pl-10 pr-4 py-3 bg-[#FBF9F5] rounded-2xl border border-zinc-300 text-xs font-bold focus:bg-white focus:outline-hidden focus:border-amber-500"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isRegistering}
-                  className="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-black text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-amber-500/20"
-                >
-                  {isRegistering ? (
-                    <span>Registering with StudioCore AI...</span>
-                  ) : (
-                    <>
-                      <Sparkles className="w-4 h-4" />
-                      <span>Register for Instant Wedding Photos</span>
-                    </>
-                  )}
-                </button>
-              </form>
-
-            </div>
-          )}
-
-        </div>
-
-        <div className="text-center text-[11px] text-zinc-400 pt-6">
-          <span>Powered by StudioCore AI • Zero Storage Loss Wedding Delivery</span>
-        </div>
-      </div>
-    );
-  }
-
-  // ─────────────────────────────────────────────────────────────
-  // PUBLISHED GALLERY VIEW
-  // ─────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-[#FAF9F5] text-zinc-900 font-sans pb-32 select-none">
       
-      {/* 1. LUXURY WEDDING HERO BANNER */}
-      <div className="relative bg-zinc-900 text-white overflow-hidden">
+      {/* 1. LUXURY WEDDING HERO */}
+      <div className="relative bg-zinc-950 text-white overflow-hidden">
         {gallery.cover_url ? (
           <img
             src={gallery.cover_url}
             alt={gallery.title}
-            className="w-full h-72 sm:h-96 object-cover opacity-50 filter brightness-75 scale-105"
+            className="w-full h-80 sm:h-96 object-cover opacity-45 filter brightness-75 scale-105"
           />
         ) : (
-          <div className="w-full h-72 sm:h-96 bg-gradient-to-b from-zinc-800 to-zinc-950" />
+          <div className="w-full h-80 sm:h-96 bg-gradient-to-b from-zinc-900 via-zinc-950 to-[#FAF9F5]" />
         )}
 
-        <div className="absolute inset-0 bg-gradient-to-t from-[#FAF9F5] via-black/40 to-black/70" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#FAF9F5] via-black/50 to-black/80" />
 
-        <div className="absolute inset-0 flex flex-col justify-between p-6 sm:p-12 max-w-7xl mx-auto">
+        <div className="absolute inset-0 flex flex-col justify-between p-6 sm:p-10 max-w-6xl mx-auto">
           <div className="flex items-center justify-between">
-            <span className="px-3.5 py-1 rounded-full bg-white/20 backdrop-blur-md text-white text-[11px] font-black uppercase tracking-wider border border-white/20">
-              ✨ StudioCore AI Gallery
+            <span className="px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-black uppercase tracking-widest border border-amber-400/40 backdrop-blur-md">
+              ✨ Official Wedding Gallery
             </span>
 
-            {mode === 'vip' && (
-              <span className="px-3 py-1 rounded-full bg-amber-500 text-white text-[10px] font-black flex items-center gap-1 shadow-md">
-                <Crown className="w-3 h-3" />
-                <span>VIP Direct Access</span>
-              </span>
+            {!isUnlocked && (
+              <button
+                onClick={() => setShowPinModal(true)}
+                className="px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold flex items-center gap-1.5 backdrop-blur-md border border-white/20 transition cursor-pointer"
+              >
+                <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                <span>Enter PIN</span>
+              </button>
             )}
           </div>
 
-          <div className="text-center space-y-2 max-w-2xl mx-auto pb-4">
-            <h1 className="text-3xl sm:text-5xl font-black tracking-tight text-white drop-shadow-md">
+          <div className="space-y-2 text-center sm:text-left max-w-2xl">
+            <div className="flex items-center justify-center sm:justify-start gap-2 text-amber-400 text-xs font-serif italic">
+              <Calendar className="w-3.5 h-3.5" />
+              <span>{new Date(gallery.event_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
+            </div>
+            <h1 className="text-3xl sm:text-5xl font-serif font-black tracking-tight text-white drop-shadow-md">
               {gallery.title}
             </h1>
-            <p className="text-xs sm:text-sm font-serif italic text-amber-200/90 tracking-wide">
-              {new Date(gallery.event_date).toLocaleDateString('en-IN', {
-                weekday: 'long',
-                day: 'numeric',
-                month: 'long',
-                year: 'numeric',
-              })} • {photos.length} Captured Moments
+            <p className="text-xs sm:text-sm text-zinc-300 font-serif italic drop-shadow-xs">
+              Moments captured forever. Find all your personal memories with AI Face Search.
             </p>
           </div>
         </div>
       </div>
 
-      {/* 1.5 GOOGLE PHOTOS PEOPLE AVATARS BAR */}
-      {people.length > 0 && (
-        <div className="max-w-7xl mx-auto px-4 sm:px-8 mt-4">
-          <div className="bg-white rounded-3xl p-4 border border-[#E7E2D8] shadow-sm space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500 flex items-center gap-1.5">
-                <Users className="w-3.5 h-3.5 text-purple-600" />
-                <span>People in this Wedding ({people.length})</span>
+      {/* 2. MAIN CONTENT AREA */}
+      <div className="max-w-6xl mx-auto px-4 sm:px-8 -mt-6 relative z-10 space-y-8">
+        
+        {/* CASE A: ZERO-KNOWLEDGE LOCKED HERO FOR GUESTS */}
+        {!isPrivilegedMode && !isVerified && (
+          <div className="bg-white rounded-3xl sm:rounded-4xl p-8 sm:p-12 border border-[#E7E2D8] shadow-xl text-center space-y-6 max-w-2xl mx-auto">
+            <div className="w-20 h-20 rounded-3xl bg-amber-50 border-2 border-amber-200 text-amber-700 flex items-center justify-center mx-auto shadow-inner">
+              <Lock className="w-9 h-9 text-amber-600" />
+            </div>
+
+            <div className="space-y-2">
+              <span className="text-[10px] font-black uppercase tracking-widest text-amber-800 bg-amber-100/80 px-3 py-1 rounded-full border border-amber-300">
+                🔒 Privacy Protected
               </span>
-              <span className="text-[10px] text-zinc-400 hidden sm:inline">Tap any face to filter</span>
+              <h2 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
+                Your Wedding Memories Await
+              </h2>
+              <p className="text-xs sm:text-sm text-zinc-500 max-w-md mx-auto leading-relaxed">
+                To respect guest privacy, photos are locked. Take a quick selfie, and our AI will instantly find only your photos and send your album to WhatsApp.
+              </p>
             </div>
 
-            <div className="flex items-center gap-3 overflow-x-auto pb-1 scrollbar-thin">
+            <div className="pt-2">
               <button
-                onClick={() => {
-                  setSelectedPersonId(null);
-                  setActiveFilter('all');
-                  setMatchNotice(null);
-                }}
-                className={'flex flex-col items-center gap-1 shrink-0 cursor-pointer transition ' + (
-                  selectedPersonId === null && activeFilter === 'all' ? 'scale-105' : 'opacity-70 hover:opacity-100'
-                )}
+                type="button"
+                onClick={() => setIsFaceScannerOpen(true)}
+                className="px-8 py-4 rounded-2xl bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 hover:from-amber-500 hover:to-amber-700 text-white font-black text-sm tracking-wide shadow-xl shadow-amber-600/30 flex items-center justify-center gap-2.5 mx-auto transition-all active:scale-98 cursor-pointer group"
               >
-                <div className={'w-12 h-12 rounded-full flex items-center justify-center border-2 ' + (
-                  selectedPersonId === null && activeFilter === 'all'
-                    ? 'border-amber-500 bg-amber-50 text-amber-800 ring-2 ring-amber-400/30'
-                    : 'border-zinc-200 bg-zinc-100 text-zinc-600'
-                )}>
-                  <Users className="w-5 h-5" />
-                </div>
-                <span className="text-[10px] font-black text-zinc-800">All</span>
+                <Camera className="w-5 h-5 text-amber-300 group-hover:scale-110 transition-transform" />
+                <span>Find My Photos (Scan Face)</span>
+                <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
               </button>
-
-              {people.map(p => {
-                const isSel = selectedPersonId === p.id;
-                return (
-                  <button
-                    key={p.id}
-                    onClick={() => {
-                      if (isSel) {
-                        setSelectedPersonId(null);
-                        setActiveFilter('all');
-                        setMatchNotice(null);
-                      } else {
-                        setSelectedPersonId(p.id);
-                        const pSet = new Set(p.photo_ids);
-                        const matched = photos.filter((ph: any) => pSet.has(ph.id));
-                        setMatchedPhotos(matched);
-                        setActiveFilter('matched');
-                        setMatchNotice(`Showing ${matched.length} photos of ${p.name}`);
-                      }
-                    }}
-                    className={'flex flex-col items-center gap-1 shrink-0 cursor-pointer transition ' + (
-                      isSel ? 'scale-105' : 'opacity-80 hover:opacity-100'
-                    )}
-                  >
-                    <div className={'relative w-12 h-12 rounded-full overflow-hidden border-2 ' + (
-                      isSel
-                        ? 'border-purple-600 ring-3 ring-purple-500/30'
-                        : 'border-zinc-200 hover:border-purple-400'
-                    )}>
-                      <img src={p.avatar_url} alt={p.name} className="w-full h-full object-cover object-top" />
-                    </div>
-                    <span className="text-[10px] font-bold text-zinc-700 max-w-[60px] truncate">{p.name}</span>
-                  </button>
-                );
-              })}
             </div>
-          </div>
-        </div>
-      )}
 
-      {/* 2. FLOATING FACE AI SEARCH BAR */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-8 -mt-8 relative z-20 space-y-4">
-        <div className="bg-white rounded-3xl p-4 sm:p-6 border border-[#E7E2D8] shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-md shadow-amber-500/30 shrink-0">
-              <Sparkles className="w-6 h-6" />
+            <div className="pt-4 border-t border-zinc-100 flex items-center justify-center gap-4 text-[11px] text-zinc-400 font-medium">
+              <span className="flex items-center gap-1">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> 100% Private
+              </span>
+              <span>•</span>
+              <span className="flex items-center gap-1">
+                <Zap className="w-3.5 h-3.5 text-amber-500" /> Sub-Second AI Match
+              </span>
             </div>
-            <div>
-              <h3 className="text-sm font-black text-zinc-900">Find Yourself in this Wedding</h3>
-              <p className="text-xs text-zinc-500">Take a quick selfie to filter and download all photos of you</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                setIsFaceModalOpen(true);
-                startCamera();
-              }}
-              className="px-5 py-3 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-bold transition flex items-center gap-2 shadow-sm cursor-pointer"
-            >
-              <Camera className="w-4 h-4 text-amber-400" />
-              <span>Face Search</span>
-            </button>
-
-            {activeFilter === 'matched' && (
-              <button
-                onClick={() => {
-                  setActiveFilter('all');
-                  setMatchNotice(null);
-                }}
-                className="px-4 py-3 rounded-2xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-bold transition cursor-pointer"
-              >
-                Show All Photos ({photos.length})
-              </button>
-            )}
-          </div>
-        </div>
-
-        {matchNotice && (
-          <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-xs font-bold text-amber-900 flex items-center justify-between">
-            <span>{matchNotice}</span>
-            <button onClick={() => setMatchNotice(null)} className="text-amber-700 hover:text-amber-900">
-              <X className="w-4 h-4" />
-            </button>
           </div>
         )}
-      </div>
 
-      {/* 3. PHOTO GRID */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-8 pt-8">
-        <div className="columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-4 space-y-4">
-          {displayedPhotos.map((photo, idx) => {
-            const isFav = favorites.has(photo.id);
-            const isSel = selectedPhotos.has(photo.id);
+        {/* CASE B: MATCHED PHOTOS (Strictly Matched Photos Only) */}
+        {(!isPrivilegedMode && isVerified && matchedPhotos.length > 0) && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-3xl p-6 border border-emerald-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase tracking-wider border border-emerald-200">
+                    ✓ Face Verified
+                  </span>
+                  <span className="text-xs font-bold text-zinc-500">
+                    {guestName || 'Guest'}
+                  </span>
+                </div>
+                <h2 className="text-xl sm:text-2xl font-black text-zinc-900 tracking-tight">
+                  🎉 Found {matchedPhotos.length} photos of you!
+                </h2>
+              </div>
 
-            return (
-              <div
-                key={photo.id}
-                onClick={() => setSelectedPhotoIndex(idx)}
-                className="break-inside-avoid relative rounded-2xl overflow-hidden group bg-zinc-100 border border-zinc-200 shadow-2xs hover:shadow-md transition cursor-pointer"
-              >
-                <img
-                  src={photo.thumbnail_url || photo.preview_url}
-                  alt="Wedding photo"
-                  loading="lazy"
-                  className="w-full object-cover group-hover:scale-105 transition duration-300"
-                />
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDownloadAllMyPhotos}
+                  disabled={isDownloadingAll}
+                  className="px-4 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs flex items-center gap-2 transition shadow-sm cursor-pointer"
+                >
+                  <Download className="w-4 h-4 text-amber-400" />
+                  <span>{isDownloadingAll ? 'Downloading...' : 'Download All Photos'}</span>
+                </button>
 
-                {/* Overlays */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20 opacity-0 group-hover:opacity-100 transition p-2.5 flex flex-col justify-between">
-                  <div className="flex items-center justify-between">
-                    <span className="px-2 py-0.5 rounded-md bg-black/50 text-white text-[10px] font-bold backdrop-blur-xs">
-                      {photo.face_count || 1} {photo.face_count === 1 ? 'Face' : 'Faces'}
-                    </span>
+                <button
+                  type="button"
+                  onClick={() => setIsFaceScannerOpen(true)}
+                  className="px-3.5 py-2.5 rounded-xl bg-[#FAF9F5] hover:bg-zinc-100 text-zinc-700 border border-[#E7E2D8] font-bold text-xs flex items-center gap-1.5 transition cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Scan Another</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Matched Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4">
+              {matchedPhotos.map((photo, idx) => (
+                <div
+                  key={photo.id}
+                  onClick={() => setSelectedPhotoIndex(idx)}
+                  className="group relative aspect-square rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border border-[#E7E2D8] shadow-2xs hover:shadow-lg transition-all duration-300 cursor-pointer"
+                >
+                  <img
+                    src={photo.thumbnail_url || photo.preview_url}
+                    alt="Matched Photo"
+                    loading="lazy"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  />
+
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+
+                  <div className="absolute bottom-2.5 inset-x-2.5 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity">
+                    {photo.confidencePercent && (
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-950/80 backdrop-blur-md text-[10px] font-black text-emerald-300 border border-emerald-500/40">
+                        {photo.confidencePercent}% Match
+                      </span>
+                    )}
 
                     <button
-                      onClick={e => toggleFavorite(photo.id, e)}
-                      className="p-1.5 rounded-full bg-black/40 text-white hover:text-rose-400 transition"
-                    >
-                      <Heart className={'w-3.5 h-3.5 ' + (isFav ? 'fill-rose-500 text-rose-500' : '')} />
-                    </button>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <button
-                      onClick={e => toggleSelectPhoto(photo.id, e)}
-                      className="p-1.5 rounded-lg bg-black/40 text-white hover:bg-black/70 transition"
-                    >
-                      {isSel ? <CheckSquare className="w-3.5 h-3.5 text-emerald-400" /> : <Square className="w-3.5 h-3.5" />}
-                    </button>
-
-                    <button
-                      onClick={e => {
+                      onClick={(e) => {
                         e.stopPropagation();
                         handleDownloadPhoto(photo);
                       }}
-                      className="p-1.5 rounded-lg bg-white text-zinc-900 hover:bg-zinc-200 transition"
+                      className="p-1.5 rounded-full bg-white text-zinc-900 hover:bg-amber-400 transition shadow-md"
+                      title="Download High-Res"
                     >
                       <Download className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* CASE C: PRIVILEGED FULL ACCESS */}
+        {isPrivilegedMode && isUnlocked && (
+          <div className="space-y-6">
+            {collections.length > 0 && (
+              <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+                <button
+                  type="button"
+                  onClick={() => setSelectedCollectionId('all')}
+                  className={`px-4 py-2 rounded-2xl text-xs font-black transition shrink-0 cursor-pointer ${
+                    selectedCollectionId === 'all'
+                      ? 'bg-zinc-900 text-white shadow-sm'
+                      : 'bg-white text-zinc-600 border border-[#E7E2D8] hover:bg-zinc-50'
+                  }`}
+                >
+                  All Photos ({fullPhotos.length})
+                </button>
+                {collections.map((col) => (
+                  <button
+                    key={col.id}
+                    type="button"
+                    onClick={() => setSelectedCollectionId(col.id)}
+                    className={`px-4 py-2 rounded-2xl text-xs font-black transition shrink-0 cursor-pointer ${
+                      selectedCollectionId === col.id
+                        ? 'bg-zinc-900 text-white shadow-sm'
+                        : 'bg-white text-zinc-600 border border-[#E7E2D8] hover:bg-zinc-50'
+                    }`}
+                  >
+                    {col.name}
+                  </button>
+                ))}
               </div>
-            );
-          })}
-        </div>
+            )}
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4">
+              {displayedPhotos.map((photo, idx) => {
+                const isSelected = selectedForAlbum.has(photo.id);
+                return (
+                  <div
+                    key={photo.id}
+                    onClick={() => {
+                      if (isSelectionMode) {
+                        const next = new Set(selectedForAlbum);
+                        if (isSelected) next.delete(photo.id);
+                        else next.add(photo.id);
+                        setSelectedForAlbum(next);
+                      } else {
+                        setSelectedPhotoIndex(idx);
+                      }
+                    }}
+                    className={`group relative aspect-square rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border transition-all duration-300 cursor-pointer ${
+                      isSelected
+                        ? 'border-amber-500 ring-4 ring-amber-500/20'
+                        : 'border-[#E7E2D8] hover:shadow-lg'
+                    }`}
+                  >
+                    <img
+                      src={photo.thumbnail_url || photo.preview_url}
+                      alt="Wedding photo"
+                      loading="lazy"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    />
+
+                    {isSelectionMode && (
+                      <div className="absolute top-2.5 right-2.5 z-10">
+                        {isSelected ? (
+                          <div className="w-6 h-6 rounded-lg bg-amber-500 text-white flex items-center justify-center shadow-md">
+                            <CheckSquare className="w-4 h-4" />
+                          </div>
+                        ) : (
+                          <div className="w-6 h-6 rounded-lg bg-black/40 text-white/80 flex items-center justify-center backdrop-blur-xs">
+                            <Square className="w-4 h-4" />
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+
+                    <div className="absolute bottom-2.5 inset-x-2.5 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity">
+                      {photo.face_count > 0 && (
+                        <span className="px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-md text-[10px] font-bold text-white">
+                          {photo.face_count} {photo.face_count === 1 ? 'Face' : 'Faces'}
+                        </span>
+                      )}
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDownloadPhoto(photo);
+                        }}
+                        className="p-1.5 rounded-full bg-white text-zinc-900 hover:bg-amber-400 transition shadow-md"
+                        title="Download High-Res"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
       </div>
 
-      {/* 4. FACE SEARCH MODAL */}
-      {isFaceModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 max-w-sm w-full border border-zinc-200 shadow-2xl text-center space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-black uppercase tracking-wider text-amber-700">StudioCore AI</span>
+      {/* 3. SMART 3D FACE GUIDANCE SCANNER */}
+      <FaceScannerModal
+        isOpen={isFaceScannerOpen}
+        onClose={() => setIsFaceScannerOpen(false)}
+        onSubmit={handleFaceScanSubmit}
+        galleryTitle={gallery.title}
+        isProcessing={isMatching}
+      />
+
+      {/* 4. ZERO MATCH FALLBACK MODAL */}
+      {noMatchModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full border border-zinc-200 shadow-2xl text-center space-y-5 animate-in fade-in zoom-in">
+            <div className="w-16 h-16 rounded-3xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto shadow-sm">
+              <Camera className="w-8 h-8" />
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-lg font-black text-zinc-900">
+                Registration Saved, {guestName || 'Guest'}!
+              </h3>
+              <p className="text-xs text-zinc-500 leading-relaxed">
+                No matching photos found in the processed set yet. The photographer might still be uploading more photos.
+              </p>
+              {guestPhone && (
+                <p className="text-xs font-bold text-amber-900 bg-amber-50 p-2.5 rounded-2xl border border-amber-200">
+                  📲 We will automatically send your personal album link to WhatsApp ({guestPhone}) as soon as your photos are ready!
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
               <button
+                type="button"
                 onClick={() => {
-                  stopCamera();
-                  setIsFaceModalOpen(false);
+                  setNoMatchModalOpen(false);
+                  setIsFaceScannerOpen(true);
                 }}
-                className="p-1.5 rounded-full hover:bg-zinc-100 text-zinc-500"
+                className="flex-1 py-3 rounded-2xl bg-amber-600 hover:bg-amber-500 text-white font-black text-xs transition cursor-pointer shadow-md"
               >
-                <X className="w-4 h-4" />
+                Retake Clear Selfie
               </button>
-            </div>
 
-            <div className="space-y-1">
-              <h3 className="text-base font-black text-zinc-900">Take a Quick Selfie</h3>
-              <p className="text-xs text-zinc-500">AI will scan all {photos.length} photos and show only yours in seconds</p>
-            </div>
-
-            <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-black border border-zinc-200">
-              <video ref={videoRef} playsInline autoPlay muted className="w-full h-full object-cover scale-x-[-1]" />
-            </div>
-
-            <div className="flex flex-col gap-2 pt-2">
               <button
-                onClick={captureSelfieAndMatch}
-                disabled={isMatching}
-                className="w-full py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-black text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-md"
+                type="button"
+                onClick={() => setNoMatchModalOpen(false)}
+                className="px-5 py-3 rounded-2xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs transition cursor-pointer"
               >
-                <Camera className="w-4 h-4" />
-                <span>{isMatching ? 'Matching Faces...' : 'Search My Photos'}</span>
+                Close
               </button>
-
-              <label className="w-full py-2.5 rounded-2xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer">
-                <ImageIcon className="w-4 h-4 text-zinc-500" />
-                <span>Upload from Gallery</span>
-                <input type="file" accept="image/*" onChange={handleUploadSelfie} className="hidden" />
-              </label>
             </div>
           </div>
         </div>
       )}
 
-      {/* 5. LIGHTBOX MODAL */}
+      {/* 5. PIN UNLOCK MODAL */}
+      {showPinModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full border border-zinc-200 shadow-2xl space-y-4 animate-in fade-in">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <KeyRound className="w-5 h-5 text-amber-600" />
+                <h3 className="text-sm font-black text-zinc-900">Enter Access PIN</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPinModal(false)}
+                className="p-1 rounded-lg text-zinc-400 hover:text-zinc-700"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handlePinSubmit} className="space-y-4">
+              <input
+                type="password"
+                maxLength={8}
+                placeholder="PIN Code"
+                value={enteredPin}
+                onChange={(e) => {
+                  setEnteredPin(e.target.value);
+                  setPinError(false);
+                }}
+                className="w-full text-center py-3 bg-[#FAF9F5] border border-zinc-200 rounded-2xl text-lg font-mono font-black tracking-widest focus:outline-hidden focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
+              />
+
+              {pinError && (
+                <p className="text-[11px] font-bold text-rose-600 text-center">
+                  Invalid PIN code. Please check and try again.
+                </p>
+              )}
+
+              <button
+                type="submit"
+                className="w-full py-3 bg-zinc-900 hover:bg-zinc-800 text-white font-black text-xs rounded-2xl transition shadow-md cursor-pointer"
+              >
+                Unlock Gallery
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 6. LIGHTBOX MODAL */}
       {selectedPhotoIndex !== null && displayedPhotos[selectedPhotoIndex] && (
-        <div className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-4">
-          <button
-            onClick={() => setSelectedPhotoIndex(null)}
-            className="absolute top-4 right-4 p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition z-10"
-          >
-            <X className="w-5 h-5" />
-          </button>
+        <div className="fixed inset-0 z-50 bg-black/95 flex flex-col justify-between text-white p-4 sm:p-6 backdrop-blur-md select-none">
+          <div className="flex items-center justify-between z-10">
+            <span className="text-xs font-bold text-zinc-400">
+              {selectedPhotoIndex + 1} of {displayedPhotos.length}
+            </span>
 
-          <img
-            src={displayedPhotos[selectedPhotoIndex].preview_url}
-            alt="Expanded view"
-            className="max-h-[85vh] max-w-[90vw] object-contain rounded-2xl shadow-2xl"
-          />
-
-          {/* Navigation Controls */}
-          {selectedPhotoIndex > 0 && (
             <button
-              onClick={() => setSelectedPhotoIndex(selectedPhotoIndex - 1)}
-              className="absolute left-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition"
+              onClick={() => setSelectedPhotoIndex(null)}
+              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-zinc-300 hover:text-white transition cursor-pointer"
             >
-              <ChevronLeft className="w-6 h-6" />
+              <X className="w-5 h-5" />
             </button>
-          )}
+          </div>
 
-          {selectedPhotoIndex < displayedPhotos.length - 1 && (
-            <button
-              onClick={() => setSelectedPhotoIndex(selectedPhotoIndex + 1)}
-              className="absolute right-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition"
-            >
-              <ChevronRight className="w-6 h-6" />
-            </button>
-          )}
+          <div className="relative flex-1 flex items-center justify-center p-2 sm:p-6 overflow-hidden">
+            {selectedPhotoIndex > 0 && (
+              <button
+                onClick={() => setSelectedPhotoIndex(selectedPhotoIndex - 1)}
+                className="absolute left-2 sm:left-4 p-3 rounded-full bg-black/60 hover:bg-black/90 text-white transition z-10 cursor-pointer"
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+            )}
 
-          <div className="absolute bottom-6 inset-x-0 flex items-center justify-center gap-3">
+            <img
+              src={displayedPhotos[selectedPhotoIndex].preview_url}
+              alt="Wedding preview"
+              className="max-h-[85vh] max-w-full object-contain rounded-2xl shadow-2xl"
+            />
+
+            {selectedPhotoIndex < displayedPhotos.length - 1 && (
+              <button
+                onClick={() => setSelectedPhotoIndex(selectedPhotoIndex + 1)}
+                className="absolute right-2 sm:right-4 p-3 rounded-full bg-black/60 hover:bg-black/90 text-white transition z-10 cursor-pointer"
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center justify-center gap-3 z-10 pb-2">
             <button
               onClick={() => handleDownloadPhoto(displayedPhotos[selectedPhotoIndex])}
-              className="px-5 py-2.5 rounded-full bg-white text-zinc-900 text-xs font-black flex items-center gap-2 hover:bg-zinc-200 transition shadow-lg"
+              className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-black text-xs transition flex items-center gap-2 shadow-lg cursor-pointer"
             >
               <Download className="w-4 h-4" />
-              <span>Download Original</span>
+              <span>Download High-Res Original</span>
             </button>
           </div>
         </div>
       )}
 
     </div>
+  );
+}
+
+export default function GuestSlugGalleryPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#FAF9F5] flex flex-col items-center justify-center space-y-4 p-6">
+          <div className="w-16 h-16 rounded-3xl bg-amber-100 text-amber-700 flex items-center justify-center animate-pulse">
+            <Camera className="w-8 h-8" />
+          </div>
+          <p className="text-sm font-black text-zinc-800 tracking-tight">Loading Wedding Gallery...</p>
+          <span className="text-xs text-zinc-400">Powered by StudioCore AI</span>
+        </div>
+      }
+    >
+      <GuestSlugGalleryContent />
+    </Suspense>
   );
 }
