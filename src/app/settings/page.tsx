@@ -4,10 +4,11 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Settings as SettingsIcon, RefreshCw, Check, Save, ArrowLeft, Target,
-  FileText, Coins, Clock, Globe, Users, Plus, Trash2, Phone, Mail, MessageSquare, Send, FileCheck, Search, MoveUp, MoveDown,
+  FileText, Coins, Clock, Globe, Users, Plus, Trash2, Phone, Mail, MessageSquare, Send,
   UserCheck, AlertCircle, ChevronDown, GripVertical, CheckCircle2, Table, ArrowUp, ArrowDown,
   QrCode, Sparkles, Upload, Image as ImageIcon, Building2, CreditCard, Lock, Unlock, ShieldCheck, Key,
-  Pencil, X
+  Pencil, X, PackageCheck, Gift, Layers, ListPlus, SlidersHorizontal, Edit2, Edit3, MoveUp, MoveDown,
+  Search, FileCheck, Calendar, MapPin, Sliders, Shield
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { 
@@ -54,9 +55,10 @@ import {
   DEFAULT_QUOTATION_PAYMENT_STEPS,
   getRoleShortCode 
 } from '@/lib/workspace-settings';
-import { PackageCheck, Gift, Layers, ListPlus, SlidersHorizontal, Edit2 } from 'lucide-react';
+
 
 type SettingsTab = 'leads' | 'functions' | 'crew_roles' | 'quotations' | 'finance' | 'attendance' | 'integrations' | 'team';
+type QuoteSubTab = 'deliverables' | 'special_addons' | 'paid_addons' | 'default_functions' | 'payment_steps' | 'theme_terms';
 
 interface DropdownItem {
   id: string;
@@ -154,7 +156,7 @@ export default function SettingsPage() {
     setQuotationSettings(prev => ({ ...prev, paymentSteps: reordered }));
   };
 
-  const [quoteSubTab, setQuoteSubTab] = useState<'deliverables' | 'special_addons' | 'paid_addons' | 'default_functions' | 'payment_steps' | 'theme_terms'>('deliverables');
+  const [quoteSubTab, setQuoteSubTab] = useState<QuoteSubTab>('deliverables');
   const [quotationSettings, setQuotationSettings] = useState<WorkspaceQuotationSettings>(DEFAULT_WORKSPACE_QUOTATION_SETTINGS);
   
   // Deliverables states
@@ -217,17 +219,17 @@ export default function SettingsPage() {
     { id: 'new', name: 'Inquiry / New', color: '#3b82f6' },
     { id: 'contacted', name: 'Contacted', color: '#8b5cf6' },
     { id: 'cool', name: 'Cool / Warm', color: '#06b6d4' },
-    { id: 'hot', name: 'Hot ≡ƒöÑ', color: '#f43f5e' },
+    { id: 'hot', name: 'Hot Lead', color: '#f43f5e' },
     { id: 'booked', name: 'Booked', color: '#84cc16' },
-    { id: 'won', name: 'Won ≡ƒÄë', color: '#10b981' },
-    { id: 'lost', name: 'Lost Γ¥î', color: '#f43f5e' },
+    { id: 'won', name: 'Won / Converted', color: '#10b981' },
+    { id: 'lost', name: 'Lost / Closed', color: '#f43f5e' },
   ]);
 
   const [budgetRanges, setBudgetRanges] = useState<DropdownItem[]>([
-    { id: 'b1', name: 'Γé╣50k - Γé╣1L', color: '#10b981' },
-    { id: 'b2', name: 'Γé╣1L - Γé╣2.5L', color: '#3b82f6' },
-    { id: 'b3', name: 'Γé╣2.5L - Γé╣5L', color: '#f59e0b' },
-    { id: 'b4', name: 'Γé╣5L+', color: '#f43f5e' },
+    { id: 'b1', name: '50k - 1L', color: '#10b981' },
+    { id: 'b2', name: '1L - 2.5L', color: '#3b82f6' },
+    { id: 'b3', name: '2.5L - 5L', color: '#f59e0b' },
+    { id: 'b4', name: '5L+', color: '#f43f5e' },
   ]);
 
   // Lead Action Buttons Checkboxes (Default for new users: quotation, call, mail, comments)
@@ -630,7 +632,7 @@ export default function SettingsPage() {
           console.warn('Quotation settings save note:', qErr);
         }
 
-        setSaveToast('Settings saved & synchronized live across all pages! Γ£ô');
+        setSaveToast('Settings saved & synchronized live across all pages! ');
         setTimeout(() => setSaveToast(null), 3500);
       } else {
         const errJson = await res.json().catch(() => ({}));
@@ -718,7 +720,7 @@ export default function SettingsPage() {
       {list.map((item, index) => (
         <div key={item.id} className="flex items-center gap-2 sm:gap-3 group relative">
           {/* Grip Handle */}
-          <div className="cursor-grab text-slate-300 hover:text-slate-500 transition-colors p-1">
+          <div className="cursor-grab text-slate-300 hover:text-zinc-500 transition-colors p-1">
             <GripVertical className="w-5 h-5" />
           </div>
 
@@ -728,7 +730,7 @@ export default function SettingsPage() {
               type="button"
               onClick={() => handleMoveItemUp(list, setList, index)}
               disabled={index === 0}
-              className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-20 cursor-pointer"
+              className="p-1 text-slate-400 hover:text-zinc-700 disabled:opacity-20 cursor-pointer"
               title="Move Up"
             >
               <ArrowUp className="w-3.5 h-3.5" />
@@ -737,7 +739,7 @@ export default function SettingsPage() {
               type="button"
               onClick={() => handleMoveItemDown(list, setList, index)}
               disabled={index === list.length - 1}
-              className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-20 cursor-pointer"
+              className="p-1 text-slate-400 hover:text-zinc-700 disabled:opacity-20 cursor-pointer"
               title="Move Down"
             >
               <ArrowDown className="w-3.5 h-3.5" />
@@ -828,7 +830,7 @@ export default function SettingsPage() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => router.back()}
-              className="p-2.5 rounded-xl bg-white hover:bg-amber-50 border border-amber-200/80 text-slate-600 hover:text-zinc-900 transition-all shadow-xs"
+              className="p-2.5 rounded-xl bg-white hover:bg-amber-50 border border-amber-200/80 text-zinc-600 hover:text-zinc-900 transition-all shadow-xs"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
@@ -866,14 +868,14 @@ export default function SettingsPage() {
         {/* Page-Wise Settings Tabs Header */}
         <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-amber-200/80 scrollbar-none">
           {[
-            { id: 'leads', label: '≡ƒÄ» Leads & Pipeline', icon: Target },
-            { id: 'functions', label: '≡ƒÆì Functions & Events', icon: Sparkles },
-            { id: 'crew_roles', label: '≡ƒæÑ Crew Roles & Codes', icon: Users },
-            { id: 'quotations', label: '≡ƒôä Quotations & Proposals', icon: FileText },
-            { id: 'finance', label: '≡ƒÆ░ Finance & Invoices', icon: Coins },
-            { id: 'attendance', label: 'ΓÅ░ Attendance & Geofence', icon: Clock },
-            { id: 'integrations', label: '≡ƒöî Meta & Integrations', icon: Globe },
-            { id: 'team', label: '≡ƒ¢í∩╕Å Team & Owners', icon: ShieldCheck },
+            { id: 'leads', label: ' Leads & Pipeline', icon: Target },
+            { id: 'functions', label: ' Functions & Events', icon: Sparkles },
+            { id: 'crew_roles', label: ' Crew Roles & Codes', icon: Users },
+            { id: 'quotations', label: ' Quotations & Proposals', icon: FileText },
+            { id: 'finance', label: ' Finance & Invoices', icon: Coins },
+            { id: 'attendance', label: ' Attendance & Geofence', icon: Clock },
+            { id: 'integrations', label: ' Meta & Integrations', icon: Globe },
+            { id: 'team', label: ' Team & Owners', icon: ShieldCheck },
           ].map(tab => {
             const isActive = activeTab === tab.id;
             return (
@@ -883,7 +885,7 @@ export default function SettingsPage() {
                 className={`px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm whitespace-nowrap transition-all flex items-center gap-2 cursor-pointer ${
                   isActive 
                     ? 'bg-[#0F9D58] text-white shadow-xs border border-[#0B8043]' 
-                    : 'bg-white hover:bg-amber-50 text-slate-700 border border-amber-200/80'
+                    : 'bg-white hover:bg-amber-50 text-zinc-700 border border-amber-200/80'
                 }`}
               >
                 <span>{tab.label}</span>
@@ -894,7 +896,7 @@ export default function SettingsPage() {
 
         {/* Content Panel */}
         {loading ? (
-          <div className="py-20 text-center text-slate-500 space-y-3 bg-white rounded-2xl border border-amber-200/80 shadow-xs">
+          <div className="py-20 text-center text-zinc-500 space-y-3 bg-white rounded-2xl border border-amber-200/80 shadow-xs">
             <RefreshCw className="w-8 h-8 animate-spin mx-auto text-[#0F9D58]" />
             <p className="text-sm font-semibold">Loading user settings from Supabase Database...</p>
           </div>
@@ -903,24 +905,24 @@ export default function SettingsPage() {
 
             {/* 1. LEADS PAGE SETTINGS */}
             {activeTab === 'leads' && (
-              <div className="bg-white border border-amber-200/80 rounded-2xl p-6 shadow-xs space-y-6">
+              <div className="bg-white border border-amber-200/80 rounded-2xl p-6 shadow-[0_4px_24px_-4px_rgba(217,119,6,0.07)] hover:shadow-[0_8px_30px_-4px_rgba(217,119,6,0.12)] transition-all space-y-6">
                 <div className="flex items-center gap-3 border-b border-amber-100 pb-4">
                   <div className="w-10 h-10 rounded-xl bg-emerald-50 text-[#0F9D58] flex items-center justify-center font-bold">
                     <Target className="w-5 h-5" />
                   </div>
                   <div>
                     <h2 className="text-lg font-extrabold text-zinc-900">Leads Page Settings (`/leads`)</h2>
-                    <p className="text-xs font-medium text-slate-500">Manage Lead Owners, Lead Sources, Pipeline Stages, and Action Buttons</p>
+                    <p className="text-xs font-medium text-zinc-500">Manage Lead Owners, Lead Sources, Pipeline Stages, and Action Buttons</p>
                   </div>
                 </div>
 
                 {/* Lead Action Buttons Checkboxes */}
                 <div className="space-y-3">
                   <div>
-                    <label className="text-xs font-extrabold text-slate-700 uppercase tracking-wider block">
+                    <label className="text-xs font-extrabold text-zinc-700 uppercase tracking-wider block">
                       Manage Lead Action Column Buttons (Visible on `/leads` Page)
                     </label>
-                    <p className="text-xs text-slate-500 mt-0.5">Select which action buttons appear in the Action column (New users get Quotation, Call, Mail & Comments by default)</p>
+                    <p className="text-xs text-zinc-500 mt-0.5">Select which action buttons appear in the Action column (New users get Quotation, Call, Mail & Comments by default)</p>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 pt-1">
@@ -939,7 +941,7 @@ export default function SettingsPage() {
                         className={`flex items-start gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
                           quickActions[item.key] 
                             ? 'bg-emerald-50/60 border-emerald-300 text-zinc-900 shadow-2xs' 
-                            : 'bg-white border-amber-200/80 text-slate-500 hover:bg-[#FAF9F5]'
+                            : 'bg-white border-amber-200/80 text-zinc-500 hover:bg-[#FAF9F5]'
                         }`}
                       >
                         <input
@@ -956,7 +958,7 @@ export default function SettingsPage() {
                               <span className="text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-[#0F9D58] px-1.5 py-0.2 rounded-md">Default</span>
                             )}
                           </span>
-                          <p className="text-[11px] text-slate-500 mt-0.5">{item.desc}</p>
+                          <p className="text-[11px] text-zinc-500 mt-0.5">{item.desc}</p>
                         </div>
                       </label>
                     ))}
@@ -965,7 +967,7 @@ export default function SettingsPage() {
 
                 {/* Lead Owners Google Sheets Style Dropdown Builder */}
                 <div className="pt-4 border-t border-amber-100 space-y-2">
-                  <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1">
+                  <label className="text-xs font-extrabold text-zinc-600 uppercase tracking-wider block mb-1">
                     Manage Lead Owners (Dropdown Options in Leads Page)
                   </label>
                   {renderGoogleOptionList(leadOwners, setLeadOwners, 'owner', 'Add another item')}
@@ -973,7 +975,7 @@ export default function SettingsPage() {
 
                 {/* Lead Sources Google Sheets Style Dropdown Builder */}
                 <div className="pt-4 border-t border-amber-100 space-y-2">
-                  <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1">
+                  <label className="text-xs font-extrabold text-zinc-600 uppercase tracking-wider block mb-1">
                     Manage Lead Sources (Dropdown Options in Leads Page)
                   </label>
                   {renderGoogleOptionList(leadSources, setLeadSources, 'source', 'Add another item')}
@@ -981,7 +983,7 @@ export default function SettingsPage() {
 
                 {/* Lead Stages Google Sheets Style Dropdown Builder */}
                 <div className="pt-4 border-t border-amber-100 space-y-2">
-                  <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1">
+                  <label className="text-xs font-extrabold text-zinc-600 uppercase tracking-wider block mb-1">
                     Manage Pipeline Stages (Kanban Columns in Leads Page)
                   </label>
                   {renderGoogleOptionList(leadStages, setLeadStages, 'stage', 'Add another item')}
@@ -989,7 +991,7 @@ export default function SettingsPage() {
 
                 {/* Lead Budget Ranges Google Sheets Style Dropdown Builder */}
                 <div className="pt-4 border-t border-amber-100 space-y-2">
-                  <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1">
+                  <label className="text-xs font-extrabold text-zinc-600 uppercase tracking-wider block mb-1">
                     Lead Budget Filter Options
                   </label>
                   {renderGoogleOptionList(budgetRanges, setBudgetRanges, 'budget', 'Add another item')}
@@ -999,7 +1001,7 @@ export default function SettingsPage() {
 
             {/* 1.5 FUNCTIONS & WEDDING EVENTS SETTINGS */}
             {activeTab === 'functions' && (
-              <div className="bg-white border border-amber-200/80 rounded-2xl p-6 shadow-xs space-y-6">
+              <div className="bg-white border border-amber-200/80 rounded-2xl p-6 shadow-[0_4px_24px_-4px_rgba(217,119,6,0.07)] hover:shadow-[0_8px_30px_-4px_rgba(217,119,6,0.12)] transition-all space-y-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-amber-100 pb-4">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
@@ -1007,7 +1009,7 @@ export default function SettingsPage() {
                     </div>
                     <div>
                       <h2 className="text-lg font-extrabold text-zinc-900">Functions & Wedding Events Settings</h2>
-                      <p className="text-xs font-medium text-slate-500">
+                      <p className="text-xs font-medium text-zinc-500">
                         Manage standardized wedding event names. Synced automatically across Quotations and Team Manager.
                       </p>
                     </div>
@@ -1027,7 +1029,7 @@ export default function SettingsPage() {
 
                 {/* Add New Function Form */}
                 <div className="p-4 bg-[#FAF9F5] border border-amber-200/80 rounded-xl space-y-3">
-                  <h4 className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">
+                  <h4 className="text-xs font-extrabold text-zinc-700 uppercase tracking-wider">
                     + Add New Function
                   </h4>
                   <div className="flex flex-col sm:flex-row items-center gap-3">
@@ -1090,7 +1092,7 @@ export default function SettingsPage() {
 
                         <div className="flex items-center gap-1 shrink-0">
                           {item.is_default && (
-                            <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 bg-amber-50 text-slate-500 rounded-md">
+                            <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 bg-amber-50 text-zinc-500 rounded-md">
                               Default
                             </span>
                           )}
@@ -1132,7 +1134,7 @@ export default function SettingsPage() {
                         <h3 className="text-sm font-extrabold text-zinc-900">Edit Function Name</h3>
                         <button
                           onClick={() => setEditingFunction(null)}
-                          className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                          className="p-1 text-slate-400 hover:text-zinc-600 rounded-lg"
                         >
                           <X className="w-4 h-4" />
                         </button>
@@ -1147,7 +1149,7 @@ export default function SettingsPage() {
                       <div className="flex items-center justify-end gap-2">
                         <button
                           onClick={() => setEditingFunction(null)}
-                          className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:bg-amber-50 rounded-xl"
+                          className="px-3 py-1.5 text-xs font-bold text-zinc-500 hover:bg-amber-50 rounded-xl"
                         >
                           Cancel
                         </button>
@@ -1176,7 +1178,7 @@ export default function SettingsPage() {
 
             {/* 1.6 CREW ROLES & SHORT CODES SETTINGS */}
             {activeTab === 'crew_roles' && (
-              <div className="bg-white border border-amber-200/80 rounded-2xl p-6 shadow-xs space-y-6">
+              <div className="bg-white border border-amber-200/80 rounded-2xl p-6 shadow-[0_4px_24px_-4px_rgba(217,119,6,0.07)] hover:shadow-[0_8px_30px_-4px_rgba(217,119,6,0.12)] transition-all space-y-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-amber-100 pb-4">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
@@ -1184,7 +1186,7 @@ export default function SettingsPage() {
                     </div>
                     <div>
                       <h2 className="text-lg font-extrabold text-zinc-900">Crew Roles & Short Codes Settings</h2>
-                      <p className="text-xs font-medium text-slate-500">
+                      <p className="text-xs font-medium text-zinc-500">
                         Configure crew roles with short codes (TP, CP, CV, DP) for compact roster cards in Team Manager.
                       </p>
                     </div>
@@ -1204,7 +1206,7 @@ export default function SettingsPage() {
 
                 {/* Add New Crew Role Form */}
                 <div className="p-4 bg-[#FAF9F5] border border-amber-200/80 rounded-xl space-y-3">
-                  <h4 className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">
+                  <h4 className="text-xs font-extrabold text-zinc-700 uppercase tracking-wider">
                     + Add New Crew Role & Short Code
                   </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
@@ -1271,7 +1273,7 @@ export default function SettingsPage() {
 
                         <div className="flex items-center gap-1 shrink-0">
                           {item.is_default && (
-                            <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 bg-amber-50 text-slate-500 rounded-md">
+                            <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 bg-amber-50 text-zinc-500 rounded-md">
                               Def
                             </span>
                           )}
@@ -1314,14 +1316,14 @@ export default function SettingsPage() {
                         <h3 className="text-sm font-extrabold text-zinc-900">Edit Crew Role</h3>
                         <button
                           onClick={() => setEditingCrewRole(null)}
-                          className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                          className="p-1 text-slate-400 hover:text-zinc-600 rounded-lg"
                         >
                           <X className="w-4 h-4" />
                         </button>
                       </div>
                       <div className="space-y-3">
                         <div>
-                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Full Role Name</label>
+                          <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1">Full Role Name</label>
                           <input
                             type="text"
                             value={editRoleName}
@@ -1331,7 +1333,7 @@ export default function SettingsPage() {
                           />
                         </div>
                         <div>
-                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Short Code (Any Length)</label>
+                          <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1">Short Code (Any Length)</label>
                           <input
                             type="text"
                             value={editRoleCode}
@@ -1344,7 +1346,7 @@ export default function SettingsPage() {
                       <div className="flex items-center justify-end gap-2 pt-2">
                         <button
                           onClick={() => setEditingCrewRole(null)}
-                          className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:bg-amber-50 rounded-xl"
+                          className="px-3 py-1.5 text-xs font-bold text-zinc-500 hover:bg-amber-50 rounded-xl"
                         >
                           Cancel
                         </button>
@@ -1374,7 +1376,7 @@ export default function SettingsPage() {
 
             {/* 2. QUOTATIONS PAGE SETTINGS */}
             {activeTab === 'quotations' && (
-              <div className="bg-white border border-amber-200/80 rounded-2xl p-6 shadow-xs space-y-6">
+              <div className="bg-white border border-amber-200/80 rounded-2xl p-6 shadow-[0_4px_24px_-4px_rgba(217,119,6,0.07)] hover:shadow-[0_8px_30px_-4px_rgba(217,119,6,0.12)] transition-all space-y-6">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-amber-100 pb-4">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
@@ -1382,22 +1384,24 @@ export default function SettingsPage() {
                     </div>
                     <div>
                       <h2 className="text-lg font-extrabold text-zinc-900">Quotations & Proposals Suite (`/workspace/quotations`)</h2>
-                      <p className="text-xs font-medium text-slate-500">Manage Deliverables, Special Add-ons, Extra Paid Add-ons, Default Functions, and Themes with 2-Way Sync</p>
+                      <p className="text-xs font-medium text-zinc-500">Manage Deliverables, Special Add-ons, Extra Paid Add-ons, Default Functions, and Themes with 2-Way Sync</p>
                     </div>
                   </div>
 
-                  {/* Quotation Sub-Tabs Navigation Pills */}
-                  <div className="flex items-center gap-1.5 p-1 bg-amber-50/80 rounded-xl overflow-x-auto">
+                  {/* Quotation Sub-Tabs Navigation (3D Tactile Pills) */}
+                  <div className="flex items-center gap-1.5 p-1.5 bg-[#FAF9F5] border border-amber-200/80 rounded-2xl overflow-x-auto shadow-inner">
                     <button
                       type="button"
                       onClick={() => setQuoteSubTab('deliverables')}
-                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
-                        quoteSubTab === 'deliverables' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-zinc-900'
+                      className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                        quoteSubTab === 'deliverables' 
+                          ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white font-black shadow-md shadow-amber-500/20' 
+                          : 'text-zinc-700 hover:text-amber-950 hover:bg-amber-100/50'
                       }`}
                     >
                       <PackageCheck className="w-3.5 h-3.5" />
                       <span>Deliverables</span>
-                      <span className="px-1.5 py-0.2 bg-blue-100 text-blue-800 text-[10px] rounded-full font-black">
+                      <span className={`px-1.5 py-0.2 text-[10px] rounded-full font-black ${quoteSubTab === 'deliverables' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-900'}`}>
                         {quotationSettings.deliverables.length}
                       </span>
                     </button>
@@ -1405,13 +1409,15 @@ export default function SettingsPage() {
                     <button
                       type="button"
                       onClick={() => setQuoteSubTab('special_addons')}
-                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
-                        quoteSubTab === 'special_addons' ? 'bg-white text-purple-700 shadow-xs' : 'text-slate-600 hover:text-zinc-900'
+                      className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                        quoteSubTab === 'special_addons' 
+                          ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white font-black shadow-md shadow-amber-500/20' 
+                          : 'text-zinc-700 hover:text-amber-950 hover:bg-amber-100/50'
                       }`}
                     >
                       <Gift className="w-3.5 h-3.5" />
                       <span>Special Add-ons</span>
-                      <span className="px-1.5 py-0.2 bg-purple-100 text-purple-800 text-[10px] rounded-full font-black">
+                      <span className={`px-1.5 py-0.2 text-[10px] rounded-full font-black ${quoteSubTab === 'special_addons' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-900'}`}>
                         {quotationSettings.specialAddons.length}
                       </span>
                     </button>
@@ -1419,13 +1425,15 @@ export default function SettingsPage() {
                     <button
                       type="button"
                       onClick={() => setQuoteSubTab('paid_addons')}
-                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
-                        quoteSubTab === 'paid_addons' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-600 hover:text-zinc-900'
+                      className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                        quoteSubTab === 'paid_addons' 
+                          ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white font-black shadow-md shadow-amber-500/20' 
+                          : 'text-zinc-700 hover:text-amber-950 hover:bg-amber-100/50'
                       }`}
                     >
                       <CreditCard className="w-3.5 h-3.5" />
-                      <span>Extra Paid Add-ons</span>
-                      <span className="px-1.5 py-0.2 bg-emerald-100 text-emerald-800 text-[10px] rounded-full font-black">
+                      <span>Paid Add-ons</span>
+                      <span className={`px-1.5 py-0.2 text-[10px] rounded-full font-black ${quoteSubTab === 'paid_addons' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-900'}`}>
                         {quotationSettings.paidAddons.length}
                       </span>
                     </button>
@@ -1433,13 +1441,15 @@ export default function SettingsPage() {
                     <button
                       type="button"
                       onClick={() => setQuoteSubTab('default_functions')}
-                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
-                        quoteSubTab === 'default_functions' ? 'bg-white text-amber-700 shadow-xs' : 'text-slate-600 hover:text-zinc-900'
+                      className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                        quoteSubTab === 'default_functions' 
+                          ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white font-black shadow-md shadow-amber-500/20' 
+                          : 'text-zinc-700 hover:text-amber-950 hover:bg-amber-100/50'
                       }`}
                     >
                       <Sparkles className="w-3.5 h-3.5" />
                       <span>Default Functions</span>
-                      <span className="px-1.5 py-0.2 bg-amber-100 text-amber-800 text-[10px] rounded-full font-black">
+                      <span className={`px-1.5 py-0.2 text-[10px] rounded-full font-black ${quoteSubTab === 'default_functions' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-900'}`}>
                         {quotationSettings.defaultFunctions.length}
                       </span>
                     </button>
@@ -1447,13 +1457,15 @@ export default function SettingsPage() {
                     <button
                       type="button"
                       onClick={() => setQuoteSubTab('payment_steps')}
-                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
-                        quoteSubTab === 'payment_steps' ? 'bg-white text-amber-900 shadow-xs font-black' : 'text-zinc-600 hover:text-zinc-900'
+                      className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                        quoteSubTab === 'payment_steps' 
+                          ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white font-black shadow-md shadow-amber-500/20' 
+                          : 'text-zinc-700 hover:text-amber-950 hover:bg-amber-100/50'
                       }`}
                     >
                       <Coins className="w-3.5 h-3.5" />
-                      <span>Payment Schedule Steps</span>
-                      <span className="px-1.5 py-0.2 bg-amber-100 text-amber-900 text-[10px] rounded-full font-black">
+                      <span>Payment Steps</span>
+                      <span className={`px-1.5 py-0.2 text-[10px] rounded-full font-black ${quoteSubTab === 'payment_steps' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-900'}`}>
                         {(quotationSettings.paymentSteps || DEFAULT_QUOTATION_PAYMENT_STEPS).length}
                       </span>
                     </button>
@@ -1461,8 +1473,10 @@ export default function SettingsPage() {
                     <button
                       type="button"
                       onClick={() => setQuoteSubTab('theme_terms')}
-                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
-                        quoteSubTab === 'theme_terms' ? 'bg-white text-amber-950 shadow-xs font-black' : 'text-zinc-600 hover:text-zinc-900'
+                      className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                        quoteSubTab === 'theme_terms' 
+                          ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white font-black shadow-md shadow-amber-500/20' 
+                          : 'text-zinc-700 hover:text-amber-950 hover:bg-amber-100/50'
                       }`}
                     >
                       <FileCheck className="w-3.5 h-3.5" />
@@ -1476,7 +1490,7 @@ export default function SettingsPage() {
                   <div className="space-y-4">
                     <div className="p-4 bg-blue-50/60 border border-blue-100 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-3">
                       <div>
-                        <h3 className="text-xs font-black text-blue-950 uppercase tracking-wider">≡ƒôª Output Deliverables Catalog</h3>
+                        <h3 className="text-xs font-black text-blue-950 uppercase tracking-wider"> Output Deliverables Catalog</h3>
                         <p className="text-[11px] text-blue-800 font-medium">Deliverables managed here sync automatically with the Quotation Builder dropdowns and client proposals.</p>
                       </div>
                       <span className="px-3 py-1 bg-white border border-blue-200 text-blue-900 text-xs font-extrabold rounded-full shadow-2xs">
@@ -1504,7 +1518,7 @@ export default function SettingsPage() {
                       <select
                         value={newDelivCat}
                         onChange={e => setNewDelivCat(e.target.value)}
-                        className="px-3 py-2 bg-white border border-amber-200/80 rounded-lg text-xs font-bold text-slate-700 cursor-pointer"
+                        className="px-3 py-2 bg-white border border-amber-200/80 rounded-lg text-xs font-bold text-zinc-700 cursor-pointer"
                       >
                         <option value="Video">Video</option>
                         <option value="Photo">Photo</option>
@@ -1535,7 +1549,7 @@ export default function SettingsPage() {
                       <div className="flex items-center justify-between gap-4">
                         <input
                           type="text"
-                          placeholder="≡ƒöì Search deliverables..."
+                          placeholder=" Search deliverables..."
                           value={delivSearch}
                           onChange={e => setDelivSearch(e.target.value)}
                           className="px-3 py-1.5 bg-[#FAF9F5] border border-amber-200/80 rounded-lg text-xs font-medium text-zinc-800 w-64 focus:outline-none focus:border-amber-500"
@@ -1559,7 +1573,7 @@ export default function SettingsPage() {
                                 </span>
                                 <div className="min-w-0 flex-1">
                                   <p className="text-xs font-bold text-zinc-900 truncate">{d.title}</p>
-                                  <span className="inline-block mt-0.5 px-2 py-0.5 bg-amber-50 text-slate-600 text-[9px] font-black rounded-md uppercase tracking-wider">
+                                  <span className="inline-block mt-0.5 px-2 py-0.5 bg-amber-50 text-zinc-600 text-[9px] font-black rounded-md uppercase tracking-wider">
                                     {d.category || 'General'}
                                   </span>
                                 </div>
@@ -1603,7 +1617,7 @@ export default function SettingsPage() {
                   <div className="space-y-4">
                     <div className="p-4 bg-purple-50/60 border border-purple-100 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-3">
                       <div>
-                        <h3 className="text-xs font-black text-purple-950 uppercase tracking-wider">Γ£¿ Special Value Additions (Complimentary)</h3>
+                        <h3 className="text-xs font-black text-purple-950 uppercase tracking-wider"> Special Value Additions (Complimentary)</h3>
                         <p className="text-[11px] text-purple-800 font-medium">Free perks and value-added services offered to entice clients in proposals.</p>
                       </div>
                       <span className="px-3 py-1 bg-white border border-purple-200 text-purple-900 text-xs font-extrabold rounded-full shadow-2xs">
@@ -1631,7 +1645,7 @@ export default function SettingsPage() {
                       <select
                         value={newSpecialCat}
                         onChange={e => setNewSpecialCat(e.target.value)}
-                        className="px-3 py-2 bg-white border border-amber-200/80 rounded-lg text-xs font-bold text-slate-700 cursor-pointer"
+                        className="px-3 py-2 bg-white border border-amber-200/80 rounded-lg text-xs font-bold text-zinc-700 cursor-pointer"
                       >
                         <option value="Shoots">Shoots</option>
                         <option value="Album">Album</option>
@@ -1663,7 +1677,7 @@ export default function SettingsPage() {
                       <div className="flex items-center justify-between gap-4">
                         <input
                           type="text"
-                          placeholder="≡ƒöì Search special addons..."
+                          placeholder=" Search special addons..."
                           value={specialSearch}
                           onChange={e => setSpecialSearch(e.target.value)}
                           className="px-3 py-1.5 bg-[#FAF9F5] border border-amber-200/80 rounded-lg text-xs font-medium text-zinc-800 w-64 focus:outline-none focus:border-purple-500"
@@ -1731,7 +1745,7 @@ export default function SettingsPage() {
                   <div className="space-y-4">
                     <div className="p-4 bg-emerald-50/60 border border-emerald-100 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-3">
                       <div>
-                        <h3 className="text-xs font-black text-emerald-950 uppercase tracking-wider">≡ƒÆ│ Extra Paid Add-ons & Upgrades</h3>
+                        <h3 className="text-xs font-black text-emerald-950 uppercase tracking-wider"> Extra Paid Add-ons & Upgrades</h3>
                         <p className="text-[11px] text-emerald-800 font-medium">Additional billable crew, services & upgrades that clients can opt for with standard base pricing.</p>
                       </div>
                       <span className="px-3 py-1 bg-white border border-emerald-200 text-emerald-900 text-xs font-extrabold rounded-full shadow-2xs">
@@ -1749,10 +1763,10 @@ export default function SettingsPage() {
                         className="flex-1 px-3 py-2 bg-white border border-amber-200/80 rounded-lg text-xs font-bold text-zinc-900 placeholder:text-slate-400 focus:outline-none focus:border-emerald-600"
                       />
                       <div className="relative flex items-center w-36">
-                        <span className="absolute left-2.5 text-xs font-bold text-emerald-700">Γé╣</span>
+                        <span className="absolute left-2.5 text-xs font-bold text-emerald-700"></span>
                         <input
                           type="number"
-                          placeholder="Price (Γé╣)"
+                          placeholder="Price ()"
                           value={newPaidPrice}
                           onChange={e => setNewPaidPrice(e.target.value)}
                           className="w-full pl-6 pr-2 py-2 bg-white border border-amber-200/80 rounded-lg text-xs font-bold text-zinc-900 focus:outline-none focus:border-emerald-600"
@@ -1761,7 +1775,7 @@ export default function SettingsPage() {
                       <select
                         value={newPaidCat}
                         onChange={e => setNewPaidCat(e.target.value)}
-                        className="px-3 py-2 bg-white border border-amber-200/80 rounded-lg text-xs font-bold text-slate-700 cursor-pointer"
+                        className="px-3 py-2 bg-white border border-amber-200/80 rounded-lg text-xs font-bold text-zinc-700 cursor-pointer"
                       >
                         <option value="Photography">Photography</option>
                         <option value="Cinematography">Cinematography</option>
@@ -1795,7 +1809,7 @@ export default function SettingsPage() {
                       <div className="flex items-center justify-between gap-4">
                         <input
                           type="text"
-                          placeholder="≡ƒöì Search paid add-ons..."
+                          placeholder=" Search paid add-ons..."
                           value={paidSearch}
                           onChange={e => setPaidSearch(e.target.value)}
                           className="px-3 py-1.5 bg-[#FAF9F5] border border-amber-200/80 rounded-lg text-xs font-medium text-zinc-800 w-64 focus:outline-none focus:border-emerald-500"
@@ -1821,9 +1835,9 @@ export default function SettingsPage() {
                                   <p className="text-xs font-bold text-zinc-900 truncate">{p.title}</p>
                                   <div className="flex items-center gap-2 mt-0.5">
                                     <span className="text-xs font-extrabold text-emerald-700">
-                                      Γé╣{Number(p.price || 0).toLocaleString('en-IN')}
+                                      {Number(p.price || 0).toLocaleString('en-IN')}
                                     </span>
-                                    <span className="px-2 py-0.5 bg-amber-50 text-slate-600 text-[9px] font-black rounded-md uppercase tracking-wider">
+                                    <span className="px-2 py-0.5 bg-amber-50 text-zinc-600 text-[9px] font-black rounded-md uppercase tracking-wider">
                                       {p.category || 'Extra Service'}
                                     </span>
                                   </div>
@@ -1869,7 +1883,7 @@ export default function SettingsPage() {
                   <div className="space-y-4">
                     <div className="p-4 bg-amber-50/60 border border-amber-100 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-3">
                       <div>
-                        <h3 className="text-xs font-black text-amber-950 uppercase tracking-wider">≡ƒôà Default Quotation Functions & Events</h3>
+                        <h3 className="text-xs font-black text-amber-950 uppercase tracking-wider"> Default Quotation Functions & Events</h3>
                         <p className="text-[11px] text-amber-800 font-medium">Pre-configure standard wedding functions with default crew counts, duration, and notes. When creating a new Quotation Proposal, these functions will load automatically!</p>
                       </div>
                       <span className="px-3 py-1 bg-white border border-amber-200 text-amber-900 text-xs font-extrabold rounded-full shadow-2xs">
@@ -1890,7 +1904,7 @@ export default function SettingsPage() {
                         <select
                           value={newDefaultFuncDuration}
                           onChange={e => setNewDefaultFuncDuration(e.target.value)}
-                          className="px-3 py-2 bg-white border border-amber-200/80 rounded-lg text-xs font-bold text-slate-700 cursor-pointer"
+                          className="px-3 py-2 bg-white border border-amber-200/80 rounded-lg text-xs font-bold text-zinc-700 cursor-pointer"
                         >
                           {DEFAULT_DURATION_SLOTS.map(slot => (
                             <option key={slot} value={slot}>{slot}</option>
@@ -1946,7 +1960,7 @@ export default function SettingsPage() {
                       <div className="flex items-center justify-between gap-4">
                         <input
                           type="text"
-                          placeholder="≡ƒöì Search default functions..."
+                          placeholder=" Search default functions..."
                           value={defaultFuncSearch}
                           onChange={e => setDefaultFuncSearch(e.target.value)}
                           className="px-3 py-1.5 bg-[#FAF9F5] border border-amber-200/80 rounded-lg text-xs font-medium text-zinc-800 w-64 focus:outline-none focus:border-amber-500"
@@ -1973,7 +1987,7 @@ export default function SettingsPage() {
                                 </div>
                                 <div className="flex items-center gap-1">
                                   <span className="px-2.5 py-0.5 bg-amber-50 border border-amber-200 text-amber-900 text-[10px] font-bold rounded-full">
-                                    ΓÅ▒ {f.durationSlot || '7 Hours'}
+                                     {f.durationSlot || '7 Hours'}
                                   </span>
                                   <button
                                     type="button"
@@ -2020,7 +2034,7 @@ export default function SettingsPage() {
                               </div>
 
                               {f.notes && (
-                                <p className="text-[11px] text-slate-500 italic bg-[#FAF9F5] p-2 rounded-lg border border-amber-100">
+                                <p className="text-[11px] text-zinc-500 italic bg-[#FAF9F5] p-2 rounded-lg border border-amber-100">
                                   "{f.notes}"
                                 </p>
                               )}
@@ -2035,9 +2049,12 @@ export default function SettingsPage() {
                                 {/* SUBTAB 5: PAYMENT SCHEDULE STEP NAMES */}
                 {quoteSubTab === 'payment_steps' && (
                   <div className="space-y-4">
-                    <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-3">
+                    <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-3 shadow-xs">
                       <div>
-                        <h3 className="text-xs font-black text-amber-950 uppercase tracking-wider">💳 Payment Terms & Schedule Step Names</h3>
+                        <h3 className="text-xs font-black text-amber-950 uppercase tracking-wider flex items-center gap-2">
+                          <Coins className="w-4 h-4 text-amber-600" />
+                          <span>Payment Terms & Schedule Step Names</span>
+                        </h3>
                         <p className="text-[11px] text-amber-900 font-medium">Default installment step presets. These populate the Step Name dropdown in Quotation Builder with live 2-way sync.</p>
                       </div>
                       <span className="px-3 py-1 bg-white border border-amber-300 text-amber-900 text-xs font-extrabold rounded-full shadow-2xs">
@@ -2076,7 +2093,7 @@ export default function SettingsPage() {
                             setTimeout(() => setSaveToast(null), 3000);
                           }
                         }}
-                        className="w-full sm:w-auto px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-black rounded-lg shadow-xs flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+                        className="w-full sm:w-auto px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-black rounded-lg shadow-xs flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
                       >
                         <Plus className="w-3.5 h-3.5" />
                         <span>Add Step Name</span>
@@ -2206,7 +2223,7 @@ export default function SettingsPage() {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                       {/* PDF Theme Dropdown */}
                       <div>
-                        <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
+                        <label className="text-xs font-extrabold text-zinc-600 uppercase tracking-wider block mb-1.5">
                           PDF Document Theme
                         </label>
                         <div className="relative">
@@ -2215,17 +2232,17 @@ export default function SettingsPage() {
                             onChange={e => setPdfTheme(e.target.value)}
                             className="w-full appearance-none px-4 py-2 bg-white border border-amber-200/80 rounded-xl text-xs font-bold text-zinc-900 focus:outline-none focus:border-[#0F9D58] cursor-pointer"
                           >
-                            <option value="royal_gold">≡ƒææ Royal Gold & Obsidian</option>
-                            <option value="minimal_dark">≡ƒûñ Minimal Dark Studio</option>
-                            <option value="airy_clean">Γ£¿ Airy Clean White</option>
+                            <option value="royal_gold"> Royal Gold & Obsidian</option>
+                            <option value="minimal_dark"> Minimal Dark Studio</option>
+                            <option value="airy_clean"> Airy Clean White</option>
                           </select>
-                          <ChevronDown className="w-4 h-4 text-slate-500 absolute right-3 top-2.5 pointer-events-none" />
+                          <ChevronDown className="w-4 h-4 text-zinc-500 absolute right-3 top-2.5 pointer-events-none" />
                         </div>
                       </div>
 
                       {/* Expiry Days */}
                       <div>
-                        <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
+                        <label className="text-xs font-extrabold text-zinc-600 uppercase tracking-wider block mb-1.5">
                           Quotation Validity (Days)
                         </label>
                         <input
@@ -2238,7 +2255,7 @@ export default function SettingsPage() {
 
                       {/* Currency Dropdown */}
                       <div>
-                        <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
+                        <label className="text-xs font-extrabold text-zinc-600 uppercase tracking-wider block mb-1.5">
                           Default Currency
                         </label>
                         <div className="relative">
@@ -2247,18 +2264,18 @@ export default function SettingsPage() {
                             onChange={e => setCurrency(e.target.value)}
                             className="w-full appearance-none px-4 py-2 bg-white border border-amber-200/80 rounded-xl text-xs font-bold text-zinc-900 focus:outline-none focus:border-[#0F9D58] cursor-pointer"
                           >
-                            <option value="INR">Γé╣ INR (Indian Rupee)</option>
+                            <option value="INR"> INR (Indian Rupee)</option>
                             <option value="USD">$ USD (US Dollar)</option>
                             <option value="AED">AED (UAE Dirham)</option>
                           </select>
-                          <ChevronDown className="w-4 h-4 text-slate-500 absolute right-3 top-2.5 pointer-events-none" />
+                          <ChevronDown className="w-4 h-4 text-zinc-500 absolute right-3 top-2.5 pointer-events-none" />
                         </div>
                       </div>
                     </div>
 
                     {/* Terms */}
                     <div>
-                      <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
+                      <label className="text-xs font-extrabold text-zinc-600 uppercase tracking-wider block mb-1.5">
                         Default Quotation Terms & Conditions
                       </label>
                       <textarea
@@ -2271,7 +2288,7 @@ export default function SettingsPage() {
 
                     {/* Contract Clauses */}
                     <div>
-                      <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
+                      <label className="text-xs font-extrabold text-zinc-600 uppercase tracking-wider block mb-1.5">
                         Standard Contract Clauses
                       </label>
                       <textarea
@@ -2291,13 +2308,13 @@ export default function SettingsPage() {
                     <div className="bg-white rounded-2xl max-w-md w-full p-5 space-y-4 shadow-xl border border-amber-200/80">
                       <div className="flex items-center justify-between border-b border-amber-100 pb-3">
                         <h3 className="text-sm font-extrabold text-zinc-900">Edit Deliverable</h3>
-                        <button type="button" onClick={() => setEditingDeliv(null)} className="text-slate-400 hover:text-slate-600">
+                        <button type="button" onClick={() => setEditingDeliv(null)} className="text-slate-400 hover:text-zinc-600">
                           <X className="w-4 h-4" />
                         </button>
                       </div>
                       <div className="space-y-3">
                         <div>
-                          <label className="text-xs font-bold text-slate-700 block mb-1">Deliverable Title</label>
+                          <label className="text-xs font-bold text-zinc-700 block mb-1">Deliverable Title</label>
                           <input
                             type="text"
                             value={editDelivTitle}
@@ -2306,7 +2323,7 @@ export default function SettingsPage() {
                           />
                         </div>
                         <div>
-                          <label className="text-xs font-bold text-slate-700 block mb-1">Category</label>
+                          <label className="text-xs font-bold text-zinc-700 block mb-1">Category</label>
                           <select
                             value={editDelivCat}
                             onChange={e => setEditDelivCat(e.target.value)}
@@ -2325,7 +2342,7 @@ export default function SettingsPage() {
                         <button
                           type="button"
                           onClick={() => setEditingDeliv(null)}
-                          className="px-3 py-1.5 bg-amber-50 text-slate-700 text-xs font-bold rounded-xl"
+                          className="px-3 py-1.5 bg-amber-50 text-zinc-700 text-xs font-bold rounded-xl"
                         >
                           Cancel
                         </button>
@@ -2354,13 +2371,13 @@ export default function SettingsPage() {
                     <div className="bg-white rounded-2xl max-w-md w-full p-5 space-y-4 shadow-xl border border-amber-200/80">
                       <div className="flex items-center justify-between border-b border-amber-100 pb-3">
                         <h3 className="text-sm font-extrabold text-zinc-900">Edit Special Addon</h3>
-                        <button type="button" onClick={() => setEditingSpecial(null)} className="text-slate-400 hover:text-slate-600">
+                        <button type="button" onClick={() => setEditingSpecial(null)} className="text-slate-400 hover:text-zinc-600">
                           <X className="w-4 h-4" />
                         </button>
                       </div>
                       <div className="space-y-3">
                         <div>
-                          <label className="text-xs font-bold text-slate-700 block mb-1">Special Addon Title</label>
+                          <label className="text-xs font-bold text-zinc-700 block mb-1">Special Addon Title</label>
                           <input
                             type="text"
                             value={editSpecialTitle}
@@ -2369,7 +2386,7 @@ export default function SettingsPage() {
                           />
                         </div>
                         <div>
-                          <label className="text-xs font-bold text-slate-700 block mb-1">Category</label>
+                          <label className="text-xs font-bold text-zinc-700 block mb-1">Category</label>
                           <select
                             value={editSpecialCat}
                             onChange={e => setEditSpecialCat(e.target.value)}
@@ -2389,7 +2406,7 @@ export default function SettingsPage() {
                         <button
                           type="button"
                           onClick={() => setEditingSpecial(null)}
-                          className="px-3 py-1.5 bg-amber-50 text-slate-700 text-xs font-bold rounded-xl"
+                          className="px-3 py-1.5 bg-amber-50 text-zinc-700 text-xs font-bold rounded-xl"
                         >
                           Cancel
                         </button>
@@ -2418,13 +2435,13 @@ export default function SettingsPage() {
                     <div className="bg-white rounded-2xl max-w-md w-full p-5 space-y-4 shadow-xl border border-amber-200/80">
                       <div className="flex items-center justify-between border-b border-amber-100 pb-3">
                         <h3 className="text-sm font-extrabold text-zinc-900">Edit Paid Add-on Service</h3>
-                        <button type="button" onClick={() => setEditingPaid(null)} className="text-slate-400 hover:text-slate-600">
+                        <button type="button" onClick={() => setEditingPaid(null)} className="text-slate-400 hover:text-zinc-600">
                           <X className="w-4 h-4" />
                         </button>
                       </div>
                       <div className="space-y-3">
                         <div>
-                          <label className="text-xs font-bold text-slate-700 block mb-1">Add-on Title</label>
+                          <label className="text-xs font-bold text-zinc-700 block mb-1">Add-on Title</label>
                           <input
                             type="text"
                             value={editPaidTitle}
@@ -2433,9 +2450,9 @@ export default function SettingsPage() {
                           />
                         </div>
                         <div>
-                          <label className="text-xs font-bold text-slate-700 block mb-1">Price (Γé╣)</label>
+                          <label className="text-xs font-bold text-zinc-700 block mb-1">Price ()</label>
                           <div className="relative flex items-center">
-                            <span className="absolute left-3 text-xs font-bold text-emerald-700">Γé╣</span>
+                            <span className="absolute left-3 text-xs font-bold text-emerald-700"></span>
                             <input
                               type="number"
                               value={editPaidPrice}
@@ -2445,7 +2462,7 @@ export default function SettingsPage() {
                           </div>
                         </div>
                         <div>
-                          <label className="text-xs font-bold text-slate-700 block mb-1">Category</label>
+                          <label className="text-xs font-bold text-zinc-700 block mb-1">Category</label>
                           <select
                             value={editPaidCat}
                             onChange={e => setEditPaidCat(e.target.value)}
@@ -2466,7 +2483,7 @@ export default function SettingsPage() {
                         <button
                           type="button"
                           onClick={() => setEditingPaid(null)}
-                          className="px-3 py-1.5 bg-amber-50 text-slate-700 text-xs font-bold rounded-xl"
+                          className="px-3 py-1.5 bg-amber-50 text-zinc-700 text-xs font-bold rounded-xl"
                         >
                           Cancel
                         </button>
@@ -2495,13 +2512,13 @@ export default function SettingsPage() {
                     <div className="bg-white rounded-2xl max-w-lg w-full p-5 space-y-4 shadow-xl border border-amber-200/80 max-h-[90vh] overflow-y-auto">
                       <div className="flex items-center justify-between border-b border-amber-100 pb-3">
                         <h3 className="text-sm font-extrabold text-zinc-900">Edit Default Function Template</h3>
-                        <button type="button" onClick={() => setEditingDefaultFunc(null)} className="text-slate-400 hover:text-slate-600">
+                        <button type="button" onClick={() => setEditingDefaultFunc(null)} className="text-slate-400 hover:text-zinc-600">
                           <X className="w-4 h-4" />
                         </button>
                       </div>
                       <div className="space-y-3">
                         <div>
-                          <label className="text-xs font-bold text-slate-700 block mb-1">Function Name</label>
+                          <label className="text-xs font-bold text-zinc-700 block mb-1">Function Name</label>
                           <input
                             type="text"
                             value={editDefaultFuncName}
@@ -2511,7 +2528,7 @@ export default function SettingsPage() {
                         </div>
                         <div className="grid grid-cols-2 gap-2">
                           <div>
-                            <label className="text-xs font-bold text-slate-700 block mb-1">Duration Slot</label>
+                            <label className="text-xs font-bold text-zinc-700 block mb-1">Duration Slot</label>
                             <select
                               value={editDefaultFuncDuration}
                               onChange={e => setEditDefaultFuncDuration(e.target.value)}
@@ -2523,7 +2540,7 @@ export default function SettingsPage() {
                             </select>
                           </div>
                           <div>
-                            <label className="text-xs font-bold text-slate-700 block mb-1">Default Venue / Location</label>
+                            <label className="text-xs font-bold text-zinc-700 block mb-1">Default Venue / Location</label>
                             <input
                               type="text"
                               value={editDefaultFuncLocation}
@@ -2568,7 +2585,7 @@ export default function SettingsPage() {
                                   ))}
                                 </select>
                                 <div className="flex items-center gap-1">
-                                  <span className="text-xs font-bold text-slate-500">Qty:</span>
+                                  <span className="text-xs font-bold text-zinc-500">Qty:</span>
                                   <input
                                     type="number"
                                     min="1"
@@ -2596,7 +2613,7 @@ export default function SettingsPage() {
                         </div>
 
                         <div>
-                          <label className="text-xs font-bold text-slate-700 block mb-1">Coverage Notes</label>
+                          <label className="text-xs font-bold text-zinc-700 block mb-1">Coverage Notes</label>
                           <textarea
                             rows={2}
                             value={editDefaultFuncNotes}
@@ -2609,7 +2626,7 @@ export default function SettingsPage() {
                         <button
                           type="button"
                           onClick={() => setEditingDefaultFunc(null)}
-                          className="px-3 py-1.5 bg-amber-50 text-slate-700 text-xs font-bold rounded-xl"
+                          className="px-3 py-1.5 bg-amber-50 text-zinc-700 text-xs font-bold rounded-xl"
                         >
                           Cancel
                         </button>
@@ -2642,24 +2659,24 @@ export default function SettingsPage() {
 
             {/* 3. FINANCE & INVOICES SETTINGS */}
             {activeTab === 'finance' && (
-              <div className="bg-white border border-amber-200/80 rounded-2xl p-6 shadow-xs space-y-6">
+              <div className="bg-white border border-amber-200/80 rounded-2xl p-6 shadow-[0_4px_24px_-4px_rgba(217,119,6,0.07)] hover:shadow-[0_8px_30px_-4px_rgba(217,119,6,0.12)] transition-all space-y-6">
                 <div className="flex items-center gap-3 border-b border-amber-100 pb-4">
                   <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
                     <Coins className="w-5 h-5" />
                   </div>
                   <div>
                     <h2 className="text-lg font-extrabold text-zinc-900">Finance & Invoices Settings (`/workspace/finance`)</h2>
-                    <p className="text-xs font-medium text-slate-500">Configure Invoice branding, GSTIN, Bank Transfer credentials, and Expense Categories</p>
+                    <p className="text-xs font-medium text-zinc-500">Configure Invoice branding, GSTIN, Bank Transfer credentials, and Expense Categories</p>
                   </div>
                 </div>
 
                 {/* Studio & Brand Identity on Invoices */}
                 <div className="space-y-4">
-                  <h3 className="text-xs font-black text-zinc-800 uppercase tracking-wider">≡ƒÅó Studio Identity & Header on Invoices</h3>
+                  <h3 className="text-xs font-black text-zinc-800 uppercase tracking-wider"> Studio Identity & Header on Invoices</h3>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="text-xs font-bold text-slate-700 block mb-1">Company / Studio Name</label>
+                      <label className="text-xs font-bold text-zinc-700 block mb-1">Company / Studio Name</label>
                       <input
                         type="text"
                         value={invoiceCompanyName}
@@ -2668,7 +2685,7 @@ export default function SettingsPage() {
                       />
                     </div>
                     <div>
-                      <label className="text-xs font-bold text-slate-700 block mb-1">Tagline / Subtitle</label>
+                      <label className="text-xs font-bold text-zinc-700 block mb-1">Tagline / Subtitle</label>
                       <input
                         type="text"
                         value={invoiceTagline}
@@ -2680,7 +2697,7 @@ export default function SettingsPage() {
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
-                      <label className="text-xs font-bold text-slate-700 block mb-1">GSTIN Number</label>
+                      <label className="text-xs font-bold text-zinc-700 block mb-1">GSTIN Number</label>
                       <input
                         type="text"
                         value={invoiceGstin}
@@ -2689,7 +2706,7 @@ export default function SettingsPage() {
                       />
                     </div>
                     <div>
-                      <label className="text-xs font-bold text-slate-700 block mb-1">Phone Number</label>
+                      <label className="text-xs font-bold text-zinc-700 block mb-1">Phone Number</label>
                       <input
                         type="text"
                         value={invoicePhone}
@@ -2698,7 +2715,7 @@ export default function SettingsPage() {
                       />
                     </div>
                     <div>
-                      <label className="text-xs font-bold text-slate-700 block mb-1">Email Address</label>
+                      <label className="text-xs font-bold text-zinc-700 block mb-1">Email Address</label>
                       <input
                         type="email"
                         value={invoiceEmail}
@@ -2709,7 +2726,7 @@ export default function SettingsPage() {
                   </div>
 
                   <div>
-                    <label className="text-xs font-bold text-slate-700 block mb-1">Studio Physical Address</label>
+                    <label className="text-xs font-bold text-zinc-700 block mb-1">Studio Physical Address</label>
                     <input
                       type="text"
                       value={invoiceAddress}
@@ -2721,11 +2738,11 @@ export default function SettingsPage() {
 
                 {/* Bank Transfer & UPI Details */}
                 <div className="space-y-4 pt-4 border-t border-amber-100">
-                  <h3 className="text-xs font-black text-zinc-800 uppercase tracking-wider">≡ƒÆ│ Bank Account & UPI Payment Details</h3>
+                  <h3 className="text-xs font-black text-zinc-800 uppercase tracking-wider"> Bank Account & UPI Payment Details</h3>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="text-xs font-bold text-slate-700 block mb-1">Bank Name</label>
+                      <label className="text-xs font-bold text-zinc-700 block mb-1">Bank Name</label>
                       <input
                         type="text"
                         value={invoiceBankName}
@@ -2734,7 +2751,7 @@ export default function SettingsPage() {
                       />
                     </div>
                     <div>
-                      <label className="text-xs font-bold text-slate-700 block mb-1">Account Holder Name</label>
+                      <label className="text-xs font-bold text-zinc-700 block mb-1">Account Holder Name</label>
                       <input
                         type="text"
                         value={invoiceAccountHolder}
@@ -2746,7 +2763,7 @@ export default function SettingsPage() {
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
-                      <label className="text-xs font-bold text-slate-700 block mb-1">Account Number</label>
+                      <label className="text-xs font-bold text-zinc-700 block mb-1">Account Number</label>
                       <input
                         type="text"
                         value={invoiceAccountNo}
@@ -2755,7 +2772,7 @@ export default function SettingsPage() {
                       />
                     </div>
                     <div>
-                      <label className="text-xs font-bold text-slate-700 block mb-1">IFSC Code</label>
+                      <label className="text-xs font-bold text-zinc-700 block mb-1">IFSC Code</label>
                       <input
                         type="text"
                         value={invoiceIfsc}
@@ -2764,7 +2781,7 @@ export default function SettingsPage() {
                       />
                     </div>
                     <div>
-                      <label className="text-xs font-bold text-slate-700 block mb-1">UPI ID (e.g. name@bank)</label>
+                      <label className="text-xs font-bold text-zinc-700 block mb-1">UPI ID (e.g. name@bank)</label>
                       <input
                         type="text"
                         value={upiId}
@@ -2776,7 +2793,7 @@ export default function SettingsPage() {
 
                   {/* QR Code Upload Section */}
                   <div className="pt-2">
-                    <label className="text-xs font-bold text-slate-700 block mb-1.5">Official Payment QR Code Image (Custom Upload)</label>
+                    <label className="text-xs font-bold text-zinc-700 block mb-1.5">Official Payment QR Code Image (Custom Upload)</label>
                     <div className="flex flex-wrap items-center gap-3 bg-[#FAF9F5] p-3 rounded-xl border border-amber-200/80">
                       {invoiceQrImageUrl ? (
                         <img src={invoiceQrImageUrl} alt="QR Code" className="w-12 h-12 object-contain rounded-lg border bg-white p-1" />
@@ -2815,7 +2832,7 @@ export default function SettingsPage() {
                             }
                           }
                         }}
-                        className="text-xs text-slate-600 file:mr-2 file:py-1 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#0F9D58] file:text-white hover:file:bg-[#0B8043] cursor-pointer"
+                        className="text-xs text-zinc-600 file:mr-2 file:py-1 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#0F9D58] file:text-white hover:file:bg-[#0B8043] cursor-pointer"
                       />
                       {invoiceQrImageUrl && (
                         <button
@@ -2833,7 +2850,7 @@ export default function SettingsPage() {
                 {/* Invoice Number Prefix & Font Theme */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 pt-4 border-t border-amber-100">
                   <div>
-                    <label className="text-xs font-bold text-slate-700 block mb-1">Invoice ID Prefix</label>
+                    <label className="text-xs font-bold text-zinc-700 block mb-1">Invoice ID Prefix</label>
                     <input
                       type="text"
                       value={invoicePrefix}
@@ -2842,7 +2859,7 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-slate-700 block mb-1">Default GST Rate (%)</label>
+                    <label className="text-xs font-bold text-zinc-700 block mb-1">Default GST Rate (%)</label>
                     <input
                       type="number"
                       value={gstPercent}
@@ -2851,13 +2868,13 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-slate-700 block mb-1">Invoice Color Palette (Quotation Themes)</label>
+                    <label className="text-xs font-bold text-zinc-700 block mb-1">Invoice Color Palette (Quotation Themes)</label>
                     <select
                       value={invoiceThemePalette}
                       onChange={e => setInvoiceThemePalette(e.target.value)}
                       className="w-full px-3.5 py-2 bg-[#FAF9F5] border border-amber-200/80 rounded-xl text-xs font-bold text-zinc-900 focus:outline-none focus:border-[#0F9D58] cursor-pointer"
                     >
-                      <option value="auto">ΓÜí Auto-Sync with Default Quotation Theme</option>
+                      <option value="auto"> Auto-Sync with Default Quotation Theme</option>
                       <option value="cyprus-sand-dune">Cyprus & Sand Dune (#004643 / #F0EDE5)</option>
                       <option value="sand-dune-cyprus">Sand Dune & Cyprus (#F0EDE5 / #004643)</option>
                       <option value="cherry-red-cream">Cherry Red & Cream (#750505 / #FBFCEB)</option>
@@ -2876,13 +2893,13 @@ export default function SettingsPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-slate-700 block mb-1">Invoice Typography / Font</label>
+                    <label className="text-xs font-bold text-zinc-700 block mb-1">Invoice Typography / Font</label>
                     <select
                       value={invoiceFont}
                       onChange={e => setInvoiceFont(e.target.value)}
                       className="w-full px-3.5 py-2 bg-[#FAF9F5] border border-amber-200/80 rounded-xl text-xs font-bold text-zinc-900 focus:outline-none focus:border-[#0F9D58] cursor-pointer"
                     >
-                      <option value="auto">ΓÜí Auto-Sync with Default Quotation Font</option>
+                      <option value="auto"> Auto-Sync with Default Quotation Font</option>
                       <option value="Cormorant Garamond">Cormorant Garamond (Quotation Luxury Serif)</option>
                       <option value="Cinzel">Cinzel (Royal Classical)</option>
                       <option value="Playfair Display">Playfair Display (Editorial Serif)</option>
@@ -2899,7 +2916,7 @@ export default function SettingsPage() {
                 {/* Terms & Conditions */}
                 <div className="space-y-4 pt-4 border-t border-amber-100">
                   <div>
-                    <label className="text-xs font-bold text-slate-700 block mb-1">Standard Invoice Terms & Conditions</label>
+                    <label className="text-xs font-bold text-zinc-700 block mb-1">Standard Invoice Terms & Conditions</label>
                     <textarea
                       rows={2}
                       value={invoiceTerms}
@@ -2909,7 +2926,7 @@ export default function SettingsPage() {
                   </div>
 
                   <div>
-                    <label className="text-xs font-bold text-slate-700 block mb-1">Footer Note / Disclaimer</label>
+                    <label className="text-xs font-bold text-zinc-700 block mb-1">Footer Note / Disclaimer</label>
                     <input
                       type="text"
                       value={invoiceFooterNote}
@@ -2919,7 +2936,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                {/* ≡ƒöÉ FINANCE VAULT SECURITY & PIN PROTECTION */}
+                {/*  FINANCE VAULT SECURITY & PIN PROTECTION */}
                 <div className="pt-5 border-t border-amber-100 space-y-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
@@ -2930,7 +2947,7 @@ export default function SettingsPage() {
                         <h3 className="text-xs font-black text-zinc-900 uppercase tracking-wider">
                           Finance Vault Security & PIN Gate
                         </h3>
-                        <p className="text-[11px] text-slate-500 font-medium">
+                        <p className="text-[11px] text-zinc-500 font-medium">
                           Protect financial figures, quotations revenue, and payouts behind a 6-digit PIN screen
                         </p>
                       </div>
@@ -2952,7 +2969,7 @@ export default function SettingsPage() {
                     <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-2xl space-y-4">
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                         <div>
-                          <label className="text-xs font-bold text-slate-700 block mb-1">
+                          <label className="text-xs font-bold text-zinc-700 block mb-1">
                             6-Digit Master PIN <span className="text-rose-500">*</span>
                           </label>
                           <input
@@ -2966,7 +2983,7 @@ export default function SettingsPage() {
                         </div>
 
                         <div>
-                          <label className="text-xs font-bold text-slate-700 block mb-1">
+                          <label className="text-xs font-bold text-zinc-700 block mb-1">
                             Auto-Lock Session Timeout
                           </label>
                           <select
@@ -2982,7 +2999,7 @@ export default function SettingsPage() {
                         </div>
 
                         <div>
-                          <label className="text-xs font-bold text-slate-700 block mb-1">
+                          <label className="text-xs font-bold text-zinc-700 block mb-1">
                             Admin Recovery Email
                           </label>
                           <input
@@ -2995,14 +3012,14 @@ export default function SettingsPage() {
                         </div>
 
                         <div>
-                          <label className="text-xs font-bold text-slate-700 block mb-1">
+                          <label className="text-xs font-bold text-zinc-700 block mb-1">
                             Master Admin Password
                           </label>
                           <input
                             type="password"
                             value={financeMasterPassword}
                             onChange={e => setFinanceMasterPassword(e.target.value)}
-                            placeholder="ΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇó"
+                            placeholder=""
                             className="w-full px-3.5 py-2 bg-white border border-amber-300 rounded-xl text-xs font-medium text-zinc-900 focus:outline-none"
                           />
                         </div>
@@ -3018,7 +3035,7 @@ export default function SettingsPage() {
 
                 {/* Expense Categories Google Sheets Option Builder */}
                 <div className="pt-4 border-t border-amber-100 space-y-2">
-                  <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1">
+                  <label className="text-xs font-extrabold text-zinc-600 uppercase tracking-wider block mb-1">
                     Expense Categories Options
                   </label>
                   {renderGoogleOptionList(expenseCategories, setExpenseCategories, 'expense', 'Add another item')}
@@ -3028,21 +3045,21 @@ export default function SettingsPage() {
 
             {/* 4. ATTENDANCE & GEOFENCE SETTINGS */}
             {activeTab === 'attendance' && (
-              <div className="bg-white border border-amber-200/80 rounded-2xl p-6 shadow-xs space-y-6">
+              <div className="bg-white border border-amber-200/80 rounded-2xl p-6 shadow-[0_4px_24px_-4px_rgba(217,119,6,0.07)] hover:shadow-[0_8px_30px_-4px_rgba(217,119,6,0.12)] transition-all space-y-6">
                 <div className="flex items-center gap-3 border-b border-amber-100 pb-4">
                   <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
                     <Clock className="w-5 h-5" />
                   </div>
                   <div>
                     <h2 className="text-lg font-extrabold text-zinc-900">Attendance & Geofence Settings (`/workspace/attendance`)</h2>
-                    <p className="text-xs font-medium text-slate-500">Configure Geofence radius, Shift start time, and break limits</p>
+                    <p className="text-xs font-medium text-zinc-500">Configure Geofence radius, Shift start time, and break limits</p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Geofence Radius */}
                   <div>
-                    <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
+                    <label className="text-xs font-extrabold text-zinc-600 uppercase tracking-wider block mb-1.5">
                       Geofence Radius (Meters)
                     </label>
                     <input
@@ -3055,7 +3072,7 @@ export default function SettingsPage() {
 
                   {/* Shift Start */}
                   <div>
-                    <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
+                    <label className="text-xs font-extrabold text-zinc-600 uppercase tracking-wider block mb-1.5">
                       Default Shift Start Time
                     </label>
                     <input
@@ -3068,7 +3085,7 @@ export default function SettingsPage() {
 
                   {/* Grace Period */}
                   <div>
-                    <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
+                    <label className="text-xs font-extrabold text-zinc-600 uppercase tracking-wider block mb-1.5">
                       Grace Period (Minutes)
                     </label>
                     <input
@@ -3081,7 +3098,7 @@ export default function SettingsPage() {
 
                   {/* Break Limit */}
                   <div>
-                    <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider block mb-1.5">
+                    <label className="text-xs font-extrabold text-zinc-600 uppercase tracking-wider block mb-1.5">
                       Break Limit (Minutes)
                     </label>
                     <input
@@ -3097,27 +3114,27 @@ export default function SettingsPage() {
 
             {/* 5. META & INTEGRATIONS SETTINGS */}
             {activeTab === 'integrations' && (
-              <div className="bg-white border border-amber-200/80 rounded-2xl p-6 shadow-xs space-y-6">
+              <div className="bg-white border border-amber-200/80 rounded-2xl p-6 shadow-[0_4px_24px_-4px_rgba(217,119,6,0.07)] hover:shadow-[0_8px_30px_-4px_rgba(217,119,6,0.12)] transition-all space-y-6">
                 <div className="flex items-center gap-3 border-b border-amber-100 pb-4">
                   <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#0866FF] flex items-center justify-center font-bold">
                     <Globe className="w-5 h-5" />
                   </div>
                   <div>
                     <h2 className="text-lg font-extrabold text-zinc-900">Meta & Integrations Settings (`/workspace/integrations/meta`)</h2>
-                    <p className="text-xs font-medium text-slate-500">Configure Meta auto-sync interval and default WhatsApp triggers</p>
+                    <p className="text-xs font-medium text-zinc-500">Configure Meta auto-sync interval and default WhatsApp triggers</p>
                   </div>
                 </div>
 
                 <div className="flex items-center justify-between p-4 bg-[#FAF9F5] border border-amber-200/80 rounded-xl">
                   <div>
                     <h4 className="text-sm font-bold text-zinc-900">Real-Time Meta Lead Webhook Sync</h4>
-                    <p className="text-xs text-slate-500 mt-0.5">Automatically ingest Facebook Instant Leads into CRM instantly</p>
+                    <p className="text-xs text-zinc-500 mt-0.5">Automatically ingest Facebook Instant Leads into CRM instantly</p>
                   </div>
                   <button
                     type="button"
                     onClick={() => setMetaAutoSync(!metaAutoSync)}
                     className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                      metaAutoSync ? 'bg-[#0F9D58] text-white' : 'bg-slate-200 text-slate-600'
+                      metaAutoSync ? 'bg-[#0F9D58] text-white' : 'bg-slate-200 text-zinc-600'
                     }`}
                   >
                     {metaAutoSync ? 'Active' : 'Disabled'}
@@ -3128,14 +3145,14 @@ export default function SettingsPage() {
 
             {/* 6. TEAM & OWNERS SETTINGS */}
             {activeTab === 'team' && (
-              <div className="bg-white border border-amber-200/80 rounded-2xl p-6 shadow-xs space-y-6">
+              <div className="bg-white border border-amber-200/80 rounded-2xl p-6 shadow-[0_4px_24px_-4px_rgba(217,119,6,0.07)] hover:shadow-[0_8px_30px_-4px_rgba(217,119,6,0.12)] transition-all space-y-6">
                 <div className="flex items-center gap-3 border-b border-amber-100 pb-4">
                   <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
                     <Users className="w-5 h-5" />
                   </div>
                   <div>
                     <h2 className="text-lg font-extrabold text-zinc-900">Team & Access Control Settings (`/workspace/team`)</h2>
-                    <p className="text-xs font-medium text-slate-500">Manage team members, roles, and access rules</p>
+                    <p className="text-xs font-medium text-zinc-500">Manage team members, roles, and access rules</p>
                   </div>
                 </div>
 
@@ -3147,7 +3164,7 @@ export default function SettingsPage() {
                       </div>
                       <div>
                         <h4 className="text-sm font-bold text-zinc-900">Workspace User Account</h4>
-                        <p className="text-xs text-slate-500">Active Supabase Workspace ID: {workspaceId.slice(0, 8)}...</p>
+                        <p className="text-xs text-zinc-500">Active Supabase Workspace ID: {workspaceId.slice(0, 8)}...</p>
                       </div>
                     </div>
                     <span className="px-3 py-1 rounded-full bg-emerald-50 text-[#0F9D58] border border-emerald-200 text-xs font-bold">
