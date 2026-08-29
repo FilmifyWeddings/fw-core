@@ -120,6 +120,7 @@ function AlbumStudioContent() {
   const [newCollectionName, setNewCollectionName] = useState('');
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
   const [isReindexing, setIsReindexing] = useState(false);
+  const [reindexProgress, setReindexProgress] = useState<string>('');
 
   // Uploader State
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
@@ -255,21 +256,52 @@ function AlbumStudioContent() {
   const handleReindexFaces = async () => {
     if (!gallery || isReindexing) return;
     setIsReindexing(true);
+    setReindexProgress('Starting AI Scan...');
+
     try {
-      const res = await fetch(`/api/gallery/reindex?gallery_id=${gallery.id}`, {
-        method: 'POST',
-      });
-      const json = await res.json();
-      if (json.success) {
-        await loadData();
-        alert(`Face AI indexing complete! Found ${json.totalFacesFound || 0} faces across ${json.indexedCount || 0} photos.`);
-      } else {
-        alert(json.error || 'Failed to re-index faces');
+      let offset = 0;
+      const limit = 15;
+      let hasMore = true;
+      let totalFacesIndexed = 0;
+      let totalPhotosProcessed = 0;
+      let totalPhotos = photos.length || 60;
+
+      while (hasMore) {
+        setReindexProgress(
+          totalPhotos > 0
+            ? `Scanning ${Math.min(offset + limit, totalPhotos)} of ${totalPhotos} photos...`
+            : `Scanning batch from ${offset}...`
+        );
+
+        const res = await fetch(`/api/gallery/reindex?gallery_id=${gallery.id}&offset=${offset}&limit=${limit}`, {
+          method: 'POST',
+        });
+
+        if (!res.ok) {
+          throw new Error(`Server returned HTTP ${res.status}`);
+        }
+
+        const json = await res.json();
+        if (!json.success) {
+          throw new Error(json.error || 'Failed batch reindex');
+        }
+
+        totalPhotos = json.totalPhotos || totalPhotos;
+        totalFacesIndexed += json.totalFacesFound || 0;
+        totalPhotosProcessed += json.indexedCount || 0;
+
+        hasMore = json.hasMore === true;
+        offset = json.nextOffset ?? (offset + limit);
       }
+
+      await loadData();
+      alert(`Face AI indexing complete! Found ${totalFacesIndexed} real faces across ${totalPhotos} photos.`);
     } catch (err: any) {
-      alert(`Re-index error: ${err.message}`);
+      alert(`Re-index notice: ${err.message}`);
+      await loadData();
     } finally {
       setIsReindexing(false);
+      setReindexProgress('');
     }
   };
 
@@ -633,7 +665,7 @@ function AlbumStudioContent() {
             title="Scan photos with AI and cluster unique people"
           >
             <Sparkles className={`w-4 h-4 text-purple-600 ${isReindexing ? 'animate-spin' : ''}`} />
-            <span>{isReindexing ? 'Scanning Faces...' : 'AI Scan Faces'}</span>
+            <span>{isReindexing ? (reindexProgress || 'Scanning Faces...') : 'AI Scan Faces'}</span>
           </button>
 
           <Link
