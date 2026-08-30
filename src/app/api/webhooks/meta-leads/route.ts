@@ -47,7 +47,7 @@ export type SignatureVerifyResult =
 /**
  * Strict Fail-Closed HMAC SHA-256 Webhook Signature Verification
  */
-export function verifyMetaHubSignatureStrict(rawBody: string, signatureHeader: string | null): SignatureVerifyResult {
+function verifyMetaHubSignatureStrict(rawBody: string, signatureHeader: string | null): SignatureVerifyResult {
   const appSecret = process.env.FACEBOOK_APP_SECRET;
 
   // 1. FAIL CLOSED: Missing or Misconfigured FACEBOOK_APP_SECRET

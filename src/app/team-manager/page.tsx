@@ -8,7 +8,7 @@ import {
   Send, AlertCircle, Search, Filter, Loader2, Sparkles, MapPin, 
   Clock, CheckCircle, Info, Trash, ChevronDown, Edit2, TrendingUp, Award, Grid, Menu,
   Database, FileText, Layers, ArrowLeft, SlidersHorizontal, CheckSquare, Folder, Edit3, Pencil, Settings,
-  HardDrive, UserPlus, AlertTriangle, Zap, Lock
+  HardDrive, UserPlus, AlertTriangle, Zap, Lock, IndianRupee, Users2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createPortal } from 'react-dom';
@@ -21,7 +21,8 @@ import TeamSettingsModal from './components/TeamSettingsModal';
 import MonthListView from './components/MonthListView';
 import Professional3DCalendar from './components/Professional3DCalendar';
 import { EventBlockData } from './components/EventBlock';
-import { saveOrUpdateEventPayout } from '@/lib/team-finance-sync';
+import { saveOrUpdateEventPayout, fetchMemberFinancialSummary, TeamFinancialSummary } from '@/lib/team-finance-sync';
+import TeamMemberFinanceDrawer from '../workspace/team/components/TeamMemberFinanceDrawer';
 import { WorkspaceCrewRole, fetchWorkspaceCrewRoles, fetchWorkspaceEventTypes, getRoleShortCode, DEFAULT_CREW_ROLES } from '@/lib/workspace-settings';
 
 // 1. Deterministic Client Gradient Consistency based on Project ID / Name Hash
@@ -116,7 +117,7 @@ const resolveSubEventAssignments = (subEvent: FWSubEvent, teamMembers: FWTeamMem
 
 export default function TeamManagerPage() {
   const { workspaceId, workspaceName, isOwner, userRole, permissions } = useWorkspace();
-  const [activeTab, setActiveTab] = useState<'overview' | 'projects' | 'list' | 'calendar' | 'trash'>('projects');
+  const [activeTab, setActiveTab] = useState<'overview' | 'projects' | 'list' | 'calendar' | 'trash' | 'team_cards'>('projects');
   
   // Dynamic Time-Based Greeting & Studio Profile Name
   const greetingInfo = useMemo(() => {
@@ -144,8 +145,29 @@ export default function TeamManagerPage() {
   const [currentUserId, setCurrentUserId] = useState<string>('');
   const [projects, setProjects] = useState<FWProject[]>([]);
   const [teamMembers, setTeamMembers] = useState<FWTeamMember[]>([]);
+  
+  // Team & Partner Financial Engine States
+  const [selectedFinanceMember, setSelectedFinanceMember] = useState<any>(null);
+  const [isFinanceDrawerOpen, setIsFinanceDrawerOpen] = useState(false);
+  const [memberFinancials, setMemberFinancials] = useState<Record<string, TeamFinancialSummary>>({});
+  const [teamCardFilter, setTeamCardFilter] = useState('All');
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+
+  const loadFinancialSummaries = async (membersList: FWTeamMember[]) => {
+    const effectiveWsId = workspaceId || currentUserId;
+    if (!effectiveWsId || membersList.length === 0) return;
+
+    const summaryMap: Record<string, TeamFinancialSummary> = {};
+    for (const m of membersList) {
+      try {
+        const sum = await fetchMemberFinancialSummary(effectiveWsId, m.id, (m as any).primary_type || 'FREELANCER');
+        summaryMap[m.id] = sum;
+      } catch (_) {}
+    }
+    setMemberFinancials(summaryMap);
+  };
 
   // Modals & Popovers State
   const [isAddProjectOpen, setIsAddProjectOpen] = useState<boolean>(false);
@@ -178,6 +200,15 @@ export default function TeamManagerPage() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedRoleFilter, setSelectedRoleFilter] = useState<string>('All');
   const [instantAlerts, setInstantAlerts] = useState<boolean>(true);
+
+
+  useEffect(() => {
+    const handleFinanceUpdated = () => {
+      loadFinancialSummaries(teamMembers);
+    };
+    window.addEventListener('team_finance_updated', handleFinanceUpdated);
+    return () => window.removeEventListener('team_finance_updated', handleFinanceUpdated);
+  }, [teamMembers]);
 
   // Close popovers on outside click
   useEffect(() => {
@@ -314,6 +345,7 @@ export default function TeamManagerPage() {
       }
 
       setTeamMembers(combinedMembers);
+      loadFinancialSummaries(combinedMembers);
 
       // 2. Fetch Projects for active workspace
       let projectsQuery = supabase
@@ -968,6 +1000,18 @@ export default function TeamManagerPage() {
               >
                 <List className="w-4 h-4" />
                 Month-Wise List View
+              </button>
+
+              <button
+                onClick={() => setActiveTab('team_cards')}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer select-none shrink-0 ${
+                  activeTab === 'team_cards'
+                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-md shadow-amber-500/30'
+                    : 'text-amber-900 hover:text-amber-950 hover:bg-amber-50 border border-amber-200/80 bg-amber-50/50'
+                }`}
+              >
+                <Users className="w-4 h-4 text-amber-500" />
+                <span>👥 Team & Partner Cards (Finance & Event Ledger)</span>
               </button>
 
               <button
@@ -1722,6 +1766,159 @@ export default function TeamManagerPage() {
         )}
 
         {/* ─── TAB VIEW: TRASH RECOVERY & PERMANENT DELETE ─── */}
+        
+        {/* ─── TAB VIEW: TEAM & PARTNER FINANCIAL CARDS ─── */}
+        {activeTab === 'team_cards' && (
+          <div className="space-y-6">
+            {/* Header & Stats */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 bg-[#FEFDF8] border-2 border-amber-200/90 rounded-3xl shadow-sm">
+              <div className="space-y-1">
+                <h3 className="text-lg font-black text-amber-950 flex items-center gap-2">
+                  <Users className="w-5 h-5 text-amber-600" />
+                  <span>Crew & Partner Financial Cards</span>
+                </h3>
+                <p className="text-xs font-semibold text-zinc-600">
+                  Track event-wise freelancer payouts, album lab sheet orders, and in-house staff salaries with live 2-way Finance sync.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingMember(null);
+                  setIsAddMemberOpen(true);
+                }}
+                className="px-5 py-2.5 rounded-2xl bg-gradient-to-b from-amber-400 via-amber-500 to-amber-600 hover:from-amber-500 hover:to-amber-700 text-white font-bold text-xs shadow-md shadow-amber-500/25 flex items-center gap-2 cursor-pointer shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ Add Team Member / Partner</span>
+              </button>
+            </div>
+
+            {/* Filter Pills Bar */}
+            <div className="p-3 bg-white border border-amber-200 rounded-2xl flex items-center gap-2 overflow-x-auto shadow-2xs">
+              {[
+                { id: 'All', label: 'All Crew & Partners' },
+                { id: 'In-House', label: '🏢 In-House Staff' },
+                { id: 'Freelancers', label: '📸 Freelancers' },
+                { id: 'Labs', label: '🤝 Lab & Album Partners' },
+                { id: 'Photographers', label: 'Photographers' },
+                { id: 'Cinematographers', label: 'Cinematographers' },
+                { id: 'Editors', label: 'Editors' },
+              ].map(f => (
+                <button
+                  key={f.id}
+                  onClick={() => setTeamCardFilter(f.id)}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+                    teamCardFilter === f.id
+                      ? 'bg-gradient-to-b from-amber-400 to-amber-600 text-white font-black shadow-xs'
+                      : 'bg-[#FEFDF8] text-zinc-700 hover:bg-amber-50 border border-amber-200/80'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Members Cards Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {teamMembers
+                .filter(m => {
+                  const mType = ((m as any).primary_type || 'FREELANCER').toUpperCase();
+                  const role = (m.primary_role || '').toLowerCase();
+                  if (teamCardFilter === 'In-House') return mType.includes('HOUSE') || mType.includes('STAFF');
+                  if (teamCardFilter === 'Freelancers') return !mType.includes('HOUSE') && !mType.includes('LAB') && !mType.includes('PARTNER');
+                  if (teamCardFilter === 'Labs') return mType.includes('LAB') || mType.includes('PARTNER');
+                  if (teamCardFilter === 'Photographers') return role.includes('photo');
+                  if (teamCardFilter === 'Cinematographers') return role.includes('cine');
+                  if (teamCardFilter === 'Editors') return role.includes('edit');
+                  return true;
+                })
+                .map(m => {
+                  const mType = ((m as any).primary_type || 'FREELANCER').toUpperCase();
+                  const isLab = mType.includes('LAB') || mType.includes('PARTNER');
+                  const isInHouse = mType.includes('HOUSE') || mType.includes('STAFF');
+                  const fin = memberFinancials[m.id];
+
+                  return (
+                    <div
+                      key={m.id}
+                      className="bg-[#FEFDF8] border-2 border-amber-200/90 rounded-3xl p-5 shadow-[0_6px_25px_-4px_rgba(217,119,6,0.08)] hover:shadow-lg transition-all space-y-4 flex flex-col justify-between"
+                    >
+                      {/* Top Header Row */}
+                      <div className="space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-2xl bg-gradient-to-b from-amber-400 to-amber-600 text-white font-black text-sm flex items-center justify-center shadow-md shrink-0 border border-amber-300">
+                              {m.avatar_url ? (
+                                <img src={m.avatar_url} alt={m.name} className="w-full h-full rounded-2xl object-cover" />
+                              ) : (
+                                m.name.slice(0, 2).toUpperCase()
+                              )}
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-black text-amber-950 leading-tight">{m.name}</h4>
+                              <p className="text-[11px] font-bold text-amber-800/80 mt-0.5">{m.primary_role || 'Crew'}</p>
+                            </div>
+                          </div>
+
+                          <span className="px-2.5 py-0.5 rounded-full text-[9.5px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300">
+                            {isLab ? '🤝 Album Lab' : isInHouse ? '🏢 In-House' : '📸 Freelancer'}
+                          </span>
+                        </div>
+
+                        {/* Contact details */}
+                        <div className="text-xs text-zinc-600 space-y-0.5">
+                          {m.phone_number && <p className="font-semibold">📞 {m.phone_number}</p>}
+                          {m.email && <p className="font-semibold text-zinc-500 truncate">✉️ {m.email}</p>}
+                        </div>
+                      </div>
+
+                      {/* Financial Summary Pill Box */}
+                      <div className="p-3 bg-white border border-amber-200/80 rounded-2xl space-y-2">
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <span className="text-[9px] font-extrabold uppercase text-zinc-400 block">Total Paid</span>
+                            <span className="font-black text-emerald-700 font-mono">
+                              ₹{(fin?.total_paid || 0).toLocaleString('en-IN')}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[9px] font-extrabold uppercase text-zinc-400 block">Balance Due</span>
+                            <span className={`font-black font-mono ${(fin?.total_balance || 0) > 0 ? 'text-rose-700' : 'text-zinc-700'}`}>
+                              ₹{(fin?.total_balance || 0).toLocaleString('en-IN')}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* 3D Action Button to open financial ledger drawer */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedFinanceMember({
+                              id: m.id,
+                              name: m.name,
+                              email: m.email,
+                              phone: m.phone_number,
+                              primary_role: m.primary_role,
+                              primary_type: (m as any).primary_type || 'FREELANCER',
+                              avatar_url: m.avatar_url
+                            });
+                            setIsFinanceDrawerOpen(true);
+                          }}
+                          className="w-full py-2 px-3 bg-gradient-to-b from-amber-400 via-amber-500 to-amber-600 hover:from-amber-500 hover:to-amber-700 text-white font-black text-xs rounded-xl shadow-md shadow-amber-500/20 active:translate-y-0.5 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <IndianRupee className="w-3.5 h-3.5" />
+                          <span>{isLab ? 'Album Orders & Payments' : isInHouse ? 'Monthly Salary & Payroll' : 'Event Ledger & Payouts'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        )}
+
         {activeTab === 'trash' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -2089,6 +2286,17 @@ export default function TeamManagerPage() {
           </motion.div>
         </div>
       )}
+      {/* 3D Tactile Financial Drawer */}
+      <TeamMemberFinanceDrawer
+        isOpen={isFinanceDrawerOpen}
+        onClose={() => {
+          setIsFinanceDrawerOpen(false);
+          setSelectedFinanceMember(null);
+          fetchAllData();
+        }}
+        workspaceId={workspaceId || currentUserId}
+        member={selectedFinanceMember}
+      />
     </div>
   );
 }

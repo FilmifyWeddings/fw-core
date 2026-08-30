@@ -58,7 +58,7 @@ import {
 // Using imported BirdsSVG and MonogramSVG from QuotationSVGs
 
 // Exact Registered Color Palettes with Inverted Counterparts
-export interface ColorTheme {
+interface ColorTheme {
   id: string;
   name: string;
   primary: string;
@@ -70,7 +70,7 @@ export interface ColorTheme {
   isDark?: boolean;
 }
 
-export const COLOR_THEMES: ColorTheme[] = [
+const COLOR_THEMES: ColorTheme[] = [
   {
     id: 'cherry-red-cream',
     name: 'Cherry Red & Cream',
@@ -292,7 +292,7 @@ interface PageImageConfig {
   imagePosition?: 'top' | 'center' | 'bottom';
 }
 
-export interface PaymentTermStep {
+interface PaymentTermStep {
   id?: string;
   name?: string;
   stepName?: string;
@@ -302,14 +302,14 @@ export interface PaymentTermStep {
   status?: 'Completed' | 'Pending' | string;
 }
 
-export interface AddOnItem {
+interface AddOnItem {
   id: string;
   title: string;
   price: number;
   selected: boolean;
 }
 
-export interface PageSequenceItem {
+interface PageSequenceItem {
   id: string;
   type: string;
   label: string;
@@ -317,7 +317,7 @@ export interface PageSequenceItem {
   customId?: string;
 }
 
-export interface CustomPageItem {
+interface CustomPageItem {
   id: string;
   heading: string;
   kicker?: string;
@@ -332,7 +332,7 @@ export interface CustomPageItem {
   imagePosition?: 'top' | 'center' | 'bottom' | 'full';
 }
 
-export const STANDARD_PAGE_DEFINITIONS: { type: string; label: string }[] = [
+const STANDARD_PAGE_DEFINITIONS: { type: string; label: string }[] = [
   { type: 'cover', label: 'Cover Page' },
   { type: 'aboutUs', label: 'About Us' },
   { type: 'shootDetails', label: 'Pre-Wedding Shoot' },
@@ -346,7 +346,7 @@ export const STANDARD_PAGE_DEFINITIONS: { type: string; label: string }[] = [
   { type: 'thankYouPage', label: 'Thank You Page' },
 ];
 
-export const DEFAULT_PAGE_SEQUENCE: PageSequenceItem[] = STANDARD_PAGE_DEFINITIONS.map(std => ({
+const DEFAULT_PAGE_SEQUENCE: PageSequenceItem[] = STANDARD_PAGE_DEFINITIONS.map(std => ({
   id: std.type,
   type: std.type,
   label: std.label,
@@ -1405,7 +1405,7 @@ function ThreeDCurvedMultiSelect({
   );
 }
 
-export interface FunctionItem {
+interface FunctionItem {
   id: string;
   name: string;
   date: string;
