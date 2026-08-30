@@ -7,14 +7,16 @@ export const runtime = 'nodejs';
 
 /**
  * POST /api/quotations/set-final
- * Marks a specific quotation version as the "Final Quotation" for a lead.
- * Directly synchronizes the exact budget, breakdowns, and payment terms into Finance & Payments!
+ * Marks or Unmarks a specific quotation version as the "Final Quotation" for a lead.
+ * Synchronizes budget, breakdowns, and payment terms into Finance & Payments!
  */
 export async function POST(req: NextRequest) {
   try {
     const { userId } = await resolveRequestUser(req);
     const body = await req.json().catch(() => ({}));
-    const { quotationId, leadId } = body;
+    const { quotationId, leadId, unmark = false, isFinal } = body;
+
+    const shouldUnmark = unmark === true || isFinal === false;
 
     if (!quotationId || !leadId) {
       return NextResponse.json({ error: 'quotationId and leadId are required' }, { status: 400 });
@@ -46,10 +48,15 @@ export async function POST(req: NextRequest) {
       for (const doc of allDocs) {
         const isTarget = doc.template_id === quotationId || doc.id === quotationId;
         const updatedContent = { ...(doc.content_json || {}) };
-        updatedContent.is_final = isTarget;
-        if (isTarget) {
-          updatedContent.lead_id = leadId;
-          finalDoc = { ...doc, lead_id: leadId, content_json: updatedContent };
+        
+        if (shouldUnmark) {
+          updatedContent.is_final = false;
+        } else {
+          updatedContent.is_final = isTarget;
+          if (isTarget) {
+            updatedContent.lead_id = leadId;
+            finalDoc = { ...doc, lead_id: leadId, content_json: updatedContent };
+          }
         }
 
         // Update each document in Supabase
@@ -66,15 +73,22 @@ export async function POST(req: NextRequest) {
 
     // 2. Also update quotations table
     try {
-      await supabaseAdmin
-        .from('quotations')
-        .update({ status: 'draft', updated_at: now })
-        .eq('client_id', leadId);
+      if (shouldUnmark) {
+        await supabaseAdmin
+          .from('quotations')
+          .update({ status: 'draft', is_final: false, updated_at: now })
+          .or(`id.eq.${quotationId},quotation_number.eq.${quotationId},client_id.eq.${leadId}`);
+      } else {
+        await supabaseAdmin
+          .from('quotations')
+          .update({ status: 'draft', is_final: false, updated_at: now })
+          .eq('client_id', leadId);
 
-      await supabaseAdmin
-        .from('quotations')
-        .update({ status: 'accepted', updated_at: now })
-        .or(`id.eq.${quotationId},quotation_number.eq.${quotationId}`);
+        await supabaseAdmin
+          .from('quotations')
+          .update({ status: 'accepted', is_final: true, updated_at: now })
+          .or(`id.eq.${quotationId},quotation_number.eq.${quotationId}`);
+      }
     } catch (_) {}
 
     // 3. Update Leads table
@@ -82,14 +96,22 @@ export async function POST(req: NextRequest) {
       await supabaseAdmin
         .from('leads')
         .update({
-          final_quotation_id: quotationId,
-          quotation_id: quotationId,
+          final_quotation_id: shouldUnmark ? null : quotationId,
+          quotation_id: shouldUnmark ? null : quotationId,
           updated_at: now
         })
         .eq('id', leadId);
     } catch (_) {}
 
-    // 4. Sync with Finance Records & Workspace Clients
+    if (shouldUnmark) {
+      return NextResponse.json({
+        success: true,
+        unmarked: true,
+        message: 'Quotation unlocked successfully. Linked booking cards kept in draft mode.'
+      });
+    }
+
+    // 4. Sync with Finance Records & Workspace Clients (only when marking as final)
     if (finalDoc?.content_json) {
       // Fetch lead details
       const { data: leadData } = await supabaseAdmin
@@ -98,117 +120,121 @@ export async function POST(req: NextRequest) {
         .eq('id', leadId)
         .maybeSingle();
 
-      const calcFin = extractFinancialsFromQuotation(finalDoc.content_json, leadData?.event_date);
-      const effectiveUserId = leadData?.user_id || leadData?.workspace_id || userId;
-      const effectiveWorkspaceId = leadData?.workspace_id || leadData?.user_id || userId;
+      const clientName = leadData?.name || finalDoc.content_json?.meta?.client_name || 'Wedding Client';
+      const eventDate = leadData?.event_date || finalDoc.content_json?.meta?.event_date || null;
+      const workspaceId = leadData?.workspace_id || userId || finalDoc.content_json?.meta?.workspace_id;
 
-      // Find linked workspace_clients
-      let { data: linkedClients } = await supabaseAdmin
-        .from('workspace_clients')
-        .select('id, user_id, workspace_id, name, phone, email, event_date')
-        .eq('lead_id', leadId);
+      // Extract exact totals and milestones
+      const financials = extractFinancialsFromQuotation(finalDoc.content_json, eventDate);
 
-      // If no workspace_client exists for this lead yet, create one!
-      if (!linkedClients || linkedClients.length === 0) {
-        const newClientPayload = {
-          lead_id: leadId,
-          name: leadData?.name || leadData?.client_name || 'Client',
-          phone: leadData?.phone || '',
-          email: leadData?.email || '',
-          city: leadData?.city || leadData?.location || '',
-          event_type: calcFin.event_type || leadData?.event_type || 'Wedding',
-          event_date: calcFin.event_date || leadData?.event_date || null,
-          total_package_amount: calcFin.final_total_amount,
-          paid_amount: calcFin.received_amount,
-          status: 'active',
-          user_id: effectiveUserId,
-          workspace_id: effectiveWorkspaceId,
-          created_at: now,
-          updated_at: now
-        };
+      // Create or update workspace client
+      try {
+        let clientId: string | null = null;
+        if (workspaceId) {
+          const { data: existingClient } = await supabaseAdmin
+            .from('clients')
+            .select('id')
+            .eq('workspace_id', workspaceId)
+            .ilike('name', clientName.trim())
+            .maybeSingle();
 
-        const { data: createdClient, error: clientCreateErr } = await supabaseAdmin
-          .from('workspace_clients')
-          .insert([newClientPayload])
-          .select('id, user_id, workspace_id, name, phone, email, event_date')
-          .single();
-
-        if (!clientCreateErr && createdClient) {
-          linkedClients = [createdClient];
+          if (existingClient?.id) {
+            clientId = existingClient.id;
+          } else {
+            const { data: newClient } = await supabaseAdmin
+              .from('clients')
+              .insert({
+                workspace_id: workspaceId,
+                name: clientName.trim(),
+                phone: leadData?.phone || null,
+                email: leadData?.email || null,
+                created_at: now,
+                updated_at: now
+              })
+              .select('id')
+              .single();
+            clientId = newClient?.id || null;
+          }
         }
-      }
 
-      if (linkedClients && linkedClients.length > 0) {
-        for (const lc of linkedClients) {
-          await supabaseAdmin
-            .from('workspace_clients')
-            .update({
-              total_package_amount: calcFin.final_total_amount,
-              paid_amount: calcFin.received_amount,
-              event_date: calcFin.event_date || lc.event_date || null,
-              updated_at: now
-            })
-            .eq('id', lc.id);
+        // Upsert finance record
+        if (workspaceId) {
+          const { data: existingFinance } = await supabaseAdmin
+            .from('finance_records')
+            .select('id')
+            .eq('workspace_id', workspaceId)
+            .or(`client_name.ilike.${clientName.trim()},lead_id.eq.${leadId}`)
+            .maybeSingle();
 
-          const finPayload = {
-            user_id: lc.user_id || effectiveUserId,
-            workspace_id: lc.workspace_id || effectiveWorkspaceId,
-            client_id: lc.id,
-            base_package_price: calcFin.base_package_price,
-            discount_amount: calcFin.discount_amount,
-            accommodation_charges: calcFin.accommodation_charges,
-            travel_charges: calcFin.travel_charges,
-            additional_charges: calcFin.additional_charges,
-            subtotal_amount: calcFin.subtotal_amount,
-            gst_rate: calcFin.gst_rate,
-            gst_amount: calcFin.gst_amount,
-            final_total_amount: calcFin.final_total_amount,
-            received_amount: calcFin.received_amount,
-            pending_amount: calcFin.pending_amount,
-            payment_status: calcFin.payment_status,
-            milestones: calcFin.milestones,
+          const financePayload = {
+            workspace_id: workspaceId,
+            client_id: clientId,
+            lead_id: leadId,
+            client_name: clientName.trim(),
+            event_name: finalDoc.content_json?.meta?.project_name || 'Wedding Photography',
+            event_date: eventDate,
+            base_package_price: financials.base_package_price || financials.subtotal_amount,
+            discount_amount: financials.discount_amount || 0,
+            accommodation_charges: financials.accommodation_charges || 0,
+            travel_charges: financials.travel_charges || 0,
+            additional_charges: financials.additional_charges || 0,
+            subtotal_amount: financials.subtotal_amount,
+            gst_rate: financials.gst_rate || 0,
+            gst_amount: financials.gst_amount || 0,
+            final_total_amount: financials.final_total_amount,
+            received_amount: financials.received_amount,
+            pending_amount: financials.pending_amount,
+            payment_status: financials.payment_status,
+            payment_type: 'custom',
+            notes: `Auto-generated from Final Quotation V${finalDoc.version || finalDoc.lead_version || '1'}.`,
             updated_at: now
           };
 
-          const { data: exFin } = await supabaseAdmin
-            .from('client_finance_records')
-            .select('id')
-            .eq('client_id', lc.id)
-            .maybeSingle();
-
-          if (exFin) {
+          if (existingFinance?.id) {
             await supabaseAdmin
-              .from('client_finance_records')
-              .update(finPayload)
-              .eq('client_id', lc.id);
+              .from('finance_records')
+              .update(financePayload)
+              .eq('id', existingFinance.id);
           } else {
             await supabaseAdmin
-              .from('client_finance_records')
-              .insert([{ ...finPayload, created_at: now }]);
+              .from('finance_records')
+              .insert({
+                ...financePayload,
+                created_at: now
+              });
           }
+        }
+      } catch (finErr) {
+        console.error('[Set-Final] Error syncing finance record:', finErr);
+      }
 
-          // 5. Synchronize Sub-Events, Timings, Dates, Venue, and Crew into Team Manager / Bookings & Events
-          const clientName = lc.name || leadData?.name || 'Client';
+      // Sync Quotation Sub-events to Team Manager Projects & Sub-Events
+      try {
+        if (workspaceId) {
           await syncQuotationToTeamManagerEvents(
             supabaseAdmin,
             leadId,
             finalDoc.content_json,
             clientName,
-            lc.workspace_id || effectiveWorkspaceId,
-            calcFin.event_date || lc.event_date,
-            leadData?.city || leadData?.location || null
+            workspaceId,
+            eventDate
           );
         }
+      } catch (tmErr) {
+        console.error('[Set-Final] Error syncing team manager events:', tmErr);
       }
     }
 
     return NextResponse.json({
       success: true,
-      quotationId,
-      message: 'Quotation marked as Final and synced with Finance & Team Manager Bookings!'
+      message: 'Final Quotation locked and synchronized with Finance & Bookings!',
+      quotationId
     });
-  } catch (err: any) {
-    console.error('[POST /api/quotations/set-final Error]:', err);
-    return NextResponse.json({ error: err.message || 'Failed to set final quotation' }, { status: 500 });
+  } catch (error: any) {
+    console.error('[Set-Final] Error:', error);
+    return NextResponse.json(
+      { error: error?.message || 'Failed to set final quotation' },
+      { status: 500 }
+    );
   }
 }

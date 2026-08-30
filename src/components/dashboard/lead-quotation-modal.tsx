@@ -82,6 +82,8 @@ export function LeadQuotationModal({ isOpen, onClose, lead, onFinalSet }: LeadQu
   const [openingQuotation, setOpeningQuotation] = useState<{ id: string; title: string; step: string } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [settingFinalId, setSettingFinalId] = useState<string | null>(null);
+  const [confirmingFinalQuotation, setConfirmingFinalQuotation] = useState<QuotationVersionItem | null>(null);
+  const [unmarkingFinalQuotation, setUnmarkingFinalQuotation] = useState<QuotationVersionItem | null>(null);
 
   // Template Picker state
   const [availableTemplates, setAvailableTemplates] = useState<StudioTemplateItem[]>([]);
@@ -220,10 +222,12 @@ export function LeadQuotationModal({ isOpen, onClose, lead, onFinalSet }: LeadQu
     }
   };
 
-  const handleSetFinalQuotation = async (q: QuotationVersionItem) => {
+  const handleSetFinalQuotation = async (q: QuotationVersionItem, unmark: boolean = false) => {
     if (!lead?.id || settingFinalId) return;
     setSettingFinalId(q.template_id);
     setErrorMsg(null);
+    setConfirmingFinalQuotation(null);
+    setUnmarkingFinalQuotation(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
@@ -236,7 +240,8 @@ export function LeadQuotationModal({ isOpen, onClose, lead, onFinalSet }: LeadQu
         },
         body: JSON.stringify({
           quotationId: q.template_id,
-          leadId: lead.id
+          leadId: lead.id,
+          unmark
         })
       });
 
@@ -252,17 +257,17 @@ export function LeadQuotationModal({ isOpen, onClose, lead, onFinalSet }: LeadQu
         setQuotations(prev => {
           const updated = prev.map(item => ({
             ...item,
-            is_final: item.template_id === q.template_id
+            is_final: unmark ? false : item.template_id === q.template_id
           }));
           const cacheKey = `lead_quotes_cache_${lead.id}`;
           safeSessionSet(cacheKey, updated);
           return updated;
         });
-        if (onFinalSet) {
+        if (onFinalSet && !unmark) {
           onFinalSet(q);
         }
       } else {
-        setErrorMsg(json.error || 'Failed to set final quotation.');
+        setErrorMsg(json.error || 'Failed to update final quotation status.');
       }
     } catch (e: any) {
       console.error('Error setting final quotation:', e);
@@ -619,19 +624,25 @@ export function LeadQuotationModal({ isOpen, onClose, lead, onFinalSet }: LeadQu
                                 {/* Top Right: Final Quotation Toggle / Badge */}
                                 <div className="flex items-center gap-1.5 shrink-0">
                                   {q.is_final ? (
-                                    <span
-                                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black bg-gradient-to-r from-amber-500 to-[#F36F21] text-white shadow-xs border border-amber-400 shrink-0"
-                                      title="Official Final Quotation (Synced to Finance & Payments)"
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setUnmarkingFinalQuotation(q);
+                                      }}
+                                      disabled={settingFinalId === q.template_id}
+                                      className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-black bg-gradient-to-r from-amber-500 to-[#F36F21] text-white shadow-sm border border-amber-400 hover:brightness-110 transition cursor-pointer shrink-0"
+                                      title="Click to Unlock / Unmark Final Quotation"
                                     >
                                       <Crown className="w-3 h-3 text-amber-100" />
-                                      <span>Final Quotation</span>
-                                    </span>
+                                      <span>Final Quotation (Locked)</span>
+                                    </button>
                                   ) : (
                                     <button
                                       type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        handleSetFinalQuotation(q);
+                                        setConfirmingFinalQuotation(q);
                                       }}
                                       disabled={settingFinalId === q.template_id}
                                       className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:text-amber-700 hover:bg-amber-50 hover:border-amber-400 border border-zinc-200 dark:border-zinc-700 shadow-2xs transition-all cursor-pointer shrink-0 group/btn"
@@ -642,7 +653,7 @@ export function LeadQuotationModal({ isOpen, onClose, lead, onFinalSet }: LeadQu
                                       ) : (
                                         <CheckCircle2 className="w-3 h-3 text-zinc-400 group-hover/btn:text-amber-600" />
                                       )}
-                                      <span>Final Quotation</span>
+                                      <span>Mark as Final</span>
                                     </button>
                                   )}
 

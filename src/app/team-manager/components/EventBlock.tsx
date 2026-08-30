@@ -1,19 +1,25 @@
-'use client';
+"use client";
 
 import React, { useRef, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Copy, Trash2, MapPin, Link as LinkIcon, MessageSquare, Clock, Calendar, Users, Layers, Sparkles, Zap, ChevronDown, Check } from 'lucide-react';
+import { 
+  Copy, Trash2, MapPin, Link as LinkIcon, MessageSquare, Clock, 
+  Calendar, Users, Layers, Sparkles, Zap, ChevronDown, Check, Moon, AlertCircle
+} from 'lucide-react';
 import ProgramTypeSelect from './ProgramTypeSelect';
 import CalendarPicker from './CalendarPicker';
-import SmartTimePicker from './SmartTimePicker';
+import TimePicker12H from '@/components/ui/TimePicker12H';
 import RoleGrid from './RoleGrid';
 
 export interface EventBlockData {
   id: string;
   subEventNames: string[];
   subEventDate: string;
-  venueLocation: string;
-  mapLink: string;
+  isDateTbd?: boolean;
+  isOvernight?: boolean;
+  endDate?: string;
+  venueLocation?: string;
+  mapLink?: string;
   startTime: string;
   endTime: string;
   shiftSlot?: string;
@@ -90,18 +96,18 @@ export default function EventBlock({
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.98 }}
-      className="bg-white rounded-3xl border border-slate-200/90 p-5 space-y-4 shadow-sm relative group"
+      className="bg-[#FEFDF8] rounded-3xl border-2 border-amber-200/90 p-5 space-y-4 shadow-sm relative group"
     >
       {/* HEADER ROW WITH BLOCK INDEX & ACTIONS */}
-      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+      <div className="flex items-center justify-between border-b border-amber-200/80 pb-3">
         <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-lg bg-indigo-50 text-[#6C5CE7] font-black text-xs flex items-center justify-center border border-indigo-100">
+          <div className="w-6 h-6 rounded-lg bg-amber-100 text-amber-900 font-black text-xs flex items-center justify-center border border-amber-300">
             {index + 1}
           </div>
-          <h4 className="text-xs font-black text-[#0B111E] uppercase tracking-wider flex items-center gap-1.5">
+          <h4 className="text-xs font-black text-amber-950 uppercase tracking-wider flex items-center gap-1.5">
             <span>Sub-Event #{index + 1}</span>
             {block.subEventNames.length > 0 && (
-              <span className="text-[#6C5CE7] font-extrabold normal-case">
+              <span className="text-amber-700 font-extrabold normal-case">
                 ({block.subEventNames.join(' + ')})
               </span>
             )}
@@ -112,7 +118,7 @@ export default function EventBlock({
           <button
             type="button"
             onClick={() => onDuplicate(block)}
-            className="p-1.5 text-slate-400 hover:text-[#6C5CE7] hover:bg-indigo-50 rounded-lg transition cursor-pointer"
+            className="p-1.5 text-zinc-400 hover:text-amber-700 hover:bg-amber-100/70 rounded-lg transition cursor-pointer"
             title="Duplicate event block"
           >
             <Copy className="w-3.5 h-3.5" />
@@ -121,7 +127,7 @@ export default function EventBlock({
             <button
               type="button"
               onClick={() => onRemove(block.id)}
-              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+              className="p-1.5 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
               title="Remove event block"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -138,53 +144,122 @@ export default function EventBlock({
         hasError={hasProgramTypeError}
       />
 
-      {/* 2. PROGRAM DATE, TIMES & SINGLE SHIFT SLOT ICON DROPDOWN ON FAR RIGHT */}
-      <div className="grid grid-cols-1 sm:grid-cols-7 gap-3 items-end">
-        <div className="sm:col-span-2">
-          <CalendarPicker
-            value={block.subEventDate}
-            onChange={(date) => onUpdate(block.id, { subEventDate: date })}
-            hasError={hasDateError}
-          />
+      {/* 2. DATE SETTINGS (TBD + OVERNIGHT DUAL DAY OPTIONS) */}
+      <div className="p-3 bg-amber-50/50 border border-amber-200/80 rounded-2xl space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {/* TBD Checkbox */}
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={Boolean(block.isDateTbd)}
+              onChange={(e) => {
+                const isTbd = e.target.checked;
+                onUpdate(block.id, {
+                  isDateTbd: isTbd,
+                  subEventDate: isTbd ? '' : block.subEventDate,
+                });
+              }}
+              className="w-4 h-4 accent-amber-600 rounded cursor-pointer"
+            />
+            <span className="text-xs font-black text-amber-950">
+              📅 Date Not Fixed (TBD)
+            </span>
+          </label>
+
+          {/* Overnight Toggle */}
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={Boolean(block.isOvernight)}
+              onChange={(e) => {
+                const isOvernight = e.target.checked;
+                onUpdate(block.id, {
+                  isOvernight,
+                  endDate: isOvernight ? (block.endDate || block.subEventDate) : '',
+                });
+              }}
+              className="w-4 h-4 accent-indigo-600 rounded cursor-pointer"
+            />
+            <span className="text-xs font-black text-indigo-950 flex items-center gap-1">
+              <Moon className="w-3.5 h-3.5 text-indigo-600" />
+              <span>🌙 Spans Overnight (Next Day End)</span>
+            </span>
+          </label>
         </div>
 
-        <div className="sm:col-span-2">
-          <SmartTimePicker
-            label="Crew Roll Call Time"
+        {/* Calendar Picker Row */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="text-[10px] font-black text-amber-950 uppercase tracking-wider block mb-1">
+              {block.isOvernight ? 'Start Date' : 'Event Date'}
+            </label>
+            {block.isDateTbd ? (
+              <div className="p-2.5 bg-amber-100/70 border border-amber-300 rounded-xl text-xs font-bold text-amber-900 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-700" />
+                <span>Date: TBD / Not Fixed</span>
+              </div>
+            ) : (
+              <CalendarPicker
+                value={block.subEventDate}
+                onChange={(date) => onUpdate(block.id, { subEventDate: date })}
+                hasError={hasDateError}
+              />
+            )}
+          </div>
+
+          {block.isOvernight && !block.isDateTbd && (
+            <div>
+              <label className="text-[10px] font-black text-indigo-950 uppercase tracking-wider block mb-1">
+                🌙 End Date (Next Day)
+              </label>
+              <CalendarPicker
+                value={block.endDate || block.subEventDate}
+                onChange={(date) => onUpdate(block.id, { endDate: date })}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 3. UNIVERSAL 12-HOUR TIME PICKERS & SHIFT SLOT */}
+      <div className="grid grid-cols-1 sm:grid-cols-7 gap-3 items-end">
+        <div className="sm:col-span-3">
+          <TimePicker12H
+            label="Roll Call Time (Start)"
             value={block.startTime}
             onChange={(time) => onUpdate(block.id, { startTime: time })}
           />
         </div>
 
-        <div className="sm:col-span-2">
-          <SmartTimePicker
-            label="Dismissal Estimate Time"
+        <div className="sm:col-span-3">
+          <TimePicker12H
+            label="Dismissal Estimate (End)"
             value={block.endTime}
             onChange={(time) => onUpdate(block.id, { endTime: time })}
           />
         </div>
 
-        {/* SINGLE SHIFT SLOT DROPDOWN ON FAR RIGHT END */}
+        {/* SINGLE SHIFT SLOT DROPDOWN */}
         <div className="sm:col-span-1 relative" ref={slotDropdownRef}>
-          <label className="text-[10px] text-[#0B111E] font-black uppercase tracking-wider block mb-1.5 flex items-center gap-1">
+          <label className="text-[10px] text-amber-950 font-black uppercase tracking-wider block mb-1 flex items-center gap-1">
             <Zap className="w-3 h-3 text-amber-500" />
-            <span>Shift Slot</span>
+            <span>Shift</span>
           </label>
 
           <button
             type="button"
             onClick={() => setIsSlotDropdownOpen(!isSlotDropdownOpen)}
-            className={`w-full py-2 px-2.5 rounded-xl border-2 font-extrabold text-xs transition flex items-center justify-between cursor-pointer shadow-2xs ${
+            className={`w-full py-2.5 px-2 rounded-2xl border-2 font-extrabold text-xs transition flex items-center justify-between cursor-pointer shadow-xs ${
               block.shiftSlot && block.shiftSlot !== 'None (Standard)'
                 ? 'bg-amber-50 border-amber-300 text-amber-900'
-                : 'bg-white border-slate-200 text-slate-700 hover:border-indigo-300'
+                : 'bg-white border-amber-200 text-zinc-700 hover:border-amber-400'
             }`}
             title="Select Shift Slot Duration"
           >
             <span className="truncate text-[11px]">
               {block.shiftSlot && block.shiftSlot !== 'None (Standard)' ? block.shiftSlot : 'Slot'}
             </span>
-            <ChevronDown className={`w-3.5 h-3.5 shrink-0 text-slate-500 transition-transform ${isSlotDropdownOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown className={`w-3.5 h-3.5 shrink-0 text-zinc-500 transition-transform ${isSlotDropdownOpen ? 'rotate-180' : ''}`} />
           </button>
 
           <AnimatePresence>
@@ -193,7 +268,7 @@ export default function EventBlock({
                 initial={{ opacity: 0, y: -4, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -4, scale: 0.95 }}
-                className="absolute right-0 top-full mt-1.5 w-44 bg-white/95 backdrop-blur-xl border-2 border-indigo-100 rounded-2xl shadow-xl p-1.5 z-50 space-y-0.5"
+                className="absolute right-0 top-full mt-1.5 w-44 bg-white/95 backdrop-blur-xl border-2 border-amber-200 rounded-2xl shadow-xl p-1.5 z-50 space-y-0.5"
               >
                 {SLOT_OPTIONS.map((option) => {
                   const isSelected = (block.shiftSlot || 'None (Standard)') === option;
@@ -208,7 +283,7 @@ export default function EventBlock({
                       className={`w-full text-left px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center justify-between cursor-pointer ${
                         isSelected
                           ? 'bg-amber-500 text-white font-extrabold shadow-xs'
-                          : 'hover:bg-slate-50 text-slate-800'
+                          : 'hover:bg-amber-50 text-zinc-800'
                       }`}
                     >
                       <span>{option}</span>
@@ -222,58 +297,58 @@ export default function EventBlock({
         </div>
       </div>
 
-      {/* 3. Venue Coordinates / Location (Optional) */}
+      {/* 4. Venue Coordinates / Location */}
       <div className="space-y-2">
-        <label className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider block flex items-center gap-1.5">
-          <MapPin className="w-3.5 h-3.5 text-slate-500" />
+        <label className="text-[11px] font-bold text-amber-950 uppercase tracking-wider block flex items-center gap-1.5">
+          <MapPin className="w-3.5 h-3.5 text-zinc-500" />
           <span>Venue Coordinates / Location</span>
-          <span className="text-slate-400 font-normal lowercase">(optional)</span>
+          <span className="text-zinc-400 font-normal lowercase">(optional)</span>
         </label>
         <div className="relative">
-          <MapPin className="w-3.5 h-3.5 text-[#4F5E74] absolute left-3 top-1/2 -translate-y-1/2" />
+          <MapPin className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="e.g. Royal Lawn Room, Mumbai"
             value={block.venueLocation}
             onChange={(e) => onUpdate(block.id, { venueLocation: e.target.value })}
-            className="w-full bg-[#F8F9FD] border border-slate-200 focus:border-[#6C5CE7] focus:bg-white pl-9 pr-3 py-2 rounded-xl text-xs font-semibold text-[#0B111E] placeholder:text-slate-400 focus:outline-none transition shadow-2xs"
+            className="w-full bg-white border border-amber-200/90 focus:border-amber-500 pl-9 pr-3 py-2 rounded-xl text-xs font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none transition shadow-2xs"
           />
         </div>
         <div className="relative">
-          <LinkIcon className="w-3.5 h-3.5 text-[#4F5E74] absolute left-3 top-1/2 -translate-y-1/2" />
+          <LinkIcon className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="url"
             placeholder="Map Link (e.g. https://maps.google.com/...)"
             value={block.mapLink}
             onChange={(e) => onUpdate(block.id, { mapLink: e.target.value })}
-            className="w-full bg-[#F8F9FD] border border-slate-200 focus:border-[#6C5CE7] focus:bg-white pl-9 pr-3 py-2 rounded-xl text-xs font-medium text-[#4F5E74] placeholder:text-slate-400 focus:outline-none transition shadow-2xs"
+            className="w-full bg-white border border-amber-200/90 focus:border-amber-500 pl-9 pr-3 py-2 rounded-xl text-xs font-medium text-zinc-700 placeholder:text-zinc-400 focus:outline-none transition shadow-2xs"
           />
         </div>
       </div>
 
-      {/* 4. Roles Required Grid */}
+      {/* 5. Roles Required Grid */}
       <RoleGrid
         selectedRoles={block.roles}
         onToggle={(role: string) => onToggleRole(block.id, role)}
         onAddCustom={onAddCustomRole}
       />
 
-      {/* 5. Operational Notes / Comments (Optional) */}
+      {/* 6. Operational Notes / Comments */}
       <div className="space-y-1">
-        <label className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider block flex items-center gap-1.5">
-          <MessageSquare className="w-3.5 h-3.5 text-slate-500" />
+        <label className="text-[11px] font-bold text-amber-950 uppercase tracking-wider block flex items-center gap-1.5">
+          <MessageSquare className="w-3.5 h-3.5 text-zinc-500" />
           <span>Operational Notes & Instructions</span>
-          <span className="text-slate-400 font-normal lowercase">(optional)</span>
+          <span className="text-zinc-400 font-normal lowercase">(optional)</span>
         </label>
         <div className="relative">
-          <MessageSquare className="w-3.5 h-3.5 text-[#4F5E74] absolute left-3 top-3" />
+          <MessageSquare className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-3" />
           <textarea
             ref={notesRef}
             rows={1}
             placeholder="Important operational notes for crew..."
             value={block.notes}
             onChange={(e) => onUpdate(block.id, { notes: e.target.value })}
-            className="w-full bg-[#F8F9FD] border border-slate-200 focus:border-[#6C5CE7] focus:bg-white pl-9 pr-3 py-2 rounded-xl text-xs font-medium text-[#0B111E] placeholder:text-slate-400 focus:outline-none transition shadow-2xs resize-none"
+            className="w-full bg-white border border-amber-200/90 focus:border-amber-500 pl-9 pr-3 py-2 rounded-xl text-xs font-medium text-zinc-900 placeholder:text-zinc-400 focus:outline-none transition shadow-2xs resize-none"
           />
         </div>
       </div>

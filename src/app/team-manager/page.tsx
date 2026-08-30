@@ -1277,7 +1277,12 @@ export default function TeamManagerPage() {
                                         </h4>
                                         {isDateNotFixed && (
                                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black">
-                                            ⚠️ Date Not Fixed (Click Edit to set date)
+                                            ⚠️ Date: TBD / Not Fixed
+                                          </span>
+                                        )}
+                                        {Boolean((subEvent as any).is_overnight) && (
+                                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-900 border border-indigo-300 text-[10px] font-black">
+                                            🌙 Overnight (Next Day End)
                                           </span>
                                         )}
                                       </div>
@@ -1386,16 +1391,19 @@ export default function TeamManagerPage() {
                                                 </div>
                                               )}
 
-                                              <span className={`font-bold text-[11px] uppercase tracking-wide block text-center mt-1.5 leading-none ${
-                                                isAssigned ? 'text-indigo-600' : 'text-red-600 font-extrabold'
+                                              {/* Strict Short-Code Badge */}
+                                              <span className={`font-black text-[10px] uppercase tracking-wider block text-center mt-1 px-1.5 py-0.5 rounded-md border leading-none ${
+                                                isAssigned
+                                                  ? 'bg-indigo-50 text-indigo-900 border-indigo-200'
+                                                  : 'bg-red-50 text-red-700 border-red-200'
                                               }`}>
-                                                {isAssigned ? role : getRoleShortCode(role, customCrewRoles)}
+                                                [{getRoleShortCode(role, customCrewRoles)}]
                                               </span>
 
                                               {isAssigned && (
-                                                <div className="flex flex-col items-center text-center font-extrabold text-slate-900 text-xs leading-tight max-w-[90px] mt-0.5 min-h-[28px] justify-start">
-                                                  <span className="block leading-none truncate max-w-[90px]">{line1}</span>
-                                                  {line2 ? <span className="block leading-none truncate max-w-[90px] mt-0.5">{line2}</span> : null}
+                                                <div className="flex flex-col items-center text-center font-extrabold text-slate-900 text-[11px] leading-tight max-w-[85px] mt-1 justify-start">
+                                                  <span className="block leading-none truncate max-w-[85px]">{line1}</span>
+                                                  {line2 ? <span className="block leading-none truncate max-w-[85px] mt-0.5 text-[10px] text-slate-600">{line2}</span> : null}
                                                 </div>
                                               )}
                                             </div>

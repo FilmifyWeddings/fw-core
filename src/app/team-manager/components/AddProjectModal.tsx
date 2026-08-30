@@ -1,10 +1,14 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Plus, User, Sparkles, AlertCircle, Loader2, Save, Trash2, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { 
+  X, Plus, User, Sparkles, AlertCircle, Loader2, Save, Trash2, 
+  AlertTriangle, CheckCircle2, RotateCcw, ShieldCheck 
+} from 'lucide-react';
 import EventBlock, { EventBlockData } from './EventBlock';
 import { FWProject } from '@/types';
+import { supabase } from '@/lib/supabase';
 
 // Robust unique UUID generator for sub-event blocks
 const generateUniqueId = (): string => {
@@ -18,10 +22,13 @@ const DEFAULT_BLOCK: EventBlockData = {
   id: '',
   subEventNames: [],
   subEventDate: '',
+  isDateTbd: false,
+  isOvernight: false,
+  endDate: '',
   venueLocation: '',
   mapLink: '',
-  startTime: '10:00',
-  endTime: '18:00',
+  startTime: '10:00 AM',
+  endTime: '06:00 PM',
   roles: [],
   notes: '',
 };
@@ -32,7 +39,10 @@ interface AddProjectModalProps {
   projectToEdit?: FWProject | null;
   onSave: (couplingName: string, blocks: EventBlockData[], projectId?: string) => Promise<boolean | void> | void;
   onDeleteProject?: (projectId: string) => void;
+  workspaceId?: string;
 }
+
+const DRAFT_KEY_PREFIX = 'fw_event_form_draft_';
 
 export default function AddProjectModal({
   isOpen,
@@ -40,6 +50,7 @@ export default function AddProjectModal({
   projectToEdit,
   onSave,
   onDeleteProject,
+  workspaceId = 'default',
 }: AddProjectModalProps) {
   const [couplingName, setCouplingName] = useState('');
   const [eventBlocks, setEventBlocks] = useState<EventBlockData[]>([
@@ -50,10 +61,13 @@ export default function AddProjectModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDraftRestored, setIsDraftRestored] = useState(false);
 
   // Validation State
   const [validatedAttempt, setValidatedAttempt] = useState(false);
   const [validationAlert, setValidationAlert] = useState<{ title: string; issues: string[] } | null>(null);
+
+  const draftKey = `${DRAFT_KEY_PREFIX}${workspaceId}`;
 
   const resetFormState = () => {
     setCouplingName('');
@@ -64,8 +78,13 @@ export default function AddProjectModal({
     setValidationAlert(null);
     setErrorMessage(null);
     setShowDeleteConfirm(false);
+    setIsDraftRestored(false);
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(draftKey);
+    }
   };
 
+  // Load project or restore draft
   useEffect(() => {
     if (projectToEdit && isOpen) {
       setCouplingName(projectToEdit.client_name || '');
@@ -74,10 +93,13 @@ export default function AddProjectModal({
           id: se.id || generateUniqueId(),
           subEventNames: se.event_title ? [se.event_title] : [],
           subEventDate: se.event_date || '',
+          isDateTbd: Boolean((se as any).is_date_tbd),
+          isOvernight: Boolean((se as any).is_overnight),
+          endDate: (se as any).end_date || '',
           venueLocation: se.venue_name || '',
           mapLink: se.venue_map_link || '',
-          startTime: se.roll_call_time || '10:00',
-          endTime: se.dismissal_estimate_time || '18:00',
+          startTime: (se as any).start_time_12h || se.roll_call_time || '10:00 AM',
+          endTime: (se as any).end_time_12h || se.dismissal_estimate_time || '06:00 PM',
           shiftSlot: (se as any).shift_hours_slot || '',
           roles: se.fw_assignments && se.fw_assignments.length > 0
             ? se.fw_assignments.map(a => a.required_role)
@@ -89,9 +111,58 @@ export default function AddProjectModal({
         setEventBlocks([{ ...DEFAULT_BLOCK, id: generateUniqueId(), roles: [] }]);
       }
     } else if (isOpen) {
-      resetFormState();
+      // Check for saved local draft for new projects
+      let hasDraft = false;
+      if (typeof window !== 'undefined') {
+        const savedDraft = localStorage.getItem(draftKey);
+        if (savedDraft) {
+          try {
+            const parsed = JSON.parse(savedDraft);
+            if (parsed.couplingName || (parsed.eventBlocks && parsed.eventBlocks.length > 0)) {
+              setCouplingName(parsed.couplingName || '');
+              setEventBlocks(parsed.eventBlocks || [{ ...DEFAULT_BLOCK, id: generateUniqueId(), roles: [] }]);
+              setIsDraftRestored(true);
+              hasDraft = true;
+            }
+          } catch (_) {}
+        }
+      }
+      if (!hasDraft) {
+        resetFormState();
+      }
     }
-  }, [projectToEdit, isOpen]);
+  }, [projectToEdit, isOpen, draftKey]);
+
+  // Debounced auto-save draft for new events
+  useEffect(() => {
+    if (!isOpen || projectToEdit) return;
+
+    const timer = setTimeout(() => {
+      if (couplingName.trim() || eventBlocks.some(b => b.subEventNames.length > 0 || b.venueLocation)) {
+        if (typeof window !== 'undefined') {
+          const payload = { couplingName, eventBlocks, updatedAt: Date.now() };
+          localStorage.setItem(draftKey, JSON.stringify(payload));
+        }
+
+        // Silent Supabase draft save if user authenticated
+        (async () => {
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.user && workspaceId) {
+              await supabase.from('event_form_drafts').upsert({
+                workspace_id: workspaceId,
+                user_id: session.user.id,
+                draft_payload: { couplingName, eventBlocks },
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'workspace_id, user_id' });
+            }
+          } catch (_) {}
+        })();
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [couplingName, eventBlocks, isOpen, projectToEdit, draftKey, workspaceId]);
 
   const handleSubmit = async () => {
     setValidatedAttempt(true);
@@ -105,8 +176,8 @@ export default function AddProjectModal({
       if (block.subEventNames.length === 0) {
         issues.push(`Event #${idx + 1}: Wedding Program Type (Required)`);
       }
-      if (!block.subEventDate) {
-        issues.push(`Event #${idx + 1}: Program Date (Required)`);
+      if (!block.isDateTbd && !block.subEventDate) {
+        issues.push(`Event #${idx + 1}: Program Date (Required or mark Date Not Fixed)`);
       }
     });
 
@@ -148,298 +219,250 @@ export default function AddProjectModal({
   const addEventBlock = () => {
     setEventBlocks(prev => [
       ...prev,
-      {
-        ...DEFAULT_BLOCK,
-        id: generateUniqueId(),
-        subEventNames: [],
-        roles: [],
-      },
-    ]);
-  };
-
-  const removeEventBlock = (id: string) => {
-    setEventBlocks(prev => prev.filter(b => b.id !== id));
-  };
-
-  const duplicateEventBlock = (block: EventBlockData) => {
-    setEventBlocks(prev => [
-      ...prev,
-      { ...block, id: generateUniqueId() },
+      { ...DEFAULT_BLOCK, id: generateUniqueId(), roles: [] },
     ]);
   };
 
   const updateEventBlock = (id: string, fields: Partial<EventBlockData>) => {
-    setEventBlocks(prev => prev.map(b => b.id === id ? { ...b, ...fields } : b));
+    setEventBlocks(prev =>
+      prev.map(b => (b.id === id ? { ...b, ...fields } : b))
+    );
   };
 
-  const toggleRoleInBlock = (blockId: string, role: string) => {
-    setEventBlocks(prev => prev.map(b => {
-      if (b.id !== blockId) return b;
-      const currentRoles = b.roles || [];
-      const roles = currentRoles.includes(role)
-        ? currentRoles.filter(r => r !== role)
-        : [...currentRoles, role];
-      return { ...b, roles };
-    }));
+  const removeEventBlock = (id: string) => {
+    if (eventBlocks.length <= 1) return;
+    setEventBlocks(prev => prev.filter(b => b.id !== id));
+  };
+
+  const duplicateEventBlock = (sourceBlock: EventBlockData) => {
+    setEventBlocks(prev => [
+      ...prev,
+      {
+        ...sourceBlock,
+        id: generateUniqueId(),
+      },
+    ]);
   };
 
   const handleAddCustomProgram = (name: string) => {
-    setCustomPrograms(prev => prev.includes(name) ? prev : [...prev, name]);
+    if (name && !customPrograms.includes(name)) {
+      setCustomPrograms(prev => [...prev, name]);
+    }
   };
 
-  const handleAddCustomRole = (blockId: string, role: string) => {
-    setCustomRoles(prev => prev.includes(role) ? prev : [...prev, role]);
-    setEventBlocks(prev => prev.map(b => {
-      if (b.id !== blockId) return b;
-      const currentRoles = b.roles || [];
-      if (!currentRoles.includes(role)) {
-        return { ...b, roles: [...currentRoles, role] };
-      }
-      return b;
-    }));
+  const handleAddCustomRole = (role: string) => {
+    if (role && !customRoles.includes(role)) {
+      setCustomRoles(prev => [...prev, role]);
+    }
   };
 
-  const isCouplingNameError = validatedAttempt && !couplingName.trim();
+  const handleToggleRole = (blockId: string, role: string) => {
+    setEventBlocks(prev =>
+      prev.map(b => {
+        if (b.id !== blockId) return b;
+        const exists = b.roles.includes(role);
+        return {
+          ...b,
+          roles: exists ? b.roles.filter(r => r !== role) : [...b.roles, role],
+        };
+      })
+    );
+  };
+
+  if (!isOpen) return null;
 
   return (
     <AnimatePresence>
-      {isOpen && (
-        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-3 sm:p-4">
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="fixed inset-0 bg-slate-900/60 backdrop-blur-md"
-          />
-
-          <motion.div
-            initial={{ scale: 0.95, opacity: 0, y: 10 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.95, opacity: 0, y: 10 }}
-            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="relative w-full max-w-3xl max-h-[90vh] bg-white border border-slate-200 rounded-[28px] shadow-2xl overflow-hidden flex flex-col z-10"
-          >
-            {/* MINIMAL MODAL HEADER */}
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-[#6C5CE7] flex items-center justify-center font-black">
-                  <Sparkles className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-black text-[#0B111E] tracking-tight">
-                    {projectToEdit ? 'Edit Project Configuration' : 'Create New Wedding Project'}
-                  </h3>
-                  <p className="text-xs text-[#4F5E74] font-semibold">
-                    Set up client profile, sub-events, and crew allocations.
-                  </p>
-                </div>
+      <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-xs">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 10 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 10 }}
+          className="bg-[#FEFDF8] border-2 border-amber-200/90 rounded-3xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden"
+        >
+          {/* HEADER BAR */}
+          <div className="p-4 sm:p-6 border-b border-amber-200/80 bg-gradient-to-r from-amber-50/80 via-white to-amber-50/60 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-b from-amber-400 to-amber-600 border border-amber-300 text-white flex items-center justify-center font-black shadow-md">
+                <Sparkles className="w-5 h-5" />
               </div>
-
-              <div className="flex items-center gap-2">
-                {projectToEdit && onDeleteProject && (
-                  <button
-                    type="button"
-                    onClick={() => setShowDeleteConfirm(true)}
-                    className="p-2 rounded-xl text-rose-600 hover:bg-rose-50 border border-rose-200/60 transition cursor-pointer flex items-center gap-1.5 text-xs font-bold"
-                    title="Delete Project Card"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    <span className="hidden sm:inline">Delete Card</span>
-                  </button>
-                )}
-
-                <button
-                  onClick={onClose}
-                  className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base sm:text-lg font-black text-amber-950">
+                    {projectToEdit ? 'Edit Wedding Shoot Project' : 'Add New Wedding Shoot & Events'}
+                  </h3>
+                  {isDraftRestored && !projectToEdit && (
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                      <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                      Auto-Draft Restored
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs font-semibold text-zinc-500">
+                  Configure client couple profile, multi-day functions, overnight shoots, and crew placements.
+                </p>
               </div>
             </div>
 
-            {/* SCROLLABLE FORM BODY */}
-            <div className="p-6 overflow-y-auto space-y-6 flex-1 bg-slate-50/40">
-              {errorMessage && (
-                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
-                  <span>{errorMessage}</span>
-                </div>
-              )}
-
-              {/* CLIENT NAME INPUT */}
-              <div className="bg-white p-5 rounded-2xl border border-slate-200/90 space-y-2 shadow-2xs">
-                <label className="text-xs font-black text-[#0B111E] uppercase tracking-wider block flex items-center gap-1">
-                  <span>Client Couple Name / Profile</span>
-                  <span className="text-rose-500 font-black">*</span>
-                </label>
-                <div className="relative">
-                  <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={couplingName}
-                    onChange={(e) => setCouplingName(e.target.value)}
-                    placeholder="e.g. Prakash & Mage Wedding"
-                    className={`w-full bg-[#F8F9FD] border-2 pl-10 pr-4 py-2.5 rounded-xl text-xs font-extrabold text-[#0B111E] placeholder:text-slate-400 focus:outline-none transition shadow-2xs ${
-                      isCouplingNameError
-                        ? 'border-rose-500 ring-2 ring-rose-500/40 animate-pulse bg-rose-50/50'
-                        : 'border-slate-200 focus:border-[#6C5CE7] focus:bg-white'
-                    }`}
-                  />
-                </div>
-              </div>
-
-              {/* MULTI SUB-EVENT BLOCKS LIST */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between px-1">
-                  <h4 className="text-xs font-black text-[#0B111E] uppercase tracking-wider">
-                    Sub-Events Breakdown ({eventBlocks.length})
-                  </h4>
-                  <span className="text-[11px] font-bold text-slate-500">
-                    Required fields marked with <span className="text-rose-500 font-black">*</span>
-                  </span>
-                </div>
-
-                {eventBlocks.map((block, idx) => (
-                  <EventBlock
-                    key={block.id}
-                    block={block}
-                    index={idx}
-                    totalBlocks={eventBlocks.length}
-                    onUpdate={updateEventBlock}
-                    onRemove={removeEventBlock}
-                    onDuplicate={duplicateEventBlock}
-                    onAddCustomProgram={handleAddCustomProgram}
-                    onAddCustomRole={(role) => handleAddCustomRole(block.id, role)}
-                    onToggleRole={toggleRoleInBlock}
-                    hasProgramTypeError={validatedAttempt && block.subEventNames.length === 0}
-                    hasDateError={validatedAttempt && !block.subEventDate}
-                  />
-                ))}
-
+            <div className="flex items-center gap-2">
+              {isDraftRestored && !projectToEdit && (
                 <button
                   type="button"
-                  onClick={addEventBlock}
-                  className="w-full py-3 border-2 border-dashed border-indigo-200 hover:border-[#6C5CE7] bg-indigo-50/50 hover:bg-indigo-50 text-[#6C5CE7] font-black text-xs rounded-2xl transition flex items-center justify-center gap-2 cursor-pointer shadow-2xs"
+                  onClick={resetFormState}
+                  className="px-3 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-xl border border-rose-200 cursor-pointer"
+                  title="Discard cached draft"
                 >
-                  <Plus className="w-4 h-4" />
-                  + Add Another Sub-Event
+                  Discard Draft
                 </button>
-              </div>
-            </div>
-
-            {/* MODAL FOOTER */}
-            <div className="px-6 py-4 bg-white border-t border-slate-100 flex items-center justify-between shrink-0">
+              )}
               <button
                 type="button"
                 onClick={onClose}
-                className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition cursor-pointer"
+                className="p-2 rounded-xl bg-white hover:bg-amber-100/70 border border-amber-200 text-amber-900 cursor-pointer shadow-xs transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* SCROLLABLE BODY CONTENT */}
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+            {/* 1. CLIENT COUPLE PROFILE INPUT */}
+            <div className="p-4 rounded-2xl bg-white border-2 border-amber-200/90 shadow-sm space-y-2">
+              <label className="text-xs font-black text-amber-950 uppercase tracking-wider block flex items-center gap-1.5">
+                <User className="w-4 h-4 text-amber-600" />
+                <span>Client Couple Name / Project Title</span>
+                <span className="text-rose-500 font-bold">*</span>
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Rahul & Sneha (Wedding)"
+                value={couplingName}
+                onChange={(e) => setCouplingName(e.target.value)}
+                className={`w-full px-4 py-2.5 bg-[#FEFDF8] border-2 rounded-xl text-xs font-black text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:bg-white transition ${
+                  validatedAttempt && !couplingName.trim()
+                    ? 'border-rose-400 bg-rose-50/20'
+                    : 'border-amber-200/90 focus:border-amber-500'
+                }`}
+              />
+            </div>
+
+            {/* 2. VALIDATION ALERT IF ANY */}
+            {validationAlert && (
+              <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 space-y-1">
+                <div className="flex items-center gap-2 font-black text-xs">
+                  <AlertCircle className="w-4 h-4 text-rose-600" />
+                  <span>{validationAlert.title}</span>
+                </div>
+                <ul className="list-disc list-inside text-[11px] font-bold text-rose-700 pl-2">
+                  {validationAlert.issues.map((issue, i) => (
+                    <li key={i}>{issue}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* 3. SUB-EVENT BLOCKS LIST */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-black text-amber-950 uppercase tracking-wider flex items-center gap-2">
+                  <span>Wedding Programs & Coverage Breakdown ({eventBlocks.length})</span>
+                </h4>
+                <button
+                  type="button"
+                  onClick={addEventBlock}
+                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-b from-amber-400 to-amber-600 hover:from-amber-500 hover:to-amber-700 text-white font-black text-xs shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>+ Add Another Function</span>
+                </button>
+              </div>
+
+              {eventBlocks.map((block, idx) => (
+                <EventBlock
+                  key={block.id}
+                  block={block}
+                  index={idx}
+                  totalBlocks={eventBlocks.length}
+                  onUpdate={updateEventBlock}
+                  onRemove={removeEventBlock}
+                  onDuplicate={duplicateEventBlock}
+                  onAddCustomProgram={handleAddCustomProgram}
+                  onAddCustomRole={handleAddCustomRole}
+                  onToggleRole={handleToggleRole}
+                  hasProgramTypeError={validatedAttempt && block.subEventNames.length === 0}
+                  hasDateError={validatedAttempt && !block.isDateTbd && !block.subEventDate}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* FOOTER ACTION BAR */}
+          <div className="p-4 sm:p-6 border-t border-amber-200/80 bg-gradient-to-r from-amber-50/80 via-white to-amber-50/60 flex items-center justify-between gap-3">
+            {projectToEdit && onDeleteProject ? (
+              <div>
+                {showDeleteConfirm ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black text-rose-700">Are you sure?</span>
+                    <button
+                      type="button"
+                      onClick={handleDeleteConfirmed}
+                      className="px-3 py-1.5 bg-rose-600 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer"
+                    >
+                      Yes, Delete
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowDeleteConfirm(false)}
+                      className="px-3 py-1.5 bg-zinc-200 text-zinc-700 font-bold text-xs rounded-xl cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="px-4 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-2xl border border-rose-200 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete Project</span>
+                  </button>
+                )}
+              </div>
+            ) : <div />}
+
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-5 py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs rounded-2xl cursor-pointer"
               >
                 Cancel
               </button>
 
               <button
                 type="button"
-                onClick={handleSubmit}
                 disabled={isSubmitting}
-                className="bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-black px-6 py-2.5 rounded-xl transition flex items-center gap-2 shadow-lg shadow-[#6C5CE7]/25 cursor-pointer disabled:opacity-50"
+                onClick={handleSubmit}
+                className="px-6 py-2.5 bg-gradient-to-b from-amber-400 via-amber-500 to-amber-600 hover:from-amber-500 hover:to-amber-700 text-white font-black text-xs rounded-2xl shadow-md shadow-amber-500/25 flex items-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 {isSubmitting ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Saving Project...
+                    <span>Saving Project...</span>
                   </>
                 ) : (
                   <>
                     <Save className="w-4 h-4" />
-                    Save Project Configuration
+                    <span>{projectToEdit ? 'Save Changes' : 'Create Wedding Project'}</span>
                   </>
                 )}
               </button>
             </div>
-          </motion.div>
-
-          {/* VALIDATION ERROR ALERT POPUP MODAL */}
-          {validationAlert && (
-            <div className="fixed inset-0 z-[100005] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-150">
-              <motion.div
-                initial={{ scale: 0.95, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.95, opacity: 0 }}
-                className="bg-white rounded-3xl border border-slate-200 p-6 max-w-md w-full shadow-2xl space-y-4 text-center"
-              >
-                <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
-                  <AlertTriangle className="w-6 h-6" />
-                </div>
-
-                <div className="space-y-2">
-                  <h3 className="text-base font-black text-[#0B111E]">{validationAlert.title}</h3>
-                  <p className="text-xs font-semibold text-[#4F5E74]">
-                    Please complete all mandatory fields highlighted in <span className="text-rose-600 font-black">blinking red</span> before saving:
-                  </p>
-                  <div className="bg-rose-50 border border-rose-200/80 rounded-2xl p-3 text-left space-y-1 max-h-36 overflow-y-auto">
-                    {validationAlert.issues.map((issue, idx) => (
-                      <div key={idx} className="text-xs font-bold text-rose-700 flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
-                        <span>{issue}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setValidationAlert(null)}
-                  className="w-full py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs transition shadow-md shadow-rose-500/20 cursor-pointer"
-                >
-                  Understand & Fix Missing Fields
-                </button>
-              </motion.div>
-            </div>
-          )}
-
-          {/* CONFIRMATION MODAL FOR DELETING CARD */}
-          {showDeleteConfirm && (
-            <div className="fixed inset-0 z-[100005] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-150">
-              <motion.div
-                initial={{ scale: 0.95, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.95, opacity: 0 }}
-                className="bg-white rounded-3xl border border-slate-200 p-6 max-w-md w-full shadow-2xl space-y-4 text-center"
-              >
-                <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
-                  <AlertTriangle className="w-6 h-6" />
-                </div>
-
-                <div className="space-y-1">
-                  <h3 className="text-lg font-extrabold text-[#0B111E]">Move Project to Trash?</h3>
-                  <p className="text-xs font-semibold text-[#4F5E74]">
-                    Are you sure you want to move <span className="font-extrabold text-slate-900">&quot;{couplingName}&quot;</span> to Trash? You can restore it anytime from the Trash tab.
-                  </p>
-                </div>
-
-                <div className="flex items-center justify-center gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowDeleteConfirm(false)}
-                    className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleDeleteConfirmed}
-                    className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs transition shadow-md shadow-rose-500/20 cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    Move to Trash
-                  </button>
-                </div>
-              </motion.div>
-            </div>
-          )}
-        </div>
-      )}
+          </div>
+        </motion.div>
+      </div>
     </AnimatePresence>
   );
 }
