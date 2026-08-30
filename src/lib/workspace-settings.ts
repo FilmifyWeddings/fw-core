@@ -511,9 +511,21 @@ export async function saveWorkspaceCrewRole(
     display_order: 99
   };
 
+  // 1. Immediately cache to localStorage
+  if (typeof window !== 'undefined') {
+    try {
+      const key = `wg_custom_crew_roles_${wsId || 'default'}`;
+      const existing = JSON.parse(localStorage.getItem(key) || '[]');
+      const filtered = existing.filter((r: any) => r.name.toLowerCase() !== cleanName.toLowerCase());
+      filtered.push(newRole);
+      localStorage.setItem(key, JSON.stringify(filtered));
+    } catch (_) {}
+  }
+
+  // 2. Persist to Supabase workspace_crew_roles & master_crew_roles
   try {
     if (wsId) {
-      const { data, error } = await supabase
+      await supabase
         .from('workspace_crew_roles')
         .upsert([{
           workspace_id: wsId,
@@ -523,16 +535,17 @@ export async function saveWorkspaceCrewRole(
           is_default: false,
           display_order: 99,
           updated_at: new Date().toISOString()
-        }], { onConflict: 'workspace_id, name' })
-        .select()
-        .single();
+        }], { onConflict: 'workspace_id, name' });
 
-      if (!error && data) {
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('workspace_crew_roles_updated'));
-        }
-        return data;
-      }
+      await supabase
+        .from('master_crew_roles')
+        .upsert([{
+          workspace_id: wsId,
+          name: cleanName,
+          short_code: cleanCode,
+          category,
+          created_at: new Date().toISOString()
+        }], { onConflict: 'workspace_id, name' });
     }
   } catch (err) {
     console.warn('[WorkspaceSettings] Error saving workspace_crew_role:', err);

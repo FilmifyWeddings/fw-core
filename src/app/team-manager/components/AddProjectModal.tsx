@@ -394,6 +394,18 @@ export default function AddProjectModal({
                   hasDateError={validatedAttempt && !block.isDateTbd && !block.subEventDate}
                 />
               ))}
+
+              {/* BOTTOM ADD FUNCTION BUTTON */}
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={addEventBlock}
+                  className="w-full py-3.5 px-4 rounded-2xl border-2 border-dashed border-amber-300 hover:border-amber-500 bg-amber-50/60 hover:bg-amber-100/80 text-amber-950 font-black text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs active:translate-y-0.5"
+                >
+                  <Plus className="w-4 h-4 text-amber-600 stroke-[3]" />
+                  <span>+ Add Another Function / Sub-Event</span>
+                </button>
+              </div>
             </div>
           </div>
 

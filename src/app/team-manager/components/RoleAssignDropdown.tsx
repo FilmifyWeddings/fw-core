@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FWAssignment, FWTeamMember } from '@/types';
 import { Search, Plus, Check } from 'lucide-react';
+import { getRoleShortCode } from '@/lib/workspace-settings';
 
 interface RoleAssignDropdownProps {
   assignment: FWAssignment;
@@ -116,15 +117,17 @@ export default function RoleAssignDropdown({
             </div>
           )}
 
-          <span className={`font-extrabold text-[10px] uppercase tracking-wide block text-center mt-1 leading-none ${
-            isAssigned ? 'text-indigo-600' : 'text-red-600'
+          <span className={`font-black text-[10px] uppercase tracking-wider block text-center mt-1 px-1.5 py-0.5 rounded-md border leading-none ${
+            isAssigned
+              ? 'bg-indigo-50 text-indigo-900 border-indigo-200'
+              : 'bg-red-50 text-red-700 border-red-200'
           }`}>
-            {role}
+            {getRoleShortCode(role)}
           </span>
 
           {isAssigned && (
             <span className="block font-black text-slate-900 text-[11px] truncate max-w-[80px] mt-0.5 text-center leading-none">
-              {cleanName}
+              {cleanName.split(' ')[0]}
             </span>
           )}
         </div>

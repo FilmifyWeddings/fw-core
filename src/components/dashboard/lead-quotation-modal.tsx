@@ -853,6 +853,109 @@ export function LeadQuotationModal({ isOpen, onClose, lead, onFinalSet }: LeadQu
         }}
       />
 
+
+      {/* ─── 3D CONFIRMATION MODAL: MARK AS FINAL QUOTATION ─── */}
+      {confirmingFinalQuotation && (
+        <div className="fixed inset-0 z-[100002] flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.92, y: 15 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.92, y: 15 }}
+            className="bg-[#FEFDF8] border-2 border-amber-300 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 text-center relative overflow-hidden"
+          >
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-b from-amber-400 to-amber-600 border border-amber-300 text-white flex items-center justify-center mx-auto shadow-lg">
+              <Crown className="w-7 h-7" />
+            </div>
+
+            <div>
+              <h3 className="text-lg font-black text-amber-950">Confirm Final Quotation</h3>
+              <p className="text-xs font-semibold text-zinc-600 mt-1.5 leading-relaxed">
+                Are you sure you want to lock <span className="font-bold text-amber-900">Version {confirmingFinalQuotation.version}</span> as the Final Quotation for <span className="font-bold text-zinc-900">{lead?.name || 'this client'}</span>?
+              </p>
+              <div className="p-3 bg-amber-50/70 border border-amber-200/90 rounded-2xl text-[11px] font-bold text-amber-900 mt-3 text-left">
+                ✨ This will automatically synchronize all sub-events, deliverables, and payment milestones directly into <span className="underline">Bookings & Finance Records</span>.
+              </div>
+            </div>
+
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmingFinalQuotation(null)}
+                className="px-5 py-2.5 rounded-2xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs cursor-pointer transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(settingFinalId)}
+                onClick={() => handleSetFinalQuotation(confirmingFinalQuotation, false)}
+                className="px-6 py-2.5 rounded-2xl bg-gradient-to-b from-amber-400 via-amber-500 to-amber-600 hover:from-amber-500 hover:to-amber-700 text-white font-black text-xs shadow-md shadow-amber-500/30 flex items-center gap-2 cursor-pointer transition active:translate-y-0.5"
+              >
+                {settingFinalId ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Locking...</span>
+                  </>
+                ) : (
+                  <>
+                    <Crown className="w-4 h-4 text-amber-100" />
+                    <span>Confirm & Lock</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* ─── 3D UNMARK MODAL: UNLOCK FINAL QUOTATION ─── */}
+      {unmarkingFinalQuotation && (
+        <div className="fixed inset-0 z-[100002] flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.92, y: 15 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.92, y: 15 }}
+            className="bg-[#FEFDF8] border-2 border-amber-300 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 text-center relative overflow-hidden"
+          >
+            <div className="w-14 h-14 rounded-2xl bg-amber-100 border border-amber-300 text-amber-800 flex items-center justify-center mx-auto shadow-md">
+              <AlertCircle className="w-7 h-7 text-amber-600" />
+            </div>
+
+            <div>
+              <h3 className="text-lg font-black text-amber-950">Unmark Final Quotation?</h3>
+              <p className="text-xs font-semibold text-zinc-600 mt-1.5 leading-relaxed">
+                Do you want to unlock this quotation? The linked booking cards will remain in draft status.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setUnmarkingFinalQuotation(null)}
+                className="px-5 py-2.5 rounded-2xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs cursor-pointer transition"
+              >
+                Keep Final
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(settingFinalId)}
+                onClick={() => handleSetFinalQuotation(unmarkingFinalQuotation, true)}
+                className="px-6 py-2.5 rounded-2xl bg-gradient-to-b from-amber-500 to-amber-700 hover:from-amber-600 hover:to-amber-800 text-white font-black text-xs shadow-md shadow-amber-600/30 flex items-center gap-2 cursor-pointer transition active:translate-y-0.5"
+              >
+                {settingFinalId ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Unlocking...</span>
+                  </>
+                ) : (
+                  <span>Unmark & Unlock</span>
+                )}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
       {/* Share Link Drawer Modal */}
       {activeShareModal && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">

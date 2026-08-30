@@ -669,11 +669,16 @@ export default function TeamManagerPage() {
             const subEventPayload: any = {
               project_id: targetProjectId,
               event_title: title,
-              event_date: block.subEventDate || new Date().toISOString().split('T')[0],
+              event_date: block.isDateTbd ? 'TBD / Not Fixed' : (block.subEventDate || new Date().toISOString().split('T')[0]),
+              is_date_tbd: Boolean(block.isDateTbd),
+              is_overnight: Boolean(block.isOvernight),
+              end_date: block.endDate || null,
+              start_time_12h: block.startTime || '10:00 AM',
+              end_time_12h: block.endTime || '06:00 PM',
               venue_name: block.venueLocation || null,
               venue_map_link: block.mapLink || null,
-              roll_call_time: block.startTime || '10:00',
-              dismissal_estimate_time: block.endTime || '18:00',
+              roll_call_time: block.startTime || '10:00 AM',
+              dismissal_estimate_time: block.endTime || '06:00 PM',
               operational_notes: block.notes || null,
               shift_hours_slot: block.shiftSlot || null,
               roles: rolesToSave,
@@ -739,11 +744,16 @@ export default function TeamManagerPage() {
             const subEventPayload: any = {
               project_id: targetProjectId,
               event_title: title,
-              event_date: block.subEventDate || new Date().toISOString().split('T')[0],
+              event_date: block.isDateTbd ? 'TBD / Not Fixed' : (block.subEventDate || new Date().toISOString().split('T')[0]),
+              is_date_tbd: Boolean(block.isDateTbd),
+              is_overnight: Boolean(block.isOvernight),
+              end_date: block.endDate || null,
+              start_time_12h: block.startTime || '10:00 AM',
+              end_time_12h: block.endTime || '06:00 PM',
               venue_name: block.venueLocation || null,
               venue_map_link: block.mapLink || null,
-              roll_call_time: block.startTime || '10:00',
-              dismissal_estimate_time: block.endTime || '18:00',
+              roll_call_time: block.startTime || '10:00 AM',
+              dismissal_estimate_time: block.endTime || '06:00 PM',
               operational_notes: block.notes || null,
               shift_hours_slot: block.shiftSlot || null,
               roles: rolesToSave,
@@ -1397,7 +1407,7 @@ export default function TeamManagerPage() {
                                                   ? 'bg-indigo-50 text-indigo-900 border-indigo-200'
                                                   : 'bg-red-50 text-red-700 border-red-200'
                                               }`}>
-                                                [{getRoleShortCode(role, customCrewRoles)}]
+                                                {getRoleShortCode(role, customCrewRoles)}
                                               </span>
 
                                               {isAssigned && (
