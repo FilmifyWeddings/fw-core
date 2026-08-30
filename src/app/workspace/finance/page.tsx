@@ -365,6 +365,12 @@ export default function FinancePage() {
   // ─────────────────────────────────────────────────────────────
   useEffect(() => {
     checkSecurityAndFetchData();
+
+    const handleExpensesUpdated = () => {
+      fetchFinanceData();
+    };
+    window.addEventListener('finance_expenses_updated', handleExpensesUpdated);
+    return () => window.removeEventListener('finance_expenses_updated', handleExpensesUpdated);
   }, []);
 
   const checkSecurityAndFetchData = async () => {

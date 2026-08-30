@@ -13,6 +13,8 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import AddTeamMemberModal from '@/app/team-manager/components/AddTeamMemberModal';
+import TeamMemberFinanceDrawer from './components/TeamMemberFinanceDrawer';
+import { fetchMemberFinancialSummary, TeamFinancialSummary } from '@/lib/team-finance-sync';
 
 interface TeamMember {
   id: string;
@@ -63,7 +65,28 @@ export default function WorkspaceTeamPage() {
   // Modal states
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [memberToEdit, setMemberToEdit] = useState<TeamMember | null>(null);
+  
+  // Team & Partner Financial Engine Drawer States
+  const [selectedFinanceMember, setSelectedFinanceMember] = useState<TeamMember | null>(null);
+  const [isFinanceDrawerOpen, setIsFinanceDrawerOpen] = useState(false);
+  const [memberFinancials, setMemberFinancials] = useState<Record<string, TeamFinancialSummary>>({});
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+
+  // Load Financial Summaries for all members
+  const loadFinancialSummaries = useCallback(async (membersList: TeamMember[]) => {
+    const effectiveWsId = workspaceId || userEmail;
+    if (!effectiveWsId || membersList.length === 0) return;
+
+    const summaryMap: Record<string, TeamFinancialSummary> = {};
+    for (const m of membersList) {
+      try {
+        const sum = await fetchMemberFinancialSummary(effectiveWsId, m.id, m.primary_type || 'FREELANCER');
+        summaryMap[m.id] = sum;
+      } catch (_) {}
+    }
+    setMemberFinancials(summaryMap);
+  }, [workspaceId, userEmail]);
 
   // Load team members from database
   const loadMembers = useCallback(async () => {
@@ -129,6 +152,7 @@ export default function WorkspaceTeamPage() {
       }
 
       setMembers(combinedMembers);
+      loadFinancialSummaries(combinedMembers);
     } catch (err) {
       console.error('[WorkspaceTeamPage] Load members error:', err);
     } finally {
@@ -163,6 +187,14 @@ export default function WorkspaceTeamPage() {
   useEffect(() => {
     loadMembers();
   }, [loadMembers]);
+
+  useEffect(() => {
+    const handleFinanceUpdated = () => {
+      loadFinancialSummaries(members);
+    };
+    window.addEventListener('team_finance_updated', handleFinanceUpdated);
+    return () => window.removeEventListener('team_finance_updated', handleFinanceUpdated);
+  }, [members, loadFinancialSummaries]);
 
   useEffect(() => {
     if (activeTab === 'activity_logs') {
@@ -757,6 +789,17 @@ export default function WorkspaceTeamPage() {
         onSave={handleSaveMember}
       />
 
+      {/* 3D Tactile Financial & Event Compensation Drawer */}
+      <TeamMemberFinanceDrawer
+        isOpen={isFinanceDrawerOpen}
+        onClose={() => {
+          setIsFinanceDrawerOpen(false);
+          setSelectedFinanceMember(null);
+          loadMembers();
+        }}
+        workspaceId={workspaceId || ''}
+        member={selectedFinanceMember}
+      />
     </div>
   );
 }

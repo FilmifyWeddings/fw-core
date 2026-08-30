@@ -21,6 +21,7 @@ import TeamSettingsModal from './components/TeamSettingsModal';
 import MonthListView from './components/MonthListView';
 import Professional3DCalendar from './components/Professional3DCalendar';
 import { EventBlockData } from './components/EventBlock';
+import { saveOrUpdateEventPayout } from '@/lib/team-finance-sync';
 import { WorkspaceCrewRole, fetchWorkspaceCrewRoles, fetchWorkspaceEventTypes, getRoleShortCode, DEFAULT_CREW_ROLES } from '@/lib/workspace-settings';
 
 // 1. Deterministic Client Gradient Consistency based on Project ID / Name Hash
@@ -507,9 +508,28 @@ export default function TeamManagerPage() {
           }))
         );
 
-        // 2. BACKGROUND SILENT DB PERSISTENCE
+        // 2. BACKGROUND SILENT DB PERSISTENCE & FINANCE PAYOUT AUTO-SYNC
         (async () => {
           try {
+            const projectObj = projects.find(p => p.id === activeAssign.project_id);
+            const subEventObj = projects
+              .flatMap(p => p.fw_sub_events || [])
+              .find(se => se.id === activeAssign.sub_event_id);
+
+            // Auto sync to Team & Partner Financial Engine
+            if (memberId && matchedMemberObj) {
+              await saveOrUpdateEventPayout(workspaceId || currentUserId, {
+                member_id: memberId,
+                member_name: matchedMemberObj.name,
+                project_id: activeAssign.project_id || undefined,
+                sub_event_id: activeAssign.sub_event_id || undefined,
+                client_name: projectObj?.client_name || 'Wedding Client',
+                event_name: subEventObj?.event_title || 'Wedding Event',
+                event_date: subEventObj?.event_date || new Date().toISOString().split('T')[0],
+                role: activeAssign.required_role || 'Crew',
+                agreed_amount: 0 // Can be customized in Member Finance Drawer
+              });
+            }
             if (assignmentId.includes('-role-')) {
               const subEventObj = projects
                 .flatMap(p => p.fw_sub_events || [])
