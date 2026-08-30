@@ -5,31 +5,9 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   productionBrowserSourceMaps: false,
-  reactStrictMode: false,
-  
-  // External packages must NOT be bundled by Webpack to prevent build hanging
-  serverExternalPackages: [
-    '@whiskeysockets/baileys',
-    'bufferutil',
-    'utf-8-validate',
-    'pino',
-    '@hapi/boom',
-    '@sparticuz/chromium',
-    'puppeteer-core',
-    'puppeteer',
-    'pdf-lib',
-    'pdfkit',
-    'chromium-bidi',
-  ],
-
+  outputFileTracingRoot: process.cwd(),
   experimental: {
-    serverActions: {
-      bodySizeLimit: '10mb',
-    },
-    optimizePackageImports: [
-      'lucide-react',
-      'framer-motion',
-    ],
+    optimizePackageImports: ['lucide-react', 'framer-motion', '@supabase/supabase-js'],
   },
 };
 
