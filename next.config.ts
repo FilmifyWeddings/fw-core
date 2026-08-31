@@ -5,9 +5,31 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   productionBrowserSourceMaps: false,
+  compress: true,
+  serverExternalPackages: [
+    '@whiskeysockets/baileys',
+    '@sparticuz/chromium',
+    'puppeteer-core',
+    'sharp',
+    'pdf-lib',
+    'jspdf',
+    'nodemailer',
+    'xlsx',
+    'pg',
+    'pino',
+    'bufferutil',
+    'utf-8-validate',
+  ],
   outputFileTracingRoot: process.cwd(),
   experimental: {
-    optimizePackageImports: ['lucide-react', 'framer-motion', '@supabase/supabase-js'],
+    optimizePackageImports: [
+      'lucide-react',
+      'framer-motion',
+      '@supabase/supabase-js',
+      'recharts',
+      'clsx',
+      'tailwind-merge',
+    ],
   },
 };
 
