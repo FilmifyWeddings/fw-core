@@ -471,7 +471,26 @@ export async function fetchWorkspaceCrewRoles(workspaceId?: string): Promise<Wor
   const wsId = await resolveWorkspaceId(workspaceId);
   try {
     if (wsId) {
-      // 1. Query master_crew_roles strictly by workspace_id
+      // 1. First attempt: Call DB RPC Function to get or auto-seed defaults permanently
+      try {
+        const { data: rpcData, error: rpcErr } = await supabase.rpc('get_or_seed_workspace_crew_roles', {
+          target_ws_id: wsId
+        });
+
+        if (!rpcErr && Array.isArray(rpcData) && rpcData.length > 0) {
+          return rpcData.map((d: any, idx: number) => ({
+            id: d.id,
+            workspace_id: d.workspace_id,
+            name: d.name,
+            short_code: d.short_code || getRoleShortCode(d.name),
+            category: d.category || 'Photography',
+            is_default: d.is_default || false,
+            display_order: d.display_order || idx + 1
+          }));
+        }
+      } catch (_) {}
+
+      // 2. Direct Query on master_crew_roles strictly by workspace_id
       const { data, error } = await supabase
         .from('master_crew_roles')
         .select('*')
@@ -490,18 +509,7 @@ export async function fetchWorkspaceCrewRoles(workspaceId?: string): Promise<Wor
         }));
       }
 
-      // 2. Fallback check on workspace_crew_roles
-      const { data: wsData, error: wsErr } = await supabase
-        .from('workspace_crew_roles')
-        .select('*')
-        .eq('workspace_id', wsId)
-        .order('display_order', { ascending: true });
-
-      if (!wsErr && wsData && wsData.length > 0) {
-        return wsData;
-      }
-
-      // 3. If brand new workspace with 0 roles, seed the 8 default roles
+      // 3. If brand new workspace with 0 roles in DB, seed the 8 default roles directly
       const defaultSeed = [
         { name: 'Team Manager', short_code: 'TM', category: 'Management' },
         { name: 'Candid Photographer', short_code: 'CP', category: 'Photography' },
@@ -513,31 +521,29 @@ export async function fetchWorkspaceCrewRoles(workspaceId?: string): Promise<Wor
         { name: 'Family Photographer', short_code: 'FP', category: 'Photography' },
       ];
 
-      const seedPayload = defaultSeed.map((role, idx) => ({
+      const seedPayload = defaultSeed.map((role) => ({
         workspace_id: wsId,
         name: role.name,
         short_code: role.short_code,
-        category: role.category,
-        is_default: true,
-        display_order: idx + 1,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }));
 
       const { data: seeded } = await supabase
         .from('master_crew_roles')
-        .insert(seedPayload.map(s => ({
-          workspace_id: s.workspace_id,
-          name: s.name,
-          short_code: s.short_code,
-          category: s.category
-        })))
+        .insert(seedPayload)
         .select();
 
-      await supabase.from('workspace_crew_roles').insert(seedPayload);
-
       if (seeded && seeded.length > 0) {
-        return seeded;
+        return seeded.map((d: any, idx: number) => ({
+          id: d.id,
+          workspace_id: d.workspace_id,
+          name: d.name,
+          short_code: d.short_code || getRoleShortCode(d.name),
+          category: d.category || 'Photography',
+          is_default: d.is_default || false,
+          display_order: idx + 1
+        }));
       }
     }
   } catch (err) {
@@ -561,7 +567,7 @@ export async function fetchWorkspaceCrewRoles(workspaceId?: string): Promise<Wor
 }
 
 /**
- * Save new crew role with short code strictly for current workspace
+ * Save new crew role strictly for current workspace
  */
 export async function saveWorkspaceCrewRole(
   workspaceId?: string,
@@ -576,38 +582,30 @@ export async function saveWorkspaceCrewRole(
 
   try {
     if (wsId) {
-      const { data: masterData } = await supabase
+      const { data: masterData, error } = await supabase
         .from('master_crew_roles')
-        .upsert([{
+        .insert([{
           workspace_id: wsId,
           name: cleanName,
           short_code: cleanCode,
-          category,
+          created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
-        }], { onConflict: 'workspace_id, name' })
+        }])
         .select()
         .single();
 
-      await supabase
-        .from('workspace_crew_roles')
-        .upsert([{
-          workspace_id: wsId,
-          name: cleanName,
-          short_code: cleanCode,
-          category,
-          updated_at: new Date().toISOString()
-        }], { onConflict: 'workspace_id, name' });
-
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('workspace_crew_roles_updated'));
+      if (!error && masterData) {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('workspace_crew_roles_updated'));
+        }
+        return {
+          id: masterData.id,
+          workspace_id: masterData.workspace_id,
+          name: masterData.name,
+          short_code: masterData.short_code,
+          category
+        };
       }
-      return masterData || {
-        id: `role_${Date.now()}`,
-        workspace_id: wsId,
-        name: cleanName,
-        short_code: cleanCode,
-        category
-      };
     }
   } catch (err) {
     console.warn('[WorkspaceSettings] Error saving master_crew_roles:', err);
@@ -620,7 +618,7 @@ export async function saveWorkspaceCrewRole(
 }
 
 /**
- * Update existing crew role strictly for current workspace
+ * Update existing crew role strictly by ID and workspace_id
  */
 export async function updateWorkspaceCrewRole(
   id: string,
@@ -636,7 +634,7 @@ export async function updateWorkspaceCrewRole(
 
   try {
     if (wsId) {
-      await supabase
+      const { data, error } = await supabase
         .from('master_crew_roles')
         .update({
           name: cleanName,
@@ -644,23 +642,22 @@ export async function updateWorkspaceCrewRole(
           updated_at: new Date().toISOString()
         })
         .eq('id', id)
-        .eq('workspace_id', wsId);
+        .eq('workspace_id', wsId)
+        .select()
+        .single();
 
-      await supabase
-        .from('workspace_crew_roles')
-        .update({
-          name: cleanName,
-          short_code: cleanCode,
-          category,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', id)
-        .eq('workspace_id', wsId);
-
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('workspace_crew_roles_updated'));
+      if (!error && data) {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('workspace_crew_roles_updated'));
+        }
+        return {
+          id: data.id,
+          workspace_id: data.workspace_id,
+          name: data.name,
+          short_code: data.short_code,
+          category
+        };
       }
-      return { id, workspace_id: wsId, name: cleanName, short_code: cleanCode, category };
     }
   } catch (err) {
     console.warn('[WorkspaceSettings] Error updating master_crew_roles:', err);
@@ -673,7 +670,7 @@ export async function updateWorkspaceCrewRole(
 }
 
 /**
- * Delete crew role strictly for current workspace
+ * Delete crew role strictly by ID and workspace_id
  */
 export async function deleteWorkspaceCrewRole(
   id: string,
@@ -682,17 +679,15 @@ export async function deleteWorkspaceCrewRole(
   const wsId = await resolveWorkspaceId(workspaceId);
   try {
     if (wsId) {
-      await supabase
+      const { error } = await supabase
         .from('master_crew_roles')
         .delete()
         .eq('id', id)
         .eq('workspace_id', wsId);
 
-      await supabase
-        .from('workspace_crew_roles')
-        .delete()
-        .eq('id', id)
-        .eq('workspace_id', wsId);
+      if (error) {
+        console.error('[WorkspaceSettings] Error deleting role:', error);
+      }
 
       if (typeof window !== 'undefined') {
         try {
