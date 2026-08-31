@@ -94,15 +94,14 @@ export const DEFAULT_EVENT_TYPES: WorkspaceEventType[] = [
 
 export const DEFAULT_CREW_ROLES: WorkspaceCrewRole[] = [
   { id: 'def_role_1', name: 'Team Manager', short_code: 'TM', category: 'Management', is_default: true, display_order: 1 },
-  { id: 'def_role_2', name: 'Candid Photographer', short_code: 'CP', category: 'Photography', is_default: true, display_order: 2 },
-  { id: 'def_role_3', name: 'Cinematographer', short_code: 'CV', category: 'Cinematography', is_default: true, display_order: 3 },
-  { id: 'def_role_4', name: 'Traditional Photographer', short_code: 'TP', category: 'Photography', is_default: true, display_order: 4 },
-  { id: 'def_role_5', name: 'Traditional Videographer', short_code: 'TV', category: 'Cinematography', is_default: true, display_order: 5 },
+  { id: 'def_role_2', name: 'Traditional Photographer', short_code: 'TP', category: 'Photography', is_default: true, display_order: 2 },
+  { id: 'def_role_3', name: 'Traditional Videographer', short_code: 'TV', category: 'Cinematography', is_default: true, display_order: 3 },
+  { id: 'def_role_4', name: 'Candid Photographer', short_code: 'CP', category: 'Photography', is_default: true, display_order: 4 },
+  { id: 'def_role_5', name: 'Cinematographer', short_code: 'CV', category: 'Cinematography', is_default: true, display_order: 5 },
   { id: 'def_role_6', name: 'Assistant', short_code: 'AS', category: 'Assistance', is_default: true, display_order: 6 },
   { id: 'def_role_7', name: 'Drone Pilot', short_code: 'DP', category: 'Drone', is_default: true, display_order: 7 },
   { id: 'def_role_8', name: 'Family Photographer', short_code: 'FP', category: 'Photography', is_default: true, display_order: 8 },
-  { id: 'def_role_9', name: 'Lead Photographer', short_code: 'LP', category: 'Photography', is_default: true, display_order: 9 },
-  { id: 'def_role_10', name: 'Social Media Reels Creator', short_code: 'RC', category: 'Social Media', is_default: true, display_order: 10 },
+  { id: 'def_role_9', name: 'Reels Creator', short_code: 'RC', category: 'Social Media', is_default: true, display_order: 9 },
 ];
 
 export const DEFAULT_QUOTATION_DELIVERABLES: WorkspaceQuotationDeliverable[] = [
@@ -344,50 +343,6 @@ export async function fetchWorkspaceEventTypes(workspaceId?: string): Promise<Wo
 }
 
 /**
- * Fetch workspace crew roles with short codes from Supabase with fallback to DEFAULT_CREW_ROLES
- */
-export async function fetchWorkspaceCrewRoles(workspaceId?: string): Promise<WorkspaceCrewRole[]> {
-  const wsId = await resolveWorkspaceId(workspaceId);
-  try {
-    if (wsId) {
-      const { data, error } = await supabase
-        .from('workspace_crew_roles')
-        .select('*')
-        .eq('workspace_id', wsId)
-        .order('display_order', { ascending: true });
-
-      if (!error && data && data.length > 0) {
-        const customNames = new Set(data.map(d => d.name.toLowerCase()));
-        const merged = [...data];
-        DEFAULT_CREW_ROLES.forEach(def => {
-          if (!customNames.has(def.name.toLowerCase())) {
-            merged.push(def);
-          }
-        });
-        return merged;
-      }
-    }
-  } catch (err) {
-    console.warn('[WorkspaceSettings] Error fetching workspace_crew_roles:', err);
-  }
-
-  // Fallback to localStorage
-  if (typeof window !== 'undefined') {
-    try {
-      const local = localStorage.getItem(`wg_custom_crew_roles_${wsId || 'default'}`);
-      if (local) {
-        const parsed = JSON.parse(local);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
-      }
-    } catch (_) {}
-  }
-
-  return DEFAULT_CREW_ROLES;
-}
-
-/**
  * Save new event type to workspace
  */
 export async function saveWorkspaceEventType(
@@ -485,6 +440,91 @@ export async function updateWorkspaceEventType(
 }
 
 /**
+ * Delete event type from workspace
+ */
+export async function deleteWorkspaceEventType(
+  id: string,
+  workspaceId?: string
+): Promise<boolean> {
+  const wsId = await resolveWorkspaceId(workspaceId);
+  try {
+    if (wsId && !id.startsWith('def_')) {
+      await supabase
+        .from('workspace_event_types')
+        .delete()
+        .eq('id', id);
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('workspace_event_types_updated'));
+    }
+    return true;
+  } catch (err) {
+    console.warn('[WorkspaceSettings] Error deleting workspace_event_type:', err);
+    return false;
+  }
+}
+
+/**
+ * Fetch workspace crew roles with short codes from Supabase with fallback to DEFAULT_CREW_ROLES
+ */
+export async function fetchWorkspaceCrewRoles(workspaceId?: string): Promise<WorkspaceCrewRole[]> {
+  const wsId = await resolveWorkspaceId(workspaceId);
+  try {
+    if (wsId) {
+      const { data, error } = await supabase
+        .from('workspace_crew_roles')
+        .select('*')
+        .eq('workspace_id', wsId)
+        .order('display_order', { ascending: true });
+
+      if (!error && data) {
+        if (data.length > 0) {
+          return data;
+        }
+
+        // Auto-seed the 9 default roles for this new workspace in database!
+        const seedPayload = DEFAULT_CREW_ROLES.map((role, idx) => ({
+          workspace_id: wsId,
+          name: role.name,
+          short_code: role.short_code,
+          category: role.category,
+          is_default: true,
+          display_order: idx + 1,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }));
+
+        const { data: seeded, error: seedErr } = await supabase
+          .from('workspace_crew_roles')
+          .insert(seedPayload)
+          .select();
+
+        if (!seedErr && seeded && seeded.length > 0) {
+          return seeded;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[WorkspaceSettings] Error fetching workspace_crew_roles:', err);
+  }
+
+  // Fallback to localStorage
+  if (typeof window !== 'undefined') {
+    try {
+      const local = localStorage.getItem(`wg_custom_crew_roles_${wsId || 'default'}`);
+      if (local) {
+        const parsed = JSON.parse(local);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (_) {}
+  }
+
+  return DEFAULT_CREW_ROLES;
+}
+
+/**
  * Save new crew role with short code to workspace
  */
 export async function saveWorkspaceCrewRole(
@@ -509,21 +549,9 @@ export async function saveWorkspaceCrewRole(
     display_order: 99
   };
 
-  // 1. Immediately cache to localStorage
-  if (typeof window !== 'undefined') {
-    try {
-      const key = `wg_custom_crew_roles_${wsId || 'default'}`;
-      const existing = JSON.parse(localStorage.getItem(key) || '[]');
-      const filtered = existing.filter((r: any) => r.name.toLowerCase() !== cleanName.toLowerCase());
-      filtered.push(newRole);
-      localStorage.setItem(key, JSON.stringify(filtered));
-    } catch (_) {}
-  }
-
-  // 2. Persist to Supabase workspace_crew_roles & master_crew_roles
   try {
     if (wsId) {
-      await supabase
+      const { data, error } = await supabase
         .from('workspace_crew_roles')
         .upsert([{
           workspace_id: wsId,
@@ -533,17 +561,16 @@ export async function saveWorkspaceCrewRole(
           is_default: false,
           display_order: 99,
           updated_at: new Date().toISOString()
-        }], { onConflict: 'workspace_id, name' });
+        }], { onConflict: 'workspace_id, name' })
+        .select()
+        .single();
 
-      await supabase
-        .from('master_crew_roles')
-        .upsert([{
-          workspace_id: wsId,
-          name: cleanName,
-          short_code: cleanCode,
-          category,
-          created_at: new Date().toISOString()
-        }], { onConflict: 'workspace_id, name' });
+      if (!error && data) {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('workspace_crew_roles_updated'));
+        }
+        return data;
+      }
     }
   } catch (err) {
     console.warn('[WorkspaceSettings] Error saving workspace_crew_role:', err);
@@ -571,7 +598,7 @@ export async function updateWorkspaceCrewRole(
   const wsId = await resolveWorkspaceId(workspaceId);
 
   try {
-    if (wsId && !id.startsWith('def_')) {
+    if (wsId) {
       const { data, error } = await supabase
         .from('workspace_crew_roles')
         .update({
@@ -581,6 +608,7 @@ export async function updateWorkspaceCrewRole(
           updated_at: new Date().toISOString()
         })
         .eq('id', id)
+        .eq('workspace_id', wsId)
         .select()
         .single();
 
@@ -602,32 +630,7 @@ export async function updateWorkspaceCrewRole(
 }
 
 /**
- * Delete event type from workspace
- */
-export async function deleteWorkspaceEventType(
-  id: string,
-  workspaceId?: string
-): Promise<boolean> {
-  const wsId = await resolveWorkspaceId(workspaceId);
-  try {
-    if (wsId && !id.startsWith('def_')) {
-      await supabase
-        .from('workspace_event_types')
-        .delete()
-        .eq('id', id);
-    }
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('workspace_event_types_updated'));
-    }
-    return true;
-  } catch (err) {
-    console.warn('[WorkspaceSettings] Error deleting workspace_event_type:', err);
-    return false;
-  }
-}
-
-/**
- * Delete crew role from workspace
+ * Delete crew role from workspace (Strictly for this workspace_id)
  */
 export async function deleteWorkspaceCrewRole(
   id: string,
@@ -635,11 +638,23 @@ export async function deleteWorkspaceCrewRole(
 ): Promise<boolean> {
   const wsId = await resolveWorkspaceId(workspaceId);
   try {
-    if (wsId && !id.startsWith('def_')) {
+    if (wsId) {
+      // If it has a real DB id or default id, delete it specifically for this workspace
       await supabase
         .from('workspace_crew_roles')
         .delete()
-        .eq('id', id);
+        .eq('id', id)
+        .eq('workspace_id', wsId);
+
+      // Also clean up localStorage cache for this workspace
+      if (typeof window !== 'undefined') {
+        try {
+          const key = `wg_custom_crew_roles_${wsId || 'default'}`;
+          const existing = JSON.parse(localStorage.getItem(key) || '[]');
+          const filtered = existing.filter((r: any) => r.id !== id);
+          localStorage.setItem(key, JSON.stringify(filtered));
+        } catch (_) {}
+      }
     }
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('workspace_crew_roles_updated'));

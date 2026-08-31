@@ -210,6 +210,20 @@ export default function TeamManagerPage() {
     return () => window.removeEventListener('team_finance_updated', handleFinanceUpdated);
   }, [teamMembers]);
 
+  // Real-time synchronization of crew roles from Workspace Settings
+  useEffect(() => {
+    const syncCrewRoles = async () => {
+      const targetWs = workspaceId || currentUserId;
+      const roles = await fetchWorkspaceCrewRoles(targetWs);
+      if (roles && roles.length > 0) {
+        setCustomCrewRoles(roles);
+      }
+    };
+    syncCrewRoles();
+    window.addEventListener('workspace_crew_roles_updated', syncCrewRoles);
+    return () => window.removeEventListener('workspace_crew_roles_updated', syncCrewRoles);
+  }, [workspaceId, currentUserId]);
+
   // Close popovers on outside click
   useEffect(() => {
     const handleGlobalClick = () => {

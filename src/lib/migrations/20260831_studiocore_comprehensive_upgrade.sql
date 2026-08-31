@@ -67,22 +67,35 @@ CREATE TABLE IF NOT EXISTS public.event_form_drafts (
 
 CREATE INDEX IF NOT EXISTS event_form_drafts_ws_user_idx ON public.event_form_drafts(workspace_id, user_id);
 
--- 5. Row Level Security Policies
-ALTER TABLE public.master_crew_roles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.workspace_crew_roles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.event_form_drafts ENABLE ROW LEVEL SECURITY;
-
-DO $$
+-- 6. Helper to seed default 9 roles into any workspace that doesn't have them
+CREATE OR REPLACE FUNCTION public.seed_default_workspace_crew_roles(ws_id UUID)
+RETURNS VOID AS $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'master_crew_roles' AND policyname = 'master_crew_roles_all') THEN
-    CREATE POLICY "master_crew_roles_all" ON public.master_crew_roles FOR ALL USING (true) WITH CHECK (true);
-  END IF;
+  IF ws_id IS NULL THEN RETURN; END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'workspace_crew_roles' AND policyname = 'workspace_crew_roles_all') THEN
-    CREATE POLICY "workspace_crew_roles_all" ON public.workspace_crew_roles FOR ALL USING (true) WITH CHECK (true);
-  END IF;
+  INSERT INTO public.workspace_crew_roles (workspace_id, name, short_code, category, is_default, display_order)
+  VALUES
+    (ws_id, 'Team Manager', 'TM', 'Management', true, 1),
+    (ws_id, 'Traditional Photographer', 'TP', 'Photography', true, 2),
+    (ws_id, 'Traditional Videographer', 'TV', 'Cinematography', true, 3),
+    (ws_id, 'Candid Photographer', 'CP', 'Photography', true, 4),
+    (ws_id, 'Cinematographer', 'CV', 'Cinematography', true, 5),
+    (ws_id, 'Assistant', 'AS', 'Assistance', true, 6),
+    (ws_id, 'Drone Pilot', 'DP', 'Drone', true, 7),
+    (ws_id, 'Family Photographer', 'FP', 'Photography', true, 8),
+    (ws_id, 'Reels Creator', 'RC', 'Social Media', true, 9)
+  ON CONFLICT (workspace_id, name) DO NOTHING;
+END;
+$$ LANGUAGE plpgsql;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'event_form_drafts' AND policyname = 'event_form_drafts_all') THEN
-    CREATE POLICY "event_form_drafts_all" ON public.event_form_drafts FOR ALL USING (true) WITH CHECK (true);
+-- Automatically seed for all existing workspaces in database
+DO $$
+DECLARE
+  ws RECORD;
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'workspaces') THEN
+    FOR ws IN SELECT id FROM public.workspaces LOOP
+      PERFORM public.seed_default_workspace_crew_roles(ws.id);
+    END LOOP;
   END IF;
 END $$;
