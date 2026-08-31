@@ -3,8 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import Image from 'next/image';
-import { supabase } from '@/lib/supabase';
+import { supabase, clearAllSupabaseAuthCookies } from '@/lib/supabase';
 import {
   User,
   Lock,
@@ -187,6 +186,9 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
+      // Purge any stale/corrupted cookie chunks before fresh login
+      clearAllSupabaseAuthCookies();
+
       const redirectTo = searchParams.get('redirectTo') || '/workspace';
 
       // 1. Direct Supabase Cloud Login for Email (Bypasses server & prevents any 502 Bad Gateway)

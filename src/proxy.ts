@@ -134,26 +134,58 @@ export async function proxy(request: NextRequest) {
       /* ignore */
     }
 
-    // Fallback 1: Direct cookie token inspection via parseJwt
+    // Fallback 1: Direct cookie token inspection with proper chunk reassembly
     if (!user) {
       const candidateTokens: string[] = [];
-
       const allCookies = request.cookies.getAll();
-      const authCookies = allCookies.filter(c => c.name.includes('-auth-token'));
-      for (const ac of authCookies) {
-        if (ac.value) {
-          try {
-            const parsed = JSON.parse(ac.value);
-            const tok = parsed?.access_token || (Array.isArray(parsed) ? parsed[0] : null);
-            if (tok) candidateTokens.push(tok);
-          } catch (_) {
-            candidateTokens.push(ac.value);
+
+      // Group and reassemble chunked cookies (e.g., sb-*-auth-token.0, .1)
+      const chunkMap: { [baseName: string]: { index: number; value: string }[] } = {};
+      const standaloneValues: string[] = [];
+
+      allCookies.forEach(c => {
+        if (c.name.includes('-auth-token')) {
+          const match = c.name.match(/^(.*?)\.(\d+)$/);
+          if (match) {
+            const base = match[1];
+            const idx = parseInt(match[2], 10);
+            if (!chunkMap[base]) chunkMap[base] = [];
+            chunkMap[base].push({ index: idx, value: c.value });
+          } else {
+            standaloneValues.push(c.value);
+          }
+        }
+      });
+
+      // Reassemble chunks sorted by index
+      Object.values(chunkMap).forEach(chunks => {
+        chunks.sort((a, b) => a.index - b.index);
+        const combined = chunks.map(c => c.value).join('');
+        standaloneValues.push(combined);
+      });
+
+      // Also check standard sb-access-token
+      const sbAccessToken = request.cookies.get('sb-access-token')?.value;
+      if (sbAccessToken) standaloneValues.push(sbAccessToken);
+
+      for (let rawVal of standaloneValues) {
+        if (!rawVal) continue;
+        try {
+          let unescaped = rawVal;
+          if (unescaped.startsWith('base64-')) {
+            try {
+              unescaped = Buffer.from(unescaped.substring(7), 'base64').toString('utf-8');
+            } catch (_) {}
+          }
+          const parsed = JSON.parse(unescaped);
+          const tok = parsed?.access_token || (Array.isArray(parsed) ? parsed[0] : null);
+          if (tok && typeof tok === 'string') candidateTokens.push(tok);
+        } catch (_) {
+          if (rawVal.startsWith('ey') && rawVal.split('.').length === 3) {
+            candidateTokens.push(rawVal);
           }
         }
       }
-
-      const sbAccessToken = request.cookies.get('sb-access-token')?.value;
-      if (sbAccessToken) candidateTokens.push(sbAccessToken);
 
       for (const tok of candidateTokens) {
         const decodedUser = parseJwt(tok);
