@@ -84,23 +84,6 @@ export default function RootLayout({
                       }
                     }
                   });
-
-                  // 2. Cookie cleanup for legacy token chunks
-                  if (typeof document !== 'undefined' && document.cookie) {
-                    var cookies = document.cookie.split(';');
-                    var domain = window.location.hostname;
-                    var paths = ['/', '/workspace', '/dashboard', '/api'];
-                    for (var i = 0; i < cookies.length; i++) {
-                      var c = cookies[i].trim();
-                      var name = c.split('=')[0];
-                      if (name === 'sb-access-token' || name === 'sb-refresh-token' || name === 'supabase.auth.token' || /\\.([3-9]|[1-9][0-9])$/.test(name)) {
-                        for (var p = 0; p < paths.length; p++) {
-                          document.cookie = name + '=; path=' + paths[p] + '; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
-                          document.cookie = name + '=; path=' + paths[p] + '; domain=' + domain + '; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
-                        }
-                      }
-                    }
-                  }
                 } catch(e){}
               })();
             `,

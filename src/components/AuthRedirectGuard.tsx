@@ -2,15 +2,37 @@
 
 import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
 
 /**
- * AuthRedirectGuard
- * Intercepts Supabase Auth email recovery and magic links from any landing URL (e.g. /, /login, or nip.io domain)
- * and safely forwards them to /reset-password with the full auth hash.
+ * AuthRedirectGuard & Auto-Healing Cookie Recovery
+ * 1. Intercepts Supabase Auth email recovery and magic links
+ * 2. Auto-heals broken/corrupted Supabase SSR cookie chunks when session is absent or signed out
  */
 export function AuthRedirectGuard() {
   const pathname = usePathname();
   const router = useRouter();
+
+  // Auto-healing: Destroy broken or corrupted supabase cookies on sign-out or initial empty session on public routes
+  useEffect(() => {
+    try {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session)) {
+          if (pathname === '/login' || pathname === '/') {
+            if (typeof document !== 'undefined' && document.cookie) {
+              document.cookie.split(';').forEach((c) => {
+                const trimmed = c.trim();
+                if (trimmed.startsWith('sb-') && (trimmed.includes('auth-token') || trimmed.includes('-token'))) {
+                  document.cookie = trimmed.replace(/^ +/, '').replace(/=.*/, '=;expires=' + new Date(0).toUTCString() + ';path=/;SameSite=Lax');
+                }
+              });
+            }
+          }
+        }
+      });
+      return () => subscription.unsubscribe();
+    } catch (_) {}
+  }, [pathname]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
