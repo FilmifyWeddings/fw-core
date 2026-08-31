@@ -49,7 +49,6 @@ import {
   reorderWorkspacePaymentStepNames,
   saveAllWorkspaceQuotationSettings,
   DEFAULT_EVENT_TYPES, 
-  DEFAULT_CREW_ROLES, 
   DEFAULT_WORKSPACE_QUOTATION_SETTINGS,
   DEFAULT_DURATION_SLOTS,
   DEFAULT_QUOTATION_PAYMENT_STEPS,
@@ -90,7 +89,8 @@ export default function SettingsPage() {
 
   // Functions & Crew Roles States
   const [eventTypes, setEventTypes] = useState<WorkspaceEventType[]>(DEFAULT_EVENT_TYPES);
-  const [crewRoles, setCrewRoles] = useState<WorkspaceCrewRole[]>(DEFAULT_CREW_ROLES);
+  const [crewRoles, setCrewRoles] = useState<WorkspaceCrewRole[]>([]);
+  const [loadingCrewRoles, setLoadingCrewRoles] = useState<boolean>(true);
   const [newEventName, setNewEventName] = useState('');
   const [newRoleName, setNewRoleName] = useState('');
   const [newRoleCode, setNewRoleCode] = useState('');
@@ -520,13 +520,16 @@ export default function SettingsPage() {
       if (wId) {
         const ev = await fetchWorkspaceEventTypes(wId);
         if (ev && ev.length > 0) setEventTypes(ev);
+        setLoadingCrewRoles(true);
         const cr = await fetchWorkspaceCrewRoles(wId);
-        if (cr && cr.length > 0) setCrewRoles(cr);
+        setCrewRoles(cr || []);
+        setLoadingCrewRoles(false);
       }
     } catch (err) {
       console.error('Failed to load settings:', err);
     } finally {
       setLoading(false);
+      setLoadingCrewRoles(false);
     }
   }, [router, getAuthHeaders]);
 
@@ -1253,60 +1256,71 @@ export default function SettingsPage() {
                 </div>
 
                 {/* Crew Roles List */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 pt-2">
-                  {crewRoles
-                    .filter(r => r.name.toLowerCase().includes(roleSearch.toLowerCase()) || r.short_code.toLowerCase().includes(roleSearch.toLowerCase()))
-                    .map((item) => (
-                      <div
-                        key={item.id}
-                        className="flex items-center justify-between p-3.5 bg-white border border-amber-200/90 rounded-xl shadow-2xs hover:border-slate-300 transition group"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 font-black text-xs flex items-center justify-center shrink-0">
-                            {item.short_code}
+                {loadingCrewRoles && crewRoles.length === 0 ? (
+                  <div className="flex items-center justify-center py-12 text-slate-400 gap-2">
+                    <Loader2 className="w-5 h-5 animate-spin text-indigo-600" />
+                    <span className="text-xs font-bold">Loading crew roles from database...</span>
+                  </div>
+                ) : crewRoles.length === 0 ? (
+                  <div className="text-center py-8 text-xs font-bold text-slate-400 bg-amber-50/50 rounded-xl border border-dashed border-amber-200">
+                    No crew roles found. Click &quot;+ Add Role&quot; above to create your first crew role.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 pt-2">
+                    {crewRoles
+                      .filter(r => r.name.toLowerCase().includes(roleSearch.toLowerCase()) || r.short_code.toLowerCase().includes(roleSearch.toLowerCase()))
+                      .map((item) => (
+                        <div
+                          key={item.id}
+                          className="flex items-center justify-between p-3.5 bg-white border border-amber-200/90 rounded-xl shadow-2xs hover:border-slate-300 transition group"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 font-black text-xs flex items-center justify-center shrink-0">
+                              {item.short_code}
+                            </div>
+                            <div className="min-w-0">
+                              <span className="text-xs font-black text-amber-950 block truncate">{item.name}</span>
+                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{item.category || 'Crew'}</span>
+                            </div>
                           </div>
-                          <div className="min-w-0">
-                            <span className="text-xs font-black text-amber-950 block truncate">{item.name}</span>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{item.category || 'Crew'}</span>
-                          </div>
-                        </div>
 
-                        <div className="flex items-center gap-1 shrink-0">
-                          {item.is_default && (
-                            <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 bg-amber-50 text-zinc-500 rounded-md">
-                              Def
-                            </span>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingCrewRole(item);
-                              setEditRoleName(item.name);
-                              setEditRoleCode(item.short_code);
-                            }}
-                            className="p-1.5 text-slate-400 hover:text-indigo-600 transition rounded-lg hover:bg-indigo-50 cursor-pointer"
-                            title="Edit Role & Code"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              if (!confirm(`Delete crew role "${item.name}"?`)) return;
-                              await deleteWorkspaceCrewRole(item.id, workspaceId);
-                              setCrewRoles(prev => prev.filter(r => r.id !== item.id));
-                              setSaveToast(`Crew role "${item.name}" removed`);
-                              setTimeout(() => setSaveToast(null), 3000);
-                            }}
-                            className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition rounded-lg cursor-pointer opacity-100 border border-rose-200/60 shadow-2xs"
-                            title={`Delete ${item.name}`}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {item.is_default && (
+                              <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 bg-amber-50 text-zinc-500 rounded-md">
+                                Def
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingCrewRole(item);
+                                setEditRoleName(item.name);
+                                setEditRoleCode(item.short_code);
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-indigo-600 transition rounded-lg hover:bg-indigo-50 cursor-pointer"
+                              title="Edit Role & Code"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (!confirm(`Delete crew role "${item.name}"?`)) return;
+                                await deleteWorkspaceCrewRole(item.id, workspaceId);
+                                setCrewRoles(prev => prev.filter(r => r.id !== item.id));
+                                setSaveToast(`Crew role "${item.name}" removed`);
+                                setTimeout(() => setSaveToast(null), 3000);
+                              }}
+                              className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition rounded-lg cursor-pointer opacity-100 border border-rose-200/60 shadow-2xs"
+                              title={`Delete ${item.name}`}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                </div>
+                      ))}
+                  </div>
+                )}
 
                 {/* Edit Crew Role Modal */}
                 {editingCrewRole && (
@@ -2554,7 +2568,7 @@ export default function SettingsPage() {
                                   }}
                                   className="flex-1 px-2 py-1 bg-white border border-amber-200/90 rounded-lg text-xs font-bold text-zinc-850"
                                 >
-                                  {DEFAULT_CREW_ROLES.map(cr => (
+                                  {crewRoles.map(cr => (
                                     <option key={cr.id} value={cr.name}>{cr.name} ({cr.short_code})</option>
                                   ))}
                                 </select>

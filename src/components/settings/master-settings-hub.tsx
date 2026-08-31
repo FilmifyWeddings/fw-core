@@ -17,8 +17,7 @@ import {
   fetchWorkspaceCrewRoles, 
   saveWorkspaceEventType, 
   saveWorkspaceCrewRole, 
-  DEFAULT_EVENT_TYPES, 
-  DEFAULT_CREW_ROLES 
+  DEFAULT_EVENT_TYPES 
 } from '@/lib/workspace-settings';
 
 interface MasterSettingsHubProps {
@@ -124,7 +123,7 @@ export function MasterSettingsHub({ isOpen, onClose, workspaceId, onStagesUpdate
 
   // Functions (Event Types) & Crew Roles (with Short Codes) State
   const [eventTypes, setEventTypes] = useState<WorkspaceEventType[]>(DEFAULT_EVENT_TYPES);
-  const [crewRoles, setCrewRoles] = useState<WorkspaceCrewRole[]>(DEFAULT_CREW_ROLES);
+  const [crewRoles, setCrewRoles] = useState<WorkspaceCrewRole[]>([]);
   const [newEventTypeName, setNewEventTypeName] = useState('');
   const [newEventTypeCat, setNewEventTypeCat] = useState('Wedding');
   const [newRoleName, setNewRoleName] = useState('');
@@ -246,7 +245,7 @@ export function MasterSettingsHub({ isOpen, onClose, workspaceId, onStagesUpdate
       if (fetchedEvTypes && fetchedEvTypes.length > 0) setEventTypes(fetchedEvTypes);
 
       const fetchedCrewRoles = await fetchWorkspaceCrewRoles(workspaceId);
-      if (fetchedCrewRoles && fetchedCrewRoles.length > 0) setCrewRoles(fetchedCrewRoles);
+      setCrewRoles(fetchedCrewRoles || []);
     } catch (err) {
       console.error('Failed to load settings:', err);
     } finally {

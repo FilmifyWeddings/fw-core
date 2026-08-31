@@ -23,7 +23,7 @@ import Professional3DCalendar from './components/Professional3DCalendar';
 import { EventBlockData } from './components/EventBlock';
 import { saveOrUpdateEventPayout, fetchMemberFinancialSummary, TeamFinancialSummary } from '@/lib/team-finance-sync';
 import TeamMemberFinanceDrawer from '../workspace/team/components/TeamMemberFinanceDrawer';
-import { WorkspaceCrewRole, fetchWorkspaceCrewRoles, fetchWorkspaceEventTypes, getRoleShortCode, DEFAULT_CREW_ROLES } from '@/lib/workspace-settings';
+import { WorkspaceCrewRole, fetchWorkspaceCrewRoles, fetchWorkspaceEventTypes, getRoleShortCode } from '@/lib/workspace-settings';
 
 // 1. Deterministic Client Gradient Consistency based on Project ID / Name Hash
 const getGradientByProjectId = (id: string) => {
@@ -180,7 +180,7 @@ export default function TeamManagerPage() {
   const [eventTypesList, setEventTypesList] = useState<string[]>([
     "Wedding Ceremony", "Haldi", "Sangeet", "Mehendi", "Reception", "Pre-Wedding Shoot"
   ]);
-  const [customCrewRoles, setCustomCrewRoles] = useState<WorkspaceCrewRole[]>(DEFAULT_CREW_ROLES);
+  const [customCrewRoles, setCustomCrewRoles] = useState<WorkspaceCrewRole[]>([]);
   const [activeAssignmentForMember, setActiveAssignmentForMember] = useState<{
     assignmentId?: string;
     role?: string;
@@ -215,9 +215,7 @@ export default function TeamManagerPage() {
     const syncCrewRoles = async () => {
       const targetWs = workspaceId || currentUserId;
       const roles = await fetchWorkspaceCrewRoles(targetWs);
-      if (roles && roles.length > 0) {
-        setCustomCrewRoles(roles);
-      }
+      setCustomCrewRoles(roles || []);
     };
     syncCrewRoles();
     window.addEventListener('workspace_crew_roles_updated', syncCrewRoles);

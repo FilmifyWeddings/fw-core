@@ -2721,7 +2721,7 @@ function StudioCoreAiryBuilderContent() {
           setAvailableFunctionNames(names);
         }
         const roles = await fetchWorkspaceCrewRoles(effectiveUid);
-        if (roles && roles.length > 0) {
+        if (Array.isArray(roles) && roles.length > 0) {
           const roleNames = roles.map(r => r.name);
           setAvailableRequirements(roleNames);
         }

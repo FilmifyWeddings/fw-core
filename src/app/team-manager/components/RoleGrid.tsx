@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Users, UserPlus, Layers, Plus, X, Check } from 'lucide-react';
-import { WorkspaceCrewRole, fetchWorkspaceCrewRoles, saveWorkspaceCrewRole, getRoleShortCode, DEFAULT_CREW_ROLES } from '@/lib/workspace-settings';
+import { WorkspaceCrewRole, fetchWorkspaceCrewRoles, saveWorkspaceCrewRole, getRoleShortCode } from '@/lib/workspace-settings';
 
 interface RoleGridProps {
   selectedRoles: string[];
@@ -15,12 +15,12 @@ export default function RoleGrid({ selectedRoles, onToggle, onAddCustom }: RoleG
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [customRole, setCustomRole] = useState('');
   const [customRoleCode, setCustomRoleCode] = useState('');
-  const [dbRoles, setDbRoles] = useState<WorkspaceCrewRole[]>(DEFAULT_CREW_ROLES);
+  const [dbRoles, setDbRoles] = useState<WorkspaceCrewRole[]>([]);
 
   useEffect(() => {
     const loadRoles = async () => {
       const fetched = await fetchWorkspaceCrewRoles();
-      if (fetched && fetched.length > 0) setDbRoles(fetched);
+      setDbRoles(fetched || []);
     };
     loadRoles();
     window.addEventListener('workspace_crew_roles_updated', loadRoles);
