@@ -93,18 +93,16 @@ export const DEFAULT_EVENT_TYPES: WorkspaceEventType[] = [
 ];
 
 export const DEFAULT_CREW_ROLES: WorkspaceCrewRole[] = [
-  { id: 'def_role_1', name: 'Traditional Photographer', short_code: 'TP', category: 'Photography', is_default: true, display_order: 1 },
+  { id: 'def_role_1', name: 'Team Manager', short_code: 'TM', category: 'Management', is_default: true, display_order: 1 },
   { id: 'def_role_2', name: 'Candid Photographer', short_code: 'CP', category: 'Photography', is_default: true, display_order: 2 },
   { id: 'def_role_3', name: 'Cinematographer', short_code: 'CV', category: 'Cinematography', is_default: true, display_order: 3 },
-  { id: 'def_role_4', name: 'Drone Pilot', short_code: 'DP', category: 'Drone', is_default: true, display_order: 4 },
+  { id: 'def_role_4', name: 'Traditional Photographer', short_code: 'TP', category: 'Photography', is_default: true, display_order: 4 },
   { id: 'def_role_5', name: 'Traditional Videographer', short_code: 'TV', category: 'Cinematography', is_default: true, display_order: 5 },
-  { id: 'def_role_6', name: 'Assistant / Helper', short_code: 'AS', category: 'Assistance', is_default: true, display_order: 6 },
-  { id: 'def_role_7', name: 'Teaser Specialist', short_code: 'TS', category: 'Cinematography', is_default: true, display_order: 7 },
-  { id: 'def_role_8', name: 'Photo Editor / Retoucher', short_code: 'PE', category: 'Post-Production', is_default: true, display_order: 8 },
-  { id: 'def_role_9', name: 'Video Editor', short_code: 'VE', category: 'Post-Production', is_default: true, display_order: 9 },
-  { id: 'def_role_10', name: 'Album Designer', short_code: 'AD', category: 'Post-Production', is_default: true, display_order: 10 },
-  { id: 'def_role_11', name: 'Live Stream Operator', short_code: 'LS', category: 'Live Tech', is_default: true, display_order: 11 },
-  { id: 'def_role_12', name: 'Social Media Reels Creator', short_code: 'RC', category: 'Social Media', is_default: true, display_order: 12 },
+  { id: 'def_role_6', name: 'Assistant', short_code: 'AS', category: 'Assistance', is_default: true, display_order: 6 },
+  { id: 'def_role_7', name: 'Drone Pilot', short_code: 'DP', category: 'Drone', is_default: true, display_order: 7 },
+  { id: 'def_role_8', name: 'Family Photographer', short_code: 'FP', category: 'Photography', is_default: true, display_order: 8 },
+  { id: 'def_role_9', name: 'Lead Photographer', short_code: 'LP', category: 'Photography', is_default: true, display_order: 9 },
+  { id: 'def_role_10', name: 'Social Media Reels Creator', short_code: 'RC', category: 'Social Media', is_default: true, display_order: 10 },
 ];
 
 export const DEFAULT_QUOTATION_DELIVERABLES: WorkspaceQuotationDeliverable[] = [

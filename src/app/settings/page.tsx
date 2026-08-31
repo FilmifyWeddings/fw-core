@@ -1298,8 +1298,8 @@ export default function SettingsPage() {
                               setSaveToast(`Crew role "${item.name}" removed`);
                               setTimeout(() => setSaveToast(null), 3000);
                             }}
-                            className="p-1.5 text-slate-300 hover:text-rose-600 transition rounded-lg hover:bg-rose-50 cursor-pointer opacity-0 group-hover:opacity-100"
-                            title="Delete"
+                            className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition rounded-lg cursor-pointer opacity-100 border border-rose-200/60 shadow-2xs"
+                            title={`Delete ${item.name}`}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>

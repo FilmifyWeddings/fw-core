@@ -612,7 +612,7 @@ export default function TeamManagerPage() {
   ) => {
     try {
       let targetProjectId = projectId;
-      const firstSubEventDate = blocks[0]?.subEventDate || new Date().toISOString().split('T')[0];
+      const firstSubEventDate = blocks[0]?.isDateTbd ? null : (blocks[0]?.subEventDate || new Date().toISOString().split('T')[0]);
       const firstSubEventVenue = blocks[0]?.venueLocation || 'TBD Venue';
 
       // STEP 1: Insert or Update Project in fw_projects
@@ -669,7 +669,7 @@ export default function TeamManagerPage() {
             const subEventPayload: any = {
               project_id: targetProjectId,
               event_title: title,
-              event_date: block.isDateTbd ? 'TBD / Not Fixed' : (block.subEventDate || new Date().toISOString().split('T')[0]),
+              event_date: block.isDateTbd ? null : (block.subEventDate || null),
               is_date_tbd: Boolean(block.isDateTbd),
               is_overnight: Boolean(block.isOvernight),
               end_date: block.endDate || null,
@@ -744,7 +744,7 @@ export default function TeamManagerPage() {
             const subEventPayload: any = {
               project_id: targetProjectId,
               event_title: title,
-              event_date: block.isDateTbd ? 'TBD / Not Fixed' : (block.subEventDate || new Date().toISOString().split('T')[0]),
+              event_date: block.isDateTbd ? null : (block.subEventDate || null),
               is_date_tbd: Boolean(block.isDateTbd),
               is_overnight: Boolean(block.isOvernight),
               end_date: block.endDate || null,
@@ -1228,24 +1228,33 @@ export default function TeamManagerPage() {
                         {/* HORIZONTAL MODERN GRADIENT SUB-EVENT CARDS STACK */}
                         <div className="space-y-4">
                           {project.fw_sub_events?.map((subEvent) => {
-                            const isDateNotFixed = !subEvent.event_date || 
-                              subEvent.event_date.toLowerCase().includes('not fix') || 
-                              subEvent.event_date.toLowerCase().includes('tbd') || 
-                              isNaN(new Date(subEvent.event_date).getTime());
+                            const isTbd = Boolean((subEvent as any).is_date_tbd) || !subEvent.event_date || isNaN(new Date(subEvent.event_date).getTime());
+                            const isOvernightShoot = Boolean((subEvent as any).is_overnight) && Boolean((subEvent as any).end_date) && !isNaN(new Date((subEvent as any).end_date).getTime());
 
-                            const eventDate = new Date(subEvent.event_date);
-                            const dayName = isDateNotFixed 
-                              ? 'DATE' 
-                              : eventDate.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
-                            const monthAbbr = isDateNotFixed 
-                              ? 'NOT' 
-                              : eventDate.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
-                            const dayNumber = isDateNotFixed 
-                              ? 'TBD' 
-                              : eventDate.getDate().toString().padStart(2, '0');
-                            const yearStr = isDateNotFixed 
-                              ? 'FIXED' 
-                              : eventDate.getFullYear().toString();
+                            const startDateObj = !isTbd ? new Date(subEvent.event_date) : null;
+                            const endDateObj = isOvernightShoot ? new Date((subEvent as any).end_date) : null;
+
+                            let dayNumber = 'TBD';
+                            let dayName = 'DATE';
+                            let monthAbbr = 'NOT';
+                            let yearStr = 'FIXED';
+
+                            if (!isTbd && startDateObj) {
+                              const sDay = startDateObj.getDate().toString().padStart(2, '0');
+                              const sDayName = startDateObj.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+                              monthAbbr = startDateObj.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+                              yearStr = startDateObj.getFullYear().toString();
+
+                              if (isOvernightShoot && endDateObj) {
+                                const eDay = endDateObj.getDate().toString().padStart(2, '0');
+                                const eDayName = endDateObj.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+                                dayNumber = `${sDay}-${eDay}`;
+                                dayName = `${sDayName}-${eDayName}`;
+                              } else {
+                                dayNumber = sDay;
+                                dayName = sDayName;
+                              }
+                            }
 
                             // Robust assignment resolver ensuring roles are fetched via fw_assignments relation
                             const assignments = resolveSubEventAssignments(subEvent, teamMembers);
@@ -1261,7 +1270,7 @@ export default function TeamManagerPage() {
                                     <span className="text-xs font-bold text-white/80 uppercase tracking-wider block">
                                       {dayName}
                                     </span>
-                                    <span className={`font-black text-white leading-none my-1 block ${isDateNotFixed ? 'text-lg' : 'text-2xl'}`}>
+                                    <span className={`font-black text-white leading-none my-1 block ${isTbd ? 'text-lg' : 'text-2xl'}`}>
                                       {dayNumber}
                                     </span>
                                     <span className="text-xs font-extrabold text-white/90 uppercase tracking-wider block">
@@ -1285,7 +1294,7 @@ export default function TeamManagerPage() {
                                         <h4 className="font-black text-slate-900 text-base tracking-tight" style={{ color: '#1E1B4B' }}>
                                           {subEvent.event_title}
                                         </h4>
-                                        {isDateNotFixed && (
+                                        {isTbd && (
                                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black">
                                             ⚠️ Date: TBD / Not Fixed
                                           </span>

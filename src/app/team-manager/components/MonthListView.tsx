@@ -200,18 +200,23 @@ export default function MonthListView({
                   {items.map(({ subEvent, project, dateObj }) => {
                     const projectGradient = getGradientByProjectId(project.id || project.client_name);
 
-                    const dayName = isNaN(dateObj.getTime())
-                      ? 'DAY'
-                      : dateObj.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
-                    const monthAbbr = isNaN(dateObj.getTime())
-                      ? 'MMM'
-                      : dateObj.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
-                    const dayNumber = isNaN(dateObj.getTime())
-                      ? '00'
-                      : dateObj.getDate().toString().padStart(2, '0');
-                    const yearStr = isNaN(dateObj.getTime())
-                      ? ''
-                      : dateObj.getFullYear().toString();
+                    const isTbd = Boolean((subEvent as any).is_date_tbd) || !subEvent.event_date || isNaN(dateObj.getTime());
+                    const isOvernightShoot = Boolean((subEvent as any).is_overnight) && Boolean((subEvent as any).end_date) && !isNaN(new Date((subEvent as any).end_date).getTime());
+                    const endDateObj = isOvernightShoot ? new Date((subEvent as any).end_date) : null;
+
+                    let dayName = isTbd ? 'DATE' : dateObj.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+                    let monthAbbr = isTbd ? 'TBD' : dateObj.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+                    let dayNumber = isTbd ? 'TBD' : dateObj.getDate().toString().padStart(2, '0');
+                    let yearStr = isTbd ? '' : dateObj.getFullYear().toString();
+
+                    if (!isTbd && isOvernightShoot && endDateObj) {
+                      const sDay = dateObj.getDate().toString().padStart(2, '0');
+                      const eDay = endDateObj.getDate().toString().padStart(2, '0');
+                      const sDayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+                      const eDayName = endDateObj.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+                      dayNumber = `${sDay}-${eDay}`;
+                      dayName = `${sDayName}-${eDayName}`;
+                    }
 
                     const assignments = resolveSubEventAssignments(subEvent, teamMembers);
                     const assignedCount = assignments.filter((a) => a.assigned_member_id).length;

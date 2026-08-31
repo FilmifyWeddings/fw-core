@@ -186,6 +186,20 @@ export default function AddProjectModal({
         title: 'Missing Mandatory Information',
         issues,
       });
+
+      // Smooth scroll directly to the first invalid field or error block
+      setTimeout(() => {
+        const errorInput = document.querySelector('[data-has-error="true"]') || 
+                           document.querySelector('.border-rose-500') ||
+                           document.querySelector('.border-rose-400') ||
+                           document.getElementById('coupling-name-input');
+        if (errorInput) {
+          errorInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          if (errorInput instanceof HTMLElement) {
+            errorInput.focus();
+          }
+        }
+      }, 100);
       return;
     }
 

@@ -44,10 +44,12 @@ ALTER TABLE IF EXISTS public.fw_sub_events ADD COLUMN IF NOT EXISTS is_overnight
 ALTER TABLE IF EXISTS public.fw_sub_events ADD COLUMN IF NOT EXISTS end_date TEXT;
 ALTER TABLE IF EXISTS public.fw_sub_events ADD COLUMN IF NOT EXISTS start_time_12h TEXT;
 ALTER TABLE IF EXISTS public.fw_sub_events ADD COLUMN IF NOT EXISTS end_time_12h TEXT;
+ALTER TABLE IF EXISTS public.fw_sub_events ALTER COLUMN event_date DROP NOT NULL;
 
 -- Project Manager columns on fw_projects
 ALTER TABLE IF EXISTS public.fw_projects ADD COLUMN IF NOT EXISTS project_manager_id TEXT;
 ALTER TABLE IF EXISTS public.fw_projects ADD COLUMN IF NOT EXISTS project_manager_name TEXT;
+ALTER TABLE IF EXISTS public.fw_projects ALTER COLUMN main_date DROP NOT NULL;
 
 -- 3. Update Quotations Table to support explicit Toggle Unmarking
 ALTER TABLE IF EXISTS public.quotations ADD COLUMN IF NOT EXISTS is_final BOOLEAN DEFAULT false;

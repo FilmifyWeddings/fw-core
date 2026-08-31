@@ -134,14 +134,13 @@ export default function RoleGrid({ selectedRoles, onToggle, onAddCustom }: RoleG
               type="button"
               title={`${item.name} (${item.code})`}
               onClick={() => onToggle(item.name)}
-              className={`px-2.5 py-1.5 rounded-xl text-xs font-black transition-all inline-flex items-center gap-1.5 cursor-pointer select-none border group/pill ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all inline-flex items-center gap-1.5 cursor-pointer select-none border group/pill ${
                 isSelected
                   ? 'bg-[#6C5CE7] text-white shadow-xs border-[#6C5CE7] scale-[1.02]'
                   : 'bg-white text-slate-700 hover:bg-indigo-50 hover:text-indigo-900 border-slate-200 shadow-2xs'
               }`}
             >
               <span className={`font-black text-xs ${isSelected ? 'text-white' : 'text-indigo-600'}`}>{item.code}</span>
-              <span className={`text-[11px] font-bold hidden sm:inline-block truncate max-w-[120px] ${isSelected ? 'text-indigo-100' : 'text-slate-600'}`}>{item.name}</span>
               {isSelected ? (
                 <Check className="w-3 h-3 text-white stroke-[3] shrink-0" />
               ) : (
