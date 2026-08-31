@@ -37,6 +37,7 @@ interface AddProjectModalProps {
   isOpen: boolean;
   onClose: () => void;
   projectToEdit?: FWProject | null;
+  initialDate?: string;
   onSave: (couplingName: string, blocks: EventBlockData[], projectId?: string) => Promise<boolean | void> | void;
   onDeleteProject?: (projectId: string) => void;
   workspaceId?: string;
@@ -48,13 +49,14 @@ export default function AddProjectModal({
   isOpen,
   onClose,
   projectToEdit,
+  initialDate,
   onSave,
   onDeleteProject,
   workspaceId = 'default',
 }: AddProjectModalProps) {
   const [couplingName, setCouplingName] = useState('');
   const [eventBlocks, setEventBlocks] = useState<EventBlockData[]>([
-    { ...DEFAULT_BLOCK, id: generateUniqueId(), roles: [] },
+    { ...DEFAULT_BLOCK, id: generateUniqueId(), subEventDate: initialDate || '', roles: [] },
   ]);
   const [customPrograms, setCustomPrograms] = useState<string[]>([]);
   const [customRoles, setCustomRoles] = useState<string[]>([]);
@@ -71,7 +73,7 @@ export default function AddProjectModal({
 
   const resetFormState = () => {
     setCouplingName('');
-    setEventBlocks([{ ...DEFAULT_BLOCK, id: generateUniqueId(), roles: [] }]);
+    setEventBlocks([{ ...DEFAULT_BLOCK, id: generateUniqueId(), subEventDate: initialDate || '', roles: [] }]);
     setCustomPrograms([]);
     setCustomRoles([]);
     setValidatedAttempt(false);

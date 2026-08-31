@@ -20,6 +20,7 @@ import AddTeamMemberModal from './components/AddTeamMemberModal';
 import TeamSettingsModal from './components/TeamSettingsModal';
 import MonthListView from './components/MonthListView';
 import Professional3DCalendar from './components/Professional3DCalendar';
+import WhatsAppAssignmentModal from './components/WhatsAppAssignmentModal';
 import { EventBlockData } from './components/EventBlock';
 import { saveOrUpdateEventPayout, fetchMemberFinancialSummary, TeamFinancialSummary } from '@/lib/team-finance-sync';
 import TeamMemberFinanceDrawer from '../workspace/team/components/TeamMemberFinanceDrawer';
@@ -195,6 +196,22 @@ export default function TeamManagerPage() {
   const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null);
   const [activePmDropdownProjectId, setActivePmDropdownProjectId] = useState<string | null>(null);
   const [pmSearchQuery, setPmSearchQuery] = useState<string>('');
+
+  // WhatsApp Assignment Modal State
+  const [initialDateForModal, setInitialDateForModal] = useState<string>('');
+  const [whatsappModalData, setWhatsappModalData] = useState<{
+    isOpen: boolean;
+    member: FWTeamMember | null;
+    role: string;
+    project: FWProject | null;
+    subEvent: FWSubEvent | null;
+  }>({
+    isOpen: false,
+    member: null,
+    role: '',
+    project: null,
+    subEvent: null,
+  });
 
   // Filter state
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -552,7 +569,23 @@ export default function TeamManagerPage() {
           }))
         );
 
-        // 2. BACKGROUND SILENT DB PERSISTENCE & FINANCE PAYOUT AUTO-SYNC
+        // 2. TRIGGER WHATSAPP ROSTER DISPATCH MODAL ON MEMBER ASSIGNMENT
+        if (memberId && matchedMemberObj) {
+          const projectObj = projects.find(p => p.id === activeAssign.project_id);
+          const subEventObj = projects
+            .flatMap(p => p.fw_sub_events || [])
+            .find(se => se.id === activeAssign.sub_event_id);
+
+          setWhatsappModalData({
+            isOpen: true,
+            member: matchedMemberObj,
+            role: activeAssign.required_role || 'Crew',
+            project: projectObj || null,
+            subEvent: subEventObj || null,
+          });
+        }
+
+        // 3. BACKGROUND SILENT DB PERSISTENCE & FINANCE PAYOUT AUTO-SYNC
         (async () => {
           try {
             const projectObj = projects.find(p => p.id === activeAssign.project_id);
@@ -1796,6 +1829,11 @@ export default function TeamManagerPage() {
               setActiveAssignmentForMember(info);
               setIsAddMemberOpen(true);
             }}
+            onAddProject={(initialDate) => {
+              setEditingProject(null);
+              setInitialDateForModal(initialDate || '');
+              setIsAddProjectOpen(true);
+            }}
           />
         )}
 
@@ -1813,8 +1851,9 @@ export default function TeamManagerPage() {
               setActiveAssignmentForMember(info);
               setIsAddMemberOpen(true);
             }}
-            onAddProject={() => {
+            onAddProject={(initialDate) => {
               setEditingProject(null);
+              setInitialDateForModal(initialDate || '');
               setIsAddProjectOpen(true);
             }}
           />
@@ -2256,8 +2295,10 @@ export default function TeamManagerPage() {
         onClose={() => {
           setIsAddProjectOpen(false);
           setEditingProject(null);
+          setInitialDateForModal('');
         }}
         projectToEdit={editingProject}
+        initialDate={initialDateForModal}
         onSave={handleSaveProject}
         onDeleteProject={(id) => handleToggleArchiveProject(id, true)}
       />
@@ -2341,6 +2382,19 @@ export default function TeamManagerPage() {
           </motion.div>
         </div>
       )}
+
+      {/* 5. WhatsApp Roster Assignment Dispatcher Modal */}
+      <WhatsAppAssignmentModal
+        isOpen={whatsappModalData.isOpen}
+        onClose={() => setWhatsappModalData(prev => ({ ...prev, isOpen: false }))}
+        member={whatsappModalData.member}
+        role={whatsappModalData.role}
+        project={whatsappModalData.project}
+        subEvent={whatsappModalData.subEvent}
+        studioName="Filmify Weddings"
+        projectManagerName={(whatsappModalData.project as any)?.project_manager_name || 'Studio Manager'}
+      />
+
       {/* 3D Tactile Financial Drawer */}
       <TeamMemberFinanceDrawer
         isOpen={isFinanceDrawerOpen}

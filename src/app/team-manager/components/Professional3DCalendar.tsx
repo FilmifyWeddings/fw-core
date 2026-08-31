@@ -1,11 +1,11 @@
-﻿'use client';
+'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { FWProject, FWSubEvent, FWTeamMember, FWAssignment } from '@/types';
 import { 
   Calendar as CalendarIcon, ChevronLeft, ChevronRight, Clock, MapPin, 
   UserCheck, AlertCircle, X, Sparkles, Filter, Search, Plus, Moon,
-  Users, CheckCircle2, Phone, ExternalLink
+  Users, CheckCircle2, Phone, ExternalLink, ChevronDown
 } from 'lucide-react';
 import RoleAssignDropdown from './RoleAssignDropdown';
 
@@ -18,7 +18,7 @@ interface Professional3DCalendarProps {
   getGradientByProjectId: (id: string) => string;
   onAssignMember: (assignmentId: string, memberId: string | null) => void;
   onAddNewMember: (info: { assignmentId: string; role: string; subEventId: string; projectId: string }) => void;
-  onAddProject?: () => void;
+  onAddProject?: (initialDate?: string) => void;
 }
 
 // Robust assignment resolver ensuring ALL configured roles remain visible (assigned or unassigned)
@@ -65,7 +65,7 @@ const getEventPillStyle = (title: string) => {
   const t = (title || '').toLowerCase();
   if (t.includes('haldi') || t.includes('mehendi') || t.includes('mehndi') || t.includes('pithi') || t.includes('engagement') || t.includes('roka') || t.includes('tilak')) {
     return {
-      pillBg: 'bg-amber-100/90 hover:bg-amber-200/90 text-amber-950 border border-amber-300/80',
+      pillBg: 'bg-amber-100/95 hover:bg-amber-200 text-amber-950 border border-amber-300/80',
       dotColor: 'bg-amber-500',
       tag: 'Haldi/Mehendi',
       timeText: 'text-amber-800'
@@ -73,7 +73,7 @@ const getEventPillStyle = (title: string) => {
   }
   if (t.includes('sangeet') || t.includes('reception') || t.includes('cocktail') || t.includes('party') || t.includes('dj') || t.includes('garba') || t.includes('dance')) {
     return {
-      pillBg: 'bg-purple-100/90 hover:bg-purple-200/90 text-purple-950 border border-purple-300/80',
+      pillBg: 'bg-purple-100/95 hover:bg-purple-200 text-purple-950 border border-purple-300/80',
       dotColor: 'bg-purple-500',
       tag: 'Sangeet/Reception',
       timeText: 'text-purple-800'
@@ -81,7 +81,7 @@ const getEventPillStyle = (title: string) => {
   }
   if (t.includes('wedding') || t.includes('shaadi') || t.includes('mandap') || t.includes('phera') || t.includes('barat') || t.includes('varmala') || t.includes('main')) {
     return {
-      pillBg: 'bg-rose-100/90 hover:bg-rose-200/90 text-rose-950 border border-rose-300/80',
+      pillBg: 'bg-rose-100/95 hover:bg-rose-200 text-rose-950 border border-rose-300/80',
       dotColor: 'bg-rose-500',
       tag: 'Wedding',
       timeText: 'text-rose-800'
@@ -89,19 +89,26 @@ const getEventPillStyle = (title: string) => {
   }
   if (t.includes('pre-wedding') || t.includes('pre wedding') || t.includes('shoot') || t.includes('portrait') || t.includes('outdoor')) {
     return {
-      pillBg: 'bg-sky-100/90 hover:bg-sky-200/90 text-sky-950 border border-sky-300/80',
+      pillBg: 'bg-sky-100/95 hover:bg-sky-200 text-sky-950 border border-sky-300/80',
       dotColor: 'bg-sky-500',
       tag: 'Pre-Wedding',
       timeText: 'text-sky-800'
     };
   }
   return {
-    pillBg: 'bg-emerald-100/90 hover:bg-emerald-200/90 text-emerald-950 border border-emerald-300/80',
+    pillBg: 'bg-emerald-100/95 hover:bg-emerald-200 text-emerald-950 border border-emerald-300/80',
     dotColor: 'bg-emerald-500',
     tag: 'Event',
     timeText: 'text-emerald-800'
   };
 };
+
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
+
+const YEARS_LIST = [2024, 2025, 2026, 2027, 2028, 2029, 2030];
 
 export default function Professional3DCalendar({
   projects,
@@ -116,17 +123,27 @@ export default function Professional3DCalendar({
 }: Professional3DCalendarProps) {
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [internalSearch, setInternalSearch] = useState<string>('');
-  const [activeCategoryFilter, setActiveCategoryFilter] = useState<string>('All');
+  const [isMonthPickerOpen, setIsMonthPickerOpen] = useState<boolean>(false);
+  const monthPickerRef = useRef<HTMLDivElement>(null);
+
   const [selectedDayInspector, setSelectedDayInspector] = useState<{
     dateStr: string;
     formattedDate: string;
-    items: { subEvent: FWSubEvent; project: FWProject }[];
+    projectGroups: { project: FWProject; subEvents: FWSubEvent[] }[];
   } | null>(null);
 
-  // Effective search query combining parent search and internal calendar search
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (monthPickerRef.current && !monthPickerRef.current.contains(e.target as Node)) {
+        setIsMonthPickerOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const effectiveSearch = (internalSearch || parentSearchQuery || '').trim().toLowerCase();
 
-  // Month navigation helpers
   const prevMonth = () => {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
   };
@@ -139,18 +156,19 @@ export default function Professional3DCalendar({
     setCurrentDate(new Date());
   };
 
-  // Calendar Grid Calculation (Monday as first day of week)
+  const jumpToMonthYear = (monthIdx: number, yearNum: number) => {
+    setCurrentDate(new Date(yearNum, monthIdx, 1));
+    setIsMonthPickerOpen(false);
+  };
+
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
 
-  // Get day of week for 1st of month (0 = Sun, 1 = Mon, ... 6 = Sat)
   const rawFirstDay = new Date(year, month, 1).getDay();
-  // Adjust so Monday is 0, Sunday is 6
   const firstDayOfMonth = (rawFirstDay + 6) % 7;
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const daysInPrevMonth = new Date(year, month, 0).getDate();
 
-  // Map events to date strings YYYY-MM-DD
   const eventsByDate: { [dateStr: string]: { subEvent: FWSubEvent; project: FWProject }[] } = useMemo(() => {
     const map: { [dateStr: string]: { subEvent: FWSubEvent; project: FWProject }[] } = {};
 
@@ -163,14 +181,6 @@ export default function Professional3DCalendar({
       (project.fw_sub_events || []).forEach((se) => {
         const matchSubTitle = !q || se.event_title.toLowerCase().includes(q);
         if (!matchClientName && !matchSubTitle) return;
-
-        // Category filter
-        if (activeCategoryFilter !== 'All') {
-          const style = getEventPillStyle(se.event_title);
-          if (style.tag.toLowerCase() !== activeCategoryFilter.toLowerCase() && !se.event_title.toLowerCase().includes(activeCategoryFilter.toLowerCase())) {
-            return;
-          }
-        }
 
         const assignments = resolveSubEventAssignments(se, teamMembers);
 
@@ -189,7 +199,7 @@ export default function Professional3DCalendar({
     });
 
     return map;
-  }, [projects, effectiveSearch, activeCategoryFilter, selectedRoleFilter, teamMembers]);
+  }, [projects, effectiveSearch, selectedRoleFilter, teamMembers]);
 
   const monthNameYear = currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   const todayObj = new Date();
@@ -199,15 +209,6 @@ export default function Professional3DCalendar({
 
   const daysOfWeek = ['Mon', 'Tues', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-  const categoryTags = [
-    { label: 'All events', value: 'All' },
-    { label: 'Haldi & Mehendi', value: 'Haldi/Mehendi' },
-    { label: 'Sangeet & Reception', value: 'Sangeet/Reception' },
-    { label: 'Weddings', value: 'Wedding' },
-    { label: 'Pre-Wedding', value: 'Pre-Wedding' }
-  ];
-
-  // Total shoots count this month
   const totalMonthEvents = useMemo(() => {
     let count = 0;
     for (let d = 1; d <= daysInMonth; d++) {
@@ -219,17 +220,33 @@ export default function Professional3DCalendar({
     return count;
   }, [eventsByDate, year, month, daysInMonth]);
 
+  const handleOpenDayInspector = (dateStr: string) => {
+    const rawItems = eventsByDate[dateStr] || [];
+    const dObj = new Date(`${dateStr}T12:00:00`);
+
+    const projectMap: { [projId: string]: { project: FWProject; subEvents: FWSubEvent[] } } = {};
+    rawItems.forEach(({ project, subEvent }) => {
+      const pId = project.id || project.client_name;
+      if (!projectMap[pId]) {
+        projectMap[pId] = { project, subEvents: [] };
+      }
+      projectMap[pId].subEvents.push(subEvent);
+    });
+
+    setSelectedDayInspector({
+      dateStr,
+      formattedDate: dObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }),
+      projectGroups: Object.values(projectMap),
+    });
+  };
+
   return (
-    <div className="space-y-5 select-none font-sans">
-      {/* ─── LUXURY CREAM MASTER CALENDAR CARD ─── */}
-      <div className="bg-[#FAF8F2] rounded-3xl border border-amber-200/70 shadow-xl shadow-amber-950/5 p-4 md:p-6 space-y-5 overflow-hidden">
+    <div className="space-y-5 select-none font-sans min-h-[600px]">
+      <div className="bg-[#FAF8F2] rounded-3xl border border-amber-200/80 shadow-xl shadow-amber-950/5 p-4 md:p-6 space-y-5 overflow-hidden">
         
-        {/* TOP FILTER & CATEGORY TAGS BAR */}
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 border-b border-amber-200/60 pb-4">
           
-          {/* LEFT: Mini Calendar Badge + Month Title & Date Range */}
           <div className="flex items-center gap-3.5">
-            {/* Dark Square Date Badge (Matching reference image) */}
             <div className="w-12 h-12 rounded-2xl bg-slate-950 text-white flex flex-col items-center justify-center shadow-md shadow-slate-950/20 shrink-0 border border-slate-800">
               <span className="text-[9px] font-black tracking-wider text-amber-300 uppercase leading-none">{todayMonthShort}</span>
               <span className="text-base font-black leading-tight mt-0.5">{todayDayNum}</span>
@@ -240,7 +257,7 @@ export default function Professional3DCalendar({
                 <h2 className="text-xl sm:text-2xl font-black text-amber-950 tracking-tight leading-tight">
                   {monthNameYear}
                 </h2>
-                <span className="px-2 py-0.5 text-[10px] font-extrabold bg-amber-200/70 text-amber-950 rounded-full border border-amber-300/80">
+                <span className="px-2 py-0.5 text-[10px] font-extrabold bg-amber-200/80 text-amber-950 rounded-full border border-amber-300/80">
                   {totalMonthEvents} Shoots
                 </span>
               </div>
@@ -250,15 +267,13 @@ export default function Professional3DCalendar({
             </div>
           </div>
 
-          {/* RIGHT: Search, Navigation, Category Filters & + Add Project */}
           <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-between lg:justify-end">
             
-            {/* Search within Calendar */}
-            <div className="relative w-44 sm:w-56">
+            <div className="relative w-40 sm:w-52">
               <Search className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search (⌘K)..."
+                placeholder="Search shoots..."
                 value={internalSearch}
                 onChange={(e) => setInternalSearch(e.target.value)}
                 className="w-full pl-8 pr-3 py-1.5 bg-white/90 border border-amber-200/90 rounded-xl text-xs font-bold text-amber-950 placeholder:text-stone-400 focus:outline-none focus:border-amber-500 focus:bg-white shadow-2xs transition"
@@ -273,7 +288,63 @@ export default function Professional3DCalendar({
               )}
             </div>
 
-            {/* Nav Arrows & Today Button */}
+            <div className="relative" ref={monthPickerRef}>
+              <button
+                type="button"
+                onClick={() => setIsMonthPickerOpen(!isMonthPickerOpen)}
+                className="px-3 py-1.5 bg-white/90 hover:bg-white border border-amber-200/90 rounded-xl text-xs font-black text-amber-950 shadow-2xs flex items-center gap-1.5 transition cursor-pointer"
+              >
+                <span>📅 {MONTH_NAMES[month].slice(0, 3)} {year}</span>
+                <ChevronDown className="w-3.5 h-3.5 text-amber-700" />
+              </button>
+
+              {isMonthPickerOpen && (
+                <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-2xl border-2 border-amber-300 shadow-2xl p-4 z-50 space-y-3 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="flex items-center justify-between border-b border-amber-100 pb-2">
+                    <span className="text-xs font-black text-amber-950 uppercase">Select Month & Year</span>
+                    <button
+                      onClick={() => setIsMonthPickerOpen(false)}
+                      className="text-stone-400 hover:text-stone-600 p-0.5"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-none">
+                    {YEARS_LIST.map((y) => (
+                      <button
+                        key={y}
+                        onClick={() => jumpToMonthYear(month, y)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-black transition cursor-pointer shrink-0 ${
+                          y === year
+                            ? 'bg-amber-950 text-amber-200 shadow-xs'
+                            : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
+                        }`}
+                      >
+                        {y}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-1.5 pt-1">
+                    {MONTH_NAMES.map((mName, idx) => (
+                      <button
+                        key={mName}
+                        onClick={() => jumpToMonthYear(idx, year)}
+                        className={`py-1.5 px-2 rounded-xl text-xs font-black transition text-center cursor-pointer ${
+                          idx === month
+                            ? 'bg-slate-950 text-white shadow-xs'
+                            : 'bg-amber-50/70 hover:bg-amber-100/90 text-amber-950 border border-amber-200/60'
+                        }`}
+                      >
+                        {mName.slice(0, 3)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="flex items-center bg-white/90 p-1 rounded-2xl border border-amber-200/90 shadow-2xs">
               <button
                 onClick={prevMonth}
@@ -299,40 +370,20 @@ export default function Professional3DCalendar({
               </button>
             </div>
 
-            {/* + Add Project Button */}
             {onAddProject && (
               <button
                 type="button"
-                onClick={onAddProject}
+                onClick={() => onAddProject()}
                 className="px-3.5 py-2 rounded-2xl bg-slate-950 hover:bg-slate-800 text-white font-extrabold text-xs shadow-md shadow-slate-950/20 flex items-center gap-1.5 transition active:scale-95 cursor-pointer shrink-0"
               >
                 <Plus className="w-3.5 h-3.5 text-amber-300 stroke-[3]" />
-                <span>+ Add event</span>
+                <span>+ Add Event</span>
               </button>
             )}
           </div>
         </div>
 
-        {/* CATEGORY FILTER PILLS (Reference matching) */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-          {categoryTags.map((cat) => (
-            <button
-              key={cat.value}
-              onClick={() => setActiveCategoryFilter(cat.value)}
-              className={`px-3 py-1 rounded-xl text-xs font-extrabold transition cursor-pointer shrink-0 ${
-                activeCategoryFilter === cat.value
-                  ? 'bg-amber-950 text-white shadow-xs'
-                  : 'bg-white/70 hover:bg-white text-stone-600 border border-amber-200/60'
-              }`}
-            >
-              {cat.label}
-            </button>
-          ))}
-        </div>
-
-        {/* ─── 7-DAY MONTH GRID ─── */}
         <div className="space-y-1.5 overflow-x-auto">
-          {/* DAY NAMES HEADER (Mon, Tues, Wed, Thu, Fri, Sat, Sun) */}
           <div className="grid grid-cols-7 min-w-[700px] text-center border-b border-amber-200/60 pb-2">
             {daysOfWeek.map((day) => (
               <div key={day} className="text-xs font-black text-stone-400 uppercase tracking-wider text-center">
@@ -341,22 +392,19 @@ export default function Professional3DCalendar({
             ))}
           </div>
 
-          {/* DATES GRID */}
           <div className="grid grid-cols-7 gap-1.5 sm:gap-2 min-w-[700px]">
-            {/* Leading days from previous month */}
             {Array.from({ length: firstDayOfMonth }).map((_, i) => {
               const prevDayNum = daysInPrevMonth - firstDayOfMonth + i + 1;
               return (
                 <div
                   key={`prev-${i}`}
-                  className="min-h-[100px] sm:min-h-[125px] p-2 rounded-2xl bg-[#F5F2E9]/40 border border-stone-200/40 text-stone-300 flex flex-col justify-between opacity-60"
+                  className="min-h-[110px] sm:min-h-[140px] p-2 rounded-2xl bg-[#F5F2E9]/40 border border-stone-200/40 text-stone-300 flex flex-col justify-between opacity-60"
                 >
                   <span className="text-xs font-bold">{prevDayNum}</span>
                 </div>
               );
             })}
 
-            {/* Current Month Day Cells */}
             {Array.from({ length: daysInMonth }).map((_, i) => {
               const dayNum = i + 1;
               const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
@@ -366,23 +414,15 @@ export default function Professional3DCalendar({
               return (
                 <div
                   key={dayNum}
-                  onClick={() => {
-                    const dObj = new Date(`${dateStr}T12:00:00`);
-                    setSelectedDayInspector({
-                      dateStr,
-                      formattedDate: dObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }),
-                      items,
-                    });
-                  }}
-                  className={`min-h-[110px] sm:min-h-[135px] p-2 rounded-2xl border transition-all flex flex-col justify-between group cursor-pointer ${
+                  onClick={() => handleOpenDayInspector(dateStr)}
+                  className={`min-h-[115px] sm:min-h-[140px] p-2.5 rounded-2xl border transition-all flex flex-col justify-between group cursor-pointer ${
                     isToday
-                      ? 'bg-amber-50/90 border-amber-400 ring-2 ring-amber-400/60 shadow-md'
+                      ? 'bg-amber-50/95 border-amber-400 ring-2 ring-amber-400/60 shadow-md'
                       : items.length > 0
                       ? 'bg-white hover:bg-amber-50/50 border-amber-200/90 hover:border-amber-400 shadow-2xs hover:shadow-md'
                       : 'bg-white/80 hover:bg-white border-amber-200/50 hover:border-amber-300'
                   }`}
                 >
-                  {/* Day Header: Date Number + Counter */}
                   <div className="flex items-start justify-between">
                     <span
                       className={`text-xs font-black transition-all ${
@@ -394,19 +434,35 @@ export default function Professional3DCalendar({
                       {dayNum}
                     </span>
 
-                    {items.length > 0 && (
-                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-950 border border-amber-300/70 leading-none">
-                        {items.length} {items.length === 1 ? 'event' : 'events'}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1">
+                      {items.length > 0 && (
+                        <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-950 border border-amber-300/70 leading-none">
+                          {items.length} {items.length === 1 ? 'shoot' : 'shoots'}
+                        </span>
+                      )}
+
+                      {onAddProject && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onAddProject(dateStr);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-amber-200 text-amber-900 rounded-lg transition"
+                          title={`Add event on ${dateStr}`}
+                        >
+                          <Plus className="w-3 h-3 stroke-[3]" />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
-                  {/* EVENT PILLS PREVIEW (STACKED VERTICALLY) */}
                   <div className="space-y-1 mt-1 flex-1">
                     {items.slice(0, 2).map(({ subEvent, project }, idx) => {
                       const style = getEventPillStyle(subEvent.event_title);
-                      const isOvernight = subEvent.roll_call_time && subEvent.dismissal_estimate_time && (
-                        subEvent.dismissal_estimate_time < subEvent.roll_call_time
+                      const isOvernight = Boolean(
+                        (subEvent as any).is_overnight ||
+                        (subEvent.roll_call_time && subEvent.dismissal_estimate_time && subEvent.dismissal_estimate_time < subEvent.roll_call_time)
                       );
 
                       return (
@@ -439,7 +495,6 @@ export default function Professional3DCalendar({
                       );
                     })}
 
-                    {/* Expander if more than 2 items */}
                     {items.length > 2 && (
                       <div className="text-[9px] font-black text-amber-900 bg-amber-100/90 py-0.5 px-1.5 rounded-lg border border-amber-300/80 text-center hover:bg-amber-200 transition">
                         +{items.length - 2} more...
@@ -450,14 +505,13 @@ export default function Professional3DCalendar({
               );
             })}
 
-            {/* Trailing days for the remaining grid slots */}
             {(() => {
               const totalSlots = firstDayOfMonth + daysInMonth;
               const remainingSlots = (7 - (totalSlots % 7)) % 7;
               return Array.from({ length: remainingSlots }).map((_, i) => (
                 <div
                   key={`next-${i}`}
-                  className="min-h-[100px] sm:min-h-[125px] p-2 rounded-2xl bg-[#F5F2E9]/40 border border-stone-200/40 text-stone-300 flex flex-col justify-between opacity-60"
+                  className="min-h-[110px] sm:min-h-[140px] p-2 rounded-2xl bg-[#F5F2E9]/40 border border-stone-200/40 text-stone-300 flex flex-col justify-between opacity-60"
                 >
                   <span className="text-xs font-bold">{i + 1}</span>
                 </div>
@@ -467,12 +521,10 @@ export default function Professional3DCalendar({
         </div>
       </div>
 
-      {/* ─── 3D LUXURY CREAM DAY INSPECTOR SLIDE-OVER MODAL ─── */}
       {selectedDayInspector && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md animate-in fade-in duration-200">
           <div className="bg-[#FEFDF9] rounded-3xl border-2 border-amber-200 shadow-2xl max-w-2xl w-full p-6 space-y-5 relative max-h-[90vh] overflow-y-auto">
             
-            {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-amber-200/80 pb-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-amber-950 text-amber-300 flex items-center justify-center font-black shadow-md">
@@ -481,7 +533,7 @@ export default function Professional3DCalendar({
                 <div>
                   <h3 className="text-lg font-black text-amber-950">{selectedDayInspector.formattedDate}</h3>
                   <span className="text-xs font-bold text-amber-800">
-                    {selectedDayInspector.items.length} {selectedDayInspector.items.length === 1 ? 'Sub-Event' : 'Sub-Events'} Scheduled
+                    {selectedDayInspector.projectGroups.reduce((acc, g) => acc + g.subEvents.length, 0)} Sub-Events Scheduled
                   </span>
                 </div>
               </div>
@@ -490,13 +542,14 @@ export default function Professional3DCalendar({
                 {onAddProject && (
                   <button
                     onClick={() => {
+                      const d = selectedDayInspector.dateStr;
                       setSelectedDayInspector(null);
-                      onAddProject();
+                      onAddProject(d);
                     }}
                     className="px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-950 text-xs font-extrabold rounded-xl border border-amber-300 transition flex items-center gap-1 cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>Add Shoot</span>
+                    <span>+ Add Shoot</span>
                   </button>
                 )}
                 <button
@@ -508,17 +561,17 @@ export default function Professional3DCalendar({
               </div>
             </div>
 
-            {/* Empty State */}
-            {selectedDayInspector.items.length === 0 ? (
+            {selectedDayInspector.projectGroups.length === 0 ? (
               <div className="p-8 text-center bg-amber-50/50 rounded-2xl border border-amber-200/60 space-y-3">
                 <Sparkles className="w-8 h-8 text-amber-500 mx-auto" />
-                <h4 className="text-sm font-black text-amber-950">No Events Scheduled on this Date</h4>
-                <p className="text-xs font-semibold text-stone-500">You can add a new wedding, pre-wedding, or reception event.</p>
+                <h4 className="text-sm font-black text-amber-950">No Shoots Scheduled on this Date</h4>
+                <p className="text-xs font-semibold text-stone-500">You can create a new wedding or event for this date.</p>
                 {onAddProject && (
                   <button
                     onClick={() => {
+                      const d = selectedDayInspector.dateStr;
                       setSelectedDayInspector(null);
-                      onAddProject();
+                      onAddProject(d);
                     }}
                     className="px-4 py-2 bg-slate-950 text-white text-xs font-black rounded-xl shadow-md cursor-pointer inline-flex items-center gap-1.5"
                   >
@@ -528,85 +581,95 @@ export default function Professional3DCalendar({
                 )}
               </div>
             ) : (
-              /* EVENTS BREAKDOWN LIST WITH INTERACTIVE CREW ASSIGNMENT DROPDOWNS */
               <div className="space-y-4">
-                {selectedDayInspector.items.map(({ subEvent, project }) => {
-                  const assignments = resolveSubEventAssignments(subEvent, teamMembers);
-                  const style = getEventPillStyle(subEvent.event_title);
-                  const isOvernight = subEvent.roll_call_time && subEvent.dismissal_estimate_time && (
-                    subEvent.dismissal_estimate_time < subEvent.roll_call_time
-                  );
-
-                  return (
-                    <div
-                      key={subEvent.id}
-                      className="bg-white rounded-2xl border border-amber-200/90 p-4 space-y-3 shadow-xs hover:border-amber-400 transition"
-                    >
-                      {/* Sub-Event Header */}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-100 pb-2.5">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="px-3 py-1 rounded-full bg-slate-950 text-amber-300 text-xs font-black shadow-xs">
-                            {project.client_name}
-                          </span>
-                          <h4 className="font-black text-amber-950 text-sm md:text-base">
-                            {subEvent.event_title}
-                          </h4>
-                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold ${style.pillBg}`}>
-                            {style.tag}
-                          </span>
-                        </div>
-
-                        {/* Timing */}
-                        {subEvent.roll_call_time && (
-                          <div className="flex items-center gap-1.5 text-xs font-extrabold text-amber-950 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200/80 shrink-0">
-                            <Clock className="w-3.5 h-3.5 text-amber-600" />
-                            <span>
-                              {format12HourTime(subEvent.roll_call_time)}
-                              {subEvent.dismissal_estimate_time
-                                ? ` → ${format12HourTime(subEvent.dismissal_estimate_time)}`
-                                : ''}
-                            </span>
-                            {isOvernight && (
-                              <span className="ml-1 text-[10px] text-indigo-700 font-black">🌙 Overnight</span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Location */}
-                      {subEvent.venue_name && (
-                        <div className="flex items-center gap-1.5 text-xs font-bold text-stone-600">
-                          <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                          <span>{subEvent.venue_name}</span>
-                        </div>
-                      )}
-
-                      {/* Assigned Crew Roster */}
-                      <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-[10px] font-black text-stone-400 uppercase tracking-wider block">
-                            Assigned Crew Roster ({assignments.filter(a => a.assigned_member_id).length}/{assignments.length})
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-3 flex-wrap pt-1">
-                          {assignments.map((assignment) => (
-                            <RoleAssignDropdown
-                              key={assignment.id}
-                              assignment={assignment}
-                              subEventId={subEvent.id}
-                              projectId={project.id}
-                              teamMembers={teamMembers}
-                              onAssignMember={onAssignMember}
-                              onAddNewMember={onAddNewMember}
-                              variant="avatar"
-                            />
-                          ))}
-                        </div>
+                {selectedDayInspector.projectGroups.map(({ project, subEvents }) => (
+                  <div
+                    key={project.id}
+                    className="bg-white rounded-2xl border-2 border-amber-200/90 p-4 space-y-3 shadow-xs"
+                  >
+                    <div className="flex items-center justify-between border-b border-amber-100 pb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="px-3 py-1 rounded-full bg-slate-950 text-amber-300 text-xs font-black shadow-xs">
+                          {project.client_name}
+                        </span>
+                        <span className="text-xs font-bold text-stone-500">
+                          ({subEvents.length} Event{subEvents.length === 1 ? '' : 's'})
+                        </span>
                       </div>
                     </div>
-                  );
-                })}
+
+                    <div className="space-y-3">
+                      {subEvents.map((subEvent) => {
+                        const assignments = resolveSubEventAssignments(subEvent, teamMembers);
+                        const style = getEventPillStyle(subEvent.event_title);
+                        const isOvernight = Boolean(
+                          (subEvent as any).is_overnight ||
+                          (subEvent.roll_call_time && subEvent.dismissal_estimate_time && subEvent.dismissal_estimate_time < subEvent.roll_call_time)
+                        );
+
+                        return (
+                          <div
+                            key={subEvent.id}
+                            className="bg-[#FAF8F2] rounded-xl border border-amber-200/70 p-3.5 space-y-2.5"
+                          >
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <h5 className="font-black text-amber-950 text-sm">
+                                  {subEvent.event_title}
+                                </h5>
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${style.pillBg}`}>
+                                  {style.tag}
+                                </span>
+                              </div>
+
+                              {subEvent.roll_call_time && (
+                                <div className="flex items-center gap-1.5 text-xs font-extrabold text-amber-950 bg-white px-2.5 py-1 rounded-lg border border-amber-200 shrink-0">
+                                  <Clock className="w-3.5 h-3.5 text-amber-600" />
+                                  <span>
+                                    {format12HourTime(subEvent.roll_call_time)}
+                                    {subEvent.dismissal_estimate_time
+                                      ? ` → ${format12HourTime(subEvent.dismissal_estimate_time)}`
+                                      : ''}
+                                  </span>
+                                  {isOvernight && (
+                                    <span className="ml-1 text-[10px] text-indigo-700 font-black">🌙 Overnight</span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+
+                            {subEvent.venue_name && (
+                              <div className="flex items-center gap-1.5 text-xs font-bold text-stone-600">
+                                <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                <span>{subEvent.venue_name}</span>
+                              </div>
+                            )}
+
+                            <div>
+                              <span className="text-[10px] font-black text-stone-400 uppercase tracking-wider block mb-1">
+                                Assigned Crew ({assignments.filter(a => a.assigned_member_id).length}/{assignments.length})
+                              </span>
+                              <div className="flex items-center gap-3 flex-wrap pt-1">
+                                {assignments.map((assignment) => (
+                                  <RoleAssignDropdown
+                                    key={assignment.id}
+                                    assignment={assignment}
+                                    subEventId={subEvent.id}
+                                    projectId={project.id}
+                                    teamMembers={teamMembers}
+                                    onAssignMember={onAssignMember}
+                                    onAddNewMember={onAddNewMember}
+                                    variant="avatar"
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
