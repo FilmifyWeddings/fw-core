@@ -91,7 +91,11 @@ export async function proxy(request: NextRequest) {
       const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
         cookies: {
           getAll() {
-            return request.cookies.getAll();
+            try {
+              return request.cookies.getAll();
+            } catch {
+              return [];
+            }
           },
           setAll(cookiesToSet) {
             // Track active cookie names being set

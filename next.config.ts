@@ -5,10 +5,7 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   productionBrowserSourceMaps: false,
-  outputFileTracingIncludes: {},
-  outputFileTracingExcludes: {
-    '*': ['**/*proxy*'],
-  },
+  outputFileTracingRoot: undefined,
   experimental: {
     optimizePackageImports: ['lucide-react', 'framer-motion', '@supabase/supabase-js'],
   },
