@@ -33,6 +33,8 @@ import {
   fetchWorkspaceCrewRoles, 
   saveWorkspaceEventType, 
   saveWorkspaceCrewRole, 
+  syncQuotationCrewRole,
+  deleteQuotationCrewRole,
   getRoleShortCode,
   fetchWorkspaceQuotationSettings,
   saveWorkspaceQuotationDeliverable,
@@ -3547,9 +3549,11 @@ function StudioCoreAiryBuilderContent() {
                     }}
                     onEditCustomRequirement={(oldReq, newReq) => {
                       setAvailableRequirements(prev => prev.map(r => r === oldReq ? newReq : r));
+                      syncQuotationCrewRole(userId || '', oldReq, newReq, getRoleShortCode(newReq));
                     }}
                     onDeleteCustomRequirement={(reqToDelete) => {
                       setAvailableRequirements(prev => prev.filter(r => r !== reqToDelete));
+                      deleteQuotationCrewRole(userId || '', reqToDelete);
                     }}
                   />
                 ))}

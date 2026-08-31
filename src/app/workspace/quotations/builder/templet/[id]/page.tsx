@@ -39,6 +39,8 @@ import {
   fetchWorkspaceCrewRoles, 
   saveWorkspaceEventType, 
   saveWorkspaceCrewRole, 
+  syncQuotationCrewRole,
+  deleteQuotationCrewRole,
   getRoleShortCode,
   fetchWorkspaceQuotationSettings,
   saveWorkspaceQuotationDeliverable,
@@ -3817,9 +3819,11 @@ function StudioCoreAiryBuilderContent() {
                     }}
                     onEditCustomRequirement={(oldReq, newReq) => {
                       setAvailableRequirements(prev => prev.map(r => r === oldReq ? newReq : r));
+                      if (userId && userId !== 'PUBLIC_USER') syncQuotationCrewRole(userId, oldReq, newReq, getRoleShortCode(newReq));
                     }}
                     onDeleteCustomRequirement={(reqToDelete) => {
                       setAvailableRequirements(prev => prev.filter(r => r !== reqToDelete));
+                      if (userId && userId !== 'PUBLIC_USER') deleteQuotationCrewRole(userId, reqToDelete);
                     }}
                   />
                 ))}

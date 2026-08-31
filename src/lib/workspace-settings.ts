@@ -695,6 +695,102 @@ export async function deleteWorkspaceCrewRole(
   }
 }
 
+/**
+ * 2-Way Sync helper to rename/update a crew role by previous name or ID from Quotation Builder
+ */
+export async function syncQuotationCrewRole(
+  workspaceId?: string,
+  oldName?: string,
+  newName?: string,
+  shortCode?: string,
+  roleId?: string
+): Promise<WorkspaceCrewRole | null> {
+  const wsId = await resolveWorkspaceId(workspaceId);
+  const cleanNew = (newName || '').trim();
+  const cleanOld = (oldName || '').trim();
+  if (!cleanNew) return null;
+  const cleanCode = (shortCode ? shortCode.trim() : getRoleShortCode(cleanNew)).toUpperCase();
+
+  try {
+    if (wsId) {
+      // 1. Try sync_workspace_crew_role RPC if available
+      try {
+        const { data: rpcData, error: rpcErr } = await supabase.rpc('sync_workspace_crew_role', {
+          p_workspace_id: wsId,
+          p_name: cleanNew,
+          p_short_code: cleanCode,
+          p_id: roleId || null
+        });
+        if (!rpcErr && rpcData) {
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('workspace_crew_roles_updated'));
+          }
+          return rpcData;
+        }
+      } catch (_) {}
+
+      // 2. Direct fallback update by ID or oldName
+      if (roleId) {
+        return await updateWorkspaceCrewRole(roleId, cleanNew, cleanCode, 'Photography', wsId);
+      } else if (cleanOld) {
+        const { data: existing } = await supabase
+          .from('master_crew_roles')
+          .select('id')
+          .eq('workspace_id', wsId)
+          .ilike('name', cleanOld)
+          .maybeSingle();
+
+        if (existing?.id) {
+          return await updateWorkspaceCrewRole(existing.id, cleanNew, cleanCode, 'Photography', wsId);
+        }
+      }
+
+      // 3. Otherwise save as new
+      return await saveWorkspaceCrewRole(wsId, cleanNew, cleanCode);
+    }
+  } catch (err) {
+    console.warn('[WorkspaceSettings] Error in syncQuotationCrewRole:', err);
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('workspace_crew_roles_updated'));
+  }
+  return { id: `role_${Date.now()}`, workspace_id: wsId, name: cleanNew, short_code: cleanCode, category: 'Photography', is_default: false };
+}
+
+/**
+ * Delete crew role by name or ID from Quotation Builder
+ */
+export async function deleteQuotationCrewRole(
+  workspaceId?: string,
+  roleName?: string,
+  roleId?: string
+): Promise<boolean> {
+  const wsId = await resolveWorkspaceId(workspaceId);
+  const clean = (roleName || '').trim();
+  if (!wsId || (!clean && !roleId)) return false;
+
+  try {
+    if (roleId) {
+      return await deleteWorkspaceCrewRole(roleId, wsId);
+    } else if (clean) {
+      const { data: existing } = await supabase
+        .from('master_crew_roles')
+        .select('id')
+        .eq('workspace_id', wsId)
+        .ilike('name', clean)
+        .maybeSingle();
+
+      if (existing?.id) {
+        return await deleteWorkspaceCrewRole(existing.id, wsId);
+      }
+    }
+  } catch (err) {
+    console.warn('[WorkspaceSettings] Error in deleteQuotationCrewRole:', err);
+  }
+  return false;
+}
+
 // ==============================================================================
 // QUOTATION SETTINGS (DELIVERABLES, SPECIAL ADDONS, PAID ADDONS, DEFAULT FUNCTIONS)
 // ==============================================================================

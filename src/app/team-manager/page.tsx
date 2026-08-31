@@ -1025,6 +1025,18 @@ export default function TeamManagerPage() {
               </button>
 
               <button
+                onClick={() => setActiveTab('calendar')}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer select-none shrink-0 ${
+                  activeTab === 'calendar'
+                    ? 'bg-amber-950 text-amber-200 shadow-md shadow-amber-950/30'
+                    : 'text-amber-900 hover:text-amber-950 hover:bg-amber-50 border border-amber-200/80 bg-amber-50/50'
+                }`}
+              >
+                <CalendarIcon className="w-4 h-4 text-amber-500" />
+                📅 Master Calendar View
+              </button>
+
+              <button
                 onClick={() => setActiveTab('team_cards')}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer select-none shrink-0 ${
                   activeTab === 'team_cards'
@@ -1801,6 +1813,10 @@ export default function TeamManagerPage() {
               setActiveAssignmentForMember(info);
               setIsAddMemberOpen(true);
             }}
+            onAddProject={() => {
+              setEditingProject(null);
+              setIsAddProjectOpen(true);
+            }}
           />
         )}
 
@@ -2030,7 +2046,7 @@ export default function TeamManagerPage() {
           {/* TAB 2: Month List */}
           <button
             onClick={() => setActiveTab('list')}
-            className={`flex flex-col items-center gap-0.5 py-1 px-3 rounded-2xl transition-all duration-200 ${
+            className={`flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-2xl transition-all duration-200 ${
               activeTab === 'list' ? 'text-[#6C5CE7]' : 'text-slate-400 hover:text-slate-600'
             }`}
           >
@@ -2045,48 +2061,48 @@ export default function TeamManagerPage() {
           </button>
 
           {/* CENTER FLOATING + CREATE PROJECT BUTTON */}
-          <div className="relative -mt-6 mx-2">
+          <div className="relative -mt-6 mx-1">
             <button
               onClick={() => { setEditingProject(null); setIsAddProjectOpen(true); }}
-              className="w-14 h-14 rounded-full bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white flex items-center justify-center shadow-xl shadow-[#6C5CE7]/40 border-4 border-white transition-all active:scale-95 cursor-pointer"
+              className="w-13 h-13 rounded-full bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white flex items-center justify-center shadow-xl shadow-[#6C5CE7]/40 border-4 border-white transition-all active:scale-95 cursor-pointer"
               title="Create New Project"
             >
-              <Plus className="w-7 h-7" />
+              <Plus className="w-6 h-6" />
             </button>
           </div>
 
-          {/* TAB 3: Overview */}
+          {/* TAB 3: Calendar */}
           <button
-            onClick={() => setActiveTab('overview')}
-            className={`flex flex-col items-center gap-0.5 py-1 px-3 rounded-2xl transition-all duration-200 ${
-              activeTab === 'overview' ? 'text-[#6C5CE7]' : 'text-slate-400 hover:text-slate-600'
+            onClick={() => setActiveTab('calendar')}
+            className={`flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-2xl transition-all duration-200 ${
+              activeTab === 'calendar' ? 'text-amber-700' : 'text-slate-400 hover:text-slate-600'
             }`}
           >
             <div className={`transition-all duration-200 ${
-              activeTab === 'overview' ? 'scale-110' : ''
+              activeTab === 'calendar' ? 'scale-110' : ''
             }`}>
-              <TrendingUp className="w-5 h-5" />
+              <CalendarIcon className="w-5 h-5" />
             </div>
             <span className={`text-[9px] font-black transition-all ${
-              activeTab === 'overview' ? 'text-[#6C5CE7]' : 'text-slate-400'
-            }`}>Overview</span>
+              activeTab === 'calendar' ? 'text-amber-700 font-extrabold' : 'text-slate-400'
+            }`}>Calendar</span>
           </button>
 
-          {/* TAB 4: Trash */}
+          {/* TAB 4: Team Cards */}
           <button
-            onClick={() => setActiveTab('trash')}
-            className={`flex flex-col items-center gap-0.5 py-1 px-3 rounded-2xl transition-all duration-200 ${
-              activeTab === 'trash' ? 'text-rose-500' : 'text-slate-400 hover:text-slate-600'
+            onClick={() => setActiveTab('team_cards')}
+            className={`flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-2xl transition-all duration-200 ${
+              activeTab === 'team_cards' ? 'text-amber-600' : 'text-slate-400 hover:text-slate-600'
             }`}
           >
             <div className={`transition-all duration-200 ${
-              activeTab === 'trash' ? 'scale-110' : ''
+              activeTab === 'team_cards' ? 'scale-110' : ''
             }`}>
-              <Trash2 className="w-5 h-5" />
+              <Users className="w-5 h-5" />
             </div>
             <span className={`text-[9px] font-black transition-all ${
-              activeTab === 'trash' ? 'text-rose-500' : 'text-slate-400'
-            }`}>Trash</span>
+              activeTab === 'team_cards' ? 'text-amber-600' : 'text-slate-400'
+            }`}>Team</span>
           </button>
         </div>
       </div>
