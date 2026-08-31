@@ -629,14 +629,15 @@ export async function updateWorkspaceCrewRole(
   const wsId = await resolveWorkspaceId(workspaceId);
 
   try {
+    const cleanPayload = {
+      name: cleanName,
+      short_code: cleanCode,
+      updated_at: new Date().toISOString()
+    };
+
     const { data, error } = await supabase
       .from('master_crew_roles')
-      .update({
-        name: cleanName,
-        short_code: cleanCode,
-        is_customized: true,
-        updated_at: new Date().toISOString()
-      })
+      .update(cleanPayload)
       .eq('id', id)
       .select()
       .single();
@@ -650,9 +651,12 @@ export async function updateWorkspaceCrewRole(
         workspace_id: data.workspace_id,
         name: data.name,
         short_code: data.short_code,
-        category,
-        is_default: false
+        category: data.category || category,
+        is_default: data.is_default || false
       };
+    }
+    if (error) {
+      console.error('[WorkspaceSettings] Error updating master_crew_roles in database:', error);
     }
   } catch (err) {
     console.warn('[WorkspaceSettings] Error updating master_crew_roles:', err);
