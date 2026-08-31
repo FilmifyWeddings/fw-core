@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, Send, Paperclip, Smile, Phone, Video, MoreVertical,
-  Check, CheckCheck, Clock, Image, FileText, Users,
+  Check, CheckCheck, Clock, Image as ImageIcon, FileText, Users,
   ChevronLeft, X, Mic, MessageSquare, RefreshCw
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -251,7 +251,7 @@ function MediaUploadModal({
           />
           {file ? (
             <div className="space-y-1">
-              <Image className="w-8 h-8 text-emerald-400 mx-auto" />
+              <ImageIcon className="w-8 h-8 text-emerald-400 mx-auto" />
               <p className="text-xs text-zinc-900 dark:text-white font-medium truncate">{file.name}</p>
               <p className="text-[10px] text-zinc-500 dark:text-zinc-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
             </div>
