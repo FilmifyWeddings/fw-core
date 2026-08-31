@@ -4,7 +4,7 @@ import OperationsAnalyticsTab from './components/OperationsAnalyticsTab';
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { 
-  Users, Calendar, List, Plus, Trash2, RotateCcw, Check, X, 
+  Users, Calendar, Calendar as CalendarIcon, List, Plus, Trash2, RotateCcw, Check, X, 
   Send, AlertCircle, Search, Filter, Loader2, Sparkles, MapPin, 
   Clock, CheckCircle, Info, Trash, ChevronDown, Edit2, TrendingUp, Award, Grid, Menu,
   Database, FileText, Layers, ArrowLeft, SlidersHorizontal, CheckSquare, Folder, Edit3, Pencil, Settings,
