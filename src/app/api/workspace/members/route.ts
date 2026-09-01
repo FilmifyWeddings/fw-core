@@ -68,6 +68,8 @@ export async function POST(req: NextRequest) {
       member_types,
       primary_type,
       avatar_url,
+      default_daily_rate,
+      default_currency,
       permissions
     } = body;
 
@@ -89,6 +91,8 @@ export async function POST(req: NextRequest) {
       ? member_types 
       : [primary_type || 'IN_HOUSE'];
     const cleanPrimaryType = primary_type || cleanMemberTypes[0] || 'IN_HOUSE';
+    const numDailyRate = Number(default_daily_rate) || 0;
+    const cleanCurrency = default_currency || 'INR';
 
     // 1. Check if user already exists in auth profiles
     let invitedUserId: string | null = null;
@@ -119,6 +123,8 @@ export async function POST(req: NextRequest) {
       member_types: cleanMemberTypes,
       primary_type: cleanPrimaryType,
       avatar_url: avatar_url || null,
+      default_daily_rate: numDailyRate,
+      default_currency: cleanCurrency,
       status: 'ACTIVE',
       role: 'member',
       updated_at: new Date().toISOString(),
@@ -137,7 +143,7 @@ export async function POST(req: NextRequest) {
         .eq('id', existingMember.id)
         .select()
         .single();
-      savedMember = updated;
+      savedMember = updated || { ...memberPayload, id: existingMember.id };
     } else {
       const { data: inserted, error: insertErr } = await supabaseAdmin
         .from('workspace_members')
@@ -145,6 +151,38 @@ export async function POST(req: NextRequest) {
         .select()
         .single();
       savedMember = inserted;
+    }
+
+    // 2.5 Ensure identical record in fw_team_members for calendar & foreign key constraints
+    if (savedMember?.id) {
+      try {
+        await supabaseAdmin
+          .from('fw_team_members')
+          .upsert({
+            id: savedMember.id,
+            user_id: user.id,
+            name: name.trim(),
+            primary_role: primary_role || 'FREELANCER',
+            phone_number: phone || null,
+            email: cleanEmail,
+            avatar_url: avatar_url || null,
+            default_daily_rate: numDailyRate,
+            default_currency: cleanCurrency,
+            is_active: true,
+          }, { onConflict: 'id' });
+      } catch (_) {}
+
+      try {
+        await supabaseAdmin
+          .from('workspace_team_member_rates')
+          .upsert({
+            workspace_id: workspace_id,
+            team_member_id: savedMember.id,
+            default_daily_rate: numDailyRate,
+            currency: cleanCurrency,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'workspace_id,team_member_id' });
+      } catch (_) {}
     }
 
     // 3. Upsert into member_permissions table

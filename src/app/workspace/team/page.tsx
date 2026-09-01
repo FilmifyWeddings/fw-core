@@ -263,7 +263,7 @@ export default function WorkspaceTeamPage() {
 
       // 2. Insert/Update in workspace_members API for Multi-Tenant RBAC
       if (session?.access_token) {
-        await fetch('/api/workspace/members', {
+        const memberRes = await fetch('/api/workspace/members', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -279,9 +279,25 @@ export default function WorkspaceTeamPage() {
             member_types: memberData.member_types || ['IN_HOUSE'],
             primary_type: memberData.primary_type || 'IN_HOUSE',
             avatar_url: memberData.avatar_url || null,
+            default_daily_rate: Number(memberData.default_daily_rate) || 0,
+            default_currency: memberData.default_currency || 'INR',
             permissions: memberData.permissions,
           }),
-        }).catch(() => {});
+        }).catch(() => null);
+
+        if (memberRes && memberRes.ok) {
+          try {
+            const resJson = await memberRes.json();
+            if (resJson?.savedMember?.id) {
+              savedMemberId = resJson.savedMember.id;
+            }
+          } catch (_) {}
+        }
+
+        // Save isolated studio member rate
+        if (savedMemberId && memberData.default_daily_rate != null) {
+          await saveWorkspaceMemberRate(effectiveWsId, savedMemberId, Number(memberData.default_daily_rate), memberData.default_currency || 'INR');
+        }
 
         // 3. Log Audit Activity
         await fetch('/api/workspace/activity-logs', {

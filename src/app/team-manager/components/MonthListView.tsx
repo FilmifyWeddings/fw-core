@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useMemo } from 'react';
 import { FWProject, FWSubEvent, FWTeamMember, FWAssignment } from '@/types';
@@ -57,7 +57,11 @@ const resolveSubEventAssignments = (subEvent: FWSubEvent, teamMembers: FWTeamMem
       a => a.required_role?.toLowerCase() === role.toLowerCase()
     );
     if (existing) {
-      return existing;
+      const matched = existing.fw_team_members || (existing.assigned_member_id ? teamMembers.find(m => m.id === existing.assigned_member_id) : null);
+      return {
+        ...existing,
+        fw_team_members: matched || existing.fw_team_members || null
+      };
     }
     return {
       id: `${subEvent.id}-role-${idx}`,

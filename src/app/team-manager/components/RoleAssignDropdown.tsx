@@ -31,8 +31,8 @@ export default function RoleAssignDropdown({
   const [popoverPos, setPopoverPos] = useState<{ top: number; left: number } | null>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
 
-  const isAssigned = !!assignment.assigned_member_id;
-  const memberObj = assignment.fw_team_members;
+  const memberObj = assignment.fw_team_members || (assignment.assigned_member_id ? teamMembers.find(m => m.id === assignment.assigned_member_id) : null);
+  const isAssigned = Boolean(assignment.assigned_member_id || memberObj);
   const rawName = memberObj?.name || '';
   const cleanName = rawName.replace(/\.\.\./g, '').trim();
   const role = assignment.required_role;

@@ -103,7 +103,11 @@ const resolveSubEventAssignments = (subEvent: FWSubEvent, teamMembers: FWTeamMem
       a => a.required_role?.toLowerCase() === role.toLowerCase()
     );
     if (existing) {
-      return existing;
+      const matched = existing.fw_team_members || (existing.assigned_member_id ? teamMembers.find(m => m.id === existing.assigned_member_id) : null);
+      return {
+        ...existing,
+        fw_team_members: matched || existing.fw_team_members || null
+      };
     }
     return {
       id: `${subEvent.id}-role-${idx}`,
@@ -327,6 +331,7 @@ export default function TeamManagerPage() {
 
       // 1. Fetch Team Members for active workspace from both workspace_members and fw_team_members
       const combinedMembers: FWTeamMember[] = [];
+      const wsRatesMap = await fetchWorkspaceMemberRatesMap(uid).catch(() => ({}));
 
       try {
         const { data: { session } } = await supabase.auth.getSession();
@@ -337,6 +342,10 @@ export default function TeamManagerPage() {
         const json = await res.json();
         if (json.success && Array.isArray(json.members)) {
           json.members.forEach((m: any) => {
+            const calculatedRate = (wsRatesMap && wsRatesMap[m.id] != null) 
+              ? wsRatesMap[m.id] 
+              : (Number(m.default_daily_rate) || Number(m.daily_rate) || 0);
+
             combinedMembers.push({
               id: m.id,
               user_id: uid,
@@ -345,6 +354,8 @@ export default function TeamManagerPage() {
               phone_number: m.phone || '',
               email: m.email || '',
               avatar_url: m.avatar_url || '',
+              default_daily_rate: calculatedRate,
+              default_currency: m.default_currency || 'INR',
               is_active: m.status === 'ACTIVE'
             });
           });
@@ -365,9 +376,23 @@ export default function TeamManagerPage() {
 
       if (membersData && membersData.length > 0) {
         membersData.forEach((f: any) => {
-          const exists = combinedMembers.some(c => c.name.toLowerCase() === f.name.toLowerCase());
-          if (!exists) {
-            combinedMembers.push(f);
+          const calculatedRate = (wsRatesMap && wsRatesMap[f.id] != null)
+            ? wsRatesMap[f.id]
+            : (Number(f.default_daily_rate) || 0);
+
+          const existingIdx = combinedMembers.findIndex(
+            c => c.id === f.id || c.name.toLowerCase() === f.name.toLowerCase() || (f.email && c.email?.toLowerCase() === f.email.toLowerCase())
+          );
+          if (existingIdx >= 0) {
+            if (!combinedMembers[existingIdx].default_daily_rate && calculatedRate > 0) {
+              combinedMembers[existingIdx].default_daily_rate = calculatedRate;
+            }
+          } else {
+            combinedMembers.push({
+              ...f,
+              default_daily_rate: calculatedRate,
+              default_currency: f.default_currency || 'INR'
+            });
           }
         });
       }
@@ -397,7 +422,19 @@ export default function TeamManagerPage() {
       const { data: projectsData, error: projectsErr } = await projectsQuery;
       if (projectsErr) console.warn('[TeamManager] fw_projects error:', projectsErr.message);
 
-      let projectsDataToSet: any[] = projectsData || [];
+      let projectsDataToSet: any[] = (projectsData || []).map((proj: any) => ({
+        ...proj,
+        fw_sub_events: (proj.fw_sub_events || []).map((se: any) => ({
+          ...se,
+          fw_assignments: (se.fw_assignments || []).map((a: any) => {
+            const matched = a.fw_team_members || (a.assigned_member_id ? combinedMembers.find(m => m.id === a.assigned_member_id) : null);
+            return {
+              ...a,
+              fw_team_members: matched || a.fw_team_members || null
+            };
+          })
+        }))
+      }));
 
       if (!isOwner && isAssignedCardOnly) {
         const { data: { session } } = await supabase.auth.getSession();
@@ -594,7 +631,24 @@ export default function TeamManagerPage() {
               .flatMap(p => p.fw_sub_events || [])
               .find(se => se.id === activeAssign.sub_event_id);
 
-            // Auto sync to Team & Partner Financial Engine
+            // 0. Ensure member exists in fw_team_members first to eliminate FK constraint errors
+            if (memberId && matchedMemberObj) {
+              try {
+                await supabase.from('fw_team_members').upsert({
+                  id: memberId,
+                  name: matchedMemberObj.name,
+                  phone_number: matchedMemberObj.phone_number || null,
+                  email: matchedMemberObj.email || null,
+                  primary_role: matchedMemberObj.primary_role || activeAssign.required_role || 'Crew',
+                  avatar_url: matchedMemberObj.avatar_url || null,
+                  default_daily_rate: matchedMemberObj.default_daily_rate || 0,
+                  user_id: currentUserId || undefined,
+                  is_active: true,
+                }, { onConflict: 'id' });
+              } catch (_) {}
+            }
+
+            // 1. Auto sync to Team & Partner Financial Engine
             if (memberId && matchedMemberObj) {
               await saveOrUpdateEventPayout(workspaceId || currentUserId, {
                 member_id: memberId,
@@ -605,10 +659,10 @@ export default function TeamManagerPage() {
                 event_name: subEventObj?.event_title || 'Wedding Event',
                 event_date: subEventObj?.event_date || new Date().toISOString().split('T')[0],
                 role: activeAssign.required_role || 'Crew',
-                agreed_amount: 0 // Can be customized in Member Finance Drawer
+                agreed_amount: matchedMemberObj.default_daily_rate || 0
               });
             }
-            // 1. Check if assignment record already exists in DB for this sub_event & role
+            // 2. Check if assignment record already exists in DB for this sub_event & role
             const { data: existingRow } = await supabase
               .from('fw_assignments')
               .select('id')

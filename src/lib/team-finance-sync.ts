@@ -455,9 +455,28 @@ async function persistAssignmentSlot(params: {
   subEventId?: string;
   assignmentId?: string;
   teamMemberId: string;
+  teamMemberName?: string;
+  teamMemberPhone?: string;
   roleName: string;
 }) {
   try {
+    // 1. CRITICAL: Ensure member exists in fw_team_members so foreign key constraint NEVER fails
+    if (params.teamMemberId) {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const currentUid = session?.user?.id;
+        await supabase.from('fw_team_members').upsert({
+          id: params.teamMemberId,
+          name: params.teamMemberName || 'Team Member',
+          phone_number: params.teamMemberPhone || null,
+          primary_role: params.roleName || 'Crew',
+          user_id: currentUid || undefined,
+          is_active: true,
+        }, { onConflict: 'id' });
+      } catch (_) {}
+    }
+
+    // 2. Perform fw_assignments update or insert
     if (params.assignmentId && !params.assignmentId.includes('-role-')) {
       await supabase
         .from('fw_assignments')

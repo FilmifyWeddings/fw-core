@@ -12,6 +12,7 @@ import {
 import CountryFlagPhoneInput from './CountryFlagPhoneInput';
 import { supabase } from '@/lib/supabase';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
+import { saveWorkspaceMemberRate } from '@/lib/team-finance-sync';
 
 interface AddTeamMemberModalProps {
   memberToEdit?: any | null;
@@ -382,6 +383,10 @@ export default function AddTeamMemberModal({
             }),
           }).catch(() => {});
         }
+      }
+
+      if (workspaceId && memberToEdit?.id) {
+        await saveWorkspaceMemberRate(workspaceId, memberToEdit.id, defaultDailyRate ? Number(defaultDailyRate) : 0, 'INR').catch(() => {});
       }
 
       onClose();
