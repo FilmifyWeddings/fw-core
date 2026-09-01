@@ -248,7 +248,42 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
   let memberEmail = '';
 
   try {
-    // 0. Parallel lookup of member aliases & rates across fw_team_members, workspace_members & workspace_team_member_rates
+    // 0. Try Supabase RPC get_member_complete_commercial_ledger (Strict DB Ledger)
+    try {
+      const { data: ledgerRows, error: ledgerErr } = await supabase.rpc('get_member_complete_commercial_ledger', {
+        p_workspace_id: workspaceId,
+        p_member_id: memberId
+      });
+
+      if (!ledgerErr && ledgerRows && Array.isArray(ledgerRows) && ledgerRows.length > 0) {
+        return ledgerRows.map((r: any) => ({
+          id: r.assignment_id || `assign_${r.event_id}`,
+          workspace_id: workspaceId,
+          member_id: memberId,
+          member_name: memberName || '',
+          project_id: r.event_id || '',
+          sub_event_id: '',
+          client_name: r.client_name || 'Wedding Client',
+          event_name: r.sub_event_title || 'Shoot Event',
+          event_date: r.shoot_date || new Date().toISOString().split('T')[0],
+          role: r.role_name || 'Crew',
+          agreed_amount: Number(r.agreed_amount) || 0,
+          paid_amount: Number(r.advance_amount) || 0,
+          balance_amount: Number(r.balance_amount) || 0,
+          status: (r.payment_status === 'completed' || (Number(r.agreed_amount) > 0 && Number(r.balance_amount) === 0) ? 'PAID' : Number(r.advance_amount) > 0 ? 'PARTIAL' : 'PENDING') as any,
+          payment_method: r.payment_method || 'UPI / Bank Transfer',
+          payment_date: r.payment_date || undefined,
+          notes: '',
+          venue: r.venue || '',
+          start_time: r.start_time || '',
+          end_time: r.end_time || '',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }));
+      }
+    } catch (_) {}
+
+    // 0.5. Parallel lookup of member aliases & rates across fw_team_members, workspace_members & workspace_team_member_rates
     const [ftmRes, wmRes, rateRes] = await Promise.all([
       supabase.from('fw_team_members').select('id, name, email, default_daily_rate').eq('id', memberId).maybeSingle().catch(() => ({ data: null })),
       supabase.from('workspace_members').select('id, name, email, default_daily_rate').eq('id', memberId).maybeSingle().catch(() => ({ data: null })),
@@ -920,7 +955,18 @@ export async function unassignCrewSlot(params: {
   teamMemberId?: string;
 }): Promise<{ success: boolean }> {
   try {
-    // 1. Try Supabase RPC unassign_crew_slot
+    // 1. Try Supabase RPC unassign_crew_slot_strict (Complete multi-table purge)
+    try {
+      await supabase.rpc('unassign_crew_slot_strict', {
+        p_workspace_id: params.workspaceId,
+        p_event_id: params.eventId,
+        p_sub_event_id: String(params.subEventId || ''),
+        p_role_short_code: params.roleShortCode || params.roleName?.slice(0, 4) || '',
+        p_member_id: params.teamMemberId || null
+      });
+    } catch (_) {}
+
+    // 1.5. Try fallback RPC unassign_crew_slot
     try {
       await supabase.rpc('unassign_crew_slot', {
         p_workspace_id: params.workspaceId,
@@ -956,16 +1002,18 @@ export async function unassignCrewSlot(params: {
     }
 
     // 3. Purge from crew_assignments_finance and team_event_payouts if memberId was given
-    if (params.teamMemberId && params.subEventId) {
+    if (params.teamMemberId) {
       try {
-        await supabase.from('crew_assignments_finance').delete()
-          .eq('team_member_id', params.teamMemberId)
-          .eq('sub_event_id', params.subEventId);
+        let q = supabase.from('crew_assignments_finance').delete().eq('team_member_id', params.teamMemberId);
+        if (params.subEventId) q = q.eq('sub_event_id', params.subEventId);
+        else if (params.eventId) q = q.eq('event_id', params.eventId);
+        await q;
       } catch (_) {}
       try {
-        await supabase.from('team_event_payouts').delete()
-          .eq('member_id', params.teamMemberId)
-          .eq('sub_event_id', params.subEventId);
+        let q = supabase.from('team_event_payouts').delete().eq('member_id', params.teamMemberId);
+        if (params.subEventId) q = q.eq('sub_event_id', params.subEventId);
+        else if (params.eventId) q = q.eq('project_id', params.eventId);
+        await q;
       } catch (_) {}
     }
 

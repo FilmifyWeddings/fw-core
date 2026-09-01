@@ -48,28 +48,60 @@ export default function WhatsAppAssignmentModal({
   const [isSavingCommercials, setIsSavingCommercials] = useState(false);
   const [commercialsSaved, setCommercialsSaved] = useState(false);
 
-  // Initialize or reset on open (NO hardcoded 5000 fallback)
+  // Initialize or reset on open (Preserve custom negotiated fee if already saved)
   useEffect(() => {
     if (isOpen && member) {
       (async () => {
         const effectiveWsId = workspaceId || (member as any).workspace_id || '';
-        let rate = member.default_daily_rate ?? member.daily_rate;
-        if ((rate == null || rate === 0) && effectiveWsId) {
-          const wsRate = await fetchWorkspaceMemberRate(effectiveWsId, member.id);
-          if (wsRate != null && wsRate > 0) rate = wsRate;
+        let existingAgreed: number | null = null;
+        let existingAdvance: number | null = null;
+        let existingStatus: 'pending' | 'partial' | 'completed' = 'pending';
+        let existingMethod = 'UPI/Bank Transfer';
+        let existingDate = new Date().toISOString().split('T')[0];
+        let existingNotes = '';
+
+        // 1. Check if an existing assignment for this sub-event & role already has a saved custom rate
+        if (subEvent?.id) {
+          try {
+            const { data: assignRow } = await supabase
+              .from('fw_assignments')
+              .select('agreed_amount, advance_amount, payment_status, payment_method, payment_date, notes')
+              .eq('sub_event_id', subEvent.id)
+              .eq('required_role', role)
+              .maybeSingle();
+
+            if (assignRow && Number(assignRow.agreed_amount) > 0) {
+              existingAgreed = Number(assignRow.agreed_amount);
+              existingAdvance = Number(assignRow.advance_amount) || 0;
+              existingStatus = (assignRow.payment_status as any) || 'pending';
+              if (assignRow.payment_method) existingMethod = assignRow.payment_method;
+              if (assignRow.payment_date) existingDate = assignRow.payment_date;
+              if (assignRow.notes) existingNotes = assignRow.notes;
+            }
+          } catch (_) {}
         }
-        const initialAmount = rate != null ? rate : 0;
-        setAgreedAmount(String(initialAmount));
+
+        // 2. If no custom agreed rate exists for this shoot, fall back to member's default daily rate
+        if (existingAgreed == null) {
+          let rate = member.default_daily_rate ?? member.daily_rate;
+          if ((rate == null || rate === 0) && effectiveWsId) {
+            const wsRate = await fetchWorkspaceMemberRate(effectiveWsId, member.id);
+            if (wsRate != null && wsRate > 0) rate = wsRate;
+          }
+          existingAgreed = rate != null ? rate : 0;
+        }
+
+        setAgreedAmount(String(existingAgreed));
+        setAdvancePaid(String(existingAdvance || 0));
+        setPaymentStatus(existingStatus);
+        setPaymentDate(existingDate);
+        setPaymentMethod(existingMethod as any);
+        setNotes(existingNotes);
       })();
-      setAdvancePaid('0');
-      setPaymentStatus('pending');
-      setPaymentDate(new Date().toISOString().split('T')[0]);
-      setPaymentMethod('UPI/Bank Transfer');
-      setNotes('');
       setCommercialsSaved(false);
       setCopied(false);
     }
-  }, [isOpen, member, workspaceId]);
+  }, [isOpen, member, subEvent?.id, role, workspaceId]);
 
   // Handle Advance change and auto update status
   const handleAdvanceChange = (val: string) => {
