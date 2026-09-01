@@ -117,6 +117,7 @@ const resolveSubEventAssignments = (subEvent: FWSubEvent, teamMembers: FWTeamMem
 };
 
 export default function TeamManagerPage() {
+  const { workspaceId, workspaceName, isOwner, userRole, permissions } = useWorkspace();
   const [activeTab, setActiveTab] = useState<'overview' | 'projects' | 'list' | 'calendar' | 'trash'>('projects');
   
   // Dynamic Time-Based Greeting & Studio Profile Name
@@ -2235,7 +2236,7 @@ export default function TeamManagerPage() {
         project={whatsappModalData.project}
         subEvent={whatsappModalData.subEvent}
         workspaceId={workspaceId || currentUserId}
-        studioName="Filmify Weddings"
+        studioName={studioName || 'Filmify Weddings'}
         projectManagerName={(whatsappModalData.project as any)?.project_manager_name || 'Studio Manager'}
         onCommercialsSaved={() => fetchAllData()}
       />
