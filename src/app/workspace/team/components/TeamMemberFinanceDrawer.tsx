@@ -7,7 +7,7 @@ import {
   AlertCircle, ChevronRight, Edit3, Trash2, Sparkles, Building2, 
   User, Check, FileText, Send, Layers, Wallet, TrendingUp, History,
   Receipt, ArrowUpRight, ShieldCheck, CheckCheck, RefreshCw, SlidersHorizontal,
-  Phone, Mail, BarChart3, BookOpen
+  Phone, Mail, BarChart3, BookOpen, MapPin
 } from 'lucide-react';
 import { 
   TeamEventPayout, 
@@ -502,48 +502,96 @@ export default function TeamMemberFinanceDrawer({
                           No shoot bookings recorded yet for this member. Assign them to a shoot in Team Manager or add a custom payout above.
                         </div>
                       ) : (
-                        payouts.map(payout => (
-                          <div
-                            key={payout.id}
-                            className="p-4 rounded-2xl bg-white border-2 border-amber-200/90 shadow-[0_4px_16px_-4px_rgba(217,119,6,0.06)] hover:shadow-md transition-all space-y-3"
-                          >
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-amber-100 pb-2.5">
-                              <div>
-                                <span className="text-xs font-black text-amber-950 block">{payout.client_name}</span>
-                                <span className="text-[11px] font-bold text-amber-800/80">{payout.event_name} • {payout.role}</span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-[10px] font-bold text-zinc-500 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200">
-                                  {payout.event_date}
-                                </span>
-                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
-                                  payout.status === 'PAID'
-                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                                    : payout.status === 'PARTIAL'
-                                    ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                                    : 'bg-rose-100 text-rose-800 border border-rose-300'
-                                }`}>
-                                  {payout.status}
-                                </span>
-                              </div>
-                            </div>
+                        payouts.map(payout => {
+                          const dateObj = payout.event_date ? new Date(payout.event_date) : null;
+                          const dayStr = dateObj && !isNaN(dateObj.getTime()) ? String(dateObj.getDate()).padStart(2, '0') : '--';
+                          const monthStr = dateObj && !isNaN(dateObj.getTime()) ? dateObj.toLocaleString('en-US', { month: 'short' }).toUpperCase() : 'DATE';
 
-                            <div className="grid grid-cols-3 gap-2 text-center bg-[#FEFDF8] p-2.5 rounded-xl border border-amber-200/70">
-                              <div>
-                                <span className="text-[10px] font-extrabold uppercase text-zinc-400 block">Agreed Fee</span>
-                                <span className="text-xs font-black text-amber-950 font-mono">₹{Number(payout.agreed_amount).toLocaleString('en-IN')}</span>
-                              </div>
-                              <div>
-                                <span className="text-[10px] font-extrabold uppercase text-emerald-600 block">Advance / Paid</span>
-                                <span className="text-xs font-black text-emerald-700 font-mono">₹{Number(payout.paid_amount).toLocaleString('en-IN')}</span>
-                              </div>
-                              <div>
-                                <span className="text-[10px] font-extrabold uppercase text-rose-600 block">Balance Due</span>
-                                <span className="text-xs font-black text-rose-700 font-mono">₹{Number(payout.balance_amount).toLocaleString('en-IN')}</span>
-                              </div>
-                            </div>
+                          const cleanRole = payout.role || 'Crew';
+                          const roleShortCode = cleanRole.toLowerCase().includes('candid photo') || cleanRole.toLowerCase().includes('candid')
+                            ? 'CP'
+                            : cleanRole.toLowerCase().includes('cinemat')
+                            ? 'CM'
+                            : cleanRole.toLowerCase().includes('traditional photo') || cleanRole.toLowerCase().includes('photo')
+                            ? 'TP'
+                            : cleanRole.toLowerCase().includes('drone')
+                            ? 'DR'
+                            : cleanRole.slice(0, 2).toUpperCase();
 
-                            {payout.status !== 'PAID' && (
+                          const isPaid = payout.status === 'PAID' || payout.status === 'completed' || (payout.agreed_amount > 0 && payout.balance_amount === 0);
+                          const isPartial = !isPaid && (payout.paid_amount > 0 || payout.status === 'PARTIAL' || payout.status === 'partial');
+
+                          return (
+                            <div
+                              key={payout.id}
+                              className="p-4 rounded-3xl bg-white border-2 border-amber-200/90 shadow-[0_4px_20px_-4px_rgba(217,119,6,0.08)] hover:shadow-md transition-all space-y-3 relative overflow-hidden"
+                            >
+                              {/* Top Main Row */}
+                              <div className="flex items-start gap-3">
+                                {/* Left Date Pill */}
+                                <div className="flex flex-col items-center justify-center w-12 h-14 rounded-2xl bg-gradient-to-b from-amber-500 to-amber-600 text-white shadow-sm shrink-0 border border-amber-400/40">
+                                  <span className="text-[10px] font-black uppercase tracking-wider leading-none text-amber-100">{monthStr}</span>
+                                  <span className="text-base font-black leading-none mt-0.5">{dayStr}</span>
+                                </div>
+
+                                {/* Middle Details */}
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center justify-between gap-1.5">
+                                    <h4 className="text-sm font-black text-amber-950 truncate tracking-tight">{payout.client_name}</h4>
+                                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider shrink-0 ${
+                                      isPaid
+                                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                        : isPartial
+                                        ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                        : 'bg-rose-100 text-rose-800 border border-rose-300'
+                                    }`}>
+                                      {isPaid ? '🟢 Completed' : isPartial ? '🟡 Partial' : '🔴 Pending'}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                    <span className="text-xs font-bold text-amber-900/90">{payout.event_name}</span>
+                                    {payout.venue && (
+                                      <span className="text-[10px] font-medium text-zinc-500 flex items-center gap-0.5">
+                                        <MapPin className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                                        <span className="truncate max-w-[130px]">{payout.venue}</span>
+                                      </span>
+                                    )}
+                                    {(payout.start_time || payout.end_time) && (
+                                      <span className="text-[10px] font-medium text-zinc-500 flex items-center gap-0.5">
+                                        <Clock className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                                        <span>{payout.start_time || ''}{payout.end_time ? ` - ${payout.end_time}` : ''}</span>
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {/* Role Badge */}
+                                  <div className="mt-1.5 flex items-center gap-1.5">
+                                    <span className="px-2 py-0.5 rounded-lg bg-amber-100/80 border border-amber-300/80 text-[10px] font-black text-amber-950 flex items-center gap-1">
+                                      <span className="bg-amber-600 text-white rounded px-1 text-[9px] font-black">{roleShortCode}</span>
+                                      <span>{cleanRole}</span>
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Financials Strip */}
+                              <div className="grid grid-cols-3 gap-2 text-center bg-[#FEFDF8] p-2.5 rounded-2xl border border-amber-200/80">
+                                <div>
+                                  <span className="text-[10px] font-extrabold uppercase text-zinc-400 block">Agreed Fee</span>
+                                  <span className="text-xs font-black text-amber-950 font-mono">₹{Number(payout.agreed_amount).toLocaleString('en-IN')}</span>
+                                </div>
+                                <div>
+                                  <span className="text-[10px] font-extrabold uppercase text-emerald-600 block">Advance / Paid</span>
+                                  <span className="text-xs font-black text-emerald-700 font-mono">₹{Number(payout.paid_amount).toLocaleString('en-IN')}</span>
+                                </div>
+                                <div>
+                                  <span className="text-[10px] font-extrabold uppercase text-rose-600 block">Balance Due</span>
+                                  <span className="text-xs font-black text-rose-700 font-mono">₹{Number(payout.balance_amount).toLocaleString('en-IN')}</span>
+                                </div>
+                              </div>
+
+                              {/* Action: Update Payment Button */}
                               <button
                                 type="button"
                                 onClick={() => {
@@ -556,17 +604,17 @@ export default function TeamMemberFinanceDrawer({
                                     balanceAmount: Number(payout.balance_amount),
                                     role: payout.role
                                   });
-                                  setPaymentAmount(String(payout.balance_amount));
+                                  setPaymentAmount(String(payout.balance_amount > 0 ? payout.balance_amount : payout.agreed_amount));
                                   setIsPaymentModalOpen(true);
                                 }}
-                                className="w-full py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-black text-xs rounded-xl shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+                                className="w-full py-2 bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 hover:from-amber-600 hover:to-amber-800 text-white font-black text-xs rounded-xl shadow-xs cursor-pointer flex items-center justify-center gap-1.5 transition active:scale-[0.99]"
                               >
-                                <CreditCard className="w-3.5 h-3.5" />
-                                <span>Record Payment / Clear Balance</span>
+                                <CreditCard className="w-3.5 h-3.5 text-amber-100" />
+                                <span>Update Payment / Settle Payout</span>
                               </button>
-                            )}
-                          </div>
-                        ))
+                            </div>
+                          );
+                        })
                       )}
                     </div>
                   </div>

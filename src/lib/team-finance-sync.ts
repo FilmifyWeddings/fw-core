@@ -221,20 +221,56 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
   const seenIds = new Set<string>();
 
   try {
-    // 1. Try fw_assignments (Direct Link to Bookings & Events)
+    // 1. Fetch from fw_assignments (Direct Link to Bookings & Events)
     try {
       const { data: assignData, error: assignErr } = await supabase
         .from('fw_assignments')
-        .select(`
-          *,
-          fw_projects (id, client_name),
-          fw_sub_events (id, event_title, event_date, start_time, end_time)
-        `)
+        .select('*')
         .eq('assigned_member_id', memberId)
         .order('created_at', { ascending: false });
 
       if (!assignErr && assignData && assignData.length > 0) {
+        // Collect sub_event_ids and project_ids for fast batch lookup
+        const subEventIds = assignData.map(a => a.sub_event_id).filter(Boolean);
+        const projectIds: string[] = assignData.map(a => a.project_id || a.event_id).filter(Boolean);
+
+        const subEventsMap: Record<string, any> = {};
+        const projectsMap: Record<string, any> = {};
+
+        if (subEventIds.length > 0) {
+          try {
+            const { data: seList } = await supabase
+              .from('fw_sub_events')
+              .select('id, project_id, event_title, event_date, start_time, end_time, venue, location')
+              .in('id', subEventIds);
+            if (seList) {
+              seList.forEach(se => {
+                subEventsMap[se.id] = se;
+                if (se.project_id) projectIds.push(se.project_id);
+              });
+            }
+          } catch (_) {}
+        }
+
+        const uniqueProjectIds = Array.from(new Set(projectIds));
+        if (uniqueProjectIds.length > 0) {
+          try {
+            const { data: pList } = await supabase
+              .from('fw_projects')
+              .select('id, client_name, project_name, venue_location')
+              .in('id', uniqueProjectIds);
+            if (pList) {
+              pList.forEach(p => {
+                projectsMap[p.id] = p;
+              });
+            }
+          } catch (_) {}
+        }
+
         assignData.forEach((a: any) => {
+          const se = a.sub_event_id ? subEventsMap[a.sub_event_id] : null;
+          const proj = (a.project_id || se?.project_id) ? projectsMap[a.project_id || se?.project_id] : null;
+
           const agreed = Number(a.agreed_amount) || 0;
           const paid = Number(a.advance_amount ?? a.paid_amount) || 0;
           const bal = Number(a.balance_amount) || Math.max(0, agreed - paid);
@@ -244,16 +280,23 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
             ? 'PARTIAL' 
             : 'PENDING';
 
+          const clientName = proj?.client_name || a.client_name || 'Wedding Client';
+          const eventTitle = se?.event_title || a.sub_event_name || a.event_name || a.required_role || 'Shoot Event';
+          const eventDate = se?.event_date || a.sub_event_date || a.payment_date || new Date().toISOString().split('T')[0];
+          const venue = se?.venue || se?.location || proj?.venue_location || a.venue || '';
+          const startTime = se?.start_time || a.start_time || '';
+          const endTime = se?.end_time || a.end_time || '';
+
           const item: TeamEventPayout = {
             id: a.id,
             workspace_id: a.workspace_id || workspaceId,
             member_id: a.assigned_member_id,
             member_name: a.assigned_member_name || '',
-            project_id: a.project_id || a.event_id || '',
+            project_id: a.project_id || a.event_id || se?.project_id || '',
             sub_event_id: a.sub_event_id || '',
-            client_name: a.fw_projects?.client_name || a.client_name || 'Wedding Shoot',
-            event_name: a.fw_sub_events?.event_title || a.sub_event_name || a.event_name || a.required_role || 'Shoot Event',
-            event_date: a.fw_sub_events?.event_date || a.sub_event_date || a.payment_date || new Date().toISOString().split('T')[0],
+            client_name: clientName,
+            event_name: eventTitle,
+            event_date: eventDate,
             role: a.required_role || a.role_name || 'Crew',
             agreed_amount: agreed,
             paid_amount: paid,
@@ -263,6 +306,9 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
             payment_date: a.payment_date || undefined,
             notes: a.notes || '',
             synced_expense_id: a.synced_expense_id,
+            venue: venue,
+            start_time: startTime,
+            end_time: endTime,
             created_at: a.created_at,
             updated_at: a.updated_at
           };

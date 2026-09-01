@@ -171,40 +171,33 @@ Please confirm your slot.
   };
 
   // Save Commercials to Database & Finance Sync
-  const handleSaveCommercials = async () => {
-    setIsSavingCommercials(true);
-    try {
-      const effectiveWsId = workspaceId || (member as any).workspace_id || '';
-      await assignCrewMemberWithCommercials({
-        workspaceId: effectiveWsId,
-        eventId: project?.id || '',
-        subEventId: subEvent?.id || '',
-        teamMemberId: member.id,
-        teamMemberName: cleanMemberName,
-        teamMemberPhone: member.phone_number || member.phone || '',
-        roleName: role,
-        finalAgreedAmount: numericAgreed,
-        advancePaidAmount: numericAdvance,
-        paymentStatus: paymentStatus,
-        paymentDate: paymentDate,
-        paymentMethod: paymentMethod,
-        notes: notes || `Assigned via Team Manager for ${clientName} (${eventTitle})`,
-        clientName: clientName,
-        eventName: eventTitle
-      });
+  const handleSaveCommercials = () => {
+    // 1. INSTANT OPTIMISTIC CLOSE (0ms delay)
+    onClose();
 
-      setCommercialsSaved(true);
+    // 2. TRIGGER BACKGROUND SILENT ASYNC PERSISTENCE
+    const effectiveWsId = workspaceId || (member as any).workspace_id || '';
+    assignCrewMemberWithCommercials({
+      workspaceId: effectiveWsId,
+      eventId: project?.id || '',
+      subEventId: subEvent?.id || '',
+      teamMemberId: member.id,
+      teamMemberName: cleanMemberName,
+      teamMemberPhone: member.phone_number || member.phone || '',
+      roleName: role,
+      finalAgreedAmount: numericAgreed,
+      advancePaidAmount: numericAdvance,
+      paymentStatus: paymentStatus,
+      paymentDate: paymentDate,
+      paymentMethod: paymentMethod,
+      notes: notes || `Assigned via Team Manager for ${clientName} (${eventTitle})`,
+      clientName: clientName,
+      eventName: eventTitle
+    }).then(() => {
       if (onCommercialsSaved) onCommercialsSaved();
-      
-      // Auto close after brief confirmation
-      setTimeout(() => {
-        onClose();
-      }, 1000);
-    } catch (err) {
-      console.error('[WhatsAppAssignmentModal] Save error:', err);
-    } finally {
-      setIsSavingCommercials(false);
-    }
+    }).catch(err => {
+      console.error('[WhatsAppAssignmentModal] Background save error:', err);
+    });
   };
 
   const currentTimeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });

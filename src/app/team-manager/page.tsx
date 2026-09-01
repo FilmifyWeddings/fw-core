@@ -317,8 +317,8 @@ export default function TeamManagerPage() {
   // ─────────────────────────────────────────────────────────────
   // DATA FETCHING & HYDRATION FROM SUPABASE (RELATIONAL SCHEMAS + WORKSPACE ISOLATION)
   // ─────────────────────────────────────────────────────────────
-  const fetchAllData = async (targetUid?: string) => {
-    setLoading(true);
+  const fetchAllData = async (targetUid?: string, silent: boolean = false) => {
+    if (!silent) setLoading(true);
     setError(null);
     const uid = targetUid !== undefined ? targetUid : (workspaceId || currentUserId);
 
@@ -2292,7 +2292,7 @@ export default function TeamManagerPage() {
         workspaceId={workspaceId || currentUserId}
         studioName={studioName || 'Filmify Weddings'}
         projectManagerName={(whatsappModalData.project as any)?.project_manager_name || 'Studio Manager'}
-        onCommercialsSaved={() => fetchAllData()}
+        onCommercialsSaved={() => fetchAllData(undefined, true)}
       />
 
       {/* 3D Tactile Financial Drawer */}
@@ -2301,7 +2301,7 @@ export default function TeamManagerPage() {
         onClose={() => {
           setIsFinanceDrawerOpen(false);
           setSelectedFinanceMember(null);
-          fetchAllData();
+          fetchAllData(undefined, true);
         }}
         workspaceId={workspaceId || currentUserId}
         member={selectedFinanceMember}
