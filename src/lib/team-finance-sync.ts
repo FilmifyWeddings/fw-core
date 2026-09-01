@@ -169,7 +169,8 @@ export async function saveWorkspaceMemberRate(
   workspaceId: string,
   memberId: string,
   defaultDailyRate: number,
-  currency = 'INR'
+  currency = 'INR',
+  payoutFrequency: 'daily' | 'monthly' = 'daily'
 ): Promise<void> {
   if (!workspaceId || !memberId) return;
   const numRate = Number(defaultDailyRate) || 0;
@@ -179,6 +180,7 @@ export async function saveWorkspaceMemberRate(
       workspace_id: workspaceId,
       team_member_id: memberId,
       default_daily_rate: numRate,
+      payout_frequency: payoutFrequency,
       currency: currency || 'INR',
       updated_at: new Date().toISOString()
     }, { onConflict: 'workspace_id,team_member_id' });
@@ -190,14 +192,24 @@ export async function saveWorkspaceMemberRate(
   try {
     await supabase.from('fw_team_members').update({
       default_daily_rate: numRate,
-      default_currency: currency || 'INR'
+      default_currency: currency || 'INR',
+      payout_frequency: payoutFrequency
+    }).eq('id', memberId);
+  } catch (_) {}
+
+  // Also update workspace_members
+  try {
+    await supabase.from('workspace_members').update({
+      default_daily_rate: numRate,
+      default_currency: currency || 'INR',
+      payout_frequency: payoutFrequency
     }).eq('id', memberId);
   } catch (_) {}
 
   if (typeof window !== 'undefined') {
     const local = localStorage.getItem(`${LS_MEMBER_RATES_KEY}${workspaceId}`);
     const map = local ? JSON.parse(local) : {};
-    map[memberId] = numRate;
+    map[memberId] = { rate: numRate, frequency: payoutFrequency };
     localStorage.setItem(`${LS_MEMBER_RATES_KEY}${workspaceId}`, JSON.stringify(map));
   }
 }
@@ -205,8 +217,62 @@ export async function saveWorkspaceMemberRate(
 // ── 1. FREELANCER EVENT PAYOUTS (CREW ASSIGNMENT FINANCE) ───────────────────
 
 export async function fetchMemberEventPayouts(workspaceId: string, memberId: string): Promise<TeamEventPayout[]> {
+  const resultList: TeamEventPayout[] = [];
+  const seenIds = new Set<string>();
+
   try {
-    // Try crew_assignments_finance first
+    // 1. Try fw_assignments (Direct Link to Bookings & Events)
+    try {
+      const { data: assignData, error: assignErr } = await supabase
+        .from('fw_assignments')
+        .select(`
+          *,
+          fw_projects (id, client_name),
+          fw_sub_events (id, event_title, event_date, start_time, end_time)
+        `)
+        .eq('assigned_member_id', memberId)
+        .order('created_at', { ascending: false });
+
+      if (!assignErr && assignData && assignData.length > 0) {
+        assignData.forEach((a: any) => {
+          const agreed = Number(a.agreed_amount) || 0;
+          const paid = Number(a.advance_amount ?? a.paid_amount) || 0;
+          const bal = Number(a.balance_amount) || Math.max(0, agreed - paid);
+          const pStatus: 'PENDING' | 'PARTIAL' | 'PAID' = a.payment_status === 'completed' || (agreed > 0 && bal === 0) 
+            ? 'PAID' 
+            : paid > 0 
+            ? 'PARTIAL' 
+            : 'PENDING';
+
+          const item: TeamEventPayout = {
+            id: a.id,
+            workspace_id: a.workspace_id || workspaceId,
+            member_id: a.assigned_member_id,
+            member_name: a.assigned_member_name || '',
+            project_id: a.project_id || a.event_id || '',
+            sub_event_id: a.sub_event_id || '',
+            client_name: a.fw_projects?.client_name || a.client_name || 'Wedding Shoot',
+            event_name: a.fw_sub_events?.event_title || a.sub_event_name || a.event_name || a.required_role || 'Shoot Event',
+            event_date: a.fw_sub_events?.event_date || a.sub_event_date || a.payment_date || new Date().toISOString().split('T')[0],
+            role: a.required_role || a.role_name || 'Crew',
+            agreed_amount: agreed,
+            paid_amount: paid,
+            balance_amount: bal,
+            status: pStatus,
+            payment_method: a.payment_method || 'UPI / Bank Transfer',
+            payment_date: a.payment_date || undefined,
+            notes: a.notes || '',
+            synced_expense_id: a.synced_expense_id,
+            created_at: a.created_at,
+            updated_at: a.updated_at
+          };
+          seenIds.add(item.id);
+          resultList.push(item);
+        });
+      }
+    } catch (_) {}
+
+    // 2. Try crew_assignments_finance
     const { data: crewFinData, error: crewFinErr } = await supabase
       .from('crew_assignments_finance')
       .select('*')
@@ -214,36 +280,42 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
       .order('payment_date', { ascending: false });
 
     if (!crewFinErr && crewFinData && crewFinData.length > 0) {
-      const mapped: TeamEventPayout[] = crewFinData.map((c: any) => ({
-        id: c.id,
-        workspace_id: c.workspace_id || workspaceId,
-        member_id: c.team_member_id,
-        member_name: c.team_member_name || c.member_name || '',
-        project_id: c.event_id || '',
-        sub_event_id: c.sub_event_id || '',
-        client_name: c.client_name || 'Wedding Shoot',
-        event_name: c.event_name || c.role_name || 'Shoot Event',
-        event_date: c.payment_date || c.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
-        role: c.role_name || 'Crew',
-        agreed_amount: Number(c.final_agreed_amount) || 0,
-        paid_amount: Number(c.advance_paid_amount) || 0,
-        balance_amount: Number(c.balance_amount) || Math.max(0, (Number(c.final_agreed_amount) || 0) - (Number(c.advance_paid_amount) || 0)),
-        status: (c.payment_status === 'completed' ? 'PAID' : c.payment_status === 'partial' ? 'PARTIAL' : 'PENDING') as any,
-        payment_method: c.payment_method || 'UPI/Bank Transfer',
-        payment_date: c.payment_date,
-        notes: c.notes || '',
-        synced_expense_id: c.synced_expense_id,
-        created_at: c.created_at,
-        updated_at: c.updated_at
-      }));
+      crewFinData.forEach((c: any) => {
+        if (!seenIds.has(c.id)) {
+          const agreed = Number(c.final_agreed_amount) || 0;
+          const paid = Number(c.advance_paid_amount) || 0;
+          const bal = Number(c.balance_amount) || Math.max(0, agreed - paid);
+          const pStatus = (c.payment_status === 'completed' ? 'PAID' : c.payment_status === 'partial' ? 'PARTIAL' : 'PENDING') as any;
 
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(`${LS_PAYOUTS_KEY}${workspaceId}_${memberId}`, JSON.stringify(mapped));
-      }
-      return mapped;
+          const item: TeamEventPayout = {
+            id: c.id,
+            workspace_id: c.workspace_id || workspaceId,
+            member_id: c.team_member_id,
+            member_name: c.team_member_name || c.member_name || '',
+            project_id: c.event_id || '',
+            sub_event_id: c.sub_event_id || '',
+            client_name: c.client_name || 'Wedding Shoot',
+            event_name: c.event_name || c.role_name || 'Shoot Event',
+            event_date: c.payment_date || c.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
+            role: c.role_name || 'Crew',
+            agreed_amount: agreed,
+            paid_amount: paid,
+            balance_amount: bal,
+            status: pStatus,
+            payment_method: c.payment_method || 'UPI / Bank Transfer',
+            payment_date: c.payment_date,
+            notes: c.notes || '',
+            synced_expense_id: c.synced_expense_id,
+            created_at: c.created_at,
+            updated_at: c.updated_at
+          };
+          seenIds.add(c.id);
+          resultList.push(item);
+        }
+      });
     }
 
-    // Fallback to team_event_payouts
+    // 3. Fallback to team_event_payouts
     const { data, error } = await supabase
       .from('team_event_payouts')
       .select('*')
@@ -251,10 +323,19 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
       .order('event_date', { ascending: false });
 
     if (!error && data && data.length > 0) {
+      data.forEach((p: any) => {
+        if (!seenIds.has(p.id)) {
+          seenIds.add(p.id);
+          resultList.push(p);
+        }
+      });
+    }
+
+    if (resultList.length > 0) {
       if (typeof window !== 'undefined') {
-        localStorage.setItem(`${LS_PAYOUTS_KEY}${workspaceId}_${memberId}`, JSON.stringify(data));
+        localStorage.setItem(`${LS_PAYOUTS_KEY}${workspaceId}_${memberId}`, JSON.stringify(resultList));
       }
-      return data as TeamEventPayout[];
+      return resultList;
     }
   } catch (err) {
     console.warn('[team-finance-sync] DB fetchMemberEventPayouts error, checking fallback:', err);
@@ -268,6 +349,121 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
     }
   }
   return [];
+}
+
+export async function updateCrewAssignmentPayment(
+  workspaceId: string,
+  assignmentId: string,
+  params: {
+    advanceAmount: number;
+    paymentStatus: 'pending' | 'partial' | 'completed';
+    paymentMethod?: string;
+    paymentDate?: string;
+    notes?: string;
+    teamMemberId?: string;
+    teamMemberName?: string;
+    clientName?: string;
+    eventName?: string;
+    roleName?: string;
+    agreedAmount?: number;
+  }
+): Promise<{ success: boolean; expenseId?: string }> {
+  try {
+    const paymentMethod = params.paymentMethod || 'UPI / Bank Transfer';
+    const paymentDate = params.paymentDate || new Date().toISOString().split('T')[0];
+    const advanceAmount = Number(params.advanceAmount) || 0;
+    const agreedAmount = Number(params.agreedAmount) || 0;
+    const balanceAmount = Math.max(0, agreedAmount - advanceAmount);
+    const amountToLog = params.paymentStatus === 'completed' ? agreedAmount : advanceAmount;
+
+    // 1. Try Supabase RPC first
+    try {
+      const { data: rpcRes, error: rpcErr } = await supabase.rpc('update_crew_assignment_payment', {
+        p_assignment_id: assignmentId,
+        p_workspace_id: workspaceId,
+        p_advance_amount: advanceAmount,
+        p_payment_status: params.paymentStatus,
+        p_payment_method: paymentMethod,
+        p_payment_date: paymentDate
+      });
+
+      if (!rpcErr && rpcRes && rpcRes.success) {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('team_finance_updated'));
+          window.dispatchEvent(new CustomEvent('finance_expenses_updated'));
+        }
+        return { success: true, expenseId: rpcRes.expense_id };
+      }
+    } catch (_) {}
+
+    // 2. Direct Sync Fallback
+    // A. Sync into Finance Expenses & Transactions if paid > 0
+    if (amountToLog > 0) {
+      await syncTeamPaymentToFinanceExpense(workspaceId, {
+        title: `Crew Payout: ${params.teamMemberName || 'Member'} (${params.roleName || 'Crew'})`,
+        category: 'Crew & Freelancer Payout',
+        amount: amountToLog,
+        date: paymentDate,
+        payment_mode: paymentMethod,
+        notes: params.notes || `Shoot: ${params.eventName || 'Event'} | Client: ${params.clientName || 'Client'} | Status: ${params.paymentStatus}`,
+        team_member_name: params.teamMemberName,
+        team_member_id: params.teamMemberId,
+        client_name: params.clientName,
+        event_name: params.eventName,
+        linked_event_id: assignmentId
+      });
+    }
+
+    // B. Update fw_assignments
+    if (assignmentId && !assignmentId.includes('-role-')) {
+      await supabase.from('fw_assignments').update({
+        advance_amount: advanceAmount,
+        balance_amount: balanceAmount,
+        payment_status: params.paymentStatus,
+        payment_method: paymentMethod,
+        payment_date: paymentDate,
+        notes: params.notes || undefined,
+        updated_at: new Date().toISOString()
+      }).eq('id', assignmentId);
+    }
+
+    // C. Update crew_assignments_finance
+    try {
+      await supabase.from('crew_assignments_finance').update({
+        advance_paid_amount: advanceAmount,
+        balance_amount: balanceAmount,
+        payment_status: params.paymentStatus,
+        payment_method: paymentMethod,
+        payment_date: paymentDate,
+        notes: params.notes || undefined,
+        updated_at: new Date().toISOString()
+      }).eq('id', assignmentId);
+    } catch (_) {}
+
+    // D. Update team_event_payouts
+    try {
+      await supabase.from('team_event_payouts').update({
+        paid_amount: advanceAmount,
+        balance_amount: balanceAmount,
+        status: params.paymentStatus === 'completed' ? 'PAID' : params.paymentStatus === 'partial' ? 'PARTIAL' : 'PENDING',
+        payment_method: paymentMethod,
+        payment_date: paymentDate,
+        notes: params.notes || undefined,
+        updated_at: new Date().toISOString()
+      }).eq('id', assignmentId);
+    } catch (_) {}
+
+    // E. Broadcast live event for real-time drawer & page refresh
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('team_finance_updated'));
+      window.dispatchEvent(new CustomEvent('finance_expenses_updated'));
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.error('[updateCrewAssignmentPayment] error:', err);
+    return { success: false };
+  }
 }
 
 export async function saveOrUpdateEventPayout(

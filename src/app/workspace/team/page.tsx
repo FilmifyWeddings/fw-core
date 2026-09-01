@@ -237,6 +237,7 @@ export default function WorkspaceTeamPage() {
         primary_type: memberData.primary_type || 'IN_HOUSE',
         default_daily_rate: memberData.default_daily_rate || 0,
         default_currency: memberData.default_currency || 'INR',
+        payout_frequency: memberData.payout_frequency || 'daily',
         user_id: currentUid,
       };
 
@@ -258,7 +259,7 @@ export default function WorkspaceTeamPage() {
 
       // Save isolated studio member rate
       if (savedMemberId && memberData.default_daily_rate != null) {
-        await saveWorkspaceMemberRate(effectiveWsId, savedMemberId, Number(memberData.default_daily_rate), memberData.default_currency || 'INR');
+        await saveWorkspaceMemberRate(effectiveWsId, savedMemberId, Number(memberData.default_daily_rate), memberData.default_currency || 'INR', memberData.payout_frequency || 'daily');
       }
 
       // 2. Insert/Update in workspace_members API for Multi-Tenant RBAC
@@ -281,6 +282,7 @@ export default function WorkspaceTeamPage() {
             avatar_url: memberData.avatar_url || null,
             default_daily_rate: Number(memberData.default_daily_rate) || 0,
             default_currency: memberData.default_currency || 'INR',
+            payout_frequency: memberData.payout_frequency || 'daily',
             permissions: memberData.permissions,
           }),
         }).catch(() => null);
@@ -296,7 +298,7 @@ export default function WorkspaceTeamPage() {
 
         // Save isolated studio member rate
         if (savedMemberId && memberData.default_daily_rate != null) {
-          await saveWorkspaceMemberRate(effectiveWsId, savedMemberId, Number(memberData.default_daily_rate), memberData.default_currency || 'INR');
+          await saveWorkspaceMemberRate(effectiveWsId, savedMemberId, Number(memberData.default_daily_rate), memberData.default_currency || 'INR', memberData.payout_frequency || 'daily');
         }
 
         // 3. Log Audit Activity

@@ -75,6 +75,7 @@ export default function AddTeamMemberModal({
   const [email, setEmail] = useState('');
   const [avatarUrl, setAvatarUrl] = useState<string>('');
   const [defaultDailyRate, setDefaultDailyRate] = useState<string>('');
+  const [payoutFrequency, setPayoutFrequency] = useState<'daily' | 'monthly'>('daily');
   const [isCompressing, setIsCompressing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showPermissions, setShowPermissions] = useState(false);
@@ -133,6 +134,7 @@ export default function AddTeamMemberModal({
       setEmail(memberToEdit.email || '');
       setAvatarUrl(memberToEdit.avatar_url || '');
       setDefaultDailyRate(memberToEdit.default_daily_rate != null ? String(memberToEdit.default_daily_rate) : '');
+      setPayoutFrequency(memberToEdit.payout_frequency === 'monthly' ? 'monthly' : 'daily');
 
       const perms = memberToEdit.permissions || memberToEdit.member_permissions?.[0] || memberToEdit.member_permissions || {};
       setLeadsAccess(perms.leads_access || 'NONE');
@@ -151,6 +153,7 @@ export default function AddTeamMemberModal({
       setEmail('');
       setAvatarUrl('');
       setDefaultDailyRate('');
+      setPayoutFrequency('daily');
       setLeadsAccess('NONE');
       setTeamManagerAccess('ASSIGNED_ONLY_VIEW');
       setQuotationsAccess('NONE');
@@ -354,6 +357,7 @@ export default function AddTeamMemberModal({
         avatar_url: avatarUrl || undefined,
         default_daily_rate: defaultDailyRate ? Number(defaultDailyRate) : 0,
         default_currency: 'INR',
+        payout_frequency: payoutFrequency,
         permissions: permissionsObj,
       });
 
@@ -379,6 +383,7 @@ export default function AddTeamMemberModal({
               avatar_url: avatarUrl || null,
               default_daily_rate: defaultDailyRate ? Number(defaultDailyRate) : 0,
               default_currency: 'INR',
+              payout_frequency: payoutFrequency,
               permissions: permissionsObj,
             }),
           }).catch(() => {});
@@ -386,7 +391,7 @@ export default function AddTeamMemberModal({
       }
 
       if (workspaceId && memberToEdit?.id) {
-        await saveWorkspaceMemberRate(workspaceId, memberToEdit.id, defaultDailyRate ? Number(defaultDailyRate) : 0, 'INR').catch(() => {});
+        await saveWorkspaceMemberRate(workspaceId, memberToEdit.id, defaultDailyRate ? Number(defaultDailyRate) : 0, 'INR', payoutFrequency).catch(() => {});
       }
 
       onClose();
@@ -696,28 +701,47 @@ export default function AddTeamMemberModal({
               </div>
             </div>
 
-            {/* ── 5.5. DEFAULT DAILY / EVENT PAYOUT RATE ── */}
-            <div className="space-y-1.5 bg-amber-50/70 p-3.5 rounded-2xl border border-amber-200/80">
+            {/* ── 5.5. DEFAULT DAILY / EVENT PAYOUT RATE & FREQUENCY ── */}
+            <div className="space-y-2 bg-amber-50/70 p-3.5 rounded-2xl border border-amber-200/80">
               <label className="text-[11px] font-black text-amber-950 flex items-center justify-between">
                 <span className="flex items-center gap-1.5">
                   <IndianRupee className="w-3.5 h-3.5 text-amber-700" />
-                  <span>Default Daily / Event Payout (₹)</span>
+                  <span>Default Commercials & Payout Setup</span>
                 </span>
                 <span className="text-[10px] text-amber-700 font-bold">Auto-fills in Shoot Commercials</span>
               </label>
-              <div className="relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-black text-amber-900">₹</span>
-                <input
-                  type="number"
-                  min="0"
-                  placeholder="0"
-                  value={defaultDailyRate}
-                  onChange={(e) => setDefaultDailyRate(e.target.value)}
-                  className="w-full pl-8 pr-3.5 py-2 rounded-xl bg-white border border-amber-300 text-xs font-black text-amber-950 focus:border-amber-500 focus:outline-hidden transition shadow-2xs"
-                />
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-extrabold text-amber-900">Default Payout Rate (₹)</label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-black text-amber-900">₹</span>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="0"
+                      value={defaultDailyRate}
+                      onChange={(e) => setDefaultDailyRate(e.target.value)}
+                      className="w-full pl-8 pr-3 py-2 rounded-xl bg-white border border-amber-300 text-xs font-black text-amber-950 focus:border-amber-500 focus:outline-hidden transition shadow-2xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-extrabold text-amber-900">Payout Frequency</label>
+                  <select
+                    value={payoutFrequency}
+                    onChange={(e) => setPayoutFrequency(e.target.value as 'daily' | 'monthly')}
+                    className="w-full px-3 py-2 rounded-xl bg-white border border-amber-300 text-xs font-bold text-amber-950 focus:border-amber-500 focus:outline-hidden transition shadow-2xs"
+                  >
+                    <option value="daily">📅 Daily / Per Shoot</option>
+                    <option value="monthly">🗓️ Monthly Retainer</option>
+                  </select>
+                </div>
               </div>
+
               <p className="text-[10px] text-amber-800/80 font-medium">
-                Set standard fee per shoot. You can still customize or apply discounts per project when assigning.
+                Set standard rate and frequency. Payouts auto-link with Team Manager booking assignments and Member Details Drawer.
               </p>
             </div>
 

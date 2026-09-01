@@ -70,6 +70,7 @@ export async function POST(req: NextRequest) {
       avatar_url,
       default_daily_rate,
       default_currency,
+      payout_frequency,
       permissions
     } = body;
 
@@ -93,6 +94,7 @@ export async function POST(req: NextRequest) {
     const cleanPrimaryType = primary_type || cleanMemberTypes[0] || 'IN_HOUSE';
     const numDailyRate = Number(default_daily_rate) || 0;
     const cleanCurrency = default_currency || 'INR';
+    const cleanFrequency = payout_frequency === 'monthly' ? 'monthly' : 'daily';
 
     // 1. Check if user already exists in auth profiles
     let invitedUserId: string | null = null;
@@ -125,6 +127,7 @@ export async function POST(req: NextRequest) {
       avatar_url: avatar_url || null,
       default_daily_rate: numDailyRate,
       default_currency: cleanCurrency,
+      payout_frequency: cleanFrequency,
       status: 'ACTIVE',
       role: 'member',
       updated_at: new Date().toISOString(),
@@ -168,6 +171,7 @@ export async function POST(req: NextRequest) {
             avatar_url: avatar_url || null,
             default_daily_rate: numDailyRate,
             default_currency: cleanCurrency,
+            payout_frequency: cleanFrequency,
             is_active: true,
           }, { onConflict: 'id' });
       } catch (_) {}
@@ -179,6 +183,7 @@ export async function POST(req: NextRequest) {
             workspace_id: workspace_id,
             team_member_id: savedMember.id,
             default_daily_rate: numDailyRate,
+            payout_frequency: cleanFrequency,
             currency: cleanCurrency,
             updated_at: new Date().toISOString()
           }, { onConflict: 'workspace_id,team_member_id' });

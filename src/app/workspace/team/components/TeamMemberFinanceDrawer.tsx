@@ -24,6 +24,7 @@ import {
   fetchMemberSalaryRecords, 
   saveSalaryRecord, 
   recordSalaryPayment,
+  updateCrewAssignmentPayment,
   fetchMemberFinancialSummary 
 } from '@/lib/team-finance-sync';
 
@@ -158,6 +159,25 @@ export default function TeamMemberFinanceDrawer({
       const amount = Number(paymentAmount);
 
       if (paymentTarget.type === 'EVENT') {
+        const previousPaid = (paymentTarget.totalAmount - paymentTarget.balanceAmount) || 0;
+        const newAdvanceTotal = previousPaid + amount;
+        const isFullyPaid = newAdvanceTotal >= paymentTarget.totalAmount;
+        const paymentStatus = isFullyPaid ? 'completed' : 'partial';
+
+        await updateCrewAssignmentPayment(workspaceId, paymentTarget.id, {
+          advanceAmount: newAdvanceTotal,
+          paymentStatus: paymentStatus,
+          paymentMethod: paymentMode,
+          paymentDate: paymentDate,
+          notes: paymentNotes || paymentRef,
+          teamMemberId: member!.id,
+          teamMemberName: member?.name,
+          clientName: paymentTarget.clientName,
+          eventName: paymentTarget.title,
+          roleName: paymentTarget.role,
+          agreedAmount: paymentTarget.totalAmount
+        });
+
         await recordPayoutTransaction(workspaceId, paymentTarget.id, member!.id, {
           amount,
           payment_date: paymentDate,
