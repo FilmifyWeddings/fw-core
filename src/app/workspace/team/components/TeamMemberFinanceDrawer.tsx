@@ -163,14 +163,36 @@ export default function TeamMemberFinanceDrawer({
     }
   }, [workspaceId, member, memberType, isLab, isInHouse]);
 
+  // Track active member ID to prevent stale data flash
+  const [activeMemberId, setActiveMemberId] = useState<string | null>(null);
+
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && member?.id) {
+      if (member.id !== activeMemberId) {
+        setActiveMemberId(member.id);
+        setPayouts([]);
+        setAlbumOrders([]);
+        setSalaryRecords([]);
+        setSummary({
+          member_id: member.id,
+          total_agreed: 0,
+          total_paid: 0,
+          total_balance: 0,
+          active_events_count: 0,
+          paid_events_count: 0,
+          pending_events_count: 0,
+          monthly_breakdown: []
+        });
+        setLoading(true);
+      }
       loadData();
       if (member?.default_daily_rate) {
         setNewEventAgreedAmount(String(member.default_daily_rate));
       }
+    } else if (!isOpen) {
+      setActiveMemberId(null);
     }
-  }, [isOpen, loadData, member]);
+  }, [isOpen, member?.id, loadData]);
 
   // Handle Record Payment Submit
   const handleRecordPaymentSubmit = async () => {
@@ -327,9 +349,13 @@ export default function TeamMemberFinanceDrawer({
               <span className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500 flex items-center gap-1">
                 <Wallet className="w-3 h-3 text-amber-600" /> Total Agreed
               </span>
-              <span className="text-sm sm:text-base font-black text-amber-950 mt-1 font-mono">
-                ₹{summary.total_agreed.toLocaleString('en-IN')}
-              </span>
+              {loading ? (
+                <div className="h-6 w-20 bg-amber-200/60 rounded-lg animate-pulse mt-1" />
+              ) : (
+                <span className="text-sm sm:text-base font-black text-amber-950 mt-1 font-mono">
+                  ₹{summary.total_agreed.toLocaleString('en-IN')}
+                </span>
+              )}
             </div>
 
             {/* Total Paid */}
@@ -337,9 +363,13 @@ export default function TeamMemberFinanceDrawer({
               <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700 flex items-center gap-1">
                 <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Total Paid
               </span>
-              <span className="text-sm sm:text-base font-black text-emerald-900 mt-1 font-mono">
-                ₹{summary.total_paid.toLocaleString('en-IN')}
-              </span>
+              {loading ? (
+                <div className="h-6 w-20 bg-emerald-200/60 rounded-lg animate-pulse mt-1" />
+              ) : (
+                <span className="text-sm sm:text-base font-black text-emerald-900 mt-1 font-mono">
+                  ₹{summary.total_paid.toLocaleString('en-IN')}
+                </span>
+              )}
             </div>
 
             {/* Balance Due */}
@@ -351,11 +381,15 @@ export default function TeamMemberFinanceDrawer({
               }`}>
                 <Clock className="w-3 h-3 text-rose-500" /> Pending Due
               </span>
-              <span className={`text-sm sm:text-base font-black mt-1 font-mono ${
-                summary.total_balance > 0 ? 'text-rose-700' : 'text-zinc-700'
-              }`}>
-                ₹{summary.total_balance.toLocaleString('en-IN')}
-              </span>
+              {loading ? (
+                <div className="h-6 w-20 bg-rose-200/60 rounded-lg animate-pulse mt-1" />
+              ) : (
+                <span className={`text-sm sm:text-base font-black mt-1 font-mono ${
+                  summary.total_balance > 0 ? 'text-rose-700' : 'text-zinc-700'
+                }`}>
+                  ₹{summary.total_balance.toLocaleString('en-IN')}
+                </span>
+              )}
             </div>
           </div>
 
@@ -517,7 +551,34 @@ export default function TeamMemberFinanceDrawer({
 
                     {/* Event Payouts List */}
                     <div className="space-y-3">
-                      {payouts.length === 0 ? (
+                      {loading ? (
+                        <div className="space-y-3">
+                          {[1, 2].map((i) => (
+                            <div
+                              key={i}
+                              className="p-4 rounded-3xl bg-white border-2 border-amber-200/60 shadow-xs space-y-3 relative overflow-hidden animate-pulse"
+                            >
+                              <div className="flex items-start gap-3">
+                                <div className="w-12 h-14 rounded-2xl bg-amber-200/70 shrink-0" />
+                                <div className="flex-1 space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <div className="h-4 w-36 bg-amber-200/80 rounded-lg" />
+                                    <div className="h-4 w-20 bg-amber-100 rounded-full" />
+                                  </div>
+                                  <div className="h-3 w-48 bg-amber-100/90 rounded-lg" />
+                                  <div className="h-4 w-24 bg-amber-200/50 rounded-md" />
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-3 gap-2 p-2.5 rounded-2xl bg-amber-50/50 border border-amber-100/80">
+                                <div className="h-7 bg-amber-100/80 rounded-lg" />
+                                <div className="h-7 bg-amber-100/80 rounded-lg" />
+                                <div className="h-7 bg-amber-100/80 rounded-lg" />
+                              </div>
+                              <div className="h-9 bg-amber-200/60 rounded-xl w-full" />
+                            </div>
+                          ))}
+                        </div>
+                      ) : payouts.length === 0 ? (
                         <div className="p-8 text-center bg-white border-2 border-dashed border-amber-200/90 rounded-2xl text-zinc-400 text-xs font-medium">
                           No shoot bookings recorded yet for this member. Assign them to a shoot in Team Manager or add a custom payout above.
                         </div>

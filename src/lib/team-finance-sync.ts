@@ -751,8 +751,23 @@ async function persistAssignmentSlot(params: {
   teamMemberName?: string;
   teamMemberPhone?: string;
   roleName: string;
+  finalAgreedAmount?: number;
+  advancePaidAmount?: number;
+  paymentStatus?: string;
+  paymentDate?: string;
+  paymentMethod?: string;
+  notes?: string;
+  clientName?: string;
+  eventName?: string;
 }) {
   try {
+    const agreed = Number(params.finalAgreedAmount) || 0;
+    const advance = Number(params.advancePaidAmount) || 0;
+    const balance = Math.max(0, agreed - advance);
+    const pStatus = params.paymentStatus || (agreed > 0 && balance === 0 ? 'completed' : advance > 0 ? 'partial' : 'pending');
+    const pDate = params.paymentDate || new Date().toISOString().split('T')[0];
+    const pMethod = params.paymentMethod || 'UPI / Bank Transfer';
+
     // 1. CRITICAL: Ensure member exists in fw_team_members so foreign key constraint NEVER fails
     if (params.teamMemberId) {
       try {
@@ -765,15 +780,32 @@ async function persistAssignmentSlot(params: {
           primary_role: params.roleName || 'Crew',
           user_id: currentUid || undefined,
           is_active: true,
+          default_daily_rate: agreed > 0 ? agreed : undefined
         }, { onConflict: 'id' });
       } catch (_) {}
     }
+
+    const assignmentPayload: any = {
+      assigned_member_id: params.teamMemberId,
+      assigned_member_name: params.teamMemberName || null,
+      agreed_amount: agreed,
+      advance_amount: advance,
+      paid_amount: advance,
+      balance_amount: balance,
+      payment_status: pStatus,
+      payment_method: pMethod,
+      payment_date: pDate,
+      notes: params.notes || null,
+      workspace_id: params.workspaceId || null,
+      sub_event_name: params.eventName || null,
+      client_name: params.clientName || null
+    };
 
     // 2. Perform fw_assignments update or insert
     if (params.assignmentId && !params.assignmentId.includes('-role-')) {
       await supabase
         .from('fw_assignments')
-        .update({ assigned_member_id: params.teamMemberId })
+        .update(assignmentPayload)
         .eq('id', params.assignmentId);
     } else if (params.subEventId) {
       const { data: existing } = await supabase
@@ -786,7 +818,7 @@ async function persistAssignmentSlot(params: {
       if (existing?.id) {
         await supabase
           .from('fw_assignments')
-          .update({ assigned_member_id: params.teamMemberId })
+          .update(assignmentPayload)
           .eq('id', existing.id);
       } else {
         await supabase
@@ -795,8 +827,8 @@ async function persistAssignmentSlot(params: {
             project_id: params.eventId,
             sub_event_id: params.subEventId,
             required_role: params.roleName,
-            assigned_member_id: params.teamMemberId,
-            status: 'pending'
+            status: 'pending',
+            ...assignmentPayload
           }]);
       }
     }
