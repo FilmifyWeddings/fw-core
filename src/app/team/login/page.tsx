@@ -87,10 +87,23 @@ export default function TeamLoginPage() {
       });
 
       if (signInErr) {
-        if (signInErr.message.includes('Invalid login credentials') && isInvited) {
-          setIsActivating(true);
-          setError('Account not activated yet. Set a password below to activate your crew access.');
-          return;
+        if (signInErr.message.includes('Invalid login credentials') || signInErr.message.includes('Email not confirmed') || isInvited) {
+          // Instant dynamic invite check
+          try {
+            const checkRes = await fetch(`/api/team/check-invite?email=${encodeURIComponent(cleanEmail)}`);
+            const checkJson = await checkRes.json();
+            if (checkJson?.is_invited) {
+              setIsInvited(true);
+              setInvitedName(checkJson.member_name || 'Crew Member');
+              setInvitedStudios(checkJson.studios || ['Studio Partner']);
+              if (!activationFullName && checkJson.member_name) {
+                setActivationFullName(checkJson.member_name);
+              }
+              setIsActivating(true);
+              setError(`👋 Welcome ${checkJson.member_name || 'Partner'}! Aapka account abhi create/activate nahi hua hai. Apna password daalkar 1-click me activate karein.`);
+              return;
+            }
+          } catch (_) {}
         }
         throw signInErr;
       }
@@ -100,7 +113,7 @@ export default function TeamLoginPage() {
       }
     } catch (err: any) {
       console.error('[Team Login] Error:', err);
-      setError(err.message || 'Invalid email or password. Please check your credentials.');
+      setError(err.message || 'Invalid email or password. Please check your credentials or click Activate Account.');
     } finally {
       setLoading(false);
     }
@@ -187,6 +200,28 @@ export default function TeamLoginPage() {
                 ? 'Set a secure password to activate your portal access'
                 : 'Access your assigned wedding shoots and live payment ledger'}
             </p>
+
+            {/* Mode Switcher Buttons */}
+            <div className="flex p-0.5 bg-zinc-100 rounded-xl text-xs font-bold mt-4 max-w-xs mx-auto border border-[#EBE7DF]">
+              <button
+                type="button"
+                onClick={() => { setIsActivating(false); setError(null); }}
+                className={`flex-1 py-1.5 rounded-lg transition-all cursor-pointer ${
+                  !isActivating ? 'bg-white text-zinc-900 shadow-2xs' : 'text-zinc-500 hover:text-zinc-900'
+                }`}
+              >
+                Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => { setIsActivating(true); setError(null); }}
+                className={`flex-1 py-1.5 rounded-lg transition-all cursor-pointer ${
+                  isActivating ? 'bg-white text-[#b45309] shadow-2xs' : 'text-zinc-500 hover:text-zinc-900'
+                }`}
+              >
+                Activate / Register
+              </button>
+            </div>
           </div>
 
           {/* Invited Studio Notice */}
