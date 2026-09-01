@@ -82,7 +82,9 @@ export default function WorkspaceTeamPage() {
 
   // Load Financial Summaries for all members
   const loadFinancialSummaries = useCallback(async (membersList: TeamMember[]) => {
-    const effectiveWsId = workspaceId || userEmail;
+    const { data: { session } } = await supabase.auth.getSession();
+    const currentUid = session?.user?.id;
+    const effectiveWsId = workspaceId || currentUid || userEmail;
     if (!effectiveWsId || membersList.length === 0) return;
 
     const summaryMap: Record<string, TeamFinancialSummary> = {};

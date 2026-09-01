@@ -261,6 +261,46 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
 
     const idList = Array.from(memberIdsToQuery);
 
+    // Fetch member's configured default rate as baseline fallback
+    let defaultDailyRate = 0;
+    try {
+      const { data: rateRow } = await supabase
+        .from('workspace_team_member_rates')
+        .select('default_daily_rate')
+        .eq('workspace_id', workspaceId)
+        .in('team_member_id', idList)
+        .maybeSingle();
+      if (rateRow && Number(rateRow.default_daily_rate) > 0) {
+        defaultDailyRate = Number(rateRow.default_daily_rate);
+      }
+    } catch (_) {}
+
+    if (!defaultDailyRate) {
+      try {
+        const { data: tmRow } = await supabase
+          .from('fw_team_members')
+          .select('default_daily_rate')
+          .in('id', idList)
+          .maybeSingle();
+        if (tmRow && Number(tmRow.default_daily_rate) > 0) {
+          defaultDailyRate = Number(tmRow.default_daily_rate);
+        }
+      } catch (_) {}
+    }
+
+    if (!defaultDailyRate) {
+      try {
+        const { data: wmRow } = await supabase
+          .from('workspace_members')
+          .select('default_daily_rate')
+          .in('id', idList)
+          .maybeSingle();
+        if (wmRow && Number(wmRow.default_daily_rate) > 0) {
+          defaultDailyRate = Number(wmRow.default_daily_rate);
+        }
+      } catch (_) {}
+    }
+
     // 1. Fetch from fw_assignments (Direct Link to Bookings & Events)
     try {
       let assignQuery = supabase.from('fw_assignments').select('*');
@@ -314,10 +354,11 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
           const se = a.sub_event_id ? subEventsMap[a.sub_event_id] : null;
           const proj = (a.project_id || se?.project_id) ? projectsMap[a.project_id || se?.project_id] : null;
 
-          const agreed = Number(a.agreed_amount) || 0;
+          const rawAgreed = Number(a.agreed_amount) || 0;
+          const agreed = rawAgreed > 0 ? rawAgreed : defaultDailyRate;
           const paid = Number(a.advance_amount ?? a.paid_amount) || 0;
-          const bal = Number(a.balance_amount) || Math.max(0, agreed - paid);
-          const pStatus: 'PENDING' | 'PARTIAL' | 'PAID' = a.payment_status === 'completed' || (agreed > 0 && bal === 0) 
+          const bal = Number(a.balance_amount) > 0 ? Number(a.balance_amount) : Math.max(0, agreed - paid);
+          const pStatus: 'PENDING' | 'PARTIAL' | 'PAID' = (agreed > 0 && bal === 0)
             ? 'PAID' 
             : paid > 0 
             ? 'PARTIAL' 
@@ -1405,76 +1446,52 @@ export async function fetchMemberFinancialSummary(
 ): Promise<TeamFinancialSummary> {
   const normType = (memberType || '').toUpperCase();
 
+  // 1. Fetch Shoot Event Payouts (Universal for all assigned shoots)
+  const payouts = await fetchMemberEventPayouts(workspaceId, memberId);
+  const eventAgreed = payouts.reduce((acc, p) => acc + Number(p.agreed_amount || 0), 0);
+  const eventPaid = payouts.reduce((acc, p) => acc + Number(p.paid_amount || 0), 0);
+  const eventBalance = payouts.reduce((acc, p) => acc + Number(p.balance_amount || 0), 0);
+
+  let additionalAgreed = 0;
+  let additionalPaid = 0;
+  let additionalBalance = 0;
+  let additionalActiveCount = 0;
+  let additionalPaidCount = 0;
+
+  // 2. Partner Album Orders (if lab partner)
   if (normType.includes('LAB') || normType.includes('ALBUM') || normType.includes('PARTNER')) {
     const orders = await fetchPartnerAlbumOrders(workspaceId, memberId);
-    const totalAgreed = orders.reduce((acc, o) => acc + Number(o.total_amount || 0), 0);
-    const totalPaid = orders.reduce((acc, o) => acc + Number(o.paid_amount || 0), 0);
-    const totalBalance = Math.max(0, totalAgreed - totalPaid);
-
-    const monthlyMap: Record<string, { agreed: number; paid: number; balance: number }> = {};
-    orders.forEach(o => {
-      const m = (o.order_date || '').slice(0, 7) || 'Other';
-      if (!monthlyMap[m]) monthlyMap[m] = { agreed: 0, paid: 0, balance: 0 };
-      monthlyMap[m].agreed += Number(o.total_amount || 0);
-      monthlyMap[m].paid += Number(o.paid_amount || 0);
-      monthlyMap[m].balance += Number(o.balance_amount || 0);
-    });
-
-    const monthlyBreakdown = Object.keys(monthlyMap).sort().map(m => ({
-      month: m,
-      ...monthlyMap[m]
-    }));
-
-    return {
-      member_id: memberId,
-      total_agreed: totalAgreed,
-      total_paid: totalPaid,
-      total_balance: totalBalance,
-      active_events_count: orders.length,
-      paid_events_count: orders.filter(o => o.payment_status === 'PAID').length,
-      pending_events_count: orders.filter(o => o.payment_status !== 'PAID').length,
-      monthly_breakdown: monthlyBreakdown
-    };
+    if (orders.length > 0) {
+      additionalAgreed += orders.reduce((acc, o) => acc + Number(o.total_amount || 0), 0);
+      additionalPaid += orders.reduce((acc, o) => acc + Number(o.paid_amount || 0), 0);
+      additionalBalance += Math.max(0, additionalAgreed - additionalPaid);
+      additionalActiveCount += orders.length;
+      additionalPaidCount += orders.filter(o => o.payment_status === 'PAID').length;
+    }
   }
 
+  // 3. In-House Salary Records (if in-house staff)
   if (normType.includes('HOUSE') || normType.includes('STAFF')) {
     const salaries = await fetchMemberSalaryRecords(workspaceId, memberId);
-    const totalAgreed = salaries.reduce((acc, s) => acc + Number(s.net_payable || 0), 0);
-    const totalPaid = salaries.reduce((acc, s) => acc + Number(s.paid_amount || 0), 0);
-    const totalBalance = Math.max(0, totalAgreed - totalPaid);
-
-    const monthlyMap: Record<string, { agreed: number; paid: number; balance: number }> = {};
-    salaries.forEach(s => {
-      const m = s.month_year || 'Other';
-      if (!monthlyMap[m]) monthlyMap[m] = { agreed: 0, paid: 0, balance: 0 };
-      monthlyMap[m].agreed += Number(s.net_payable || 0);
-      monthlyMap[m].paid += Number(s.paid_amount || 0);
-      monthlyMap[m].balance += Math.max(0, Number(s.net_payable || 0) - Number(s.paid_amount || 0));
-    });
-
-    const monthlyBreakdown = Object.keys(monthlyMap).sort().map(m => ({
-      month: m,
-      ...monthlyMap[m]
-    }));
-
-    return {
-      member_id: memberId,
-      total_agreed: totalAgreed,
-      total_paid: totalPaid,
-      total_balance: totalBalance,
-      active_events_count: salaries.length,
-      paid_events_count: salaries.filter(s => s.payment_status === 'PAID').length,
-      pending_events_count: salaries.filter(s => s.payment_status !== 'PAID').length,
-      monthly_breakdown: monthlyBreakdown
-    };
+    if (salaries.length > 0) {
+      const salAgreed = salaries.reduce((acc, s) => acc + Number(s.net_payable || 0), 0);
+      const salPaid = salaries.reduce((acc, s) => acc + Number(s.paid_amount || 0), 0);
+      additionalAgreed += salAgreed;
+      additionalPaid += salPaid;
+      additionalBalance += Math.max(0, salAgreed - salPaid);
+      additionalActiveCount += salaries.length;
+      additionalPaidCount += salaries.filter(s => s.payment_status === 'PAID').length;
+    }
   }
 
-  // Default Freelancer
-  const payouts = await fetchMemberEventPayouts(workspaceId, memberId);
-  const totalAgreed = payouts.reduce((acc, p) => acc + Number(p.agreed_amount || 0), 0);
-  const totalPaid = payouts.reduce((acc, p) => acc + Number(p.paid_amount || 0), 0);
-  const totalBalance = Math.max(0, totalAgreed - totalPaid);
+  const totalAgreed = eventAgreed + additionalAgreed;
+  const totalPaid = eventPaid + additionalPaid;
+  const totalBalance = eventBalance + additionalBalance;
+  const activeCount = payouts.length + additionalActiveCount;
+  const paidCount = payouts.filter(p => p.status === 'PAID').length + additionalPaidCount;
+  const pendingCount = activeCount - paidCount;
 
+  // Monthly breakdown
   const monthlyMap: Record<string, { agreed: number; paid: number; balance: number }> = {};
   payouts.forEach(p => {
     const m = (p.event_date || '').slice(0, 7) || 'Other';
@@ -1494,9 +1511,9 @@ export async function fetchMemberFinancialSummary(
     total_agreed: totalAgreed,
     total_paid: totalPaid,
     total_balance: totalBalance,
-    active_events_count: payouts.length,
-    paid_events_count: payouts.filter(p => p.status === 'PAID').length,
-    pending_events_count: payouts.filter(p => p.status !== 'PAID').length,
+    active_events_count: activeCount,
+    paid_events_count: paidCount,
+    pending_events_count: pendingCount,
     monthly_breakdown: monthlyBreakdown
   };
 }
