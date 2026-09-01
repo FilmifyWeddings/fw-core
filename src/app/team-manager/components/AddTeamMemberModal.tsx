@@ -25,6 +25,8 @@ interface AddTeamMemberModalProps {
     phone_number: string;
     email?: string;
     avatar_url?: string;
+    default_daily_rate?: number;
+    default_currency?: string;
     roles?: string[];
     member_types?: string[];
     primary_type?: string;
@@ -71,6 +73,7 @@ export default function AddTeamMemberModal({
   const [phoneNumber, setPhoneNumber] = useState('');
   const [email, setEmail] = useState('');
   const [avatarUrl, setAvatarUrl] = useState<string>('');
+  const [defaultDailyRate, setDefaultDailyRate] = useState<string>('');
   const [isCompressing, setIsCompressing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showPermissions, setShowPermissions] = useState(false);
@@ -127,6 +130,7 @@ export default function AddTeamMemberModal({
       setPhoneNumber(memberToEdit.phone_number || memberToEdit.phone || '');
       setEmail(memberToEdit.email || '');
       setAvatarUrl(memberToEdit.avatar_url || '');
+      setDefaultDailyRate(memberToEdit.default_daily_rate != null ? String(memberToEdit.default_daily_rate) : '');
 
       const perms = memberToEdit.permissions || memberToEdit.member_permissions?.[0] || memberToEdit.member_permissions || {};
       setLeadsAccess(perms.leads_access || 'NONE');
@@ -144,6 +148,7 @@ export default function AddTeamMemberModal({
       setPhoneNumber('');
       setEmail('');
       setAvatarUrl('');
+      setDefaultDailyRate('');
       setLeadsAccess('NONE');
       setTeamManagerAccess('ASSIGNED_ONLY_VIEW');
       setQuotationsAccess('NONE');
@@ -345,6 +350,8 @@ export default function AddTeamMemberModal({
         phone_number: phoneNumber.trim(),
         email: email.trim() || undefined,
         avatar_url: avatarUrl || undefined,
+        default_daily_rate: defaultDailyRate ? Number(defaultDailyRate) : 0,
+        default_currency: 'INR',
         permissions: permissionsObj,
       });
 
@@ -368,6 +375,8 @@ export default function AddTeamMemberModal({
               member_types: selectedMemberTypes,
               primary_type: selectedMemberTypes[0] || 'IN_HOUSE',
               avatar_url: avatarUrl || null,
+              default_daily_rate: defaultDailyRate ? Number(defaultDailyRate) : 0,
+              default_currency: 'INR',
               permissions: permissionsObj,
             }),
           }).catch(() => {});
@@ -679,6 +688,31 @@ export default function AddTeamMemberModal({
                   );
                 })}
               </div>
+            </div>
+
+            {/* ── 5.5. DEFAULT DAILY / EVENT PAYOUT RATE ── */}
+            <div className="space-y-1.5 bg-amber-50/70 p-3.5 rounded-2xl border border-amber-200/80">
+              <label className="text-[11px] font-black text-amber-950 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <IndianRupee className="w-3.5 h-3.5 text-amber-700" />
+                  <span>Default Daily / Event Payout (₹)</span>
+                </span>
+                <span className="text-[10px] text-amber-700 font-bold">Auto-fills in Shoot Commercials</span>
+              </label>
+              <div className="relative">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-black text-amber-900">₹</span>
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="e.g. 5000"
+                  value={defaultDailyRate}
+                  onChange={(e) => setDefaultDailyRate(e.target.value)}
+                  className="w-full pl-8 pr-3.5 py-2 rounded-xl bg-white border border-amber-300 text-xs font-black text-amber-950 focus:border-amber-500 focus:outline-hidden transition shadow-2xs"
+                />
+              </div>
+              <p className="text-[10px] text-amber-800/80 font-medium">
+                Set standard fee per shoot. You can still customize or apply discounts per project when assigning.
+              </p>
             </div>
 
             {/* ── 6. COMPREHENSIVE GRANULAR PERMISSION MATRIX ── */}

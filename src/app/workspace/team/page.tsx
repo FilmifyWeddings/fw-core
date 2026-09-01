@@ -29,6 +29,8 @@ interface TeamMember {
   primary_type?: string;
   avatar_url?: string;
   status?: string;
+  default_daily_rate?: number;
+  default_currency?: string;
   permissions?: {
     leads_access?: string;
     team_manager_access?: string;
@@ -118,6 +120,8 @@ export default function WorkspaceTeamPage() {
             primary_type: m.primary_type || 'IN_HOUSE',
             avatar_url: m.avatar_url || '',
             status: m.status || 'ACTIVE',
+            default_daily_rate: m.default_daily_rate || 0,
+            default_currency: m.default_currency || 'INR',
             permissions: m.member_permissions?.[0] || m.member_permissions || undefined,
           }));
         }
@@ -146,6 +150,8 @@ export default function WorkspaceTeamPage() {
               primary_type: f.primary_type || 'IN_HOUSE',
               avatar_url: f.avatar_url || '',
               status: 'ACTIVE',
+              default_daily_rate: f.default_daily_rate || 0,
+              default_currency: f.default_currency || 'INR',
             });
           }
         }
@@ -221,6 +227,8 @@ export default function WorkspaceTeamPage() {
         avatar_url: memberData.avatar_url || null,
         member_types: memberData.member_types || [memberData.primary_type || 'IN_HOUSE'],
         primary_type: memberData.primary_type || 'IN_HOUSE',
+        default_daily_rate: memberData.default_daily_rate || 0,
+        default_currency: memberData.default_currency || 'INR',
         user_id: currentUid,
       };
 
@@ -636,20 +644,55 @@ export default function WorkspaceTeamPage() {
                         )}
                       </div>
 
-                      {/* Multi-Role Tags */}
-                      {member.roles && member.roles.length > 0 && (
-                        <div className="flex flex-wrap gap-1 pt-1">
-                          {member.roles.map((r) => (
-                            <span key={r} className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-zinc-100 text-zinc-600 border border-zinc-200">
-                              {r}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                      {/* Multi-Role Tags & Default Rate */}
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                        {member.roles && member.roles.length > 0 && member.roles.map((r) => (
+                          <span key={r} className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-zinc-100 text-zinc-600 border border-zinc-200">
+                            {r}
+                          </span>
+                        ))}
+                        {Boolean(member.default_daily_rate && member.default_daily_rate > 0) && (
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-amber-50 text-amber-900 border border-amber-300 flex items-center gap-1">
+                            <IndianRupee className="w-2.5 h-2.5" />
+                            <span>{Number(member.default_daily_rate).toLocaleString('en-IN')}/day</span>
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Financial Quick Widget */}
+                      {(() => {
+                        const fin = memberFinancials[member.id];
+                        const totalAgreed = fin?.total_agreed || 0;
+                        const totalPaid = fin?.total_paid || 0;
+                        const totalBal = fin?.total_balance || 0;
+
+                        return (
+                          <div className="bg-stone-50/80 rounded-xl p-2.5 border border-stone-200/80 grid grid-cols-3 gap-1.5 text-center">
+                            <div>
+                              <span className="text-[9px] font-bold text-stone-400 block uppercase">Agreed</span>
+                              <span className="text-[11px] font-black text-stone-800">
+                                ₹{totalAgreed.toLocaleString('en-IN')}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[9px] font-bold text-emerald-600 block uppercase">Paid</span>
+                              <span className="text-[11px] font-black text-emerald-700">
+                                ₹{totalPaid.toLocaleString('en-IN')}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[9px] font-bold text-rose-500 block uppercase">Balance</span>
+                              <span className="text-[11px] font-black text-rose-700">
+                                ₹{totalBal.toLocaleString('en-IN')}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     {/* Permissions & Security Summary */}
-                    <div className="pt-3 border-t border-zinc-100 space-y-1.5">
+                    <div className="pt-3 border-t border-zinc-100 space-y-2">
                       <div className="flex flex-wrap gap-1.5">
                         <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${leadsBadge.color}`}>
                           {leadsBadge.label}
@@ -659,13 +702,19 @@ export default function WorkspaceTeamPage() {
                         </span>
                       </div>
 
-                      <div className="flex items-center justify-between text-[10px] text-zinc-400 font-semibold pt-1">
-                        <span className="flex items-center gap-1 text-emerald-600">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                          Active Access
-                        </span>
-                        <span>Role: {member.primary_role}</span>
-                      </div>
+                      {/* Action Row: Open Finance Drawer */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedFinanceMember(member);
+                          setIsFinanceDrawerOpen(true);
+                        }}
+                        className="w-full py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-black shadow-xs flex items-center justify-center gap-1.5 transition active:scale-98 cursor-pointer"
+                      >
+                        <IndianRupee className="w-3.5 h-3.5 text-amber-300" />
+                        <span>Details / Finance Ledger</span>
+                        <ChevronRight className="w-3.5 h-3.5 text-slate-400 ml-auto" />
+                      </button>
                     </div>
                   </div>
                 );

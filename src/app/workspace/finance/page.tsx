@@ -26,10 +26,12 @@ import type {
 
 // Default expense categories
 const DEFAULT_EXPENSE_CATEGORIES = [
+  'Crew & Freelancer Payout',
   'Photographer Payout',
   'Cinematographer Payout',
   'Video Editor Payout',
   'Drone Operator Payout',
+  'Album Printing & Binding',
   'Travel & Flights',
   'Hotel & Accommodation',
   'Equipment Rental',
@@ -370,7 +372,11 @@ export default function FinancePage() {
       fetchFinanceData();
     };
     window.addEventListener('finance_expenses_updated', handleExpensesUpdated);
-    return () => window.removeEventListener('finance_expenses_updated', handleExpensesUpdated);
+    window.addEventListener('team_finance_updated', handleExpensesUpdated);
+    return () => {
+      window.removeEventListener('finance_expenses_updated', handleExpensesUpdated);
+      window.removeEventListener('team_finance_updated', handleExpensesUpdated);
+    };
   }, []);
 
   const checkSecurityAndFetchData = async () => {

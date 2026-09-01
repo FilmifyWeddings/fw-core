@@ -488,6 +488,8 @@ export default function TeamManagerPage() {
         phone_number: cleanMemberData.phone_number,
         email: cleanMemberData.email || null,
         avatar_url: cleanMemberData.avatar_url || null,
+        default_daily_rate: cleanMemberData.default_daily_rate || 0,
+        default_currency: cleanMemberData.default_currency || 'INR',
         ...(currentUserId ? { user_id: currentUserId } : {})
       };
 
@@ -2391,8 +2393,10 @@ export default function TeamManagerPage() {
         role={whatsappModalData.role}
         project={whatsappModalData.project}
         subEvent={whatsappModalData.subEvent}
+        workspaceId={workspaceId || currentUserId}
         studioName="Filmify Weddings"
         projectManagerName={(whatsappModalData.project as any)?.project_manager_name || 'Studio Manager'}
+        onCommercialsSaved={() => fetchAllData()}
       />
 
       {/* 3D Tactile Financial Drawer */}

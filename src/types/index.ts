@@ -330,6 +330,9 @@ export interface FWTeamMember {
   shift_end?: string | null; // e.g. '19:00:00' or '19:00'
   weekly_offs?: string[] | null; // e.g. ['Sun']
   daily_rate?: number | null;
+  default_daily_rate?: number | null;
+  default_currency?: string | null;
+  phone?: string;
   monthly_salary?: number | null;
   payout_type?: 'monthly' | 'daily' | string | null;
   is_geofence_exempt?: boolean | null;
