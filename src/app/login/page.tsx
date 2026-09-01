@@ -4,7 +4,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { supabase, clearAllSupabaseAuthCookies } from '@/lib/supabase';
+import { motion, AnimatePresence } from 'framer-motion';
+import { supabase } from '@/lib/supabase';
 import {
   User,
   Lock,
@@ -33,33 +34,39 @@ import {
   Calendar,
   Layers,
   Crown,
+  MapPin,
+  IndianRupee,
+  Check,
+  ArrowUpRight,
+  X,
 } from 'lucide-react';
 import OtpModal from '@/components/auth/OtpModal';
-import { pruneClientCookies } from '@/lib/cookie-cleaner';
 
-// Comprehensive Country Code Data
+// Comprehensive Country Code Data with 3D Flag Emoji & ISO
 const COUNTRIES = [
-  { code: '+91', iso: 'in', name: 'India' },
-  { code: '+1', iso: 'us', name: 'United States' },
-  { code: '+44', iso: 'gb', name: 'United Kingdom' },
-  { code: '+971', iso: 'ae', name: 'UAE' },
-  { code: '+1', iso: 'ca', name: 'Canada' },
-  { code: '+61', iso: 'au', name: 'Australia' },
-  { code: '+65', iso: 'sg', name: 'Singapore' },
-  { code: '+966', iso: 'sa', name: 'Saudi Arabia' },
-  { code: '+974', iso: 'qa', name: 'Qatar' },
-  { code: '+965', iso: 'kw', name: 'Kuwait' },
-  { code: '+968', iso: 'om', name: 'Oman' },
-  { code: '+973', iso: 'bh', name: 'Bahrain' },
-  { code: '+977', iso: 'np', name: 'Nepal' },
-  { code: '+880', iso: 'bd', name: 'Bangladesh' },
-  { code: '+94', iso: 'lk', name: 'Sri Lanka' },
+  { code: '+91', iso: 'in', name: 'India', flag: '🇮🇳' },
+  { code: '+1', iso: 'us', name: 'United States', flag: '🇺🇸' },
+  { code: '+44', iso: 'gb', name: 'United Kingdom', flag: '🇬🇧' },
+  { code: '+971', iso: 'ae', name: 'UAE', flag: '🇦🇪' },
+  { code: '+1', iso: 'ca', name: 'Canada', flag: '🇨🇦' },
+  { code: '+61', iso: 'au', name: 'Australia', flag: '🇦🇺' },
+  { code: '+65', iso: 'sg', name: 'Singapore', flag: '🇸🇬' },
+  { code: '+966', iso: 'sa', name: 'Saudi Arabia', flag: '🇸🇦' },
+  { code: '+974', iso: 'qa', name: 'Qatar', flag: '🇶🇦' },
+  { code: '+965', iso: 'kw', name: 'Kuwait', flag: '🇰🇼' },
+  { code: '+968', iso: 'om', name: 'Oman', flag: '🇴🇲' },
+  { code: '+973', iso: 'bh', name: 'Bahrain', flag: '🇧🇭' },
+  { code: '+977', iso: 'np', name: 'Nepal', flag: '🇳🇵' },
+  { code: '+880', iso: 'bd', name: 'Bangladesh', flag: '🇧🇩' },
+  { code: '+94', iso: 'lk', name: 'Sri Lanka', flag: '🇱🇰' },
+  { code: '+60', iso: 'my', name: 'Malaysia', flag: '🇲🇾' },
+  { code: '+49', iso: 'de', name: 'Germany', flag: '🇩🇪' },
 ];
 
 export const StudioCoreBrandIcon = ({ className = "w-8 h-8" }: { className?: string }) => (
-  <div className={`${className} rounded-xl bg-gradient-to-br from-[#D9822B] via-[#C8751F] to-[#A05A12] text-white flex items-center justify-center font-black tracking-wider shadow-sm border border-[#F5C78E]/40 shrink-0 select-none relative overflow-hidden group`}>
-    <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/25 to-transparent opacity-80 pointer-events-none" />
-    <span className="relative z-10 text-[13px] font-black tracking-tight drop-shadow-xs">SC</span>
+  <div className={`${className} rounded-2xl bg-gradient-to-br from-[#D9822B] via-[#C8751F] to-[#A05A12] text-white flex items-center justify-center font-black tracking-wider shadow-md border border-[#F5C78E]/50 shrink-0 select-none relative overflow-hidden group`}>
+    <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/30 to-transparent opacity-90 pointer-events-none" />
+    <span className="relative z-10 text-[14px] font-black tracking-tight drop-shadow-xs font-serif">SC</span>
   </div>
 );
 
@@ -95,6 +102,10 @@ export default function LoginPage() {
   const [teamPassword, setTeamPassword] = useState('');
   const [showTeamPassword, setShowTeamPassword] = useState(false);
 
+  // Real-time Email Already Registered State
+  const [isEmailRegistered, setIsEmailRegistered] = useState(false);
+  const [registeredRole, setRegisteredRole] = useState('');
+
   // Invite state for team member
   const [isInvited, setIsInvited] = useState(false);
   const [invitedStudios, setInvitedStudios] = useState<string[]>([]);
@@ -115,6 +126,17 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Close country dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (countryDropdownRef.current && !countryDropdownRef.current.contains(e.target as Node)) {
+        setIsCountryOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   // Query parameter support (e.g. ?portal=team)
   useEffect(() => {
     const portalParam = searchParams.get('portal');
@@ -122,6 +144,32 @@ export default function LoginPage() {
       setPortal('team');
     }
   }, [searchParams]);
+
+  // Real-Time Check: Email Already Registered (in Sign Up Mode)
+  useEffect(() => {
+    const currentEmail = authMode === 'signup' ? (portal === 'studio' ? signupEmail : teamEmail) : '';
+    if (!currentEmail || !currentEmail.includes('@') || currentEmail.length < 5) {
+      setIsEmailRegistered(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/auth/check-email?email=${encodeURIComponent(currentEmail.trim())}`);
+        const data = await res.json();
+        if (data.exists) {
+          setIsEmailRegistered(true);
+          setRegisteredRole(data.role || 'user');
+        } else {
+          setIsEmailRegistered(false);
+        }
+      } catch (_) {
+        setIsEmailRegistered(false);
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [signupEmail, teamEmail, authMode, portal]);
 
   // Debounced check for team email invitation
   useEffect(() => {
@@ -166,7 +214,6 @@ export default function LoginPage() {
       });
 
       if (authErr) {
-        // If team portal and account not activated yet, offer 1-click activation
         if (portal === 'team' && authErr.message.includes('Invalid login credentials')) {
           try {
             const checkRes = await fetch(`/api/team/check-invite?email=${encodeURIComponent(cleanIdent)}`);
@@ -185,7 +232,6 @@ export default function LoginPage() {
       }
 
       if (data?.user) {
-        // Target destination based on portal
         if (portal === 'team') {
           router.push('/team/dashboard');
         } else {
@@ -203,6 +249,11 @@ export default function LoginPage() {
   // 2. Handle Studio Owner Signup (Sends Email OTP)
   const handleStudioSignupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isEmailRegistered) {
+      setError('This email is already registered. Please switch to Login.');
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -210,7 +261,6 @@ export default function LoginPage() {
     const cleanPhone = signupPhone.trim();
 
     try {
-      // Trigger Supabase Signup with email OTP
       const { data, error: signUpErr } = await supabase.auth.signUp({
         email: cleanEmail,
         password: signupPassword,
@@ -242,7 +292,7 @@ export default function LoginPage() {
     }
   };
 
-  // 3. Handle Team Member / Freelancer Signup (Sends Email OTP & Auto-links to Studios)
+  // 3. Handle Team Member / Freelancer Signup
   const handleTeamSignupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -252,21 +302,19 @@ export default function LoginPage() {
     const cleanPhone = teamPhone.trim();
 
     try {
-      // Create user via Supabase signup
       const { data, error: signUpErr } = await supabase.auth.signUp({
         email: cleanEmail,
         password: teamPassword,
         options: {
           data: {
             full_name: teamFullName.trim() || 'Crew Member',
-            phone: cleanPhone ? `+91${cleanPhone}` : undefined,
+            phone: cleanPhone ? `${selectedCountry.code}${cleanPhone}` : undefined,
             role: 'team_member',
           },
         },
       });
 
       if (signUpErr) {
-        // If user already registered, link directly
         if (signUpErr.message.includes('already registered') || (signUpErr as any).code === 'email_exists') {
           const linkRes = await fetch('/api/team/link-account', {
             method: 'POST',
@@ -292,7 +340,7 @@ export default function LoginPage() {
       }
 
       setOtpTargetEmail(cleanEmail);
-      setOtpTargetPhone(cleanPhone ? `+91 ${cleanPhone}` : '');
+      setOtpTargetPhone(cleanPhone ? `${selectedCountry.code} ${cleanPhone}` : '');
       setOtpPendingMeta({
         fullName: teamFullName.trim() || 'Crew Member',
         role: 'team_member',
@@ -317,110 +365,262 @@ export default function LoginPage() {
     }
   };
 
+  const filteredCountries = COUNTRIES.filter(
+    (c) =>
+      c.name.toLowerCase().includes(countrySearch.toLowerCase()) ||
+      c.code.includes(countrySearch)
+  );
+
   return (
-    <div className="min-h-screen w-full bg-[#FAF9F6] text-zinc-900 flex flex-col justify-between font-sans selection:bg-amber-100">
+    <div className="min-h-screen w-full bg-[#FAF9F6] text-zinc-900 flex flex-col justify-between font-sans selection:bg-amber-100 relative overflow-x-hidden">
       
-      {/* ── TOP HEADER ── */}
-      <header className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 flex items-center justify-between">
+      {/* Background Decorative Ambient Blobs */}
+      <div className="absolute -top-32 -left-32 w-96 h-96 bg-amber-200/30 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute top-1/3 -right-32 w-96 h-96 bg-indigo-200/20 rounded-full blur-3xl pointer-events-none" />
+
+      {/* ── TOP LUXURY HEADER ── */}
+      <header className="relative z-20 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-3 group">
-          <StudioCoreBrandIcon className="w-9 h-9 sm:w-10 sm:h-10 shadow-sm group-hover:scale-105 transition-transform" />
+          <StudioCoreBrandIcon className="w-10 h-10 shadow-sm group-hover:scale-105 transition-transform" />
           <div>
-            <span className="text-lg sm:text-xl font-black text-zinc-900 tracking-tight font-serif flex items-center gap-1">
+            <span className="text-xl sm:text-2xl font-black text-zinc-900 tracking-tight font-serif flex items-center gap-1.5">
               StudioCore <span className="text-[#bf7304] text-xs">✦</span>
             </span>
-            <p className="text-[10px] sm:text-[11px] text-zinc-400 font-bold tracking-tight">
-              All-in-One Studio Operating System
+            <p className="text-[10px] sm:text-[11px] text-zinc-500 font-bold tracking-tight">
+              Focus on Art, We Manage Everything
             </p>
           </div>
         </Link>
 
-        {/* Top Portal Switcher Pill */}
-        <div className="flex p-1 bg-white border border-[#EBE7DF] rounded-2xl shadow-2xs">
-          <button
-            type="button"
-            onClick={() => { setPortal('studio'); setError(null); }}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              portal === 'studio'
-                ? 'bg-gradient-to-r from-[#d97706] to-[#b45309] text-white shadow-xs'
-                : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50'
-            }`}
-          >
-            <Crown className="w-3.5 h-3.5" />
-            <span>Studio Owner</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => { setPortal('team'); setError(null); }}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              portal === 'team'
-                ? 'bg-gradient-to-r from-[#4f46e5] to-[#4338ca] text-white shadow-xs'
-                : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50'
-            }`}
-          >
-            <Camera className="w-3.5 h-3.5" />
-            <span>Team & Freelancer</span>
-          </button>
+        {/* Brand Support Pill */}
+        <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/80 backdrop-blur-xs border border-[#EBE7DF] text-xs font-bold text-zinc-600 shadow-2xs">
+          <ShieldCheck className="w-4 h-4 text-emerald-600" />
+          <span>ISO 27001 Certified • Bank-Grade Security</span>
         </div>
       </header>
 
-      {/* ── MAIN AUTH CONTAINER ── */}
-      <main className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 flex-1 flex flex-col justify-center">
+      {/* ── MAIN DUAL PORTAL CONTAINER ── */}
+      <main className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 sm:py-6 flex-1 flex flex-col justify-center">
+        
+        {/* ── 3D LIQUID GLASS ROLE SELECTOR CARDS (SIDE-BY-SIDE) ── */}
+        <div className="max-w-4xl mx-auto w-full mb-6 sm:mb-8">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 p-1.5 sm:p-2 bg-zinc-200/60 backdrop-blur-md rounded-3xl border border-white/60 shadow-inner">
+            
+            {/* Card 1: Studio Owner */}
+            <button
+              type="button"
+              onClick={() => { setPortal('studio'); setError(null); }}
+              className={`relative p-3.5 sm:p-5 rounded-2xl transition-all duration-300 text-left cursor-pointer flex items-center gap-3 sm:gap-4 overflow-hidden ${
+                portal === 'studio'
+                  ? 'bg-gradient-to-br from-white via-white to-amber-50/80 border-2 border-amber-500/80 shadow-lg shadow-amber-900/10'
+                  : 'bg-white/40 hover:bg-white/70 border border-transparent'
+              }`}
+            >
+              {portal === 'studio' && (
+                <motion.div
+                  layoutId="activePortalGlow"
+                  className="absolute inset-0 bg-gradient-to-r from-amber-500/10 via-transparent to-amber-400/5 pointer-events-none"
+                  transition={{ type: 'spring', bounce: 0.2, duration: 0.5 }}
+                />
+              )}
+              <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-sm transition-transform ${
+                portal === 'studio'
+                  ? 'bg-gradient-to-tr from-[#d97706] to-[#b45309] text-white scale-105'
+                  : 'bg-zinc-100 text-zinc-500'
+              }`}>
+                <Crown className="w-5 h-5 sm:w-6 sm:h-6" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <h4 className={`text-xs sm:text-base font-black font-serif tracking-tight truncate ${
+                    portal === 'studio' ? 'text-zinc-900' : 'text-zinc-600'
+                  }`}>
+                    Studio Owner
+                  </h4>
+                  {portal === 'studio' && (
+                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                  )}
+                </div>
+                <p className="text-[10px] sm:text-xs text-zinc-500 font-medium truncate mt-0.5">
+                  CRM, Leads, Quotations & Finance
+                </p>
+              </div>
+            </button>
+
+            {/* Card 2: Team & Freelancer */}
+            <button
+              type="button"
+              onClick={() => { setPortal('team'); setError(null); }}
+              className={`relative p-3.5 sm:p-5 rounded-2xl transition-all duration-300 text-left cursor-pointer flex items-center gap-3 sm:gap-4 overflow-hidden ${
+                portal === 'team'
+                  ? 'bg-gradient-to-br from-white via-white to-indigo-50/80 border-2 border-indigo-500/80 shadow-lg shadow-indigo-900/10'
+                  : 'bg-white/40 hover:bg-white/70 border border-transparent'
+              }`}
+            >
+              {portal === 'team' && (
+                <motion.div
+                  layoutId="activePortalGlow"
+                  className="absolute inset-0 bg-gradient-to-r from-indigo-500/10 via-transparent to-indigo-400/5 pointer-events-none"
+                  transition={{ type: 'spring', bounce: 0.2, duration: 0.5 }}
+                />
+              )}
+              <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-sm transition-transform ${
+                portal === 'team'
+                  ? 'bg-gradient-to-tr from-[#4f46e5] to-[#4338ca] text-white scale-105'
+                  : 'bg-zinc-100 text-zinc-500'
+              }`}>
+                <Camera className="w-5 h-5 sm:w-6 sm:h-6" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <h4 className={`text-xs sm:text-base font-black font-serif tracking-tight truncate ${
+                    portal === 'team' ? 'text-zinc-900' : 'text-zinc-600'
+                  }`}>
+                    Team & Freelancer
+                  </h4>
+                  {portal === 'team' && (
+                    <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+                  )}
+                </div>
+                <p className="text-[10px] sm:text-xs text-zinc-500 font-medium truncate mt-0.5">
+                  Assigned Shoots, Dates & Payouts
+                </p>
+              </div>
+            </button>
+
+          </div>
+        </div>
+
+        {/* ── 2-COLUMN DISPLAY: 3D VISUALS (LEFT) & AUTH CARD (RIGHT) ── */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center max-w-5xl mx-auto w-full">
           
-          {/* Left Column: Role Value Proposition */}
-          <div className="lg:col-span-6 hidden lg:flex flex-col justify-center pr-4">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-100/80 border border-amber-200 text-[#92400e] text-xs font-bold w-fit mb-4">
+          {/* Left Column: Rich 3D Visual Cards */}
+          <div className="lg:col-span-6 hidden lg:flex flex-col justify-center space-y-4 pr-2">
+            
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/90 border border-[#EBE7DF] text-xs font-bold text-zinc-700 shadow-2xs w-fit">
               <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-              <span>{portal === 'studio' ? 'For Photography & Cinema Studios' : 'For Freelancers & Crew Specialists'}</span>
+              <span>{portal === 'studio' ? 'Studio Operating System' : 'Multi-Studio Freelance Network'}</span>
             </div>
 
-            <h2 className="text-3xl xl:text-4xl font-serif font-black text-zinc-900 tracking-tight leading-tight mb-4">
+            <h2 className="text-3xl xl:text-4xl font-serif font-black text-zinc-900 tracking-tight leading-tight">
               {portal === 'studio' ? (
-                <>Run your entire studio business effortlessly.</>
+                <>Run your entire photography business in one place.</>
               ) : (
-                <>Track assigned shoots, live schedules & instant payouts.</>
+                <>Never miss a call time, venue location or payout.</>
               )}
             </h2>
 
-            <p className="text-sm text-zinc-600 font-medium mb-6 leading-relaxed">
-              {portal === 'studio'
-                ? 'Manage leads, send interactive wedding quotations, assign crew members, track album workflows, and automate WhatsApp updates.'
-                : 'View wedding event details, call times, venue locations, assigned roles, and guaranteed fees across multiple studio partners.'}
-            </p>
+            {/* 3D Visual Cards for Studio Owner */}
+            {portal === 'studio' ? (
+              <div className="space-y-3 pt-2">
+                {/* 3D Widget 1: Live Lead Pipeline */}
+                <div className="p-4 rounded-2xl bg-white/90 backdrop-blur-md border border-[#EBE7DF] shadow-md shadow-amber-950/5 hover:border-amber-300 transition-all">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">LIVE CRM PIPELINE</span>
+                    <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                      ₹4,85,000 Booked
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs font-bold text-zinc-800">
+                    <span className="flex items-center gap-1.5">
+                      <TrendingUp className="w-4 h-4 text-[#bf7304]" />
+                      <span>8 New Wedding Leads (94% Conversion)</span>
+                    </span>
+                    <span className="text-[11px] text-zinc-400">Auto WhatsApp Active</span>
+                  </div>
+                </div>
 
-            {/* Feature List */}
-            <div className="space-y-3">
-              {portal === 'studio' ? [
-                'Lead CRM & WhatsApp Automation',
-                'Interactive Proposal & Quotation Builder',
-                'Crew Scheduling & Event Calendar',
-                'Client Photo Selection & Delivery',
-              ].map((feat, i) => (
-                <div key={i} className="flex items-center gap-2.5 text-xs font-bold text-zinc-700">
-                  <div className="w-5 h-5 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
+                {/* 3D Widget 2: Interactive Quotation Proposal */}
+                <div className="p-4 rounded-2xl bg-white/90 backdrop-blur-md border border-[#EBE7DF] shadow-md shadow-amber-950/5 hover:border-amber-300 transition-all">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-black text-zinc-900 font-serif">Rohit & Ananya Wedding</span>
+                    <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-amber-100 text-[#92400e]">
+                      PROPOSAL ACCEPTED
+                    </span>
                   </div>
-                  <span>{feat}</span>
+                  <p className="text-xs text-zinc-500 font-medium">
+                    3-Day Premium Cinematography & Traditional Coverage • ₹2,50,000
+                  </p>
                 </div>
-              )) : [
-                'Instant Event & Shoot Notifications',
-                'Direct Call Times & Venue Location Navigation',
-                'Transparent Agreed Fee & Payout Tracking',
-                'Multi-Studio Freelancing from One Dashboard',
-              ].map((feat, i) => (
-                <div key={i} className="flex items-center gap-2.5 text-xs font-bold text-zinc-700">
-                  <div className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
+
+                {/* 3D Widget 3: Crew Scheduling */}
+                <div className="p-4 rounded-2xl bg-white/90 backdrop-blur-md border border-[#EBE7DF] shadow-md shadow-amber-950/5 hover:border-amber-300 transition-all">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-amber-50 text-[#b45309] flex items-center justify-center font-bold text-xs">
+                        <Calendar className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-zinc-800">Sangeet & Reception</p>
+                        <p className="text-[10px] text-zinc-400">4 Crew Members Assigned • Live WhatsApp Alerts</p>
+                      </div>
+                    </div>
+                    <span className="text-xs font-bold text-emerald-600">✓ Ready</span>
                   </div>
-                  <span>{feat}</span>
                 </div>
-              ))}
-            </div>
+              </div>
+            ) : (
+              /* 3D Visual Cards for Team / Freelancer */
+              <div className="space-y-3 pt-2">
+                {/* 3D Widget 1: Assigned Shoot & Call Time */}
+                <div className="p-4 rounded-2xl bg-white/90 backdrop-blur-md border border-[#EBE7DF] shadow-md shadow-indigo-950/5 hover:border-indigo-300 transition-all">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Building2 className="w-4 h-4 text-indigo-600" />
+                      <span className="text-xs font-bold text-indigo-900">Filmify Weddings</span>
+                    </div>
+                    <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700">
+                      LEAD CINEMATOGRAPHER
+                    </span>
+                  </div>
+                  <h4 className="text-sm font-black text-zinc-900 font-serif">Kunal & Riya Wedding</h4>
+                  <div className="flex items-center gap-3 text-xs text-zinc-600 mt-2">
+                    <span className="flex items-center gap-1 font-semibold">
+                      <Clock className="w-3.5 h-3.5 text-zinc-400" /> Call: 08:30 AM
+                    </span>
+                    <span className="flex items-center gap-1 truncate font-semibold">
+                      <MapPin className="w-3.5 h-3.5 text-zinc-400" /> Taj Lands End, Mumbai
+                    </span>
+                  </div>
+                </div>
+
+                {/* 3D Widget 2: Live Payout Ledger */}
+                <div className="p-4 rounded-2xl bg-white/90 backdrop-blur-md border border-[#EBE7DF] shadow-md shadow-indigo-950/5 hover:border-indigo-300 transition-all">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">LIVE PAYOUT TRACKER</span>
+                    <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                      ₹15,000 Advance Received
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs font-bold">
+                    <span className="text-zinc-800">Total Agreed Fee: ₹25,000</span>
+                    <span className="text-[#b45309]">Balance ₹10,000 on wrap</span>
+                  </div>
+                </div>
+
+                {/* 3D Widget 3: Multi-Studio Switcher */}
+                <div className="p-4 rounded-2xl bg-white/90 backdrop-blur-md border border-[#EBE7DF] shadow-md shadow-indigo-950/5 hover:border-indigo-300 transition-all">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-xs">
+                        <Layers className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-zinc-800">Connected to 3 Studios</p>
+                        <p className="text-[10px] text-zinc-400">Switch studios from your top dropdown anytime</p>
+                      </div>
+                    </div>
+                    <span className="text-xs font-bold text-indigo-600">✓ Connected</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
           </div>
 
           {/* Right Column: Interactive Card Form */}
           <div className="lg:col-span-6 w-full max-w-md mx-auto">
-            <div className="bg-white border border-[#EBE7DF] rounded-3xl p-6 sm:p-8 shadow-xl shadow-amber-950/5">
+            <div className="bg-white border border-[#EBE7DF] rounded-3xl p-6 sm:p-8 shadow-xl shadow-amber-950/5 relative overflow-hidden">
               
               {/* Card Header */}
               <div className="mb-5">
@@ -439,7 +639,7 @@ export default function LoginPage() {
                     <button
                       type="button"
                       onClick={() => { setAuthMode('login'); setError(null); }}
-                      className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                      className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
                         authMode === 'login' ? 'bg-white text-zinc-900 shadow-2xs' : 'text-zinc-500 hover:text-zinc-900'
                       }`}
                     >
@@ -448,7 +648,7 @@ export default function LoginPage() {
                     <button
                       type="button"
                       onClick={() => { setAuthMode('signup'); setError(null); }}
-                      className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                      className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
                         authMode === 'signup'
                           ? portal === 'studio' ? 'bg-white text-[#bf7304] shadow-2xs' : 'bg-white text-indigo-600 shadow-2xs'
                           : 'text-zinc-500 hover:text-zinc-900'
@@ -465,6 +665,27 @@ export default function LoginPage() {
                     : (authMode === 'login' ? 'View your assigned shoots and payment status' : 'Register your crew account with email OTP')}
                 </p>
               </div>
+
+              {/* Real-time Email Already Registered Alert */}
+              {isEmailRegistered && authMode === 'signup' && (
+                <div className="mb-4 p-3 rounded-2xl bg-rose-50 border border-rose-200 flex items-start justify-between gap-2 text-xs text-rose-700 font-bold animate-pulse">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                    <span>This email is already registered on StudioCore!</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIdentifier(portal === 'studio' ? signupEmail : teamEmail);
+                      setAuthMode('login');
+                      setError(null);
+                    }}
+                    className="underline text-rose-800 hover:text-rose-900 shrink-0 cursor-pointer font-black"
+                  >
+                    Login Now →
+                  </button>
+                </div>
+              )}
 
               {/* Invited Notice for Freelancer */}
               {isInvited && portal === 'team' && (
@@ -489,14 +710,14 @@ export default function LoginPage() {
 
               {/* ── FORMS ROUTER ── */}
               {authMode === 'login' ? (
-                /* LOGIN FORM (Shared with Dynamic Routing) */
+                /* LOGIN FORM */
                 <form onSubmit={handleLoginSubmit} className="space-y-3.5">
                   <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Email or Mobile Number</label>
+                    <label className="block text-xs font-bold text-zinc-700 mb-1">Email Address</label>
                     <div className="relative flex items-center">
                       <Mail className="w-4 h-4 text-zinc-400 absolute left-3.5 pointer-events-none" />
                       <input
-                        type="text"
+                        type="email"
                         value={identifier}
                         onChange={(e) => { setIdentifier(e.target.value); setError(null); }}
                         placeholder="your.email@example.com"
@@ -593,29 +814,84 @@ export default function LoginPage() {
                         onChange={(e) => setSignupEmail(e.target.value)}
                         placeholder="studio@example.com"
                         required
-                        className="w-full pl-10 pr-3.5 py-2 rounded-xl bg-zinc-50 border border-[#EBE7DF] text-xs sm:text-sm focus:border-[#b45309] focus:bg-white text-zinc-900 outline-none"
+                        className={`w-full pl-10 pr-3.5 py-2 rounded-xl bg-zinc-50 border text-xs sm:text-sm focus:bg-white text-zinc-900 outline-none transition-all ${
+                          isEmailRegistered
+                            ? 'border-red-500 focus:border-red-500 ring-1 ring-red-400'
+                            : 'border-[#EBE7DF] focus:border-[#b45309]'
+                        }`}
                       />
                     </div>
                   </div>
 
+                  {/* Country Code + Mobile Number */}
                   <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Mobile Number (10 digits)</label>
-                    <div className="relative flex items-center">
-                      <Phone className="w-4 h-4 text-zinc-400 absolute left-3.5 pointer-events-none" />
-                      <input
-                        type="tel"
-                        value={signupPhone}
-                        maxLength={10}
-                        onChange={(e) => setSignupPhone(e.target.value.replace(/\D/g, ''))}
-                        placeholder="9876543210"
-                        required
-                        className="w-full pl-10 pr-3.5 py-2 rounded-xl bg-zinc-50 border border-[#EBE7DF] text-xs sm:text-sm focus:border-[#b45309] focus:bg-white text-zinc-900 outline-none"
-                      />
+                    <label className="block text-xs font-bold text-zinc-700 mb-1">Mobile Number</label>
+                    <div className="flex items-center gap-1.5 relative">
+                      
+                      {/* Country Dropdown */}
+                      <div className="relative" ref={countryDropdownRef}>
+                        <button
+                          type="button"
+                          onClick={() => setIsCountryOpen(!isCountryOpen)}
+                          className="h-9 sm:h-10 px-2 sm:px-2.5 rounded-xl bg-zinc-50 border border-[#EBE7DF] flex items-center gap-1 text-xs sm:text-sm font-bold text-zinc-800 hover:border-[#bf7304] transition-all cursor-pointer shrink-0"
+                        >
+                          <span className="text-base">{selectedCountry.flag}</span>
+                          <span className="font-mono">{selectedCountry.code}</span>
+                          <ChevronDown className="w-3 h-3 text-zinc-400" />
+                        </button>
+
+                        {isCountryOpen && (
+                          <div className="absolute left-0 top-full mt-1.5 w-60 max-h-56 bg-white border border-[#EBE7DF] rounded-2xl shadow-xl z-50 overflow-hidden flex flex-col">
+                            <div className="p-2 border-b border-zinc-100 flex items-center gap-1.5 bg-zinc-50">
+                              <Search className="w-3.5 h-3.5 text-zinc-400" />
+                              <input
+                                type="text"
+                                value={countrySearch}
+                                onChange={(e) => setCountrySearch(e.target.value)}
+                                placeholder="Search country..."
+                                className="w-full text-xs bg-transparent outline-none font-medium"
+                              />
+                            </div>
+                            <div className="overflow-y-auto flex-1 p-1">
+                              {filteredCountries.map((c) => (
+                                <button
+                                  key={c.code + c.name}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedCountry(c);
+                                    setIsCountryOpen(false);
+                                  }}
+                                  className="w-full px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs hover:bg-amber-50 text-left font-medium cursor-pointer"
+                                >
+                                  <span className="flex items-center gap-1.5">
+                                    <span>{c.flag}</span>
+                                    <span className="truncate">{c.name}</span>
+                                  </span>
+                                  <span className="font-mono text-zinc-400">{c.code}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="relative flex-1 flex items-center">
+                        <Phone className="w-3.5 h-3.5 text-zinc-400 absolute left-3 pointer-events-none" />
+                        <input
+                          type="tel"
+                          value={signupPhone}
+                          maxLength={selectedCountry.code === '+91' ? 10 : 15}
+                          onChange={(e) => setSignupPhone(e.target.value.replace(/\D/g, ''))}
+                          placeholder="10-digit mobile number"
+                          required
+                          className="w-full pl-8.5 pr-3.5 py-2 rounded-xl bg-zinc-50 border border-[#EBE7DF] text-xs sm:text-sm focus:border-[#b45309] focus:bg-white text-zinc-900 outline-none"
+                        />
+                      </div>
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Password</label>
+                    <label className="block text-xs font-bold text-zinc-700 mb-1">Create Password</label>
                     <div className="relative flex items-center">
                       <Lock className="w-4 h-4 text-zinc-400 absolute left-3.5 pointer-events-none" />
                       <input
@@ -638,7 +914,7 @@ export default function LoginPage() {
 
                   <button
                     type="submit"
-                    disabled={loading}
+                    disabled={loading || isEmailRegistered}
                     className="w-full py-3 rounded-xl bg-gradient-to-r from-[#d97706] to-[#b45309] hover:from-[#b45309] hover:to-[#92400e] text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md shadow-amber-900/10 transition-all cursor-pointer disabled:opacity-50 mt-1"
                   >
                     {loading ? 'Sending Verification OTP...' : (
@@ -653,7 +929,7 @@ export default function LoginPage() {
                 /* TEAM MEMBER / FREELANCER SIGNUP FORM */
                 <form onSubmit={handleTeamSignupSubmit} className="space-y-3">
                   <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Your Name</label>
+                    <label className="block text-xs font-bold text-zinc-700 mb-1">Your Full Name</label>
                     <div className="relative flex items-center">
                       <User className="w-4 h-4 text-zinc-400 absolute left-3.5 pointer-events-none" />
                       <input
@@ -677,7 +953,11 @@ export default function LoginPage() {
                         onChange={(e) => setTeamEmail(e.target.value)}
                         placeholder="rahul@example.com"
                         required
-                        className="w-full pl-10 pr-3.5 py-2 rounded-xl bg-zinc-50 border border-[#EBE7DF] text-xs sm:text-sm focus:border-indigo-600 focus:bg-white text-zinc-900 outline-none"
+                        className={`w-full pl-10 pr-3.5 py-2 rounded-xl bg-zinc-50 border text-xs sm:text-sm focus:bg-white text-zinc-900 outline-none transition-all ${
+                          isEmailRegistered
+                            ? 'border-red-500 focus:border-red-500 ring-1 ring-red-400'
+                            : 'border-[#EBE7DF] focus:border-indigo-600'
+                        }`}
                       />
                     </div>
                   </div>
@@ -721,7 +1001,7 @@ export default function LoginPage() {
 
                   <button
                     type="submit"
-                    disabled={loading}
+                    disabled={loading || isEmailRegistered}
                     className="w-full py-3 rounded-xl bg-gradient-to-r from-[#4f46e5] to-[#4338ca] hover:from-[#4338ca] hover:to-[#3730a3] text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md shadow-indigo-900/10 transition-all cursor-pointer disabled:opacity-50 mt-1"
                   >
                     {loading ? 'Sending OTP Verification...' : (
@@ -734,33 +1014,6 @@ export default function LoginPage() {
                 </form>
               )}
 
-              {/* Bottom Switch between Owner and Crew */}
-              <div className="mt-5 pt-4 border-t border-[#F0ECE4] text-center">
-                {portal === 'studio' ? (
-                  <p className="text-xs text-zinc-500 font-medium">
-                    Are you a hired Photographer or Crew?{' '}
-                    <button
-                      type="button"
-                      onClick={() => { setPortal('team'); setError(null); }}
-                      className="font-bold text-[#4f46e5] hover:underline cursor-pointer"
-                    >
-                      Open Crew Portal →
-                    </button>
-                  </p>
-                ) : (
-                  <p className="text-xs text-zinc-500 font-medium">
-                    Do you run a photography studio?{' '}
-                    <button
-                      type="button"
-                      onClick={() => { setPortal('studio'); setError(null); }}
-                      className="font-bold text-[#bf7304] hover:underline cursor-pointer"
-                    >
-                      Studio Owner Login →
-                    </button>
-                  </p>
-                )}
-              </div>
-
             </div>
           </div>
 
@@ -769,7 +1022,7 @@ export default function LoginPage() {
 
       {/* ── BOTTOM TRUST BAR ── */}
       <footer className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 text-center text-xs text-zinc-500 border-t border-[#EBE7DF]">
-        StudioCore Multi-Studio Operating System • Hybrid Owner & Freelancer Architecture
+        StudioCore Multi-Studio Operating System • Hybrid Studio Owner & Freelancer Architecture
       </footer>
 
       {/* OTP Verification Modal */}
