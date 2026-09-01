@@ -15,6 +15,10 @@ export interface TeamEventPayout {
   paid_amount: number;
   balance_amount: number;
   status: 'PENDING' | 'PARTIAL' | 'PAID' | 'completed' | 'partial' | 'pending';
+  venue?: string;
+  start_time?: string;
+  end_time?: string;
+  payout_frequency?: string;
   payment_method?: string;
   payment_date?: string;
   notes?: string;
@@ -285,14 +289,14 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
 
     // 0.5. Parallel lookup of member aliases & rates across fw_team_members, workspace_members & workspace_team_member_rates
     const [ftmRes, wmRes, rateRes] = await Promise.all([
-      supabase.from('fw_team_members').select('id, name, email, default_daily_rate').eq('id', memberId).maybeSingle().catch(() => ({ data: null })),
-      supabase.from('workspace_members').select('id, name, email, default_daily_rate').eq('id', memberId).maybeSingle().catch(() => ({ data: null })),
-      supabase.from('workspace_team_member_rates').select('default_daily_rate').eq('workspace_id', workspaceId).eq('team_member_id', memberId).maybeSingle().catch(() => ({ data: null }))
+      Promise.resolve(supabase.from('fw_team_members').select('id, name, email, default_daily_rate').eq('id', memberId).maybeSingle()).catch(() => ({ data: null })),
+      Promise.resolve(supabase.from('workspace_members').select('id, name, email, default_daily_rate').eq('id', memberId).maybeSingle()).catch(() => ({ data: null })),
+      Promise.resolve(supabase.from('workspace_team_member_rates').select('default_daily_rate').eq('workspace_id', workspaceId).eq('team_member_id', memberId).maybeSingle()).catch(() => ({ data: null }))
     ]);
 
-    const m1 = ftmRes?.data;
-    const m2 = wmRes?.data;
-    const rateRow = rateRes?.data;
+    const m1 = (ftmRes as any)?.data;
+    const m2 = (wmRes as any)?.data;
+    const rateRow = (rateRes as any)?.data;
 
     if (m1) {
       if (m1.name) memberName = m1.name;
@@ -307,16 +311,16 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
 
     // Resolve any linked IDs by email/name in parallel
     if (memberEmail || memberName) {
-      const aliasQueries = [];
+      const aliasQueries: Promise<any>[] = [];
       if (memberEmail) {
-        aliasQueries.push(supabase.from('fw_team_members').select('id').eq('email', memberEmail).catch(() => ({ data: null })));
-        aliasQueries.push(supabase.from('workspace_members').select('id').eq('email', memberEmail).catch(() => ({ data: null })));
+        aliasQueries.push(Promise.resolve(supabase.from('fw_team_members').select('id').eq('email', memberEmail)).catch(() => ({ data: null })));
+        aliasQueries.push(Promise.resolve(supabase.from('workspace_members').select('id').eq('email', memberEmail)).catch(() => ({ data: null })));
       }
       if (memberName) {
-        aliasQueries.push(supabase.from('fw_team_members').select('id').ilike('name', memberName).catch(() => ({ data: null })));
+        aliasQueries.push(Promise.resolve(supabase.from('fw_team_members').select('id').ilike('name', memberName)).catch(() => ({ data: null })));
       }
       const aliasResults = await Promise.all(aliasQueries);
-      aliasResults.forEach(res => {
+      aliasResults.forEach((res: any) => {
         if (res?.data && Array.isArray(res.data)) {
           res.data.forEach((r: any) => { if (r.id) memberIdsToQuery.add(r.id); });
         }
@@ -327,25 +331,31 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
 
     // 1. Fetch fw_assignments, crew_assignments_finance, and team_event_payouts concurrently
     const [assignRes, crewFinRes, teamPayoutRes] = await Promise.all([
-      (idList.length === 1 
-        ? supabase.from('fw_assignments').select('*').eq('assigned_member_id', idList[0])
-        : supabase.from('fw_assignments').select('*').in('assigned_member_id', idList)
-      ).order('created_at', { ascending: false }).catch(() => ({ data: null, error: null })),
+      Promise.resolve(
+        (idList.length === 1 
+          ? supabase.from('fw_assignments').select('*').eq('assigned_member_id', idList[0])
+          : supabase.from('fw_assignments').select('*').in('assigned_member_id', idList)
+        ).order('created_at', { ascending: false })
+      ).catch(() => ({ data: null, error: null })),
 
-      (idList.length === 1
-        ? supabase.from('crew_assignments_finance').select('*').eq('team_member_id', idList[0])
-        : supabase.from('crew_assignments_finance').select('*').in('team_member_id', idList)
-      ).order('created_at', { ascending: false }).catch(() => ({ data: null })),
+      Promise.resolve(
+        (idList.length === 1
+          ? supabase.from('crew_assignments_finance').select('*').eq('team_member_id', idList[0])
+          : supabase.from('crew_assignments_finance').select('*').in('team_member_id', idList)
+        ).order('created_at', { ascending: false })
+      ).catch(() => ({ data: null })),
 
-      (idList.length === 1
-        ? supabase.from('team_event_payouts').select('*').eq('member_id', idList[0])
-        : supabase.from('team_event_payouts').select('*').in('member_id', idList)
-      ).order('created_at', { ascending: false }).catch(() => ({ data: null }))
+      Promise.resolve(
+        (idList.length === 1
+          ? supabase.from('team_event_payouts').select('*').eq('member_id', idList[0])
+          : supabase.from('team_event_payouts').select('*').in('member_id', idList)
+        ).order('created_at', { ascending: false })
+      ).catch(() => ({ data: null }))
     ]);
 
-    const assignData = assignRes?.data || [];
-    const crewFinData = crewFinRes?.data || [];
-    const teamPayoutData = teamPayoutRes?.data || [];
+    const assignData = (assignRes as any)?.data || [];
+    const crewFinData = (crewFinRes as any)?.data || [];
+    const teamPayoutData = (teamPayoutRes as any)?.data || [];
 
     if (assignData && assignData.length > 0) {
       // Collect sub_event_ids and project_ids for fast batch lookup
@@ -354,10 +364,10 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
 
       const [seListRes, pListRes] = await Promise.all([
         subEventIds.length > 0
-          ? supabase.from('fw_sub_events').select('id, project_id, event_title, event_date, start_time, end_time, venue, location, client_name, couple_name').in('id', subEventIds).catch(() => ({ data: null }))
+          ? Promise.resolve(supabase.from('fw_sub_events').select('id, project_id, event_title, event_date, start_time, end_time, venue, location, client_name, couple_name').in('id', subEventIds)).catch(() => ({ data: null }))
           : Promise.resolve({ data: null }),
         projectIds.length > 0
-          ? supabase.from('fw_projects').select('id, client_name, project_name, bride_name, groom_name, couple_name, venue_location').in('id', projectIds).catch(() => ({ data: null }))
+          ? Promise.resolve(supabase.from('fw_projects').select('id, client_name, project_name, bride_name, groom_name, couple_name, venue_location').in('id', projectIds)).catch(() => ({ data: null }))
           : Promise.resolve({ data: null })
       ]);
 
@@ -947,7 +957,7 @@ export async function assignCrewMemberWithCommercials(params: {
 
 export async function unassignCrewSlot(params: {
   workspaceId: string;
-  eventId: string;
+  eventId?: string;
   subEventId?: string;
   assignmentId?: string;
   roleShortCode?: string;

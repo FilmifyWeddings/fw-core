@@ -36,6 +36,7 @@ interface TeamMember {
   status?: string;
   default_daily_rate?: number;
   default_currency?: string;
+  payout_frequency?: string;
   permissions?: {
     leads_access?: string;
     team_manager_access?: string;

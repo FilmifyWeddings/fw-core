@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
+  Loader2,
   Settings as SettingsIcon, RefreshCw, Check, Save, ArrowLeft, Target,
   FileText, Coins, Clock, Globe, Users, Plus, Trash2, Phone, Mail, MessageSquare, Send,
   UserCheck, AlertCircle, ChevronDown, GripVertical, CheckCircle2, Table, ArrowUp, ArrowDown,

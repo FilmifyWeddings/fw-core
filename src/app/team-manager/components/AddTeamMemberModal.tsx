@@ -31,6 +31,7 @@ interface AddTeamMemberModalProps {
     roles?: string[];
     member_types?: string[];
     primary_type?: string;
+    payout_frequency?: string;
     permissions?: any;
   }) => Promise<void> | void;
 }

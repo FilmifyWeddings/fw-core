@@ -5,7 +5,6 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   productionBrowserSourceMaps: false,
-  outputFileTracing: false,
   experimental: {
     optimizePackageImports: ['lucide-react', 'framer-motion', '@supabase/supabase-js'],
   },

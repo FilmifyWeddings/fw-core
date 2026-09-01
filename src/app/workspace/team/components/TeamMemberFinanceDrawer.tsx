@@ -465,7 +465,7 @@ export default function TeamMemberFinanceDrawer({
                   ) : (
                     <div className="space-y-3 pt-2">
                       {summary.monthly_breakdown.map((m) => {
-                        const maxVal = Math.max(...summary.monthly_breakdown.map(x => x.agreed || 1), 1);
+                        const maxVal = Math.max(...(summary.monthly_breakdown || []).map(x => x.agreed || 1), 1);
                         const agreedPct = Math.min(100, Math.round((m.agreed / maxVal) * 100));
                         const paidPct = Math.min(100, Math.round((m.paid / maxVal) * 100));
 

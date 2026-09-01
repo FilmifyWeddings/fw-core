@@ -342,8 +342,8 @@ export default function TeamManagerPage() {
         const json = await res.json();
         if (json.success && Array.isArray(json.members)) {
           json.members.forEach((m: any) => {
-            const calculatedRate = (wsRatesMap && wsRatesMap[m.id] != null) 
-              ? wsRatesMap[m.id] 
+            const calculatedRate = (wsRatesMap && (wsRatesMap as any)[m.id] != null) 
+              ? (wsRatesMap as any)[m.id] 
               : (Number(m.default_daily_rate) || Number(m.daily_rate) || 0);
 
             combinedMembers.push({
@@ -376,8 +376,8 @@ export default function TeamManagerPage() {
 
       if (membersData && membersData.length > 0) {
         membersData.forEach((f: any) => {
-          const calculatedRate = (wsRatesMap && wsRatesMap[f.id] != null)
-            ? wsRatesMap[f.id]
+          const calculatedRate = (wsRatesMap && (wsRatesMap as any)[f.id] != null)
+            ? (wsRatesMap as any)[f.id]
             : (Number(f.default_daily_rate) || 0);
 
           const existingIdx = combinedMembers.findIndex(
@@ -612,10 +612,10 @@ export default function TeamManagerPage() {
           (async () => {
             await unassignCrewSlot({
               workspaceId: workspaceId || currentUserId || '',
-              eventId: activeAssign.project_id,
-              subEventId: activeAssign.sub_event_id,
+              eventId: activeAssign.project_id || undefined,
+              subEventId: activeAssign.sub_event_id || undefined,
               assignmentId: assignmentId,
-              roleShortCode: activeAssign.role_short_code || activeAssign.required_role?.slice(0, 4),
+              roleShortCode: (activeAssign as any).role_short_code || activeAssign.required_role?.slice(0, 4) || '',
               roleName: activeAssign.required_role,
               teamMemberId: activeAssign.assigned_member_id || undefined
             });
