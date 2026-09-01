@@ -839,7 +839,34 @@ export async function assignCrewMemberWithCommercials(params: {
   clientName?: string;
   eventName?: string;
 }): Promise<{ success: boolean }> {
-  // 1. Try Supabase RPC assign_crew_member_with_commercials
+  const agreed = Number(params.finalAgreedAmount) >= 0 ? Number(params.finalAgreedAmount) : 0;
+  const advance = Number(params.advancePaidAmount) || 0;
+
+  // 1. Try Supabase RPC assign_or_replace_crew_slot
+  try {
+    const { data: rpcData, error: rpcErr } = await supabase.rpc('assign_or_replace_crew_slot', {
+      p_workspace_id: params.workspaceId,
+      p_event_id: params.eventId,
+      p_sub_event_id: String(params.subEventId || ''),
+      p_role_short_code: params.roleShortCode || params.roleName?.slice(0, 4) || 'CREW',
+      p_role_name: params.roleName,
+      p_member_id: params.teamMemberId,
+      p_member_name: params.teamMemberName,
+      p_member_phone: params.teamMemberPhone || '',
+      p_custom_agreed_amount: agreed,
+      p_advance_amount: advance,
+      p_payment_status: params.paymentStatus || 'pending'
+    });
+
+    if (!rpcErr && rpcData?.success) {
+      await persistAssignmentSlot(params);
+      return { success: true };
+    }
+  } catch (err) {
+    console.warn('[team-finance-sync] assign_or_replace_crew_slot RPC fallback:', err);
+  }
+
+  // 1.5 Try fallback RPC assign_crew_member_with_commercials
   try {
     const { data: rpcData, error: rpcErr } = await supabase.rpc('assign_crew_member_with_commercials', {
       p_workspace_id: params.workspaceId,
@@ -850,8 +877,8 @@ export async function assignCrewMemberWithCommercials(params: {
       p_team_member_phone: params.teamMemberPhone || '',
       p_role_name: params.roleName,
       p_role_short_code: params.roleShortCode || '',
-      p_final_agreed_amount: Number(params.finalAgreedAmount) || 0,
-      p_advance_paid_amount: Number(params.advancePaidAmount) || 0,
+      p_final_agreed_amount: agreed,
+      p_advance_paid_amount: advance,
       p_payment_status: params.paymentStatus || 'pending',
       p_payment_date: params.paymentDate || new Date().toISOString().split('T')[0]
     });
@@ -860,9 +887,7 @@ export async function assignCrewMemberWithCommercials(params: {
       await persistAssignmentSlot(params);
       return { success: true };
     }
-  } catch (err) {
-    console.warn('[team-finance-sync] assign_crew_member_with_commercials RPC fallback:', err);
-  }
+  } catch (_) {}
 
   // 2. Direct persistence fallback
   await saveOrUpdateEventPayout(params.workspaceId, {
@@ -874,15 +899,87 @@ export async function assignCrewMemberWithCommercials(params: {
     event_name: params.eventName || params.roleName || 'Shoot Event',
     event_date: params.paymentDate || new Date().toISOString().split('T')[0],
     role: params.roleName,
-    agreed_amount: params.finalAgreedAmount,
-    advance_paid_amount: params.advancePaidAmount,
-    payment_method: params.paymentMethod || 'UPI/Bank Transfer',
+    agreed_amount: agreed,
+    advance_paid_amount: advance,
+    payment_method: params.paymentMethod || 'UPI / Bank Transfer',
     payment_date: params.paymentDate,
     notes: params.notes
   });
 
   await persistAssignmentSlot(params);
   return { success: true };
+}
+
+export async function unassignCrewSlot(params: {
+  workspaceId: string;
+  eventId: string;
+  subEventId?: string;
+  assignmentId?: string;
+  roleShortCode?: string;
+  roleName?: string;
+  teamMemberId?: string;
+}): Promise<{ success: boolean }> {
+  try {
+    // 1. Try Supabase RPC unassign_crew_slot
+    try {
+      await supabase.rpc('unassign_crew_slot', {
+        p_workspace_id: params.workspaceId,
+        p_event_id: params.eventId,
+        p_sub_event_id: String(params.subEventId || ''),
+        p_role_short_code: params.roleShortCode || params.roleName?.slice(0, 4) || ''
+      });
+    } catch (_) {}
+
+    // 2. Direct clean up in fw_assignments
+    if (params.assignmentId && !params.assignmentId.includes('-role-')) {
+      await supabase.from('fw_assignments').update({
+        assigned_member_id: null,
+        assigned_member_name: null,
+        agreed_amount: 0,
+        advance_amount: 0,
+        paid_amount: 0,
+        balance_amount: 0,
+        payment_status: 'pending',
+        notes: null
+      }).eq('id', params.assignmentId);
+    } else if (params.subEventId && params.roleName) {
+      await supabase.from('fw_assignments').update({
+        assigned_member_id: null,
+        assigned_member_name: null,
+        agreed_amount: 0,
+        advance_amount: 0,
+        paid_amount: 0,
+        balance_amount: 0,
+        payment_status: 'pending',
+        notes: null
+      }).eq('sub_event_id', params.subEventId).eq('required_role', params.roleName);
+    }
+
+    // 3. Purge from crew_assignments_finance and team_event_payouts if memberId was given
+    if (params.teamMemberId && params.subEventId) {
+      try {
+        await supabase.from('crew_assignments_finance').delete()
+          .eq('team_member_id', params.teamMemberId)
+          .eq('sub_event_id', params.subEventId);
+      } catch (_) {}
+      try {
+        await supabase.from('team_event_payouts').delete()
+          .eq('member_id', params.teamMemberId)
+          .eq('sub_event_id', params.subEventId);
+      } catch (_) {}
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('team_finance_updated', {
+        detail: { memberId: params.teamMemberId, unassigned: true }
+      }));
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.error('[team-finance-sync] unassignCrewSlot error:', err);
+    return { success: false };
+  }
 }
 
 async function persistAssignmentSlot(params: {

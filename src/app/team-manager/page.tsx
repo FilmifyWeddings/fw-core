@@ -22,7 +22,7 @@ import MonthListView from './components/MonthListView';
 import Professional3DCalendar from './components/Professional3DCalendar';
 import WhatsAppAssignmentModal from './components/WhatsAppAssignmentModal';
 import { EventBlockData } from './components/EventBlock';
-import { saveOrUpdateEventPayout, fetchMemberFinancialSummary, fetchWorkspaceMemberRatesMap, TeamFinancialSummary } from '@/lib/team-finance-sync';
+import { saveOrUpdateEventPayout, fetchMemberFinancialSummary, fetchWorkspaceMemberRatesMap, TeamFinancialSummary, unassignCrewSlot } from '@/lib/team-finance-sync';
 import TeamMemberFinanceDrawer from '../workspace/team/components/TeamMemberFinanceDrawer';
 import { WorkspaceCrewRole, fetchWorkspaceCrewRoles, fetchWorkspaceEventTypes, getRoleShortCode } from '@/lib/workspace-settings';
 
@@ -607,8 +607,24 @@ export default function TeamManagerPage() {
           }))
         );
 
-        // 2. TRIGGER WHATSAPP ROSTER DISPATCH MODAL ON MEMBER ASSIGNMENT
-        if (memberId && matchedMemberObj) {
+        // 2. UNASSIGNMENT CLEANUP (IF MEMBER ID IS NULL)
+        if (!memberId) {
+          (async () => {
+            await unassignCrewSlot({
+              workspaceId: workspaceId || currentUserId || '',
+              eventId: activeAssign.project_id,
+              subEventId: activeAssign.sub_event_id,
+              assignmentId: assignmentId,
+              roleShortCode: activeAssign.role_short_code || activeAssign.required_role?.slice(0, 4),
+              roleName: activeAssign.required_role,
+              teamMemberId: activeAssign.assigned_member_id || undefined
+            });
+          })();
+          return;
+        }
+
+        // 3. TRIGGER WHATSAPP ROSTER DISPATCH MODAL ON MEMBER ASSIGNMENT
+        if (matchedMemberObj) {
           const projectObj = projects.find(p => p.id === activeAssign.project_id);
           const subEventObj = projects
             .flatMap(p => p.fw_sub_events || [])
@@ -623,7 +639,7 @@ export default function TeamManagerPage() {
           });
         }
 
-        // 3. BACKGROUND SILENT DB PERSISTENCE & FINANCE PAYOUT AUTO-SYNC
+        // 4. BACKGROUND SILENT DB PERSISTENCE & FINANCE PAYOUT AUTO-SYNC
         (async () => {
           try {
             const projectObj = projects.find(p => p.id === activeAssign.project_id);
@@ -632,7 +648,7 @@ export default function TeamManagerPage() {
               .find(se => se.id === activeAssign.sub_event_id);
 
             // 0. Ensure member exists in fw_team_members first to eliminate FK constraint errors
-            if (memberId && matchedMemberObj) {
+            if (matchedMemberObj) {
               try {
                 await supabase.from('fw_team_members').upsert({
                   id: memberId,
@@ -649,7 +665,7 @@ export default function TeamManagerPage() {
             }
 
             // 1. Auto sync to Team & Partner Financial Engine
-            if (memberId && matchedMemberObj) {
+            if (matchedMemberObj) {
               await saveOrUpdateEventPayout(workspaceId || currentUserId, {
                 member_id: memberId,
                 member_name: matchedMemberObj.name,
