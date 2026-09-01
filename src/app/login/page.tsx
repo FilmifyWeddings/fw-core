@@ -759,6 +759,17 @@ export default function LoginPage() {
                       </button>
                     </p>
                   </div>
+
+                  {/* Crew Portal Entry Badge */}
+                  <div className="mt-3 pt-3 border-t border-zinc-100 text-center">
+                    <Link
+                      href="/team/login"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-50 hover:bg-amber-50 border border-zinc-200 hover:border-amber-200 text-zinc-600 hover:text-amber-800 text-xs font-semibold transition-all group"
+                    >
+                      <span>Are you a Crew / Freelancer?</span>
+                      <span className="font-bold text-[#b45309] group-hover:translate-x-0.5 transition-transform">Team Portal Login →</span>
+                    </Link>
+                  </div>
                 </form>
               ) : (
                 /* SIGNUP FORM */
