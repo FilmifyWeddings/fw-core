@@ -122,19 +122,40 @@ export default function TeamMemberFinanceDrawer({
     if (!member?.id || !workspaceId) return;
     setLoading(true);
     try {
+      // 1. ALWAYS load event payouts for all team members (assigned shoots from Team Manager)
+      const eventPayouts = await fetchMemberEventPayouts(workspaceId, member.id);
+      setPayouts(eventPayouts);
+
+      // 2. Also load partner album orders if lab
       if (isLab) {
         const orders = await fetchPartnerAlbumOrders(workspaceId, member.id);
         setAlbumOrders(orders);
-      } else if (isInHouse) {
+      }
+
+      // 3. Also load salary records if in-house
+      if (isInHouse) {
         const salaries = await fetchMemberSalaryRecords(workspaceId, member.id);
         setSalaryRecords(salaries);
-      } else {
-        const eventPayouts = await fetchMemberEventPayouts(workspaceId, member.id);
-        setPayouts(eventPayouts);
       }
 
       const sum = await fetchMemberFinancialSummary(workspaceId, member.id, memberType);
-      setSummary(sum);
+
+      // If event payouts exist, prioritize their totals if summary is 0
+      if (eventPayouts.length > 0 && sum.total_agreed === 0) {
+        const eventAgreed = eventPayouts.reduce((a, b) => a + Number(b.agreed_amount || 0), 0);
+        const eventPaid = eventPayouts.reduce((a, b) => a + Number(b.paid_amount || 0), 0);
+        setSummary({
+          ...sum,
+          total_agreed: eventAgreed,
+          total_paid: eventPaid,
+          total_balance: Math.max(0, eventAgreed - eventPaid),
+          active_events_count: eventPayouts.length,
+          paid_events_count: eventPayouts.filter(p => p.status === 'PAID' || p.status === 'completed').length,
+          pending_events_count: eventPayouts.filter(p => p.status !== 'PAID' && p.status !== 'completed').length
+        });
+      } else {
+        setSummary(sum);
+      }
     } catch (err) {
       console.error('[TeamMemberFinanceDrawer] Load error:', err);
     } finally {
@@ -348,7 +369,7 @@ export default function TeamMemberFinanceDrawer({
                   : 'border-transparent text-stone-500 hover:text-stone-800'
               }`}
             >
-              📅 Bookings &amp; Events ({isLab ? albumOrders.length : isInHouse ? salaryRecords.length : payouts.length})
+              📅 Bookings &amp; Events ({payouts.length})
             </button>
             <button
               onClick={() => setActiveTab('monthly')}
@@ -408,9 +429,8 @@ export default function TeamMemberFinanceDrawer({
             ) : (
               /* Ledger Tab */
               <>
-                {/* ── CASE 1: FREELANCER EVENT-WISE PAYOUTS ──────────────── */}
-                {isFreelancer && (
-                  <div className="space-y-4">
+                {/* ── 1. SHOOT BOOKINGS & EVENT-WISE PAYOUTS (FOR ALL MEMBERS) ── */}
+                <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <div>
                         <h3 className="text-sm font-black text-amber-950 flex items-center gap-2">
@@ -618,7 +638,6 @@ export default function TeamMemberFinanceDrawer({
                       )}
                     </div>
                   </div>
-                )}
 
                 {/* ── CASE 2: PARTNER ALBUM ORDERS ────────────────────────── */}
                 {isLab && (

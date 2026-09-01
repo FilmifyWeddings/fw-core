@@ -219,15 +219,58 @@ export async function saveWorkspaceMemberRate(
 export async function fetchMemberEventPayouts(workspaceId: string, memberId: string): Promise<TeamEventPayout[]> {
   const resultList: TeamEventPayout[] = [];
   const seenIds = new Set<string>();
+  const memberIdsToQuery = new Set<string>([memberId]);
+  let memberName = '';
+  let memberEmail = '';
 
   try {
+    // 0. Resolve linked IDs / Name / Email for this member across fw_team_members & workspace_members
+    try {
+      const { data: m1 } = await supabase.from('fw_team_members').select('id, name, email').eq('id', memberId).maybeSingle();
+      if (m1) {
+        if (m1.name) memberName = m1.name;
+        if (m1.email) memberEmail = m1.email;
+      }
+    } catch (_) {}
+
+    try {
+      const { data: m2 } = await supabase.from('workspace_members').select('id, name, email').eq('id', memberId).maybeSingle();
+      if (m2) {
+        if (m2.name && !memberName) memberName = m2.name;
+        if (m2.email && !memberEmail) memberEmail = m2.email;
+      }
+    } catch (_) {}
+
+    if (memberEmail) {
+      try {
+        const { data: matchingFtm } = await supabase.from('fw_team_members').select('id').eq('email', memberEmail);
+        if (matchingFtm) matchingFtm.forEach(r => memberIdsToQuery.add(r.id));
+      } catch (_) {}
+      try {
+        const { data: matchingWm } = await supabase.from('workspace_members').select('id').eq('email', memberEmail);
+        if (matchingWm) matchingWm.forEach(r => memberIdsToQuery.add(r.id));
+      } catch (_) {}
+    }
+
+    if (memberName) {
+      try {
+        const { data: matchingNameFtm } = await supabase.from('fw_team_members').select('id').ilike('name', memberName);
+        if (matchingNameFtm) matchingNameFtm.forEach(r => memberIdsToQuery.add(r.id));
+      } catch (_) {}
+    }
+
+    const idList = Array.from(memberIdsToQuery);
+
     // 1. Fetch from fw_assignments (Direct Link to Bookings & Events)
     try {
-      const { data: assignData, error: assignErr } = await supabase
-        .from('fw_assignments')
-        .select('*')
-        .eq('assigned_member_id', memberId)
-        .order('created_at', { ascending: false });
+      let assignQuery = supabase.from('fw_assignments').select('*');
+      if (idList.length === 1) {
+        assignQuery = assignQuery.eq('assigned_member_id', idList[0]);
+      } else {
+        assignQuery = assignQuery.in('assigned_member_id', idList);
+      }
+
+      const { data: assignData, error: assignErr } = await assignQuery.order('created_at', { ascending: false });
 
       if (!assignErr && assignData && assignData.length > 0) {
         // Collect sub_event_ids and project_ids for fast batch lookup
@@ -291,7 +334,7 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
             id: a.id,
             workspace_id: a.workspace_id || workspaceId,
             member_id: a.assigned_member_id,
-            member_name: a.assigned_member_name || '',
+            member_name: a.assigned_member_name || memberName || '',
             project_id: a.project_id || a.event_id || se?.project_id || '',
             sub_event_id: a.sub_event_id || '',
             client_name: clientName,
@@ -319,63 +362,71 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
     } catch (_) {}
 
     // 2. Try crew_assignments_finance
-    const { data: crewFinData, error: crewFinErr } = await supabase
-      .from('crew_assignments_finance')
-      .select('*')
-      .eq('team_member_id', memberId)
-      .order('payment_date', { ascending: false });
+    try {
+      let cfQuery = supabase.from('crew_assignments_finance').select('*');
+      if (idList.length === 1) {
+        cfQuery = cfQuery.eq('team_member_id', idList[0]);
+      } else {
+        cfQuery = cfQuery.in('team_member_id', idList);
+      }
+      const { data: crewFinData } = await cfQuery.order('payment_date', { ascending: false });
 
-    if (!crewFinErr && crewFinData && crewFinData.length > 0) {
-      crewFinData.forEach((c: any) => {
-        if (!seenIds.has(c.id)) {
-          const agreed = Number(c.final_agreed_amount) || 0;
-          const paid = Number(c.advance_paid_amount) || 0;
-          const bal = Number(c.balance_amount) || Math.max(0, agreed - paid);
-          const pStatus = (c.payment_status === 'completed' ? 'PAID' : c.payment_status === 'partial' ? 'PARTIAL' : 'PENDING') as any;
+      if (crewFinData && crewFinData.length > 0) {
+        crewFinData.forEach((c: any) => {
+          if (!seenIds.has(c.id)) {
+            const agreed = Number(c.final_agreed_amount) || 0;
+            const paid = Number(c.advance_paid_amount) || 0;
+            const bal = Number(c.balance_amount) || Math.max(0, agreed - paid);
+            const pStatus = (c.payment_status === 'completed' ? 'PAID' : c.payment_status === 'partial' ? 'PARTIAL' : 'PENDING') as any;
 
-          const item: TeamEventPayout = {
-            id: c.id,
-            workspace_id: c.workspace_id || workspaceId,
-            member_id: c.team_member_id,
-            member_name: c.team_member_name || c.member_name || '',
-            project_id: c.event_id || '',
-            sub_event_id: c.sub_event_id || '',
-            client_name: c.client_name || 'Wedding Shoot',
-            event_name: c.event_name || c.role_name || 'Shoot Event',
-            event_date: c.payment_date || c.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
-            role: c.role_name || 'Crew',
-            agreed_amount: agreed,
-            paid_amount: paid,
-            balance_amount: bal,
-            status: pStatus,
-            payment_method: c.payment_method || 'UPI / Bank Transfer',
-            payment_date: c.payment_date,
-            notes: c.notes || '',
-            synced_expense_id: c.synced_expense_id,
-            created_at: c.created_at,
-            updated_at: c.updated_at
-          };
-          seenIds.add(c.id);
-          resultList.push(item);
-        }
-      });
-    }
+            const item: TeamEventPayout = {
+              id: c.id,
+              workspace_id: c.workspace_id || workspaceId,
+              member_id: c.team_member_id,
+              member_name: c.team_member_name || c.member_name || memberName || '',
+              project_id: c.event_id || '',
+              sub_event_id: c.sub_event_id || '',
+              client_name: c.client_name || 'Wedding Shoot',
+              event_name: c.event_name || c.role_name || 'Shoot Event',
+              event_date: c.payment_date || c.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
+              role: c.role_name || 'Crew',
+              agreed_amount: agreed,
+              paid_amount: paid,
+              balance_amount: bal,
+              status: pStatus,
+              payment_method: c.payment_method || 'UPI / Bank Transfer',
+              payment_date: c.payment_date,
+              notes: c.notes || '',
+              synced_expense_id: c.synced_expense_id,
+              created_at: c.created_at,
+              updated_at: c.updated_at
+            };
+            seenIds.add(c.id);
+            resultList.push(item);
+          }
+        });
+      }
+    } catch (_) {}
 
     // 3. Fallback to team_event_payouts
-    const { data, error } = await supabase
-      .from('team_event_payouts')
-      .select('*')
-      .eq('member_id', memberId)
-      .order('event_date', { ascending: false });
+    try {
+      let tpQuery = supabase.from('team_event_payouts').select('*');
+      if (idList.length === 1) {
+        tpQuery = tpQuery.eq('member_id', idList[0]);
+      } else {
+        tpQuery = tpQuery.in('member_id', idList);
+      }
+      const { data } = await tpQuery.order('event_date', { ascending: false });
 
-    if (!error && data && data.length > 0) {
-      data.forEach((p: any) => {
-        if (!seenIds.has(p.id)) {
-          seenIds.add(p.id);
-          resultList.push(p);
-        }
-      });
-    }
+      if (data && data.length > 0) {
+        data.forEach((p: any) => {
+          if (!seenIds.has(p.id)) {
+            seenIds.add(p.id);
+            resultList.push(p);
+          }
+        });
+      }
+    } catch (_) {}
 
     if (resultList.length > 0) {
       if (typeof window !== 'undefined') {
