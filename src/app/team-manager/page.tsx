@@ -22,7 +22,7 @@ import MonthListView from './components/MonthListView';
 import Professional3DCalendar from './components/Professional3DCalendar';
 import WhatsAppAssignmentModal from './components/WhatsAppAssignmentModal';
 import { EventBlockData } from './components/EventBlock';
-import { saveOrUpdateEventPayout, fetchMemberFinancialSummary, TeamFinancialSummary } from '@/lib/team-finance-sync';
+import { saveOrUpdateEventPayout, fetchMemberFinancialSummary, fetchWorkspaceMemberRatesMap, TeamFinancialSummary } from '@/lib/team-finance-sync';
 import TeamMemberFinanceDrawer from '../workspace/team/components/TeamMemberFinanceDrawer';
 import { WorkspaceCrewRole, fetchWorkspaceCrewRoles, fetchWorkspaceEventTypes, getRoleShortCode } from '@/lib/workspace-settings';
 
