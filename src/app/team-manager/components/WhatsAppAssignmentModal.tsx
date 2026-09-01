@@ -39,7 +39,7 @@ export default function WhatsAppAssignmentModal({
   const [activeTab, setActiveTab] = useState<'commercials' | 'whatsapp'>('commercials');
   
   // Commercials State
-  const [agreedAmount, setAgreedAmount] = useState<string>('');
+  const [agreedAmount, setAgreedAmount] = useState<string>('0');
   const [advancePaid, setAdvancePaid] = useState<string>('0');
   const [paymentStatus, setPaymentStatus] = useState<'pending' | 'partial' | 'completed'>('pending');
   const [paymentDate, setPaymentDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -48,17 +48,18 @@ export default function WhatsAppAssignmentModal({
   const [isSavingCommercials, setIsSavingCommercials] = useState(false);
   const [commercialsSaved, setCommercialsSaved] = useState(false);
 
-  // Initialize or reset on open
+  // Initialize or reset on open (NO hardcoded 5000 fallback)
   useEffect(() => {
     if (isOpen && member) {
       (async () => {
         const effectiveWsId = workspaceId || (member as any).workspace_id || '';
-        let defaultRate = member.default_daily_rate || member.daily_rate;
-        if (!defaultRate && effectiveWsId) {
+        let rate = member.default_daily_rate ?? member.daily_rate;
+        if ((rate == null || rate === 0) && effectiveWsId) {
           const wsRate = await fetchWorkspaceMemberRate(effectiveWsId, member.id);
-          if (wsRate > 0) defaultRate = wsRate;
+          if (wsRate != null && wsRate > 0) rate = wsRate;
         }
-        setAgreedAmount(String(defaultRate || 5000));
+        const initialAmount = rate != null ? rate : 0;
+        setAgreedAmount(String(initialAmount));
       })();
       setAdvancePaid('0');
       setPaymentStatus('pending');
@@ -194,14 +195,20 @@ Please confirm your slot.
 
       setCommercialsSaved(true);
       if (onCommercialsSaved) onCommercialsSaved();
+      
+      // Auto close after brief confirmation
+      setTimeout(() => {
+        onClose();
+      }, 1000);
     } catch (err) {
-      console.error('[WhatsAppAssignmentModal] Save commercials error:', err);
+      console.error('[WhatsAppAssignmentModal] Save error:', err);
     } finally {
       setIsSavingCommercials(false);
     }
   };
 
   const currentTimeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+  const configuredDefaultRate = member.default_daily_rate ?? member.daily_rate ?? 0;
 
   return (
     <AnimatePresence>
@@ -219,7 +226,7 @@ Please confirm your slot.
                 <Sparkles className="w-4 h-4" />
               </div>
               <div>
-                <h3 className="text-sm font-black text-white">Crew Assignment &amp; Commercials Hub</h3>
+                <h3 className="text-sm font-black text-white">Crew Assignment &amp; Commercials</h3>
                 <p className="text-[10px] text-slate-400">Set commercial terms, sync to finance, and dispatch WhatsApp confirmation</p>
               </div>
             </div>
@@ -283,7 +290,7 @@ Please confirm your slot.
                 <div className="space-y-1">
                   <label className="text-[11px] font-bold text-slate-700 flex items-center justify-between">
                     <span>Agreed Final Amount (₹)</span>
-                    <span className="text-[10px] text-amber-700 font-medium">Default: ₹{member.default_daily_rate || 5000}</span>
+                    <span className="text-[10px] text-amber-700 font-medium">Default: ₹{configuredDefaultRate.toLocaleString('en-IN')}</span>
                   </label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-slate-400">₹</span>
@@ -293,7 +300,7 @@ Please confirm your slot.
                       value={agreedAmount}
                       onChange={e => handleAgreedChange(e.target.value)}
                       className="w-full pl-7 pr-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-black text-slate-900 focus:border-amber-500 focus:outline-hidden font-mono shadow-2xs"
-                      placeholder="e.g. 5000"
+                      placeholder="0"
                     />
                   </div>
                 </div>
@@ -388,29 +395,36 @@ Please confirm your slot.
                 </div>
               </div>
 
-              {/* Save Commercials Action */}
-              <div className="pt-2">
+              {/* Save & Confirm Actions */}
+              <div className="pt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2.5 rounded-xl border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-bold transition cursor-pointer"
+                >
+                  Cancel
+                </button>
                 <button
                   type="button"
                   disabled={isSavingCommercials}
                   onClick={handleSaveCommercials}
-                  className={`w-full py-2.5 rounded-xl text-xs font-black shadow-md flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                  className={`flex-1 py-2.5 rounded-xl text-xs font-black shadow-md flex items-center justify-center gap-1.5 transition cursor-pointer ${
                     commercialsSaved
                       ? 'bg-emerald-600 text-white hover:bg-emerald-700'
                       : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white'
                   }`}
                 >
                   {isSavingCommercials ? (
-                    <span>Saving to Database &amp; Finance...</span>
+                    <span>Saving to Database...</span>
                   ) : commercialsSaved ? (
                     <>
                       <CheckCircle2 className="w-4 h-4" />
-                      <span>Commercials Saved &amp; Synced to Finance!</span>
+                      <span>Saved &amp; Confirmed!</span>
                     </>
                   ) : (
                     <>
-                      <CreditCard className="w-4 h-4" />
-                      <span>Save &amp; Confirm Commercials</span>
+                      <Check className="w-4 h-4" />
+                      <span>Save &amp; Confirm</span>
                     </>
                   )}
                 </button>

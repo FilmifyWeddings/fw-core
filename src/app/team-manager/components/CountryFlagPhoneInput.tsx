@@ -93,8 +93,12 @@ export default function CountryFlagPhoneInput({
         type="tel"
         required
         placeholder="98765 43210"
-        value={phoneNumber}
-        onChange={(e) => onPhoneNumberChange(e.target.value)}
+        value={phoneNumber ? phoneNumber.replace(/^\+91\s*/, '').replace(/^\+91/, '').replace(/^\+\d{1,4}\s*/, '') : ''}
+        onChange={(e) => {
+          const raw = e.target.value;
+          const cleaned = raw.replace(/^\+91\s*/, '').replace(/^\+91/, '').replace(/^\+\d{1,4}\s*/, '');
+          onPhoneNumberChange(cleaned);
+        }}
         className="flex-1 bg-[#F8F9FD] border border-[#6C5CE7]/10 px-4 py-3 rounded-2xl text-sm font-bold text-[#0B111E] placeholder:text-zinc-400 focus:outline-none focus:border-[#6C5CE7] focus:ring-2 focus:ring-[#6C5CE7]/10 transition"
       />
     </div>

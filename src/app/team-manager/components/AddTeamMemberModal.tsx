@@ -126,8 +126,9 @@ export default function AddTeamMemberModal({
       setPrimaryRole(memberToEdit.primary_role || initialRole);
       setSelectedRoles(memberToEdit.roles || [memberToEdit.primary_role || initialRole]);
       setSelectedMemberTypes(memberToEdit.member_types || [memberToEdit.primary_type || 'IN_HOUSE']);
-      setCountryCode(memberToEdit.country_code || '+91');
-      setPhoneNumber(memberToEdit.phone_number || memberToEdit.phone || '');
+      const rawPhone = memberToEdit.phone_number || memberToEdit.phone || '';
+      const cleanPhone = rawPhone.replace(/^\+91\s*/, '').replace(/^\+91/, '').replace(/^\+\d{1,4}\s*/, '').trim();
+      setPhoneNumber(cleanPhone);
       setEmail(memberToEdit.email || '');
       setAvatarUrl(memberToEdit.avatar_url || '');
       setDefaultDailyRate(memberToEdit.default_daily_rate != null ? String(memberToEdit.default_daily_rate) : '');
@@ -347,7 +348,7 @@ export default function AddTeamMemberModal({
         member_types: selectedMemberTypes,
         primary_type: selectedMemberTypes[0] || 'IN_HOUSE',
         country_code: countryCode,
-        phone_number: phoneNumber.trim(),
+        phone_number: cleanEnteredPhone,
         email: email.trim() || undefined,
         avatar_url: avatarUrl || undefined,
         default_daily_rate: defaultDailyRate ? Number(defaultDailyRate) : 0,
@@ -369,7 +370,7 @@ export default function AddTeamMemberModal({
               workspace_id: workspaceId,
               name: name.trim(),
               email: email.trim(),
-              phone: `${countryCode} ${phoneNumber.trim()}`.trim(),
+              phone: `${countryCode} ${cleanEnteredPhone}`.trim(),
               primary_role: primaryRole,
               roles: selectedRoles,
               member_types: selectedMemberTypes,
@@ -704,7 +705,7 @@ export default function AddTeamMemberModal({
                 <input
                   type="number"
                   min="0"
-                  placeholder="e.g. 5000"
+                  placeholder="0"
                   value={defaultDailyRate}
                   onChange={(e) => setDefaultDailyRate(e.target.value)}
                   className="w-full pl-8 pr-3.5 py-2 rounded-xl bg-white border border-amber-300 text-xs font-black text-amber-950 focus:border-amber-500 focus:outline-hidden transition shadow-2xs"
