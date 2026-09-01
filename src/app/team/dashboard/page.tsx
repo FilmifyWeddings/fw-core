@@ -4,20 +4,25 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { SidebarLayout } from '@/components/sidebar-layout';
+import { WorkspaceSwitcher } from '@/components/workspace/WorkspaceSwitcher';
+import { useWorkspace } from '@/lib/context/BhamstraContext';
 import {
   Camera,
   Calendar,
   Clock,
   MapPin,
-  LogOut,
   IndianRupee,
   CheckCircle2,
-  AlertCircle,
   Building2,
   Sparkles,
   User,
   ChevronRight,
   Filter,
+  Check,
+  FileText,
+  AlertCircle,
+  Briefcase,
 } from 'lucide-react';
 
 interface AssignedShoot {
@@ -45,11 +50,11 @@ interface AssignedShoot {
 
 export default function TeamDashboardPage() {
   const router = useRouter();
-  const [userEmail, setUserEmail] = useState<string>('');
-  const [userName, setUserName] = useState<string>('');
+  const { workspaceName, isOwner, userRole, availableWorkspaces } = useWorkspace();
   const [shoots, setShoots] = useState<AssignedShoot[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'upcoming' | 'completed' | 'all'>('upcoming');
+  const [selectedStudio, setSelectedStudio] = useState<string>('all');
 
   useEffect(() => {
     async function loadCrewData() {
@@ -63,10 +68,6 @@ export default function TeamDashboardPage() {
           return;
         }
 
-        setUserEmail(activeUser.email || '');
-        setUserName(activeUser.user_metadata?.full_name || activeUser.user_metadata?.name || activeUser.email?.split('@')[0] || 'Crew Member');
-
-        // Fetch assigned shoots
         const token = session?.access_token;
         const res = await fetch('/api/team/shoots', {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -85,14 +86,14 @@ export default function TeamDashboardPage() {
     loadCrewData();
   }, [router]);
 
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    router.push('/team/login');
-  };
-
   const today = new Date().toISOString().split('T')[0];
 
+  const uniqueStudios = Array.from(new Set(shoots.map(s => s.studio_name).filter(Boolean)));
+
   const filteredShoots = shoots.filter((s) => {
+    const matchesStudio = selectedStudio === 'all' || s.studio_name === selectedStudio;
+    if (!matchesStudio) return false;
+
     if (activeTab === 'upcoming') {
       return s.event_date >= today || s.event_date === 'TBD';
     }
@@ -107,124 +108,131 @@ export default function TeamDashboardPage() {
   const totalBalance = shoots.reduce((acc, s) => acc + (Number(s.balance_amount) || 0), 0);
 
   return (
-    <div className="min-h-screen w-full bg-[#0B1120] text-slate-100 font-sans">
-      {/* Top Navigation */}
-      <header className="sticky top-0 z-40 bg-[#0F172A]/90 backdrop-blur-md border-b border-slate-800">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-400 flex items-center justify-center text-white shadow-md shadow-indigo-500/20">
-              <Camera className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="text-base font-black text-white tracking-tight">StudioCore</span>
-              <span className="ml-2 text-[10px] px-2 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 font-bold border border-indigo-500/30">
-                Crew Dashboard
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <div className="hidden sm:flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-300">
-                {userName.slice(0, 2).toUpperCase()}
-              </div>
-              <div className="text-left">
-                <p className="text-xs font-bold text-white leading-tight">{userName}</p>
-                <p className="text-[10px] text-slate-400 leading-tight">{userEmail}</p>
-              </div>
-            </div>
-
-            <button
-              onClick={handleSignOut}
-              className="p-2 rounded-xl bg-slate-800/80 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 border border-slate-700 transition cursor-pointer"
-              title="Sign Out"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Container */}
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+    <SidebarLayout>
+      <div className="p-4 sm:p-8 max-w-7xl mx-auto space-y-6">
         
-        {/* Metric Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-          <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-lg">
-            <div className="flex items-center justify-between text-slate-400 text-xs font-bold mb-2">
-              <span>TOTAL ASSIGNED SHOOTS</span>
-              <Calendar className="w-4 h-4 text-indigo-400" />
+        {/* Top Header Banner */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[#EBE7DF]">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-100 text-[#92400e] border border-amber-200 font-black">
+                Crew & Freelancer Portal
+              </span>
+              <span className="text-xs text-zinc-400">•</span>
+              <span className="text-xs font-bold text-zinc-500">{userRole || 'Crew Member'}</span>
             </div>
-            <p className="text-2xl font-black text-white">{shoots.length}</p>
-            <p className="text-[11px] text-slate-500 mt-1">Events assigned by studios</p>
+            <h1 className="text-2xl sm:text-3xl font-serif font-black text-zinc-900 tracking-tight">
+              My Assigned Shoots & Schedule
+            </h1>
+            <p className="text-xs sm:text-sm text-zinc-500 mt-1 font-medium">
+              View live call times, venue locations, assigned roles, and payout statuses across all partner studios.
+            </p>
           </div>
 
-          <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-lg">
-            <div className="flex items-center justify-between text-slate-400 text-xs font-bold mb-2">
-              <span>TOTAL EARNINGS</span>
-              <IndianRupee className="w-4 h-4 text-emerald-400" />
-            </div>
-            <p className="text-2xl font-black text-emerald-400">₹{totalAgreed.toLocaleString('en-IN')}</p>
-            <p className="text-[11px] text-emerald-500/80 mt-1">₹{totalPaid.toLocaleString('en-IN')} Received</p>
-          </div>
-
-          <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-lg">
-            <div className="flex items-center justify-between text-slate-400 text-xs font-bold mb-2">
-              <span>PENDING PAYOUTS</span>
-              <Clock className="w-4 h-4 text-amber-400" />
-            </div>
-            <p className="text-2xl font-black text-amber-400">₹{totalBalance.toLocaleString('en-IN')}</p>
-            <p className="text-[11px] text-slate-500 mt-1">To be released by studios</p>
+          <div className="flex items-center gap-3">
+            <WorkspaceSwitcher />
           </div>
         </div>
 
-        {/* Section Header with Tabs */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-          <div>
-            <h2 className="text-xl font-black text-white tracking-tight">Your Assigned Shoots</h2>
-            <p className="text-xs text-slate-400 mt-0.5">Live schedule, venue locations, and roles</p>
+        {/* 3 Metric Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="p-5 rounded-2xl bg-white border border-[#EBE7DF] shadow-xs">
+            <div className="flex items-center justify-between text-zinc-500 text-xs font-bold mb-2">
+              <span>TOTAL ASSIGNED SHOOTS</span>
+              <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
+                <Calendar className="w-4 h-4" />
+              </div>
+            </div>
+            <p className="text-3xl font-black text-zinc-900 font-serif">{shoots.length}</p>
+            <p className="text-xs text-zinc-400 mt-1 font-medium">Events assigned across {uniqueStudios.length || 1} studio(s)</p>
           </div>
 
-          <div className="flex p-1 bg-slate-900 border border-slate-800 rounded-xl text-xs font-bold">
+          <div className="p-5 rounded-2xl bg-white border border-[#EBE7DF] shadow-xs">
+            <div className="flex items-center justify-between text-zinc-500 text-xs font-bold mb-2">
+              <span>TOTAL EARNINGS / AGREED FEE</span>
+              <div className="w-8 h-8 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
+                <IndianRupee className="w-4 h-4" />
+              </div>
+            </div>
+            <p className="text-3xl font-black text-emerald-600 font-serif">₹{totalAgreed.toLocaleString('en-IN')}</p>
+            <p className="text-xs text-emerald-600/80 mt-1 font-bold">₹{totalPaid.toLocaleString('en-IN')} Received</p>
+          </div>
+
+          <div className="p-5 rounded-2xl bg-white border border-[#EBE7DF] shadow-xs">
+            <div className="flex items-center justify-between text-zinc-500 text-xs font-bold mb-2">
+              <span>PENDING PAYOUT BALANCE</span>
+              <div className="w-8 h-8 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600">
+                <Clock className="w-4 h-4" />
+              </div>
+            </div>
+            <p className="text-3xl font-black text-[#b45309] font-serif">₹{totalBalance.toLocaleString('en-IN')}</p>
+            <p className="text-xs text-zinc-400 mt-1 font-medium">To be released by studio owners</p>
+          </div>
+        </div>
+
+        {/* Filter Bar & Tabs */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2">
+          {/* Tabs */}
+          <div className="flex p-1 bg-white border border-[#EBE7DF] rounded-xl text-xs font-bold shadow-2xs">
             <button
               onClick={() => setActiveTab('upcoming')}
-              className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                activeTab === 'upcoming' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+              className={`px-3.5 py-1.5 rounded-lg transition cursor-pointer ${
+                activeTab === 'upcoming' ? 'bg-[#FDF6EC] text-[#92400E] border border-[#F5E6CC] shadow-2xs' : 'text-zinc-500 hover:text-zinc-900'
               }`}
             >
               Upcoming ({shoots.filter(s => s.event_date >= today || s.event_date === 'TBD').length})
             </button>
             <button
               onClick={() => setActiveTab('completed')}
-              className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                activeTab === 'completed' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+              className={`px-3.5 py-1.5 rounded-lg transition cursor-pointer ${
+                activeTab === 'completed' ? 'bg-[#FDF6EC] text-[#92400E] border border-[#F5E6CC] shadow-2xs' : 'text-zinc-500 hover:text-zinc-900'
               }`}
             >
               Completed ({shoots.filter(s => s.event_date < today && s.event_date !== 'TBD').length})
             </button>
             <button
               onClick={() => setActiveTab('all')}
-              className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                activeTab === 'all' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+              className={`px-3.5 py-1.5 rounded-lg transition cursor-pointer ${
+                activeTab === 'all' ? 'bg-[#FDF6EC] text-[#92400E] border border-[#F5E6CC] shadow-2xs' : 'text-zinc-500 hover:text-zinc-900'
               }`}
             >
-              All ({shoots.length})
+              All Events ({shoots.length})
             </button>
           </div>
+
+          {/* Studio Filter Dropdown */}
+          {uniqueStudios.length > 1 && (
+            <div className="flex items-center gap-2 text-xs font-bold text-zinc-600">
+              <Filter className="w-3.5 h-3.5 text-zinc-400" />
+              <span>Studio:</span>
+              <select
+                value={selectedStudio}
+                onChange={(e) => setSelectedStudio(e.target.value)}
+                className="px-3 py-1.5 rounded-xl bg-white border border-[#EBE7DF] text-xs font-bold text-zinc-800 outline-none cursor-pointer"
+              >
+                <option value="all">All Studios ({uniqueStudios.length})</option>
+                {uniqueStudios.map(st => (
+                  <option key={st} value={st}>{st}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
-        {/* Shoot Cards List */}
+        {/* Shoot Cards Grid */}
         {loading ? (
-          <div className="p-12 text-center text-slate-400">
-            <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+          <div className="p-16 text-center text-zinc-500">
+            <div className="w-8 h-8 border-2 border-amber-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
             <p className="text-xs font-bold">Loading your assigned shoots...</p>
           </div>
         ) : filteredShoots.length === 0 ? (
-          <div className="p-12 rounded-3xl bg-slate-900/50 border border-slate-800 text-center">
-            <Camera className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-            <h3 className="text-base font-bold text-white">No Shoots Found</h3>
-            <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-              You do not have any shoots in this category yet. When a studio owner assigns you to an event, it will appear here automatically.
+          <div className="p-16 rounded-3xl bg-white border border-[#EBE7DF] text-center shadow-xs">
+            <div className="w-14 h-14 rounded-2xl bg-amber-50 border border-amber-200/80 flex items-center justify-center text-[#b45309] mx-auto mb-3">
+              <Camera className="w-7 h-7" />
+            </div>
+            <h3 className="text-lg font-bold text-zinc-900 font-serif">No Assigned Shoots Found</h3>
+            <p className="text-xs text-zinc-500 mt-1 max-w-sm mx-auto font-medium">
+              You do not have any shoots in this category. When a studio owner assigns you to a wedding event in Team Manager, it will appear here automatically.
             </p>
           </div>
         ) : (
@@ -232,57 +240,66 @@ export default function TeamDashboardPage() {
             {filteredShoots.map((shoot) => (
               <div
                 key={shoot.assignment_id}
-                className="p-5 rounded-2xl bg-slate-900/90 border border-slate-800 hover:border-slate-700 shadow-md transition-all flex flex-col justify-between"
+                className="p-5 rounded-2xl bg-white border border-[#EBE7DF] hover:border-amber-300 hover:shadow-md transition-all flex flex-col justify-between group"
               >
                 <div>
-                  {/* Studio Header */}
-                  <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-800">
+                  {/* Top Studio & Role Badge */}
+                  <div className="flex items-center justify-between mb-3 pb-3 border-b border-[#F0ECE4]">
                     <div className="flex items-center gap-2">
-                      <Building2 className="w-4 h-4 text-indigo-400" />
-                      <span className="text-xs font-bold text-indigo-300">{shoot.studio_name}</span>
+                      <div className="w-6 h-6 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
+                        <Building2 className="w-3.5 h-3.5" />
+                      </div>
+                      <span className="text-xs font-bold text-zinc-800">{shoot.studio_name}</span>
                     </div>
-                    <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 font-black">
+                    <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-[#92400e] font-black">
                       {shoot.role_name}
                     </span>
                   </div>
 
-                  {/* Couple Name & Event */}
-                  <h3 className="text-base font-black text-white tracking-tight leading-tight">
+                  {/* Couple Name & Event Title */}
+                  <h3 className="text-base font-black text-zinc-900 tracking-tight font-serif leading-tight group-hover:text-[#b45309] transition-colors">
                     {shoot.couple_name}
                   </h3>
-                  <p className="text-xs font-bold text-amber-400 mt-0.5">{shoot.event_name}</p>
+                  <p className="text-xs font-bold text-amber-700 mt-0.5">{shoot.event_name}</p>
 
-                  {/* Details Grid */}
-                  <div className="mt-4 space-y-2 text-xs text-slate-300">
+                  {/* Schedule & Venue Details */}
+                  <div className="mt-4 space-y-2 text-xs text-zinc-600">
                     <div className="flex items-center gap-2.5">
-                      <Calendar className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                      <span>{shoot.event_date}</span>
+                      <Calendar className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                      <span className="font-semibold text-zinc-800">{shoot.event_date}</span>
                     </div>
                     <div className="flex items-center gap-2.5">
-                      <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                      <Clock className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
                       <span>{shoot.start_time} - {shoot.end_time}</span>
                     </div>
                     <div className="flex items-center gap-2.5">
-                      <MapPin className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                      <MapPin className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
                       <span className="truncate">{shoot.venue_location}</span>
                     </div>
                   </div>
+
+                  {shoot.notes && (
+                    <div className="mt-3 p-2.5 rounded-xl bg-[#FAF9F6] border border-[#EBE7DF] text-[11px] text-zinc-600">
+                      <span className="font-bold text-zinc-700 block mb-0.5">Notes:</span>
+                      <span>{shoot.notes}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Footer Payout Info */}
-                <div className="mt-5 pt-3 border-t border-slate-800 flex items-center justify-between">
+                <div className="mt-5 pt-3 border-t border-[#F0ECE4] flex items-center justify-between">
                   <div>
-                    <span className="text-[10px] text-slate-500 font-bold block">FEE / PAYOUT</span>
-                    <span className="text-sm font-black text-emerald-400">
+                    <span className="text-[10px] text-zinc-400 font-bold block">FEE / PAYOUT</span>
+                    <span className="text-sm font-black text-emerald-600">
                       ₹{(Number(shoot.agreed_amount) || 0).toLocaleString('en-IN')}
                     </span>
                   </div>
 
                   <div className="text-right">
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
                       shoot.payment_status === 'paid' 
-                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' 
-                        : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                        : 'bg-amber-50 text-[#92400e] border border-amber-200'
                     }`}>
                       {shoot.payment_status?.toUpperCase()}
                     </span>
@@ -294,7 +311,7 @@ export default function TeamDashboardPage() {
           </div>
         )}
 
-      </main>
-    </div>
+      </div>
+    </SidebarLayout>
   );
 }
