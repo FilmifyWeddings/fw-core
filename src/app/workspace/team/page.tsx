@@ -130,7 +130,8 @@ export default function WorkspaceTeamPage() {
             primary_type: m.primary_type || 'IN_HOUSE',
             avatar_url: m.avatar_url || '',
             status: m.status || 'ACTIVE',
-            default_daily_rate: wsRatesMap[m.id] != null ? wsRatesMap[m.id] : (m.default_daily_rate || 0),
+            default_daily_rate: typeof wsRatesMap[m.id] === 'object' ? wsRatesMap[m.id].rate : (wsRatesMap[m.id] != null ? wsRatesMap[m.id] : (m.default_daily_rate || 0)),
+            payout_frequency: typeof wsRatesMap[m.id] === 'object' && wsRatesMap[m.id].frequency ? wsRatesMap[m.id].frequency : (m.payout_frequency || 'daily'),
             default_currency: m.default_currency || 'INR',
             permissions: m.member_permissions?.[0] || m.member_permissions || undefined,
           }));
@@ -160,7 +161,8 @@ export default function WorkspaceTeamPage() {
               primary_type: f.primary_type || 'IN_HOUSE',
               avatar_url: f.avatar_url || '',
               status: 'ACTIVE',
-              default_daily_rate: wsRatesMap[f.id] != null ? wsRatesMap[f.id] : (f.default_daily_rate || 0),
+              default_daily_rate: typeof wsRatesMap[f.id] === 'object' ? wsRatesMap[f.id].rate : (wsRatesMap[f.id] != null ? wsRatesMap[f.id] : (f.default_daily_rate || 0)),
+              payout_frequency: typeof wsRatesMap[f.id] === 'object' && wsRatesMap[f.id].frequency ? wsRatesMap[f.id].frequency : (f.payout_frequency || 'daily'),
               default_currency: f.default_currency || 'INR',
             });
           }
@@ -205,7 +207,26 @@ export default function WorkspaceTeamPage() {
   }, [loadMembers]);
 
   useEffect(() => {
-    const handleFinanceUpdated = () => {
+    const handleFinanceUpdated = (e?: any) => {
+      const detail = e?.detail;
+      if (detail?.memberId && detail?.amount) {
+        setMemberFinancials(prev => {
+          const current = prev[detail.memberId];
+          if (current) {
+            const newPaid = current.total_paid + Number(detail.amount);
+            const newBal = Math.max(0, current.total_balance - Number(detail.amount));
+            return {
+              ...prev,
+              [detail.memberId]: {
+                ...current,
+                total_paid: newPaid,
+                total_balance: newBal
+              }
+            };
+          }
+          return prev;
+        });
+      }
       loadFinancialSummaries(members);
     };
     window.addEventListener('team_finance_updated', handleFinanceUpdated);

@@ -133,20 +133,23 @@ export async function fetchWorkspaceMemberRate(workspaceId: string, memberId: st
   return 0;
 }
 
-export async function fetchWorkspaceMemberRatesMap(workspaceId: string): Promise<Record<string, number>> {
+export async function fetchWorkspaceMemberRatesMap(workspaceId: string): Promise<Record<string, any>> {
   if (!workspaceId) return {};
-  const ratesMap: Record<string, number> = {};
+  const ratesMap: Record<string, any> = {};
 
   try {
     const { data, error } = await supabase
       .from('workspace_team_member_rates')
-      .select('team_member_id, default_daily_rate')
+      .select('team_member_id, default_daily_rate, payout_frequency')
       .eq('workspace_id', workspaceId);
 
     if (!error && data && Array.isArray(data)) {
       data.forEach((r: any) => {
         if (r.team_member_id) {
-          ratesMap[r.team_member_id] = Number(r.default_daily_rate) || 0;
+          ratesMap[r.team_member_id] = {
+            rate: Number(r.default_daily_rate) || 0,
+            frequency: r.payout_frequency === 'monthly' ? 'monthly' : 'daily'
+          };
         }
       });
       if (typeof window !== 'undefined') {
@@ -176,14 +179,35 @@ export async function saveWorkspaceMemberRate(
   const numRate = Number(defaultDailyRate) || 0;
 
   try {
-    await supabase.from('workspace_team_member_rates').upsert({
-      workspace_id: workspaceId,
-      team_member_id: memberId,
-      default_daily_rate: numRate,
-      payout_frequency: payoutFrequency,
-      currency: currency || 'INR',
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'workspace_id,team_member_id' });
+    const { data: existingRate } = await supabase
+      .from('workspace_team_member_rates')
+      .select('id')
+      .eq('workspace_id', workspaceId)
+      .eq('team_member_id', memberId)
+      .maybeSingle();
+
+    if (existingRate?.id) {
+      await supabase
+        .from('workspace_team_member_rates')
+        .update({
+          default_daily_rate: numRate,
+          payout_frequency: payoutFrequency,
+          currency: currency || 'INR',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existingRate.id);
+    } else {
+      await supabase
+        .from('workspace_team_member_rates')
+        .insert([{
+          workspace_id: workspaceId,
+          team_member_id: memberId,
+          default_daily_rate: numRate,
+          payout_frequency: payoutFrequency,
+          currency: currency || 'INR',
+          updated_at: new Date().toISOString()
+        }]);
+    }
   } catch (err) {
     console.warn('[team-finance-sync] saveWorkspaceMemberRate error:', err);
   }
@@ -224,183 +248,261 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
   let memberEmail = '';
 
   try {
-    // 0. Resolve linked IDs / Name / Email for this member across fw_team_members & workspace_members
-    try {
-      const { data: m1 } = await supabase.from('fw_team_members').select('id, name, email').eq('id', memberId).maybeSingle();
-      if (m1) {
-        if (m1.name) memberName = m1.name;
-        if (m1.email) memberEmail = m1.email;
-      }
-    } catch (_) {}
+    // 0. Parallel lookup of member aliases & rates across fw_team_members, workspace_members & workspace_team_member_rates
+    const [ftmRes, wmRes, rateRes] = await Promise.all([
+      supabase.from('fw_team_members').select('id, name, email, default_daily_rate').eq('id', memberId).maybeSingle().catch(() => ({ data: null })),
+      supabase.from('workspace_members').select('id, name, email, default_daily_rate').eq('id', memberId).maybeSingle().catch(() => ({ data: null })),
+      supabase.from('workspace_team_member_rates').select('default_daily_rate').eq('workspace_id', workspaceId).eq('team_member_id', memberId).maybeSingle().catch(() => ({ data: null }))
+    ]);
 
-    try {
-      const { data: m2 } = await supabase.from('workspace_members').select('id, name, email').eq('id', memberId).maybeSingle();
-      if (m2) {
-        if (m2.name && !memberName) memberName = m2.name;
-        if (m2.email && !memberEmail) memberEmail = m2.email;
-      }
-    } catch (_) {}
+    const m1 = ftmRes?.data;
+    const m2 = wmRes?.data;
+    const rateRow = rateRes?.data;
 
-    if (memberEmail) {
-      try {
-        const { data: matchingFtm } = await supabase.from('fw_team_members').select('id').eq('email', memberEmail);
-        if (matchingFtm) matchingFtm.forEach(r => memberIdsToQuery.add(r.id));
-      } catch (_) {}
-      try {
-        const { data: matchingWm } = await supabase.from('workspace_members').select('id').eq('email', memberEmail);
-        if (matchingWm) matchingWm.forEach(r => memberIdsToQuery.add(r.id));
-      } catch (_) {}
+    if (m1) {
+      if (m1.name) memberName = m1.name;
+      if (m1.email) memberEmail = m1.email;
+    }
+    if (m2) {
+      if (m2.name && !memberName) memberName = m2.name;
+      if (m2.email && !memberEmail) memberEmail = m2.email;
     }
 
-    if (memberName) {
-      try {
-        const { data: matchingNameFtm } = await supabase.from('fw_team_members').select('id').ilike('name', memberName);
-        if (matchingNameFtm) matchingNameFtm.forEach(r => memberIdsToQuery.add(r.id));
-      } catch (_) {}
+    const defaultDailyRate = Number(rateRow?.default_daily_rate) || Number(m1?.default_daily_rate) || Number(m2?.default_daily_rate) || 0;
+
+    // Resolve any linked IDs by email/name in parallel
+    if (memberEmail || memberName) {
+      const aliasQueries = [];
+      if (memberEmail) {
+        aliasQueries.push(supabase.from('fw_team_members').select('id').eq('email', memberEmail).catch(() => ({ data: null })));
+        aliasQueries.push(supabase.from('workspace_members').select('id').eq('email', memberEmail).catch(() => ({ data: null })));
+      }
+      if (memberName) {
+        aliasQueries.push(supabase.from('fw_team_members').select('id').ilike('name', memberName).catch(() => ({ data: null })));
+      }
+      const aliasResults = await Promise.all(aliasQueries);
+      aliasResults.forEach(res => {
+        if (res?.data && Array.isArray(res.data)) {
+          res.data.forEach((r: any) => { if (r.id) memberIdsToQuery.add(r.id); });
+        }
+      });
     }
 
     const idList = Array.from(memberIdsToQuery);
 
-    // Fetch member's configured default rate as baseline fallback
-    let defaultDailyRate = 0;
-    try {
-      const { data: rateRow } = await supabase
-        .from('workspace_team_member_rates')
-        .select('default_daily_rate')
-        .eq('workspace_id', workspaceId)
-        .in('team_member_id', idList)
-        .maybeSingle();
-      if (rateRow && Number(rateRow.default_daily_rate) > 0) {
-        defaultDailyRate = Number(rateRow.default_daily_rate);
-      }
-    } catch (_) {}
+    // 1. Fetch fw_assignments, crew_assignments_finance, and team_event_payouts concurrently
+    const [assignRes, crewFinRes, teamPayoutRes] = await Promise.all([
+      (idList.length === 1 
+        ? supabase.from('fw_assignments').select('*').eq('assigned_member_id', idList[0])
+        : supabase.from('fw_assignments').select('*').in('assigned_member_id', idList)
+      ).order('created_at', { ascending: false }).catch(() => ({ data: null, error: null })),
 
-    if (!defaultDailyRate) {
-      try {
-        const { data: tmRow } = await supabase
-          .from('fw_team_members')
-          .select('default_daily_rate')
-          .in('id', idList)
-          .maybeSingle();
-        if (tmRow && Number(tmRow.default_daily_rate) > 0) {
-          defaultDailyRate = Number(tmRow.default_daily_rate);
+      (idList.length === 1
+        ? supabase.from('crew_assignments_finance').select('*').eq('team_member_id', idList[0])
+        : supabase.from('crew_assignments_finance').select('*').in('team_member_id', idList)
+      ).order('created_at', { ascending: false }).catch(() => ({ data: null })),
+
+      (idList.length === 1
+        ? supabase.from('team_event_payouts').select('*').eq('member_id', idList[0])
+        : supabase.from('team_event_payouts').select('*').in('member_id', idList)
+      ).order('created_at', { ascending: false }).catch(() => ({ data: null }))
+    ]);
+
+    const assignData = assignRes?.data || [];
+    const crewFinData = crewFinRes?.data || [];
+    const teamPayoutData = teamPayoutRes?.data || [];
+
+    if (assignData && assignData.length > 0) {
+      // Collect sub_event_ids and project_ids for fast batch lookup
+      const subEventIds = assignData.map((a: any) => a.sub_event_id).filter(Boolean);
+      const projectIds: string[] = assignData.map((a: any) => a.project_id || a.event_id).filter(Boolean);
+
+      const [seListRes, pListRes] = await Promise.all([
+        subEventIds.length > 0
+          ? supabase.from('fw_sub_events').select('id, project_id, event_title, event_date, start_time, end_time, venue, location, client_name, couple_name').in('id', subEventIds).catch(() => ({ data: null }))
+          : Promise.resolve({ data: null }),
+        projectIds.length > 0
+          ? supabase.from('fw_projects').select('id, client_name, project_name, bride_name, groom_name, couple_name, venue_location').in('id', projectIds).catch(() => ({ data: null }))
+          : Promise.resolve({ data: null })
+      ]);
+
+      const subEventsMap: Record<string, any> = {};
+      const projectsMap: Record<string, any> = {};
+
+      const additionalProjIds: string[] = [];
+      if (seListRes?.data) {
+        seListRes.data.forEach((se: any) => {
+          subEventsMap[se.id] = se;
+          if (se.project_id && !projectIds.includes(se.project_id)) {
+            additionalProjIds.push(se.project_id);
+          }
+        });
+      }
+
+      if (pListRes?.data) {
+        pListRes.data.forEach((p: any) => {
+          projectsMap[p.id] = p;
+        });
+      }
+
+      if (additionalProjIds.length > 0) {
+        try {
+          const { data: addProjs } = await supabase
+            .from('fw_projects')
+            .select('id, client_name, project_name, bride_name, groom_name, couple_name, venue_location')
+            .in('id', additionalProjIds);
+          if (addProjs) {
+            addProjs.forEach((p: any) => { projectsMap[p.id] = p; });
+          }
+        } catch (_) {}
+      }
+
+      assignData.forEach((a: any) => {
+        const se = a.sub_event_id ? subEventsMap[a.sub_event_id] : null;
+        const proj = (a.project_id || se?.project_id) ? projectsMap[a.project_id || se?.project_id] : null;
+
+        // Intelligent Couple / Client Name Resolution
+        let resolvedClientName = '';
+        if (proj?.couple_name && proj.couple_name.trim()) {
+          resolvedClientName = proj.couple_name.trim();
+        } else if (proj?.bride_name && proj?.groom_name) {
+          resolvedClientName = `${proj.bride_name} & ${proj.groom_name}`;
+        } else if (proj?.client_name && proj.client_name.trim() && proj.client_name.toLowerCase() !== 'wedding client' && proj.client_name.toLowerCase() !== 'client') {
+          resolvedClientName = proj.client_name.trim();
+        } else if (proj?.project_name && proj.project_name.trim() && proj.project_name.toLowerCase() !== 'wedding project') {
+          resolvedClientName = proj.project_name.trim();
+        } else if (proj?.bride_name) {
+          resolvedClientName = proj.bride_name.trim();
+        } else if (proj?.groom_name) {
+          resolvedClientName = proj.groom_name.trim();
+        } else if (se?.couple_name && se.couple_name.trim()) {
+          resolvedClientName = se.couple_name.trim();
+        } else if (se?.client_name && se.client_name.trim() && se.client_name.toLowerCase() !== 'wedding client') {
+          resolvedClientName = se.client_name.trim();
+        } else if (a.client_name && a.client_name.trim() && a.client_name.toLowerCase() !== 'wedding client') {
+          resolvedClientName = a.client_name.trim();
+        } else {
+          resolvedClientName = proj?.client_name || 'Wedding Client';
         }
-      } catch (_) {}
+
+        const rawAgreed = Number(a.agreed_amount) || 0;
+        const agreed = rawAgreed > 0 ? rawAgreed : defaultDailyRate;
+        const paid = Number(a.advance_amount ?? a.paid_amount) || 0;
+        const bal = Number(a.balance_amount) > 0 ? Number(a.balance_amount) : Math.max(0, agreed - paid);
+        const pStatus: 'PENDING' | 'PARTIAL' | 'PAID' = (agreed > 0 && bal === 0)
+          ? 'PAID' 
+          : paid > 0 
+          ? 'PARTIAL' 
+          : 'PENDING';
+
+        const eventTitle = se?.event_title || a.sub_event_name || a.event_name || a.required_role || 'Shoot Event';
+        const eventDate = se?.event_date || a.sub_event_date || a.payment_date || new Date().toISOString().split('T')[0];
+        const venue = se?.venue || se?.location || proj?.venue_location || a.venue || '';
+        const startTime = se?.start_time || a.start_time || '';
+        const endTime = se?.end_time || a.end_time || '';
+
+        const item: TeamEventPayout = {
+          id: a.id,
+          workspace_id: a.workspace_id || workspaceId,
+          member_id: a.assigned_member_id,
+          member_name: a.assigned_member_name || memberName || '',
+          project_id: a.project_id || a.event_id || se?.project_id || '',
+          sub_event_id: a.sub_event_id || '',
+          client_name: resolvedClientName,
+          event_name: eventTitle,
+          event_date: eventDate,
+          role: a.required_role || a.role_name || 'Crew',
+          agreed_amount: agreed,
+          paid_amount: paid,
+          balance_amount: bal,
+          status: pStatus,
+          payment_method: a.payment_method || 'UPI / Bank Transfer',
+          payment_date: a.payment_date || undefined,
+          notes: a.notes || '',
+          synced_expense_id: a.synced_expense_id,
+          venue: venue,
+          start_time: startTime,
+          end_time: endTime,
+          created_at: a.created_at,
+          updated_at: a.updated_at
+        };
+        seenIds.add(item.id);
+        resultList.push(item);
+      });
     }
 
-    if (!defaultDailyRate) {
-      try {
-        const { data: wmRow } = await supabase
-          .from('workspace_members')
-          .select('default_daily_rate')
-          .in('id', idList)
-          .maybeSingle();
-        if (wmRow && Number(wmRow.default_daily_rate) > 0) {
-          defaultDailyRate = Number(wmRow.default_daily_rate);
-        }
-      } catch (_) {}
-    }
-
-    // 1. Fetch from fw_assignments (Direct Link to Bookings & Events)
-    try {
-      let assignQuery = supabase.from('fw_assignments').select('*');
-      if (idList.length === 1) {
-        assignQuery = assignQuery.eq('assigned_member_id', idList[0]);
-      } else {
-        assignQuery = assignQuery.in('assigned_member_id', idList);
-      }
-
-      const { data: assignData, error: assignErr } = await assignQuery.order('created_at', { ascending: false });
-
-      if (!assignErr && assignData && assignData.length > 0) {
-        // Collect sub_event_ids and project_ids for fast batch lookup
-        const subEventIds = assignData.map(a => a.sub_event_id).filter(Boolean);
-        const projectIds: string[] = assignData.map(a => a.project_id || a.event_id).filter(Boolean);
-
-        const subEventsMap: Record<string, any> = {};
-        const projectsMap: Record<string, any> = {};
-
-        if (subEventIds.length > 0) {
-          try {
-            const { data: seList } = await supabase
-              .from('fw_sub_events')
-              .select('id, project_id, event_title, event_date, start_time, end_time, venue, location')
-              .in('id', subEventIds);
-            if (seList) {
-              seList.forEach(se => {
-                subEventsMap[se.id] = se;
-                if (se.project_id) projectIds.push(se.project_id);
-              });
-            }
-          } catch (_) {}
-        }
-
-        const uniqueProjectIds = Array.from(new Set(projectIds));
-        if (uniqueProjectIds.length > 0) {
-          try {
-            const { data: pList } = await supabase
-              .from('fw_projects')
-              .select('id, client_name, project_name, venue_location')
-              .in('id', uniqueProjectIds);
-            if (pList) {
-              pList.forEach(p => {
-                projectsMap[p.id] = p;
-              });
-            }
-          } catch (_) {}
-        }
-
-        assignData.forEach((a: any) => {
-          const se = a.sub_event_id ? subEventsMap[a.sub_event_id] : null;
-          const proj = (a.project_id || se?.project_id) ? projectsMap[a.project_id || se?.project_id] : null;
-
-          const rawAgreed = Number(a.agreed_amount) || 0;
+    // Unify crew_assignments_finance without duplicates
+    if (crewFinData.length > 0) {
+      crewFinData.forEach((c: any) => {
+        if (!seenIds.has(c.id)) {
+          const rawAgreed = Number(c.final_agreed_amount) || 0;
           const agreed = rawAgreed > 0 ? rawAgreed : defaultDailyRate;
-          const paid = Number(a.advance_amount ?? a.paid_amount) || 0;
-          const bal = Number(a.balance_amount) > 0 ? Number(a.balance_amount) : Math.max(0, agreed - paid);
-          const pStatus: 'PENDING' | 'PARTIAL' | 'PAID' = (agreed > 0 && bal === 0)
-            ? 'PAID' 
-            : paid > 0 
-            ? 'PARTIAL' 
-            : 'PENDING';
+          const paid = Number(c.advance_paid_amount) || 0;
+          const bal = Number(c.balance_amount) > 0 ? Number(c.balance_amount) : Math.max(0, agreed - paid);
+          const pStatus = (agreed > 0 && bal === 0) ? 'PAID' : (paid > 0 ? 'PARTIAL' : 'PENDING');
 
-          const clientName = proj?.client_name || a.client_name || 'Wedding Client';
-          const eventTitle = se?.event_title || a.sub_event_name || a.event_name || a.required_role || 'Shoot Event';
-          const eventDate = se?.event_date || a.sub_event_date || a.payment_date || new Date().toISOString().split('T')[0];
-          const venue = se?.venue || se?.location || proj?.venue_location || a.venue || '';
-          const startTime = se?.start_time || a.start_time || '';
-          const endTime = se?.end_time || a.end_time || '';
-
-          const item: TeamEventPayout = {
-            id: a.id,
-            workspace_id: a.workspace_id || workspaceId,
-            member_id: a.assigned_member_id,
-            member_name: a.assigned_member_name || memberName || '',
-            project_id: a.project_id || a.event_id || se?.project_id || '',
-            sub_event_id: a.sub_event_id || '',
-            client_name: clientName,
-            event_name: eventTitle,
-            event_date: eventDate,
-            role: a.required_role || a.role_name || 'Crew',
+          seenIds.add(c.id);
+          resultList.push({
+            id: c.id,
+            workspace_id: c.workspace_id || workspaceId,
+            member_id: c.team_member_id,
+            member_name: c.team_member_name || memberName,
+            project_id: c.event_id || '',
+            sub_event_id: c.sub_event_id || '',
+            client_name: c.client_name || 'Wedding Client',
+            event_name: c.role_name || 'Shoot Event',
+            event_date: c.payment_date || new Date().toISOString().split('T')[0],
+            role: c.role_name || 'Crew',
             agreed_amount: agreed,
             paid_amount: paid,
             balance_amount: bal,
-            status: pStatus,
-            payment_method: a.payment_method || 'UPI / Bank Transfer',
-            payment_date: a.payment_date || undefined,
-            notes: a.notes || '',
-            synced_expense_id: a.synced_expense_id,
-            venue: venue,
-            start_time: startTime,
-            end_time: endTime,
-            created_at: a.created_at,
-            updated_at: a.updated_at
-          };
-          seenIds.add(item.id);
-          resultList.push(item);
-        });
-      }
-    } catch (_) {}
+            status: pStatus as any,
+            payment_method: c.payment_method || 'UPI',
+            payment_date: c.payment_date || undefined,
+            notes: c.notes || '',
+            created_at: c.created_at,
+            updated_at: c.updated_at
+          });
+        }
+      });
+    }
+
+    // Unify team_event_payouts without duplicates
+    if (teamPayoutData.length > 0) {
+      teamPayoutData.forEach((tp: any) => {
+        if (!seenIds.has(tp.id)) {
+          const rawAgreed = Number(tp.agreed_amount) || 0;
+          const agreed = rawAgreed > 0 ? rawAgreed : defaultDailyRate;
+          const paid = Number(tp.paid_amount) || 0;
+          const bal = Number(tp.balance_amount) > 0 ? Number(tp.balance_amount) : Math.max(0, agreed - paid);
+          const pStatus = (agreed > 0 && bal === 0) ? 'PAID' : (paid > 0 ? 'PARTIAL' : 'PENDING');
+
+          seenIds.add(tp.id);
+          resultList.push({
+            id: tp.id,
+            workspace_id: tp.workspace_id || workspaceId,
+            member_id: tp.member_id,
+            member_name: tp.member_name || memberName,
+            project_id: tp.project_id || '',
+            sub_event_id: tp.sub_event_id || '',
+            client_name: tp.client_name || 'Wedding Client',
+            event_name: tp.event_name || 'Shoot Event',
+            event_date: tp.event_date || new Date().toISOString().split('T')[0],
+            role: tp.role || 'Crew',
+            agreed_amount: agreed,
+            paid_amount: paid,
+            balance_amount: bal,
+            status: pStatus as any,
+            payment_method: tp.payment_method || 'UPI / Bank Transfer',
+            payment_date: tp.payment_date || undefined,
+            notes: tp.notes || '',
+            synced_expense_id: tp.synced_expense_id,
+            created_at: tp.created_at,
+            updated_at: tp.updated_at
+          });
+        }
+      });
+    }
 
     // 2. Try crew_assignments_finance
     try {
@@ -1386,45 +1488,62 @@ export async function syncTeamPaymentToFinanceExpense(
   }
 ): Promise<void> {
   try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const currentUid = session?.user?.id;
+    const effectiveWsId = workspaceId || currentUid || '';
+
+    const expId = `exp_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    const payDate = expenseData.date || new Date().toISOString().split('T')[0];
+    const amt = Number(expenseData.amount) || 0;
+
     const expenseItem = {
-      id: `exp_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-      workspace_id: workspaceId,
+      id: expId,
+      workspace_id: effectiveWsId,
+      user_id: currentUid || effectiveWsId,
       title: expenseData.title,
       category: expenseData.category || 'Crew & Freelancer Payout',
-      amount: Number(expenseData.amount) || 0,
-      date: expenseData.date || new Date().toISOString().split('T')[0],
+      expense_type: 'project_expense',
+      amount: amt,
+      paid_to: expenseData.team_member_name || 'Team Member',
+      payment_date: payDate,
+      date: payDate,
       payment_mode: expenseData.payment_mode || 'UPI',
       notes: expenseData.notes || '',
       team_member_name: expenseData.team_member_name || '',
+      team_member_id: expenseData.team_member_id || null,
       client_name: expenseData.client_name || '',
-      created_at: new Date().toISOString()
+      status: 'paid',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     };
 
-    // 1. Insert into finance_transactions DB table
+    // 1. Insert into finance_expenses DB table
+    try {
+      await supabase.from('finance_expenses').insert([expenseItem]);
+    } catch (_) {}
+
+    // 2. Insert into finance_transactions DB table
     try {
       await supabase.from('finance_transactions').insert({
-        workspace_id: workspaceId,
+        workspace_id: effectiveWsId,
+        user_id: currentUid || effectiveWsId,
         type: 'expense',
         category: expenseData.category || 'Crew & Freelancer Payout',
-        amount: Number(expenseData.amount) || 0,
-        payment_date: expenseData.date || new Date().toISOString().split('T')[0],
+        amount: amt,
+        payment_date: payDate,
         title: expenseData.title,
         description: expenseData.notes || `Crew Payout for ${expenseData.team_member_name || 'Member'}`,
         client_name: expenseData.client_name || null,
         team_member_id: expenseData.team_member_id || null,
         linked_event_id: expenseData.linked_event_id || null,
-        payment_status: 'paid'
+        payment_status: 'paid',
+        payment_mode: expenseData.payment_mode || 'UPI'
       });
     } catch (_) {}
 
-    // 2. Insert into finance_expenses DB table if exists
-    try {
-      await supabase.from('finance_expenses').insert(expenseItem);
-    } catch (_) {}
-
-    // 3. Also update local storage for /workspace/finance
+    // 3. Also update local storage and notify listeners
     if (typeof window !== 'undefined') {
-      const lsKey = `fw_finance_expenses_${workspaceId}`;
+      const lsKey = `fw_finance_expenses_${effectiveWsId}`;
       const raw = localStorage.getItem(lsKey);
       const list = raw ? JSON.parse(raw) : [];
       list.unshift(expenseItem);

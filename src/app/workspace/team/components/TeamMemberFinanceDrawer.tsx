@@ -197,10 +197,41 @@ export default function TeamMemberFinanceDrawer({
   // Handle Record Payment Submit
   const handleRecordPaymentSubmit = async () => {
     if (!paymentTarget || !paymentAmount || Number(paymentAmount) <= 0) return;
+    const amount = Number(paymentAmount);
     setSubmittingPayment(true);
-    try {
-      const amount = Number(paymentAmount);
 
+    // 0. Instant Optimistic State Patch (0ms)
+    if (paymentTarget.type === 'EVENT') {
+      setPayouts(prev => prev.map(p => {
+        if (p.id === paymentTarget.id) {
+          const prevPaid = Number(p.paid_amount) || 0;
+          const newPaid = prevPaid + amount;
+          const newBal = Math.max(0, p.agreed_amount - newPaid);
+          const newStatus = (p.agreed_amount > 0 && newBal === 0) ? 'PAID' : (newPaid > 0 ? 'PARTIAL' : 'PENDING');
+          return {
+            ...p,
+            paid_amount: newPaid,
+            balance_amount: newBal,
+            status: newStatus
+          };
+        }
+        return p;
+      }));
+
+      setSummary(prev => ({
+        ...prev,
+        total_paid: prev.total_paid + amount,
+        total_balance: Math.max(0, prev.total_balance - amount)
+      }));
+    }
+
+    setIsPaymentModalOpen(false);
+    setPaymentTarget(null);
+    setPaymentAmount('');
+    setPaymentRef('');
+    setPaymentNotes('');
+
+    try {
       if (paymentTarget.type === 'EVENT') {
         const previousPaid = (paymentTarget.totalAmount - paymentTarget.balanceAmount) || 0;
         const newAdvanceTotal = previousPaid + amount;
@@ -255,11 +286,12 @@ export default function TeamMemberFinanceDrawer({
         });
       }
 
-      setIsPaymentModalOpen(false);
-      setPaymentTarget(null);
-      setPaymentAmount('');
-      setPaymentRef('');
-      setPaymentNotes('');
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('team_finance_updated', {
+          detail: { memberId: member!.id, amount }
+        }));
+      }
+
       await loadData();
     } catch (err) {
       console.error('[TeamMemberFinanceDrawer] Record payment failed:', err);
