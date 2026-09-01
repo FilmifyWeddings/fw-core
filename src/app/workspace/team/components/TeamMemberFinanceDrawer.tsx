@@ -328,7 +328,7 @@ export default function TeamMemberFinanceDrawer({
                   : 'border-transparent text-stone-500 hover:text-stone-800'
               }`}
             >
-              📋 Event-Wise Ledger & Payouts ({isLab ? albumOrders.length : isInHouse ? salaryRecords.length : payouts.length})
+              📅 Bookings &amp; Events ({isLab ? albumOrders.length : isInHouse ? salaryRecords.length : payouts.length})
             </button>
             <button
               onClick={() => setActiveTab('monthly')}
@@ -338,7 +338,7 @@ export default function TeamMemberFinanceDrawer({
                   : 'border-transparent text-stone-500 hover:text-stone-800'
               }`}
             >
-              📊 Monthly Payout Breakdown
+              📊 Financial Summary
             </button>
           </div>
 

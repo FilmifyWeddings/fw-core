@@ -101,6 +101,106 @@ const LS_PAYOUTS_KEY = 'fw_team_event_payouts_';
 const LS_ALBUMS_KEY = 'fw_partner_album_orders_';
 const LS_SALARIES_KEY = 'fw_team_salaries_';
 const LS_TRANSACTIONS_KEY = 'fw_team_transactions_';
+const LS_MEMBER_RATES_KEY = 'fw_ws_member_rates_';
+
+// ── 0. ISOLATED WORKSPACE TEAM MEMBER RATES (PER-STUDIO RATE ISOLATION) ─────
+
+export async function fetchWorkspaceMemberRate(workspaceId: string, memberId: string): Promise<number> {
+  if (!workspaceId || !memberId) return 0;
+  try {
+    const { data, error } = await supabase
+      .from('workspace_team_member_rates')
+      .select('default_daily_rate')
+      .eq('workspace_id', workspaceId)
+      .eq('team_member_id', memberId)
+      .maybeSingle();
+
+    if (!error && data && data.default_daily_rate != null) {
+      return Number(data.default_daily_rate);
+    }
+  } catch (_) {}
+
+  // Fallback to local storage
+  if (typeof window !== 'undefined') {
+    const local = localStorage.getItem(`${LS_MEMBER_RATES_KEY}${workspaceId}`);
+    if (local) {
+      try {
+        const parsed = JSON.parse(local);
+        if (parsed[memberId] != null) return Number(parsed[memberId]);
+      } catch (_) {}
+    }
+  }
+  return 0;
+}
+
+export async function fetchWorkspaceMemberRatesMap(workspaceId: string): Promise<Record<string, number>> {
+  if (!workspaceId) return {};
+  const ratesMap: Record<string, number> = {};
+
+  try {
+    const { data, error } = await supabase
+      .from('workspace_team_member_rates')
+      .select('team_member_id, default_daily_rate')
+      .eq('workspace_id', workspaceId);
+
+    if (!error && data && Array.isArray(data)) {
+      data.forEach((r: any) => {
+        if (r.team_member_id) {
+          ratesMap[r.team_member_id] = Number(r.default_daily_rate) || 0;
+        }
+      });
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(`${LS_MEMBER_RATES_KEY}${workspaceId}`, JSON.stringify(ratesMap));
+      }
+      return ratesMap;
+    }
+  } catch (_) {}
+
+  if (typeof window !== 'undefined') {
+    const local = localStorage.getItem(`${LS_MEMBER_RATES_KEY}${workspaceId}`);
+    if (local) {
+      try { return JSON.parse(local); } catch (_) {}
+    }
+  }
+  return ratesMap;
+}
+
+export async function saveWorkspaceMemberRate(
+  workspaceId: string,
+  memberId: string,
+  defaultDailyRate: number,
+  currency = 'INR'
+): Promise<void> {
+  if (!workspaceId || !memberId) return;
+  const numRate = Number(defaultDailyRate) || 0;
+
+  try {
+    await supabase.from('workspace_team_member_rates').upsert({
+      workspace_id: workspaceId,
+      team_member_id: memberId,
+      default_daily_rate: numRate,
+      currency: currency || 'INR',
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'workspace_id,team_member_id' });
+  } catch (err) {
+    console.warn('[team-finance-sync] saveWorkspaceMemberRate error:', err);
+  }
+
+  // Also update fw_team_members as baseline fallback
+  try {
+    await supabase.from('fw_team_members').update({
+      default_daily_rate: numRate,
+      default_currency: currency || 'INR'
+    }).eq('id', memberId);
+  } catch (_) {}
+
+  if (typeof window !== 'undefined') {
+    const local = localStorage.getItem(`${LS_MEMBER_RATES_KEY}${workspaceId}`);
+    const map = local ? JSON.parse(local) : {};
+    map[memberId] = numRate;
+    localStorage.setItem(`${LS_MEMBER_RATES_KEY}${workspaceId}`, JSON.stringify(map));
+  }
+}
 
 // ── 1. FREELANCER EVENT PAYOUTS (CREW ASSIGNMENT FINANCE) ───────────────────
 
@@ -118,7 +218,7 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
         id: c.id,
         workspace_id: c.workspace_id || workspaceId,
         member_id: c.team_member_id,
-        member_name: c.member_name || '',
+        member_name: c.team_member_name || c.member_name || '',
         project_id: c.event_id || '',
         sub_event_id: c.sub_event_id || '',
         client_name: c.client_name || 'Wedding Shoot',
@@ -224,6 +324,9 @@ export async function saveOrUpdateEventPayout(
       event_id: payoutData.project_id || null,
       sub_event_id: payoutData.sub_event_id || null,
       team_member_id: payoutData.member_id,
+      team_member_name: payoutData.member_name,
+      client_name: payoutData.client_name,
+      event_name: payoutData.event_name,
       role_name: payoutData.role || 'Crew',
       final_agreed_amount: agreed,
       advance_paid_amount: paid,
@@ -256,7 +359,8 @@ export async function saveOrUpdateEventPayout(
       team_member_name: payload.member_name,
       team_member_id: payload.member_id,
       client_name: payload.client_name,
-      event_name: payload.event_name
+      event_name: payload.event_name,
+      linked_event_id: payload.project_id
     });
   }
 
@@ -276,6 +380,117 @@ export async function saveOrUpdateEventPayout(
   }
 
   return payload;
+}
+
+// ── 1.5 ATOMIC ASSIGNMENT & COMMERCIALS SYNC (FIXES UNASSIGNED REFRESH BUG) ──
+
+export async function assignCrewMemberWithCommercials(params: {
+  workspaceId: string;
+  eventId: string;
+  subEventId?: string;
+  assignmentId?: string;
+  teamMemberId: string;
+  teamMemberName: string;
+  teamMemberPhone?: string;
+  roleName: string;
+  roleShortCode?: string;
+  finalAgreedAmount: number;
+  advancePaidAmount: number;
+  paymentStatus: 'pending' | 'partial' | 'completed';
+  paymentDate?: string;
+  paymentMethod?: string;
+  notes?: string;
+  clientName?: string;
+  eventName?: string;
+}): Promise<{ success: boolean }> {
+  // 1. Try Supabase RPC assign_crew_member_with_commercials
+  try {
+    const { data: rpcData, error: rpcErr } = await supabase.rpc('assign_crew_member_with_commercials', {
+      p_workspace_id: params.workspaceId,
+      p_event_id: params.eventId,
+      p_sub_event_id: params.subEventId || null,
+      p_team_member_id: params.teamMemberId,
+      p_team_member_name: params.teamMemberName,
+      p_team_member_phone: params.teamMemberPhone || '',
+      p_role_name: params.roleName,
+      p_role_short_code: params.roleShortCode || '',
+      p_final_agreed_amount: Number(params.finalAgreedAmount) || 0,
+      p_advance_paid_amount: Number(params.advancePaidAmount) || 0,
+      p_payment_status: params.paymentStatus || 'pending',
+      p_payment_date: params.paymentDate || new Date().toISOString().split('T')[0]
+    });
+
+    if (!rpcErr && rpcData?.success) {
+      await persistAssignmentSlot(params);
+      return { success: true };
+    }
+  } catch (err) {
+    console.warn('[team-finance-sync] assign_crew_member_with_commercials RPC fallback:', err);
+  }
+
+  // 2. Direct persistence fallback
+  await saveOrUpdateEventPayout(params.workspaceId, {
+    member_id: params.teamMemberId,
+    member_name: params.teamMemberName,
+    project_id: params.eventId,
+    sub_event_id: params.subEventId,
+    client_name: params.clientName || 'Wedding Client',
+    event_name: params.eventName || params.roleName || 'Shoot Event',
+    event_date: params.paymentDate || new Date().toISOString().split('T')[0],
+    role: params.roleName,
+    agreed_amount: params.finalAgreedAmount,
+    advance_paid_amount: params.advancePaidAmount,
+    payment_method: params.paymentMethod || 'UPI/Bank Transfer',
+    payment_date: params.paymentDate,
+    notes: params.notes
+  });
+
+  await persistAssignmentSlot(params);
+  return { success: true };
+}
+
+async function persistAssignmentSlot(params: {
+  workspaceId: string;
+  eventId: string;
+  subEventId?: string;
+  assignmentId?: string;
+  teamMemberId: string;
+  roleName: string;
+}) {
+  try {
+    if (params.assignmentId && !params.assignmentId.includes('-role-')) {
+      await supabase
+        .from('fw_assignments')
+        .update({ assigned_member_id: params.teamMemberId })
+        .eq('id', params.assignmentId);
+    } else if (params.subEventId) {
+      const { data: existing } = await supabase
+        .from('fw_assignments')
+        .select('id')
+        .eq('sub_event_id', params.subEventId)
+        .eq('required_role', params.roleName)
+        .maybeSingle();
+
+      if (existing?.id) {
+        await supabase
+          .from('fw_assignments')
+          .update({ assigned_member_id: params.teamMemberId })
+          .eq('id', existing.id);
+      } else {
+        await supabase
+          .from('fw_assignments')
+          .insert([{
+            project_id: params.eventId,
+            sub_event_id: params.subEventId,
+            required_role: params.roleName,
+            assigned_member_id: params.teamMemberId,
+            status: 'pending'
+          }]);
+      }
+    }
+  } catch (err) {
+    console.warn('[team-finance-sync] persistAssignmentSlot error:', err);
+  }
 }
 
 export async function recordPayoutTransaction(
@@ -323,11 +538,11 @@ export async function recordPayoutTransaction(
           id: data.id,
           workspace_id: data.workspace_id || workspaceId,
           member_id: data.team_member_id,
-          member_name: payment.memberName || '',
+          member_name: payment.memberName || data.team_member_name || '',
           project_id: data.event_id,
           sub_event_id: data.sub_event_id,
-          client_name: payment.clientName || 'Wedding Client',
-          event_name: payment.eventName || 'Shoot Event',
+          client_name: payment.clientName || data.client_name || 'Wedding Client',
+          event_name: payment.eventName || data.event_name || 'Shoot Event',
           event_date: data.payment_date || payment.payment_date,
           role: data.role_name || payment.role || 'Crew',
           agreed_amount: Number(data.final_agreed_amount) || 0,
@@ -404,7 +619,8 @@ export async function recordPayoutTransaction(
           team_member_name: payment.memberName || existingPayout.member_name,
           team_member_id: memberId,
           client_name: existingPayout.client_name,
-          event_name: existingPayout.event_name
+          event_name: existingPayout.event_name,
+          linked_event_id: existingPayout.project_id
         });
       }
 

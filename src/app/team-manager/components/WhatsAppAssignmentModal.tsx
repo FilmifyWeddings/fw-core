@@ -8,7 +8,7 @@ import {
   CreditCard, CheckCircle2, ShieldCheck, Tag, FileText, ArrowRight
 } from 'lucide-react';
 import { FWTeamMember, FWProject, FWSubEvent } from '@/types';
-import { saveOrUpdateEventPayout } from '@/lib/team-finance-sync';
+import { assignCrewMemberWithCommercials, fetchWorkspaceMemberRate } from '@/lib/team-finance-sync';
 
 export interface WhatsAppAssignmentModalProps {
   isOpen: boolean;
@@ -51,8 +51,15 @@ export default function WhatsAppAssignmentModal({
   // Initialize or reset on open
   useEffect(() => {
     if (isOpen && member) {
-      const defaultRate = member.default_daily_rate || member.daily_rate || 5000;
-      setAgreedAmount(String(defaultRate));
+      (async () => {
+        const effectiveWsId = workspaceId || (member as any).workspace_id || '';
+        let defaultRate = member.default_daily_rate || member.daily_rate;
+        if (!defaultRate && effectiveWsId) {
+          const wsRate = await fetchWorkspaceMemberRate(effectiveWsId, member.id);
+          if (wsRate > 0) defaultRate = wsRate;
+        }
+        setAgreedAmount(String(defaultRate || 5000));
+      })();
       setAdvancePaid('0');
       setPaymentStatus('pending');
       setPaymentDate(new Date().toISOString().split('T')[0]);
@@ -61,7 +68,7 @@ export default function WhatsAppAssignmentModal({
       setCommercialsSaved(false);
       setCopied(false);
     }
-  }, [isOpen, member]);
+  }, [isOpen, member, workspaceId]);
 
   // Handle Advance change and auto update status
   const handleAdvanceChange = (val: string) => {
@@ -167,20 +174,22 @@ Please confirm your slot.
     setIsSavingCommercials(true);
     try {
       const effectiveWsId = workspaceId || (member as any).workspace_id || '';
-      await saveOrUpdateEventPayout(effectiveWsId, {
-        member_id: member.id,
-        member_name: cleanMemberName,
-        project_id: project?.id || '',
-        sub_event_id: subEvent?.id || '',
-        client_name: clientName,
-        event_name: eventTitle,
-        event_date: subEvent?.event_date || paymentDate,
-        role: role,
-        agreed_amount: numericAgreed,
-        advance_paid_amount: numericAdvance,
-        payment_method: paymentMethod,
-        payment_date: paymentDate,
-        notes: notes || `Assigned via Team Manager for ${clientName} (${eventTitle})`
+      await assignCrewMemberWithCommercials({
+        workspaceId: effectiveWsId,
+        eventId: project?.id || '',
+        subEventId: subEvent?.id || '',
+        teamMemberId: member.id,
+        teamMemberName: cleanMemberName,
+        teamMemberPhone: member.phone_number || member.phone || '',
+        roleName: role,
+        finalAgreedAmount: numericAgreed,
+        advancePaidAmount: numericAdvance,
+        paymentStatus: paymentStatus,
+        paymentDate: paymentDate,
+        paymentMethod: paymentMethod,
+        notes: notes || `Assigned via Team Manager for ${clientName} (${eventTitle})`,
+        clientName: clientName,
+        eventName: eventTitle
       });
 
       setCommercialsSaved(true);

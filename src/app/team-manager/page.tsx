@@ -609,11 +609,39 @@ export default function TeamManagerPage() {
                 agreed_amount: 0 // Can be customized in Member Finance Drawer
               });
             }
-            if (assignmentId.includes('-role-')) {
-              const subEventObj = projects
-                .flatMap(p => p.fw_sub_events || [])
-                .find(se => se.id === activeAssign.sub_event_id);
+            // 1. Check if assignment record already exists in DB for this sub_event & role
+            const { data: existingRow } = await supabase
+              .from('fw_assignments')
+              .select('id')
+              .eq('sub_event_id', activeAssign.sub_event_id)
+              .eq('required_role', activeAssign.required_role)
+              .maybeSingle();
 
+            if (existingRow?.id) {
+              const { error: assignErr } = await supabase
+                .from('fw_assignments')
+                .update({ 
+                  assigned_member_id: memberId,
+                  ...(currentUserId ? { user_id: currentUserId } : {})
+                })
+                .eq('id', existingRow.id);
+
+              if (assignErr) {
+                console.error('[TeamManager] Assignment update error:', assignErr.message);
+              }
+            } else if (!assignmentId.includes('-role-')) {
+              const { error: assignErr } = await supabase
+                .from('fw_assignments')
+                .update({ 
+                  assigned_member_id: memberId,
+                  ...(currentUserId ? { user_id: currentUserId } : {})
+                })
+                .eq('id', assignmentId);
+
+              if (assignErr) {
+                console.error('[TeamManager] Assignment update error:', assignErr.message);
+              }
+            } else {
               const { error: insertErr } = await supabase
                 .from('fw_assignments')
                 .insert([{
@@ -626,19 +654,11 @@ export default function TeamManagerPage() {
                   start_time: subEventObj?.roll_call_time || '10:00',
                   end_time: subEventObj?.dismissal_estimate_time || '18:00',
                   status: 'pending',
+                  ...(currentUserId ? { user_id: currentUserId } : {})
                 }]);
 
               if (insertErr) {
                 console.error('[TeamManager] Insert assignment error:', insertErr.message);
-              }
-            } else {
-              const { error: assignErr } = await supabase
-                .from('fw_assignments')
-                .update({ assigned_member_id: memberId })
-                .eq('id', assignmentId);
-
-              if (assignErr) {
-                console.error('[TeamManager] Assignment update error:', assignErr.message);
               }
             }
           } catch (err) {

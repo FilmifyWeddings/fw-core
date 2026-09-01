@@ -14,7 +14,12 @@ import { supabase } from '@/lib/supabase';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import AddTeamMemberModal from '@/app/team-manager/components/AddTeamMemberModal';
 import TeamMemberFinanceDrawer from './components/TeamMemberFinanceDrawer';
-import { fetchMemberFinancialSummary, TeamFinancialSummary } from '@/lib/team-finance-sync';
+import { 
+  fetchMemberFinancialSummary, 
+  TeamFinancialSummary, 
+  fetchWorkspaceMemberRatesMap, 
+  saveWorkspaceMemberRate 
+} from '@/lib/team-finance-sync';
 
 interface TeamMember {
   id: string;
@@ -100,7 +105,10 @@ export default function WorkspaceTeamPage() {
 
       const effectiveWsId = workspaceId || currentUid;
 
-      // 1. Fetch from workspace_members API / DB
+      // 1. Fetch isolated workspace member rates
+      const wsRatesMap = await fetchWorkspaceMemberRatesMap(effectiveWsId);
+
+      // 2. Fetch from workspace_members API / DB
       let combinedMembers: TeamMember[] = [];
 
       try {
@@ -120,14 +128,14 @@ export default function WorkspaceTeamPage() {
             primary_type: m.primary_type || 'IN_HOUSE',
             avatar_url: m.avatar_url || '',
             status: m.status || 'ACTIVE',
-            default_daily_rate: m.default_daily_rate || 0,
+            default_daily_rate: wsRatesMap[m.id] != null ? wsRatesMap[m.id] : (m.default_daily_rate || 0),
             default_currency: m.default_currency || 'INR',
             permissions: m.member_permissions?.[0] || m.member_permissions || undefined,
           }));
         }
       } catch (_) {}
 
-      // 2. Also merge from fw_team_members for backwards compatibility
+      // 3. Also merge from fw_team_members for backwards compatibility
       const { data: fwData } = await supabase
         .from('fw_team_members')
         .select('*')
@@ -150,7 +158,7 @@ export default function WorkspaceTeamPage() {
               primary_type: f.primary_type || 'IN_HOUSE',
               avatar_url: f.avatar_url || '',
               status: 'ACTIVE',
-              default_daily_rate: f.default_daily_rate || 0,
+              default_daily_rate: wsRatesMap[f.id] != null ? wsRatesMap[f.id] : (f.default_daily_rate || 0),
               default_currency: f.default_currency || 'INR',
             });
           }
@@ -232,15 +240,25 @@ export default function WorkspaceTeamPage() {
         user_id: currentUid,
       };
 
+      let savedMemberId = memberToEdit?.id;
+
       if (memberToEdit) {
         await supabase
           .from('fw_team_members')
           .update(fwPayload)
           .eq('id', memberToEdit.id);
       } else {
-        await supabase
+        const { data: insertedData } = await supabase
           .from('fw_team_members')
-          .insert([fwPayload]);
+          .insert([fwPayload])
+          .select('id')
+          .maybeSingle();
+        if (insertedData?.id) savedMemberId = insertedData.id;
+      }
+
+      // Save isolated studio member rate
+      if (savedMemberId && memberData.default_daily_rate != null) {
+        await saveWorkspaceMemberRate(effectiveWsId, savedMemberId, Number(memberData.default_daily_rate), memberData.default_currency || 'INR');
       }
 
       // 2. Insert/Update in workspace_members API for Multi-Tenant RBAC
@@ -569,8 +587,14 @@ export default function WorkspaceTeamPage() {
                     {/* Top Row: Avatar & Details */}
                     <div className="space-y-3">
                       <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-12 h-12 rounded-2xl bg-zinc-100 border border-zinc-200 overflow-hidden flex items-center justify-center shrink-0">
+                        <div 
+                          className="flex items-center gap-3 min-w-0 cursor-pointer group/title"
+                          onClick={() => {
+                            setSelectedFinanceMember(member);
+                            setIsFinanceDrawerOpen(true);
+                          }}
+                        >
+                          <div className="w-12 h-12 rounded-2xl bg-zinc-100 border border-zinc-200 overflow-hidden flex items-center justify-center shrink-0 group-hover/title:scale-105 transition">
                             {member.avatar_url ? (
                               <img src={member.avatar_url} alt={member.name} className="w-full h-full object-cover" />
                             ) : (
@@ -581,7 +605,7 @@ export default function WorkspaceTeamPage() {
                           </div>
 
                           <div className="min-w-0">
-                            <h3 className="text-sm font-black text-zinc-900 truncate leading-tight">{member.name}</h3>
+                            <h3 className="text-sm font-black text-zinc-900 truncate leading-tight group-hover/title:text-amber-700 transition">{member.name}</h3>
                             
                             {/* Member Type Badges */}
                             <div className="flex flex-wrap gap-1 mt-1">
@@ -702,18 +726,20 @@ export default function WorkspaceTeamPage() {
                         </span>
                       </div>
 
-                      {/* Action Row: Open Finance Drawer */}
+                      {/* Action Row: Open Finance & Bookings Details Drawer */}
                       <button
                         type="button"
                         onClick={() => {
                           setSelectedFinanceMember(member);
                           setIsFinanceDrawerOpen(true);
                         }}
-                        className="w-full py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-black shadow-xs flex items-center justify-center gap-1.5 transition active:scale-98 cursor-pointer"
+                        className="w-full py-2.5 px-3.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-black shadow-xs flex items-center justify-between transition active:scale-98 cursor-pointer group/btn"
                       >
-                        <IndianRupee className="w-3.5 h-3.5 text-amber-300" />
-                        <span>Details / Finance Ledger</span>
-                        <ChevronRight className="w-3.5 h-3.5 text-slate-400 ml-auto" />
+                        <div className="flex items-center gap-2">
+                          <Calendar className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Details</span>
+                        </div>
+                        <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover/btn:translate-x-0.5 transition" />
                       </button>
                     </div>
                   </div>
