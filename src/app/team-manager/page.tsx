@@ -712,7 +712,7 @@ export default function TeamManagerPage() {
                 .from('fw_assignments')
                 .update({ 
                   assigned_member_id: memberId,
-                  ...(currentUserId ? { user_id: currentUserId } : {})
+                  ...(currentUserId ? { user_id: currentUserId, workspace_id: currentUserId } : {})
                 })
                 .eq('id', existingRow.id);
 
@@ -724,7 +724,7 @@ export default function TeamManagerPage() {
                 .from('fw_assignments')
                 .update({ 
                   assigned_member_id: memberId,
-                  ...(currentUserId ? { user_id: currentUserId } : {})
+                  ...(currentUserId ? { user_id: currentUserId, workspace_id: currentUserId } : {})
                 })
                 .eq('id', assignmentId);
 
@@ -744,7 +744,7 @@ export default function TeamManagerPage() {
                   start_time: subEventObj?.roll_call_time || '10:00',
                   end_time: subEventObj?.dismissal_estimate_time || '18:00',
                   status: 'pending',
-                  ...(currentUserId ? { user_id: currentUserId } : {})
+                  ...(currentUserId ? { user_id: currentUserId, workspace_id: currentUserId } : {})
                 }]);
 
               if (insertErr) {

@@ -126,40 +126,77 @@ export default function TeamMemberFinanceDrawer({
       // 1. ALWAYS load event payouts for all team members (assigned shoots from Team Manager)
       let eventPayouts = await fetchMemberEventPayouts(workspaceId, member.id);
 
-      // 2. Direct Fallback query from fw_assignments & fw_sub_events if empty or incomplete
+      // 2. Direct Fallback query from fw_crew_assignments / fw_assignments & fw_sub_events
       if (!eventPayouts || eventPayouts.length === 0) {
         try {
-          const { data: assignmentsData } = await supabase
-            .from('fw_assignments')
-            .select(`
-              id,
-              required_role,
-              assigned_member_id,
-              agreed_amount,
-              advance_amount,
-              paid_amount,
-              balance_amount,
-              payment_status,
-              sub_event_id,
-              created_at,
-              updated_at,
-              fw_sub_events (
-                id,
-                project_id,
-                event_title,
-                event_date,
-                start_time,
-                end_time,
-                venue,
-                location,
-                client_name,
-                couple_name
-              )
-            `)
-            .eq('assigned_member_id', member.id);
+          let rawData: any[] | null = null;
+          
+          // A. Try fw_crew_assignments table / view with workspace_id filter
+          try {
+            const { data: crewData } = await supabase
+              .from('fw_crew_assignments')
+              .select('*, fw_sub_events(*)')
+              .eq('member_id', member.id)
+              .eq('workspace_id', workspaceId);
 
-          if (assignmentsData && assignmentsData.length > 0) {
-            const fallbackPayouts: TeamEventPayout[] = assignmentsData.map((a: any) => {
+            if (crewData && crewData.length > 0) {
+              rawData = crewData.map((c: any) => ({
+                id: c.id,
+                required_role: c.role || c.required_role || 'Crew',
+                assigned_member_id: c.member_id || member.id,
+                agreed_amount: c.agreed_fee || c.agreed_amount || c.rate || 0,
+                advance_amount: c.advance_amount || c.paid_amount || 0,
+                paid_amount: c.paid_amount || c.advance_amount || 0,
+                balance_amount: c.balance_amount || 0,
+                payment_status: c.payment_status || 'PENDING',
+                sub_event_id: c.sub_event_id,
+                workspace_id: c.workspace_id,
+                created_at: c.created_at,
+                updated_at: c.updated_at,
+                fw_sub_events: c.fw_sub_events
+              }));
+            }
+          } catch (_) {}
+
+          // B. Fallback to fw_assignments table with workspace isolation
+          if (!rawData || rawData.length === 0) {
+            const { data: assignmentsData } = await supabase
+              .from('fw_assignments')
+              .select(`
+                id,
+                required_role,
+                assigned_member_id,
+                agreed_amount,
+                advance_amount,
+                paid_amount,
+                balance_amount,
+                payment_status,
+                sub_event_id,
+                workspace_id,
+                created_at,
+                updated_at,
+                fw_sub_events (
+                  id,
+                  project_id,
+                  event_title,
+                  event_date,
+                  start_time,
+                  end_time,
+                  venue,
+                  location,
+                  client_name,
+                  couple_name
+                )
+              `)
+              .eq('assigned_member_id', member.id);
+
+            if (assignmentsData && assignmentsData.length > 0) {
+              rawData = assignmentsData.filter((a: any) => !a.workspace_id || a.workspace_id === workspaceId);
+            }
+          }
+
+          if (rawData && rawData.length > 0) {
+            const fallbackPayouts: TeamEventPayout[] = rawData.map((a: any) => {
               const se = a.fw_sub_events;
               const defaultDailyRate = Number(member.default_daily_rate) || 0;
               const rawAgreed = Number(a.agreed_amount) || 0;
@@ -174,7 +211,7 @@ export default function TeamMemberFinanceDrawer({
 
               return {
                 id: a.id,
-                workspace_id: workspaceId,
+                workspace_id: a.workspace_id || workspaceId,
                 member_id: member.id,
                 member_name: member.name || '',
                 project_id: se?.project_id || '',

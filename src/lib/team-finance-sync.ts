@@ -256,10 +256,32 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
     const isStrictUuid = (val: any): boolean => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val.trim());
     if (isStrictUuid(workspaceId) && isStrictUuid(memberId)) {
       try {
-        const { data: ledgerRows, error: ledgerErr } = await supabase.rpc('get_member_complete_commercial_ledger', {
-          p_workspace_id: workspaceId,
-          p_member_id: memberId
-        });
+        let ledgerRows: any[] | null = null;
+        let ledgerErr: any = null;
+
+        // Try primary signature (target_member_id, target_workspace_id)
+        try {
+          const res = await supabase.rpc('get_member_complete_commercial_ledger', {
+            target_member_id: memberId,
+            target_workspace_id: workspaceId
+          });
+          ledgerRows = res.data;
+          ledgerErr = res.error;
+        } catch (_) {}
+
+        // Fallback to legacy signature (p_workspace_id, p_member_id)
+        if (!ledgerRows || (ledgerErr && ledgerErr.code !== 'PGRST116')) {
+          try {
+            const res2 = await supabase.rpc('get_member_complete_commercial_ledger', {
+              p_workspace_id: workspaceId,
+              p_member_id: memberId
+            });
+            if (res2.data) {
+              ledgerRows = res2.data;
+              ledgerErr = res2.error;
+            }
+          } catch (_) {}
+        }
 
         if (!ledgerErr && ledgerRows && Array.isArray(ledgerRows) && ledgerRows.length > 0) {
           const filtered = ledgerRows.filter((r: any) => r.client_name && r.client_name !== 'Wedding Client' && r.client_name !== 'Wedding Shoot');
