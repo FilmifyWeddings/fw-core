@@ -23,6 +23,7 @@ import TeamSettingsModal from './components/TeamSettingsModal';
 import MonthListView from './components/MonthListView';
 import Professional3DCalendar from './components/Professional3DCalendar';
 import WhatsAppAssignmentModal from './components/WhatsAppAssignmentModal';
+import RoleAssignDropdown from './components/RoleAssignDropdown';
 import { EventBlockData } from './components/EventBlock';
 import { saveOrUpdateEventPayout, fetchMemberFinancialSummary, fetchWorkspaceMemberRatesMap, TeamFinancialSummary, unassignCrewSlot } from '@/lib/team-finance-sync';
 import TeamMemberFinanceDrawer from '../workspace/team/components/TeamMemberFinanceDrawer';
@@ -223,6 +224,7 @@ export default function TeamManagerPage() {
   const [selectedRoleFilter, setSelectedRoleFilter] = useState<string>('All');
   const [instantAlerts, setInstantAlerts] = useState<boolean>(true);
   const [isUnifiedFilterOpen, setIsUnifiedFilterOpen] = useState<boolean>(false);
+  const [isCardViewTbdExpanded, setIsCardViewTbdExpanded] = useState<boolean>(false);
   const [unifiedFilters, setUnifiedFilters] = useState<UnifiedFilterState>({
     monthYear: 'all',
     startDate: '',
@@ -1066,6 +1068,22 @@ export default function TeamManagerPage() {
     });
   }, [projects, activeTab, searchQuery, selectedRoleFilter, unifiedFilters]);
 
+  // Flatten TBD / Date Not Fixed shoots for Card View & Month View consistency
+  const tbdProjectsShoots = useMemo(() => {
+    const list: { project: FWProject; subEvent: FWSubEvent }[] = [];
+    projects.forEach((p) => {
+      if (p.is_archived) return;
+      (p.fw_sub_events || []).forEach((se) => {
+        const isTbd = Boolean((se as any).is_date_tbd) || !se.event_date || se.event_date.toLowerCase() === 'tbd';
+        const d = se.event_date ? new Date(se.event_date) : null;
+        if (isTbd || !d || isNaN(d.getTime())) {
+          list.push({ project: p, subEvent: se });
+        }
+      });
+    });
+    return list;
+  }, [projects]);
+
   if (!isOwner && tmAccess === 'NONE') {
     return (
       <div className="min-h-screen bg-[#FAF9F6] p-8 flex items-center justify-center">
@@ -1298,6 +1316,153 @@ export default function TeamManagerPage() {
               </div>
             ) : (
               <>
+                {/* ─── TOP COLLAPSIBLE REDDISH "DATE NOT FIXED (TBD)" SECTION IN CARDS VIEW ─── */}
+                {tbdProjectsShoots.length > 0 && (
+                  <div className="bg-[#FFF5F5] rounded-3xl border border-rose-200/90 p-4 md:p-6 space-y-4 shadow-sm animate-in fade-in duration-300">
+                    {/* TBD ACCORDION TOGGLE BAR */}
+                    <div
+                      onClick={() => setIsCardViewTbdExpanded(!isCardViewTbdExpanded)}
+                      className="flex items-center justify-between bg-gradient-to-r from-rose-950 via-rose-900 to-rose-950 text-white px-5 py-3.5 rounded-2xl border border-rose-800 cursor-pointer hover:border-rose-400/80 transition shadow-md select-none"
+                      title="Click to Hide or Unhide Date Not Fixed Shoots"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-white/10 text-rose-300 flex items-center justify-center font-black border border-white/10 shadow-inner">
+                          <AlertCircle className="w-5 h-5 text-rose-300" />
+                        </div>
+                        <div>
+                          <h3 className="text-base md:text-lg font-black text-white tracking-tight flex items-center gap-2">
+                            <span>Date Not Fixed (TBD)</span>
+                            <span className="px-2.5 py-0.5 rounded-full bg-rose-500/30 text-rose-200 text-xs font-bold border border-rose-400/30">
+                              Action Required
+                            </span>
+                          </h3>
+                          <span className="text-xs font-bold text-rose-200/80">
+                            {tbdProjectsShoots.length} Shoot{tbdProjectsShoots.length === 1 ? '' : 's'} Pending Date (Click to {isCardViewTbdExpanded ? 'Hide' : 'Show'})
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <span className="px-3 py-1 rounded-full bg-white/10 text-rose-200 text-xs font-black border border-white/10 backdrop-blur-sm">
+                          {tbdProjectsShoots.length} Events
+                        </span>
+                        <ChevronDown
+                          className={`w-5 h-5 text-rose-200 transition-transform duration-200 ${
+                            isCardViewTbdExpanded ? 'rotate-180' : ''
+                          }`}
+                        />
+                      </div>
+                    </div>
+
+                    {/* EXPANDED TBD CARDS (CLICK FIX DATE TO OPEN MODAL) */}
+                    {isCardViewTbdExpanded && (
+                      <div className="space-y-4 pt-1">
+                        {tbdProjectsShoots.map(({ project, subEvent }) => {
+                          const assignments = (subEvent.fw_assignments || []).map((a) => ({
+                            ...a,
+                            fw_team_members: a.fw_team_members || (a.assigned_member_id ? teamMembers.find((m) => m.id === a.assigned_member_id) : null),
+                          }));
+                          const assignedCount = assignments.filter((a) => a.assigned_member_id).length;
+                          const totalSlots = assignments.length;
+
+                          return (
+                            <div
+                              key={subEvent.id}
+                              className="bg-white rounded-2xl border-2 border-rose-200/90 hover:border-rose-400 shadow-xs hover:shadow-md transition-all p-5 flex flex-col lg:flex-row items-stretch gap-5"
+                            >
+                              {/* DATE BADGE COLUMN */}
+                              <div
+                                className="bg-gradient-to-b from-rose-600 via-rose-700 to-rose-900 w-full lg:w-32 rounded-xl p-3.5 shrink-0 flex lg:flex-col items-center justify-between text-center text-white shadow-xs"
+                              >
+                                <div className="flex lg:flex-col items-center gap-2 lg:gap-0">
+                                  <span className="text-xs font-bold text-rose-200/90 uppercase tracking-wider">
+                                    DATE
+                                  </span>
+                                  <span className="text-2xl lg:text-3xl font-black text-white leading-none my-1 tracking-wider">
+                                    TBD
+                                  </span>
+                                  <span className="text-[10px] font-black text-rose-200/90 uppercase tracking-wider">
+                                    NOT FIXED
+                                  </span>
+                                </div>
+                                <div className="px-2.5 py-1 rounded-full bg-white/20 backdrop-blur-md text-[10px] font-black border border-white/20 mt-1">
+                                  {assignedCount}/{totalSlots} Crew
+                                </div>
+                              </div>
+
+                              {/* MAIN CONTENT AREA */}
+                              <div className="flex-1 space-y-3.5">
+                                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-rose-100 pb-3">
+                                  <div className="flex items-center gap-3 flex-wrap">
+                                    <span className="text-rose-950 font-black text-sm md:text-base tracking-tight">
+                                      {project.client_name}
+                                    </span>
+
+                                    <span className="text-rose-300 text-sm font-light select-none">·</span>
+
+                                    <h4 className="text-sm md:text-base font-bold text-rose-700 tracking-tight">
+                                      {subEvent.event_title}
+                                    </h4>
+
+                                    <span className="px-2 py-0.5 rounded-md bg-rose-100 border border-rose-300 text-rose-800 font-extrabold text-[10px] flex items-center gap-1">
+                                      <AlertCircle className="w-3 h-3 text-rose-600" />
+                                      <span>Date Not Fixed</span>
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingProject(project);
+                                        setIsAddProjectOpen(true);
+                                      }}
+                                      className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black transition shadow-xs cursor-pointer flex items-center gap-1.5"
+                                    >
+                                      <Calendar className="w-3.5 h-3.5" />
+                                      <span>Fix Shoot Date</span>
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* CREW ALLOCATION AVATARS */}
+                                <div>
+                                  <span className="text-[10px] font-black text-rose-400 uppercase tracking-wider block mb-1.5">
+                                    Assigned Crew Roster (Click avatar to assign team member & dispatch WhatsApp)
+                                  </span>
+                                  <div className="flex items-center gap-4 flex-wrap pt-1">
+                                    {assignments.map((assignment) => (
+                                      <RoleAssignDropdown
+                                        key={assignment.id}
+                                        assignment={assignment}
+                                        subEventId={subEvent.id}
+                                        projectId={project.id}
+                                        teamMembers={teamMembers}
+                                        onAssignMember={handleAssignMember}
+                                        onAddNewMember={(info) => {
+                                          setSelectedRoleForNewMember(info.role);
+                                          setPendingAssignmentInfo({
+                                            assignmentId: info.assignmentId,
+                                            subEventId: info.subEventId,
+                                            projectId: info.projectId,
+                                            role: info.role,
+                                          });
+                                          setIsAddMemberOpen(true);
+                                        }}
+                                        variant="avatar"
+                                      />
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* 1. DESKTOP / PC CARDS VIEW (RESTORED MASTER CLIENT CONTAINER + VERTICAL GRADIENT DATE BLOCK) */}
                 <div className="hidden lg:block space-y-8">
                   {filteredProjects.map((project) => {

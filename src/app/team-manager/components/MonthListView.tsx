@@ -148,10 +148,8 @@ export default function MonthListView({
           if (!hasMember) return;
         }
 
-        const isOvernight = Boolean(
-          (se as any).is_overnight || 
-          (se.roll_call_time && se.dismissal_estimate_time && se.dismissal_estimate_time < se.roll_call_time)
-        );
+        // Accurate overnight check: strictly when user explicitly marks is_overnight
+        const isOvernight = Boolean((se as any).is_overnight === true || (se as any).is_overnight === 'true');
 
         // Smart Status Filters
         if (statusFilter === 'unassigned' && assignedCount === totalSlots && totalSlots > 0) return;
@@ -195,29 +193,41 @@ export default function MonthListView({
         if (isPast) {
           if (!pastGroups[monthKey]) {
             pastGroups[monthKey] = [];
-            pastOrder.push(monthKey);
           }
           pastGroups[monthKey].push(item);
         } else {
           if (!activeGroups[monthKey]) {
             activeGroups[monthKey] = [];
-            activeOrder.push(monthKey);
           }
           activeGroups[monthKey].push(item);
         }
       });
     });
 
-    // Sort items within each month chronologically
+    // 1. Sort items within each month chronologically
     Object.keys(activeGroups).forEach(k => activeGroups[k].sort((a, b) => a.sortTimestamp - b.sortTimestamp));
     Object.keys(pastGroups).forEach(k => pastGroups[k].sort((a, b) => a.sortTimestamp - b.sortTimestamp));
+
+    // 2. Sort active month groups STRICTLY chronologically ascending (e.g. Sep 2026 -> Oct 2026 -> Nov 2026 -> Jan 2027)
+    const sortedActiveOrder = Object.keys(activeGroups).sort((a, b) => {
+      const tA = activeGroups[a][0]?.sortTimestamp || 0;
+      const tB = activeGroups[b][0]?.sortTimestamp || 0;
+      return tA - tB;
+    });
+
+    // 3. Sort past month groups descending (most recent past month first)
+    const sortedPastOrder = Object.keys(pastGroups).sort((a, b) => {
+      const tA = pastGroups[a][0]?.sortTimestamp || 0;
+      const tB = pastGroups[b][0]?.sortTimestamp || 0;
+      return tB - tA;
+    });
 
     return {
       tbdEvents: tbdList,
       activeMonthGroups: activeGroups,
       pastMonthGroups: pastGroups,
-      activeMonthOrder: activeOrder,
-      pastMonthOrder: pastOrder,
+      activeMonthOrder: sortedActiveOrder,
+      pastMonthOrder: sortedPastOrder,
     };
   }, [projects, teamMembers, searchQuery, selectedRoleFilter, statusFilter, selectedPmFilter, selectedMemberFilter, currentMonthYearId]);
 
@@ -526,10 +536,8 @@ export default function MonthListView({
                   {items.map(({ subEvent, project, dateObj }) => {
                     const projectGradient = getGradientByProjectId(project.id || project.client_name);
 
-                    const isOvernightShoot = Boolean(
-                      (subEvent as any).is_overnight || 
-                      (subEvent.roll_call_time && subEvent.dismissal_estimate_time && subEvent.dismissal_estimate_time < subEvent.roll_call_time)
-                    );
+                    // Strictly check explicit is_overnight flag
+                    const isOvernightShoot = Boolean((subEvent as any).is_overnight === true || (subEvent as any).is_overnight === 'true');
                     const endDateObj = isOvernightShoot && (subEvent as any).end_date ? new Date((subEvent as any).end_date) : null;
 
                     let dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
@@ -653,72 +661,177 @@ export default function MonthListView({
         })
       )}
 
-      {/* ─── 3. COMPLETED / PAST EVENTS SECTION (COLLAPSIBLE ACCORDION ARCHIVE) ─── */}
+      {/* ─── 3. COMPLETED / PAST EVENTS SECTION (COLLAPSIBLE ACCORDION LUXURY GREY CARDS) ─── */}
       {pastMonthOrder.length > 0 && (
         <div className="pt-4">
-          <div className="bg-stone-100/70 rounded-3xl border border-stone-200/90 p-4 md:p-6 space-y-4">
+          <div className="bg-slate-100/80 rounded-3xl border border-slate-200/90 p-4 md:p-6 space-y-4">
             {/* ACCORDION TOGGLE BAR */}
             <div
               onClick={() => setIsPastSectionExpanded(!isPastSectionExpanded)}
-              className="flex items-center justify-between bg-stone-200/80 hover:bg-stone-300/80 text-stone-800 px-5 py-3.5 rounded-2xl border border-stone-300/80 cursor-pointer transition select-none shadow-2xs"
+              className="flex items-center justify-between bg-slate-800 hover:bg-slate-900 text-white px-5 py-3.5 rounded-2xl border border-slate-700 cursor-pointer transition select-none shadow-md"
+              title="Click to Hide or Unhide Past & Completed Shoots"
             >
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-stone-300 text-stone-700 flex items-center justify-center font-black">
+                <div className="w-9 h-9 rounded-xl bg-white/10 text-slate-300 flex items-center justify-center font-black">
                   <Calendar className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm md:text-base font-black text-stone-900 tracking-tight">
+                  <h3 className="text-sm md:text-base font-black text-white tracking-tight">
                     📅 Past & Completed Shoots (Archived View)
                   </h3>
-                  <span className="text-xs font-semibold text-stone-500">
-                    {pastMonthOrder.length} Past Month{pastMonthOrder.length === 1 ? '' : 's'} Recorded
+                  <span className="text-xs font-semibold text-slate-300">
+                    {pastMonthOrder.length} Past Month{pastMonthOrder.length === 1 ? '' : 's'} Recorded (Click to {isPastSectionExpanded ? 'Hide' : 'Show'})
                   </span>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <span className="px-2.5 py-1 rounded-full bg-stone-300/80 text-stone-700 text-xs font-black">
-                  {pastMonthOrder.reduce((acc, k) => acc + pastMonthGroups[k].length, 0)} Total Past Shoots
+              <div className="flex items-center gap-3">
+                <span className="px-3 py-1 rounded-full bg-white/10 text-slate-200 text-xs font-black border border-white/10">
+                  {pastMonthOrder.reduce((acc, k) => acc + pastMonthGroups[k].length, 0)} Past Shoots
                 </span>
                 <ChevronDown
-                  className={`w-5 h-5 text-stone-600 transition-transform duration-200 ${
+                  className={`w-5 h-5 text-slate-300 transition-transform duration-200 ${
                     isPastSectionExpanded ? 'rotate-180' : ''
                   }`}
                 />
               </div>
             </div>
 
-            {/* EXPANDED PAST MONTHS */}
+            {/* EXPANDED PAST MONTHS (FULL LUXURY GREY-THEMED CARDS) */}
             {isPastSectionExpanded && (
-              <div className="space-y-4 pt-2">
+              <div className="space-y-6 pt-2">
                 {pastMonthOrder.map((monthKey) => {
                   const items = pastMonthGroups[monthKey];
                   return (
-                    <div key={monthKey} className="bg-white/80 rounded-2xl border border-stone-200 p-4 space-y-3 opacity-80 hover:opacity-100 transition">
-                      <div className="flex items-center justify-between border-b border-stone-100 pb-2">
-                        <span className="font-black text-stone-900 text-sm">{monthKey}</span>
-                        <span className="text-xs font-bold text-stone-500">{items.length} Shoots</span>
+                    <div key={monthKey} className="bg-white rounded-3xl border border-slate-200 p-4 md:p-6 space-y-4 shadow-sm">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <div className="flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full bg-slate-400" />
+                          <span className="font-black text-slate-900 text-base">{monthKey}</span>
+                        </div>
+                        <span className="text-xs font-extrabold text-slate-500 bg-slate-100 px-3 py-1 rounded-full">{items.length} Completed Shoots</span>
                       </div>
 
-                      <div className="space-y-2.5">
+                      <div className="space-y-4">
                         {items.map(({ subEvent, project, dateObj }) => {
+                          const isOvernightShoot = Boolean((subEvent as any).is_overnight === true || (subEvent as any).is_overnight === 'true');
+                          const endDateObj = isOvernightShoot && (subEvent as any).end_date ? new Date((subEvent as any).end_date) : null;
+
+                          let dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+                          let monthAbbr = dateObj.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+                          let dayNumber = dateObj.getDate().toString().padStart(2, '0');
+                          let yearStr = dateObj.getFullYear().toString();
+
+                          if (isOvernightShoot && endDateObj && !isNaN(endDateObj.getTime())) {
+                            const sDay = dateObj.getDate().toString().padStart(2, '0');
+                            const eDay = endDateObj.getDate().toString().padStart(2, '0');
+                            dayNumber = `${sDay}-${eDay}`;
+                          }
+
                           const assignments = resolveSubEventAssignments(subEvent, teamMembers);
+                          const assignedCount = assignments.filter((a) => a.assigned_member_id).length;
+                          const totalSlots = assignments.length;
+
                           return (
-                            <div key={subEvent.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 bg-stone-50 rounded-xl border border-stone-200/70 text-xs">
-                              <div>
-                                <span className="font-black text-stone-900 mr-2">{project.client_name}</span>
-                                <span className="text-stone-600 font-semibold">({subEvent.event_title})</span>
-                                <span className="block text-[11px] text-stone-500 font-medium">
-                                  📅 {dateObj.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}
-                                </span>
+                            <div
+                              key={subEvent.id}
+                              className="bg-slate-50/70 rounded-2xl border-2 border-slate-200 hover:border-slate-300 shadow-2xs hover:shadow-xs transition-all p-5 flex flex-col lg:flex-row items-stretch gap-5"
+                            >
+                              {/* DATE BADGE COLUMN (SLATE / GREY THEME) */}
+                              <div
+                                className="bg-gradient-to-b from-slate-600 via-slate-700 to-slate-800 w-full lg:w-32 rounded-xl p-3.5 shrink-0 flex lg:flex-col items-center justify-between text-center text-white shadow-xs"
+                              >
+                                <div className="flex lg:flex-col items-center gap-2 lg:gap-0">
+                                  <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                                    {dayName}
+                                  </span>
+                                  <span className="text-2xl lg:text-3xl font-black text-white leading-none my-1">
+                                    {dayNumber}
+                                  </span>
+                                  <span className="text-xs font-black text-slate-200 uppercase tracking-wider">
+                                    {monthAbbr} {yearStr}
+                                  </span>
+                                </div>
+                                <div className="px-2.5 py-1 rounded-full bg-white/20 backdrop-blur-md text-[10px] font-black border border-white/20 mt-1">
+                                  {assignedCount}/{totalSlots} Crew
+                                </div>
                               </div>
 
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                {assignments.map(a => (
-                                  <span key={a.id} className="px-2 py-0.5 rounded bg-white text-[10px] font-extrabold text-stone-700 border border-stone-200">
-                                    {a.required_role}: {a.fw_team_members?.name || 'Unassigned'}
+                              {/* MAIN CONTENT AREA */}
+                              <div className="flex-1 space-y-3.5">
+                                {/* HEADER: CLIENT NAME & SUB EVENT TITLE */}
+                                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 pb-3">
+                                  <div className="flex items-center gap-3 flex-wrap">
+                                    <span className="text-slate-900 font-black text-sm md:text-base tracking-tight">
+                                      {project.client_name}
+                                    </span>
+
+                                    <span className="text-slate-300 text-sm font-light select-none">·</span>
+
+                                    <h4 className="text-sm md:text-base font-bold text-slate-700 tracking-tight">
+                                      {subEvent.event_title}
+                                    </h4>
+
+                                    <span className="px-2 py-0.5 rounded-md bg-slate-200/80 border border-slate-300 text-slate-700 font-extrabold text-[10px] flex items-center gap-1">
+                                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                      <span>Completed</span>
+                                    </span>
+
+                                    {isOvernightShoot && (
+                                      <span className="px-2 py-0.5 rounded-md bg-slate-200 border border-slate-300 text-slate-700 font-extrabold text-[10px] flex items-center gap-1">
+                                        <Moon className="w-3 h-3" />
+                                        <span>Overnight</span>
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {/* LOCATION & TIME */}
+                                  <div className="flex items-center gap-3 text-xs font-bold text-slate-600 flex-wrap">
+                                    {subEvent.roll_call_time && (
+                                      <div className="flex items-center gap-1.5 text-slate-700 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
+                                        <Clock className="w-4 h-4 text-slate-500 shrink-0" />
+                                        <span>
+                                          {format12HourTime(subEvent.roll_call_time)}
+                                          {subEvent.dismissal_estimate_time
+                                            ? ` → ${format12HourTime(subEvent.dismissal_estimate_time)}`
+                                            : ''}
+                                        </span>
+                                      </div>
+                                    )}
+                                    {subEvent.venue_name && (
+                                      <a
+                                        href={subEvent.venue_map_link || `https://maps.google.com/?q=${encodeURIComponent(subEvent.venue_name)}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex items-center gap-1.5 text-slate-700 hover:text-slate-900 font-bold bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs transition hover:border-slate-400"
+                                      >
+                                        <MapPin className="w-4 h-4 text-emerald-600 shrink-0" />
+                                        <span className="truncate max-w-[200px]">{subEvent.venue_name}</span>
+                                      </a>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* CREW ALLOCATION AVATARS */}
+                                <div>
+                                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1.5">
+                                    Assigned Crew Roster
                                   </span>
-                                ))}
+                                  <div className="flex items-center gap-4 flex-wrap pt-1">
+                                    {assignments.map((assignment) => (
+                                      <RoleAssignDropdown
+                                        key={assignment.id}
+                                        assignment={assignment}
+                                        subEventId={subEvent.id}
+                                        projectId={project.id}
+                                        teamMembers={teamMembers}
+                                        onAssignMember={onAssignMember}
+                                        onAddNewMember={onAddNewMember}
+                                        variant="avatar"
+                                      />
+                                    ))}
+                                  </div>
+                                </div>
                               </div>
                             </div>
                           );
