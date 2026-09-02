@@ -16,6 +16,8 @@ import {
   fetchWorkspaceEventTypes, 
   fetchWorkspaceCrewRoles, 
   saveWorkspaceEventType, 
+  updateWorkspaceEventType,
+  deleteWorkspaceEventType,
   saveWorkspaceCrewRole, 
   DEFAULT_EVENT_TYPES 
 } from '@/lib/workspace-settings';
@@ -126,6 +128,9 @@ export function MasterSettingsHub({ isOpen, onClose, workspaceId, onStagesUpdate
   const [crewRoles, setCrewRoles] = useState<WorkspaceCrewRole[]>([]);
   const [newEventTypeName, setNewEventTypeName] = useState('');
   const [newEventTypeCat, setNewEventTypeCat] = useState('Wedding');
+  const [editingEventTypeId, setEditingEventTypeId] = useState<string | null>(null);
+  const [editingEventTypeName, setEditingEventTypeName] = useState('');
+  const [editingEventTypeCat, setEditingEventTypeCat] = useState('Wedding');
   const [newRoleName, setNewRoleName] = useState('');
   const [newRoleCode, setNewRoleCode] = useState('');
   const [newRoleCat, setNewRoleCat] = useState('Photography');
@@ -261,25 +266,24 @@ export function MasterSettingsHub({ isOpen, onClose, workspaceId, onStagesUpdate
     if (created) {
       const updated = [...eventTypes.filter(e => e.name.toLowerCase() !== clean.toLowerCase()), created];
       setEventTypes(updated);
-      try {
-        localStorage.setItem(`wg_custom_event_types_${workspaceId}`, JSON.stringify(updated));
-        window.dispatchEvent(new Event('workspace_event_types_updated'));
-      } catch (_) {}
       setNewEventTypeName('');
+    }
+  };
+
+  const handleSaveEditEventType = async (id: string, originalName: string) => {
+    if (!editingEventTypeName.trim()) return;
+    const clean = editingEventTypeName.trim();
+    const updated = await updateWorkspaceEventType(id, clean, editingEventTypeCat, workspaceId);
+    if (updated) {
+      setEventTypes(prev => prev.map(e => (e.id === id || e.name === originalName) ? { ...e, name: clean, category: editingEventTypeCat } : e));
+      setEditingEventTypeId(null);
     }
   };
 
   const handleDeleteEventType = async (id: string, name: string) => {
     if (!confirm(`Are you sure you want to delete function '${name}'?`)) return;
-    try {
-      await supabase.from('workspace_event_types').delete().eq('workspace_id', workspaceId).eq('name', name);
-    } catch (_) {}
-    const updated = eventTypes.filter(e => e.id !== id && e.name.toLowerCase() !== name.toLowerCase());
-    setEventTypes(updated);
-    try {
-      localStorage.setItem(`wg_custom_event_types_${workspaceId}`, JSON.stringify(updated));
-      window.dispatchEvent(new Event('workspace_event_types_updated'));
-    } catch (_) {}
+    await deleteWorkspaceEventType(id, workspaceId, name);
+    setEventTypes(prev => prev.filter(e => e.id !== id && e.name.toLowerCase() !== name.toLowerCase()));
   };
 
   // --- Crew Roles & Short Codes Management ---
@@ -875,37 +879,91 @@ export function MasterSettingsHub({ isOpen, onClose, workspaceId, onStagesUpdate
                           <span>Auto-synced across system</span>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          {eventTypes.map((ev) => (
-                            <div 
-                              key={ev.id} 
-                              className="flex items-center justify-between p-3 bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl shadow-xs hover:border-amber-400 transition"
-                            >
-                              <div className="flex items-center gap-2.5 min-w-0">
-                                <div className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
-                                <div className="min-w-0">
-                                  <p className="font-bold text-slate-900 dark:text-white text-xs truncate">{ev.name}</p>
-                                  <span className="text-[9px] text-slate-400 font-medium">{ev.category || 'Wedding'}</span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          {eventTypes.map((ev) => {
+                            const isEditing = editingEventTypeId === ev.id;
+
+                            if (isEditing) {
+                              return (
+                                <div
+                                  key={ev.id}
+                                  className="flex items-center gap-2 p-3 bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-300 dark:border-indigo-800 rounded-xl shadow-xs"
+                                >
+                                  <input
+                                    type="text"
+                                    value={editingEventTypeName}
+                                    onChange={(e) => setEditingEventTypeName(e.target.value)}
+                                    placeholder="Function Name..."
+                                    className="flex-1 bg-white dark:bg-zinc-900 border border-indigo-300 dark:border-indigo-700 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    autoFocus
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') handleSaveEditEventType(ev.id, ev.name);
+                                      if (e.key === 'Escape') setEditingEventTypeId(null);
+                                    }}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveEditEventType(ev.id, ev.name)}
+                                    className="p-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition shadow-xs cursor-pointer"
+                                    title="Save function changes"
+                                  >
+                                    <Check className="w-4 h-4 stroke-[3]" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingEventTypeId(null)}
+                                    className="p-2 bg-slate-200 dark:bg-zinc-700 text-slate-700 dark:text-slate-200 rounded-lg hover:bg-slate-300 transition cursor-pointer"
+                                    title="Cancel"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <div 
+                                key={ev.id} 
+                                className="flex items-center justify-between p-3 bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl shadow-xs hover:border-indigo-300 dark:hover:border-indigo-700 transition group"
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 shrink-0 shadow-2xs" />
+                                  <div className="min-w-0">
+                                    <p className="font-extrabold text-slate-900 dark:text-white text-xs truncate">{ev.name}</p>
+                                    <span className="text-[9.5px] text-slate-400 font-semibold">{ev.category || 'General Event'}</span>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                                  {ev.is_default && (
+                                    <span className="text-[9px] px-2 py-0.5 rounded-md bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-400 font-bold">
+                                      Default
+                                    </span>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingEventTypeId(ev.id);
+                                      setEditingEventTypeName(ev.name);
+                                      setEditingEventTypeCat(ev.category || 'Wedding');
+                                    }}
+                                    className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-600 hover:text-white border border-indigo-200 dark:border-indigo-900/60 transition cursor-pointer shadow-2xs"
+                                    title="Edit function"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5 stroke-[2.2]" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteEventType(ev.id, ev.name)}
+                                    className="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 hover:bg-rose-600 hover:text-white border border-rose-200 dark:border-rose-900/60 transition cursor-pointer shadow-2xs"
+                                    title="Delete function"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5 stroke-[2.2]" />
+                                  </button>
                                 </div>
                               </div>
-
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                {ev.is_default && (
-                                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-zinc-800 text-slate-500 font-semibold">
-                                    Default
-                                  </span>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteEventType(ev.id, ev.name)}
-                                  className="p-1 text-slate-400 hover:text-red-500 transition"
-                                  title="Delete function"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     </div>

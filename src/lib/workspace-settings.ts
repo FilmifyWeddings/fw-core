@@ -301,32 +301,72 @@ export async function resolveWorkspaceId(workspaceId?: string): Promise<string> 
 /**
  * Fetch workspace event types from Supabase with fallback to DEFAULT_EVENT_TYPES
  */
+/**
+ * Fetch workspace event types from Supabase.
+ * If brand new workspace with 0 event types, seeds defaults into DB.
+ * Never forces back deleted default events.
+ */
 export async function fetchWorkspaceEventTypes(workspaceId?: string): Promise<WorkspaceEventType[]> {
   const wsId = await resolveWorkspaceId(workspaceId);
   try {
     if (wsId) {
+      // 1. Try RPC first if available
+      try {
+        const { data: rpcData, error: rpcErr } = await supabase.rpc('get_workspace_event_types', {
+          target_ws_id: wsId,
+          target_user_id: wsId
+        });
+        if (!rpcErr && rpcData && rpcData.length > 0) {
+          if (typeof window !== 'undefined') {
+            localStorage.setItem(`wg_custom_event_types_${wsId}`, JSON.stringify(rpcData));
+          }
+          return rpcData;
+        }
+      } catch (_) {}
+
+      // 2. Direct Query from workspace_event_types table
       const { data, error } = await supabase
         .from('workspace_event_types')
         .select('*')
         .eq('workspace_id', wsId)
         .order('display_order', { ascending: true });
 
-      if (!error && data && data.length > 0) {
-        const customNames = new Set(data.map(d => d.name.toLowerCase()));
-        const merged = [...data];
-        DEFAULT_EVENT_TYPES.forEach(def => {
-          if (!customNames.has(def.name.toLowerCase())) {
-            merged.push(def);
+      if (!error && data) {
+        if (data.length > 0) {
+          if (typeof window !== 'undefined') {
+            localStorage.setItem(`wg_custom_event_types_${wsId}`, JSON.stringify(data));
           }
-        });
-        return merged;
+          return data;
+        } else {
+          // Brand new workspace: Seed defaults into DB so they can be edited or deleted freely
+          const defaultInserts = DEFAULT_EVENT_TYPES.map((def, idx) => ({
+            workspace_id: wsId,
+            name: def.name,
+            category: def.category || 'Main Wedding',
+            is_default: true,
+            display_order: idx,
+            updated_at: new Date().toISOString()
+          }));
+          try {
+            const { data: seeded } = await supabase
+              .from('workspace_event_types')
+              .upsert(defaultInserts, { onConflict: 'workspace_id, name' })
+              .select('*');
+            if (seeded && seeded.length > 0) {
+              if (typeof window !== 'undefined') {
+                localStorage.setItem(`wg_custom_event_types_${wsId}`, JSON.stringify(seeded));
+              }
+              return seeded;
+            }
+          } catch (_) {}
+        }
       }
     }
   } catch (err) {
     console.warn('[WorkspaceSettings] Error fetching workspace_event_types:', err);
   }
 
-  // Fallback to localStorage
+  // Fallback to localStorage if offline
   if (typeof window !== 'undefined') {
     try {
       const local = localStorage.getItem(`wg_custom_event_types_${wsId || 'default'}`);
@@ -348,12 +388,14 @@ export async function fetchWorkspaceEventTypes(workspaceId?: string): Promise<Wo
 export async function saveWorkspaceEventType(
   workspaceId?: string,
   name?: string,
-  category = 'General'
+  category = 'General',
+  displayOrder?: number
 ): Promise<WorkspaceEventType | null> {
   const cleanName = (name || '').trim();
   if (!cleanName) return null;
 
   const wsId = await resolveWorkspaceId(workspaceId);
+  const targetOrder = typeof displayOrder === 'number' ? displayOrder : 99;
 
   const newType: WorkspaceEventType = {
     id: `ev_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -361,7 +403,7 @@ export async function saveWorkspaceEventType(
     name: cleanName,
     category,
     is_default: false,
-    display_order: 99
+    display_order: targetOrder
   };
 
   try {
@@ -373,7 +415,7 @@ export async function saveWorkspaceEventType(
           name: cleanName,
           category,
           is_default: false,
-          display_order: 99,
+          display_order: targetOrder,
           updated_at: new Date().toISOString()
         }], { onConflict: 'workspace_id, name' })
         .select()
@@ -397,30 +439,37 @@ export async function saveWorkspaceEventType(
 }
 
 /**
- * Update existing event type
+ * Update existing event type (works for both custom and default events)
  */
 export async function updateWorkspaceEventType(
-  id: string,
-  name: string,
+  idOrName: string,
+  newName: string,
   category = 'General',
-  workspaceId?: string
+  workspaceId?: string,
+  displayOrder?: number
 ): Promise<WorkspaceEventType | null> {
-  const cleanName = name.trim();
-  if (!cleanName) return null;
+  const cleanNewName = newName.trim();
+  if (!cleanNewName) return null;
   const wsId = await resolveWorkspaceId(workspaceId);
 
   try {
-    if (wsId && !id.startsWith('def_')) {
-      const { data, error } = await supabase
+    if (wsId) {
+      let query = supabase
         .from('workspace_event_types')
         .update({
-          name: cleanName,
+          name: cleanNewName,
           category,
+          ...(typeof displayOrder === 'number' ? { display_order: displayOrder } : {}),
           updated_at: new Date().toISOString()
-        })
-        .eq('id', id)
-        .select()
-        .single();
+        });
+
+      if (idOrName.length > 20 && !idOrName.startsWith('def_')) {
+        query = query.eq('id', idOrName);
+      } else {
+        query = query.eq('workspace_id', wsId).eq('name', idOrName);
+      }
+
+      const { data, error } = await query.select().single();
 
       if (!error && data) {
         if (typeof window !== 'undefined') {
@@ -436,23 +485,29 @@ export async function updateWorkspaceEventType(
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('workspace_event_types_updated'));
   }
-  return { id, workspace_id: wsId, name: cleanName, category };
+  return { id: idOrName, workspace_id: wsId, name: cleanNewName, category };
 }
 
 /**
- * Delete event type from workspace
+ * Delete event type from workspace (permanently deletes both custom and default events)
  */
 export async function deleteWorkspaceEventType(
   id: string,
-  workspaceId?: string
+  workspaceId?: string,
+  name?: string
 ): Promise<boolean> {
   const wsId = await resolveWorkspaceId(workspaceId);
   try {
-    if (wsId && !id.startsWith('def_')) {
-      await supabase
-        .from('workspace_event_types')
-        .delete()
-        .eq('id', id);
+    if (wsId) {
+      let query = supabase.from('workspace_event_types').delete();
+      if (id && id.length > 20 && !id.startsWith('def_')) {
+        query = query.eq('id', id);
+      } else if (name) {
+        query = query.eq('workspace_id', wsId).eq('name', name);
+      } else {
+        query = query.eq('id', id);
+      }
+      await query;
     }
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('workspace_event_types_updated'));
@@ -461,6 +516,55 @@ export async function deleteWorkspaceEventType(
   } catch (err) {
     console.warn('[WorkspaceSettings] Error deleting workspace_event_type:', err);
     return false;
+  }
+}
+
+/**
+ * Batch update and persist entire event list in exact order
+ */
+export async function saveAllWorkspaceEventTypes(
+  workspaceId: string | undefined,
+  events: string[]
+): Promise<void> {
+  const wsId = await resolveWorkspaceId(workspaceId);
+  if (!wsId || !Array.isArray(events)) return;
+
+  try {
+    // 1. Delete events not in the new list
+    const { data: existing } = await supabase
+      .from('workspace_event_types')
+      .select('id, name')
+      .eq('workspace_id', wsId);
+
+    const newNamesLower = new Set(events.map(e => e.trim().toLowerCase()));
+    if (existing && existing.length > 0) {
+      const toDeleteIds = existing
+        .filter(ex => !newNamesLower.has(ex.name.trim().toLowerCase()))
+        .map(ex => ex.id);
+
+      if (toDeleteIds.length > 0) {
+        await supabase.from('workspace_event_types').delete().in('id', toDeleteIds);
+      }
+    }
+
+    // 2. Upsert each event with its current display_order
+    const upserts = events.map((name, idx) => ({
+      workspace_id: wsId,
+      name: name.trim(),
+      display_order: idx,
+      category: 'General',
+      updated_at: new Date().toISOString()
+    }));
+
+    await supabase
+      .from('workspace_event_types')
+      .upsert(upserts, { onConflict: 'workspace_id, name' });
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('workspace_event_types_updated'));
+    }
+  } catch (err) {
+    console.warn('[WorkspaceSettings] Error in saveAllWorkspaceEventTypes:', err);
   }
 }
 

@@ -28,7 +28,7 @@ import { EventBlockData } from './components/EventBlock';
 import { saveOrUpdateEventPayout, fetchMemberFinancialSummary, fetchWorkspaceMemberRatesMap, TeamFinancialSummary, unassignCrewSlot } from '@/lib/team-finance-sync';
 import TeamMemberFinanceDrawer from '../workspace/team/components/TeamMemberFinanceDrawer';
 import DeleteMemberWarningModal from '../workspace/team/components/DeleteMemberWarningModal';
-import { WorkspaceCrewRole, fetchWorkspaceCrewRoles, fetchWorkspaceEventTypes, getRoleShortCode } from '@/lib/workspace-settings';
+import { WorkspaceCrewRole, fetchWorkspaceCrewRoles, fetchWorkspaceEventTypes, saveAllWorkspaceEventTypes, getRoleShortCode } from '@/lib/workspace-settings';
 
 // 1. Deterministic Client Gradient Consistency based on Project ID / Name Hash
 const getGradientByProjectId = (id: string) => {
@@ -2500,7 +2500,11 @@ export default function TeamManagerPage() {
         onClose={() => setIsSettingsModalOpen(false)}
         eventTypes={eventTypesList}
         teamMembers={teamMembers}
-        onUpdateEventTypes={(newTypes) => setEventTypesList(newTypes)}
+        onUpdateEventTypes={async (newTypes) => {
+          setEventTypesList(newTypes);
+          const effectiveWsId = workspaceId || currentUserId;
+          await saveAllWorkspaceEventTypes(effectiveWsId, newTypes);
+        }}
         onUpdateTeamMembers={fetchAllData}
         onAddMemberClick={() => {
           setEditingMember(null);

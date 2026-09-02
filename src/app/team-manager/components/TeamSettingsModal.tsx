@@ -251,23 +251,25 @@ export default function TeamSettingsModal({
                         </div>
 
                         {/* Edit / Delete Buttons */}
-                        <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                        <div className="flex items-center gap-2 shrink-0 ml-2">
                           <button
                             type="button"
                             onClick={() => {
                               setEditingEventIdx(idx);
                               setEditingEventText(evt);
                             }}
-                            className="p-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 hover:text-indigo-600 transition cursor-pointer"
+                            className="p-2 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-600 hover:bg-indigo-600 hover:text-white transition cursor-pointer shadow-2xs"
+                            title="Edit function name"
                           >
-                            <Edit2 className="w-3.5 h-3.5" />
+                            <Edit2 className="w-4 h-4 stroke-[2.2]" />
                           </button>
                           <button
                             type="button"
                             onClick={() => handleDeleteEvent(idx)}
-                            className="p-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 hover:text-rose-600 transition cursor-pointer"
+                            className="p-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-600 hover:text-white transition cursor-pointer shadow-2xs"
+                            title="Delete function"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Trash2 className="w-4 h-4 stroke-[2.2]" />
                           </button>
                         </div>
                       </div>

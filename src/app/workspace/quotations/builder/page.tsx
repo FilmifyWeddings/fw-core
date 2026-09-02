@@ -3220,7 +3220,7 @@ function StudioCoreAiryBuilderContent() {
                 value={data.cover.eventType}
                 options={customEventTypes.map(type => ({ label: type, value: type }))}
                 onChange={(val) => handleEventTypeChange(val)}
-                onAddCustom={() => {
+                onAddCustom={async () => {
                   const custom = prompt('Enter custom event type (e.g. Destination Wedding, Reception):');
                   if (custom && custom.trim()) {
                     const trimmed = custom.trim();
@@ -3228,6 +3228,7 @@ function StudioCoreAiryBuilderContent() {
                       setCustomEventTypes(prev => [...prev, trimmed]);
                     }
                     handleEventTypeChange(trimmed);
+                    await saveWorkspaceEventType(userId || undefined, trimmed, 'Quotation Custom');
                   }
                 }}
               />

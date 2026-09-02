@@ -19,19 +19,10 @@ import type {
 import dynamic from 'next/dynamic';
 import AttendanceErrorBoundary from '@/components/attendance/AttendanceErrorBoundary';
 import { analyzeAttendanceRecordTiming, formatMinutesToHumanReadable } from '@/lib/attendance/time-calculations';
+import MemberKundaliModal from '@/components/attendance/MemberKundaliModal';
+import AddTeamMemberModal from '@/components/attendance/AddTeamMemberModal';
+import CompanyHolidayModal from '@/components/attendance/CompanyHolidayModal';
 
-const MemberKundaliModal = dynamic(
-  () => import('@/components/attendance/MemberKundaliModal'),
-  { ssr: false }
-);
-const AddTeamMemberModal = dynamic(
-  () => import('@/components/attendance/AddTeamMemberModal'),
-  { ssr: false }
-);
-const CompanyHolidayModal = dynamic(
-  () => import('@/components/attendance/CompanyHolidayModal'),
-  { ssr: false }
-);
 const GeofenceMapPicker = dynamic(
   () => import('@/components/attendance/GeofenceMapPicker'),
   { ssr: false }
@@ -1676,7 +1667,7 @@ export default function AttendancePage() {
       ───────────────────────────────────────────────────────────── */}
       <AnimatePresence>
         {showAddLocationModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm font-sans">
+          <div className="fixed inset-0 z-[100010] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm font-sans">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -1764,7 +1755,7 @@ export default function AttendancePage() {
       ───────────────────────────────────────────────────────────── */}
       <AnimatePresence>
         {showAddShiftModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm font-sans">
+          <div className="fixed inset-0 z-[100010] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm font-sans">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -1847,7 +1838,7 @@ export default function AttendancePage() {
       ───────────────────────────────────────────────────────────── */}
       <AnimatePresence>
         {showLeaveModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm font-sans">
+          <div className="fixed inset-0 z-[100010] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm font-sans">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -1949,7 +1940,7 @@ export default function AttendancePage() {
       ───────────────────────────────────────────────────────────── */}
       <AnimatePresence>
         {showOverrideModal.open && showOverrideModal.member && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm font-sans">
+          <div className="fixed inset-0 z-[100010] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm font-sans">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}

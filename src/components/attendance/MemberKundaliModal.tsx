@@ -74,10 +74,11 @@ export default function MemberKundaliModal({
 
   const fetchMemberHistoricalRecords = async () => {
     try {
+      const aliasIds = (member as any).aliasIds || [member.id];
       const { data } = await supabase
         .from('attendance_records')
         .select('*')
-        .eq('member_id', member.id)
+        .in('member_id', aliasIds)
         .gte('date', startDate)
         .lte('date', endDate)
         .order('date', { ascending: false });
@@ -291,7 +292,7 @@ export default function MemberKundaliModal({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/75 backdrop-blur-xs font-sans overflow-y-auto">
+      <div className="fixed inset-0 z-[100010] flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-sm font-sans overflow-y-auto">
         <motion.div
           initial={{ scale: 0.96, opacity: 0, y: 10 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}

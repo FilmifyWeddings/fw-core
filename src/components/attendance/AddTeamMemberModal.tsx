@@ -504,7 +504,7 @@ export default function AddTeamMemberModal({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-xs font-sans overflow-y-auto">
+      <div className="fixed inset-0 z-[100010] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm font-sans overflow-y-auto">
         <motion.div
           initial={{ scale: 0.95, opacity: 0, y: 10 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
