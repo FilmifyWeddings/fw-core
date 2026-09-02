@@ -397,7 +397,7 @@ export async function saveWorkspaceEventType(
   const wsId = await resolveWorkspaceId(workspaceId);
   const targetOrder = typeof displayOrder === 'number' ? displayOrder : 99;
 
-  const newType: WorkspaceEventType = {
+  let savedItem: WorkspaceEventType = {
     id: `ev_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
     workspace_id: wsId || undefined,
     name: cleanName,
@@ -408,34 +408,51 @@ export async function saveWorkspaceEventType(
 
   try {
     if (wsId) {
+      // 1. Try insert with generated UUID
       const { data, error } = await supabase
         .from('workspace_event_types')
-        .upsert([{
+        .insert([{
           workspace_id: wsId,
           name: cleanName,
           category,
           is_default: false,
           display_order: targetOrder,
           updated_at: new Date().toISOString()
-        }], { onConflict: 'workspace_id, name' })
+        }])
         .select()
         .single();
 
       if (!error && data) {
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('workspace_event_types_updated'));
-        }
-        return data;
+        savedItem = data;
+      } else if (error) {
+        // If already exists or error, try update or select existing
+        const { data: existing } = await supabase
+          .from('workspace_event_types')
+          .select('*')
+          .eq('workspace_id', wsId)
+          .eq('name', cleanName)
+          .single();
+
+        if (existing) savedItem = existing;
       }
     }
   } catch (err) {
     console.warn('[WorkspaceSettings] Error saving workspace_event_type:', err);
   }
 
-  if (typeof window !== 'undefined') {
+  // Update local cache
+  if (typeof window !== 'undefined' && wsId) {
+    try {
+      const local = localStorage.getItem(`wg_custom_event_types_${wsId}`);
+      const list = local ? JSON.parse(local) : [];
+      const filtered = Array.isArray(list) ? list.filter((e: any) => e.name?.toLowerCase() !== cleanName.toLowerCase()) : [];
+      filtered.push(savedItem);
+      localStorage.setItem(`wg_custom_event_types_${wsId}`, JSON.stringify(filtered));
+    } catch (_) {}
     window.dispatchEvent(new CustomEvent('workspace_event_types_updated'));
   }
-  return newType;
+
+  return savedItem;
 }
 
 /**
@@ -452,6 +469,14 @@ export async function updateWorkspaceEventType(
   if (!cleanNewName) return null;
   const wsId = await resolveWorkspaceId(workspaceId);
 
+  let updatedItem: WorkspaceEventType = { 
+    id: idOrName, 
+    workspace_id: wsId, 
+    name: cleanNewName, 
+    category,
+    display_order: displayOrder ?? 0 
+  };
+
   try {
     if (wsId) {
       let query = supabase
@@ -463,29 +488,40 @@ export async function updateWorkspaceEventType(
           updated_at: new Date().toISOString()
         });
 
-      if (idOrName.length > 20 && !idOrName.startsWith('def_')) {
+      if (idOrName.length > 20 && !idOrName.startsWith('def_') && !idOrName.startsWith('ev_')) {
         query = query.eq('id', idOrName);
       } else {
         query = query.eq('workspace_id', wsId).eq('name', idOrName);
       }
 
       const { data, error } = await query.select().single();
-
       if (!error && data) {
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('workspace_event_types_updated'));
-        }
-        return data;
+        updatedItem = data;
       }
     }
   } catch (err) {
     console.warn('[WorkspaceSettings] Error updating workspace_event_type:', err);
   }
 
-  if (typeof window !== 'undefined') {
+  if (typeof window !== 'undefined' && wsId) {
+    try {
+      const local = localStorage.getItem(`wg_custom_event_types_${wsId}`);
+      if (local) {
+        const list = JSON.parse(local);
+        if (Array.isArray(list)) {
+          const updatedList = list.map((e: any) => 
+            (e.id === idOrName || e.name?.toLowerCase() === idOrName.toLowerCase())
+              ? { ...e, name: cleanNewName, category }
+              : e
+          );
+          localStorage.setItem(`wg_custom_event_types_${wsId}`, JSON.stringify(updatedList));
+        }
+      }
+    } catch (_) {}
     window.dispatchEvent(new CustomEvent('workspace_event_types_updated'));
   }
-  return { id: idOrName, workspace_id: wsId, name: cleanNewName, category };
+
+  return updatedItem;
 }
 
 export async function deleteWorkspaceEventType(
@@ -504,14 +540,15 @@ export async function deleteWorkspaceEventType(
         await supabase.from('workspace_event_types').delete().or(`id.eq.${id},name.eq.${name || ''}`);
       }
 
-      // Also clean from localStorage cache immediately
       if (typeof window !== 'undefined') {
         try {
           const local = localStorage.getItem(`wg_custom_event_types_${wsId}`);
           if (local) {
             const parsed = JSON.parse(local);
-            const filtered = parsed.filter((e: any) => e.id !== id && (!name || e.name?.toLowerCase() !== name.toLowerCase()));
-            localStorage.setItem(`wg_custom_event_types_${wsId}`, JSON.stringify(filtered));
+            if (Array.isArray(parsed)) {
+              const filtered = parsed.filter((e: any) => e.id !== id && (!name || e.name?.toLowerCase() !== name.toLowerCase()));
+              localStorage.setItem(`wg_custom_event_types_${wsId}`, JSON.stringify(filtered));
+            }
           }
         } catch (_) {}
         window.dispatchEvent(new CustomEvent('workspace_event_types_updated'));

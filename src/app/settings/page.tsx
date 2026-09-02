@@ -538,6 +538,20 @@ export default function SettingsPage() {
     loadWorkspaceSettings();
   }, [loadWorkspaceSettings]);
 
+  // Live 2-way sync: Refresh event types on any cross-module update
+  useEffect(() => {
+    const handleEventsUpdated = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const wId = session?.user?.id || workspaceId;
+      if (wId) {
+        const ev = await fetchWorkspaceEventTypes(wId);
+        if (ev && ev.length > 0) setEventTypes(ev);
+      }
+    };
+    window.addEventListener('workspace_event_types_updated', handleEventsUpdated);
+    return () => window.removeEventListener('workspace_event_types_updated', handleEventsUpdated);
+  }, [workspaceId]);
+
   // Save Settings Handler
   const handleSaveSettings = async () => {
     setSaving(true);
