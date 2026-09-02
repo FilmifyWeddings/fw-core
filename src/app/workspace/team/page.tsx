@@ -16,6 +16,7 @@ import AddTeamMemberModal from '@/app/team-manager/components/AddTeamMemberModal
 import TeamMemberFinanceDrawer from './components/TeamMemberFinanceDrawer';
 import DeleteMemberWarningModal from './components/DeleteMemberWarningModal';
 import { 
+  batchFetchWorkspaceTeamFinancials,
   fetchMemberFinancialSummary, 
   TeamFinancialSummary, 
   fetchWorkspaceMemberRatesMap, 
@@ -83,7 +84,7 @@ export default function WorkspaceTeamPage() {
   const [memberToDelete, setMemberToDelete] = useState<TeamMember | null>(null);
 
 
-  // Fast Sub-Second Parallel Financial Summaries for all members
+  // Instant O(1) Batch Financial Summaries for all members in 1 single pass
   const loadFinancialSummaries = useCallback(async (membersList: TeamMember[]) => {
     const { data: { session } } = await supabase.auth.getSession();
     const currentUid = session?.user?.id;
@@ -91,34 +92,12 @@ export default function WorkspaceTeamPage() {
     if (!effectiveWsId || membersList.length === 0) return;
 
     try {
-      const summaryResults = await Promise.all(
-        membersList.map(async (m) => {
-          try {
-            const sum = await fetchMemberFinancialSummary(effectiveWsId, m.id, m.primary_type || 'FREELANCER');
-            return { id: m.id, summary: sum };
-          } catch (_) {
-            return {
-              id: m.id,
-              summary: {
-                member_id: m.id,
-                total_agreed: 0,
-                total_paid: 0,
-                total_balance: 0,
-                active_events_count: 0,
-                paid_events_count: 0,
-                pending_events_count: 0
-              }
-            };
-          }
-        })
-      );
-
-      const summaryMap: Record<string, TeamFinancialSummary> = {};
-      summaryResults.forEach(r => {
-        if (r.id) summaryMap[r.id] = r.summary;
-      });
+      const memberIds = membersList.map(m => m.id).filter(Boolean);
+      const summaryMap = await batchFetchWorkspaceTeamFinancials(effectiveWsId, memberIds);
       setMemberFinancials(summaryMap);
-    } catch (_) {}
+    } catch (err) {
+      console.error('[WorkspaceTeamPage] Batch financials error:', err);
+    }
   }, [workspaceId, userEmail]);
 
   // Load team members from database
@@ -968,6 +947,7 @@ export default function WorkspaceTeamPage() {
         }}
         workspaceId={workspaceId || ''}
         member={selectedFinanceMember}
+        initialSummary={selectedFinanceMember ? memberFinancials[selectedFinanceMember.id] : null}
       />
 
       {/* Luxury Red Delete Warning Modal */}

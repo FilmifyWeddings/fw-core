@@ -12,6 +12,7 @@ import {
 import CountryFlagPhoneInput from './CountryFlagPhoneInput';
 import { supabase } from '@/lib/supabase';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
+import { useWorkspaceData } from '@/context/WorkspaceDataContext';
 import { saveWorkspaceMemberRate } from '@/lib/team-finance-sync';
 
 interface AddTeamMemberModalProps {
@@ -67,6 +68,7 @@ export default function AddTeamMemberModal({
   onSave,
 }: AddTeamMemberModalProps) {
   const { workspaceId, userEmail, userId } = useWorkspace();
+  const { workspaceMembers } = useWorkspaceData();
   const [name, setName] = useState('');
   const [primaryRole, setPrimaryRole] = useState(initialRole);
   const [selectedRoles, setSelectedRoles] = useState<string[]>([initialRole]);
@@ -98,30 +100,15 @@ export default function AddTeamMemberModal({
   const [postProductionAccess, setPostProductionAccess] = useState<string>('ASSIGNED_ONLY');
   const [financeAccess, setFinanceAccess] = useState<string>('NONE');
 
-  // Load existing workspace members to check duplicates
+  // In-memory instant duplicate verification from Central Workspace Context (0ms, 0 network calls)
   useEffect(() => {
-    if (isOpen && workspaceId) {
-      (async () => {
-        try {
-          const { data: wm } = await supabase
-            .from('workspace_members')
-            .select('email, phone')
-            .eq('workspace_id', workspaceId);
-
-          const { data: ftm } = await supabase
-            .from('fw_team_members')
-            .select('email, phone_number')
-            .eq('user_id', userId || '');
-
-          const combined = [
-            ...(wm || []),
-            ...(ftm || []).map(f => ({ email: f.email, phone: f.phone_number }))
-          ];
-          setExistingMembers(combined);
-        } catch (_) {}
-      })();
+    if (isOpen && workspaceMembers && workspaceMembers.length > 0) {
+      setExistingMembers(workspaceMembers.map((m: any) => ({
+        email: m.email || '',
+        phone: m.phone || m.phone_number || ''
+      })));
     }
-  }, [isOpen, workspaceId, userId]);
+  }, [isOpen, workspaceMembers]);
 
   useEffect(() => {
     if (memberToEdit && isOpen) {

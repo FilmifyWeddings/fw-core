@@ -61,8 +61,18 @@ export default function WhatsAppAssignmentModal({
         let existingDate = new Date().toISOString().split('T')[0];
         let existingNotes = '';
 
-        // 1. Check if an existing assignment for this sub-event & role already has a saved custom rate
-        if (subEvent?.id) {
+        // 1. Check in-memory subEvent.fw_assignments first (0ms, 0 network calls)
+        const inMemoryAssign = (subEvent?.fw_assignments || []).find(
+          (a: any) => a.required_role?.toLowerCase() === role?.toLowerCase()
+        );
+        if (inMemoryAssign && Number(inMemoryAssign.agreed_amount) > 0) {
+          existingAgreed = Number(inMemoryAssign.agreed_amount);
+          existingAdvance = Number(inMemoryAssign.advance_amount ?? inMemoryAssign.paid_amount) || 0;
+          existingStatus = (inMemoryAssign.payment_status as any) || 'pending';
+          if (inMemoryAssign.payment_method) existingMethod = inMemoryAssign.payment_method;
+          if (inMemoryAssign.payment_date) existingDate = inMemoryAssign.payment_date;
+          if (inMemoryAssign.notes) existingNotes = inMemoryAssign.notes;
+        } else if (subEvent?.id) {
           try {
             const { data: assignRow } = await supabase
               .from('fw_assignments')

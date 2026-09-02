@@ -44,13 +44,15 @@ interface TeamMemberFinanceDrawerProps {
     default_daily_rate?: number;
     default_currency?: string;
   } | null;
+  initialSummary?: TeamFinancialSummary | null;
 }
 
 export default function TeamMemberFinanceDrawer({
   isOpen,
   onClose,
   workspaceId,
-  member
+  member,
+  initialSummary,
 }: TeamMemberFinanceDrawerProps) {
   const [activeTab, setActiveTab] = useState<'ledger' | 'monthly'>('ledger');
   const [loading, setLoading] = useState(true);
@@ -59,7 +61,7 @@ export default function TeamMemberFinanceDrawer({
   const [payouts, setPayouts] = useState<TeamEventPayout[]>([]);
   const [albumOrders, setAlbumOrders] = useState<PartnerAlbumOrder[]>([]);
   const [salaryRecords, setSalaryRecords] = useState<TeamSalaryRecord[]>([]);
-  const [summary, setSummary] = useState<TeamFinancialSummary>({
+  const [summary, setSummary] = useState<TeamFinancialSummary>(initialSummary || {
     member_id: '',
     total_agreed: 0,
     total_paid: 0,
@@ -315,16 +317,20 @@ export default function TeamMemberFinanceDrawer({
         setPayouts([]);
         setAlbumOrders([]);
         setSalaryRecords([]);
-        setSummary({
-          member_id: member.id,
-          total_agreed: 0,
-          total_paid: 0,
-          total_balance: 0,
-          active_events_count: 0,
-          paid_events_count: 0,
-          pending_events_count: 0,
-          monthly_breakdown: []
-        });
+        if (initialSummary) {
+          setSummary(initialSummary);
+        } else {
+          setSummary({
+            member_id: member.id,
+            total_agreed: 0,
+            total_paid: 0,
+            total_balance: 0,
+            active_events_count: 0,
+            paid_events_count: 0,
+            pending_events_count: 0,
+            monthly_breakdown: []
+          });
+        }
         setLoading(true);
       }
       loadData();

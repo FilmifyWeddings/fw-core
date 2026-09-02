@@ -128,7 +128,7 @@ export default function LeadsPage() {
   const [page, setPage] = useState<number>(0);
   const [hasMore, setHasMore] = useState<boolean>(true);
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
-  const PAGE_SIZE = 100;
+  const PAGE_SIZE = 50;
 
   const leadsAccess = isOwner ? 'ALL_EDIT' : (permissions?.leads_access || 'NONE');
   const isReadOnly = !isOwner && (leadsAccess === 'ASSIGNED_VIEW' || leadsAccess === 'ALL_VIEW');

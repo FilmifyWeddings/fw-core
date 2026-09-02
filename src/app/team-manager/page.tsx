@@ -25,10 +25,11 @@ import Professional3DCalendar from './components/Professional3DCalendar';
 import WhatsAppAssignmentModal from './components/WhatsAppAssignmentModal';
 import RoleAssignDropdown from './components/RoleAssignDropdown';
 import { EventBlockData } from './components/EventBlock';
-import { saveOrUpdateEventPayout, fetchMemberFinancialSummary, fetchWorkspaceMemberRatesMap, TeamFinancialSummary, unassignCrewSlot } from '@/lib/team-finance-sync';
+import { saveOrUpdateEventPayout, batchFetchWorkspaceTeamFinancials, fetchMemberFinancialSummary, fetchWorkspaceMemberRatesMap, TeamFinancialSummary, unassignCrewSlot } from '@/lib/team-finance-sync';
 import TeamMemberFinanceDrawer from '../workspace/team/components/TeamMemberFinanceDrawer';
 import DeleteMemberWarningModal from '../workspace/team/components/DeleteMemberWarningModal';
 import { WorkspaceCrewRole, fetchWorkspaceCrewRoles, fetchWorkspaceEventTypes, saveAllWorkspaceEventTypes, getRoleShortCode } from '@/lib/workspace-settings';
+import { useWorkspaceData } from '@/context/WorkspaceDataContext';
 
 // 1. Deterministic Client Gradient Consistency based on Project ID / Name Hash
 const getGradientByProjectId = (id: string) => {
@@ -126,6 +127,7 @@ const resolveSubEventAssignments = (subEvent: FWSubEvent, teamMembers: FWTeamMem
 
 export default function TeamManagerPage() {
   const { workspaceId, workspaceName, isOwner, userRole, permissions } = useWorkspace();
+  const { crewRoles: globalCrewRoles, eventTypesList: globalEventTypesList } = useWorkspaceData();
   const [activeTab, setActiveTab] = useState<'overview' | 'projects' | 'list' | 'calendar' | 'trash'>('projects');
   
   // Dynamic Time-Based Greeting & Studio Profile Name
@@ -167,14 +169,13 @@ export default function TeamManagerPage() {
     const effectiveWsId = workspaceId || currentUserId;
     if (!effectiveWsId || membersList.length === 0) return;
 
-    const summaryMap: Record<string, TeamFinancialSummary> = {};
-    for (const m of membersList) {
-      try {
-        const sum = await fetchMemberFinancialSummary(effectiveWsId, m.id, (m as any).primary_type || 'FREELANCER');
-        summaryMap[m.id] = sum;
-      } catch (_) {}
+    try {
+      const memberIds = membersList.map(m => m.id).filter(Boolean);
+      const summaryMap = await batchFetchWorkspaceTeamFinancials(effectiveWsId, memberIds);
+      setMemberFinancials(summaryMap);
+    } catch (err) {
+      console.error('[TeamManager] Batch financials error:', err);
     }
-    setMemberFinancials(summaryMap);
   };
 
   // Modals & Popovers State
@@ -246,17 +247,18 @@ export default function TeamManagerPage() {
     return () => window.removeEventListener('team_finance_updated', handleFinanceUpdated);
   }, [teamMembers]);
 
-  // Real-time synchronization of crew roles from Workspace Settings
+  // Real-time synchronization of crew roles & event types from Central Cache
   useEffect(() => {
-    const syncCrewRoles = async () => {
-      const targetWs = workspaceId || currentUserId;
-      const roles = await fetchWorkspaceCrewRoles(targetWs);
-      setCustomCrewRoles(roles || []);
-    };
-    syncCrewRoles();
-    window.addEventListener('workspace_crew_roles_updated', syncCrewRoles);
-    return () => window.removeEventListener('workspace_crew_roles_updated', syncCrewRoles);
-  }, [workspaceId, currentUserId]);
+    if (globalCrewRoles && globalCrewRoles.length > 0) {
+      setCustomCrewRoles(globalCrewRoles);
+    }
+  }, [globalCrewRoles]);
+
+  useEffect(() => {
+    if (globalEventTypesList && globalEventTypesList.length > 0) {
+      setEventTypesList(globalEventTypesList);
+    }
+  }, [globalEventTypesList]);
 
   // Close popovers on outside click
   useEffect(() => {
@@ -487,16 +489,7 @@ export default function TeamManagerPage() {
 
       setProjects(projectsDataToSet);
 
-      // Fetch Workspace Event Types & Crew Roles for consistent dropdowns & short codes
-      try {
-        const fetchedRoles = await fetchWorkspaceCrewRoles(uid);
-        if (fetchedRoles && fetchedRoles.length > 0) setCustomCrewRoles(fetchedRoles);
 
-        const fetchedEvTypes = await fetchWorkspaceEventTypes(uid);
-        if (fetchedEvTypes && fetchedEvTypes.length > 0) setEventTypesList(fetchedEvTypes.map(e => e.name));
-      } catch (wsErr) {
-        console.warn('[TeamManager] Error fetching workspace event types/roles:', wsErr);
-      }
     } catch (err: any) {
       console.error('[TeamManager] fetchAllData Exception:', err);
       setError(err?.message || 'Failed to fetch operations data.');
@@ -2627,6 +2620,7 @@ export default function TeamManagerPage() {
         }}
         workspaceId={workspaceId || currentUserId}
         member={selectedFinanceMember}
+        initialSummary={selectedFinanceMember ? memberFinancials[selectedFinanceMember.id] : null}
       />
 
       {/* 6. Unified Filter Modal */}

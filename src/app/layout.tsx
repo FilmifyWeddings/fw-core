@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { VersionGuard } from "@/components/VersionGuard";
 import { AuthRedirectGuard } from "@/components/AuthRedirectGuard";
 import { WorkspaceProvider } from "@/lib/context/BhamstraContext";
+import { WorkspaceDataProvider } from "@/context/WorkspaceDataContext";
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -93,11 +94,13 @@ export default function RootLayout({
       <body className="bg-zinc-50 dark:bg-[#070708] text-zinc-900 dark:text-white transition-colors duration-200" suppressHydrationWarning>
         <AuthRedirectGuard />
         <WorkspaceProvider>
-          <Suspense fallback={<div className="min-h-screen w-full bg-zinc-50 dark:bg-[#070708]" />}>
-            <VersionGuard>
-              <SidebarLayout>{children}</SidebarLayout>
-            </VersionGuard>
-          </Suspense>
+          <WorkspaceDataProvider>
+            <Suspense fallback={<div className="min-h-screen w-full bg-zinc-50 dark:bg-[#070708]" />}>
+              <VersionGuard>
+                <SidebarLayout>{children}</SidebarLayout>
+              </VersionGuard>
+            </Suspense>
+          </WorkspaceDataProvider>
         </WorkspaceProvider>
       </body>
     </html>

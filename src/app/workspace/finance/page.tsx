@@ -23,6 +23,7 @@ import type {
   WorkspaceClient, ClientFinanceRecord, FinanceMilestoneItem, FinanceExpenseItem, 
   FinanceAuditLog, FinanceSecuritySettings, Lead, LeadStatus, LeadScore 
 } from '@/types';
+import { useWorkspaceData } from '@/context/WorkspaceDataContext';
 
 // Default expense categories
 const DEFAULT_EXPENSE_CATEGORIES = [
@@ -53,6 +54,7 @@ const DEFAULT_TEAM_MEMBERS = [
 ];
 
 export default function FinancePage() {
+  const { workspaceMembers } = useWorkspaceData();
   const [activeTab, setActiveTab] = useState<'clients' | 'expenses' | 'analytics'>('clients');
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string>('');
   const [clients, setClients] = useState<WorkspaceClient[]>([]);
@@ -460,11 +462,12 @@ export default function FinancePage() {
         setCurrentWorkspaceId(session.user.id);
       }
 
-      // 1. Fetch Clients
+      // 1. Fetch Clients (Initial 50 records limit for sub-300ms transition)
       let clientQuery = supabase
         .from('workspace_clients')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .range(0, 49);
 
       if (workspaceId && workspaceId !== 'ws_demo') {
         clientQuery = clientQuery.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
@@ -492,16 +495,9 @@ export default function FinancePage() {
       // 3. Fetch Team Members & Finance Milestone Settings
       try {
         const memberSet = new Set<string>(DEFAULT_TEAM_MEMBERS);
-
-        // A. Fetch from fw_team_members for this user/workspace
-        let tmQuery = supabase.from('fw_team_members').select('id, name');
-        if (workspaceId && workspaceId !== 'ws_demo') {
-          tmQuery = tmQuery.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
-        }
-        const { data: teamMembersDb } = await tmQuery;
-        if (teamMembersDb) {
-          teamMembersDb.forEach(tm => {
-            if (tm.name && tm.name.trim()) memberSet.add(tm.name.trim());
+        if (workspaceMembers && workspaceMembers.length > 0) {
+          workspaceMembers.forEach(m => {
+            if (m.name && m.name.trim()) memberSet.add(m.name.trim());
           });
         }
 
@@ -782,11 +778,12 @@ export default function FinancePage() {
         setExpandedCards(new Set([finalRecords[0].id]));
       }
 
-      // 6. Fetch Expenses
+      // 6. Fetch Expenses (Initial 50 records limit for sub-300ms transition)
       let expenseQuery = supabase
         .from('finance_expenses')
         .select('*')
-        .order('payment_date', { ascending: false });
+        .order('payment_date', { ascending: false })
+        .range(0, 49);
 
       if (workspaceId && workspaceId !== 'ws_demo') {
         expenseQuery = expenseQuery.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);

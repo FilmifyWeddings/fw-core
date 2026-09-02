@@ -3,7 +3,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, X, Plus, Search } from 'lucide-react';
-import { WorkspaceEventType, fetchWorkspaceEventTypes, saveWorkspaceEventType, DEFAULT_EVENT_TYPES } from '@/lib/workspace-settings';
+import { WorkspaceEventType, saveWorkspaceEventType, DEFAULT_EVENT_TYPES } from '@/lib/workspace-settings';
+import { useWorkspaceData } from '@/context/WorkspaceDataContext';
 
 interface ProgramTypeSelectProps {
   selected: string[];
@@ -13,22 +14,19 @@ interface ProgramTypeSelectProps {
 }
 
 export default function ProgramTypeSelect({ selected, onChange, onAddCustom, hasError }: ProgramTypeSelectProps) {
+  const { eventTypes } = useWorkspaceData();
   const [isOpen, setIsOpen] = useState(false);
   const [searchFilter, setSearchFilter] = useState('');
   const [customInput, setCustomInput] = useState('');
   const [showCustomInput, setShowCustomInput] = useState(false);
-  const [dbPrograms, setDbPrograms] = useState<WorkspaceEventType[]>(DEFAULT_EVENT_TYPES);
+  const [dbPrograms, setDbPrograms] = useState<WorkspaceEventType[]>(eventTypes && eventTypes.length > 0 ? eventTypes : DEFAULT_EVENT_TYPES);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const loadPrograms = async () => {
-      const fetched = await fetchWorkspaceEventTypes();
-      if (fetched && fetched.length > 0) setDbPrograms(fetched);
-    };
-    loadPrograms();
-    window.addEventListener('workspace_event_types_updated', loadPrograms);
-    return () => window.removeEventListener('workspace_event_types_updated', loadPrograms);
-  }, []);
+    if (eventTypes && eventTypes.length > 0) {
+      setDbPrograms(eventTypes);
+    }
+  }, [eventTypes]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {

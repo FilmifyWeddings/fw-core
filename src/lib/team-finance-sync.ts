@@ -1804,3 +1804,129 @@ export async function fetchMemberFinancialSummary(
     monthly_breakdown: monthlyBreakdown
   };
 }
+
+
+/**
+ * HIGH PERFORMANCE BATCH FINANCIAL QUERY ENGINE
+ * Fetches and aggregates financial totals for all members in a single roundtrip.
+ * Zero queries in loops. Instant O(1) in-memory Map resolution.
+ */
+export async function batchFetchWorkspaceTeamFinancials(
+  workspaceId: string,
+  memberIds: string[]
+): Promise<Record<string, TeamFinancialSummary>> {
+  const uniqueIds = Array.from(new Set(memberIds.filter(Boolean)));
+  const summaryMap: Record<string, TeamFinancialSummary> = {};
+
+  // Initialize empty defaults for all requested members
+  uniqueIds.forEach(id => {
+    summaryMap[id] = {
+      member_id: id,
+      total_agreed: 0,
+      total_paid: 0,
+      total_balance: 0,
+      active_events_count: 0,
+      paid_events_count: 0,
+      pending_events_count: 0,
+      monthly_breakdown: []
+    };
+  });
+
+  if (!workspaceId || uniqueIds.length === 0) return summaryMap;
+
+  try {
+    // 1. Single IN query for crew_assignments_finance
+    // 2. Single IN query for team_event_payouts
+    const [crewFinRes, payoutsRes] = await Promise.all([
+      supabase
+        .from('crew_assignments_finance')
+        .select('team_member_id, final_agreed_amount, advance_paid_amount, balance_amount, payment_status, payment_date')
+        .in('team_member_id', uniqueIds)
+        .or(`workspace_id.eq.${workspaceId},workspace_id.is.null`),
+      supabase
+        .from('team_event_payouts')
+        .select('member_id, agreed_amount, paid_amount, balance_amount, status, event_date')
+        .in('member_id', uniqueIds)
+        .eq('workspace_id', workspaceId)
+    ]);
+
+    const crewFinData = crewFinRes?.data || [];
+    const payoutsData = payoutsRes?.data || [];
+
+    // Track monthly breakdowns in memory: memberId -> month -> stats
+    const memberMonthlyMap: Record<string, Record<string, { agreed: number; paid: number; balance: number }>> = {};
+
+    // Process crew_assignments_finance
+    crewFinData.forEach((row: any) => {
+      const mid = row.team_member_id;
+      if (!mid || !summaryMap[mid]) return;
+
+      const agreed = Number(row.final_agreed_amount) || 0;
+      const paid = Number(row.advance_paid_amount) || 0;
+      const bal = Number(row.balance_amount) || Math.max(0, agreed - paid);
+
+      summaryMap[mid].total_agreed += agreed;
+      summaryMap[mid].total_paid += paid;
+      summaryMap[mid].total_balance += bal;
+      summaryMap[mid].active_events_count += 1;
+
+      if (bal <= 0 && agreed > 0) {
+        summaryMap[mid].paid_events_count += 1;
+      } else {
+        summaryMap[mid].pending_events_count += 1;
+      }
+
+      const m = (row.payment_date || '').slice(0, 7) || 'Other';
+      if (!memberMonthlyMap[mid]) memberMonthlyMap[mid] = {};
+      if (!memberMonthlyMap[mid][m]) memberMonthlyMap[mid][m] = { agreed: 0, paid: 0, balance: 0 };
+      memberMonthlyMap[mid][m].agreed += agreed;
+      memberMonthlyMap[mid][m].paid += paid;
+      memberMonthlyMap[mid][m].balance += bal;
+    });
+
+    // Process team_event_payouts (if any distinct event records)
+    payoutsData.forEach((p: any) => {
+      const mid = p.member_id;
+      if (!mid || !summaryMap[mid]) return;
+
+      if (crewFinData.length === 0) {
+        const agreed = Number(p.agreed_amount) || 0;
+        const paid = Number(p.paid_amount) || 0;
+        const bal = Number(p.balance_amount) || Math.max(0, agreed - paid);
+
+        summaryMap[mid].total_agreed += agreed;
+        summaryMap[mid].total_paid += paid;
+        summaryMap[mid].total_balance += bal;
+        summaryMap[mid].active_events_count += 1;
+
+        if (p.status === 'PAID' || bal <= 0) {
+          summaryMap[mid].paid_events_count += 1;
+        } else {
+          summaryMap[mid].pending_events_count += 1;
+        }
+
+        const m = (p.event_date || '').slice(0, 7) || 'Other';
+        if (!memberMonthlyMap[mid]) memberMonthlyMap[mid] = {};
+        if (!memberMonthlyMap[mid][m]) memberMonthlyMap[mid][m] = { agreed: 0, paid: 0, balance: 0 };
+        memberMonthlyMap[mid][m].agreed += agreed;
+        memberMonthlyMap[mid][m].paid += paid;
+        memberMonthlyMap[mid][m].balance += bal;
+      }
+    });
+
+    // Populate monthly breakdowns
+    Object.keys(memberMonthlyMap).forEach(mid => {
+      if (summaryMap[mid]) {
+        summaryMap[mid].monthly_breakdown = Object.keys(memberMonthlyMap[mid]).sort().map(m => ({
+          month: m,
+          ...memberMonthlyMap[mid][m]
+        }));
+      }
+    });
+
+  } catch (err) {
+    console.error('[batchFetchWorkspaceTeamFinancials] Error:', err);
+  }
+
+  return summaryMap;
+}
