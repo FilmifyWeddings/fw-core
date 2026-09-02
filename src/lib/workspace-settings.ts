@@ -287,20 +287,22 @@ export function getRoleShortCode(roleName?: string | null, customRoles?: Workspa
 /**
  * Resolves active authenticated workspace ID safely
  */
+export const isUuid = (id?: string | null): boolean => {
+  if (!id) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim());
+};
+
 export async function resolveWorkspaceId(workspaceId?: string): Promise<string> {
-  if (workspaceId && workspaceId.trim() && workspaceId !== 'default' && workspaceId !== 'PUBLIC_USER') {
+  if (workspaceId && workspaceId.trim() && isUuid(workspaceId)) {
     return workspaceId.trim();
   }
   try {
     const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user?.id) return session.user.id;
+    if (session?.user?.id && isUuid(session.user.id)) return session.user.id;
   } catch (_) {}
   return '';
 }
 
-/**
- * Fetch workspace event types from Supabase with fallback to DEFAULT_EVENT_TYPES
- */
 /**
  * Fetch workspace event types from Supabase.
  * If brand new workspace with 0 event types, seeds defaults into DB.
@@ -309,7 +311,7 @@ export async function resolveWorkspaceId(workspaceId?: string): Promise<string> 
 export async function fetchWorkspaceEventTypes(workspaceId?: string): Promise<WorkspaceEventType[]> {
   const wsId = await resolveWorkspaceId(workspaceId);
   try {
-    if (wsId) {
+    if (isUuid(wsId)) {
       // 1. Try RPC first if available
       try {
         const { data: rpcData, error: rpcErr } = await supabase.rpc('get_workspace_event_types', {
@@ -321,6 +323,8 @@ export async function fetchWorkspaceEventTypes(workspaceId?: string): Promise<Wo
             localStorage.setItem(`wg_custom_event_types_${wsId}`, JSON.stringify(rpcData));
           }
           return rpcData;
+        } else if (rpcErr) {
+          console.warn('[WorkspaceSettings] RPC get_workspace_event_types note:', rpcErr.message);
         }
       } catch (_) {}
 
@@ -329,9 +333,12 @@ export async function fetchWorkspaceEventTypes(workspaceId?: string): Promise<Wo
         .from('workspace_event_types')
         .select('*')
         .eq('workspace_id', wsId)
-        .order('display_order', { ascending: true });
+        .order('display_order', { ascending: true })
+        .order('name', { ascending: true });
 
-      if (!error && data) {
+      if (error) {
+        console.error('[WorkspaceSettings] Supabase error fetching workspace_event_types:', error.message);
+      } else if (data) {
         if (data.length > 0) {
           if (typeof window !== 'undefined') {
             localStorage.setItem(`wg_custom_event_types_${wsId}`, JSON.stringify(data));
@@ -348,11 +355,13 @@ export async function fetchWorkspaceEventTypes(workspaceId?: string): Promise<Wo
             updated_at: new Date().toISOString()
           }));
           try {
-            const { data: seeded } = await supabase
+            const { data: seeded, error: seedErr } = await supabase
               .from('workspace_event_types')
-              .upsert(defaultInserts, { onConflict: 'workspace_id, name' })
+              .insert(defaultInserts)
               .select('*');
-            if (seeded && seeded.length > 0) {
+            if (seedErr) {
+              console.warn('[WorkspaceSettings] Seed defaults note:', seedErr.message);
+            } else if (seeded && seeded.length > 0) {
               if (typeof window !== 'undefined') {
                 localStorage.setItem(`wg_custom_event_types_${wsId}`, JSON.stringify(seeded));
               }
@@ -362,8 +371,8 @@ export async function fetchWorkspaceEventTypes(workspaceId?: string): Promise<Wo
         }
       }
     }
-  } catch (err) {
-    console.warn('[WorkspaceSettings] Error fetching workspace_event_types:', err);
+  } catch (err: any) {
+    console.error('[WorkspaceSettings] Exception fetching workspace_event_types:', err?.message || err);
   }
 
   // Fallback to localStorage if offline
@@ -407,25 +416,29 @@ export async function saveWorkspaceEventType(
   };
 
   try {
-    if (wsId) {
-      // 1. Try insert with generated UUID
-      const { data, error } = await supabase
-        .from('workspace_event_types')
-        .insert([{
-          workspace_id: wsId,
-          name: cleanName,
-          category,
-          is_default: false,
-          display_order: targetOrder,
-          updated_at: new Date().toISOString()
-        }])
-        .select()
-        .single();
+    const payload: any = {
+      name: cleanName,
+      category: category || 'General',
+      is_default: false,
+      display_order: targetOrder,
+      updated_at: new Date().toISOString()
+    };
 
-      if (!error && data) {
-        savedItem = data;
-      } else if (error) {
-        // If already exists or error, try update or select existing
+    if (isUuid(wsId)) {
+      payload.workspace_id = wsId;
+    }
+
+    const { data, error } = await supabase
+      .from('workspace_event_types')
+      .insert([payload])
+      .select()
+      .single();
+
+    if (!error && data) {
+      savedItem = data;
+    } else if (error) {
+      console.warn('[WorkspaceSettings] Supabase insert note (fallback check):', error.message);
+      if (isUuid(wsId)) {
         const { data: existing } = await supabase
           .from('workspace_event_types')
           .select('*')
@@ -436,8 +449,8 @@ export async function saveWorkspaceEventType(
         if (existing) savedItem = existing;
       }
     }
-  } catch (err) {
-    console.warn('[WorkspaceSettings] Error saving workspace_event_type:', err);
+  } catch (err: any) {
+    console.error('[WorkspaceSettings] Error saving workspace_event_type:', err?.message || err);
   }
 
   // Update local cache
