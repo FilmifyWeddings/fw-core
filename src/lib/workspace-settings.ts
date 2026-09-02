@@ -488,9 +488,6 @@ export async function updateWorkspaceEventType(
   return { id: idOrName, workspace_id: wsId, name: cleanNewName, category };
 }
 
-/**
- * Delete event type from workspace (permanently deletes both custom and default events)
- */
 export async function deleteWorkspaceEventType(
   id: string,
   workspaceId?: string,
@@ -499,18 +496,26 @@ export async function deleteWorkspaceEventType(
   const wsId = await resolveWorkspaceId(workspaceId);
   try {
     if (wsId) {
-      let query = supabase.from('workspace_event_types').delete();
-      if (id && id.length > 20 && !id.startsWith('def_')) {
-        query = query.eq('id', id);
+      if (id && id.length > 20 && !id.startsWith('def_') && !id.startsWith('ev_')) {
+        await supabase.from('workspace_event_types').delete().eq('id', id);
       } else if (name) {
-        query = query.eq('workspace_id', wsId).eq('name', name);
+        await supabase.from('workspace_event_types').delete().eq('workspace_id', wsId).eq('name', name);
       } else {
-        query = query.eq('id', id);
+        await supabase.from('workspace_event_types').delete().or(`id.eq.${id},name.eq.${name || ''}`);
       }
-      await query;
-    }
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('workspace_event_types_updated'));
+
+      // Also clean from localStorage cache immediately
+      if (typeof window !== 'undefined') {
+        try {
+          const local = localStorage.getItem(`wg_custom_event_types_${wsId}`);
+          if (local) {
+            const parsed = JSON.parse(local);
+            const filtered = parsed.filter((e: any) => e.id !== id && (!name || e.name?.toLowerCase() !== name.toLowerCase()));
+            localStorage.setItem(`wg_custom_event_types_${wsId}`, JSON.stringify(filtered));
+          }
+        } catch (_) {}
+        window.dispatchEvent(new CustomEvent('workspace_event_types_updated'));
+      }
     }
     return true;
   } catch (err) {

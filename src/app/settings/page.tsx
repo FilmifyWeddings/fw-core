@@ -1094,7 +1094,7 @@ export default function SettingsPage() {
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-1 shrink-0">
+                        <div className="flex items-center gap-1.5 shrink-0">
                           {item.is_default && (
                             <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 bg-amber-50 text-zinc-500 rounded-md">
                               Default
@@ -1106,7 +1106,7 @@ export default function SettingsPage() {
                               setEditingFunction(item);
                               setEditFunctionName(item.name);
                             }}
-                            className="p-1.5 text-slate-400 hover:text-indigo-600 transition rounded-lg hover:bg-indigo-50 cursor-pointer"
+                            className="p-2 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition cursor-pointer"
                             title="Edit Function"
                           >
                             <Pencil className="w-3.5 h-3.5" />
@@ -1115,13 +1115,13 @@ export default function SettingsPage() {
                             type="button"
                             onClick={async () => {
                               if (!confirm(`Delete function "${item.name}"?`)) return;
-                              await deleteWorkspaceEventType(item.id, workspaceId);
-                              setEventTypes(prev => prev.filter(e => e.id !== item.id));
+                              await deleteWorkspaceEventType(item.id, workspaceId, item.name);
+                              setEventTypes(prev => prev.filter(e => e.id !== item.id && e.name.toLowerCase() !== item.name.toLowerCase()));
                               setSaveToast(`Function "${item.name}" removed`);
                               setTimeout(() => setSaveToast(null), 3000);
                             }}
-                            className="p-1.5 text-slate-300 hover:text-rose-600 transition rounded-lg hover:bg-rose-50 cursor-pointer opacity-0 group-hover:opacity-100"
-                            title="Delete"
+                            className="p-2 text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition cursor-pointer shadow-2xs"
+                            title="Delete Function"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -1132,7 +1132,7 @@ export default function SettingsPage() {
 
                 {/* Edit Function Modal */}
                 {editingFunction && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+                  <div className="fixed inset-0 z-[100010] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
                     <div className="bg-white rounded-2xl p-5 max-w-sm w-full border border-amber-200/90 shadow-2xl space-y-4">
                       <div className="flex items-center justify-between">
                         <h3 className="text-sm font-extrabold text-amber-950">Edit Function Name</h3>

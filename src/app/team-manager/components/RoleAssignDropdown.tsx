@@ -265,13 +265,13 @@ export default function RoleAssignDropdown({
                           </div>
                         )}
                         <div className="text-left leading-tight min-w-0">
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <span className={`block font-black text-xs truncate ${isSelected ? 'text-emerald-900' : 'text-slate-900'}`}>
                               {cleanMName}
                             </span>
                             {isSelected && (
-                              <span className="px-1.5 py-0.2 rounded text-[8.5px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                Assigned
+                              <span className="px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                ✓ Currently Assigned
                               </span>
                             )}
                           </div>
