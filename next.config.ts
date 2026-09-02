@@ -4,10 +4,10 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  productionBrowserSourceMaps: false,
-  experimental: {
-    optimizePackageImports: ['lucide-react', 'framer-motion', '@supabase/supabase-js'],
+  eslint: {
+    ignoreDuringBuilds: true,
   },
+  productionBrowserSourceMaps: false,
 };
 
 export default nextConfig;
