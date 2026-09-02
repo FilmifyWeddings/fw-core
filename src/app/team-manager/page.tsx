@@ -2511,7 +2511,19 @@ export default function TeamManagerPage() {
         }}
         onDeleteMember={async (id) => {
           if (confirm('Are you sure you want to remove this team member?')) {
-            await supabase.from('fw_team_members').delete().eq('id', id);
+            try {
+              const { data: { session } } = await supabase.auth.getSession();
+              const effectiveWsId = workspaceId || currentUserId;
+              if (session?.access_token && effectiveWsId) {
+                await fetch(`/api/workspace/members?workspace_id=${effectiveWsId}&member_id=${id}`, {
+                  method: 'DELETE',
+                  headers: { Authorization: `Bearer ${session.access_token}` },
+                }).catch(() => {});
+              }
+              await supabase.from('fw_assignments').update({ assigned_member_id: null }).eq('assigned_member_id', id);
+              await supabase.from('fw_team_members').delete().eq('id', id);
+              await supabase.from('workspace_members').delete().eq('id', id);
+            } catch (_) {}
             fetchAllData();
           }
         }}

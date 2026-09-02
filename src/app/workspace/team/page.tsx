@@ -169,7 +169,9 @@ export default function WorkspaceTeamPage() {
       if (fwData && fwData.length > 0) {
         for (const f of fwData) {
           const exists = combinedMembers.some(
-            c => c.name.toLowerCase() === f.name.toLowerCase() || (f.email && c.email?.toLowerCase() === f.email.toLowerCase())
+            c => c.id === f.id || 
+                 (f.email && c.email && c.email.trim().toLowerCase() === f.email.trim().toLowerCase()) ||
+                 (f.name && c.name && c.name.trim().toLowerCase() === f.name.trim().toLowerCase())
           );
           if (!exists) {
             combinedMembers.push({
@@ -316,6 +318,8 @@ export default function WorkspaceTeamPage() {
             Authorization: `Bearer ${session.access_token}`,
           },
           body: JSON.stringify({
+            id: memberToEdit?.id || savedMemberId,
+            member_id: memberToEdit?.id || savedMemberId,
             workspace_id: effectiveWsId,
             name: memberData.name,
             email: memberData.email || `${memberData.name.toLowerCase().replace(/\s+/g, '')}@partner.studiocore.in`,
@@ -379,18 +383,43 @@ export default function WorkspaceTeamPage() {
     }
   };
 
-  // Delete Member
+  // Delete Member (Cascading delete across permissions, rates, assignments, and team tables)
   const handleDeleteMember = async (memberId: string) => {
     if (!confirm('Are you sure you want to remove this team member / partner?')) return;
     setDeletingId(memberId);
     try {
       const targetMember = members.find(m => m.id === memberId);
-      await supabase.from('fw_team_members').delete().eq('id', memberId);
-      await supabase.from('workspace_members').delete().eq('id', memberId);
-      setMembers(prev => prev.filter(m => m.id !== memberId));
-
       const { data: { session } } = await supabase.auth.getSession();
-      if (session?.access_token && workspaceId) {
+      const currentUid = session?.user?.id;
+      const effectiveWsId = workspaceId || currentUid;
+
+      // 1. Trigger complete backend cascading deletion
+      if (session?.access_token && effectiveWsId) {
+        await fetch(`/api/workspace/members?workspace_id=${effectiveWsId}&member_id=${memberId}`, {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        }).catch(err => console.warn('[handleDeleteMember] API delete error:', err));
+      }
+
+      // 2. Client-side fallback cleanup
+      try {
+        await supabase.from('fw_assignments').update({ assigned_member_id: null }).eq('assigned_member_id', memberId);
+        await supabase.from('workspace_team_member_rates').delete().eq('team_member_id', memberId);
+        await supabase.from('member_permissions').delete().eq('member_id', memberId);
+        await supabase.from('fw_team_members').delete().eq('id', memberId);
+        await supabase.from('workspace_members').delete().eq('id', memberId);
+      } catch (_) {}
+
+      // 3. Instant optimistic UI removal
+      setMembers(prev => prev.filter(m => m.id !== memberId));
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('team_member_deleted', { detail: { memberId } }));
+      }
+
+      // 4. Log Audit Activity
+      if (session?.access_token && effectiveWsId) {
         await fetch('/api/workspace/activity-logs', {
           method: 'POST',
           headers: {
@@ -398,7 +427,7 @@ export default function WorkspaceTeamPage() {
             Authorization: `Bearer ${session.access_token}`,
           },
           body: JSON.stringify({
-            workspace_id: workspaceId,
+            workspace_id: effectiveWsId,
             module: 'TEAM',
             action: 'MEMBER_REMOVED',
             description: `Removed team member ${targetMember?.name || memberId}`,

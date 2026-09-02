@@ -168,8 +168,29 @@ export default function AttendancePage() {
       }
 
       const { data: membersData } = await teamQuery;
-      const members = membersData || [];
-      setTeamMembers(members);
+      const rawMembers = membersData || [];
+
+      // Deduplicate members so each person has exactly ONE unified account in attendance
+      const uniqueMembers: any[] = [];
+      const seenIds = new Set<string>();
+      const seenEmails = new Set<string>();
+      const seenNames = new Set<string>();
+
+      rawMembers.forEach((m: any) => {
+        const emailKey = m.email ? m.email.trim().toLowerCase() : '';
+        const nameKey = m.name ? m.name.trim().toLowerCase() : '';
+
+        if (seenIds.has(m.id)) return;
+        if (emailKey && seenEmails.has(emailKey)) return;
+        if (nameKey && seenNames.has(nameKey) && m.phone_number) return;
+
+        seenIds.add(m.id);
+        if (emailKey) seenEmails.add(emailKey);
+        if (nameKey) seenNames.add(nameKey);
+        uniqueMembers.push(m);
+      });
+
+      setTeamMembers(uniqueMembers);
 
       // 2. Fetch Attendance Records for selected date
       let recQuery = supabase

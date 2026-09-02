@@ -107,13 +107,32 @@ export async function POST(req: NextRequest) {
       if (userData?.id) invitedUserId = userData.id;
     } catch (_) {}
 
-    // 2. Look up existing member by workspace_id and email
-    const { data: existingMember } = await supabaseAdmin
-      .from('workspace_members')
-      .select('id')
-      .eq('workspace_id', workspace_id)
-      .eq('email', cleanEmail)
-      .maybeSingle();
+    const explicitId = body.id || body.member_id;
+    let existingMember: any = null;
+
+    // 1. Look up existing member by explicit ID first, then by workspace_id and email
+    if (explicitId) {
+      const { data: memById } = await supabaseAdmin
+        .from('workspace_members')
+        .select('id')
+        .eq('id', explicitId)
+        .maybeSingle();
+      if (memById?.id) {
+        existingMember = memById;
+      }
+    }
+
+    if (!existingMember) {
+      const { data: memByEmail } = await supabaseAdmin
+        .from('workspace_members')
+        .select('id')
+        .eq('workspace_id', workspace_id)
+        .eq('email', cleanEmail)
+        .maybeSingle();
+      if (memByEmail?.id) {
+        existingMember = memByEmail;
+      }
+    }
 
     const memberPayload: any = {
       workspace_id,
@@ -148,6 +167,9 @@ export async function POST(req: NextRequest) {
         .single();
       savedMember = updated || { ...memberPayload, id: existingMember.id };
     } else {
+      if (explicitId) {
+        memberPayload.id = explicitId;
+      }
       const { data: inserted, error: insertErr } = await supabaseAdmin
         .from('workspace_members')
         .insert([memberPayload])
@@ -156,13 +178,15 @@ export async function POST(req: NextRequest) {
       savedMember = inserted;
     }
 
+    const targetMemberId = savedMember?.id || existingMember?.id || explicitId;
+
     // 2.5 Ensure identical record in fw_team_members for calendar & foreign key constraints
-    if (savedMember?.id) {
+    if (targetMemberId) {
       try {
         await supabaseAdmin
           .from('fw_team_members')
           .upsert({
-            id: savedMember.id,
+            id: targetMemberId,
             user_id: user.id,
             name: name.trim(),
             primary_role: primary_role || 'FREELANCER',
@@ -181,7 +205,7 @@ export async function POST(req: NextRequest) {
           .from('workspace_team_member_rates')
           .upsert({
             workspace_id: workspace_id,
-            team_member_id: savedMember.id,
+            team_member_id: targetMemberId,
             default_daily_rate: numDailyRate,
             payout_frequency: cleanFrequency,
             currency: cleanCurrency,
@@ -191,7 +215,6 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Upsert into member_permissions table
-    const targetMemberId = savedMember?.id || existingMember?.id;
     if (targetMemberId && permissions) {
       try {
         const { data: existingPerm } = await supabaseAdmin
@@ -247,5 +270,91 @@ export async function POST(req: NextRequest) {
       success: true,
       message: 'Workspace partner saved gracefully.',
     });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const authHeader = req.headers.get('authorization');
+    const token = authHeader?.replace('Bearer ', '');
+    const { searchParams } = new URL(req.url);
+    const workspaceId = searchParams.get('workspace_id');
+    const memberId = searchParams.get('member_id') || searchParams.get('id');
+
+    if (!token || !workspaceId || !memberId) {
+      return NextResponse.json({ error: 'Missing token, workspace_id, or member_id' }, { status: 400 });
+    }
+
+    const supabaseClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+    const { data: { user }, error: authErr } = await supabaseClient.auth.getUser(token);
+    if (authErr || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // 1. Unassign member from all shoot assignments
+    try {
+      await supabaseAdmin
+        .from('fw_assignments')
+        .update({ assigned_member_id: null })
+        .eq('assigned_member_id', memberId);
+    } catch (_) {}
+
+    // 2. Cascade delete member permissions
+    try {
+      await supabaseAdmin
+        .from('member_permissions')
+        .delete()
+        .eq('member_id', memberId);
+    } catch (_) {}
+
+    // 3. Cascade delete workspace member rates
+    try {
+      await supabaseAdmin
+        .from('workspace_team_member_rates')
+        .delete()
+        .eq('team_member_id', memberId);
+    } catch (_) {}
+
+    // 4. Cascade delete finances & payouts
+    try {
+      await supabaseAdmin
+        .from('crew_assignments_finance')
+        .delete()
+        .eq('team_member_id', memberId);
+    } catch (_) {}
+
+    try {
+      await supabaseAdmin
+        .from('team_event_payouts')
+        .delete()
+        .eq('member_id', memberId);
+    } catch (_) {}
+
+    // 5. Delete from workspace_members
+    try {
+      await supabaseAdmin
+        .from('workspace_members')
+        .delete()
+        .eq('id', memberId);
+    } catch (_) {}
+
+    // 6. Delete from fw_team_members
+    try {
+      await supabaseAdmin
+        .from('fw_team_members')
+        .delete()
+        .eq('id', memberId);
+    } catch (_) {}
+
+    return NextResponse.json({
+      success: true,
+      message: 'Team member removed completely across all modules.',
+    });
+  } catch (err: any) {
+    console.error('[workspace_members DELETE Exception]:', err);
+    return NextResponse.json({ error: err?.message || 'Failed to delete member' }, { status: 500 });
   }
 }

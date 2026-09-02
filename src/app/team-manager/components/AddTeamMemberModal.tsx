@@ -373,6 +373,8 @@ export default function AddTeamMemberModal({
               Authorization: `Bearer ${session.access_token}`,
             },
             body: JSON.stringify({
+              id: memberToEdit?.id,
+              member_id: memberToEdit?.id,
               workspace_id: workspaceId,
               name: name.trim(),
               email: email.trim(),
