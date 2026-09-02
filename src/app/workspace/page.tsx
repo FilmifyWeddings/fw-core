@@ -168,15 +168,9 @@ export default function WorkspaceHubPage() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('full_name, workspace_name')
-            .eq('id', session.user.id)
-            .maybeSingle();
-
-          const name = profile?.full_name || session.user.user_metadata?.full_name || session.user.user_metadata?.name || '';
-          if (name) {
-            setUserName(name.split(' ')[0]);
+          const metaName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || '';
+          if (metaName) {
+            setUserName(metaName.split(' ')[0]);
           } else {
             setUserName(session.user.email?.split('@')[0] || 'User');
           }

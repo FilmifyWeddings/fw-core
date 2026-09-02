@@ -59,33 +59,8 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   const [showOnboardingCelebration, setShowOnboardingCelebration] = useState<boolean>(false);
   const [leadsSubmenuOpen, setLeadsSubmenuOpen] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [userId, setUserId] = useState<string>('');
   const [profileData, setProfileData] = useState<any>(null);
-  const [profilesFetchErrorCount, setProfilesFetchErrorCount] = useState(0);
-
-  const fetchUserProfileDefensive = useCallback(async (targetId: string) => {
-    if (!targetId || profilesFetchErrorCount > 3) return;
-
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('full_name')
-        .eq('id', targetId)
-        .maybeSingle();
-
-      if (error) {
-        console.error("Safe caught profile fetch error:", error.message);
-        setProfilesFetchErrorCount(prev => prev + 1);
-        return;
-      }
-
-      if (data && JSON.stringify(data) !== JSON.stringify(profileData)) {
-        setProfileData(data);
-        if (data.full_name) setUserName(data.full_name);
-      }
-    } catch (err) {
-      console.warn("Infinite loop defense triggered in profile fetch");
-    }
-  }, [profilesFetchErrorCount, profileData]);
 
   // Load user profile & collapsed preference
   const fetchUserProfile = useCallback(async (force = false) => {
@@ -110,7 +85,16 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         setUserEmail(session.user.email || 'user@studiocore.in');
         setUserId(session.user.id);
 
-        // Fetch authoritative profile from API (bypassing client RLS)
+        // Fallback to user metadata immediately
+        const metaStudio = session.user.user_metadata?.workspace_name || session.user.user_metadata?.studio_name || 'My Studio';
+        const metaName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || 'Studio Owner';
+        const metaAvatar = session.user.user_metadata?.avatar_url || '';
+
+        setWorkspaceName(metaStudio);
+        setUserName(metaName);
+        if (metaAvatar) setUserAvatarUrl(metaAvatar);
+
+        // Fetch authoritative profile from API (bypassing client RLS safely)
         const token = session.access_token;
         const headers: Record<string, string> = {};
         if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -121,34 +105,27 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
             const json = await res.json();
             if (json?.profile) {
               const p = json.profile;
-              const finalStudio = p.studioName || session.user.user_metadata?.workspace_name || 'My Studio';
-              const finalName = p.fullName || session.user.user_metadata?.full_name || session.user.user_metadata?.name || 'Studio Owner';
-              const finalAvatar = p.avatarUrl || p.logoUrl || session.user.user_metadata?.avatar_url || '';
+              const finalStudio = p.studioName || metaStudio;
+              const finalName = p.fullName || metaName;
+              const finalAvatar = p.avatarUrl || p.logoUrl || metaAvatar;
 
               setWorkspaceName(finalStudio);
               setUserName(finalName);
-              setUserAvatarUrl(finalAvatar);
+              if (finalAvatar) setUserAvatarUrl(finalAvatar);
 
               if (typeof window !== 'undefined') {
                 localStorage.setItem('sc_studio_name', finalStudio);
                 localStorage.setItem('sc_user_name', finalName);
                 if (finalAvatar) localStorage.setItem('sc_avatar_url', finalAvatar);
               }
-              return;
             }
           }
         } catch (_) {}
-
-        // Direct Supabase fallback with defensive safe column selection
-        await fetchUserProfileDefensive(session.user.id);
-
-        const studio = session.user.user_metadata?.workspace_name || 'My Studio';
-        setWorkspaceName(studio);
       }
     } catch (err) {
       console.warn('Error loading user profile in sidebar handled safely:', err);
     }
-  }, [fetchUserProfileDefensive]);
+  }, []);
 
   useEffect(() => {
     const savedCollapsed = localStorage.getItem('sidebar_collapsed');
