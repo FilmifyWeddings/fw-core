@@ -1018,23 +1018,23 @@ export default function TeamManagerPage() {
       }
 
       // 3. Unified Month Filter
-      if (unifiedFilters.monthYear !== 'all') {
+      if (unifiedFilters?.monthYear && unifiedFilters.monthYear !== 'all') {
         const hasMonth = p.fw_sub_events?.some(se => (se.event_date || '').startsWith(unifiedFilters.monthYear));
         if (!hasMonth) return false;
       }
 
       // 4. Unified Date Range
-      if (unifiedFilters.startDate) {
+      if (unifiedFilters?.startDate) {
         const afterStart = p.fw_sub_events?.some(se => (se.event_date || '') >= unifiedFilters.startDate);
         if (!afterStart) return false;
       }
-      if (unifiedFilters.endDate) {
+      if (unifiedFilters?.endDate) {
         const beforeEnd = p.fw_sub_events?.some(se => (se.event_date || '') <= unifiedFilters.endDate);
         if (!beforeEnd) return false;
       }
 
       // 5. Unified Event Types
-      if (unifiedFilters.eventTypes.length > 0) {
+      if (unifiedFilters?.eventTypes && unifiedFilters.eventTypes.length > 0) {
         const hasType = p.fw_sub_events?.some(se =>
           unifiedFilters.eventTypes.some(t => se.event_title?.toLowerCase().includes(t.toLowerCase()))
         );
@@ -1042,7 +1042,7 @@ export default function TeamManagerPage() {
       }
 
       // 6. Unified Roles Multiselect
-      if (unifiedFilters.roles.length > 0) {
+      if (unifiedFilters?.roles && unifiedFilters.roles.length > 0) {
         const hasAnyRole = p.fw_sub_events?.some(se =>
           se.fw_assignments?.some(a => unifiedFilters.roles.includes(a.required_role))
         );
@@ -1050,12 +1050,12 @@ export default function TeamManagerPage() {
       }
 
       // 7. Unified Assignment Status
-      if (unifiedFilters.assignmentStatus === 'unassigned') {
+      if (unifiedFilters?.assignmentStatus === 'unassigned') {
         const hasUnassigned = p.fw_sub_events?.some(se =>
           se.fw_assignments?.some(a => !a.assigned_member_id)
         );
         if (!hasUnassigned) return false;
-      } else if (unifiedFilters.assignmentStatus === 'assigned') {
+      } else if (unifiedFilters?.assignmentStatus === 'assigned') {
         const allAssigned = p.fw_sub_events?.every(se =>
           se.fw_assignments && se.fw_assignments.length > 0 && se.fw_assignments.every(a => Boolean(a.assigned_member_id))
         );
@@ -1152,7 +1152,7 @@ export default function TeamManagerPage() {
                   >
                     <SlidersHorizontal className="w-4 h-4 text-indigo-600" />
                     <span>Filter</span>
-                    {(unifiedFilters.monthYear !== 'all' || unifiedFilters.startDate || unifiedFilters.eventTypes.length > 0 || unifiedFilters.roles.length > 0 || unifiedFilters.assignmentStatus !== 'all') && (
+                    {(unifiedFilters?.monthYear !== 'all' || Boolean(unifiedFilters?.startDate) || (unifiedFilters?.eventTypes?.length ?? 0) > 0 || (unifiedFilters?.roles?.length ?? 0) > 0 || (unifiedFilters?.assignmentStatus && unifiedFilters.assignmentStatus !== 'all')) && (
                       <span className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse" />
                     )}
                   </button>
