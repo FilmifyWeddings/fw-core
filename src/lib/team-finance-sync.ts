@@ -428,28 +428,15 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
         const se = a.sub_event_id ? subEventsMap[a.sub_event_id] : null;
         const proj = (a.project_id || se?.project_id) ? projectsMap[a.project_id || se?.project_id] : null;
 
-        // Skip orphaned test rows: assignment MUST have a valid project or sub-event
-        if (!se && !proj) {
-          return;
-        }
-
-        // STRICT STUDIO OWNER ISOLATION: If Studio Owner is viewing, ignore assignments from other studios' projects
-        if (!isFreelancerPortal && workspaceId && proj) {
-          const projWs = (proj as any).workspace_id || (proj as any).user_id;
-          if (projWs && projWs !== workspaceId) {
-            return; // Skip other studio's project
-          }
-        }
-
         // Intelligent Couple / Client Name Resolution
         let resolvedClientName = '';
         if (proj?.couple_name && proj.couple_name.trim()) {
           resolvedClientName = proj.couple_name.trim();
         } else if (proj?.bride_name && proj?.groom_name) {
           resolvedClientName = `${proj.bride_name} & ${proj.groom_name}`;
-        } else if (proj?.client_name && proj.client_name.trim() && proj.client_name.toLowerCase() !== 'wedding client' && proj.client_name.toLowerCase() !== 'client') {
+        } else if (proj?.client_name && proj.client_name.trim()) {
           resolvedClientName = proj.client_name.trim();
-        } else if (proj?.project_name && proj.project_name.trim() && proj.project_name.toLowerCase() !== 'wedding project') {
+        } else if (proj?.project_name && proj.project_name.trim()) {
           resolvedClientName = proj.project_name.trim();
         } else if (proj?.bride_name) {
           resolvedClientName = proj.bride_name.trim();
@@ -457,17 +444,12 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
           resolvedClientName = proj.groom_name.trim();
         } else if (se?.couple_name && se.couple_name.trim()) {
           resolvedClientName = se.couple_name.trim();
-        } else if (se?.client_name && se.client_name.trim() && se.client_name.toLowerCase() !== 'wedding client') {
+        } else if (se?.client_name && se.client_name.trim()) {
           resolvedClientName = se.client_name.trim();
-        } else if (a.client_name && a.client_name.trim() && a.client_name.toLowerCase() !== 'wedding client') {
+        } else if (a.client_name && a.client_name.trim()) {
           resolvedClientName = a.client_name.trim();
         } else {
-          resolvedClientName = proj?.client_name || '';
-        }
-
-        // If client name is empty or dummy without active project, skip
-        if (!resolvedClientName && !proj) {
-          return;
+          resolvedClientName = proj?.client_name || se?.event_title || 'Wedding Shoot';
         }
 
         const rawAgreed = Number(a.agreed_amount) || 0;

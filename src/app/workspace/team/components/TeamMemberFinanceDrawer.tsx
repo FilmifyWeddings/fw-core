@@ -27,6 +27,7 @@ import {
   updateCrewAssignmentPayment,
   fetchMemberFinancialSummary 
 } from '@/lib/team-finance-sync';
+import { supabase } from '@/lib/supabase';
 
 interface TeamMemberFinanceDrawerProps {
   isOpen: boolean;
@@ -123,17 +124,93 @@ export default function TeamMemberFinanceDrawer({
     setLoading(true);
     try {
       // 1. ALWAYS load event payouts for all team members (assigned shoots from Team Manager)
-      const rawPayouts = await fetchMemberEventPayouts(workspaceId, member.id);
-      const eventPayouts = (rawPayouts || []).filter(p => p.client_name !== 'Wedding Client' && p.client_name !== 'Wedding Shoot');
-      setPayouts(eventPayouts);
+      let eventPayouts = await fetchMemberEventPayouts(workspaceId, member.id);
 
-      // 2. Also load partner album orders if lab
+      // 2. Direct Fallback query from fw_assignments & fw_sub_events if empty or incomplete
+      if (!eventPayouts || eventPayouts.length === 0) {
+        try {
+          const { data: assignmentsData } = await supabase
+            .from('fw_assignments')
+            .select(`
+              id,
+              required_role,
+              assigned_member_id,
+              agreed_amount,
+              advance_amount,
+              paid_amount,
+              balance_amount,
+              payment_status,
+              sub_event_id,
+              created_at,
+              updated_at,
+              fw_sub_events (
+                id,
+                project_id,
+                event_title,
+                event_date,
+                start_time,
+                end_time,
+                venue,
+                location,
+                client_name,
+                couple_name
+              )
+            `)
+            .eq('assigned_member_id', member.id);
+
+          if (assignmentsData && assignmentsData.length > 0) {
+            const fallbackPayouts: TeamEventPayout[] = assignmentsData.map((a: any) => {
+              const se = a.fw_sub_events;
+              const defaultDailyRate = Number(member.default_daily_rate) || 0;
+              const rawAgreed = Number(a.agreed_amount) || 0;
+              const agreed = rawAgreed > 0 ? rawAgreed : defaultDailyRate;
+              const paid = Number(a.advance_amount ?? a.paid_amount) || 0;
+              const bal = Number(a.balance_amount) > 0 ? Number(a.balance_amount) : Math.max(0, agreed - paid);
+              const pStatus = (agreed > 0 && bal === 0) || a.payment_status === 'completed' || a.payment_status === 'PAID'
+                ? 'PAID'
+                : paid > 0 || a.payment_status === 'partial' || a.payment_status === 'PARTIAL'
+                ? 'PARTIAL'
+                : 'PENDING';
+
+              return {
+                id: a.id,
+                workspace_id: workspaceId,
+                member_id: member.id,
+                member_name: member.name || '',
+                project_id: se?.project_id || '',
+                sub_event_id: a.sub_event_id || '',
+                client_name: se?.couple_name || se?.client_name || 'Wedding Shoot',
+                event_name: se?.event_title || a.required_role || 'Shoot Event',
+                event_date: se?.event_date || new Date().toISOString().split('T')[0],
+                role: a.required_role || member.primary_role || 'Crew',
+                agreed_amount: agreed,
+                paid_amount: paid,
+                balance_amount: bal,
+                status: pStatus as any,
+                payment_method: 'UPI / Bank Transfer',
+                venue: se?.venue || se?.location || '',
+                start_time: se?.start_time || '',
+                end_time: se?.end_time || '',
+                created_at: a.created_at || new Date().toISOString(),
+                updated_at: a.updated_at || new Date().toISOString()
+              };
+            });
+            eventPayouts = fallbackPayouts;
+          }
+        } catch (fbErr) {
+          console.warn('[TeamMemberFinanceDrawer] Direct assignments fallback note:', fbErr);
+        }
+      }
+
+      setPayouts(eventPayouts || []);
+
+      // 3. Also load partner album orders if lab
       if (isLab) {
         const orders = await fetchPartnerAlbumOrders(workspaceId, member.id);
         setAlbumOrders(orders);
       }
 
-      // 3. Also load salary records if in-house
+      // 4. Also load salary records if in-house
       if (isInHouse) {
         const salaries = await fetchMemberSalaryRecords(workspaceId, member.id);
         setSalaryRecords(salaries);
@@ -141,8 +218,8 @@ export default function TeamMemberFinanceDrawer({
 
       const sum = await fetchMemberFinancialSummary(workspaceId, member.id, memberType);
 
-      // If event payouts exist, prioritize their totals if summary is 0
-      if (eventPayouts.length > 0 && sum.total_agreed === 0) {
+      // Dynamically calculate accurate summary totals from real eventPayouts
+      if (eventPayouts && eventPayouts.length > 0) {
         const eventAgreed = eventPayouts.reduce((a, b) => a + Number(b.agreed_amount || 0), 0);
         const eventPaid = eventPayouts.reduce((a, b) => a + Number(b.paid_amount || 0), 0);
         setSummary({
