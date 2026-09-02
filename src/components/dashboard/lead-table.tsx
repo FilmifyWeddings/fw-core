@@ -227,7 +227,7 @@ export function LeadTable({
   }, [stages]);
 
   useEffect(() => {
-    const handleSettingsSync = () => {
+    const handleSettingsSync = async () => {
       const local = localStorage.getItem('leads_workspace_stages');
       if (local) {
         try {
@@ -238,14 +238,22 @@ export function LeadTable({
           }
         } catch (_) {}
       }
-      fetch('/api/settings')
-        .then(res => res.json())
-        .then(data => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        const uid = session?.user?.id;
+        const url = uid ? `/api/settings?workspace_id=${uid}` : '/api/settings';
+        const res = await fetch(url, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        if (res.status === 401) return;
+        if (res.ok) {
+          const data = await res.json();
           if (data.success && Array.isArray(data.settings?.lead_stages) && data.settings.lead_stages.length > 0) {
             setStagesState(data.settings.lead_stages);
           }
-        })
-        .catch(() => {});
+        }
+      } catch (_) {}
     };
 
     handleSettingsSync();
@@ -357,8 +365,19 @@ export function LeadTable({
   useEffect(() => {
     const fetchFormNamesMap = async () => {
       try {
-        const { data: leadForms } = await supabase.from('fb_lead_forms').select('form_id, form_name');
-        const { data: mappings } = await supabase.from('fb_form_mappings').select('form_id, form_name');
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user?.id) return;
+
+        let formsQuery = supabase.from('fb_lead_forms').select('form_id, form_name');
+        let mappingsQuery = supabase.from('fb_form_mappings').select('form_id, form_name');
+
+        const [leadFormsRes, mappingsRes] = await Promise.all([
+          Promise.resolve(formsQuery).catch(() => ({ data: null })),
+          Promise.resolve(mappingsQuery).catch(() => ({ data: null }))
+        ]);
+
+        const leadForms = leadFormsRes?.data;
+        const mappings = mappingsRes?.data;
 
         const map = new Map<string, string>();
         if (leadForms) {
@@ -372,9 +391,7 @@ export function LeadTable({
           });
         }
         setFormNameMap(map);
-      } catch (err) {
-        console.error('Error fetching form names map:', err);
-      }
+      } catch (_) {}
     };
     fetchFormNamesMap();
   }, []);
@@ -396,9 +413,13 @@ export function LeadTable({
   useEffect(() => {
     const fetchFormQuestionsAndAutoDiscover = async () => {
       try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user?.id) return;
+
         const { data: leadForms } = await supabase
           .from('fb_lead_forms')
-          .select('form_id, form_name, questions');
+          .select('form_id, form_name, questions')
+          .eq('workspace_id', session.user.id);
 
         const formQuestionCols: ColumnConfig[] = [];
         const addedKeys = new Set<string>();
@@ -737,18 +758,28 @@ export function LeadTable({
         } catch (_) {}
       }
       // Fallback to fetch from settings API
-      fetch('/api/settings')
-        .then(res => res.json())
-        .then(data => {
-          if (data.success && Array.isArray(data.settings?.lead_owners)) {
-            const mapped = data.settings.lead_owners.map((o: any, idx: number) => {
-              if (typeof o === 'string') return { id: String(idx + 1), name: o, color: '#10b981' };
-              return o;
-            });
-            setTeamMembers(mapped);
+      (async () => {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const token = session?.access_token;
+          const uid = session?.user?.id;
+          const url = uid ? `/api/settings?workspace_id=${uid}` : '/api/settings';
+          const res = await fetch(url, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {}
+          });
+          if (res.status === 401) return;
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success && Array.isArray(data.settings?.lead_owners)) {
+              const mapped = data.settings.lead_owners.map((o: any, idx: number) => {
+                if (typeof o === 'string') return { id: String(idx + 1), name: o, color: '#10b981' };
+                return o;
+              });
+              setTeamMembers(mapped);
+            }
           }
-        })
-        .catch(() => {});
+        } catch (_) {}
+      })();
     }
   }, []);
   const [showAddStatusModal, setShowAddStatusModal] = useState(false);
@@ -1004,15 +1035,25 @@ export function LeadTable({
         } catch (_) {}
       }
 
-      fetch('/api/settings')
-        .then(res => res.json())
-        .then(data => {
-          if (data.success && data.settings?.lead_quick_actions) {
-            setQuickActionsConfig(data.settings.lead_quick_actions);
-            localStorage.setItem('leads_quick_actions', JSON.stringify(data.settings.lead_quick_actions));
+      (async () => {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const token = session?.access_token;
+          const uid = session?.user?.id;
+          const url = uid ? `/api/settings?workspace_id=${uid}` : '/api/settings';
+          const res = await fetch(url, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {}
+          });
+          if (res.status === 401) return;
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success && data.settings?.lead_quick_actions) {
+              setQuickActionsConfig(data.settings.lead_quick_actions);
+              localStorage.setItem('leads_quick_actions', JSON.stringify(data.settings.lead_quick_actions));
+            }
           }
-        })
-        .catch(() => {});
+        } catch (_) {}
+      })();
     };
 
     loadActions();
@@ -1039,14 +1080,24 @@ export function LeadTable({
         }
       } catch (_) {}
     } else {
-      fetch('/api/settings')
-        .then(res => res.json())
-        .then(data => {
-          if (data.success && Array.isArray(data.settings?.lead_sources)) {
-            setCustomSources(data.settings.lead_sources);
+      (async () => {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const token = session?.access_token;
+          const uid = session?.user?.id;
+          const url = uid ? `/api/settings?workspace_id=${uid}` : '/api/settings';
+          const res = await fetch(url, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {}
+          });
+          if (res.status === 401) return;
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success && Array.isArray(data.settings?.lead_sources)) {
+              setCustomSources(data.settings.lead_sources);
+            }
           }
-        })
-        .catch(() => {});
+        } catch (_) {}
+      })();
     }
 
     const subtextPref = localStorage.getItem('leads_table_contact_subtext');
