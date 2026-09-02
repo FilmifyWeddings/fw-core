@@ -14,6 +14,7 @@ import { supabase } from '@/lib/supabase';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import AddTeamMemberModal from '@/app/team-manager/components/AddTeamMemberModal';
 import TeamMemberFinanceDrawer from './components/TeamMemberFinanceDrawer';
+import DeleteMemberWarningModal from './components/DeleteMemberWarningModal';
 import { 
   fetchMemberFinancialSummary, 
   TeamFinancialSummary, 
@@ -79,6 +80,7 @@ export default function WorkspaceTeamPage() {
   const [isFinanceDrawerOpen, setIsFinanceDrawerOpen] = useState(false);
   const [memberFinancials, setMemberFinancials] = useState<Record<string, TeamFinancialSummary>>({});
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [memberToDelete, setMemberToDelete] = useState<TeamMember | null>(null);
 
 
   // Fast Sub-Second Parallel Financial Summaries for all members
@@ -383,9 +385,8 @@ export default function WorkspaceTeamPage() {
     }
   };
 
-  // Delete Member (Cascading delete across permissions, rates, assignments, and team tables)
-  const handleDeleteMember = async (memberId: string) => {
-    if (!confirm('Are you sure you want to remove this team member / partner?')) return;
+  // Execute Member Delete (Cascading delete across permissions, rates, assignments, and team tables)
+  const executeDeleteMember = async (memberId: string) => {
     setDeletingId(memberId);
     try {
       const targetMember = members.find(m => m.id === memberId);
@@ -437,6 +438,7 @@ export default function WorkspaceTeamPage() {
           }),
         }).catch(() => {});
       }
+      setMemberToDelete(null);
     } catch (err) {
       console.error('[WorkspaceTeamPage] Delete error:', err);
     } finally {
@@ -733,7 +735,7 @@ export default function WorkspaceTeamPage() {
                           </button>
 
                           <button
-                            onClick={() => handleDeleteMember(member.id)}
+                            onClick={() => setMemberToDelete(member)}
                             disabled={deletingId === member.id}
                             className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
                             title="Remove Member"
@@ -966,6 +968,15 @@ export default function WorkspaceTeamPage() {
         }}
         workspaceId={workspaceId || ''}
         member={selectedFinanceMember}
+      />
+
+      {/* Luxury Red Delete Warning Modal */}
+      <DeleteMemberWarningModal
+        isOpen={Boolean(memberToDelete)}
+        onClose={() => setMemberToDelete(null)}
+        onConfirm={() => memberToDelete && executeDeleteMember(memberToDelete.id)}
+        member={memberToDelete}
+        isDeleting={Boolean(deletingId)}
       />
     </div>
   );

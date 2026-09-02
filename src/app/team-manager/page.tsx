@@ -27,6 +27,7 @@ import RoleAssignDropdown from './components/RoleAssignDropdown';
 import { EventBlockData } from './components/EventBlock';
 import { saveOrUpdateEventPayout, fetchMemberFinancialSummary, fetchWorkspaceMemberRatesMap, TeamFinancialSummary, unassignCrewSlot } from '@/lib/team-finance-sync';
 import TeamMemberFinanceDrawer from '../workspace/team/components/TeamMemberFinanceDrawer';
+import DeleteMemberWarningModal from '../workspace/team/components/DeleteMemberWarningModal';
 import { WorkspaceCrewRole, fetchWorkspaceCrewRoles, fetchWorkspaceEventTypes, getRoleShortCode } from '@/lib/workspace-settings';
 
 // 1. Deterministic Client Gradient Consistency based on Project ID / Name Hash
@@ -233,6 +234,8 @@ export default function TeamManagerPage() {
     roles: [],
     assignmentStatus: 'all',
   });
+  const [memberToDelete, setMemberToDelete] = useState<FWTeamMember | null>(null);
+  const [isDeletingMember, setIsDeletingMember] = useState<boolean>(false);
 
 
   useEffect(() => {
@@ -2509,23 +2512,9 @@ export default function TeamManagerPage() {
           setActiveAssignmentForMember(null);
           setIsAddMemberOpen(true);
         }}
-        onDeleteMember={async (id) => {
-          if (confirm('Are you sure you want to remove this team member?')) {
-            try {
-              const { data: { session } } = await supabase.auth.getSession();
-              const effectiveWsId = workspaceId || currentUserId;
-              if (session?.access_token && effectiveWsId) {
-                await fetch(`/api/workspace/members?workspace_id=${effectiveWsId}&member_id=${id}`, {
-                  method: 'DELETE',
-                  headers: { Authorization: `Bearer ${session.access_token}` },
-                }).catch(() => {});
-              }
-              await supabase.from('fw_assignments').update({ assigned_member_id: null }).eq('assigned_member_id', id);
-              await supabase.from('fw_team_members').delete().eq('id', id);
-              await supabase.from('workspace_members').delete().eq('id', id);
-            } catch (_) {}
-            fetchAllData();
-          }
+        onDeleteMember={(id) => {
+          const m = teamMembers.find(t => t.id === id);
+          if (m) setMemberToDelete(m);
         }}
       />
 
@@ -2622,6 +2611,46 @@ export default function TeamManagerPage() {
           ...customCrewRoles.map(r => r.name)
         ]))}
         totalFilteredCount={filteredProjects.length}
+      />
+
+      {/* 7. Luxury Red Delete Member Confirmation Warning Modal */}
+      <DeleteMemberWarningModal
+        isOpen={Boolean(memberToDelete)}
+        onClose={() => setMemberToDelete(null)}
+        onConfirm={async () => {
+          if (!memberToDelete) return;
+          setIsDeletingMember(true);
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const effectiveWsId = workspaceId || currentUserId;
+            if (session?.access_token && effectiveWsId) {
+              await fetch(`/api/workspace/members?workspace_id=${effectiveWsId}&member_id=${memberToDelete.id}`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${session.access_token}` },
+              }).catch(() => {});
+            }
+            await supabase.from('fw_assignments').update({ assigned_member_id: null }).eq('assigned_member_id', memberToDelete.id);
+            await supabase.from('workspace_team_member_rates').delete().eq('team_member_id', memberToDelete.id);
+            await supabase.from('member_permissions').delete().eq('member_id', memberToDelete.id);
+            await supabase.from('fw_team_members').delete().eq('id', memberToDelete.id);
+            await supabase.from('workspace_members').delete().eq('id', memberToDelete.id);
+            setMemberToDelete(null);
+            fetchAllData();
+          } catch (err) {
+            console.error('[TeamManager] Delete member error:', err);
+          } finally {
+            setIsDeletingMember(false);
+          }
+        }}
+        member={memberToDelete ? {
+          id: memberToDelete.id,
+          name: memberToDelete.name,
+          primary_role: memberToDelete.primary_role,
+          email: memberToDelete.email,
+          phone: memberToDelete.phone_number ? `${memberToDelete.country_code || '+91'} ${memberToDelete.phone_number}` : undefined,
+          avatar_url: memberToDelete.avatar_url || undefined,
+        } : null}
+        isDeleting={isDeletingMember}
       />
     </div>
   );
