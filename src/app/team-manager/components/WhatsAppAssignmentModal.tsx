@@ -82,14 +82,28 @@ export default function WhatsAppAssignmentModal({
           } catch (_) {}
         }
 
-        // 2. If no custom agreed rate exists for this shoot, fall back to member's default daily rate
+        // 2. If no custom agreed rate exists for this shoot:
+        // In-House / Monthly salaried members default to 0, Freelancers default to their daily rate
         if (existingAgreed == null) {
-          let rate = member.default_daily_rate ?? member.daily_rate;
-          if ((rate == null || rate === 0) && effectiveWsId) {
-            const wsRate = await fetchWorkspaceMemberRate(effectiveWsId, member.id);
-            if (wsRate != null && wsRate > 0) rate = wsRate;
+          const isInHouse = 
+            (member as any).payout_frequency === 'monthly' ||
+            (member as any).primary_type === 'IN_HOUSE' ||
+            (member as any).primary_type === 'in_house' ||
+            (member as any).type === 'IN_HOUSE' ||
+            (member as any).type === 'in_house' ||
+            ((member as any).member_types && (member as any).member_types.includes('IN_HOUSE')) ||
+            ((member as any).member_types && (member as any).member_types.includes('in_house'));
+
+          if (isInHouse) {
+            existingAgreed = 0;
+          } else {
+            let rate = member.default_daily_rate ?? member.daily_rate;
+            if ((rate == null || rate === 0) && effectiveWsId) {
+              const wsRate = await fetchWorkspaceMemberRate(effectiveWsId, member.id);
+              if (wsRate != null && wsRate > 0) rate = wsRate;
+            }
+            existingAgreed = rate != null ? rate : 0;
           }
-          existingAgreed = rate != null ? rate : 0;
         }
 
         setAgreedAmount(String(existingAgreed));

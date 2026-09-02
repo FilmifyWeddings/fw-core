@@ -123,7 +123,8 @@ export default function TeamMemberFinanceDrawer({
     setLoading(true);
     try {
       // 1. ALWAYS load event payouts for all team members (assigned shoots from Team Manager)
-      const eventPayouts = await fetchMemberEventPayouts(workspaceId, member.id);
+      const rawPayouts = await fetchMemberEventPayouts(workspaceId, member.id);
+      const eventPayouts = (rawPayouts || []).filter(p => p.client_name !== 'Wedding Client' && p.client_name !== 'Wedding Shoot');
       setPayouts(eventPayouts);
 
       // 2. Also load partner album orders if lab

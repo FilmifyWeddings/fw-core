@@ -260,30 +260,33 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
       });
 
       if (!ledgerErr && ledgerRows && Array.isArray(ledgerRows) && ledgerRows.length > 0) {
-        return ledgerRows.map((r: any) => ({
-          id: r.assignment_id || `assign_${r.event_id}`,
-          workspace_id: workspaceId,
-          member_id: memberId,
-          member_name: memberName || '',
-          project_id: r.event_id || '',
-          sub_event_id: '',
-          client_name: r.client_name || 'Wedding Client',
-          event_name: r.sub_event_title || 'Shoot Event',
-          event_date: r.shoot_date || new Date().toISOString().split('T')[0],
-          role: r.role_name || 'Crew',
-          agreed_amount: Number(r.agreed_amount) || 0,
-          paid_amount: Number(r.advance_amount) || 0,
-          balance_amount: Number(r.balance_amount) || 0,
-          status: (r.payment_status === 'completed' || (Number(r.agreed_amount) > 0 && Number(r.balance_amount) === 0) ? 'PAID' : Number(r.advance_amount) > 0 ? 'PARTIAL' : 'PENDING') as any,
-          payment_method: r.payment_method || 'UPI / Bank Transfer',
-          payment_date: r.payment_date || undefined,
-          notes: '',
-          venue: r.venue || '',
-          start_time: r.start_time || '',
-          end_time: r.end_time || '',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }));
+        const filtered = ledgerRows.filter((r: any) => r.client_name && r.client_name !== 'Wedding Client' && r.client_name !== 'Wedding Shoot');
+        if (filtered.length > 0) {
+          return filtered.map((r: any) => ({
+            id: r.assignment_id || `assign_${r.event_id}`,
+            workspace_id: workspaceId,
+            member_id: memberId,
+            member_name: memberName || '',
+            project_id: r.event_id || '',
+            sub_event_id: '',
+            client_name: r.client_name || 'Client',
+            event_name: r.sub_event_title || 'Shoot Event',
+            event_date: r.shoot_date || new Date().toISOString().split('T')[0],
+            role: r.role_name || 'Crew',
+            agreed_amount: Number(r.agreed_amount) || 0,
+            paid_amount: Number(r.advance_amount) || 0,
+            balance_amount: Number(r.balance_amount) || 0,
+            status: (r.payment_status === 'completed' || (Number(r.agreed_amount) > 0 && Number(r.balance_amount) === 0) ? 'PAID' : Number(r.advance_amount) > 0 ? 'PARTIAL' : 'PENDING') as any,
+            payment_method: r.payment_method || 'UPI / Bank Transfer',
+            payment_date: r.payment_date || undefined,
+            notes: '',
+            venue: r.venue || '',
+            start_time: r.start_time || '',
+            end_time: r.end_time || '',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }));
+        }
       }
     } catch (_) {}
 
@@ -307,7 +310,17 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
       if (m2.email && !memberEmail) memberEmail = m2.email;
     }
 
-    const defaultDailyRate = Number(rateRow?.default_daily_rate) || Number(m1?.default_daily_rate) || Number(m2?.default_daily_rate) || 0;
+    const isInHouseMember = 
+      (m1 as any)?.payout_frequency === 'monthly' ||
+      (m2 as any)?.payout_frequency === 'monthly' ||
+      rateRow?.payout_frequency === 'monthly' ||
+      (m1 as any)?.primary_type === 'IN_HOUSE' ||
+      (m2 as any)?.primary_type === 'IN_HOUSE' ||
+      (m1 as any)?.type === 'IN_HOUSE' ||
+      (m2 as any)?.type === 'IN_HOUSE';
+
+    const rawDailyRate = Number(rateRow?.default_daily_rate) || Number(m1?.default_daily_rate) || Number(m2?.default_daily_rate) || 0;
+    const defaultDailyRate = isInHouseMember ? 0 : rawDailyRate;
 
     // Resolve any linked IDs by email/name in parallel
     if (memberEmail || memberName) {
@@ -411,6 +424,11 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
         const se = a.sub_event_id ? subEventsMap[a.sub_event_id] : null;
         const proj = (a.project_id || se?.project_id) ? projectsMap[a.project_id || se?.project_id] : null;
 
+        // Skip orphaned test rows: assignment MUST have a valid project or sub-event
+        if (!se && !proj) {
+          return;
+        }
+
         // STRICT STUDIO OWNER ISOLATION: If Studio Owner is viewing, ignore assignments from other studios' projects
         if (!isFreelancerPortal && workspaceId && proj) {
           const projWs = (proj as any).workspace_id || (proj as any).user_id;
@@ -440,7 +458,12 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
         } else if (a.client_name && a.client_name.trim() && a.client_name.toLowerCase() !== 'wedding client') {
           resolvedClientName = a.client_name.trim();
         } else {
-          resolvedClientName = proj?.client_name || 'Wedding Client';
+          resolvedClientName = proj?.client_name || '';
+        }
+
+        // If client name is empty or dummy without active project, skip
+        if (!resolvedClientName && !proj) {
+          return;
         }
 
         const rawAgreed = Number(a.agreed_amount) || 0;
@@ -466,7 +489,7 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
           member_name: a.assigned_member_name || memberName || '',
           project_id: a.project_id || a.event_id || se?.project_id || '',
           sub_event_id: a.sub_event_id || '',
-          client_name: resolvedClientName,
+          client_name: resolvedClientName || 'Client Shoot',
           event_name: eventTitle,
           event_date: eventDate,
           role: a.required_role || a.role_name || 'Crew',
@@ -489,10 +512,15 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
       });
     }
 
-    // Unify crew_assignments_finance without duplicates
+    // Unify crew_assignments_finance without duplicates (Strictly real projects only)
     if (crewFinData.length > 0) {
       crewFinData.forEach((c: any) => {
         if (!seenIds.has(c.id)) {
+          // Discard orphaned dummy rows
+          if ((!c.event_id && !c.sub_event_id) || c.client_name === 'Wedding Client' || c.client_name === 'Wedding Shoot') {
+            return;
+          }
+
           const rawAgreed = Number(c.final_agreed_amount) || 0;
           const agreed = rawAgreed > 0 ? rawAgreed : defaultDailyRate;
           const paid = Number(c.advance_paid_amount) || 0;
@@ -507,7 +535,7 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
             member_name: c.team_member_name || memberName,
             project_id: c.event_id || '',
             sub_event_id: c.sub_event_id || '',
-            client_name: c.client_name || 'Wedding Client',
+            client_name: c.client_name || 'Shoot Event',
             event_name: c.role_name || 'Shoot Event',
             event_date: c.payment_date || new Date().toISOString().split('T')[0],
             role: c.role_name || 'Crew',
@@ -525,10 +553,15 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
       });
     }
 
-    // Unify team_event_payouts without duplicates
+    // Unify team_event_payouts without duplicates (Strictly real projects only)
     if (teamPayoutData.length > 0) {
       teamPayoutData.forEach((tp: any) => {
         if (!seenIds.has(tp.id)) {
+          // Discard orphaned dummy rows
+          if ((!tp.project_id && !tp.sub_event_id) || tp.client_name === 'Wedding Client' || tp.client_name === 'Wedding Shoot') {
+            return;
+          }
+
           const rawAgreed = Number(tp.agreed_amount) || 0;
           const agreed = rawAgreed > 0 ? rawAgreed : defaultDailyRate;
           const paid = Number(tp.paid_amount) || 0;
@@ -543,7 +576,7 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
             member_name: tp.member_name || memberName,
             project_id: tp.project_id || '',
             sub_event_id: tp.sub_event_id || '',
-            client_name: tp.client_name || 'Wedding Client',
+            client_name: tp.client_name || 'Shoot Event',
             event_name: tp.event_name || 'Shoot Event',
             event_date: tp.event_date || new Date().toISOString().split('T')[0],
             role: tp.role || 'Crew',
@@ -562,79 +595,11 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
       });
     }
 
-    // 2. Try crew_assignments_finance
-    try {
-      let cfQuery = supabase.from('crew_assignments_finance').select('*');
-      if (idList.length === 1) {
-        cfQuery = cfQuery.eq('team_member_id', idList[0]);
-      } else {
-        cfQuery = cfQuery.in('team_member_id', idList);
-      }
-      const { data: crewFinData } = await cfQuery.order('payment_date', { ascending: false });
-
-      if (crewFinData && crewFinData.length > 0) {
-        crewFinData.forEach((c: any) => {
-          if (!seenIds.has(c.id)) {
-            const agreed = Number(c.final_agreed_amount) || 0;
-            const paid = Number(c.advance_paid_amount) || 0;
-            const bal = Number(c.balance_amount) || Math.max(0, agreed - paid);
-            const pStatus = (c.payment_status === 'completed' ? 'PAID' : c.payment_status === 'partial' ? 'PARTIAL' : 'PENDING') as any;
-
-            const item: TeamEventPayout = {
-              id: c.id,
-              workspace_id: c.workspace_id || workspaceId,
-              member_id: c.team_member_id,
-              member_name: c.team_member_name || c.member_name || memberName || '',
-              project_id: c.event_id || '',
-              sub_event_id: c.sub_event_id || '',
-              client_name: c.client_name || 'Wedding Shoot',
-              event_name: c.event_name || c.role_name || 'Shoot Event',
-              event_date: c.payment_date || c.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
-              role: c.role_name || 'Crew',
-              agreed_amount: agreed,
-              paid_amount: paid,
-              balance_amount: bal,
-              status: pStatus,
-              payment_method: c.payment_method || 'UPI / Bank Transfer',
-              payment_date: c.payment_date,
-              notes: c.notes || '',
-              synced_expense_id: c.synced_expense_id,
-              created_at: c.created_at,
-              updated_at: c.updated_at
-            };
-            seenIds.add(c.id);
-            resultList.push(item);
-          }
-        });
-      }
-    } catch (_) {}
-
-    // 3. Fallback to team_event_payouts
-    try {
-      let tpQuery = supabase.from('team_event_payouts').select('*');
-      if (idList.length === 1) {
-        tpQuery = tpQuery.eq('member_id', idList[0]);
-      } else {
-        tpQuery = tpQuery.in('member_id', idList);
-      }
-      const { data } = await tpQuery.order('event_date', { ascending: false });
-
-      if (data && data.length > 0) {
-        data.forEach((p: any) => {
-          if (!seenIds.has(p.id)) {
-            seenIds.add(p.id);
-            resultList.push(p);
-          }
-        });
-      }
-    } catch (_) {}
-
-    if (resultList.length > 0) {
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(`${LS_PAYOUTS_KEY}${workspaceId}_${memberId}`, JSON.stringify(resultList));
-      }
-      return resultList;
+    // Always clear localStorage cache so fresh verified records are served
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`${LS_PAYOUTS_KEY}${workspaceId}_${memberId}`, JSON.stringify(resultList));
     }
+    return resultList;
   } catch (err) {
     console.warn('[team-finance-sync] DB fetchMemberEventPayouts error, checking fallback:', err);
   }

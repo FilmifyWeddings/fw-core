@@ -677,8 +677,19 @@ export default function TeamManagerPage() {
               } catch (_) {}
             }
 
-            // 1. Auto sync to Team & Partner Financial Engine
+            // 1. Auto sync to Team & Partner Financial Engine (0 for In-House, default_daily_rate for Freelancers)
             if (matchedMemberObj) {
+              const isInHouse = 
+                (matchedMemberObj as any).payout_frequency === 'monthly' ||
+                (matchedMemberObj as any).primary_type === 'IN_HOUSE' ||
+                (matchedMemberObj as any).primary_type === 'in_house' ||
+                (matchedMemberObj as any).type === 'IN_HOUSE' ||
+                (matchedMemberObj as any).type === 'in_house' ||
+                ((matchedMemberObj as any).member_types && (matchedMemberObj as any).member_types.includes('IN_HOUSE')) ||
+                ((matchedMemberObj as any).member_types && (matchedMemberObj as any).member_types.includes('in_house'));
+
+              const defaultAmount = isInHouse ? 0 : (matchedMemberObj.default_daily_rate || 0);
+
               await saveOrUpdateEventPayout(workspaceId || currentUserId, {
                 member_id: memberId,
                 member_name: matchedMemberObj.name,
@@ -688,7 +699,7 @@ export default function TeamManagerPage() {
                 event_name: subEventObj?.event_title || 'Wedding Event',
                 event_date: subEventObj?.event_date || new Date().toISOString().split('T')[0],
                 role: activeAssign.required_role || 'Crew',
-                agreed_amount: matchedMemberObj.default_daily_rate || 0
+                agreed_amount: defaultAmount
               });
             }
             // 2. Check if assignment record already exists in DB for this sub_event & role
