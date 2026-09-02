@@ -339,12 +339,6 @@ export default function TeamManagerPage() {
     const uid = targetUid !== undefined ? targetUid : (workspaceId || currentUserId);
 
     try {
-      try {
-        await supabase.storage.createBucket('team-avatars', { public: true });
-      } catch (e) {
-        // Bucket initialized or skipped
-      }
-
       // 1. Fetch Team Members for active workspace from both workspace_members and fw_team_members
       const combinedMembers: FWTeamMember[] = [];
       const wsRatesMap = await fetchWorkspaceMemberRatesMap(uid).catch(() => ({}));
@@ -800,26 +794,31 @@ export default function TeamManagerPage() {
         // Fetch existing ASSIGNED members so we can preserve them
         const existingAssignedMap: Record<string, string | null> = {};
         if (existingSubEvents && existingSubEvents.length > 0) {
-          const subEventIds = existingSubEvents.map(se => se.id);
-          const { data: existingAssignments } = await supabase
-            .from('fw_assignments')
-            .select('sub_event_id, required_role, assigned_member_id')
-            .in('sub_event_id', subEventIds)
-            .not('assigned_member_id', 'is', null);
+          const subEventIds = existingSubEvents
+            .map(se => se.id)
+            .filter(id => Boolean(id) && typeof id === 'string' && id.length === 36);
 
-          // Build a map: "subEventTitle|role" -> assigned_member_id
-          if (existingAssignments) {
-            existingAssignments.forEach(a => {
-              const se = existingSubEvents.find(e => e.id === a.sub_event_id);
-              if (se) {
-                const key = `${se.event_title}|${a.required_role}`;
-                existingAssignedMap[key] = a.assigned_member_id;
-              }
-            });
+          if (subEventIds.length > 0) {
+            const { data: existingAssignments } = await supabase
+              .from('fw_assignments')
+              .select('sub_event_id, required_role, assigned_member_id')
+              .in('sub_event_id', subEventIds)
+              .not('assigned_member_id', 'is', null);
+
+            // Build a map: "subEventTitle|role" -> assigned_member_id
+            if (existingAssignments) {
+              existingAssignments.forEach(a => {
+                const se = existingSubEvents.find(e => e.id === a.sub_event_id);
+                if (se) {
+                  const key = `${se.event_title}|${a.required_role}`;
+                  existingAssignedMap[key] = a.assigned_member_id;
+                }
+              });
+            }
+
+            // Now delete old assignments and sub_events to re-insert updated ones
+            await supabase.from('fw_assignments').delete().in('sub_event_id', subEventIds);
           }
-
-          // Now delete old assignments and sub_events to re-insert updated ones
-          await supabase.from('fw_assignments').delete().in('sub_event_id', subEventIds);
           await supabase.from('fw_sub_events').delete().eq('project_id', projectId);
         }
 
@@ -990,8 +989,13 @@ export default function TeamManagerPage() {
     try {
       const { data: subEvents } = await supabase.from('fw_sub_events').select('id').eq('project_id', projectId);
       if (subEvents && subEvents.length > 0) {
-        const subEventIds = subEvents.map(se => se.id);
-        await supabase.from('fw_assignments').delete().in('sub_event_id', subEventIds);
+        const subEventIds = subEvents
+          .map(se => se.id)
+          .filter(id => Boolean(id) && typeof id === 'string' && id.length === 36);
+
+        if (subEventIds.length > 0) {
+          await supabase.from('fw_assignments').delete().in('sub_event_id', subEventIds);
+        }
         await supabase.from('fw_sub_events').delete().eq('project_id', projectId);
       }
       await supabase.from('fw_projects').delete().eq('id', projectId);

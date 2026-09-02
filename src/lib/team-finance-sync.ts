@@ -252,43 +252,46 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
   let memberEmail = '';
 
   try {
-    // 0. Try Supabase RPC get_member_complete_commercial_ledger (Strict DB Ledger)
-    try {
-      const { data: ledgerRows, error: ledgerErr } = await supabase.rpc('get_member_complete_commercial_ledger', {
-        p_workspace_id: workspaceId,
-        p_member_id: memberId
-      });
+    // 0. Try Supabase RPC get_member_complete_commercial_ledger (Strict DB Ledger) only if both workspaceId and memberId are valid UUIDs
+    const isStrictUuid = (val: any): boolean => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val.trim());
+    if (isStrictUuid(workspaceId) && isStrictUuid(memberId)) {
+      try {
+        const { data: ledgerRows, error: ledgerErr } = await supabase.rpc('get_member_complete_commercial_ledger', {
+          p_workspace_id: workspaceId,
+          p_member_id: memberId
+        });
 
-      if (!ledgerErr && ledgerRows && Array.isArray(ledgerRows) && ledgerRows.length > 0) {
-        const filtered = ledgerRows.filter((r: any) => r.client_name && r.client_name !== 'Wedding Client' && r.client_name !== 'Wedding Shoot');
-        if (filtered.length > 0) {
-          return filtered.map((r: any) => ({
-            id: r.assignment_id || `assign_${r.event_id}`,
-            workspace_id: workspaceId,
-            member_id: memberId,
-            member_name: memberName || '',
-            project_id: r.event_id || '',
-            sub_event_id: '',
-            client_name: r.client_name || 'Client',
-            event_name: r.sub_event_title || 'Shoot Event',
-            event_date: r.shoot_date || new Date().toISOString().split('T')[0],
-            role: r.role_name || 'Crew',
-            agreed_amount: Number(r.agreed_amount) || 0,
-            paid_amount: Number(r.advance_amount) || 0,
-            balance_amount: Number(r.balance_amount) || 0,
-            status: (r.payment_status === 'completed' || (Number(r.agreed_amount) > 0 && Number(r.balance_amount) === 0) ? 'PAID' : Number(r.advance_amount) > 0 ? 'PARTIAL' : 'PENDING') as any,
-            payment_method: r.payment_method || 'UPI / Bank Transfer',
-            payment_date: r.payment_date || undefined,
-            notes: '',
-            venue: r.venue || '',
-            start_time: r.start_time || '',
-            end_time: r.end_time || '',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          }));
+        if (!ledgerErr && ledgerRows && Array.isArray(ledgerRows) && ledgerRows.length > 0) {
+          const filtered = ledgerRows.filter((r: any) => r.client_name && r.client_name !== 'Wedding Client' && r.client_name !== 'Wedding Shoot');
+          if (filtered.length > 0) {
+            return filtered.map((r: any) => ({
+              id: r.assignment_id || `assign_${r.event_id}`,
+              workspace_id: workspaceId,
+              member_id: memberId,
+              member_name: memberName || '',
+              project_id: r.event_id || '',
+              sub_event_id: '',
+              client_name: r.client_name || 'Client',
+              event_name: r.sub_event_title || 'Shoot Event',
+              event_date: r.shoot_date || new Date().toISOString().split('T')[0],
+              role: r.role_name || 'Crew',
+              agreed_amount: Number(r.agreed_amount) || 0,
+              paid_amount: Number(r.advance_amount) || 0,
+              balance_amount: Number(r.balance_amount) || 0,
+              status: (r.payment_status === 'completed' || (Number(r.agreed_amount) > 0 && Number(r.balance_amount) === 0) ? 'PAID' : Number(r.advance_amount) > 0 ? 'PARTIAL' : 'PENDING') as any,
+              payment_method: r.payment_method || 'UPI / Bank Transfer',
+              payment_date: r.payment_date || undefined,
+              notes: '',
+              venue: r.venue || '',
+              start_time: r.start_time || '',
+              end_time: r.end_time || '',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            }));
+          }
         }
-      }
-    } catch (_) {}
+      } catch (_) {}
+    }
 
     // 0.5. Parallel lookup of member aliases & rates across fw_team_members, workspace_members & workspace_team_member_rates
     const [ftmRes, wmRes, rateRes] = await Promise.all([
@@ -376,9 +379,10 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
     const teamPayoutData = (teamPayoutRes as any)?.data || [];
 
     if (assignData && assignData.length > 0) {
-      // Collect sub_event_ids and project_ids for fast batch lookup
-      const subEventIds = assignData.map((a: any) => a.sub_event_id).filter(Boolean);
-      const projectIds: string[] = assignData.map((a: any) => a.project_id || a.event_id).filter(Boolean);
+      // Collect sub_event_ids and project_ids for fast batch lookup (strictly valid UUIDs only)
+      const isStrictUuid = (val: any): boolean => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val.trim());
+      const subEventIds = assignData.map((a: any) => a.sub_event_id).filter(isStrictUuid);
+      const projectIds: string[] = assignData.map((a: any) => a.project_id || a.event_id).filter(isStrictUuid);
 
       const [seListRes, pListRes] = await Promise.all([
         subEventIds.length > 0
@@ -396,7 +400,7 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
       if (seListRes?.data) {
         seListRes.data.forEach((se: any) => {
           subEventsMap[se.id] = se;
-          if (se.project_id && !projectIds.includes(se.project_id)) {
+          if (se.project_id && !projectIds.includes(se.project_id) && isStrictUuid(se.project_id)) {
             additionalProjIds.push(se.project_id);
           }
         });
