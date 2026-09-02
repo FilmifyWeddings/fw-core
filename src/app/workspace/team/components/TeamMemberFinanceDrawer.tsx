@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, IndianRupee, Calendar, CreditCard, Plus, CheckCircle2, Clock, 
@@ -255,21 +255,37 @@ export default function TeamMemberFinanceDrawer({
 
       const sum = await fetchMemberFinancialSummary(workspaceId, member.id, memberType);
 
-      // Dynamically calculate accurate summary totals from real eventPayouts
-      if (eventPayouts && eventPayouts.length > 0) {
-        const eventAgreed = eventPayouts.reduce((a, b) => a + Number(b.agreed_amount || 0), 0);
-        const eventPaid = eventPayouts.reduce((a, b) => a + Number(b.paid_amount || 0), 0);
+      // Dynamically calculate accurate summary totals from studio-isolated payouts only
+      const studioShootsList = (eventPayouts || []).filter((item: any) => {
+        if (workspaceId && workspaceId !== 'all') {
+          if (item.workspace_id && item.workspace_id !== workspaceId) return false;
+          if (item.fw_sub_events?.workspace_id && item.fw_sub_events.workspace_id !== workspaceId) return false;
+        }
+        return true;
+      });
+
+      if (studioShootsList && studioShootsList.length > 0) {
+        const eventAgreed = studioShootsList.reduce((a, b) => a + Number(b.agreed_amount || 0), 0);
+        const eventPaid = studioShootsList.reduce((a, b) => a + Number(b.paid_amount || 0), 0);
         setSummary({
           ...sum,
           total_agreed: eventAgreed,
           total_paid: eventPaid,
           total_balance: Math.max(0, eventAgreed - eventPaid),
-          active_events_count: eventPayouts.length,
-          paid_events_count: eventPayouts.filter(p => p.status === 'PAID' || p.status === 'completed').length,
-          pending_events_count: eventPayouts.filter(p => p.status !== 'PAID' && p.status !== 'completed').length
+          active_events_count: studioShootsList.length,
+          paid_events_count: studioShootsList.filter(p => p.status === 'PAID' || p.status === 'completed').length,
+          pending_events_count: studioShootsList.filter(p => p.status !== 'PAID' && p.status !== 'completed').length
         });
       } else {
-        setSummary(sum);
+        setSummary({
+          ...sum,
+          total_agreed: 0,
+          total_paid: 0,
+          total_balance: 0,
+          active_events_count: 0,
+          paid_events_count: 0,
+          pending_events_count: 0
+        });
       }
     } catch (err) {
       console.error('[TeamMemberFinanceDrawer] Load error:', err);
@@ -280,6 +296,17 @@ export default function TeamMemberFinanceDrawer({
 
   // Track active member ID to prevent stale data flash
   const [activeMemberId, setActiveMemberId] = useState<string | null>(null);
+
+  // Defensive Multi-Tenant UI Guard: Ensure only shoots belonging to the active studio workspace are rendered
+  const studioShoots = useMemo(() => {
+    return (payouts || []).filter((item: any) => {
+      if (workspaceId && workspaceId !== 'all') {
+        if (item.workspace_id && item.workspace_id !== workspaceId) return false;
+        if (item.fw_sub_events?.workspace_id && item.fw_sub_events.workspace_id !== workspaceId) return false;
+      }
+      return true;
+    });
+  }, [payouts, workspaceId]);
 
   useEffect(() => {
     if (isOpen && member?.id) {
@@ -550,7 +577,7 @@ export default function TeamMemberFinanceDrawer({
                   : 'border-transparent text-stone-500 hover:text-stone-800'
               }`}
             >
-              📅 Bookings &amp; Events ({payouts.length})
+              📅 Bookings &amp; Events ({studioShoots.length})
             </button>
             <button
               onClick={() => setActiveTab('monthly')}
@@ -725,12 +752,12 @@ export default function TeamMemberFinanceDrawer({
                             </div>
                           ))}
                         </div>
-                      ) : payouts.length === 0 ? (
+                      ) : studioShoots.length === 0 ? (
                         <div className="p-8 text-center bg-white border-2 border-dashed border-amber-200/90 rounded-2xl text-zinc-400 text-xs font-medium">
-                          No shoot bookings recorded yet for this member. Assign them to a shoot in Team Manager or add a custom payout above.
+                          No shoot bookings recorded yet for this member in this workspace. Assign them to a shoot in Team Manager or add a custom payout above.
                         </div>
                       ) : (
-                        payouts.map(payout => {
+                        studioShoots.map(payout => {
                           const dateObj = payout.event_date ? new Date(payout.event_date) : null;
                           const dayStr = dateObj && !isNaN(dateObj.getTime()) ? String(dateObj.getDate()).padStart(2, '0') : '--';
                           const monthStr = dateObj && !isNaN(dateObj.getTime()) ? dateObj.toLocaleString('en-US', { month: 'short' }).toUpperCase() : 'DATE';

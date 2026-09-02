@@ -450,6 +450,23 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
         const se = a.sub_event_id ? subEventsMap[a.sub_event_id] : null;
         const proj = (a.project_id || se?.project_id) ? projectsMap[a.project_id || se?.project_id] : null;
 
+        // STRICT MULTI-TENANT ISOLATION: Studio Owner A must never see shoots assigned by Studio Owner B
+        if (!isFreelancerPortal && workspaceId) {
+          const assignWs = a.workspace_id || a.user_id;
+          const projWs = (proj as any)?.workspace_id || (proj as any)?.user_id;
+          const seWs = (se as any)?.workspace_id || (se as any)?.user_id;
+
+          if (assignWs && assignWs !== workspaceId && assignWs !== 'all') {
+            return;
+          }
+          if (projWs && projWs !== workspaceId && projWs !== 'all') {
+            return;
+          }
+          if (seWs && seWs !== workspaceId && seWs !== 'all') {
+            return;
+          }
+        }
+
         // Intelligent Couple / Client Name Resolution
         let resolvedClientName = '';
         if (proj?.couple_name && proj.couple_name.trim()) {
@@ -524,6 +541,11 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
     if (crewFinData.length > 0) {
       crewFinData.forEach((c: any) => {
         if (!seenIds.has(c.id)) {
+          // STRICT MULTI-TENANT ISOLATION
+          if (!isFreelancerPortal && workspaceId && c.workspace_id && c.workspace_id !== workspaceId && c.workspace_id !== 'all') {
+            return;
+          }
+
           // Discard orphaned dummy rows
           if ((!c.event_id && !c.sub_event_id) || c.client_name === 'Wedding Client' || c.client_name === 'Wedding Shoot') {
             return;
@@ -565,6 +587,11 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
     if (teamPayoutData.length > 0) {
       teamPayoutData.forEach((tp: any) => {
         if (!seenIds.has(tp.id)) {
+          // STRICT MULTI-TENANT ISOLATION
+          if (!isFreelancerPortal && workspaceId && tp.workspace_id && tp.workspace_id !== workspaceId && tp.workspace_id !== 'all') {
+            return;
+          }
+
           // Discard orphaned dummy rows
           if ((!tp.project_id && !tp.sub_event_id) || tp.client_name === 'Wedding Client' || tp.client_name === 'Wedding Shoot') {
             return;
