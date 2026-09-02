@@ -2420,12 +2420,31 @@ export default function TeamManagerPage() {
                     const q = memberSearchQuery.toLowerCase();
                     return (
                       cleanMName.toLowerCase().includes(q) ||
-                      m.primary_role.toLowerCase().includes(q)
+                      (m.primary_role && m.primary_role.toLowerCase().includes(q))
                     );
+                  })
+                  .sort((a, b) => {
+                    // 1. Pinned Assigned Member ALWAYS Position #1 (Top)
+                    const isAAssigned = activeAssignment.assigned_member_id === a.id;
+                    const isBAssigned = activeAssignment.assigned_member_id === b.id;
+                    if (isAAssigned && !isBAssigned) return -1;
+                    if (!isAAssigned && isBAssigned) return 1;
+
+                    // 2. Matching role prioritized next
+                    const targetRole = (activeAssignment.required_role || '').toLowerCase();
+                    const isARole = (a.primary_role || '').toLowerCase() === targetRole;
+                    const isBRole = (b.primary_role || '').toLowerCase() === targetRole;
+                    if (isARole && !isBRole) return -1;
+                    if (!isARole && isBRole) return 1;
+
+                    // 3. Alphabetical fallback
+                    return (a.name || '').localeCompare(b.name || '');
                   })
                   .map((m) => {
                     const isSelected = activeAssignment.assigned_member_id === m.id;
                     const cleanMName = m.name ? m.name.replace(/\.\.\./g, '').trim() : '';
+                    const isRoleMatch = (m.primary_role || '').toLowerCase() === (activeAssignment.required_role || '').toLowerCase();
+
                     return (
                       <button
                         key={m.id}
@@ -2436,27 +2455,44 @@ export default function TeamManagerPage() {
                         }}
                         className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
                           isSelected
-                            ? 'bg-[#6C5CE7]/10 text-[#6C5CE7]'
+                            ? 'bg-emerald-50 text-emerald-950 border border-emerald-300 shadow-2xs'
                             : 'text-[#0B111E] hover:bg-zinc-50'
                         }`}
                       >
-                        <div className="flex items-center gap-2.5">
+                        <div className="flex items-center gap-2.5 min-w-0">
                           {m.avatar_url ? (
                             // eslint-disable-next-next/no-img-element
                             <img 
                               src={m.avatar_url} 
                               alt={cleanMName} 
-                              className="w-6 h-6 rounded-full object-cover shrink-0 border border-white ring-1 ring-emerald-400" 
+                              className={`w-6 h-6 rounded-full object-cover shrink-0 border border-white ${
+                                isSelected ? 'ring-2 ring-emerald-500' : 'ring-1 ring-slate-200'
+                              }`}
                             />
                           ) : (
-                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-[9px] flex items-center justify-center shrink-0 border border-white ring-1 ring-indigo-200">
+                            <div className={`w-6 h-6 rounded-full text-white font-black text-[9px] flex items-center justify-center shrink-0 border border-white ${
+                              isSelected ? 'bg-emerald-600 ring-2 ring-emerald-500' : 'bg-gradient-to-br from-indigo-500 to-purple-600 ring-1 ring-indigo-200'
+                            }`}>
                               {getInitials(cleanMName)}
                             </div>
                           )}
-                          <span className="break-words max-w-[120px] text-left">{cleanMName}</span>
-                          <span className="text-[9px] font-semibold text-[#4F5E74]">({m.primary_role})</span>
+                          <div className="text-left leading-tight min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className={`block font-black text-xs truncate ${isSelected ? 'text-emerald-900' : 'text-slate-900'}`}>
+                                {cleanMName}
+                              </span>
+                              {isSelected && (
+                                <span className="px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                  ✓ Currently Assigned
+                                </span>
+                              )}
+                            </div>
+                            <span className={`text-[9.5px] font-semibold ${isSelected ? 'text-emerald-700' : isRoleMatch ? 'text-indigo-600 font-bold' : 'text-slate-400'}`}>
+                              {m.primary_role || 'Crew'}
+                            </span>
+                          </div>
                         </div>
-                        {isSelected && <Check className="w-3.5 h-3.5 text-[#6C5CE7]" />}
+                        {isSelected && <Check className="w-4 h-4 text-emerald-700 shrink-0 stroke-[3]" />}
                       </button>
                     );
                   })}
