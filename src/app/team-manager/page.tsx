@@ -222,6 +222,15 @@ export default function TeamManagerPage() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedRoleFilter, setSelectedRoleFilter] = useState<string>('All');
   const [instantAlerts, setInstantAlerts] = useState<boolean>(true);
+  const [isUnifiedFilterOpen, setIsUnifiedFilterOpen] = useState<boolean>(false);
+  const [unifiedFilters, setUnifiedFilters] = useState<UnifiedFilterState>({
+    monthYear: 'all',
+    startDate: '',
+    endDate: '',
+    eventTypes: [],
+    roles: [],
+    assignmentStatus: 'all',
+  });
 
 
   useEffect(() => {
@@ -2397,6 +2406,34 @@ export default function TeamManagerPage() {
         }}
         workspaceId={workspaceId || currentUserId}
         member={selectedFinanceMember}
+      />
+
+      {/* 6. Unified Filter Modal */}
+      <UnifiedTeamFilterModal
+        isOpen={isUnifiedFilterOpen}
+        onClose={() => setIsUnifiedFilterOpen(false)}
+        filters={unifiedFilters}
+        onApplyFilters={(newFilters) => {
+          setUnifiedFilters(newFilters);
+          setIsUnifiedFilterOpen(false);
+        }}
+        onResetFilters={() => {
+          setUnifiedFilters({
+            monthYear: 'all',
+            startDate: '',
+            endDate: '',
+            eventTypes: [],
+            roles: [],
+            assignmentStatus: 'all',
+          });
+        }}
+        availableEventTypes={eventTypesList}
+        availableRoles={Array.from(new Set([
+          'Lead Photographer', 'Candid Photographer', 'Traditional Photographer', 
+          'Cinematographer', 'Drone Pilot', 'Assistant / Helper', 'Editor',
+          ...customCrewRoles.map(r => r.name)
+        ]))}
+        totalFilteredCount={filteredProjects.length}
       />
     </div>
   );
