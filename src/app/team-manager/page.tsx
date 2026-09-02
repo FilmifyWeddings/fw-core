@@ -1,5 +1,7 @@
 'use client';
 import OperationsAnalyticsTab from './components/OperationsAnalyticsTab';
+import MonthlyPayrollTab from './components/MonthlyPayrollTab';
+import UnifiedTeamFilterModal, { UnifiedFilterState } from './components/UnifiedTeamFilterModal';
 
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
@@ -984,27 +986,76 @@ export default function TeamManagerPage() {
     return days > 0 ? `In ${days} Days` : days === 0 ? 'Today' : `${Math.abs(days)} Days Ago`;
   };
 
-  // Filtered Projects List
-  const filteredProjects = projects.filter(p => {
-    if (activeTab === 'trash') return p.is_archived;
-    if (p.is_archived) return false;
+  // Filtered Projects List with Unified Filter Support
+  const filteredProjects = useMemo(() => {
+    return projects.filter(p => {
+      if (activeTab === 'trash') return p.is_archived;
+      if (p.is_archived) return false;
 
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const matchName = p.client_name.toLowerCase().includes(q);
-      const matchSub = p.fw_sub_events?.some(se => se.event_title.toLowerCase().includes(q));
-      if (!matchName && !matchSub) return false;
-    }
+      // 1. Search Query
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchName = p.client_name?.toLowerCase().includes(q);
+        const matchSub = p.fw_sub_events?.some(se => se.event_title?.toLowerCase().includes(q));
+        if (!matchName && !matchSub) return false;
+      }
 
-    if (selectedRoleFilter !== 'All') {
-      const hasRole = p.fw_sub_events?.some(se =>
-        se.fw_assignments?.some(a => a.required_role === selectedRoleFilter)
-      );
-      if (!hasRole) return false;
-    }
+      // 2. Role Filter (legacy dropdown or unified)
+      if (selectedRoleFilter !== 'All') {
+        const hasRole = p.fw_sub_events?.some(se =>
+          se.fw_assignments?.some(a => a.required_role === selectedRoleFilter)
+        );
+        if (!hasRole) return false;
+      }
 
-    return true;
-  });
+      // 3. Unified Month Filter
+      if (unifiedFilters.monthYear !== 'all') {
+        const hasMonth = p.fw_sub_events?.some(se => (se.event_date || '').startsWith(unifiedFilters.monthYear));
+        if (!hasMonth) return false;
+      }
+
+      // 4. Unified Date Range
+      if (unifiedFilters.startDate) {
+        const afterStart = p.fw_sub_events?.some(se => (se.event_date || '') >= unifiedFilters.startDate);
+        if (!afterStart) return false;
+      }
+      if (unifiedFilters.endDate) {
+        const beforeEnd = p.fw_sub_events?.some(se => (se.event_date || '') <= unifiedFilters.endDate);
+        if (!beforeEnd) return false;
+      }
+
+      // 5. Unified Event Types
+      if (unifiedFilters.eventTypes.length > 0) {
+        const hasType = p.fw_sub_events?.some(se =>
+          unifiedFilters.eventTypes.some(t => se.event_title?.toLowerCase().includes(t.toLowerCase()))
+        );
+        if (!hasType) return false;
+      }
+
+      // 6. Unified Roles Multiselect
+      if (unifiedFilters.roles.length > 0) {
+        const hasAnyRole = p.fw_sub_events?.some(se =>
+          se.fw_assignments?.some(a => unifiedFilters.roles.includes(a.required_role))
+        );
+        if (!hasAnyRole) return false;
+      }
+
+      // 7. Unified Assignment Status
+      if (unifiedFilters.assignmentStatus === 'unassigned') {
+        const hasUnassigned = p.fw_sub_events?.some(se =>
+          se.fw_assignments?.some(a => !a.assigned_member_id)
+        );
+        if (!hasUnassigned) return false;
+      } else if (unifiedFilters.assignmentStatus === 'assigned') {
+        const allAssigned = p.fw_sub_events?.every(se =>
+          se.fw_assignments && se.fw_assignments.length > 0 && se.fw_assignments.every(a => Boolean(a.assigned_member_id))
+        );
+        if (!allAssigned) return false;
+      }
+
+      return true;
+    });
+  }, [projects, activeTab, searchQuery, selectedRoleFilter, unifiedFilters]);
 
   if (!isOwner && tmAccess === 'NONE') {
     return (
@@ -1084,6 +1135,19 @@ export default function TeamManagerPage() {
                     <span>+ Member</span>
                   </button>
 
+                  {/* Unified Filter Button */}
+                  <button
+                    type="button"
+                    onClick={() => setIsUnifiedFilterOpen(true)}
+                    className="hidden sm:flex bg-white border border-slate-200 hover:border-indigo-400 text-slate-800 text-xs font-black py-2.5 px-3.5 rounded-2xl items-center justify-center gap-1.5 shadow-2xs shrink-0 cursor-pointer transition"
+                  >
+                    <SlidersHorizontal className="w-4 h-4 text-indigo-600" />
+                    <span>Filter</span>
+                    {(unifiedFilters.monthYear !== 'all' || unifiedFilters.startDate || unifiedFilters.eventTypes.length > 0 || unifiedFilters.roles.length > 0 || unifiedFilters.assignmentStatus !== 'all') && (
+                      <span className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse" />
+                    )}
+                  </button>
+
                   {/* + Project - desktop only */}
                   <button
                     onClick={() => { setEditingProject(null); setIsAddProjectOpen(true); }}
@@ -1158,6 +1222,18 @@ export default function TeamManagerPage() {
               >
                 <CalendarIcon className="w-4 h-4 text-amber-500" />
                 📅 Master Calendar View
+              </button>
+
+              <button
+                onClick={() => setActiveTab('payroll')}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer select-none shrink-0 ${
+                  activeTab === 'payroll'
+                    ? 'bg-gradient-to-r from-[#d97706] to-[#b45309] text-white shadow-md shadow-amber-950/30'
+                    : 'text-amber-900 hover:text-amber-950 hover:bg-amber-50 border border-amber-300/80 bg-amber-50/60'
+                }`}
+              >
+                <IndianRupee className="w-4 h-4 text-amber-600" />
+                💰 Monthly Payroll &amp; Salary
               </button>
 
               <button

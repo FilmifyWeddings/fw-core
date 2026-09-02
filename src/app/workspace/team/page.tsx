@@ -81,21 +81,42 @@ export default function WorkspaceTeamPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
 
-  // Load Financial Summaries for all members
+  // Fast Sub-Second Parallel Financial Summaries for all members
   const loadFinancialSummaries = useCallback(async (membersList: TeamMember[]) => {
     const { data: { session } } = await supabase.auth.getSession();
     const currentUid = session?.user?.id;
     const effectiveWsId = workspaceId || currentUid || userEmail;
     if (!effectiveWsId || membersList.length === 0) return;
 
-    const summaryMap: Record<string, TeamFinancialSummary> = {};
-    for (const m of membersList) {
-      try {
-        const sum = await fetchMemberFinancialSummary(effectiveWsId, m.id, m.primary_type || 'FREELANCER');
-        summaryMap[m.id] = sum;
-      } catch (_) {}
-    }
-    setMemberFinancials(summaryMap);
+    try {
+      const summaryResults = await Promise.all(
+        membersList.map(async (m) => {
+          try {
+            const sum = await fetchMemberFinancialSummary(effectiveWsId, m.id, m.primary_type || 'FREELANCER');
+            return { id: m.id, summary: sum };
+          } catch (_) {
+            return {
+              id: m.id,
+              summary: {
+                member_id: m.id,
+                total_agreed: 0,
+                total_paid: 0,
+                total_balance: 0,
+                active_events_count: 0,
+                paid_events_count: 0,
+                pending_events_count: 0
+              }
+            };
+          }
+        })
+      );
+
+      const summaryMap: Record<string, TeamFinancialSummary> = {};
+      summaryResults.forEach(r => {
+        if (r.id) summaryMap[r.id] = r.summary;
+      });
+      setMemberFinancials(summaryMap);
+    } catch (_) {}
   }, [workspaceId, userEmail]);
 
   // Load team members from database
