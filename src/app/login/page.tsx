@@ -388,254 +388,239 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen w-full bg-[#FAF9F6] text-zinc-900 flex flex-col justify-between font-sans selection:bg-amber-100 relative overflow-x-hidden">
       
-      {/* Background Subtle Ambient Highlights */}
+      {/* Background Ambient Glows */}
       <div className="absolute -top-32 -left-32 w-96 h-96 bg-amber-200/20 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute top-1/2 -right-32 w-96 h-96 bg-indigo-200/15 rounded-full blur-3xl pointer-events-none" />
 
       {/* ── TOP LUXURY BRAND HEADER ── */}
-      <header className="relative z-20 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-5 flex items-center justify-between">
+      <header className="relative z-20 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 sm:py-5 flex items-center justify-between">
         <Link href="/" className="group">
           <OfficialStudioCoreLogo />
         </Link>
-
-        {/* Brand Security Badge */}
-        <div className="hidden sm:flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-[#EBE7DF] text-xs font-bold text-zinc-600 shadow-2xs">
-          <ShieldCheck className="w-4 h-4 text-emerald-600" />
-          <span>ISO 27001 Certified • Bank-Grade Security</span>
-        </div>
       </header>
 
       {/* ── MAIN DUAL PORTAL CONTAINER ── */}
-      <main className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 sm:py-6 flex-1 flex flex-col justify-center">
+      <main className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 sm:py-4 flex-1 flex flex-col justify-center">
         
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start max-w-6xl mx-auto w-full">
-          
-          {/* ── LEFT COLUMN: POINT-WISE FEATURE LIST & 3D FADED PHOTOGRAPHER ── */}
-          <div className="lg:col-span-6 hidden lg:flex flex-col justify-between space-y-6 pt-2">
+        {/* ── 3D CUBICAL ROLE CARDS (TOP FOR MOBILE & DESKTOP) ── */}
+        <div className="max-w-xl mx-auto w-full mb-5 sm:mb-6">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4">
             
-            <div className="space-y-4">
-              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-[#EBE7DF] text-xs font-bold text-zinc-800 shadow-2xs w-fit">
-                <Sparkles className="w-3.5 h-3.5 text-[#bf7304]" />
-                <span>{portal === 'studio' ? 'Complete Studio Operating System' : 'Multi-Studio Freelance Network'}</span>
+            {/* CUBICAL CARD 1: Studio Owner */}
+            <button
+              type="button"
+              onClick={() => { setPortal('studio'); setError(null); }}
+              className={`relative p-3.5 sm:p-4.5 rounded-3xl transition-all duration-300 text-left cursor-pointer flex flex-col justify-between shadow-md ${
+                portal === 'studio'
+                  ? 'bg-gradient-to-br from-white via-amber-50/70 to-amber-100/60 border-2 border-amber-500 shadow-amber-900/15 ring-2 ring-amber-400/20'
+                  : 'bg-white/80 hover:bg-white border border-[#EBE7DF] hover:border-zinc-300 shadow-2xs'
+              }`}
+            >
+              <div className="flex items-center justify-between w-full mb-2">
+                <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center shadow-md transition-transform ${
+                  portal === 'studio'
+                    ? 'bg-gradient-to-tr from-[#d97706] to-[#b45309] text-white scale-105 border border-amber-300/40'
+                    : 'bg-zinc-100 text-zinc-600 border border-zinc-200'
+                }`}>
+                  <Crown className="w-5 h-5" />
+                </div>
+
+                <span className={`text-[9px] sm:text-[10px] font-black px-2 py-0.5 rounded-full border ${
+                  portal === 'studio'
+                    ? 'bg-amber-500 text-white border-amber-400'
+                    : 'bg-zinc-100 text-zinc-500 border-zinc-200'
+                }`}>
+                  {portal === 'studio' ? 'Active' : 'Select'}
+                </span>
               </div>
 
-              <h2 className="text-3xl xl:text-[38px] font-serif font-black text-zinc-900 tracking-tight leading-[1.15]">
+              <div>
+                <h3 className={`text-xs sm:text-sm md:text-base font-black font-serif tracking-tight leading-tight ${
+                  portal === 'studio' ? 'text-zinc-900' : 'text-zinc-700'
+                }`}>
+                  Studio Owner
+                </h3>
+                <p className="text-[10px] sm:text-[11px] text-zinc-500 font-medium leading-tight mt-0.5 truncate">
+                  CRM, Quotes & Team
+                </p>
+              </div>
+            </button>
+
+            {/* CUBICAL CARD 2: Team & Freelancer */}
+            <button
+              type="button"
+              onClick={() => { setPortal('team'); setError(null); }}
+              className={`relative p-3.5 sm:p-4.5 rounded-3xl transition-all duration-300 text-left cursor-pointer flex flex-col justify-between shadow-md ${
+                portal === 'team'
+                  ? 'bg-gradient-to-br from-white via-indigo-50/70 to-indigo-100/60 border-2 border-indigo-600 shadow-indigo-900/15 ring-2 ring-indigo-400/20'
+                  : 'bg-white/80 hover:bg-white border border-[#EBE7DF] hover:border-zinc-300 shadow-2xs'
+              }`}
+            >
+              <div className="flex items-center justify-between w-full mb-2">
+                <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center shadow-md transition-transform ${
+                  portal === 'team'
+                    ? 'bg-gradient-to-tr from-[#4f46e5] to-[#4338ca] text-white scale-105 border border-indigo-300/40'
+                    : 'bg-zinc-100 text-zinc-600 border border-zinc-200'
+                }`}>
+                  <Camera className="w-5 h-5" />
+                </div>
+
+                <span className={`text-[9px] sm:text-[10px] font-black px-2 py-0.5 rounded-full border ${
+                  portal === 'team'
+                    ? 'bg-indigo-600 text-white border-indigo-500'
+                    : 'bg-zinc-100 text-zinc-500 border-zinc-200'
+                }`}>
+                  {portal === 'team' ? 'Active' : 'Select'}
+                </span>
+              </div>
+
+              <div>
+                <h3 className={`text-xs sm:text-sm md:text-base font-black font-serif tracking-tight leading-tight ${
+                  portal === 'team' ? 'text-zinc-900' : 'text-zinc-700'
+                }`}>
+                  Team & Freelancer
+                </h3>
+                <p className="text-[10px] sm:text-[11px] text-zinc-500 font-medium leading-tight mt-0.5 truncate">
+                  Shoots, Dates & Payouts
+                </p>
+              </div>
+            </button>
+
+          </div>
+        </div>
+
+        {/* ── 3-SECTION GRID: LEFT INSTRUCTIONS + CENTER 3D PHOTOGRAPHER + RIGHT FORM ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-center max-w-6xl mx-auto w-full">
+          
+          {/* ── LEFT COLUMN: POINT-WISE FEATURE LIST ── */}
+          <div className="lg:col-span-4 hidden lg:flex flex-col justify-center space-y-4">
+            
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white border border-[#EBE7DF] text-xs font-bold text-zinc-800 shadow-2xs w-fit">
+                <Sparkles className="w-3.5 h-3.5 text-[#bf7304]" />
+                <span>{portal === 'studio' ? 'Operating System' : 'Freelance Network'}</span>
+              </div>
+
+              <h2 className="text-2xl xl:text-3xl font-serif font-black text-zinc-900 tracking-tight leading-tight">
                 {portal === 'studio' ? (
-                  <>Focus on Your Art. <br /><span className="text-[#bf7304]">We Handle Your Business.</span></>
+                  <>Focus on Art. <br /><span className="text-[#bf7304]">We Manage Business.</span></>
                 ) : (
-                  <>Track Every Shoot & Call Time. <br /><span className="text-indigo-600">Get Guaranteed Payouts.</span></>
+                  <>Track Every Shoot. <br /><span className="text-indigo-600">Guaranteed Payouts.</span></>
                 )}
               </h2>
-
-              <p className="text-xs sm:text-sm text-zinc-600 font-medium leading-relaxed">
-                {portal === 'studio'
-                  ? 'The single platform trusted by premium wedding photographers to automate leads, assign crew, send live quotations, and track studio finances.'
-                  : 'Join the StudioCore Freelancer Network. Access assigned wedding schedules, venue GPS navigation, and transparent live payment ledgers.'}
-              </p>
-
-              {/* Point-wise Features with 3D Styled Badges */}
-              <div className="space-y-3 pt-2">
-                {portal === 'studio' ? [
-                  {
-                    icon: Target,
-                    color: 'text-emerald-600 bg-emerald-50 border-emerald-200',
-                    title: 'Smart CRM & Automated WhatsApp Follow-ups',
-                    desc: 'Never let a wedding lead go cold with auto-responders & status pipelines.',
-                  },
-                  {
-                    icon: FileText,
-                    color: 'text-amber-600 bg-amber-50 border-amber-200',
-                    title: 'Interactive Proposal & Quotation Builder',
-                    desc: 'Send modern luxury quotations that couples can review & accept in 1-click.',
-                  },
-                  {
-                    icon: Calendar,
-                    color: 'text-sky-600 bg-sky-50 border-sky-200',
-                    title: 'Crew Assignment & Smart Scheduling',
-                    desc: 'Assign lead photographers & drone pilots with live WhatsApp call sheets.',
-                  },
-                  {
-                    icon: IndianRupee,
-                    color: 'text-indigo-600 bg-indigo-50 border-indigo-200',
-                    title: 'Studio Profit & Financial Ledger',
-                    desc: 'Track client advances, pending dues, crew costs, and automated GST billing.',
-                  },
-                ].map((item, idx) => (
-                  <div key={idx} className="flex items-start gap-3 p-2.5 rounded-2xl bg-white/70 border border-[#EBE7DF] shadow-2xs hover:bg-white transition-all">
-                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${item.color}`}>
-                      <item.icon className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-zinc-900">{item.title}</h4>
-                      <p className="text-[11px] text-zinc-500 font-medium leading-tight mt-0.5">{item.desc}</p>
-                    </div>
-                  </div>
-                )) : [
-                  {
-                    icon: Calendar,
-                    color: 'text-indigo-600 bg-indigo-50 border-indigo-200',
-                    title: 'Live Wedding Shoot Schedules & Call Times',
-                    desc: 'Direct access to event timings, couple details & venue GPS location.',
-                  },
-                  {
-                    icon: IndianRupee,
-                    color: 'text-emerald-600 bg-emerald-50 border-emerald-200',
-                    title: 'Transparent Live Payout Ledger',
-                    desc: 'Track your agreed fees, advance receipts & pending balance per event.',
-                  },
-                  {
-                    icon: Layers,
-                    color: 'text-amber-600 bg-amber-50 border-amber-200',
-                    title: 'Multi-Studio Freelance Network',
-                    desc: 'Seamlessly switch between multiple studios hiring you from 1 account.',
-                  },
-                  {
-                    icon: Zap,
-                    color: 'text-sky-600 bg-sky-50 border-sky-200',
-                    title: '1-Click Instant Activation',
-                    desc: 'Get assigned shoots automatically synced as soon as you sign in.',
-                  },
-                ].map((item, idx) => (
-                  <div key={idx} className="flex items-start gap-3 p-2.5 rounded-2xl bg-white/70 border border-[#EBE7DF] shadow-2xs hover:bg-white transition-all">
-                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${item.color}`}>
-                      <item.icon className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-zinc-900">{item.title}</h4>
-                      <p className="text-[11px] text-zinc-500 font-medium leading-tight mt-0.5">{item.desc}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
 
-            {/* 3D Photographer PNG with Bottom-Fade Mask */}
-            <div className="relative w-full max-w-[420px] h-48 xl:h-56 mx-auto -mt-2 overflow-hidden select-none pointer-events-none">
-              <div 
-                className="relative w-full h-full"
-                style={{
-                  maskImage: 'linear-gradient(to bottom, black 50%, transparent 95%)',
-                  WebkitMaskImage: 'linear-gradient(to bottom, black 50%, transparent 95%)',
-                }}
-              >
-                <Image
-                  src="/images/auth/42.png"
-                  alt="StudioCore 3D Photographer"
-                  fill
-                  unoptimized
-                  priority
-                  className="object-contain object-bottom drop-shadow-xl"
-                />
-              </div>
+            {/* Point-wise Features */}
+            <div className="space-y-2.5">
+              {portal === 'studio' ? [
+                {
+                  icon: Target,
+                  color: 'text-emerald-600 bg-emerald-50 border-emerald-200',
+                  title: 'Smart CRM & Auto WhatsApp',
+                  desc: 'Never lose a lead with auto status follow-ups.',
+                },
+                {
+                  icon: FileText,
+                  color: 'text-amber-600 bg-amber-50 border-amber-200',
+                  title: 'Interactive Quotations',
+                  desc: 'Send quotes clients can accept in 1-click.',
+                },
+                {
+                  icon: Calendar,
+                  color: 'text-sky-600 bg-sky-50 border-sky-200',
+                  title: 'Crew Scheduling & Calls',
+                  desc: 'Assign lead photographers with WhatsApp call sheets.',
+                },
+                {
+                  icon: IndianRupee,
+                  color: 'text-indigo-600 bg-indigo-50 border-indigo-200',
+                  title: 'Finance & Payments',
+                  desc: 'Track client advances, costs & automated GST bills.',
+                },
+              ].map((item, idx) => (
+                <div key={idx} className="flex items-start gap-2.5 p-2 rounded-2xl bg-white/70 border border-[#EBE7DF] shadow-2xs">
+                  <div className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 border ${item.color}`}>
+                    <item.icon className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-zinc-900">{item.title}</h4>
+                    <p className="text-[10px] text-zinc-500 font-medium leading-tight">{item.desc}</p>
+                  </div>
+                </div>
+              )) : [
+                {
+                  icon: Calendar,
+                  color: 'text-indigo-600 bg-indigo-50 border-indigo-200',
+                  title: 'Live Shoot Schedules',
+                  desc: 'Direct access to event timings & venue GPS.',
+                },
+                {
+                  icon: IndianRupee,
+                  color: 'text-emerald-600 bg-emerald-50 border-emerald-200',
+                  title: 'Live Payout Ledger',
+                  desc: 'Track agreed fees, advances & pending balance.',
+                },
+                {
+                  icon: Layers,
+                  color: 'text-amber-600 bg-amber-50 border-amber-200',
+                  title: 'Multi-Studio Network',
+                  desc: 'Switch between multiple studios from 1 account.',
+                },
+                {
+                  icon: Zap,
+                  color: 'text-sky-600 bg-sky-50 border-sky-200',
+                  title: '1-Click Activation',
+                  desc: 'Synced shoots ready as soon as you sign in.',
+                },
+              ].map((item, idx) => (
+                <div key={idx} className="flex items-start gap-2.5 p-2 rounded-2xl bg-white/70 border border-[#EBE7DF] shadow-2xs">
+                  <div className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 border ${item.color}`}>
+                    <item.icon className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-zinc-900">{item.title}</h4>
+                    <p className="text-[10px] text-zinc-500 font-medium leading-tight">{item.desc}</p>
+                  </div>
+                </div>
+              ))}
             </div>
 
           </div>
 
-          {/* ── RIGHT COLUMN: CUBICAL 3D CARDS + AUTH FORM ── */}
-          <div className="lg:col-span-6 w-full max-w-[460px] mx-auto space-y-4">
-            
-            {/* ── 3D CUBICAL / SQUARE ROLE SELECTOR CARDS (TOP OF LOGIN) ── */}
-            <div className="grid grid-cols-2 gap-3.5">
-              
-              {/* CUBICAL CARD 1: Studio Owner */}
-              <button
-                type="button"
-                onClick={() => { setPortal('studio'); setError(null); }}
-                className={`relative p-4 rounded-3xl transition-all duration-300 text-left cursor-pointer flex flex-col justify-between aspect-[1.25/1] sm:aspect-[1.3/1] shadow-md ${
-                  portal === 'studio'
-                    ? 'bg-gradient-to-br from-white via-amber-50/70 to-amber-100/60 border-2 border-amber-500 shadow-amber-900/15 ring-2 ring-amber-400/20'
-                    : 'bg-white/80 hover:bg-white border border-[#EBE7DF] hover:border-zinc-300 shadow-2xs'
-                }`}
-              >
-                {/* 3D Top Header with Icon Box */}
-                <div className="flex items-center justify-between w-full">
-                  <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shadow-md transition-transform ${
-                    portal === 'studio'
-                      ? 'bg-gradient-to-tr from-[#d97706] to-[#b45309] text-white scale-105 border border-amber-300/40'
-                      : 'bg-zinc-100 text-zinc-600 border border-zinc-200'
-                  }`}>
-                    <Crown className="w-5 h-5" />
-                  </div>
-
-                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${
-                    portal === 'studio'
-                      ? 'bg-amber-500 text-white border-amber-400'
-                      : 'bg-zinc-100 text-zinc-500 border-zinc-200'
-                  }`}>
-                    {portal === 'studio' ? 'Active' : 'Select'}
-                  </span>
-                </div>
-
-                {/* Card Titles */}
-                <div>
-                  <h3 className={`text-sm sm:text-base font-black font-serif tracking-tight leading-tight ${
-                    portal === 'studio' ? 'text-zinc-900' : 'text-zinc-700'
-                  }`}>
-                    Studio Owner
-                  </h3>
-                  <p className="text-[10px] sm:text-[11px] text-zinc-500 font-medium leading-tight mt-0.5">
-                    For Studio Owners & Management
-                  </p>
-                </div>
-              </button>
-
-              {/* CUBICAL CARD 2: Team & Freelancer */}
-              <button
-                type="button"
-                onClick={() => { setPortal('team'); setError(null); }}
-                className={`relative p-4 rounded-3xl transition-all duration-300 text-left cursor-pointer flex flex-col justify-between aspect-[1.25/1] sm:aspect-[1.3/1] shadow-md ${
-                  portal === 'team'
-                    ? 'bg-gradient-to-br from-white via-indigo-50/70 to-indigo-100/60 border-2 border-indigo-600 shadow-indigo-900/15 ring-2 ring-indigo-400/20'
-                    : 'bg-white/80 hover:bg-white border border-[#EBE7DF] hover:border-zinc-300 shadow-2xs'
-                }`}
-              >
-                {/* 3D Top Header with Icon Box */}
-                <div className="flex items-center justify-between w-full">
-                  <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shadow-md transition-transform ${
-                    portal === 'team'
-                      ? 'bg-gradient-to-tr from-[#4f46e5] to-[#4338ca] text-white scale-105 border border-indigo-300/40'
-                      : 'bg-zinc-100 text-zinc-600 border border-zinc-200'
-                  }`}>
-                    <Camera className="w-5 h-5" />
-                  </div>
-
-                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${
-                    portal === 'team'
-                      ? 'bg-indigo-600 text-white border-indigo-500'
-                      : 'bg-zinc-100 text-zinc-500 border-zinc-200'
-                  }`}>
-                    {portal === 'team' ? 'Active' : 'Select'}
-                  </span>
-                </div>
-
-                {/* Card Titles */}
-                <div>
-                  <h3 className={`text-sm sm:text-base font-black font-serif tracking-tight leading-tight ${
-                    portal === 'team' ? 'text-zinc-900' : 'text-zinc-700'
-                  }`}>
-                    Team & Freelancer
-                  </h3>
-                  <p className="text-[10px] sm:text-[11px] text-zinc-500 font-medium leading-tight mt-0.5">
-                    For Photographers & Crew
-                  </p>
-                </div>
-              </button>
-
+          {/* ── CENTER COLUMN: 3D PHOTOGRAPHER CHARACTER (BOTTOM FADED) ── */}
+          <div className="lg:col-span-3 flex items-center justify-center relative select-none pointer-events-none my-auto">
+            <div 
+              className="relative w-full max-w-[260px] sm:max-w-[300px] lg:max-w-[280px] xl:max-w-[320px] h-48 sm:h-64 lg:h-80 xl:h-96"
+              style={{
+                maskImage: 'linear-gradient(to bottom, black 65%, transparent 100%)',
+                WebkitMaskImage: 'linear-gradient(to bottom, black 65%, transparent 100%)',
+              }}
+            >
+              <Image
+                src="/images/auth/42.png"
+                alt="StudioCore 3D Photographer"
+                fill
+                unoptimized
+                priority
+                className="object-contain object-bottom drop-shadow-2xl"
+              />
             </div>
+          </div>
 
-            {/* ── MAIN AUTH FORM CARD ── */}
-            <div className="bg-white border border-[#EBE7DF] rounded-3xl p-6 sm:p-7 shadow-xl shadow-amber-950/5 relative">
+          {/* ── RIGHT COLUMN: AUTH FORM CARD ── */}
+          <div className="lg:col-span-5 w-full max-w-[440px] mx-auto">
+            <div className="bg-white border border-[#EBE7DF] rounded-3xl p-5 sm:p-7 shadow-xl shadow-amber-950/5 relative">
               
               {/* Form Header */}
               <div className="mb-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xl font-serif font-black text-zinc-900 tracking-tight flex items-center gap-1.5">
+                  <h3 className="text-lg sm:text-xl font-serif font-black text-zinc-900 tracking-tight flex items-center gap-1.5">
                     <span>
                       {portal === 'studio'
                         ? (authMode === 'login' ? 'Studio Owner Login' : 'Create Studio')
                         : (authMode === 'login' ? 'Crew Member Login' : 'Crew Registration')}
                     </span>
-                    <span className="text-lg">👋</span>
+                    <span className="text-base sm:text-lg">👋</span>
                   </h3>
 
                   {/* Mode Toggle (Login vs Sign Up) */}
@@ -643,7 +628,7 @@ export default function LoginPage() {
                     <button
                       type="button"
                       onClick={() => { setAuthMode('login'); setError(null); }}
-                      className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                      className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
                         authMode === 'login' ? 'bg-white text-zinc-900 shadow-2xs' : 'text-zinc-500 hover:text-zinc-900'
                       }`}
                     >
@@ -652,7 +637,7 @@ export default function LoginPage() {
                     <button
                       type="button"
                       onClick={() => { setAuthMode('signup'); setError(null); }}
-                      className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                      className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
                         authMode === 'signup'
                           ? portal === 'studio' ? 'bg-white text-[#bf7304] shadow-2xs' : 'bg-white text-indigo-600 shadow-2xs'
                           : 'text-zinc-500 hover:text-zinc-900'
@@ -663,17 +648,17 @@ export default function LoginPage() {
                   </div>
                 </div>
 
-                <p className="text-xs text-zinc-500 mt-1 font-medium">
+                <p className="text-[11px] sm:text-xs text-zinc-500 mt-1 font-medium">
                   {portal === 'studio'
-                    ? (authMode === 'login' ? 'Access your studio CRM and operational tools' : 'Start your 7-day free studio trial')
-                    : (authMode === 'login' ? 'View your assigned shoots and payment status' : 'Register your crew account with email OTP')}
+                    ? (authMode === 'login' ? 'Access your studio CRM and operations' : 'Start your 7-day free studio trial')
+                    : (authMode === 'login' ? 'View your assigned shoots and payouts' : 'Register crew account with email OTP')}
                 </p>
               </div>
 
               {/* Real-time Email Already Registered Alert */}
               {isEmailRegistered && authMode === 'signup' && (
-                <div className="mb-4 p-3 rounded-2xl bg-rose-50 border border-rose-200 flex items-start justify-between gap-2 text-xs text-rose-700 font-bold animate-pulse">
-                  <div className="flex items-start gap-2">
+                <div className="mb-3.5 p-2.5 rounded-2xl bg-rose-50 border border-rose-200 flex items-start justify-between gap-2 text-xs text-rose-700 font-bold animate-pulse">
+                  <div className="flex items-start gap-1.5">
                     <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
                     <span>This email is already registered!</span>
                   </div>
@@ -693,12 +678,12 @@ export default function LoginPage() {
 
               {/* Invited Notice for Freelancer */}
               {isInvited && portal === 'team' && (
-                <div className="mb-4 p-3 rounded-2xl bg-amber-50/80 border border-amber-200/90 flex items-start gap-2.5 text-xs text-[#92400e] font-semibold">
+                <div className="mb-3.5 p-2.5 rounded-2xl bg-amber-50/80 border border-amber-200/90 flex items-start gap-2 text-xs text-[#92400e] font-semibold">
                   <CheckCircle2 className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   <div>
                     <p className="font-bold">🎉 Welcome, {invitedName}!</p>
-                    <p className="text-[11px] text-[#b45309] mt-0.5">
-                      You are invited by: <span className="font-bold">{invitedStudios.join(', ')}</span>
+                    <p className="text-[10px] text-[#b45309] mt-0.5">
+                      Invited by: <span className="font-bold">{invitedStudios.join(', ')}</span>
                     </p>
                   </div>
                 </div>
@@ -706,7 +691,7 @@ export default function LoginPage() {
 
               {/* Error Alert */}
               {error && (
-                <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 flex items-start gap-2.5 text-xs text-rose-700 font-medium">
+                <div className="mb-3.5 p-2.5 rounded-xl bg-rose-50 border border-rose-200 flex items-start gap-2 text-xs text-rose-700 font-medium">
                   <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
                   <span>{error}</span>
                 </div>
@@ -715,7 +700,7 @@ export default function LoginPage() {
               {/* ── FORMS ROUTER ── */}
               {authMode === 'login' ? (
                 /* LOGIN FORM */
-                <form onSubmit={handleLoginSubmit} className="space-y-3.5">
+                <form onSubmit={handleLoginSubmit} className="space-y-3">
                   <div>
                     <label className="block text-xs font-bold text-zinc-700 mb-1">Email Address</label>
                     <div className="relative flex items-center">
@@ -726,7 +711,7 @@ export default function LoginPage() {
                         onChange={(e) => { setIdentifier(e.target.value); setError(null); }}
                         placeholder="your.email@example.com"
                         required
-                        className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-zinc-50 border border-[#EBE7DF] focus:border-[#b45309] focus:bg-white text-zinc-900 text-sm placeholder:text-zinc-400 transition-all outline-none"
+                        className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-zinc-50 border border-[#EBE7DF] focus:border-[#b45309] focus:bg-white text-zinc-900 text-xs sm:text-sm placeholder:text-zinc-400 transition-all outline-none"
                       />
                     </div>
                   </div>
@@ -746,7 +731,7 @@ export default function LoginPage() {
                         onChange={(e) => { setPassword(e.target.value); setError(null); }}
                         placeholder="Enter your password"
                         required
-                        className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-zinc-50 border border-[#EBE7DF] focus:border-[#b45309] focus:bg-white text-zinc-900 text-sm placeholder:text-zinc-400 transition-all outline-none"
+                        className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-zinc-50 border border-[#EBE7DF] focus:border-[#b45309] focus:bg-white text-zinc-900 text-xs sm:text-sm placeholder:text-zinc-400 transition-all outline-none"
                       />
                       <button
                         type="button"
@@ -761,7 +746,7 @@ export default function LoginPage() {
                   <button
                     type="submit"
                     disabled={loading}
-                    className={`w-full py-3 rounded-xl text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer disabled:opacity-50 mt-2 ${
+                    className={`w-full py-2.5 sm:py-3 rounded-xl text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer disabled:opacity-50 mt-2 ${
                       portal === 'studio'
                         ? 'bg-gradient-to-r from-[#d97706] to-[#b45309] hover:from-[#b45309] hover:to-[#92400e] shadow-amber-900/10'
                         : 'bg-gradient-to-r from-[#4f46e5] to-[#4338ca] hover:from-[#4338ca] hover:to-[#3730a3] shadow-indigo-900/10'
@@ -777,7 +762,7 @@ export default function LoginPage() {
                 </form>
               ) : portal === 'studio' ? (
                 /* STUDIO OWNER SIGNUP FORM */
-                <form onSubmit={handleStudioSignupSubmit} className="space-y-3">
+                <form onSubmit={handleStudioSignupSubmit} className="space-y-2.5">
                   <div>
                     <label className="block text-xs font-bold text-zinc-700 mb-1">Full Name</label>
                     <div className="relative flex items-center">
@@ -837,9 +822,9 @@ export default function LoginPage() {
                         <button
                           type="button"
                           onClick={() => setIsCountryOpen(!isCountryOpen)}
-                          className="h-9 sm:h-10 px-2 sm:px-2.5 rounded-xl bg-zinc-50 border border-[#EBE7DF] flex items-center gap-1 text-xs sm:text-sm font-bold text-zinc-800 hover:border-[#bf7304] transition-all cursor-pointer shrink-0"
+                          className="h-9 px-2 rounded-xl bg-zinc-50 border border-[#EBE7DF] flex items-center gap-1 text-xs font-bold text-zinc-800 hover:border-[#bf7304] transition-all cursor-pointer shrink-0"
                         >
-                          <span className="text-base">{selectedCountry.flag}</span>
+                          <span className="text-sm">{selectedCountry.flag}</span>
                           <span className="font-mono">{selectedCountry.code}</span>
                           <ChevronDown className="w-3 h-3 text-zinc-400" />
                         </button>
@@ -919,7 +904,7 @@ export default function LoginPage() {
                   <button
                     type="submit"
                     disabled={loading || isEmailRegistered}
-                    className="w-full py-3 rounded-xl bg-gradient-to-r from-[#d97706] to-[#b45309] hover:from-[#b45309] hover:to-[#92400e] text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md shadow-amber-900/10 transition-all cursor-pointer disabled:opacity-50 mt-1"
+                    className="w-full py-2.5 sm:py-3 rounded-xl bg-gradient-to-r from-[#d97706] to-[#b45309] hover:from-[#b45309] hover:to-[#92400e] text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md shadow-amber-900/10 transition-all cursor-pointer disabled:opacity-50 mt-1"
                   >
                     {loading ? 'Sending Verification OTP...' : (
                       <>
@@ -931,7 +916,7 @@ export default function LoginPage() {
                 </form>
               ) : (
                 /* TEAM MEMBER / FREELANCER SIGNUP FORM */
-                <form onSubmit={handleTeamSignupSubmit} className="space-y-3">
+                <form onSubmit={handleTeamSignupSubmit} className="space-y-2.5">
                   <div>
                     <label className="block text-xs font-bold text-zinc-700 mb-1">Your Full Name</label>
                     <div className="relative flex items-center">
@@ -1006,7 +991,7 @@ export default function LoginPage() {
                   <button
                     type="submit"
                     disabled={loading || isEmailRegistered}
-                    className="w-full py-3 rounded-xl bg-gradient-to-r from-[#4f46e5] to-[#4338ca] hover:from-[#4338ca] hover:to-[#3730a3] text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md shadow-indigo-900/10 transition-all cursor-pointer disabled:opacity-50 mt-1"
+                    className="w-full py-2.5 sm:py-3 rounded-xl bg-gradient-to-r from-[#4f46e5] to-[#4338ca] hover:from-[#4338ca] hover:to-[#3730a3] text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md shadow-indigo-900/10 transition-all cursor-pointer disabled:opacity-50 mt-1"
                   >
                     {loading ? 'Sending OTP Verification...' : (
                       <>
@@ -1025,7 +1010,7 @@ export default function LoginPage() {
       </main>
 
       {/* ── BOTTOM TRUST BAR ── */}
-      <footer className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 text-center text-xs text-zinc-500 border-t border-[#EBE7DF]">
+      <footer className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 text-center text-[11px] sm:text-xs text-zinc-500 border-t border-[#EBE7DF]">
         StudioCore Multi-Studio Operating System • Hybrid Studio Owner & Freelancer Architecture
       </footer>
 

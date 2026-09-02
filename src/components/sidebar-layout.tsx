@@ -378,6 +378,12 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   const isStandalonePage = 
     pathname === '/' ||
     pathname === '/login' ||
+    pathname === '/forgot-password' ||
+    pathname.startsWith('/forgot-password') ||
+    pathname === '/reset-password' ||
+    pathname.startsWith('/reset-password') ||
+    pathname === '/team/login' ||
+    pathname.startsWith('/team/login') ||
     pathname === '/features' ||
     pathname === '/pricing' ||
     pathname === '/book-demo' ||
