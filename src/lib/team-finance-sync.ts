@@ -329,7 +329,23 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
 
     const idList = Array.from(memberIdsToQuery);
 
-    // 1. Fetch fw_assignments, crew_assignments_finance, and team_event_payouts concurrently
+    // 1. Fetch fw_assignments, crew_assignments_finance, and team_event_payouts with STRICT STUDIO WORKSPACE ISOLATION
+    const isFreelancerPortal = workspaceId === 'all' || !workspaceId;
+
+    let crewFinQuery = idList.length === 1
+      ? supabase.from('crew_assignments_finance').select('*').eq('team_member_id', idList[0])
+      : supabase.from('crew_assignments_finance').select('*').in('team_member_id', idList);
+    
+    let teamPayoutQuery = idList.length === 1
+      ? supabase.from('team_event_payouts').select('*').eq('member_id', idList[0])
+      : supabase.from('team_event_payouts').select('*').in('member_id', idList);
+
+    // If Studio Owner is viewing, strictly restrict records to Studio Owner's workspace
+    if (!isFreelancerPortal && workspaceId) {
+      crewFinQuery = crewFinQuery.eq('workspace_id', workspaceId);
+      teamPayoutQuery = teamPayoutQuery.eq('workspace_id', workspaceId);
+    }
+
     const [assignRes, crewFinRes, teamPayoutRes] = await Promise.all([
       Promise.resolve(
         (idList.length === 1 
@@ -338,19 +354,8 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
         ).order('created_at', { ascending: false })
       ).catch(() => ({ data: null, error: null })),
 
-      Promise.resolve(
-        (idList.length === 1
-          ? supabase.from('crew_assignments_finance').select('*').eq('team_member_id', idList[0])
-          : supabase.from('crew_assignments_finance').select('*').in('team_member_id', idList)
-        ).order('created_at', { ascending: false })
-      ).catch(() => ({ data: null })),
-
-      Promise.resolve(
-        (idList.length === 1
-          ? supabase.from('team_event_payouts').select('*').eq('member_id', idList[0])
-          : supabase.from('team_event_payouts').select('*').in('member_id', idList)
-        ).order('created_at', { ascending: false })
-      ).catch(() => ({ data: null }))
+      Promise.resolve(crewFinQuery.order('created_at', { ascending: false })).catch(() => ({ data: null })),
+      Promise.resolve(teamPayoutQuery.order('created_at', { ascending: false })).catch(() => ({ data: null }))
     ]);
 
     const assignData = (assignRes as any)?.data || [];
@@ -405,6 +410,14 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
       assignData.forEach((a: any) => {
         const se = a.sub_event_id ? subEventsMap[a.sub_event_id] : null;
         const proj = (a.project_id || se?.project_id) ? projectsMap[a.project_id || se?.project_id] : null;
+
+        // STRICT STUDIO OWNER ISOLATION: If Studio Owner is viewing, ignore assignments from other studios' projects
+        if (!isFreelancerPortal && workspaceId && proj) {
+          const projWs = (proj as any).workspace_id || (proj as any).user_id;
+          if (projWs && projWs !== workspaceId) {
+            return; // Skip other studio's project
+          }
+        }
 
         // Intelligent Couple / Client Name Resolution
         let resolvedClientName = '';
