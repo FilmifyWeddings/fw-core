@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 
 export interface MemberPermissions {
@@ -30,26 +30,10 @@ interface WorkspaceConfig {
   pinLockEnabled?: boolean;
 }
 
-export const DEFAULT_OWNER_PERMISSIONS: MemberPermissions = {
-  leads_access: 'ALL_EDIT',
-  quotations_access: 'MANAGE',
-  team_manager_access: 'ALL_MANAGE',
-  post_production_access: 'FULL_ACCESS',
-  finance_access: 'MANAGE',
-};
-
-export const DEFAULT_MEMBER_PERMISSIONS: MemberPermissions = {
-  leads_access: 'NONE',
-  quotations_access: 'NONE',
-  team_manager_access: 'ASSIGNED_ONLY_VIEW',
-  post_production_access: 'ASSIGNED_ONLY',
-  finance_access: 'NONE',
-};
-
-export interface BhamstraContextType {
+interface BhamstraContextType {
   userId: string | null;
   userEmail: string | null;
-  userName?: string | null;
+  userName: string | null;
   workspaceId: string | null;
   workspaceName: string;
   activeWorkspace: WorkspaceOption | null;
@@ -65,15 +49,31 @@ export interface BhamstraContextType {
   setActiveEventId: (eventId: string | null) => void;
   setCurrentClientStatus: (status: 'lead' | 'client' | 'event' | null) => void;
   setSessionShootState: (state: 'reached' | 'started' | 'end' | 'completed' | null) => void;
-  updateWorkspaceConfig: (config: Partial<WorkspaceConfig>) => Promise<void>;
   switchWorkspace: (workspaceId: string) => Promise<void>;
-  refreshContext: () => Promise<void>;
+  refreshContext: (force?: boolean) => Promise<void>;
+  updateWorkspaceConfig: (config: Partial<WorkspaceConfig>) => Promise<void>;
 }
 
-// Fail-Safe Fallback State (Ensures ZERO crash if accessed outside Provider)
+export const DEFAULT_OWNER_PERMISSIONS: MemberPermissions = {
+  leads_access: 'FULL_EDIT',
+  quotations_access: 'MANAGE',
+  team_manager_access: 'MANAGE_ALL',
+  post_production_access: 'FULL_ACCESS',
+  finance_access: 'MANAGE',
+};
+
+export const DEFAULT_MEMBER_PERMISSIONS: MemberPermissions = {
+  leads_access: 'ASSIGNED_VIEW',
+  quotations_access: 'VIEW_ONLY',
+  team_manager_access: 'VIEW_ASSIGNED',
+  post_production_access: 'ASSIGNED_ONLY',
+  finance_access: 'NONE',
+};
+
 const DEFAULT_FALLBACK_CONTEXT: BhamstraContextType = {
   userId: null,
   userEmail: null,
+  userName: null,
   workspaceId: null,
   workspaceName: 'StudioCore',
   activeWorkspace: null,
@@ -110,10 +110,18 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
   const [activeEventId, setActiveEventId] = useState<string | null>(null);
   const [currentClientStatus, setCurrentClientStatus] = useState<'lead' | 'client' | 'event' | null>(null);
   const [sessionShootState, setSessionShootState] = useState<'reached' | 'started' | 'end' | 'completed' | null>(null);
-  const [workspaceConfig, setWorkspaceConfig] = useState<WorkspaceConfig>({});
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [workspaceConfig, setWorkspaceConfig] = useState<WorkspaceConfig>({
+    themeColor: '#f97316',
+    pinLockEnabled: false,
+  });
 
-  const refreshContext = useCallback(async () => {
+  const hasFetchedRef = useRef(false);
+
+  const refreshContext = useCallback(async (force = false) => {
+    if (!force && hasFetchedRef.current) return;
+    hasFetchedRef.current = true;
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) {
@@ -134,14 +142,20 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
       setUserEmail(uEmail || null);
       setUserName(uName || null);
 
-      // 1. Fetch user's own profile (Primary Studio)
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', uId)
-        .maybeSingle();
+      // 1. Fetch user's own profile safely (Safe column selection)
+      let profile: any = null;
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('full_name, avatar_url')
+          .eq('id', uId)
+          .maybeSingle();
+        if (!error && data) profile = data;
+      } catch (pErr) {
+        console.warn('[BhamstraContext] Safe caught profile fetch error:', pErr);
+      }
 
-      const ownerStudioName = profile?.workspace_name || session.user.user_metadata?.workspace_name || 'My Studio';
+      const ownerStudioName = session.user.user_metadata?.workspace_name || 'My Studio';
 
       const ownerOption: WorkspaceOption = {
         workspaceId: uId,
@@ -149,7 +163,7 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
         userRole: 'OWNER',
         isOwner: true,
         permissions: DEFAULT_OWNER_PERMISSIONS,
-        avatarUrl: profile?.avatar_url || profile?.logo_url || session.user.user_metadata?.avatar_url || '',
+        avatarUrl: profile?.avatar_url || session.user.user_metadata?.avatar_url || '',
         ownerEmail: uEmail,
       };
 

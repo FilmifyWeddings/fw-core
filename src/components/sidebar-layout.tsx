@@ -59,7 +59,33 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   const [showOnboardingCelebration, setShowOnboardingCelebration] = useState<boolean>(false);
   const [leadsSubmenuOpen, setLeadsSubmenuOpen] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
-  const [userId, setUserId] = useState<string>('');
+  const [profileData, setProfileData] = useState<any>(null);
+  const [profilesFetchErrorCount, setProfilesFetchErrorCount] = useState(0);
+
+  const fetchUserProfileDefensive = useCallback(async (targetId: string) => {
+    if (!targetId || profilesFetchErrorCount > 3) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', targetId)
+        .maybeSingle();
+
+      if (error) {
+        console.error("Safe caught profile fetch error:", error.message);
+        setProfilesFetchErrorCount(prev => prev + 1);
+        return;
+      }
+
+      if (data && JSON.stringify(data) !== JSON.stringify(profileData)) {
+        setProfileData(data);
+        if (data.full_name) setUserName(data.full_name);
+      }
+    } catch (err) {
+      console.warn("Infinite loop defense triggered in profile fetch");
+    }
+  }, [profilesFetchErrorCount, profileData]);
 
   // Load user profile & collapsed preference
   const fetchUserProfile = useCallback(async (force = false) => {
@@ -113,25 +139,8 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
           }
         } catch (_) {}
 
-        // Direct Supabase fallback with safe column selection
-        try {
-          const { data: profile, error } = await supabase
-            .from('profiles')
-            .select('full_name, avatar_url')
-            .eq('id', session.user.id)
-            .maybeSingle();
-
-          if (error) {
-            console.warn("Profiles query handled safely:", error.message);
-          } else if (profile) {
-            const name = profile.full_name || session.user.user_metadata?.full_name || session.user.user_metadata?.name || 'Studio Owner';
-            setUserName(name);
-            const avatar = profile.avatar_url || session.user.user_metadata?.avatar_url || '';
-            if (avatar) setUserAvatarUrl(avatar);
-          }
-        } catch (dbErr: any) {
-          console.warn("Profiles query handled safely:", dbErr?.message || dbErr);
-        }
+        // Direct Supabase fallback with defensive safe column selection
+        await fetchUserProfileDefensive(session.user.id);
 
         const studio = session.user.user_metadata?.workspace_name || 'My Studio';
         setWorkspaceName(studio);
@@ -139,7 +148,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     } catch (err) {
       console.warn('Error loading user profile in sidebar handled safely:', err);
     }
-  }, []);
+  }, [fetchUserProfileDefensive]);
 
   useEffect(() => {
     const savedCollapsed = localStorage.getItem('sidebar_collapsed');
