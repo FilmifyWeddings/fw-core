@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -34,6 +34,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { isOwner, userRole, permissions, availableWorkspaces } = useWorkspace();
+  const hasFetchedRef = useRef(false);
   const stageParam = searchParams?.get('stage') || searchParams?.get('filter') || searchParams?.get('view') || '';
 
   const checkIsSubActive = (subPath: string) => {
@@ -61,7 +62,10 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   const [userId, setUserId] = useState<string>('');
 
   // Load user profile & collapsed preference
-  const fetchUserProfile = useCallback(async () => {
+  const fetchUserProfile = useCallback(async (force = false) => {
+    if (!force && hasFetchedRef.current) return;
+    hasFetchedRef.current = true;
+
     // 1. Initial fast hydration from localStorage
     if (typeof window !== 'undefined') {
       const cachedStudioName = localStorage.getItem('sc_studio_name');
@@ -85,46 +89,55 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         const headers: Record<string, string> = {};
         if (token) headers['Authorization'] = `Bearer ${token}`;
 
-        const res = await fetch('/api/user/profile-setup', { headers });
-        if (res.ok) {
-          const json = await res.json();
-          if (json?.profile) {
-            const p = json.profile;
-            const finalStudio = p.studioName || session.user.user_metadata?.workspace_name || 'My Studio';
-            const finalName = p.fullName || session.user.user_metadata?.full_name || session.user.user_metadata?.name || 'Studio Owner';
-            const finalAvatar = p.avatarUrl || p.logoUrl || session.user.user_metadata?.avatar_url || '';
+        try {
+          const res = await fetch('/api/user/profile-setup', { headers });
+          if (res.ok) {
+            const json = await res.json();
+            if (json?.profile) {
+              const p = json.profile;
+              const finalStudio = p.studioName || session.user.user_metadata?.workspace_name || 'My Studio';
+              const finalName = p.fullName || session.user.user_metadata?.full_name || session.user.user_metadata?.name || 'Studio Owner';
+              const finalAvatar = p.avatarUrl || p.logoUrl || session.user.user_metadata?.avatar_url || '';
 
-            setWorkspaceName(finalStudio);
-            setUserName(finalName);
-            setUserAvatarUrl(finalAvatar);
+              setWorkspaceName(finalStudio);
+              setUserName(finalName);
+              setUserAvatarUrl(finalAvatar);
 
-            if (typeof window !== 'undefined') {
-              localStorage.setItem('sc_studio_name', finalStudio);
-              localStorage.setItem('sc_user_name', finalName);
-              if (finalAvatar) localStorage.setItem('sc_avatar_url', finalAvatar);
+              if (typeof window !== 'undefined') {
+                localStorage.setItem('sc_studio_name', finalStudio);
+                localStorage.setItem('sc_user_name', finalName);
+                if (finalAvatar) localStorage.setItem('sc_avatar_url', finalAvatar);
+              }
+              return;
             }
-            return;
           }
+        } catch (_) {}
+
+        // Direct Supabase fallback with safe column selection
+        try {
+          const { data: profile, error } = await supabase
+            .from('profiles')
+            .select('full_name, avatar_url')
+            .eq('id', session.user.id)
+            .maybeSingle();
+
+          if (error) {
+            console.warn("Profiles query handled safely:", error.message);
+          } else if (profile) {
+            const name = profile.full_name || session.user.user_metadata?.full_name || session.user.user_metadata?.name || 'Studio Owner';
+            setUserName(name);
+            const avatar = profile.avatar_url || session.user.user_metadata?.avatar_url || '';
+            if (avatar) setUserAvatarUrl(avatar);
+          }
+        } catch (dbErr: any) {
+          console.warn("Profiles query handled safely:", dbErr?.message || dbErr);
         }
 
-        // Direct Supabase fallback
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('workspace_name, avatar_url, logo_url, full_name')
-          .eq('id', session.user.id)
-          .maybeSingle();
-
-        const name = profile?.full_name || session.user.user_metadata?.full_name || session.user.user_metadata?.name || 'Studio Owner';
-        setUserName(name);
-
-        const avatar = profile?.avatar_url || profile?.logo_url || session.user.user_metadata?.avatar_url || '';
-        setUserAvatarUrl(avatar);
-
-        const studio = profile?.workspace_name || session.user.user_metadata?.workspace_name || 'My Studio';
+        const studio = session.user.user_metadata?.workspace_name || 'My Studio';
         setWorkspaceName(studio);
       }
     } catch (err) {
-      console.error('Error loading user profile in sidebar:', err);
+      console.warn('Error loading user profile in sidebar handled safely:', err);
     }
   }, []);
 
@@ -174,14 +187,14 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         if (p.fullName) setUserName(p.fullName);
         if (p.avatarUrl || p.logoUrl) setUserAvatarUrl(p.avatarUrl || p.logoUrl);
       }
-      fetchUserProfile();
+      fetchUserProfile(true);
     };
 
     window.addEventListener('sc_profile_updated', handleProfileUpdate);
     return () => {
       window.removeEventListener('sc_profile_updated', handleProfileUpdate);
     };
-  }, [fetchUserProfile, searchParams]);
+  }, [fetchUserProfile]);
 
   useEffect(() => {
     localStorage.setItem('sidebar_collapsed', String(collapsed));
