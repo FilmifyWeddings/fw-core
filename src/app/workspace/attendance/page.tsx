@@ -128,7 +128,7 @@ export default function AttendancePage() {
 
           let q = supabase
             .from('attendance_records')
-            .select('*')
+            .select('*, member:fw_team_members(*)')
             .gte('date', startOfMonth)
             .lte('date', endOfMonth);
 
@@ -151,6 +151,20 @@ export default function AttendancePage() {
     }
   }, [activeTab, selectedMatrixMonth]);
 
+  // Helper to match any attendance record / link to a member by ID, alias ID, name, or email
+  const isRecordForMember = useCallback((rec: any, mem: FWTeamMember | null | undefined) => {
+    if (!rec || !mem) return false;
+    if (rec.member_id === mem.id) return true;
+    const aliasIds = (mem as any).aliasIds;
+    if (aliasIds && Array.isArray(aliasIds) && aliasIds.includes(rec.member_id)) return true;
+    const memName = (mem.name || '').trim().toLowerCase();
+    const memEmail = (mem.email || '').trim().toLowerCase();
+    if (rec.member?.name && memName && rec.member.name.trim().toLowerCase() === memName) return true;
+    if (rec.member?.email && memEmail && rec.member.email.trim().toLowerCase() === memEmail) return true;
+    if (rec.name && memName && rec.name.trim().toLowerCase() === memName) return true;
+    return false;
+  }, []);
+
   const fetchAttendanceData = async () => {
     setLoading(true);
     try {
@@ -170,24 +184,45 @@ export default function AttendancePage() {
       const { data: membersData } = await teamQuery;
       const rawMembers = membersData || [];
 
-      // Deduplicate members so each person has exactly ONE unified account in attendance
+      // Deduplicate members and build Alias Map so updated emails never disconnect historical attendance
       const uniqueMembers: any[] = [];
-      const seenIds = new Set<string>();
-      const seenEmails = new Set<string>();
-      const seenNames = new Set<string>();
+      const memberAliasMap = new Map<string, Set<string>>();
 
       rawMembers.forEach((m: any) => {
-        const emailKey = m.email ? m.email.trim().toLowerCase() : '';
-        const nameKey = m.name ? m.name.trim().toLowerCase() : '';
+        const cleanName = m.name ? m.name.trim().toLowerCase() : '';
+        const cleanEmail = m.email ? m.email.trim().toLowerCase() : '';
+        const cleanPhone = m.phone_number ? m.phone_number.replace(/\D/g, '') : '';
 
-        if (seenIds.has(m.id)) return;
-        if (emailKey && seenEmails.has(emailKey)) return;
-        if (nameKey && seenNames.has(nameKey) && m.phone_number) return;
+        const existing = uniqueMembers.find(u => {
+          if (u.id === m.id) return true;
+          const uEmail = u.email ? u.email.trim().toLowerCase() : '';
+          const uName = u.name ? u.name.trim().toLowerCase() : '';
+          const uPhone = u.phone_number ? u.phone_number.replace(/\D/g, '') : '';
 
-        seenIds.add(m.id);
-        if (emailKey) seenEmails.add(emailKey);
-        if (nameKey) seenNames.add(nameKey);
-        uniqueMembers.push(m);
+          if (cleanEmail && uEmail && cleanEmail === uEmail) return true;
+          if (cleanPhone && uPhone && cleanPhone.length > 5 && cleanPhone === uPhone) return true;
+          if (cleanName && uName && cleanName === uName) return true;
+          return false;
+        });
+
+        if (existing) {
+          const aliasSet = memberAliasMap.get(existing.id) || new Set([existing.id]);
+          aliasSet.add(m.id);
+          memberAliasMap.set(existing.id, aliasSet);
+
+          if (m.email && !existing.email) existing.email = m.email;
+          if (m.phone_number && !existing.phone_number) existing.phone_number = m.phone_number;
+          if (m.avatar_url && !existing.avatar_url) existing.avatar_url = m.avatar_url;
+        } else {
+          const aliasSet = new Set<string>([m.id]);
+          memberAliasMap.set(m.id, aliasSet);
+          uniqueMembers.push({ ...m });
+        }
+      });
+
+      uniqueMembers.forEach(u => {
+        const aliasSet = memberAliasMap.get(u.id) || new Set([u.id]);
+        u.aliasIds = Array.from(aliasSet);
       });
 
       setTeamMembers(uniqueMembers);
@@ -532,7 +567,7 @@ export default function AttendancePage() {
 
     const headers = ['Employee Name', 'Role', 'Date', 'Status', 'Check In (IST)', 'Check Out (IST)', 'Active Duration (Mins)', 'Late (Mins)', 'Overtime (Mins)'];
     const rows = teamMembers.map(member => {
-      const rec = records.find(r => r.member_id === member.id);
+      const rec = records.find(r => isRecordForMember(r, member));
       return [
         member.name,
         member.primary_role || 'Crew',
@@ -559,7 +594,7 @@ export default function AttendancePage() {
   // Filtered daily roster list with dynamic shift timing analyzer
   const rosterList = useMemo(() => {
     return teamMembers.map(member => {
-      const record = records.find(r => r.member_id === member.id);
+      const record = records.find(r => isRecordForMember(r, member));
       const timing = analyzeAttendanceRecordTiming(record, member);
       return { member, record, timing };
     }).filter(({ member, record, timing }) => {
@@ -572,16 +607,16 @@ export default function AttendancePage() {
       );
       return nameMatch && roleMatch && statusMatch;
     });
-  }, [teamMembers, records, searchQuery, roleFilter, statusFilter]);
+  }, [teamMembers, records, searchQuery, roleFilter, statusFilter, isRecordForMember]);
 
   // Summaries calculation
   const totalEmployees = teamMembers.length;
   const lateCount = records.filter(r => {
-    const mem = teamMembers.find(m => m.id === r.member_id);
+    const mem = teamMembers.find(m => isRecordForMember(r, m));
     const t = analyzeAttendanceRecordTiming(r, mem);
     return t.isLate;
   }).length;
-  const presentCount = records.filter(r => r.check_in_time).length;
+  const presentCount = teamMembers.filter(m => records.some(r => isRecordForMember(r, m) && r.check_in_time)).length;
   const absentCount = Math.max(0, totalEmployees - presentCount);
   const onLeaveCount = leaveRequests.filter(l => l.status === 'approved' && l.start_date <= selectedDate && l.end_date >= selectedDate).length;
   const liveWorkingCount = records.filter(r => r.check_in_time && !r.check_out_time).length;
@@ -1143,7 +1178,7 @@ export default function AttendancePage() {
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-sans">
                       {teamMembers.map(m => {
-                        const mRecords = matrixMonthlyRecords.filter(r => r.member_id === m.id);
+                        const mRecords = matrixMonthlyRecords.filter(r => isRecordForMember(r, m));
                         
                         // Distinct calendar days present
                         const uniquePresentDays = new Set(
@@ -1171,7 +1206,7 @@ export default function AttendancePage() {
                         });
 
                         const approvedLeavesCount = leaveRequests.filter(l => 
-                          l.member_id === m.id && 
+                          (isRecordForMember(l, m) || l.member_id === m.id) && 
                           l.status === 'approved' && 
                           (l.start_date.substring(0, 7) <= selectedMatrixMonth && l.end_date.substring(0, 7) >= selectedMatrixMonth)
                         ).length;
