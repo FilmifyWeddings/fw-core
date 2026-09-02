@@ -87,6 +87,7 @@ export default function MonthListView({
 }: MonthListViewProps) {
   const [collapsedMonths, setCollapsedMonths] = useState<Record<string, boolean>>({});
   const [isPastSectionExpanded, setIsPastSectionExpanded] = useState<boolean>(false);
+  const [isTbdSectionExpanded, setIsTbdSectionExpanded] = useState<boolean>(false);
 
   // Smart Filter Suite States
   const [statusFilter, setStatusFilter] = useState<'all' | 'unassigned' | 'fully_assigned' | 'overnight'>('all');
@@ -309,73 +310,163 @@ export default function MonthListView({
         </div>
       </div>
 
-      {/* ─── 1. STICKY REDDISH "DATE NOT FIXED (TBD)" HEADER ─── */}
+      {/* ─── 1. COLLAPSIBLE LUXURY REDDISH "DATE NOT FIXED (TBD)" SECTION ─── */}
       {tbdEvents.length > 0 && (
-        <div className="sticky top-2 z-20 bg-rose-50/90 border-2 border-rose-300/80 backdrop-blur-md rounded-2xl p-4 md:p-5 shadow-md space-y-3 animate-in fade-in duration-300">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-rose-600 text-white flex items-center justify-center font-black shadow-xs">
-                <AlertCircle className="w-5 h-5" />
+        <div className="bg-[#FFF5F5] rounded-3xl border border-rose-200/90 p-4 md:p-6 space-y-4 shadow-sm animate-in fade-in duration-300">
+          {/* TBD ACCORDION TOGGLE BAR (CLICKABLE ANYWHERE & RIGHT ARROW) */}
+          <div
+            onClick={() => setIsTbdSectionExpanded(!isTbdSectionExpanded)}
+            className="flex items-center justify-between bg-gradient-to-r from-rose-950 via-rose-900 to-rose-950 text-white px-5 py-3.5 rounded-2xl border border-rose-800 cursor-pointer hover:border-rose-400/80 transition shadow-md select-none"
+            title="Click to Hide or Unhide Date Not Fixed Shoots"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-white/10 text-rose-300 flex items-center justify-center font-black border border-white/10 shadow-inner">
+                <AlertCircle className="w-5 h-5 text-rose-300" />
               </div>
               <div>
-                <h3 className="text-sm md:text-base font-black text-rose-950 tracking-tight">
-                  📌 Date Not Fixed (TBD) — {tbdEvents.length} Shoot{tbdEvents.length === 1 ? '' : 's'} Pending Date
+                <h3 className="text-base md:text-lg font-black text-white tracking-tight flex items-center gap-2">
+                  <span>Date Not Fixed (TBD)</span>
+                  <span className="px-2.5 py-0.5 rounded-full bg-rose-500/30 text-rose-200 text-xs font-bold border border-rose-400/30">
+                    Action Required
+                  </span>
                 </h3>
-                <p className="text-[11px] font-semibold text-rose-700">
-                  Assign a date to automatically slot these events into their respective chronological month.
-                </p>
+                <span className="text-xs font-bold text-rose-200/80">
+                  {tbdEvents.length} Shoot{tbdEvents.length === 1 ? '' : 's'} Pending Date (Click to {isTbdSectionExpanded ? 'Hide' : 'Show'})
+                </span>
               </div>
             </div>
 
-            <span className="px-3 py-1 rounded-full bg-rose-200/80 text-rose-950 font-black text-xs border border-rose-300">
-              Action Required
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="px-3 py-1 rounded-full bg-white/10 text-rose-200 text-xs font-black border border-white/10 backdrop-blur-sm">
+                {tbdEvents.length} Events
+              </span>
+              <ChevronDown
+                className={`w-5 h-5 text-rose-200 transition-transform duration-200 ${
+                  isTbdSectionExpanded ? 'rotate-180' : ''
+                }`}
+              />
+            </div>
           </div>
 
-          {/* TBD Items List */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
-            {tbdEvents.map(({ subEvent, project }) => {
-              const assignments = resolveSubEventAssignments(subEvent, teamMembers);
-              return (
-                <div
-                  key={subEvent.id}
-                  className="bg-white rounded-xl border border-rose-200 p-3.5 space-y-2 shadow-2xs hover:border-rose-400 transition"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="truncate">
-                      <span className="font-black text-slate-900 text-xs block truncate">
-                        {project.client_name}
-                      </span>
-                      <span className="text-[11px] font-bold text-rose-600 truncate block">
-                        {subEvent.event_title}
-                      </span>
+          {/* TBD EVENTS LIST (FULL LUXURY RED-THEMED CARDS IDENTICAL TO FIXED-DATE CARDS) */}
+          {isTbdSectionExpanded && (
+            <div className="space-y-4 pt-1">
+              {tbdEvents.map(({ subEvent, project }) => {
+                const assignments = resolveSubEventAssignments(subEvent, teamMembers);
+                const assignedCount = assignments.filter((a) => a.assigned_member_id).length;
+                const totalSlots = assignments.length;
+
+                const isOvernightShoot = Boolean(
+                  (subEvent as any).is_overnight || 
+                  (subEvent.roll_call_time && subEvent.dismissal_estimate_time && subEvent.dismissal_estimate_time < subEvent.roll_call_time)
+                );
+
+                return (
+                  <div
+                    key={subEvent.id}
+                    className="bg-white rounded-2xl border-2 border-rose-200/90 hover:border-rose-400 shadow-xs hover:shadow-md transition-all p-5 flex flex-col lg:flex-row items-stretch gap-5"
+                  >
+                    {/* DATE BADGE COLUMN (ROSE / RED THEME) */}
+                    <div
+                      className="bg-gradient-to-b from-rose-600 via-rose-700 to-rose-900 w-full lg:w-32 rounded-xl p-3.5 shrink-0 flex lg:flex-col items-center justify-between text-center text-white shadow-xs"
+                    >
+                      <div className="flex lg:flex-col items-center gap-2 lg:gap-0">
+                        <span className="text-xs font-bold text-rose-200/90 uppercase tracking-wider">
+                          DATE
+                        </span>
+                        <span className="text-2xl lg:text-3xl font-black text-white leading-none my-1 tracking-wider">
+                          TBD
+                        </span>
+                        <span className="text-[10px] font-black text-rose-200/90 uppercase tracking-wider">
+                          NOT FIXED
+                        </span>
+                      </div>
+                      <div className="px-2.5 py-1 rounded-full bg-white/20 backdrop-blur-md text-[10px] font-black border border-white/20 mt-1">
+                        {assignedCount}/{totalSlots} Crew
+                      </div>
                     </div>
 
-                    <span className="px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 text-[10px] font-extrabold uppercase shrink-0">
-                      Date: TBD
-                    </span>
-                  </div>
+                    {/* MAIN CONTENT AREA */}
+                    <div className="flex-1 space-y-3.5">
+                      {/* HEADER: CLIENT NAME & SUB EVENT TITLE */}
+                      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-rose-100 pb-3">
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <span className="text-rose-950 font-black text-sm md:text-base tracking-tight">
+                            {project.client_name}
+                          </span>
 
-                  {/* Crew Slots */}
-                  <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-rose-100">
-                    <span className="text-[9px] font-black text-stone-400 uppercase">Crew:</span>
-                    {assignments.map(a => (
-                      <RoleAssignDropdown
-                        key={a.id}
-                        assignment={a}
-                        subEventId={subEvent.id}
-                        projectId={project.id}
-                        teamMembers={teamMembers}
-                        onAssignMember={onAssignMember}
-                        onAddNewMember={onAddNewMember}
-                        variant="chip"
-                      />
-                    ))}
+                          <span className="text-rose-300 text-sm font-light select-none">·</span>
+
+                          <h4 className="text-sm md:text-base font-bold text-rose-700 tracking-tight">
+                            {subEvent.event_title}
+                          </h4>
+
+                          <span className="px-2 py-0.5 rounded-md bg-rose-100 border border-rose-300 text-rose-800 font-extrabold text-[10px] flex items-center gap-1">
+                            <AlertCircle className="w-3 h-3 text-rose-600" />
+                            <span>Date Not Fixed</span>
+                          </span>
+
+                          {isOvernightShoot && (
+                            <span className="px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 font-extrabold text-[10px] flex items-center gap-1">
+                              <Moon className="w-3 h-3" />
+                              <span>Overnight</span>
+                            </span>
+                          )}
+                        </div>
+
+                        {/* LOCATION & TIME */}
+                        <div className="flex items-center gap-3 text-xs font-bold text-stone-600 flex-wrap">
+                          {subEvent.roll_call_time && (
+                            <div className="flex items-center gap-1.5 text-rose-900 bg-rose-50/80 px-3 py-1.5 rounded-xl border border-rose-200 shadow-2xs">
+                              <Clock className="w-4 h-4 text-rose-700 shrink-0" />
+                              <span>
+                                {format12HourTime(subEvent.roll_call_time)}
+                                {subEvent.dismissal_estimate_time
+                                  ? ` → ${format12HourTime(subEvent.dismissal_estimate_time)}`
+                                  : ''}
+                              </span>
+                            </div>
+                          )}
+                          {subEvent.venue_name && (
+                            <a
+                              href={subEvent.venue_map_link || `https://maps.google.com/?q=${encodeURIComponent(subEvent.venue_name)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1.5 text-rose-700 hover:text-rose-900 font-bold bg-rose-50/50 px-3 py-1.5 rounded-xl border border-rose-200 shadow-2xs transition hover:border-rose-400"
+                            >
+                              <MapPin className="w-4 h-4 text-rose-600 shrink-0" />
+                              <span className="truncate max-w-[200px]">{subEvent.venue_name}</span>
+                            </a>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* CREW ALLOCATION AVATARS GRID WITH CLICKABLE ASSIGN POPOVERS */}
+                      <div>
+                        <span className="text-[10px] font-black text-rose-400 uppercase tracking-wider block mb-1.5">
+                          Assigned Crew Roster (Click avatar to assign team member & dispatch WhatsApp)
+                        </span>
+                        <div className="flex items-center gap-4 flex-wrap pt-1">
+                          {assignments.map((assignment) => (
+                            <RoleAssignDropdown
+                              key={assignment.id}
+                              assignment={assignment}
+                              subEventId={subEvent.id}
+                              projectId={project.id}
+                              teamMembers={teamMembers}
+                              onAssignMember={onAssignMember}
+                              onAddNewMember={onAddNewMember}
+                              variant="avatar"
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
