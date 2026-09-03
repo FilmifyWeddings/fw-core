@@ -356,3 +356,28 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
     transform-origin: left center;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────
+   ✨ 3D LIQUID LOADER ANIMATIONS
+───────────────────────────────────────────────────────────── */
+@keyframes liquidRise {
+  0% { height: 12%; }
+  50% { height: 78%; }
+  100% { height: 100%; }
+}
+
+@keyframes waveChurn {
+  0% { transform: translateX(0) scaleY(1); }
+  50% { transform: translateX(-25%) scaleY(1.3); }
+  100% { transform: translateX(-50%) scaleY(1); }
+}
+
+.animate-liquid-rise {
+  animation: liquidRise 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite alternate;
+}
+
+.animate-wave-churn {
+  width: 200%;
+  animation: waveChurn 2s linear infinite;
+}
+

@@ -24,7 +24,7 @@ export interface WorkspaceDataContextType {
   quotationSettings: WorkspaceQuotationSettings | null;
   memberRatesMap: Record<string, any>;
   loading: boolean;
-  refreshCatalog: (catalog?: 'all' | 'members' | 'roles' | 'events' | 'settings') => Promise<void>;
+  refreshCatalog: (catalog?: 'all' | 'members' | 'roles' | 'events' | 'settings', force?: boolean) => Promise<void>;
   getMemberById: (id: string) => any | undefined;
   getRoleByName: (name: string) => WorkspaceCrewRole | undefined;
   getRoleShortCode: (name: string) => string;
@@ -58,6 +58,8 @@ export function WorkspaceDataProvider({ children }: { children: React.ReactNode 
   const [loading, setLoading] = useState<boolean>(true);
 
   const initialLoadDone = useRef(false);
+  const lastFetchedAt = useRef<number>(0);
+  const STALE_TIME = 1000 * 60 * 5; // 5 minutes cache
 
   // 1. Fetch Members & Isolated Rates
   const loadMembersCatalog = useCallback(async (targetWs: string) => {
@@ -158,18 +160,31 @@ export function WorkspaceDataProvider({ children }: { children: React.ReactNode 
     }
   }, []);
 
-  // Single Central Mount Fetcher
-  const refreshCatalog = useCallback(async (catalog: 'all' | 'members' | 'roles' | 'events' | 'settings' = 'all') => {
+  // Single Central Mount Fetcher with 5-minute staleTime cache & keepPreviousData
+  const refreshCatalog = useCallback(async (
+    catalog: 'all' | 'members' | 'roles' | 'events' | 'settings' = 'all',
+    force: boolean = false
+  ) => {
     if (!effectiveWsId) return;
 
+    const now = Date.now();
+    if (!force && catalog === 'all' && now - lastFetchedAt.current < STALE_TIME && workspaceMembers.length > 0) {
+      // Catalog data is fresh within 5 minutes, retain in-memory state without unmounting
+      return;
+    }
+
     if (catalog === 'all') {
-      setLoading(true);
+      // keepPreviousData: only set full blocking loading state on true cold starts
+      if (workspaceMembers.length === 0) {
+        setLoading(true);
+      }
       await Promise.all([
         loadMembersCatalog(effectiveWsId),
         loadRolesCatalog(effectiveWsId),
         loadEventTypesCatalog(effectiveWsId),
         loadSettingsCatalog(effectiveWsId),
       ]);
+      lastFetchedAt.current = Date.now();
       setLoading(false);
     } else if (catalog === 'members') {
       await loadMembersCatalog(effectiveWsId);
@@ -180,7 +195,7 @@ export function WorkspaceDataProvider({ children }: { children: React.ReactNode 
     } else if (catalog === 'settings') {
       await loadSettingsCatalog(effectiveWsId);
     }
-  }, [effectiveWsId, loadMembersCatalog, loadRolesCatalog, loadEventTypesCatalog, loadSettingsCatalog]);
+  }, [effectiveWsId, workspaceMembers.length, loadMembersCatalog, loadRolesCatalog, loadEventTypesCatalog, loadSettingsCatalog]);
 
   // Initial mount trigger
   useEffect(() => {
@@ -192,10 +207,10 @@ export function WorkspaceDataProvider({ children }: { children: React.ReactNode 
 
   // Listen for broadcast events across tabs / modules to update cache in-memory
   useEffect(() => {
-    const handleEventsUpdate = () => refreshCatalog('events');
-    const handleRolesUpdate = () => refreshCatalog('roles');
-    const handleMembersUpdate = () => refreshCatalog('members');
-    const handleSettingsUpdate = () => refreshCatalog('settings');
+    const handleEventsUpdate = () => refreshCatalog('events', true);
+    const handleRolesUpdate = () => refreshCatalog('roles', true);
+    const handleMembersUpdate = () => refreshCatalog('members', true);
+    const handleSettingsUpdate = () => refreshCatalog('settings', true);
 
     window.addEventListener('workspace_event_types_updated', handleEventsUpdate);
     window.addEventListener('workspace_crew_roles_updated', handleRolesUpdate);

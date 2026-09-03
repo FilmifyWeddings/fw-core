@@ -187,6 +187,24 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   }, [collapsed]);
 
   useEffect(() => {
+    // Pre-warm core workspace routes for instant millisecond transitions
+    const coreRoutes = [
+      '/workspace',
+      '/leads',
+      '/team-manager',
+      '/quotations',
+      '/workspace/post-production',
+      '/workspace/team',
+      '/workspace/finance',
+    ];
+    coreRoutes.forEach((route) => {
+      try {
+        router.prefetch(route);
+      } catch (_) {}
+    });
+  }, [router]);
+
+  useEffect(() => {
     if (pathname.startsWith('/leads')) {
       setLeadsSubmenuOpen(true);
     }
@@ -419,7 +437,12 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         <div className={`h-16 border-b border-[#F0ECE4] flex items-center shrink-0 ${collapsed ? 'justify-center px-1' : 'justify-between px-4'}`}>
           {!collapsed ? (
             <>
-              <Link href="/workspace" className="flex items-center gap-3 overflow-hidden group">
+              <Link
+                href="/workspace"
+                prefetch={true}
+                onMouseEnter={() => router.prefetch('/workspace')}
+                className="flex items-center gap-3 overflow-hidden group"
+              >
                 <StudioCoreBrandIcon className="w-9 h-9" isCollapsed={false} />
                 <div className="overflow-hidden">
                   <div className="flex items-center gap-1">
@@ -476,6 +499,8 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
               <div key={item.id} className="relative group">
                 <Link
                   href={item.path}
+                  prefetch={true}
+                  onMouseEnter={() => router.prefetch(item.path)}
                   className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition-all duration-200 ${
                     isActive
                       ? 'bg-[#FDF6EC] text-[#92400E] border border-[#F5E6CC] shadow-2xs'
@@ -516,6 +541,8 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                         <Link
                           key={sub.name}
                           href={sub.path}
+                          prefetch={true}
+                          onMouseEnter={() => router.prefetch(sub.path)}
                           className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${
                             isSubActive
                               ? 'bg-amber-100/70 text-amber-900 font-bold'
@@ -696,6 +723,8 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                     <div key={item.id}>
                       <Link
                         href={item.path}
+                        prefetch={true}
+                        onMouseEnter={() => router.prefetch(item.path)}
                         onClick={() => setMobileDrawerOpen(false)}
                         className={`flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition ${
                           isActive
