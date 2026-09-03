@@ -19,6 +19,7 @@ import { InvoiceModalDialog } from '@/components/finance/invoice-modal-dialog';
 import { ExcelMigrationModal } from '@/components/finance/excel-migration-modal';
 import MilestoneStepDropdown from '@/components/finance/MilestoneStepDropdown';
 import { FinancePinVerificationCard } from '@/components/finance/FinancePinVerificationCard';
+import { FinanceAnalyticsDashboard } from '@/components/finance/FinanceAnalyticsDashboard';
 import { exportCurrentFinanceToExcel } from '@/lib/excel-finance-migration';
 import type { 
   WorkspaceClient, ClientFinanceRecord, FinanceMilestoneItem, FinanceExpenseItem, 
@@ -1921,7 +1922,7 @@ export default function FinancePage() {
 
   // 3. ONLY REACHED IF 100% VERIFIED
   return (
-    <div className="min-h-screen bg-[#FDFBF7] text-slate-900 pb-28 pt-3 px-3 sm:px-5 lg:px-7 font-sans selection:bg-amber-100 selection:text-amber-900">
+    <div className="min-h-screen bg-[#FDFBF7] text-slate-900 pb-28 pt-3 px-3 sm:px-5 lg:px-7 font-sans selection:bg-amber-100 selection:text-amber-900 w-full max-w-full overflow-x-hidden">
       <div className="w-full max-w-[1680px] mx-auto space-y-4 sm:space-y-5">
 
         {/* ─────────────────────────────────────────────────────────────
@@ -2116,7 +2117,7 @@ export default function FinancePage() {
               }`}
             >
               <PieChart className="w-3.5 h-3.5" />
-              <span>Financial Analytics</span>
+              <span>Finance Analytics</span>
               {activeTab === 'analytics' && (
                 <motion.div 
                   layoutId="tabUnderline" 
@@ -2572,17 +2573,6 @@ export default function FinancePage() {
                               {client?.name || 'Unnamed Client'}
                             </h3>
 
-                            {/* Status Badge */}
-                            <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                              record.payment_status === 'paid'
-                                ? 'bg-emerald-50 text-emerald-700'
-                                : recAmt > 0
-                                ? 'bg-orange-50 text-orange-700'
-                                : 'bg-rose-50 text-rose-700'
-                            }`}>
-                              {record.payment_status === 'paid' ? 'Paid Full' : recAmt > 0 ? 'Partially Paid' : 'Pending'}
-                            </span>
-
                             {/* 🚨 CARD-LEVEL OVERDUE DAYS & AMOUNT BADGE */}
                             {clientOverdueSum > 0 && (() => {
                               const maxDays = milestones
@@ -2595,57 +2585,30 @@ export default function FinancePage() {
                               return (
                                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200 animate-pulse flex items-center gap-1 shadow-2xs">
                                   <AlertTriangle className="w-3 h-3 text-rose-600 shrink-0" />
-                                  <span>⚠️ Total Overdue: <strong>₹{clientOverdueSum.toLocaleString('en-IN')}</strong> (Oldest: {maxDays} days ago)</span>
+                                  <span>⚠️ Overdue: <strong>₹{clientOverdueSum.toLocaleString('en-IN')}</strong> ({maxDays}d ago)</span>
                                 </span>
                               );
                             })()}
 
-                            {/* 🏷️ DYNAMIC SELECTED QUOTATION VERSION BADGE */}
-                            {record.has_final_quotation && record.final_quotation_version ? (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleOpenQuotationModalForRecord(record);
-                                }}
-                                className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100 transition flex items-center gap-1 shadow-2xs cursor-pointer"
-                                title="Click to view or switch quotation versions"
-                              >
-                                <Sparkles className="w-3 h-3 text-emerald-600" />
-                                <span>Version: <strong>v{record.final_quotation_version}.0 Selected</strong></span>
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleOpenQuotationModalForRecord(record);
-                                }}
-                                className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-orange-50 text-orange-700 hover:bg-orange-100 transition flex items-center gap-1 border border-orange-200 cursor-pointer"
-                              >
-                                + Select Final Quotation
-                              </button>
-                            )}
-
-                            {/* 👥 "HANDLED BY" TEAM ATTRIBUTION SELECTOR */}
+                            {/* 👥 SLIM "HANDLED BY" TEAM ATTRIBUTION SELECTOR */}
                             <div 
                               onClick={(e) => e.stopPropagation()}
                               className="relative inline-block"
                             >
                               {addingMemberForClientId === record.client_id ? (
-                                <div className="flex items-center gap-1 bg-white border border-purple-300 rounded-xl p-1 shadow-sm">
+                                <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-xl p-1 shadow-sm">
                                   <input
                                     type="text"
                                     placeholder="Enter member name..."
                                     value={newMemberInputName}
                                     onChange={(e) => setNewMemberInputName(e.target.value)}
                                     onKeyDown={(e) => e.key === 'Enter' && handleAddNewTeamMember(record.client_id)}
-                                    className="px-2 py-0.5 text-[11px] font-bold text-purple-950 focus:outline-none w-36"
+                                    className="px-2 py-0.5 text-[11px] font-bold text-slate-900 focus:outline-none w-32"
                                     autoFocus
                                   />
                                   <button
                                     onClick={() => handleAddNewTeamMember(record.client_id)}
-                                    className="p-1 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                                    className="p-1 bg-amber-600 text-white rounded-lg hover:bg-amber-700"
                                   >
                                     <Check className="w-3 h-3" />
                                   </button>
@@ -2657,9 +2620,9 @@ export default function FinancePage() {
                                   </button>
                                 </div>
                               ) : (
-                                <div className="flex items-center gap-1 bg-purple-50 hover:bg-purple-100/70 border border-purple-200 rounded-full px-2.5 py-0.5 transition">
-                                  <UserCheck className="w-3 h-3 text-purple-600" />
-                                  <span className="text-[10px] font-extrabold text-purple-900 uppercase">Handled By:</span>
+                                <div className="px-2 py-0.5 text-[11px] rounded-full inline-flex items-center gap-1.5 bg-slate-100/80 border border-slate-200/60 max-w-fit text-slate-700 font-medium transition hover:bg-slate-200/60">
+                                  <UserCheck className="w-3 h-3 text-slate-500" />
+                                  <span className="text-[10px] font-bold text-slate-500 uppercase">Handled By:</span>
                                   <select
                                     value={handledBy}
                                     onChange={(e) => {
@@ -2671,7 +2634,7 @@ export default function FinancePage() {
                                         handleAssignTeamMember(record.client_id, val);
                                       }
                                     }}
-                                    className="bg-transparent text-[11px] font-bold text-purple-950 focus:outline-none cursor-pointer pr-1"
+                                    className="bg-transparent text-[11px] font-bold text-slate-800 focus:outline-none cursor-pointer pr-1"
                                   >
                                     <option value="__add_new__">✨ + Add / Assign New Member</option>
                                     <option value="Unassigned">Unassigned</option>
@@ -2789,7 +2752,7 @@ export default function FinancePage() {
                                   className="w-full px-3 py-2 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
                                 >
                                   <Pencil className="w-3.5 h-3.5 text-slate-500" />
-                                  Edit Pricing
+                                  <span>Edit Pricing</span>
                                 </button>
                                 <button
                                   onClick={() => {
@@ -2799,7 +2762,17 @@ export default function FinancePage() {
                                   className="w-full px-3 py-2 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
                                 >
                                   <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                                  Quotation Version
+                                  <span>{record.has_final_quotation && record.final_quotation_version ? `Quotation: v${record.final_quotation_version}.0` : 'Select Final Quotation'}</span>
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setOpenMenuRecordId(null);
+                                    setShowInvoiceModal({ open: true, client: record.client || undefined, financeRecord: record });
+                                  }}
+                                  className="w-full px-3 py-2 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
+                                >
+                                  <FileText className="w-3.5 h-3.5 text-slate-500" />
+                                  <span>Download Invoice</span>
                                 </button>
                                 {record.client_id && (
                                   <a
@@ -2809,7 +2782,7 @@ export default function FinancePage() {
                                     className="w-full px-3 py-2 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
                                   >
                                     <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
-                                    Client Profile
+                                    <span>Client Profile</span>
                                   </a>
                                 )}
                               </motion.div>
@@ -2956,8 +2929,8 @@ export default function FinancePage() {
                                 </div>
                               ) : (
                                 <div className="space-y-2.5">
-                                  {/* Table Column Headers */}
-                                  <div className="grid grid-cols-12 gap-2 text-[10px] font-black uppercase text-slate-400 px-2">
+                                  {/* Table Column Headers (Desktop Only) */}
+                                  <div className="hidden md:grid grid-cols-12 gap-2 text-[10px] font-black uppercase text-slate-400 px-2">
                                     <span className="col-span-3">Date</span>
                                     <span className="col-span-4">Steps</span>
                                     <span className="col-span-2 text-right">Amount</span>
@@ -2972,119 +2945,218 @@ export default function FinancePage() {
                                     const overdueDays = isOverdue ? Math.max(1, Math.floor((new Date(todayStr).getTime() - new Date(ms.due_date!).getTime()) / (1000 * 60 * 60 * 24))) : 0;
 
                                     return (
-                                      <div
-                                        key={ms.id}
-                                        className={`grid grid-cols-12 gap-2 items-center p-2.5 rounded-2xl transition border text-xs ${
-                                          isPaid
-                                            ? 'bg-emerald-50/40 border-emerald-100'
-                                            : isOverdue
-                                            ? 'bg-rose-50/40 border-rose-200'
-                                            : 'hover:bg-slate-50/80 border-slate-100'
-                                        }`}
-                                      >
-                                        {/* Date Field (Strictly ISO normalized YYYY-MM-DD) */}
-                                        <div className="col-span-3">
-                                          <input
-                                            type="date"
-                                            value={ms.due_date || ''}
-                                            onChange={(e) => handleMilestoneStepChange(record.id, ms.id, 'due_date', e.target.value)}
-                                            className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-xl text-[11px] font-medium text-slate-700 focus:outline-none focus:border-amber-500"
-                                          />
-                                          {isOverdue && (
-                                            <span className="text-[10px] font-black text-rose-600 flex items-center gap-0.5 mt-0.5 pl-0.5">
-                                              ⚠️ {overdueDays} Days Overdue
-                                            </span>
-                                          )}
-                                        </div>
-
-                                        {/* Step Name (3D Milestone Dropdown) */}
-                                        <div className="col-span-4">
-                                          <MilestoneStepDropdown
-                                            value={ms.step_name || ms.title || ''}
-                                            onChange={(newVal) => handleMilestoneStepChange(record.id, ms.id, 'step_name', newVal)}
-                                            templates={paymentMilestoneTemplates}
-                                            onAddTemplate={handleSaveNewMilestoneTemplate}
-                                            placeholder="Select Milestone"
-                                          />
-                                        </div>
-
-                                        {/* Amount */}
-                                        <div className="col-span-2 text-right">
-                                          <input
-                                            type="number"
-                                            value={ms.amount || 0}
-                                            onChange={(e) => handleMilestoneStepChange(record.id, ms.id, 'amount', Number(e.target.value))}
-                                            className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 text-right focus:outline-none focus:border-amber-500"
-                                          />
-                                        </div>
-
-                                        {/* 💳 STATUS & INLINE PAYMENT MODE BADGE */}
-                                        <div className="col-span-2 flex items-center justify-center gap-1.5 flex-wrap">
-                                          <button
-                                            type="button"
-                                            onClick={() => handleOpenCompletePaymentModal(record, ms)}
-                                            className={`px-2 py-0.5 text-xs font-medium rounded-full border transition cursor-pointer flex items-center gap-1 ${
-                                              isPaid
-                                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                                                : isOverdue
-                                                ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
-                                                : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
-                                            }`}
-                                            title="Click to record/update payment status"
-                                          >
-                                            {isPaid ? (
-                                              <>✓ Completed</>
-                                            ) : isOverdue ? (
-                                              <span>⚠️ Overdue ({overdueDays}d)</span>
-                                            ) : (
-                                              'Pending'
+                                      <div key={ms.id} className="space-y-2">
+                                        {/* Desktop Grid Row */}
+                                        <div
+                                          className={`hidden md:grid grid-cols-12 gap-2 items-center p-2.5 rounded-2xl transition border text-xs ${
+                                            isPaid
+                                              ? 'bg-emerald-50/40 border-emerald-100'
+                                              : isOverdue
+                                              ? 'bg-rose-50/40 border-rose-200'
+                                              : 'hover:bg-slate-50/80 border-slate-100'
+                                          }`}
+                                        >
+                                          {/* Date Field (Strictly ISO normalized YYYY-MM-DD) */}
+                                          <div className="col-span-3">
+                                            <input
+                                              type="date"
+                                              value={ms.due_date || ''}
+                                              onChange={(e) => handleMilestoneStepChange(record.id, ms.id, 'due_date', e.target.value)}
+                                              className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-xl text-[11px] font-medium text-slate-700 focus:outline-none focus:border-amber-500"
+                                            />
+                                            {isOverdue && (
+                                              <span className="text-[10px] font-black text-rose-600 flex items-center gap-0.5 mt-0.5 pl-0.5">
+                                                ⚠️ {overdueDays} Days Overdue
+                                              </span>
                                             )}
-                                          </button>
+                                          </div>
 
-                                          {/* Payment Mode Badge side-by-side with Completed */}
-                                          {isPaid && ms.payment_mode && (
-                                            <span className="px-2 py-0.5 text-xs font-semibold rounded bg-slate-100 text-slate-700 border border-slate-200 uppercase">
-                                              {ms.payment_mode}
-                                            </span>
-                                          )}
+                                          {/* Step Name (3D Milestone Dropdown) */}
+                                          <div className="col-span-4">
+                                            <MilestoneStepDropdown
+                                              value={ms.step_name || ms.title || ''}
+                                              onChange={(newVal) => handleMilestoneStepChange(record.id, ms.id, 'step_name', newVal)}
+                                              templates={paymentMilestoneTemplates}
+                                              onAddTemplate={handleSaveNewMilestoneTemplate}
+                                              placeholder="Select Milestone"
+                                            />
+                                          </div>
+
+                                          {/* Amount */}
+                                          <div className="col-span-2 text-right">
+                                            <input
+                                              type="number"
+                                              value={ms.amount || 0}
+                                              onChange={(e) => handleMilestoneStepChange(record.id, ms.id, 'amount', Number(e.target.value))}
+                                              className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 text-right focus:outline-none focus:border-amber-500"
+                                            />
+                                          </div>
+
+                                          {/* 💳 STATUS & INLINE PAYMENT MODE BADGE */}
+                                          <div className="col-span-2 flex items-center justify-center gap-1.5 flex-wrap">
+                                            <button
+                                              type="button"
+                                              onClick={() => handleOpenCompletePaymentModal(record, ms)}
+                                              className={`px-2 py-0.5 text-xs font-medium rounded-full border transition cursor-pointer flex items-center gap-1 ${
+                                                isPaid
+                                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                                                  : isOverdue
+                                                  ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+                                                  : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                                              }`}
+                                              title="Click to record/update payment status"
+                                            >
+                                              {isPaid ? (
+                                                <>✓ Completed</>
+                                              ) : isOverdue ? (
+                                                <span>⚠️ Overdue ({overdueDays}d)</span>
+                                              ) : (
+                                                'Pending'
+                                              )}
+                                            </button>
+
+                                            {/* Payment Mode Badge side-by-side with Completed */}
+                                            {isPaid && ms.payment_mode && (
+                                              <span className="px-2 py-0.5 text-xs font-semibold rounded bg-slate-100 text-slate-700 border border-slate-200 uppercase">
+                                                {ms.payment_mode}
+                                              </span>
+                                            )}
+                                          </div>
+
+                                          {/* Action / 3 Dots Menu */}
+                                          <div className="col-span-1 flex items-center justify-end relative">
+                                            <button
+                                              type="button"
+                                              onClick={() => setOpenActionMenuId(openActionMenuId === ms.id ? null : ms.id)}
+                                              className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+                                            >
+                                              <MoreVertical className="w-4 h-4" />
+                                            </button>
+
+                                            {/* Dropdown Menu */}
+                                            {openActionMenuId === ms.id && (
+                                              <div className="absolute right-0 top-8 bg-white rounded-xl border border-slate-200 shadow-xl py-1.5 w-40 z-30 space-y-0.5 text-xs">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleOpenCompletePaymentModal(record, ms)}
+                                                  className="w-full text-left px-3 py-1.5 hover:bg-slate-50 font-bold text-emerald-700 flex items-center gap-2"
+                                                >
+                                                  <CheckCircle2 className="w-3.5 h-3.5" /> Complete Payment
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleOpenEditMilestone(record.id, ms)}
+                                                  className="w-full text-left px-3 py-1.5 hover:bg-slate-50 font-bold text-slate-700 flex items-center gap-2"
+                                                >
+                                                  <Pencil className="w-3.5 h-3.5" /> Edit Step
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleDeleteMilestone(record.id, ms.id)}
+                                                  className="w-full text-left px-3 py-1.5 hover:bg-rose-50 font-bold text-rose-600 flex items-center gap-2"
+                                                >
+                                                  <Trash2 className="w-3.5 h-3.5" /> Delete
+                                                </button>
+                                              </div>
+                                            )}
+                                          </div>
                                         </div>
 
-                                        {/* Action / 3 Dots Menu */}
-                                        <div className="col-span-1 flex items-center justify-end relative">
-                                          <button
-                                            type="button"
-                                            onClick={() => setOpenActionMenuId(openActionMenuId === ms.id ? null : ms.id)}
-                                            className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
-                                          >
-                                            <MoreVertical className="w-4 h-4" />
-                                          </button>
-
-                                          {/* Dropdown Menu */}
-                                          {openActionMenuId === ms.id && (
-                                            <div className="absolute right-0 top-8 bg-white rounded-xl border border-slate-200 shadow-xl py-1.5 w-40 z-30 space-y-0.5 text-xs">
+                                        {/* Mobile Native Card Layout (< md) */}
+                                        <div
+                                          className={`block md:hidden p-3 rounded-2xl border transition text-xs space-y-2.5 ${
+                                            isPaid
+                                              ? 'bg-emerald-50/30 border-emerald-100'
+                                              : isOverdue
+                                              ? 'bg-rose-50/40 border-rose-200'
+                                              : 'bg-slate-50/70 border-slate-200/70'
+                                          }`}
+                                        >
+                                          <div className="flex items-center justify-between gap-2">
+                                            <div className="flex-1">
+                                              <MilestoneStepDropdown
+                                                value={ms.step_name || ms.title || ''}
+                                                onChange={(newVal) => handleMilestoneStepChange(record.id, ms.id, 'step_name', newVal)}
+                                                templates={paymentMilestoneTemplates}
+                                                onAddTemplate={handleSaveNewMilestoneTemplate}
+                                                placeholder="Select Milestone"
+                                              />
+                                            </div>
+                                            <div className="flex items-center gap-1.5 shrink-0">
                                               <button
                                                 type="button"
                                                 onClick={() => handleOpenCompletePaymentModal(record, ms)}
-                                                className="w-full text-left px-3 py-1.5 hover:bg-slate-50 font-bold text-emerald-700 flex items-center gap-2"
+                                                className={`px-2 py-0.5 text-[11px] font-bold rounded-full border transition flex items-center gap-1 ${
+                                                  isPaid
+                                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                    : isOverdue
+                                                    ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                                                }`}
                                               >
-                                                <CheckCircle2 className="w-3.5 h-3.5" /> Complete Payment
+                                                {isPaid ? '✓ Done' : isOverdue ? `${overdueDays}d Late` : 'Pending'}
                                               </button>
-                                              <button
-                                                type="button"
-                                                onClick={() => handleOpenEditMilestone(record.id, ms)}
-                                                className="w-full text-left px-3 py-1.5 hover:bg-slate-50 font-bold text-slate-700 flex items-center gap-2"
-                                              >
-                                                <Pencil className="w-3.5 h-3.5" /> Edit Step
-                                              </button>
-                                              <button
-                                                type="button"
-                                                onClick={() => handleDeleteMilestone(record.id, ms.id)}
-                                                className="w-full text-left px-3 py-1.5 hover:bg-rose-50 font-bold text-rose-600 flex items-center gap-2"
-                                              >
-                                                <Trash2 className="w-3.5 h-3.5" /> Delete
-                                              </button>
+                                              {isPaid && ms.payment_mode && (
+                                                <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-slate-100 text-slate-700 border border-slate-200 uppercase">
+                                                  {ms.payment_mode}
+                                                </span>
+                                              )}
+                                              <div className="relative">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setOpenActionMenuId(openActionMenuId === ms.id ? null : ms.id)}
+                                                  className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                                                >
+                                                  <MoreVertical className="w-3.5 h-3.5" />
+                                                </button>
+                                                {openActionMenuId === ms.id && (
+                                                  <div className="absolute right-0 top-7 bg-white rounded-xl border border-slate-200 shadow-xl py-1 w-36 z-30 space-y-0.5 text-xs font-bold">
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => handleOpenCompletePaymentModal(record, ms)}
+                                                      className="w-full text-left px-2.5 py-1 text-emerald-700"
+                                                    >
+                                                      Complete
+                                                    </button>
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => handleOpenEditMilestone(record.id, ms)}
+                                                      className="w-full text-left px-2.5 py-1 text-slate-700"
+                                                    >
+                                                      Edit
+                                                    </button>
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => handleDeleteMilestone(record.id, ms.id)}
+                                                      className="w-full text-left px-2.5 py-1 text-rose-600"
+                                                    >
+                                                      Delete
+                                                    </button>
+                                                  </div>
+                                                )}
+                                              </div>
                                             </div>
-                                          )}
+                                          </div>
+
+                                          <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100">
+                                            <div className="flex-1">
+                                              <input
+                                                type="date"
+                                                value={ms.due_date || ''}
+                                                onChange={(e) => handleMilestoneStepChange(record.id, ms.id, 'due_date', e.target.value)}
+                                                className="w-full px-2 py-1 bg-white border border-slate-200 rounded-xl text-[11px] font-medium text-slate-700"
+                                              />
+                                            </div>
+                                            <div className="flex items-center gap-1 w-28">
+                                              <span className="text-xs font-mono font-bold text-slate-400">₹</span>
+                                              <input
+                                                type="number"
+                                                value={ms.amount || 0}
+                                                onChange={(e) => handleMilestoneStepChange(record.id, ms.id, 'amount', Number(e.target.value))}
+                                                className="w-full px-2 py-1 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 text-right"
+                                              />
+                                            </div>
+                                          </div>
                                         </div>
                                       </div>
                                     );
@@ -3220,91 +3292,20 @@ export default function FinancePage() {
         )}
 
         {/* ─────────────────────────────────────────────────────────────
-            TAB 3: FINANCIAL ANALYTICS & BREAKDOWN
+            TAB 3: FINANCE ANALYTICS & 3D DASHBOARD
         ───────────────────────────────────────────────────────────── */}
         {activeTab === 'analytics' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {/* Income vs Expenses Card */}
-            <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-xs space-y-4">
-              <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
-                <PieChart className="w-4 h-4 text-orange-600" />
-                Revenue vs Operating Expenses
-              </h3>
-
-              <div className="space-y-3">
-                <div>
-                  <div className="flex justify-between text-xs font-bold mb-1">
-                    <span>Collected Revenue</span>
-                    <span className="font-mono text-emerald-700">₹{totalReceived.toLocaleString('en-IN')}</span>
-                  </div>
-                  <div className="w-full h-3 rounded-full bg-slate-100 overflow-hidden">
-                    <div 
-                      className="h-full bg-emerald-500 rounded-full"
-                      style={{ width: `${totalInvoiced > 0 ? (totalReceived / totalInvoiced) * 100 : 0}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between text-xs font-bold mb-1">
-                    <span>Total Expenses & Team Payouts</span>
-                    <span className="font-mono text-rose-700">₹{totalExpensesAmount.toLocaleString('en-IN')}</span>
-                  </div>
-                  <div className="w-full h-3 rounded-full bg-slate-100 overflow-hidden">
-                    <div 
-                      className="h-full bg-rose-500 rounded-full"
-                      style={{ width: `${totalReceived > 0 ? Math.min(100, (totalExpensesAmount / totalReceived) * 100) : 0}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div className="p-4 bg-orange-50 rounded-2xl border border-orange-200 flex items-center justify-between">
-                  <div>
-                    <span className="text-[11px] font-black text-orange-900 uppercase">Estimated Net Profit</span>
-                    <p className="text-2xl font-mono font-black text-orange-950 mt-0.5">
-                      ₹{netProfit.toLocaleString('en-IN')}
-                    </p>
-                  </div>
-                  <span className="px-3 py-1 rounded-full text-xs font-black bg-orange-200 text-orange-900">
-                    {profitMargin}% Profit Margin
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Category Breakdown */}
-            <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-xs space-y-4">
-              <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
-                <Tag className="w-4 h-4 text-blue-600" />
-                Expenses by Category
-              </h3>
-
-              {filteredExpenses.length === 0 ? (
-                <p className="text-xs text-slate-400 py-10 text-center">No expense categories to chart yet.</p>
-              ) : (
-                <div className="space-y-2 max-h-60 overflow-y-auto">
-                  {Array.from(new Set(filteredExpenses.map(e => e.category))).map(cat => {
-                    const catTotal = filteredExpenses
-                      .filter(e => e.category === cat)
-                      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-                    const pct = totalExpensesAmount > 0 ? Math.round((catTotal / totalExpensesAmount) * 100) : 0;
-
-                    return (
-                      <div key={cat} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl">
-                        <span className="text-xs font-bold text-slate-800">{cat}</span>
-                        <div className="flex items-center gap-3">
-                          <span className="font-mono font-bold text-xs text-slate-900">₹{catTotal.toLocaleString('en-IN')}</span>
-                          <span className="text-[10px] font-black text-slate-500 bg-white px-2 py-0.5 rounded-md border">
-                            {pct}%
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
+          <FinanceAnalyticsDashboard
+            records={filteredRecords as any}
+            expenses={filteredExpenses as any}
+            clients={clients}
+            workspaceId={currentWorkspaceId}
+            todayStr={todayStr}
+            onOpenCompletePaymentModal={handleOpenCompletePaymentModal}
+            onOpenRecordPayment={(rec) => setShowRecordPaymentModal({ open: true, client: rec.client || undefined, financeRecord: rec })}
+            onOpenInvoice={(rec) => setShowInvoiceModal({ open: true, client: rec.client || undefined, financeRecord: rec })}
+            onOpenQuotationModal={handleOpenQuotationModalForRecord}
+          />
         )}
 
       </div>
