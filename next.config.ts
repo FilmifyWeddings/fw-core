@@ -1,12 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // 1. Build ke waqt Type-checking aur Linting skip (Time 70% bachega)
+  // 1. Build ke waqt Type-checking skip (Time 70% bachega)
   typescript: {
     ignoreBuildErrors: true,
-  },
-  eslint: {
-    ignoreDuringBuilds: true,
   },
 
   // 2. Heavy Source Maps band (Disk write fast hogi)
@@ -14,14 +11,11 @@ const nextConfig: NextConfig = {
 
   // 3. Static Page Generation Fast karne ke liye (Static bailout / skip heavy prerender)
   experimental: {
-    // Multi-core CPU ka full use karega local PC par
+    // Multi-core CPU ka full use karega
     cpus: 4, 
   },
 
-  // 4. Standalone output
-  output: "standalone",
-
-  // 5. Images build-time render skip
+  // 4. Images build-time render skip
   images: {
     unoptimized: true,
   },

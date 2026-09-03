@@ -1394,17 +1394,19 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
       logger.info({ workspaceId: wsId, chatJid, isOutbound, text }, `📩 WhatsApp message ${isOutbound ? 'OUTBOUND' : 'INBOUND'}`);
 
       // 1. Insert or update baileys_messages
-      await supabase.from('baileys_messages').upsert({
-        workspace_id: wsId,
-        wa_message_id: msg.key?.id,
-        chat_jid: chatJid,
-        direction: isOutbound ? 'outbound' : 'inbound',
-        message_text: text,
-        status: isOutbound ? 'sent' : 'read',
-        sent_at: sentAt,
-      }, { onConflict: 'workspace_id,wa_message_id' } as any).catch(err => {
+      try {
+        await (supabase.from('baileys_messages') as any).upsert({
+          workspace_id: wsId,
+          wa_message_id: msg.key?.id,
+          chat_jid: chatJid,
+          direction: isOutbound ? 'outbound' : 'inbound',
+          message_text: text,
+          status: isOutbound ? 'sent' : 'read',
+          sent_at: sentAt,
+        }, { onConflict: 'workspace_id,wa_message_id' });
+      } catch (err: any) {
         // Fallback to normal insert if onConflict is not configured on wa_message_id
-        return supabase.from('baileys_messages').insert({
+        await (supabase.from('baileys_messages') as any).insert({
           workspace_id: wsId,
           wa_message_id: msg.key?.id,
           chat_jid: chatJid,
@@ -1413,19 +1415,21 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
           status: isOutbound ? 'sent' : 'read',
           sent_at: sentAt,
         });
-      });
+      }
 
       // 2. Also record in evolution_messages for unified inbox
-      await supabase.from('evolution_messages').upsert({
-        workspace_id: wsId,
-        message_id: msg.key?.id || `bm_${Date.now()}`,
-        remote_jid: chatJid,
-        from_me: isOutbound,
-        message_type: msg.message?.imageMessage ? 'image' : 'text',
-        content: text,
-        status: isOutbound ? 'SENT' : 'DELIVERED',
-        timestamp: sentAt,
-      }, { onConflict: 'workspace_id,message_id' }).catch(() => {});
+      try {
+        await (supabase.from('evolution_messages') as any).upsert({
+          workspace_id: wsId,
+          message_id: msg.key?.id || `bm_${Date.now()}`,
+          remote_jid: chatJid,
+          from_me: isOutbound,
+          message_type: msg.message?.imageMessage ? 'image' : 'text',
+          content: text,
+          status: isOutbound ? 'SENT' : 'DELIVERED',
+          timestamp: sentAt,
+        }, { onConflict: 'workspace_id,message_id' });
+      } catch (_) {}
 
       // 3. Update or insert baileys_chats
       const chatUpdate: any = {
@@ -1440,21 +1444,25 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
         chatUpdate.display_name = senderName;
       }
 
-      await supabase.from('baileys_chats').upsert(chatUpdate, { 
-        onConflict: 'workspace_id, jid', 
-        ignoreDuplicates: false 
-      }).catch(() => {});
+      try {
+        await (supabase.from('baileys_chats') as any).upsert(chatUpdate, { 
+          onConflict: 'workspace_id, jid', 
+          ignoreDuplicates: false 
+        });
+      } catch (_) {}
 
       // 4. Save contact name in evolution_contacts if available
       if (senderName && !isGroup && !isOutbound) {
-        await supabase.from('evolution_contacts').upsert({
-          workspace_id: wsId,
-          jid: chatJid,
-          name: senderName,
-          push_name: senderName,
-          phone: chatJid.split('@')[0],
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'workspace_id, jid', ignoreDuplicates: false }).catch(() => {});
+        try {
+          await (supabase.from('evolution_contacts') as any).upsert({
+            workspace_id: wsId,
+            jid: chatJid,
+            name: senderName,
+            push_name: senderName,
+            phone: chatJid.split('@')[0],
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'workspace_id, jid', ignoreDuplicates: false });
+        } catch (_) {}
       }
     }
   });
