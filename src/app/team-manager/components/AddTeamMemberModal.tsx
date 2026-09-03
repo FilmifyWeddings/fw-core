@@ -1,19 +1,20 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, UserPlus, Sparkles, User, Briefcase, Phone, Mail, 
   Camera, Loader2, ShieldCheck, ChevronDown, ChevronUp,
   Target, FileText, Users2, Film, IndianRupee, Check,
   AlertTriangle, AlertCircle, CheckCircle2, Search, Building2,
-  Lock, Eye, Edit2, ShieldAlert, CheckSquare, Square
+  Lock, Eye, Edit2, ShieldAlert, CheckSquare, Square, Plus
 } from 'lucide-react';
 import CountryFlagPhoneInput from './CountryFlagPhoneInput';
 import { supabase } from '@/lib/supabase';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { useWorkspaceData } from '@/context/WorkspaceDataContext';
 import { saveWorkspaceMemberRate } from '@/lib/team-finance-sync';
+import { fetchWorkspaceCrewRoles, saveWorkspaceCrewRole } from '@/lib/workspace-settings';
 
 interface AddTeamMemberModalProps {
   memberToEdit?: any | null;
@@ -68,7 +69,7 @@ export default function AddTeamMemberModal({
   onSave,
 }: AddTeamMemberModalProps) {
   const { workspaceId, userEmail, userId } = useWorkspace();
-  const { workspaceMembers } = useWorkspaceData();
+  const { workspaceMembers, crewRoles } = useWorkspaceData();
   const [name, setName] = useState('');
   const [primaryRole, setPrimaryRole] = useState(initialRole);
   const [selectedRoles, setSelectedRoles] = useState<string[]>([initialRole]);
@@ -82,6 +83,166 @@ export default function AddTeamMemberModal({
   const [isCompressing, setIsCompressing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showPermissions, setShowPermissions] = useState(false);
+  
+    // ── SETTINGS-LINKED CREW ROLES (SYNCED WITH STUDIO SETTINGS & MASTER_CREW_ROLES) ──
+  const [settingsRoles, setSettingsRoles] = useState<Array<{ id: string; name: string; short_code?: string }>>([]);
+  const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
+  const [isAddingCustomRole, setIsAddingCustomRole] = useState(false);
+  const [newCustomRoleName, setNewCustomRoleName] = useState('');
+  const [newCustomRoleShortCode, setNewCustomRoleShortCode] = useState('');
+  const roleDropdownRef = useRef<HTMLDivElement | null>(null);
+
+  // Load roles directly from Studio Settings (master_crew_roles + localStorage + defaults)
+  const loadSettingsRoles = useCallback(async () => {
+    try {
+      const effectiveWsId = workspaceId || userId || userEmail;
+      const roles = await fetchWorkspaceCrewRoles(effectiveWsId);
+
+      let localRoles = [];
+      if (typeof window !== 'undefined') {
+        const local = localStorage.getItem(`wg_custom_crew_roles_${effectiveWsId}`);
+        if (local) {
+          try { localRoles = JSON.parse(local); } catch (_) {}
+        }
+      }
+
+      const roleMap = new Map();
+
+      // 1. Seed defaults from MULTI_ROLES_OPTIONS
+      MULTI_ROLES_OPTIONS.forEach(opt => {
+        roleMap.set(opt.id.toLowerCase(), {
+          id: opt.id,
+          name: opt.id,
+          short_code: opt.id.slice(0, 2).toUpperCase()
+        });
+      });
+
+      // 2. Merge roles from WorkspaceDataContext (instant cache)
+      if (Array.isArray(crewRoles) && crewRoles.length > 0) {
+        crewRoles.forEach(r => {
+          if (r.name) {
+            roleMap.set(r.name.toLowerCase(), {
+              id: r.name,
+              name: r.name,
+              short_code: r.short_code
+            });
+          }
+        });
+      }
+
+      // 3. Merge database roles from master_crew_roles
+      if (Array.isArray(roles) && roles.length > 0) {
+        roles.forEach(r => {
+          if (r.name) {
+            roleMap.set(r.name.toLowerCase(), {
+              id: r.name,
+              name: r.name,
+              short_code: r.short_code
+            });
+          }
+        });
+      }
+
+      // 4. Merge local custom roles
+      if (Array.isArray(localRoles) && localRoles.length > 0) {
+        localRoles.forEach((r) => {
+          const rName = typeof r === 'string' ? r : r.name;
+          if (rName) {
+            roleMap.set(rName.toLowerCase(), {
+              id: rName,
+              name: rName,
+              short_code: typeof r === 'object' && r.short_code ? r.short_code : rName.slice(0, 2).toUpperCase()
+            });
+          }
+        });
+      }
+
+      // 5. Ensure memberToEdit roles are present
+      if (memberToEdit?.roles && Array.isArray(memberToEdit.roles)) {
+        memberToEdit.roles.forEach((r) => {
+          if (r && !roleMap.has(r.toLowerCase())) {
+            roleMap.set(r.toLowerCase(), {
+              id: r,
+              name: r,
+              short_code: r.slice(0, 2).toUpperCase()
+            });
+          }
+        });
+      }
+      if (memberToEdit?.primary_role && !roleMap.has(memberToEdit.primary_role.toLowerCase())) {
+        roleMap.set(memberToEdit.primary_role.toLowerCase(), {
+          id: memberToEdit.primary_role,
+          name: memberToEdit.primary_role,
+          short_code: memberToEdit.primary_role.slice(0, 2).toUpperCase()
+        });
+      }
+
+      setSettingsRoles(Array.from(roleMap.values()));
+    } catch (err) {
+      console.error('[AddTeamMemberModal] Failed to load settings roles:', err);
+    }
+  }, [workspaceId, userId, userEmail, crewRoles, memberToEdit]);
+
+  useEffect(() => {
+    if (isOpen) {
+      loadSettingsRoles();
+    }
+  }, [isOpen, loadSettingsRoles]);
+
+  // Live Reactive Sync with Studio Settings
+  useEffect(() => {
+    const handleSync = () => loadSettingsRoles();
+    window.addEventListener('workspace_crew_roles_updated', handleSync);
+    return () => window.removeEventListener('workspace_crew_roles_updated', handleSync);
+  }, [loadSettingsRoles]);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (roleDropdownRef.current && !roleDropdownRef.current.contains(e.target as Node)) {
+        setIsRoleDropdownOpen(false);
+      }
+    };
+    if (isRoleDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isRoleDropdownOpen]);
+
+  // Save new custom role and sync with Studio Settings
+  const handleAddCustomRole = async () => {
+    const cleanName = newCustomRoleName.trim();
+    if (!cleanName) return;
+    const cleanCode = (newCustomRoleShortCode.trim() || cleanName.slice(0, 2)).toUpperCase();
+    const effectiveWsId = workspaceId || userId || userEmail;
+
+    try {
+      // 1. Save directly to master_crew_roles
+      await saveWorkspaceCrewRole(effectiveWsId, cleanName, cleanCode);
+
+      // 2. Update local state
+      setSettingsRoles(prev => {
+        if (prev.some(r => r.name.toLowerCase() === cleanName.toLowerCase())) return prev;
+        return [...prev, { id: cleanName, name: cleanName, short_code: cleanCode }];
+      });
+
+      // 3. Automatically select the new role
+      if (!selectedRoles.includes(cleanName)) {
+        setSelectedRoles(prev => [...prev, cleanName]);
+      }
+
+      setNewCustomRoleName('');
+      setNewCustomRoleShortCode('');
+      setIsAddingCustomRole(false);
+
+      // 4. Dispatch event so Studio Settings & Quotations update in real-time
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('workspace_crew_roles_updated'));
+      }
+    } catch (err) {
+      console.error('[AddTeamMemberModal] Failed to add custom role:', err);
+    }
+  };
 
   // Existing Workspace Members for duplicate detection
   const [existingMembers, setExistingMembers] = useState<Array<{ email?: string; phone?: string }>>([]);
@@ -660,35 +821,171 @@ export default function AddTeamMemberModal({
               />
             </div>
 
-            {/* ── 5. MULTI-ROLE SPECIALIZATIONS ── */}
-            <div className="space-y-2">
+            {/* ── 5. SETTINGS-LINKED 3D MULTI-ROLE DROPDOWN ── */}
+            <div className="space-y-2 relative" ref={roleDropdownRef}>
               <label className="text-[11px] font-bold text-zinc-700 flex items-center justify-between">
-                <span>Multi-Role Specializations (Select All That Apply)</span>
-                <span className="text-[10px] text-zinc-400 font-normal">Primary: {primaryRole}</span>
+                <span className="flex items-center gap-1.5">
+                  <Briefcase className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Multi-Role Specializations (Select All That Apply)</span>
+                </span>
+                <span className="text-[10px] text-zinc-400 font-normal">Primary: <strong className="text-zinc-800 font-bold">{primaryRole}</strong></span>
               </label>
-              <div className="flex flex-wrap gap-2">
-                {MULTI_ROLES_OPTIONS.map((r) => {
-                  const isSelected = selectedRoles.includes(r.id);
-                  const isPrimary = primaryRole === r.id;
-                  return (
-                    <button
-                      key={r.id}
-                      type="button"
-                      onClick={() => toggleRole(r.id)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border ${
-                        isSelected
-                          ? isPrimary
-                            ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
-                            : 'bg-amber-50 text-amber-900 border-amber-300'
-                          : 'bg-zinc-50 text-zinc-600 border-zinc-200 hover:bg-zinc-100'
-                      }`}
+
+              {/* 3D Trigger Button */}
+              <button
+                type="button"
+                onClick={() => setIsRoleDropdownOpen(!isRoleDropdownOpen)}
+                className="h-10 px-3 w-full bg-white border border-slate-200 rounded-xl shadow-xs flex items-center justify-between text-xs font-semibold text-slate-800 hover:border-amber-400 transition cursor-pointer"
+              >
+                <div className="flex items-center gap-2 truncate">
+                  <span className="text-amber-600 font-black text-sm">🎭</span>
+                  <span className="truncate">
+                    {selectedRoles.length === 0
+                      ? 'Select Roles from Studio Settings...'
+                      : `${selectedRoles.length} Role${selectedRoles.length > 1 ? 's' : ''} Selected (${selectedRoles.join(', ')})`}
+                  </span>
+                </div>
+                <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isRoleDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {/* Floating 3D Checkbox Dropdown Card */}
+              <AnimatePresence>
+                {isRoleDropdownOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -4, scale: 0.98 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white rounded-2xl border border-slate-200 shadow-2xl p-2.5 space-y-1 max-h-64 overflow-y-auto"
+                  >
+                    <div className="px-2 py-1 text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center justify-between border-b border-slate-100 pb-1.5 mb-1">
+                      <span>Studio Settings Roles ({settingsRoles.length})</span>
+                      <span className="text-amber-700 font-bold">{selectedRoles.length} Selected</span>
+                    </div>
+
+                    <div className="space-y-0.5">
+                      {settingsRoles.map((r) => {
+                        const isSelected = selectedRoles.includes(r.name);
+                        const isPrimary = primaryRole === r.name;
+                        return (
+                          <div
+                            key={r.id || r.name}
+                            onClick={() => toggleRole(r.name)}
+                            className={`px-2.5 py-2 rounded-xl flex items-center justify-between cursor-pointer transition text-xs font-bold select-none ${
+                              isSelected
+                                ? 'bg-amber-50 text-amber-950 border border-amber-200/80 shadow-2xs'
+                                : 'hover:bg-slate-50 text-slate-700 border border-transparent'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              {isSelected ? (
+                                <CheckSquare className="w-4 h-4 text-amber-600 shrink-0" />
+                              ) : (
+                                <Square className="w-4 h-4 text-slate-300 shrink-0" />
+                              )}
+                              <span>{r.name}</span>
+                              {r.short_code && (
+                                <span className="text-[9px] font-mono font-bold text-slate-500 bg-slate-100 px-1.5 py-0.2 rounded">
+                                  {r.short_code}
+                                </span>
+                              )}
+                            </div>
+                            {isPrimary && (
+                              <span className="text-[9px] font-black uppercase bg-amber-500 text-white px-1.5 py-0.2 rounded-md shadow-2xs">
+                                Primary
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Inline + Add Custom Role option directly to Studio Settings */}
+                    <div className="pt-1.5 border-t border-slate-100">
+                      {isAddingCustomRole ? (
+                        <div className="p-2 bg-amber-50/70 rounded-xl border border-amber-200 space-y-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              placeholder="New Role (e.g. Crane Operator)"
+                              value={newCustomRoleName}
+                              onChange={(e) => setNewCustomRoleName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  handleAddCustomRole();
+                                }
+                              }}
+                              className="flex-1 px-2.5 py-1 text-xs border border-amber-300 rounded-lg focus:outline-none bg-white font-medium"
+                              autoFocus
+                            />
+                            <input
+                              type="text"
+                              placeholder="Code"
+                              value={newCustomRoleShortCode}
+                              onChange={(e) => setNewCustomRoleShortCode(e.target.value.toUpperCase())}
+                              maxLength={4}
+                              className="w-16 px-1.5 py-1 text-xs uppercase text-center border border-amber-300 rounded-lg focus:outline-none bg-white font-mono font-bold"
+                            />
+                          </div>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsAddingCustomRole(false);
+                                setNewCustomRoleName('');
+                                setNewCustomRoleShortCode('');
+                              }}
+                              className="px-2 py-1 text-[11px] text-slate-500 hover:text-slate-700 cursor-pointer font-medium"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleAddCustomRole}
+                              className="px-2.5 py-1 rounded-lg bg-amber-500 text-white text-[11px] font-bold hover:bg-amber-600 shadow-2xs cursor-pointer flex items-center gap-1"
+                            >
+                              <Check className="w-3 h-3" />
+                              <span>Save to Studio Settings</span>
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setIsAddingCustomRole(true)}
+                          className="w-full py-2 px-2.5 rounded-xl text-xs font-bold text-amber-800 hover:bg-amber-50 flex items-center justify-center gap-1.5 cursor-pointer transition border border-dashed border-amber-300 bg-amber-50/30"
+                        >
+                          <Plus className="w-3.5 h-3.5 text-amber-600" />
+                          <span>+ Add Custom Role to Studio Settings</span>
+                        </button>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Removable Selected Role Badges */}
+              {selectedRoles.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {selectedRoles.map((role) => (
+                    <span
+                      key={role}
+                      className="px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-50 text-amber-900 border border-amber-200/90 flex items-center gap-1.5 shadow-2xs"
                     >
-                      <span>{r.label}</span>
-                      {isSelected && <Check className="w-3 h-3" />}
-                    </button>
-                  );
-                })}
-              </div>
+                      <span>{role}</span>
+                      <button
+                        type="button"
+                        onClick={() => toggleRole(role)}
+                        className="text-amber-500 hover:text-amber-900 cursor-pointer"
+                        title={`Remove ${role}`}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* ── 5.5. DEFAULT DAILY / EVENT PAYOUT RATE & FREQUENCY ── */}
@@ -745,7 +1042,7 @@ export default function AddTeamMemberModal({
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4 text-emerald-600" />
                   <div>
-                    <p className="text-xs font-bold text-zinc-900">Granular Permission Matrix (Permanent Supabase RBAC)</p>
+                    <p className="text-xs font-bold text-zinc-900">Permissions & Access</p>
                     <p className="text-[10px] text-zinc-500">Configure Leads, Shoot Cards, Quotations, and Finance access</p>
                   </div>
                 </div>

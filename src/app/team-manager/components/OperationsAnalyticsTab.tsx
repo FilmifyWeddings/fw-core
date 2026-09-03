@@ -8,6 +8,8 @@ import {
   FileText, Sparkles, PieChart, Activity, Briefcase, Camera, Film, Disc, Filter,
   Layers, ArrowUpRight, Check, AlertCircle, Eye, SlidersHorizontal, Search, ChevronRight
 } from 'lucide-react';
+import OverviewAnalytics from './OverviewAnalytics';
+import MemberProfileModal from './MemberProfileModal';
 
 interface OperationsAnalyticsTabProps {
   projects: FWProject[];
@@ -269,7 +271,7 @@ export default function OperationsAnalyticsTab({
             <select
               value={selectedYear}
               onChange={(e) => setSelectedYear(parseInt(e.target.value, 10))}
-              className="px-2 py-1 bg-slate-50 border border-slate-300 rounded-lg font-extrabold text-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]"
+              className="h-6.5 px-2 bg-slate-50 border border-slate-200 rounded-md font-bold text-slate-800 text-[11px] focus:outline-none focus:border-indigo-500 cursor-pointer shadow-2xs"
             >
               <option value={2025}>2025</option>
               <option value={2026}>2026</option>
@@ -283,7 +285,7 @@ export default function OperationsAnalyticsTab({
               <select
                 value={selectedMonth}
                 onChange={(e) => setSelectedMonth(e.target.value)}
-                className="px-2 py-1 bg-slate-50 border border-slate-300 rounded-lg font-extrabold text-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-[#6C5CE7] max-w-[130px]"
+                className="h-6.5 px-2 bg-slate-50 border border-slate-200 rounded-md font-bold text-slate-800 text-[11px] focus:outline-none focus:border-indigo-500 cursor-pointer shadow-2xs max-w-[120px]"
               >
                 <option value="All">All {selectedYear}</option>
                 {monthsList.map((m) => (
@@ -385,63 +387,18 @@ export default function OperationsAnalyticsTab({
          ───────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        {/* MONTHLY VOLUME CHART (8 COLS) - RESPONSIVE SCROLL WRAPPER */}
-        <div className="lg:col-span-8 bg-white rounded-3xl border-2 border-slate-200/90 p-4 sm:p-6 md:p-8 shadow-md shadow-slate-200/30 space-y-6 overflow-hidden">
-          <div className="flex items-center justify-between border-b border-slate-200/80 pb-4 flex-wrap gap-2">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-600 flex items-center justify-center font-black shrink-0">
-                <BarChart3 className="w-5 h-5" />
-              </div>
-              <div className="min-w-0">
-                <h4 className="text-base sm:text-lg font-black text-slate-900 truncate">{selectedYear} Monthly Shoot Volume</h4>
-                <p className="text-[11px] sm:text-xs text-slate-500 font-bold">Tap any month bar to isolate operational stats</p>
-              </div>
-            </div>
-
-            <span className="px-3 py-1 rounded-full bg-indigo-100 text-indigo-900 text-xs font-black border border-indigo-200">
-              Year {selectedYear}
-            </span>
-          </div>
-
-          {/* HORIZONTAL SCROLL FOR CHART ON MOBILE */}
-          <div className="overflow-x-auto scrollbar-thin pb-2">
-            <div className="h-64 min-w-[520px] sm:min-w-full flex items-end justify-between gap-2 pt-8 px-2 border-b border-slate-200">
-              {monthlyShoots.map(({ month, val, count }) => {
-                const heightPercent = Math.round((count / maxMonthlyCount) * 100);
-                const isSelected = scopeMode === 'month' && selectedMonth === val;
-
-                return (
-                  <div
-                    key={month}
-                    onClick={() => {
-                      setScopeMode('month');
-                      setSelectedMonth(isSelected ? 'All' : val);
-                    }}
-                    className="flex-1 flex flex-col items-center gap-2 group h-full justify-end cursor-pointer select-none"
-                  >
-                    <span className="opacity-0 group-hover:opacity-100 transition text-[10px] font-black bg-slate-900 text-white px-2 py-0.5 rounded-md shadow-lg pointer-events-none whitespace-nowrap">
-                      {count} {count === 1 ? 'Shoot' : 'Shoots'}
-                    </span>
-
-                    <div
-                      style={{ height: `${Math.max(heightPercent, 8)}%` }}
-                      className={`w-full max-w-[38px] rounded-t-xl transition-all duration-300 shadow-md flex items-start justify-center pt-1 ${
-                        isSelected
-                          ? 'bg-gradient-to-t from-amber-500 via-orange-500 to-amber-400 ring-2 ring-amber-400'
-                          : 'bg-gradient-to-t from-[#6C5CE7] via-indigo-600 to-purple-400 group-hover:from-indigo-800 group-hover:to-purple-500'
-                      }`}
-                    >
-                      {count > 0 && <span className="text-[10px] font-black text-white">{count}</span>}
-                    </div>
-
-                    <span className={`text-xs font-extrabold mt-2 ${isSelected ? 'text-amber-600 font-black' : 'text-slate-600'}`}>
-                      {month}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+        {/* MONTHLY VOLUME LIVE RECHARTS LINE CHART (8 COLS) */}
+        <div className="lg:col-span-8">
+          <OverviewAnalytics
+            projects={projects}
+            selectedYear={selectedYear}
+            scopeMode={scopeMode}
+            selectedMonth={selectedMonth}
+            onSelectMonth={(monthVal) => {
+              setScopeMode('month');
+              setSelectedMonth(monthVal);
+            }}
+          />
         </div>
 
         {/* CATEGORY BREAKDOWN CARDS (4 COLS) */}
@@ -699,165 +656,15 @@ export default function OperationsAnalyticsTab({
       </div>
 
       {/* ─────────────────────────────────────────────────────────────
-          6. INTERACTIVE TEAM MEMBER DRILL-DOWN MODAL
+          6. DEEP TEAM MEMBER ANALYTICS MODAL (ROLE, YEAR, MONTH FILTERS & PAGINATION)
          ───────────────────────────────────────────────────────────── */}
-      {selectedMember && (
-        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl border-2 border-indigo-200 shadow-2xl max-w-3xl w-full p-6 md:p-8 space-y-6 relative max-h-[90vh] overflow-y-auto">
-            
-            {/* MODAL HEADER */}
-            <div className="flex items-center justify-between border-b border-slate-200 pb-5">
-              <div className="flex items-center gap-4">
-                {selectedMember.member.avatar_url ? (
-                  // eslint-disable-next-next/no-img-element
-                  <img
-                    src={selectedMember.member.avatar_url}
-                    alt={selectedMember.member.name}
-                    className="w-14 h-14 rounded-full object-cover border-2 border-white ring-2 ring-emerald-400 shadow-md shrink-0"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(selectedMember.member.name)}`;
-                    }}
-                  />
-                ) : (
-                  <div className="w-14 h-14 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-sm flex items-center justify-center border-2 border-white ring-2 ring-indigo-200 shadow-md shrink-0">
-                    {selectedMember.member.name.slice(0, 2).toUpperCase()}
-                  </div>
-                )}
-
-                <div>
-                  <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
-                    {selectedMember.member.name}
-                    <span className="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-900 text-xs font-black uppercase">
-                      {selectedMember.member.primary_role}
-                    </span>
-                  </h3>
-                  <div className="flex items-center gap-3 text-xs font-bold text-slate-500 mt-1">
-                    <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5 text-emerald-500" /> {selectedMember.member.country_code || '+91'} {selectedMember.member.phone_number}</span>
-                    {selectedMember.member.email && (
-                      <span className="flex items-center gap-1"><Mail className="w-3.5 h-3.5 text-indigo-500" /> {selectedMember.member.email}</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <button
-                onClick={() => setSelectedMember(null)}
-                className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* MODAL STAT CARDS */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="bg-indigo-50/70 border border-indigo-200 p-4 rounded-2xl">
-                <span className="text-[10px] font-black text-indigo-900 uppercase tracking-wider block">Total Assigned Shoots</span>
-                <h4 className="text-2xl font-black text-indigo-950 mt-1">{selectedMember.shoots.length}</h4>
-              </div>
-
-              <div className="bg-emerald-50/70 border border-emerald-200 p-4 rounded-2xl">
-                <span className="text-[10px] font-black text-emerald-900 uppercase tracking-wider block">Completed Shoots</span>
-                <h4 className="text-2xl font-black text-emerald-950 mt-1">{selectedMember.completedCount}</h4>
-              </div>
-
-              <div className="bg-purple-50/70 border border-purple-200 p-4 rounded-2xl">
-                <span className="text-[10px] font-black text-purple-900 uppercase tracking-wider block">Upcoming Shoots</span>
-                <h4 className="text-2xl font-black text-purple-950 mt-1">{selectedMember.upcomingCount}</h4>
-              </div>
-            </div>
-
-            {/* SHOOT HISTORY & ROSTER TIMELINE */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider block">
-                Assigned Shoot Roster History ({selectedMember.shoots.length})
-              </h4>
-
-              {selectedMember.shoots.length === 0 ? (
-                <div className="bg-slate-50 p-6 rounded-2xl text-center text-xs font-bold text-slate-400">
-                  No shoots assigned to this team member in the selected scope.
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {selectedMember.shoots.map(({ subEvent, project, assignment, dateObj }) => {
-                    const isPast = !isNaN(dateObj.getTime()) && dateObj < today;
-
-                    return (
-                      <div
-                        key={assignment.id}
-                        className="bg-slate-50/80 rounded-2xl border border-slate-200 p-4 space-y-3 shadow-2xs"
-                      >
-                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 pb-2.5">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="px-3 py-1 rounded-xl bg-indigo-900 text-white text-xs font-black">
-                              Client: {project.client_name}
-                            </span>
-                            <h4 className="font-black text-slate-900 text-sm">
-                              {subEvent.event_title}
-                            </h4>
-                            <span className="px-2.5 py-0.5 rounded-md bg-indigo-100 text-indigo-900 text-[10px] font-black">
-                              Role: {assignment.required_role}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center gap-2 text-xs font-bold">
-                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
-                              isPast ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-                            }`}>
-                              {isPast ? 'Completed / Paid' : 'Upcoming'}
-                            </span>
-                            <span className="text-slate-600 flex items-center gap-1"><Calendar className="w-3.5 h-3.5 text-indigo-600" /> {subEvent.event_date}</span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-3 text-xs font-bold text-slate-600 flex-wrap">
-                          {subEvent.roll_call_time && (
-                            <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg border border-slate-200">
-                              <Clock className="w-3.5 h-3.5 text-indigo-600" />
-                              <span>
-                                {format12HourTime(subEvent.roll_call_time)}
-                                {subEvent.dismissal_estimate_time ? ` - ${format12HourTime(subEvent.dismissal_estimate_time)}` : ''}
-                              </span>
-                            </div>
-                          )}
-
-                          {subEvent.venue_name && (
-                            <a
-                              href={subEvent.venue_map_link || `https://maps.google.com/?q=${encodeURIComponent(subEvent.venue_name)}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center gap-1.5 text-indigo-600 font-bold bg-white px-2.5 py-1 rounded-lg border border-slate-200 hover:underline"
-                            >
-                              <MapPin className="w-3.5 h-3.5 text-emerald-600" />
-                              <span>{subEvent.venue_name}</span>
-                            </a>
-                          )}
-                        </div>
-
-                        {subEvent.operational_notes && (
-                          <div className="bg-amber-50 border-l-4 border-amber-400 p-2.5 rounded-r-xl text-xs text-amber-950 font-medium flex items-center gap-2">
-                            <FileText className="w-4 h-4 text-amber-600 shrink-0" />
-                            <span>Notes: {subEvent.operational_notes}</span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* MODAL FOOTER */}
-            <div className="pt-2 text-right border-t border-slate-100">
-              <button
-                onClick={() => setSelectedMember(null)}
-                className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-2xl transition cursor-pointer"
-              >
-                Close Member Analytics
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <MemberProfileModal
+        isOpen={Boolean(selectedMember)}
+        onClose={() => setSelectedMember(null)}
+        member={selectedMember?.member || null}
+        shoots={selectedMember?.shoots || []}
+        format12HourTime={format12HourTime}
+      />
     </div>
   );
 }

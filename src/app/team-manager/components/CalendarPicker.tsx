@@ -82,7 +82,7 @@ export default function CalendarPicker({ value, onChange, hasError }: CalendarPi
 
   return (
     <div className="relative" ref={calendarRef}>
-      <label className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider block mb-1.5 flex items-center gap-1">
+      <label className="text-[10px] font-bold text-[#0B111E] uppercase tracking-wider block mb-1 flex items-center gap-1">
         <span>Program Date</span>
         <span className="text-rose-500 font-black">*</span>
       </label>
@@ -90,7 +90,7 @@ export default function CalendarPicker({ value, onChange, hasError }: CalendarPi
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`w-full bg-white border-2 px-3.5 py-2.5 rounded-xl text-xs font-extrabold text-slate-900 focus:outline-none transition flex items-center justify-between shadow-2xs ${
+        className={`w-full bg-white border h-7.5 px-2.5 py-1 rounded-lg text-xs font-bold text-slate-900 focus:outline-none transition flex items-center justify-between shadow-2xs ${
           hasError
             ? 'border-rose-500 ring-2 ring-rose-500/40 animate-pulse bg-rose-50/50'
             : 'border-slate-200 focus:border-[#6C5CE7]'

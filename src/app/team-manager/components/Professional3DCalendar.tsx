@@ -4,8 +4,9 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { FWProject, FWSubEvent, FWTeamMember, FWAssignment } from '@/types';
 import { 
   Calendar as CalendarIcon, ChevronLeft, ChevronRight, Clock, MapPin, 
-  UserCheck, AlertCircle, X, Sparkles, Filter, Search, Plus, Moon,
-  Users, CheckCircle2, Phone, ExternalLink, ChevronDown
+  UserCheck, AlertCircle, Plus, Users, CheckCircle2, Search,
+  Briefcase, ChevronDown, UserPlus, Sparkles, X, Filter,
+  Pencil, Calendar, Zap, FileText, Check
 } from 'lucide-react';
 import RoleAssignDropdown from './RoleAssignDropdown';
 
@@ -19,6 +20,57 @@ interface Professional3DCalendarProps {
   onAssignMember: (assignmentId: string, memberId: string | null) => void;
   onAddNewMember: (info: { assignmentId: string; role: string; subEventId: string; projectId: string }) => void;
   onAddProject?: (initialDate?: string) => void;
+  onEditProject?: (project: FWProject) => void;
+}
+
+// ─────────────────────────────────────────────────────────────
+// DATE HELPERS (PURE JS)
+// ─────────────────────────────────────────────────────────────
+
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
+
+const WEEKDAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+function formatMonthYear(date: Date): string {
+  return `${MONTH_NAMES[date.getMonth()]} ${date.getFullYear()}`;
+}
+
+function formatFullDate(date: Date): string {
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const dayName = days[date.getDay()];
+  const dayNum = String(date.getDate()).padStart(2, '0');
+  const monthName = MONTH_NAMES[date.getMonth()];
+  const year = date.getFullYear();
+  return `${dayName}, ${dayNum} ${monthName} ${year}`;
+}
+
+function formatOrdinalDate(date: Date): string {
+  const d = date.getDate();
+  const suffix = (d % 10 === 1 && d !== 11) ? 'st' :
+                 (d % 10 === 2 && d !== 12) ? 'nd' :
+                 (d % 10 === 3 && d !== 13) ? 'rd' : 'th';
+  return `${d}${suffix} ${MONTH_NAMES[date.getMonth()]}`;
+}
+
+function isSameDay(d1: Date, d2: Date): boolean {
+  return d1.getFullYear() === d2.getFullYear() &&
+         d1.getMonth() === d2.getMonth() &&
+         d1.getDate() === d2.getDate();
+}
+
+function isSameMonth(d1: Date, d2: Date): boolean {
+  return d1.getFullYear() === d2.getFullYear() &&
+         d1.getMonth() === d2.getMonth();
+}
+
+function toIsoDateString(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 // Robust assignment resolver ensuring ALL configured roles remain visible (assigned or unassigned)
@@ -64,55 +116,30 @@ const resolveSubEventAssignments = (subEvent: FWSubEvent, teamMembers: FWTeamMem
   });
 };
 
-// Luxury Pastel Event Pill Themes based on Event Type / Name
-const getEventPillStyle = (title: string) => {
-  const t = (title || '').toLowerCase();
-  if (t.includes('haldi') || t.includes('mehendi') || t.includes('mehndi') || t.includes('pithi') || t.includes('engagement') || t.includes('roka') || t.includes('tilak')) {
-    return {
-      pillBg: 'bg-amber-100/95 hover:bg-amber-200 text-amber-950 border border-amber-300/80',
-      dotColor: 'bg-amber-500',
-      tag: 'Haldi/Mehendi',
-      timeText: 'text-amber-800'
-    };
+// Event Dot Colors
+const getEventDotColor = (title: string = '') => {
+  const t = title.toLowerCase();
+  if (t.includes('wedding') || t.includes('shaadi') || t.includes('mandap') || t.includes('phera')) {
+    return 'bg-rose-500';
   }
-  if (t.includes('sangeet') || t.includes('reception') || t.includes('cocktail') || t.includes('party') || t.includes('dj') || t.includes('garba') || t.includes('dance')) {
-    return {
-      pillBg: 'bg-purple-100/95 hover:bg-purple-200 text-purple-950 border border-purple-300/80',
-      dotColor: 'bg-purple-500',
-      tag: 'Sangeet/Reception',
-      timeText: 'text-purple-800'
-    };
+  if (t.includes('sangeet') || t.includes('reception') || t.includes('cocktail') || t.includes('party') || t.includes('dj')) {
+    return 'bg-purple-500';
   }
-  if (t.includes('wedding') || t.includes('shaadi') || t.includes('mandap') || t.includes('phera') || t.includes('barat') || t.includes('varmala') || t.includes('main')) {
-    return {
-      pillBg: 'bg-rose-100/95 hover:bg-rose-200 text-rose-950 border border-rose-300/80',
-      dotColor: 'bg-rose-500',
-      tag: 'Wedding',
-      timeText: 'text-rose-800'
-    };
+  if (t.includes('haldi') || t.includes('mehendi') || t.includes('mehndi') || t.includes('pithi') || t.includes('engagement')) {
+    return 'bg-amber-500';
   }
-  if (t.includes('pre-wedding') || t.includes('pre wedding') || t.includes('shoot') || t.includes('portrait') || t.includes('outdoor')) {
-    return {
-      pillBg: 'bg-sky-100/95 hover:bg-sky-200 text-sky-950 border border-sky-300/80',
-      dotColor: 'bg-sky-500',
-      tag: 'Pre-Wedding',
-      timeText: 'text-sky-800'
-    };
+  if (t.includes('pre-wedding') || t.includes('pre wedding') || t.includes('post-wedding') || t.includes('shoot')) {
+    return 'bg-sky-500';
   }
-  return {
-    pillBg: 'bg-emerald-100/95 hover:bg-emerald-200 text-emerald-950 border border-emerald-300/80',
-    dotColor: 'bg-emerald-500',
-    tag: 'Event',
-    timeText: 'text-emerald-800'
-  };
+  return 'bg-emerald-500';
 };
 
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December'
-];
-
-const YEARS_LIST = [2024, 2025, 2026, 2027, 2028, 2029, 2030];
+const getInitials = (name?: string | null) => {
+  if (!name) return 'PM';
+  const parts = name.trim().split(' ');
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return name.slice(0, 2).toUpperCase();
+};
 
 export default function Professional3DCalendar({
   projects,
@@ -123,57 +150,53 @@ export default function Professional3DCalendar({
   getGradientByProjectId,
   onAssignMember,
   onAddNewMember,
-  onAddProject
+  onAddProject,
+  onEditProject,
 }: Professional3DCalendarProps) {
-  const [currentDate, setCurrentDate] = useState<Date>(new Date());
+  const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [internalSearch, setInternalSearch] = useState<string>('');
-  const [isMonthPickerOpen, setIsMonthPickerOpen] = useState<boolean>(false);
-  const monthPickerRef = useRef<HTMLDivElement>(null);
+  const [isMonthDropdownOpen, setIsMonthDropdownOpen] = useState<boolean>(false);
+  const currentRealYear = new Date().getFullYear();
+  const availableYears = useMemo(() => Array.from({ length: 8 }, (_, i) => currentRealYear - 2 + i), [currentRealYear]);
+  const [activePmDropdownId, setActivePmDropdownId] = useState<string | null>(null);
+  const [pmSearchQuery, setPmSearchQuery] = useState<string>('');
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const [selectedDayInspector, setSelectedDayInspector] = useState<{
-    dateStr: string;
-    formattedDate: string;
-    projectGroups: { project: FWProject; subEvents: FWSubEvent[] }[];
-  } | null>(null);
-
+  // Close month dropdown on outside click
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (monthPickerRef.current && !monthPickerRef.current.contains(e.target as Node)) {
-        setIsMonthPickerOpen(false);
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsMonthDropdownOpen(false);
+      }
+      if (activePmDropdownId) {
+        setActivePmDropdownId(null);
+        setPmSearchQuery('');
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  }, [activePmDropdownId]);
 
   const effectiveSearch = (internalSearch || parentSearchQuery || '').trim().toLowerCase();
 
+  // Navigation handlers
   const prevMonth = () => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
+    setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
   };
 
   const nextMonth = () => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
+    setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
   };
 
   const goToToday = () => {
-    setCurrentDate(new Date());
+    const today = new Date();
+    setCurrentMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+    setSelectedDate(today);
   };
 
-  const jumpToMonthYear = (monthIdx: number, yearNum: number) => {
-    setCurrentDate(new Date(yearNum, monthIdx, 1));
-    setIsMonthPickerOpen(false);
-  };
-
-  const year = currentDate.getFullYear();
-  const month = currentDate.getMonth();
-
-  const rawFirstDay = new Date(year, month, 1).getDay();
-  const firstDayOfMonth = (rawFirstDay + 6) % 7;
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const daysInPrevMonth = new Date(year, month, 0).getDate();
-
-  const eventsByDate: { [dateStr: string]: { subEvent: FWSubEvent; project: FWProject }[] } = useMemo(() => {
+  // Map events to date strings (YYYY-MM-DD)
+  const eventsByDate = useMemo(() => {
     const map: { [dateStr: string]: { subEvent: FWSubEvent; project: FWProject }[] } = {};
 
     projects.forEach((project) => {
@@ -188,7 +211,7 @@ export default function Professional3DCalendar({
 
         const assignments = resolveSubEventAssignments(se, teamMembers);
 
-        if (selectedRoleFilter !== 'All') {
+        if (selectedRoleFilter && selectedRoleFilter !== 'All') {
           const hasRole = assignments.some((a) => a.required_role === selectedRoleFilter);
           if (!hasRole) return;
         }
@@ -205,16 +228,44 @@ export default function Professional3DCalendar({
     return map;
   }, [projects, effectiveSearch, selectedRoleFilter, teamMembers]);
 
-  const monthNameYear = currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-  const todayObj = new Date();
-  const todayStr = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
-  const todayDayNum = todayObj.getDate();
-  const todayMonthShort = todayObj.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+  // Generate 42 grid cells (Monday-aligned)
+  const monthDays = useMemo(() => {
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const startDayOffset = (firstDay.getDay() + 6) % 7; // 0 = Mon, 6 = Sun
+    const startDate = new Date(year, month, 1 - startDayOffset);
 
-  const daysOfWeek = ['Mon', 'Tues', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const days: Date[] = [];
+    for (let i = 0; i < 42; i++) {
+      days.push(new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + i));
+    }
+    return days;
+  }, [currentMonth]);
 
-  const totalMonthEvents = useMemo(() => {
+  // Selected date events grouped by project for identical Cards View rendering
+  const selectedDateStr = toIsoDateString(selectedDate);
+  const selectedDateEvents = eventsByDate[selectedDateStr] || [];
+
+  const selectedDateProjectGroups = useMemo(() => {
+    const map: { [projId: string]: { project: FWProject; subEvents: FWSubEvent[] } } = {};
+    selectedDateEvents.forEach(({ project, subEvent }) => {
+      const pId = project.id || project.client_name;
+      if (!map[pId]) {
+        map[pId] = { project, subEvents: [] };
+      }
+      map[pId].subEvents.push(subEvent);
+    });
+    return Object.values(map);
+  }, [selectedDateEvents]);
+
+  // Month event count
+  const currentMonthTotalEvents = useMemo(() => {
     let count = 0;
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
     for (let d = 1; d <= daysInMonth; d++) {
       const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       if (eventsByDate[dStr]) {
@@ -222,439 +273,646 @@ export default function Professional3DCalendar({
       }
     }
     return count;
-  }, [eventsByDate, year, month, daysInMonth]);
-
-  const handleOpenDayInspector = (dateStr: string) => {
-    const rawItems = eventsByDate[dateStr] || [];
-    const dObj = new Date(`${dateStr}T12:00:00`);
-
-    const projectMap: { [projId: string]: { project: FWProject; subEvents: FWSubEvent[] } } = {};
-    rawItems.forEach(({ project, subEvent }) => {
-      const pId = project.id || project.client_name;
-      if (!projectMap[pId]) {
-        projectMap[pId] = { project, subEvents: [] };
-      }
-      projectMap[pId].subEvents.push(subEvent);
-    });
-
-    setSelectedDayInspector({
-      dateStr,
-      formattedDate: dObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }),
-      projectGroups: Object.values(projectMap),
-    });
-  };
+  }, [eventsByDate, currentMonth]);
 
   return (
-    <div className="space-y-5 select-none font-sans min-h-[600px]">
-      <div className="bg-[#FAF8F2] rounded-3xl border border-amber-200/80 shadow-xl shadow-amber-950/5 p-4 md:p-6 space-y-5 overflow-hidden">
+    <div className="space-y-4 select-none font-sans">
+      
+      {/* ─────────────────────────────────────────────────────────────
+          DESKTOP & TABLET: INTERACTIVE MASTER SPLIT VIEW (lg:grid)
+         ───────────────────────────────────────────────────────────── */}
+      <div className="hidden lg:grid lg:grid-cols-12 gap-5 min-h-[580px] lg:h-[calc(100vh-140px)]">
         
-        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 border-b border-amber-200/60 pb-4">
+        {/* LEFT PANEL (~50% / 6 Cols or 5 Cols): Compact Month Calendar Grid */}
+        <div className="lg:col-span-5 2xl:col-span-4 bg-white border border-slate-200 rounded-2xl sm:rounded-3xl p-4 sm:p-5 flex flex-col justify-between shadow-xs">
           
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-slate-950 text-white flex flex-col items-center justify-center shadow-md shadow-slate-950/20 shrink-0 border border-slate-800">
-              <span className="text-[9px] font-black tracking-wider text-amber-300 uppercase leading-none">{todayMonthShort}</span>
-              <span className="text-base font-black leading-tight mt-0.5">{todayDayNum}</span>
-            </div>
-
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-xl sm:text-2xl font-black text-amber-950 tracking-tight leading-tight">
-                  {monthNameYear}
-                </h2>
-                <span className="px-2 py-0.5 text-[10px] font-extrabold bg-amber-200/80 text-amber-950 rounded-full border border-amber-300/80">
-                  {totalMonthEvents} Shoots
-                </span>
-              </div>
-              <p className="text-xs font-semibold text-stone-500 mt-0.5">
-                {currentDate.toLocaleDateString('en-US', { month: 'short' })} 1, {year} – {currentDate.toLocaleDateString('en-US', { month: 'short' })} {daysInMonth}, {year}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-between lg:justify-end">
-            
-            <div className="relative w-40 sm:w-52">
-              <Search className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Search shoots..."
-                value={internalSearch}
-                onChange={(e) => setInternalSearch(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 bg-white/90 border border-amber-200/90 rounded-xl text-xs font-bold text-amber-950 placeholder:text-stone-400 focus:outline-none focus:border-amber-500 focus:bg-white shadow-2xs transition"
-              />
-              {internalSearch && (
-                <button
-                  onClick={() => setInternalSearch('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600"
+          {/* Month Header & Controls */}
+          <div className="flex items-center justify-between pb-3.5 border-b border-slate-100">
+            {/* Month & Year Selectors */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Month Selector */}
+              <div className="relative">
+                <select
+                  value={currentMonth.getMonth()}
+                  onChange={(e) => {
+                    const newMonthIdx = parseInt(e.target.value, 10);
+                    setCurrentMonth(new Date(currentMonth.getFullYear(), newMonthIdx, 1));
+                  }}
+                  className="appearance-none bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-900 text-[11px] font-bold pl-2 pr-5 py-0.5 h-6.5 rounded-md cursor-pointer transition shadow-2xs outline-none focus:border-indigo-500"
                 >
-                  <X className="w-3 h-3" />
-                </button>
-              )}
+                  {MONTH_NAMES.map((name, idx) => (
+                    <option key={name} value={idx}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="w-3 h-3 ml-1 opacity-60 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500" />
+              </div>
+
+              {/* Year Selector */}
+              <div className="relative">
+                <select
+                  value={currentMonth.getFullYear()}
+                  onChange={(e) => {
+                    const newYear = parseInt(e.target.value, 10);
+                    setCurrentMonth(new Date(newYear, currentMonth.getMonth(), 1));
+                  }}
+                  className="appearance-none bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-900 text-[11px] font-bold pl-2 pr-5 py-0.5 h-6.5 rounded-md cursor-pointer transition shadow-2xs outline-none focus:border-indigo-500"
+                >
+                  {availableYears.map((yr) => (
+                    <option key={yr} value={yr}>
+                      {yr}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="w-3 h-3 ml-1 opacity-60 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500" />
+              </div>
             </div>
 
-            <div className="relative" ref={monthPickerRef}>
+            {/* Quick Actions (Today, Prev, Next, Add) */}
+            <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={() => setIsMonthPickerOpen(!isMonthPickerOpen)}
-                className="px-3 py-1.5 bg-white/90 hover:bg-white border border-amber-200/90 rounded-xl text-xs font-black text-amber-950 shadow-2xs flex items-center gap-1.5 transition cursor-pointer"
-              >
-                <span>📅 {MONTH_NAMES[month].slice(0, 3)} {year}</span>
-                <ChevronDown className="w-3.5 h-3.5 text-amber-700" />
-              </button>
-
-              {isMonthPickerOpen && (
-                <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-2xl border-2 border-amber-300 shadow-2xl p-4 z-50 space-y-3 animate-in fade-in zoom-in-95 duration-150">
-                  <div className="flex items-center justify-between border-b border-amber-100 pb-2">
-                    <span className="text-xs font-black text-amber-950 uppercase">Select Month & Year</span>
-                    <button
-                      onClick={() => setIsMonthPickerOpen(false)}
-                      className="text-stone-400 hover:text-stone-600 p-0.5"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-none">
-                    {YEARS_LIST.map((y) => (
-                      <button
-                        key={y}
-                        onClick={() => jumpToMonthYear(month, y)}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-black transition cursor-pointer shrink-0 ${
-                          y === year
-                            ? 'bg-amber-950 text-amber-200 shadow-xs'
-                            : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
-                        }`}
-                      >
-                        {y}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-1.5 pt-1">
-                    {MONTH_NAMES.map((mName, idx) => (
-                      <button
-                        key={mName}
-                        onClick={() => jumpToMonthYear(idx, year)}
-                        className={`py-1.5 px-2 rounded-xl text-xs font-black transition text-center cursor-pointer ${
-                          idx === month
-                            ? 'bg-slate-950 text-white shadow-xs'
-                            : 'bg-amber-50/70 hover:bg-amber-100/90 text-amber-950 border border-amber-200/60'
-                        }`}
-                      >
-                        {mName.slice(0, 3)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center bg-white/90 p-1 rounded-2xl border border-amber-200/90 shadow-2xs">
-              <button
                 onClick={prevMonth}
+                className="p-1.5 sm:p-2 hover:bg-slate-100 rounded-xl text-slate-600 border border-slate-200 hover:border-slate-300 transition cursor-pointer shadow-2xs"
                 title="Previous Month"
-                className="p-1.5 hover:bg-amber-100/70 text-amber-950 rounded-xl transition cursor-pointer"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
 
               <button
+                type="button"
                 onClick={goToToday}
-                className="px-3 py-1 text-xs font-extrabold text-amber-950 hover:bg-amber-100/70 rounded-xl transition cursor-pointer"
+                className="px-2.5 sm:px-3 py-1.5 text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition cursor-pointer shadow-2xs"
               >
                 Today
               </button>
 
               <button
+                type="button"
                 onClick={nextMonth}
+                className="p-1.5 sm:p-2 hover:bg-slate-100 rounded-xl text-slate-600 border border-slate-200 hover:border-slate-300 transition cursor-pointer shadow-2xs"
                 title="Next Month"
-                className="p-1.5 hover:bg-amber-100/70 text-amber-950 rounded-xl transition cursor-pointer"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
+
+              {onAddProject && (
+                <button
+                  type="button"
+                  onClick={() => onAddProject(selectedDateStr)}
+                  className="hidden sm:flex items-center gap-1 ml-1 px-2.5 py-1.5 text-xs font-black bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white rounded-xl shadow-md shadow-[#6C5CE7]/20 transition cursor-pointer"
+                  title="Add Shoot for this Date"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Shoot</span>
+                </button>
+              )}
             </div>
-
-            {onAddProject && (
-              <button
-                type="button"
-                onClick={() => onAddProject()}
-                className="px-3.5 py-2 rounded-2xl bg-slate-950 hover:bg-slate-800 text-white font-extrabold text-xs shadow-md shadow-slate-950/20 flex items-center gap-1.5 transition active:scale-95 cursor-pointer shrink-0"
-              >
-                <Plus className="w-3.5 h-3.5 text-amber-300 stroke-[3]" />
-                <span>+ Add Event</span>
-              </button>
-            )}
           </div>
-        </div>
 
-        <div className="space-y-1.5 overflow-x-auto">
-          <div className="grid grid-cols-7 min-w-[700px] text-center border-b border-amber-200/60 pb-2">
-            {daysOfWeek.map((day) => (
-              <div key={day} className="text-xs font-black text-stone-400 uppercase tracking-wider text-center">
-                {day}
-              </div>
+          {/* Weekday Labels */}
+          <div className="grid grid-cols-7 text-center text-[10px] sm:text-[11px] font-black text-slate-400 uppercase py-2">
+            {WEEKDAY_NAMES.map(d => (
+              <div key={d} className="tracking-wider">{d}</div>
             ))}
           </div>
 
-          <div className="grid grid-cols-7 gap-1.5 sm:gap-2 min-w-[700px]">
-            {Array.from({ length: firstDayOfMonth }).map((_, i) => {
-              const prevDayNum = daysInPrevMonth - firstDayOfMonth + i + 1;
-              return (
-                <div
-                  key={`prev-${i}`}
-                  className="min-h-[110px] sm:min-h-[140px] p-2 rounded-2xl bg-[#F5F2E9]/40 border border-stone-200/40 text-stone-300 flex flex-col justify-between opacity-60"
-                >
-                  <span className="text-xs font-bold">{prevDayNum}</span>
-                </div>
-              );
-            })}
-
-            {Array.from({ length: daysInMonth }).map((_, i) => {
-              const dayNum = i + 1;
-              const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
-              const isToday = dateStr === todayStr;
-              const items = eventsByDate[dateStr] || [];
+          {/* 42-Day Month Grid */}
+          <div className="grid grid-cols-7 gap-1 sm:gap-1.5 flex-1 items-stretch">
+            {monthDays.map((day) => {
+              const dayIso = toIsoDateString(day);
+              const isSelected = isSameDay(day, selectedDate);
+              const isCurrentMonth = isSameMonth(day, currentMonth);
+              const isToday = isSameDay(day, new Date());
+              const dayEvents = eventsByDate[dayIso] || [];
 
               return (
-                <div
-                  key={dayNum}
-                  onClick={() => handleOpenDayInspector(dateStr)}
-                  className={`min-h-[115px] sm:min-h-[140px] p-2.5 rounded-2xl border transition-all flex flex-col justify-between group cursor-pointer ${
-                    isToday
-                      ? 'bg-amber-50/95 border-amber-400 ring-2 ring-amber-400/60 shadow-md'
-                      : items.length > 0
-                      ? 'bg-white hover:bg-amber-50/50 border-amber-200/90 hover:border-amber-400 shadow-2xs hover:shadow-md'
-                      : 'bg-white/80 hover:bg-white border-amber-200/50 hover:border-amber-300'
+                <button
+                  key={dayIso}
+                  type="button"
+                  onClick={() => setSelectedDate(day)}
+                  className={`relative flex flex-col items-center justify-between p-1 sm:p-1.5 rounded-xl transition-all cursor-pointer min-h-[48px] sm:min-h-[58px] ${
+                    isSelected
+                      ? 'bg-blue-600 text-white font-black shadow-lg shadow-blue-500/30 scale-[1.03] z-10'
+                      : isToday
+                      ? 'bg-blue-50/70 border-2 border-blue-400 text-blue-900 font-extrabold shadow-2xs'
+                      : isCurrentMonth
+                      ? 'text-slate-800 bg-slate-50/70 hover:bg-slate-100 border border-slate-100 hover:border-slate-200'
+                      : 'text-slate-300 bg-transparent hover:bg-slate-50/40 opacity-40'
                   }`}
                 >
-                  <div className="flex items-start justify-between">
-                    <span
-                      className={`text-xs font-black transition-all ${
-                        isToday
-                          ? 'w-6 h-6 rounded-full bg-slate-950 text-white flex items-center justify-center text-[11px] shadow-xs ring-2 ring-amber-400'
-                          : 'text-amber-950 group-hover:text-amber-600'
-                      }`}
-                    >
-                      {dayNum}
+                  {/* Day Number */}
+                  <div className="flex items-center justify-between w-full px-0.5">
+                    <span className={`text-xs sm:text-sm ${isSelected ? 'text-white font-black' : 'font-bold'}`}>
+                      {day.getDate()}
                     </span>
 
-                    <div className="flex items-center gap-1">
-                      {items.length > 0 && (
-                        <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-950 border border-amber-300/70 leading-none">
-                          {items.length} {items.length === 1 ? 'shoot' : 'shoots'}
-                        </span>
-                      )}
-
-                      {onAddProject && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onAddProject(dateStr);
-                          }}
-                          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-amber-200 text-amber-900 rounded-lg transition"
-                          title={`Add event on ${dateStr}`}
-                        >
-                          <Plus className="w-3 h-3 stroke-[3]" />
-                        </button>
-                      )}
-                    </div>
+                    {/* Today Dot */}
+                    {isToday && !isSelected && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-600" />
+                    )}
                   </div>
 
-                  <div className="space-y-1 mt-1 flex-1">
-                    {items.slice(0, 2).map(({ subEvent, project }, idx) => {
-                      const style = getEventPillStyle(subEvent.event_title);
-                      const isOvernight = Boolean(
-                        (subEvent as any).is_overnight ||
-                        (subEvent.roll_call_time && subEvent.dismissal_estimate_time && subEvent.dismissal_estimate_time < subEvent.roll_call_time)
-                      );
-
-                      return (
-                        <div
-                          key={idx}
-                          className={`${style.pillBg} p-1.5 rounded-xl text-[10px] font-extrabold transition-all shadow-2xs block truncate`}
-                          title={`${project.client_name} - ${subEvent.event_title}`}
-                        >
-                          <div className="flex items-center gap-1.5 truncate">
-                            <span className={`w-1.5 h-1.5 rounded-full ${style.dotColor} shrink-0`} />
-                            <span className="font-black truncate leading-tight flex-1">
-                              {project.client_name}
-                            </span>
-                            {subEvent.roll_call_time && (
-                              <span className={`text-[9px] font-bold ${style.timeText} shrink-0`}>
-                                {format12HourTime(subEvent.roll_call_time)}
-                              </span>
-                            )}
-                          </div>
-                          
-                          <div className="flex items-center justify-between text-[9px] text-stone-600 font-semibold truncate mt-0.5 pl-3">
-                            <span className="truncate">{subEvent.event_title}</span>
-                            {isOvernight && (
-                              <span className="flex items-center gap-0.5 text-indigo-700 font-bold shrink-0">
-                                <Moon className="w-2.5 h-2.5" /> Overnight
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                    {items.length > 2 && (
-                      <div className="text-[9px] font-black text-amber-900 bg-amber-100/90 py-0.5 px-1.5 rounded-lg border border-amber-300/80 text-center hover:bg-amber-200 transition">
-                        +{items.length - 2} more...
+                  {/* Event Indicator Dots */}
+                  <div className="w-full flex items-center justify-center gap-1 mt-auto pb-0.5">
+                    {dayEvents.length > 0 && (
+                      <div className="flex items-center gap-1 overflow-hidden">
+                        {dayEvents.slice(0, 3).map((ev, i) => {
+                          const dotColor = getEventDotColor(ev.subEvent.event_title);
+                          return (
+                            <span
+                              key={i}
+                              className={`w-1.5 h-1.5 rounded-full ${
+                                isSelected ? 'bg-white' : dotColor
+                              }`}
+                              title={ev.subEvent.event_title}
+                            />
+                          );
+                        })}
+                        {dayEvents.length > 3 && (
+                          <span className={`text-[8px] font-extrabold leading-none ${isSelected ? 'text-white' : 'text-slate-500'}`}>
+                            +{dayEvents.length - 3}
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
-                </div>
+                </button>
               );
             })}
-
-            {(() => {
-              const totalSlots = firstDayOfMonth + daysInMonth;
-              const remainingSlots = (7 - (totalSlots % 7)) % 7;
-              return Array.from({ length: remainingSlots }).map((_, i) => (
-                <div
-                  key={`next-${i}`}
-                  className="min-h-[110px] sm:min-h-[140px] p-2 rounded-2xl bg-[#F5F2E9]/40 border border-stone-200/40 text-stone-300 flex flex-col justify-between opacity-60"
-                >
-                  <span className="text-xs font-bold">{i + 1}</span>
-                </div>
-              ));
-            })()}
           </div>
+
+          {/* Bottom Legend */}
+          <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-[10px] font-bold text-slate-500">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-500"/> Wedding</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-500"/> Sangeet</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500"/> Haldi</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-sky-500"/> Pre-Wed</span>
+            </div>
+            <span className="text-slate-400 font-semibold hidden 2xl:inline">
+              {currentMonthTotalEvents} shoots
+            </span>
+          </div>
+
         </div>
-      </div>
 
-      {selectedDayInspector && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="bg-[#FEFDF9] rounded-3xl border-2 border-amber-200 shadow-2xl max-w-2xl w-full p-6 space-y-5 relative max-h-[90vh] overflow-y-auto">
-            
-            <div className="flex items-center justify-between border-b border-amber-200/80 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-amber-950 text-amber-300 flex items-center justify-center font-black shadow-md">
-                  <CalendarIcon className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-black text-amber-950">{selectedDayInspector.formattedDate}</h3>
-                  <span className="text-xs font-bold text-amber-800">
-                    {selectedDayInspector.projectGroups.reduce((acc, g) => acc + g.subEvents.length, 0)} Sub-Events Scheduled
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                {onAddProject && (
-                  <button
-                    onClick={() => {
-                      const d = selectedDayInspector.dateStr;
-                      setSelectedDayInspector(null);
-                      onAddProject(d);
-                    }}
-                    className="px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-950 text-xs font-extrabold rounded-xl border border-amber-300 transition flex items-center gap-1 cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>+ Add Shoot</span>
-                  </button>
-                )}
-                <button
-                  onClick={() => setSelectedDayInspector(null)}
-                  className="w-8 h-8 rounded-full bg-amber-100/80 hover:bg-amber-200 flex items-center justify-center text-amber-950 transition cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
+        {/* RIGHT PANEL (~50% / 7 Cols or 8 Cols): Exact High-Fidelity "Cards View" for Selected Date */}
+        <div className="lg:col-span-7 2xl:col-span-8 bg-slate-50/70 border border-slate-200 rounded-2xl sm:rounded-3xl p-4 sm:p-5 flex flex-col h-full overflow-hidden shadow-xs">
+          
+          {/* Schedule Header */}
+          <div className="flex items-center justify-between pb-3.5 border-b border-slate-200 shrink-0">
+            <div>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block leading-none">
+                DAILY SCHEDULE (FULL CARD VIEW)
+              </span>
+              <h4 className="text-sm sm:text-base font-black text-slate-900 mt-1">
+                {formatFullDate(selectedDate)}
+              </h4>
             </div>
 
-            {selectedDayInspector.projectGroups.length === 0 ? (
-              <div className="p-8 text-center bg-amber-50/50 rounded-2xl border border-amber-200/60 space-y-3">
-                <Sparkles className="w-8 h-8 text-amber-500 mx-auto" />
-                <h4 className="text-sm font-black text-amber-950">No Shoots Scheduled on this Date</h4>
-                <p className="text-xs font-semibold text-stone-500">You can create a new wedding or event for this date.</p>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-black px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-xl shadow-2xs">
+                {selectedDateEvents.length} {selectedDateEvents.length === 1 ? 'Event' : 'Events'}
+              </span>
+
+              {onAddProject && (
+                <button
+                  type="button"
+                  onClick={() => onAddProject(selectedDateStr)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-black bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white rounded-xl shadow-md shadow-[#6C5CE7]/20 transition cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>+ Project</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Events List Container (Scrollable) */}
+          <div className="flex-1 overflow-y-auto space-y-5 pt-4 pr-1 scrollbar-thin">
+            {selectedDateProjectGroups.length === 0 ? (
+              <div className="h-full min-h-[340px] flex flex-col items-center justify-center text-center p-8 bg-white border border-dashed border-slate-200 rounded-3xl text-slate-400 space-y-3 shadow-2xs">
+                <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  <Calendar className="w-7 h-7 stroke-[1.5]" />
+                </div>
+                <div>
+                  <h5 className="text-sm font-black text-slate-800">No Shoots Scheduled for this Date</h5>
+                  <p className="text-xs text-slate-400 font-semibold mt-1">
+                    Select another date on the calendar or add a new wedding shoot.
+                  </p>
+                </div>
                 {onAddProject && (
                   <button
-                    onClick={() => {
-                      const d = selectedDayInspector.dateStr;
-                      setSelectedDayInspector(null);
-                      onAddProject(d);
-                    }}
-                    className="px-4 py-2 bg-slate-950 text-white text-xs font-black rounded-xl shadow-md cursor-pointer inline-flex items-center gap-1.5"
+                    type="button"
+                    onClick={() => onAddProject(selectedDateStr)}
+                    className="flex items-center gap-2 px-4 py-2 text-xs font-extrabold bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white rounded-xl shadow-md shadow-[#6C5CE7]/20 transition cursor-pointer"
                   >
-                    <Plus className="w-4 h-4 text-amber-300" />
-                    <span>Create Event on this Date</span>
+                    <Plus className="w-4 h-4" />
+                    <span>Add First Shoot on this Date</span>
                   </button>
                 )}
               </div>
             ) : (
-              <div className="space-y-4">
-                {selectedDayInspector.projectGroups.map(({ project, subEvents }) => (
-                  <div
+              selectedDateProjectGroups.map(({ project, subEvents }) => {
+                const projectGradient = getGradientByProjectId(project.id || project.client_name);
+
+                return (
+                  <div 
                     key={project.id}
-                    className="bg-white rounded-2xl border-2 border-amber-200/90 p-4 space-y-3 shadow-xs"
+                    className="bg-white border-2 border-slate-300/90 shadow-lg shadow-slate-200/50 rounded-3xl p-5 space-y-4"
                   >
-                    <div className="flex items-center justify-between border-b border-amber-100 pb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="px-3 py-1 rounded-full bg-slate-950 text-amber-300 text-xs font-black shadow-xs">
+                    {/* MASTER CLIENT CARD HEADER */}
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-200/80 pb-3">
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <h3 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900">
                           {project.client_name}
+                        </h3>
+                        <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-950 text-[11px] font-black tracking-wide border border-indigo-200/80 shadow-2xs">
+                          {subEvents.length} Sub-Event{subEvents.length === 1 ? '' : 's'} Today
                         </span>
-                        <span className="text-xs font-bold text-stone-500">
-                          ({subEvents.length} Event{subEvents.length === 1 ? '' : 's'})
-                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {/* PM BADGE */}
+                        {project.project_manager_name ? (
+                          <div className="px-2.5 py-1 rounded-xl bg-amber-50 border border-amber-200 text-amber-950 text-xs font-bold flex items-center gap-1.5 shadow-xs">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-amber-800">PM:</span>
+                            <span className="font-extrabold text-amber-950">{project.project_manager_name}</span>
+                          </div>
+                        ) : (
+                          <span className="text-xs italic text-slate-400 font-medium">PM Not Assigned</span>
+                        )}
+
+                        {onEditProject && (
+                          <button 
+                            type="button"
+                            title="Edit Project"
+                            onClick={() => onEditProject(project)}
+                            className="w-8 h-8 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-indigo-600 transition shadow-xs shrink-0 cursor-pointer"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </div>
 
-                    <div className="space-y-3">
+                    {/* HORIZONTAL MODERN GRADIENT SUB-EVENT CARDS STACK */}
+                    <div className="space-y-3.5">
                       {subEvents.map((subEvent) => {
+                        const isTbd = Boolean((subEvent as any).is_date_tbd) || !subEvent.event_date || isNaN(new Date(subEvent.event_date).getTime());
+                        const isOvernightShoot = Boolean((subEvent as any).is_overnight) && Boolean((subEvent as any).end_date) && !isNaN(new Date((subEvent as any).end_date).getTime());
+
+                        const startDateObj = !isTbd ? new Date(subEvent.event_date) : null;
+                        const endDateObj = isOvernightShoot ? new Date((subEvent as any).end_date) : null;
+
+                        let dayNumber = 'TBD';
+                        let dayName = 'DATE';
+                        let monthAbbr = 'NOT';
+                        let yearStr = 'FIXED';
+
+                        if (!isTbd && startDateObj) {
+                          const sDay = startDateObj.getDate().toString().padStart(2, '0');
+                          const sDayName = startDateObj.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+                          monthAbbr = startDateObj.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+                          yearStr = startDateObj.getFullYear().toString();
+
+                          if (isOvernightShoot && endDateObj) {
+                            const eDay = endDateObj.getDate().toString().padStart(2, '0');
+                            const eDayName = endDateObj.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+                            dayNumber = `${sDay}-${eDay}`;
+                            dayName = `${sDayName}-${eDayName}`;
+                          } else {
+                            dayNumber = sDay;
+                            dayName = sDayName;
+                          }
+                        }
+
+                        // Robust assignment resolver ensuring roles are fetched via fw_assignments relation
                         const assignments = resolveSubEventAssignments(subEvent, teamMembers);
-                        const style = getEventPillStyle(subEvent.event_title);
-                        const isOvernight = Boolean(
-                          (subEvent as any).is_overnight ||
-                          (subEvent.roll_call_time && subEvent.dismissal_estimate_time && subEvent.dismissal_estimate_time < subEvent.roll_call_time)
-                        );
+                        const assignedCount = assignments.filter(a => a.assigned_member_id || a.fw_team_members).length;
+                        const totalSlots = assignments.length;
 
                         return (
-                          <div
+                          <div 
                             key={subEvent.id}
-                            className="bg-[#FAF8F2] rounded-xl border border-amber-200/70 p-3.5 space-y-2.5"
+                            className="bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all flex flex-col overflow-hidden"
                           >
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            {/* TOP HORIZONTAL GRADIENT DATE BANNER (MATCHES MONTH VIEW) */}
+                            <div className={`${projectGradient} px-4 py-2 text-white flex items-center justify-between`}>
                               <div className="flex items-center gap-2">
-                                <h5 className="font-black text-amber-950 text-sm">
-                                  {subEvent.event_title}
-                                </h5>
-                                <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${style.pillBg}`}>
-                                  {style.tag}
+                                <span className="text-xs sm:text-sm font-black tracking-tight uppercase">
+                                  {dayName} {dayNumber} {monthAbbr} {yearStr}
                                 </span>
+                                {isTbd && (
+                                  <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-amber-400 text-slate-950">
+                                    TBD
+                                  </span>
+                                )}
+                                {Boolean((subEvent as any).is_overnight) && (
+                                  <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-indigo-200 text-indigo-950 flex items-center gap-0.5">
+                                    <Moon className="w-2.5 h-2.5" /> Overnight
+                                  </span>
+                                )}
                               </div>
 
-                              {subEvent.roll_call_time && (
-                                <div className="flex items-center gap-1.5 text-xs font-extrabold text-amber-950 bg-white px-2.5 py-1 rounded-lg border border-amber-200 shrink-0">
-                                  <Clock className="w-3.5 h-3.5 text-amber-600" />
-                                  <span>
-                                    {format12HourTime(subEvent.roll_call_time)}
-                                    {subEvent.dismissal_estimate_time
-                                      ? ` → ${format12HourTime(subEvent.dismissal_estimate_time)}`
-                                      : ''}
-                                  </span>
-                                  {isOvernight && (
-                                    <span className="ml-1 text-[10px] text-indigo-700 font-black">🌙 Overnight</span>
+                              <div className="px-2.5 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-[10px] font-bold border border-white/20">
+                                {assignedCount}/{totalSlots} Roles
+                              </div>
+                            </div>
+
+                            {/* MAIN RIGHT CONTENT BODY */}
+                            <div className="p-4 flex flex-col justify-between space-y-3">
+                              <div>
+                                <div className="flex items-start justify-between gap-3 mb-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <h4 className="font-black text-slate-900 text-sm sm:text-base tracking-tight">
+                                      {subEvent.event_title}
+                                    </h4>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-3 text-xs font-bold text-slate-500 flex-wrap">
+                                  {subEvent.roll_call_time && (
+                                    <div className="flex items-center gap-1.5 text-slate-700">
+                                      <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                      <span>
+                                        {format12HourTime(subEvent.roll_call_time)}
+                                        {subEvent.dismissal_estimate_time ? ` - ${format12HourTime(subEvent.dismissal_estimate_time)}` : ''}
+                                      </span>
+                                      {(subEvent as any).shift_hours_slot && (
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 text-[10px] font-extrabold border border-amber-200/90 ml-1">
+                                          <Zap className="w-3 h-3 text-amber-500 fill-amber-400" />
+                                          {(subEvent as any).shift_hours_slot}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {subEvent.roll_call_time && subEvent.venue_name && (
+                                    <span className="text-slate-300 font-normal">|</span>
+                                  )}
+
+                                  {subEvent.venue_name && (
+                                    <div className="relative group/venue">
+                                      <a
+                                        href={subEvent.venue_map_link || `https://maps.google.com/?q=${encodeURIComponent(subEvent.venue_name)}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex items-center gap-1.5 text-indigo-600 hover:text-indigo-800 font-bold transition-colors cursor-pointer"
+                                      >
+                                        <MapPin className="w-3.5 h-3.5 shrink-0 text-indigo-500" />
+                                        <span className="truncate max-w-[220px]">{subEvent.venue_name}</span>
+                                      </a>
+                                    </div>
                                   )}
                                 </div>
+                              </div>
+
+                              {subEvent.operational_notes && (
+                                <div className="bg-amber-50/80 border-l-4 border-amber-400 p-2.5 rounded-r-xl text-xs text-amber-950 font-medium flex items-center gap-2 my-1">
+                                  <FileText className="w-4 h-4 text-amber-600 shrink-0" />
+                                  <span>{subEvent.operational_notes}</span>
+                                </div>
+                              )}
+
+                              <div className="border-t border-slate-100 my-1.5" />
+
+                              {/* CREW PLACEMENT ROLE BADGES GRID */}
+                              <div>
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1.5">
+                                  Assigned Crew Roster (Click avatar to assign role)
+                                </span>
+                                <div className="flex items-start gap-4 flex-wrap">
+                                  {assignments.map((assignment: any) => (
+                                    <RoleAssignDropdown
+                                      key={assignment.id}
+                                      assignment={assignment}
+                                      subEventId={subEvent.id}
+                                      projectId={project.id}
+                                      teamMembers={teamMembers}
+                                      onAssignMember={onAssignMember}
+                                      onAddNewMember={(info) => {
+                                        onAddNewMember({
+                                          assignmentId: info.assignmentId,
+                                          role: info.role,
+                                          subEventId: info.subEventId,
+                                          projectId: info.projectId,
+                                        });
+                                      }}
+                                      variant="avatar"
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+        </div>
+
+      </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          MOBILE VIEW (< lg): COMPACT DATE PICKER + EXACT CARD VIEW LIST
+         ───────────────────────────────────────────────────────────── */}
+      <div className="lg:hidden space-y-4">
+        
+        {/* Mobile Mini Month Picker Card */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
+          <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <div className="relative">
+                <select
+                  value={currentMonth.getMonth()}
+                  onChange={(e) => {
+                    const newMonthIdx = parseInt(e.target.value, 10);
+                    setCurrentMonth(new Date(currentMonth.getFullYear(), newMonthIdx, 1));
+                  }}
+                  className="appearance-none bg-slate-50 border border-slate-200 text-slate-900 text-[11px] font-black pl-2 pr-6 py-1 rounded-lg outline-none"
+                >
+                  {MONTH_NAMES.map((name, idx) => (
+                    <option key={name} value={idx}>
+                      {name.slice(0, 3)}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="w-3.5 h-3.5 ml-1.5 opacity-60 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500" />
+              </div>
+
+              <div className="relative">
+                <select
+                  value={currentMonth.getFullYear()}
+                  onChange={(e) => {
+                    const newYear = parseInt(e.target.value, 10);
+                    setCurrentMonth(new Date(newYear, currentMonth.getMonth(), 1));
+                  }}
+                  className="appearance-none bg-slate-50 border border-slate-200 text-slate-900 text-[11px] font-black pl-2 pr-6 py-1 rounded-lg outline-none"
+                >
+                  {availableYears.map((yr) => (
+                    <option key={yr} value={yr}>
+                      {yr}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="w-3.5 h-3.5 ml-1.5 opacity-60 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500" />
+              </div>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={prevMonth}
+                className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-600 border border-slate-200"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={goToToday}
+                className="px-2 py-1 text-[10px] font-bold bg-slate-100 text-slate-700 rounded-lg"
+              >
+                Today
+              </button>
+              <button
+                type="button"
+                onClick={nextMonth}
+                className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-600 border border-slate-200"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Mobile 7-Col Grid */}
+          <div className="grid grid-cols-7 text-center text-[10px] font-black text-slate-400 uppercase mb-1.5">
+            {WEEKDAY_NAMES.map(d => (
+              <div key={d}>{d[0]}</div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-7 gap-1">
+            {monthDays.map((day) => {
+              const dayIso = toIsoDateString(day);
+              const isSelected = isSameDay(day, selectedDate);
+              const isCurrentMonth = isSameMonth(day, currentMonth);
+              const isToday = isSameDay(day, new Date());
+              const dayEvents = eventsByDate[dayIso] || [];
+
+              return (
+                <button
+                  key={dayIso}
+                  type="button"
+                  onClick={() => setSelectedDate(day)}
+                  className={`relative flex flex-col items-center justify-center h-10 rounded-xl transition-all ${
+                    isSelected
+                      ? 'bg-blue-600 text-white font-black shadow-md shadow-blue-500/30'
+                      : isToday
+                      ? 'bg-blue-50 border border-blue-400 text-blue-900 font-extrabold'
+                      : isCurrentMonth
+                      ? 'text-slate-800 hover:bg-slate-100'
+                      : 'text-slate-300 opacity-40'
+                  }`}
+                >
+                  <span className="text-xs">{day.getDate()}</span>
+                  {dayEvents.length > 0 && (
+                    <span className={`w-1 h-1 rounded-full mt-0.5 ${isSelected ? 'bg-white' : 'bg-blue-500'}`} />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Mobile Schedule Section */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between px-1">
+            <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+              Events for {formatOrdinalDate(selectedDate)}
+            </h4>
+            <span className="text-[10px] font-black px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-full">
+              {selectedDateEvents.length} {selectedDateEvents.length === 1 ? 'Event' : 'Events'}
+            </span>
+          </div>
+
+          {selectedDateProjectGroups.length === 0 ? (
+            <div className="p-6 bg-white border border-slate-200 rounded-2xl text-center text-slate-400 space-y-2 shadow-xs">
+              <Calendar className="w-6 h-6 mx-auto opacity-30" />
+              <p className="text-xs font-semibold">No shoots scheduled for this date</p>
+            </div>
+          ) : (
+            selectedDateProjectGroups.map(({ project, subEvents }) => {
+              const projectGradient = getGradientByProjectId(project.id || project.client_name);
+
+              return (
+                <div 
+                  key={project.id}
+                  className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3 shadow-xs"
+                >
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <h4 className="text-base font-black text-slate-900">{project.client_name}</h4>
+                    {project.project_manager_name && (
+                      <span className="text-[10px] font-bold text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                        PM: {project.project_manager_name}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="space-y-3">
+                    {subEvents.map((subEvent) => {
+                      const assignments = resolveSubEventAssignments(subEvent, teamMembers);
+                      const timeDisplay = subEvent.roll_call_time
+                        ? `${format12HourTime(subEvent.roll_call_time)} - ${format12HourTime(subEvent.dismissal_estimate_time || '18:00')}`
+                        : 'Time Slot: TBD';
+
+                      const projectGradient = getGradientByProjectId(project.id || project.client_name);
+                      return (
+                        <div key={subEvent.id} className="bg-white rounded-xl border border-slate-200/90 shadow-2xs hover:shadow-xs transition flex flex-col overflow-hidden">
+                          {/* TOP HORIZONTAL GRADIENT DATE BANNER */}
+                          <div className={`${projectGradient} w-full px-3 py-1.5 text-white flex items-center justify-between`}>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[11px] font-black tracking-wider uppercase">
+                                {selectedDate.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()} {selectedDate.getDate().toString().padStart(2, '0')} {selectedDate.toLocaleDateString('en-US', { month: 'short' }).toUpperCase()} {selectedDate.getFullYear()}
+                              </span>
+                            </div>
+
+                            <div className="px-2 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-[9px] font-bold border border-white/20">
+                              {assignments.filter((a: any) => a.assigned_member_id).length}/{assignments.length} Roles
+                            </div>
+                          </div>
+
+                          <div className="p-2.5 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <h5 className="text-xs font-black text-slate-900">{subEvent.event_title}</h5>
+                              {subEvent.location_city && (
+                                <span className="text-[9px] font-bold text-slate-500 uppercase">
+                                  {subEvent.location_city}
+                                </span>
                               )}
                             </div>
 
-                            {subEvent.venue_name && (
-                              <div className="flex items-center gap-1.5 text-xs font-bold text-stone-600">
-                                <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                <span>{subEvent.venue_name}</span>
+                            {subEvent.roll_call_time && (
+                              <div className="flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded border border-indigo-200 w-fit">
+                                <Clock className="w-2.5 h-2.5" />
+                                <span>{timeDisplay}</span>
                               </div>
                             )}
 
-                            <div>
-                              <span className="text-[10px] font-black text-stone-400 uppercase tracking-wider block mb-1">
-                                Assigned Crew ({assignments.filter(a => a.assigned_member_id).length}/{assignments.length})
+                            {/* Crew Avatars */}
+                            <div className="pt-2 border-t border-slate-100">
+                              <span className="text-[9px] font-bold text-slate-400 uppercase block mb-1">
+                                Crew Placements
                               </span>
-                              <div className="flex items-center gap-3 flex-wrap pt-1">
-                                {assignments.map((assignment) => (
+                              <div className="flex items-start gap-2.5 flex-wrap">
+                                {assignments.map((assignment: any) => (
                                   <RoleAssignDropdown
                                     key={assignment.id}
                                     assignment={assignment}
@@ -662,23 +920,32 @@ export default function Professional3DCalendar({
                                     projectId={project.id}
                                     teamMembers={teamMembers}
                                     onAssignMember={onAssignMember}
-                                    onAddNewMember={onAddNewMember}
+                                    onAddNewMember={(info) => {
+                                      onAddNewMember({
+                                        assignmentId: info.assignmentId,
+                                        role: info.role,
+                                        subEventId: info.subEventId,
+                                        projectId: info.projectId
+                                      });
+                                    }}
                                     variant="avatar"
                                   />
                                 ))}
                               </div>
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
+                </div>
+              );
+            })
+          )}
         </div>
-      )}
+
+      </div>
+
     </div>
   );
 }

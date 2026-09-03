@@ -339,3 +339,16 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   animation: floatFast 5s ease-in-out 0.8s infinite;
 }
 
+
+/* ─────────────────────────────────────────────────────────────
+   📱 MOBILE INPUT ZERO-ZOOM & COMPACT SCALING (iOS / Chrome Bypass)
+───────────────────────────────────────────────────────────── */
+@media screen and (max-width: 768px) {
+  input, select, textarea {
+    font-size: 16px !important; /* Prevents iOS browser auto-zoom */
+  }
+  input.compact-mobile, select.compact-mobile {
+    transform: scale(0.875); /* Visually scales down to crisp ~14px cleanly */
+    transform-origin: left center;
+  }
+}

@@ -1835,35 +1835,38 @@ export async function batchFetchWorkspaceTeamFinancials(
   if (!workspaceId || uniqueIds.length === 0) return summaryMap;
 
   try {
-    // 1. Single IN query for crew_assignments_finance
-    // 2. Single IN query for team_event_payouts
-    const [crewFinRes, payoutsRes] = await Promise.all([
+    const [assignmentsRes, payoutsRes, salariesRes] = await Promise.allSettled([
       supabase
-        .from('crew_assignments_finance')
-        .select('team_member_id, final_agreed_amount, advance_paid_amount, balance_amount, payment_status, payment_date')
-        .in('team_member_id', uniqueIds)
-        .or(`workspace_id.eq.${workspaceId},workspace_id.is.null`),
+        .from('fw_assignments')
+        .select('id, assigned_member_id, agreed_amount, advance_amount, paid_amount, balance_amount, payment_status')
+        .in('assigned_member_id', uniqueIds),
       supabase
         .from('team_event_payouts')
         .select('member_id, agreed_amount, paid_amount, balance_amount, status, event_date')
         .in('member_id', uniqueIds)
-        .eq('workspace_id', workspaceId)
+        .eq('workspace_id', workspaceId),
+      supabase
+        .from('team_salary_records')
+        .select('member_id, base_salary, incentive_amount, deductions, net_payable, paid_amount, payment_status, month_year, paid_date')
+        .in('member_id', uniqueIds)
     ]);
 
-    const crewFinData = crewFinRes?.data || [];
-    const payoutsData = payoutsRes?.data || [];
+    const assignmentsData = assignmentsRes.status === 'fulfilled' && assignmentsRes.value.data ? assignmentsRes.value.data : [];
+    const payoutsData = payoutsRes.status === 'fulfilled' && payoutsRes.value.data ? payoutsRes.value.data : [];
+    const salariesData = salariesRes.status === 'fulfilled' && salariesRes.value.data ? salariesRes.value.data : [];
 
-    // Track monthly breakdowns in memory: memberId -> month -> stats
     const memberMonthlyMap: Record<string, Record<string, { agreed: number; paid: number; balance: number }>> = {};
+    const processedAssignmentMembers = new Set<string>();
 
-    // Process crew_assignments_finance
-    crewFinData.forEach((row: any) => {
-      const mid = row.team_member_id;
+    // 1. Process fw_assignments (live shoot bookings)
+    assignmentsData.forEach((row: any) => {
+      const mid = row.assigned_member_id;
       if (!mid || !summaryMap[mid]) return;
+      processedAssignmentMembers.add(mid);
 
-      const agreed = Number(row.final_agreed_amount) || 0;
-      const paid = Number(row.advance_paid_amount) || 0;
-      const bal = Number(row.balance_amount) || Math.max(0, agreed - paid);
+      const agreed = Number(row.agreed_amount) || 0;
+      const paid = Number(row.advance_amount ?? row.paid_amount) || 0;
+      const bal = Number(row.balance_amount) > 0 ? Number(row.balance_amount) : Math.max(0, agreed - paid);
 
       summaryMap[mid].total_agreed += agreed;
       summaryMap[mid].total_paid += paid;
@@ -1875,54 +1878,62 @@ export async function batchFetchWorkspaceTeamFinancials(
       } else {
         summaryMap[mid].pending_events_count += 1;
       }
-
-      const m = (row.payment_date || '').slice(0, 7) || 'Other';
-      if (!memberMonthlyMap[mid]) memberMonthlyMap[mid] = {};
-      if (!memberMonthlyMap[mid][m]) memberMonthlyMap[mid][m] = { agreed: 0, paid: 0, balance: 0 };
-      memberMonthlyMap[mid][m].agreed += agreed;
-      memberMonthlyMap[mid][m].paid += paid;
-      memberMonthlyMap[mid][m].balance += bal;
     });
 
-    // Process team_event_payouts (if any distinct event records)
+    // 2. Process team_event_payouts (fallback if fw_assignments not present)
     payoutsData.forEach((p: any) => {
       const mid = p.member_id;
+      if (!mid || !summaryMap[mid] || processedAssignmentMembers.has(mid)) return;
+
+      const agreed = Number(p.agreed_amount) || 0;
+      const paid = Number(p.paid_amount) || 0;
+      const bal = Number(p.balance_amount) || Math.max(0, agreed - paid);
+
+      summaryMap[mid].total_agreed += agreed;
+      summaryMap[mid].total_paid += paid;
+      summaryMap[mid].total_balance += bal;
+      summaryMap[mid].active_events_count += 1;
+
+      if (p.status === 'PAID' || bal <= 0) {
+        summaryMap[mid].paid_events_count += 1;
+      } else {
+        summaryMap[mid].pending_events_count += 1;
+      }
+    });
+
+    // 3. Process team_salary_records from DB
+    const processedSalaryKeys = new Set<string>();
+    salariesData.forEach((s: any) => {
+      const mid = s.member_id;
       if (!mid || !summaryMap[mid]) return;
+      processedSalaryKeys.add(`${mid}_${s.month_year}`);
 
-      if (crewFinData.length === 0) {
-        const agreed = Number(p.agreed_amount) || 0;
-        const paid = Number(p.paid_amount) || 0;
-        const bal = Number(p.balance_amount) || Math.max(0, agreed - paid);
+      const paid = Number(s.paid_amount || s.net_payable) || 0;
+      summaryMap[mid].total_paid += paid;
+    });
 
-        summaryMap[mid].total_agreed += agreed;
-        summaryMap[mid].total_paid += paid;
-        summaryMap[mid].total_balance += bal;
-        summaryMap[mid].active_events_count += 1;
-
-        if (p.status === 'PAID' || bal <= 0) {
-          summaryMap[mid].paid_events_count += 1;
-        } else {
-          summaryMap[mid].pending_events_count += 1;
+    // 4. Process localStorage salaries (instant client-side fallback)
+    if (typeof window !== 'undefined') {
+      uniqueIds.forEach(mid => {
+        const key = `${LS_SALARIES_KEY}${workspaceId}_${mid}`;
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          try {
+            const list = JSON.parse(raw);
+            if (Array.isArray(list)) {
+              list.forEach((s: any) => {
+                const sKey = `${mid}_${s.month_year}`;
+                if (!processedSalaryKeys.has(sKey)) {
+                  processedSalaryKeys.add(sKey);
+                  const paid = Number(s.paid_amount || s.net_payable) || 0;
+                  summaryMap[mid].total_paid += paid;
+                }
+              });
+            }
+          } catch (_) {}
         }
-
-        const m = (p.event_date || '').slice(0, 7) || 'Other';
-        if (!memberMonthlyMap[mid]) memberMonthlyMap[mid] = {};
-        if (!memberMonthlyMap[mid][m]) memberMonthlyMap[mid][m] = { agreed: 0, paid: 0, balance: 0 };
-        memberMonthlyMap[mid][m].agreed += agreed;
-        memberMonthlyMap[mid][m].paid += paid;
-        memberMonthlyMap[mid][m].balance += bal;
-      }
-    });
-
-    // Populate monthly breakdowns
-    Object.keys(memberMonthlyMap).forEach(mid => {
-      if (summaryMap[mid]) {
-        summaryMap[mid].monthly_breakdown = Object.keys(memberMonthlyMap[mid]).sort().map(m => ({
-          month: m,
-          ...memberMonthlyMap[mid][m]
-        }));
-      }
-    });
+      });
+    }
 
   } catch (err) {
     console.error('[batchFetchWorkspaceTeamFinancials] Error:', err);

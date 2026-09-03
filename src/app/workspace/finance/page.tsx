@@ -20,6 +20,8 @@ import { ExcelMigrationModal } from '@/components/finance/excel-migration-modal'
 import MilestoneStepDropdown from '@/components/finance/MilestoneStepDropdown';
 import { FinancePinVerificationCard } from '@/components/finance/FinancePinVerificationCard';
 import { FinanceAnalyticsDashboard } from '@/components/finance/FinanceAnalyticsDashboard';
+import { FinanceAnalyticsView } from '@/app/workspace/finance/components/FinanceAnalyticsView';
+import { ClientFinanceCard } from '@/app/workspace/finance/components/ClientFinanceCard';
 import { exportCurrentFinanceToExcel } from '@/lib/excel-finance-migration';
 import type { 
   WorkspaceClient, ClientFinanceRecord, FinanceMilestoneItem, FinanceExpenseItem, 
@@ -129,7 +131,10 @@ export default function FinancePage() {
   const [isNotificationDropdownOpen, setIsNotificationDropdownOpen] = useState(false);
   const notificationRef = useRef<HTMLDivElement | null>(null);
 
-  // Auto-close notification & filter popovers on outside click
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
+  const moreMenuRef = useRef<HTMLDivElement | null>(null);
+
+  // Auto-close notification, filter & more popovers on outside click
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) {
@@ -137,6 +142,9 @@ export default function FinancePage() {
       }
       if (filterDropdownRef.current && !filterDropdownRef.current.contains(event.target as Node)) {
         setIsFilterDropdownOpen(false);
+      }
+      if (moreMenuRef.current && !moreMenuRef.current.contains(event.target as Node)) {
+        setIsMoreMenuOpen(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -1926,57 +1934,57 @@ export default function FinancePage() {
       <div className="w-full max-w-[1680px] mx-auto space-y-4 sm:space-y-5">
 
         {/* ─────────────────────────────────────────────────────────────
-            TOP 5 METRIC CARDS WITH SPARKLINES (DYNAMIC TO FILTERS & TEAM)
+            TOP 5 METRIC CARDS WITH SPARKLINES (APP-GRADE 2-COL MOBILE STRIP)
         ───────────────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 2xl:grid-cols-5 gap-2 sm:gap-3 lg:gap-4">
           
           {/* Card 1: GROSS INVOICED */}
-          <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-[0_2px_12px_rgba(0,0,0,0.03)] relative overflow-hidden flex flex-col justify-between h-32">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-orange-50 text-orange-500 flex items-center justify-center shrink-0 border border-orange-100/60">
-                <FileText className="w-5 h-5 stroke-[2.2]" />
+          <div className="bg-white rounded-xl sm:rounded-2xl p-2.5 sm:p-4 border border-slate-100 shadow-[0_2px_10px_rgba(0,0,0,0.02)] relative overflow-hidden flex flex-col justify-between min-h-[78px] sm:min-h-[128px]">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="w-7 h-7 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-orange-50 text-orange-500 flex items-center justify-center shrink-0 border border-orange-100/60">
+                <FileText className="w-3.5 h-3.5 sm:w-5 sm:h-5 stroke-[2.2]" />
               </div>
-              <div>
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Gross Invoiced</span>
-                <p className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight font-sans">
+              <div className="min-w-0 flex-1">
+                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-slate-400 block truncate">Gross Invoiced</span>
+                <p className="text-sm sm:text-2xl font-black text-slate-900 tracking-tight font-sans truncate">
                   ₹{totalInvoiced.toLocaleString('en-IN')}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-end justify-between mt-auto">
-              <span className="text-[11px] font-medium text-slate-400">
-                {filteredRecords.length} Active Contracts {teamMemberFilter !== 'all' ? '(' + teamMemberFilter + ')' : ''}
+            <div className="flex items-end justify-between mt-1 sm:mt-auto">
+              <span className="text-[10px] sm:text-[11px] font-medium text-slate-400 truncate">
+                {filteredRecords.length} Contracts
               </span>
 
-              {/* Orange Sparkline SVG */}
-              <svg className="w-20 h-7 text-orange-500" viewBox="0 0 100 35" fill="none" preserveAspectRatio="none">
+              {/* Orange Sparkline SVG (Desktop Only) */}
+              <svg className="hidden sm:block w-20 h-7 text-orange-500" viewBox="0 0 100 35" fill="none" preserveAspectRatio="none">
                 <path d="M0 30 Q 25 15, 50 25 T 100 5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" fill="none" />
               </svg>
             </div>
           </div>
 
           {/* Card 2: CASH RECEIVED */}
-          <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-[0_2px_12px_rgba(0,0,0,0.03)] relative overflow-hidden flex flex-col justify-between h-32">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 border border-emerald-100/60">
-                <Wallet className="w-5 h-5 stroke-[2.2]" />
+          <div className="bg-white rounded-xl sm:rounded-2xl p-2.5 sm:p-4 border border-slate-100 shadow-[0_2px_10px_rgba(0,0,0,0.02)] relative overflow-hidden flex flex-col justify-between min-h-[78px] sm:min-h-[128px]">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="w-7 h-7 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 border border-emerald-100/60">
+                <Wallet className="w-3.5 h-3.5 sm:w-5 sm:h-5 stroke-[2.2]" />
               </div>
-              <div>
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Cash Received</span>
-                <p className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight font-sans">
+              <div className="min-w-0 flex-1">
+                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-slate-400 block truncate">Cash Received</span>
+                <p className="text-sm sm:text-2xl font-black text-slate-900 tracking-tight font-sans truncate">
                   ₹{totalReceived.toLocaleString('en-IN')}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-end justify-between mt-auto">
-              <span className="text-[11px] font-bold text-emerald-600 flex items-center gap-1">
-                {realizedPercent}% Realized <CheckCircle2 className="w-3.5 h-3.5" />
+            <div className="flex items-end justify-between mt-1 sm:mt-auto">
+              <span className="text-[10px] sm:text-[11px] font-bold text-emerald-600 flex items-center gap-0.5 truncate">
+                {realizedPercent}% Realized <CheckCircle2 className="w-3 h-3 hidden sm:inline" />
               </span>
 
-              {/* Green Sparkline SVG */}
-              <svg className="w-20 h-7 text-emerald-500" viewBox="0 0 100 35" fill="none" preserveAspectRatio="none">
+              {/* Green Sparkline SVG (Desktop Only) */}
+              <svg className="hidden sm:block w-20 h-7 text-emerald-500" viewBox="0 0 100 35" fill="none" preserveAspectRatio="none">
                 <path d="M0 30 Q 25 28, 45 15 T 80 20 T 100 5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" fill="none" />
               </svg>
             </div>
@@ -1985,79 +1993,79 @@ export default function FinancePage() {
           {/* Card 3: PENDING RECEIVABLES (CLICKABLE DRILL-DOWN) */}
           <div 
             onClick={() => setShowOverdueModal(true)}
-            className="bg-white hover:bg-orange-50/20 rounded-2xl p-4 border border-slate-100 shadow-[0_2px_12px_rgba(0,0,0,0.03)] relative overflow-hidden flex flex-col justify-between h-32 cursor-pointer transition"
+            className="bg-white hover:bg-orange-50/20 rounded-xl sm:rounded-2xl p-2.5 sm:p-4 border border-slate-100 shadow-[0_2px_10px_rgba(0,0,0,0.02)] relative overflow-hidden flex flex-col justify-between min-h-[78px] sm:min-h-[128px] cursor-pointer transition"
           >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-orange-50 text-orange-500 flex items-center justify-center shrink-0 border border-orange-100/60">
-                <Clock className="w-5 h-5 stroke-[2.2]" />
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="w-7 h-7 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-orange-50 text-orange-500 flex items-center justify-center shrink-0 border border-orange-100/60">
+                <Clock className="w-3.5 h-3.5 sm:w-5 sm:h-5 stroke-[2.2]" />
               </div>
-              <div>
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Pending Receivables</span>
-                <p className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight font-sans">
+              <div className="min-w-0 flex-1">
+                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-slate-400 block truncate">Pending Due</span>
+                <p className="text-sm sm:text-2xl font-black text-slate-900 tracking-tight font-sans truncate">
                   ₹{totalPending.toLocaleString('en-IN')}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-end justify-between mt-auto">
-              <span className="text-[11px] font-medium text-slate-400">
-                Scheduled Milestones
+            <div className="flex items-end justify-between mt-1 sm:mt-auto">
+              <span className="text-[10px] sm:text-[11px] font-medium text-slate-400 truncate">
+                Milestones
               </span>
 
-              {/* Orange Sparkline SVG */}
-              <svg className="w-20 h-7 text-orange-400" viewBox="0 0 100 35" fill="none" preserveAspectRatio="none">
+              {/* Orange Sparkline SVG (Desktop Only) */}
+              <svg className="hidden sm:block w-20 h-7 text-orange-400" viewBox="0 0 100 35" fill="none" preserveAspectRatio="none">
                 <path d="M0 25 Q 30 25, 55 32 T 100 10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" fill="none" />
               </svg>
             </div>
           </div>
 
           {/* Card 4: TEAM & EXPENSES */}
-          <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-[0_2px_12px_rgba(0,0,0,0.03)] relative overflow-hidden flex flex-col justify-between h-32">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-500 flex items-center justify-center shrink-0 border border-rose-100/60">
-                <CreditCard className="w-5 h-5 stroke-[2.2]" />
+          <div className="bg-white rounded-xl sm:rounded-2xl p-2.5 sm:p-4 border border-slate-100 shadow-[0_2px_10px_rgba(0,0,0,0.02)] relative overflow-hidden flex flex-col justify-between min-h-[78px] sm:min-h-[128px]">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="w-7 h-7 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-rose-50 text-rose-500 flex items-center justify-center shrink-0 border border-rose-100/60">
+                <CreditCard className="w-3.5 h-3.5 sm:w-5 sm:h-5 stroke-[2.2]" />
               </div>
-              <div>
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Team & Expenses</span>
-                <p className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight font-sans">
+              <div className="min-w-0 flex-1">
+                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-slate-400 block truncate">Team & Ops</span>
+                <p className="text-sm sm:text-2xl font-black text-slate-900 tracking-tight font-sans truncate">
                   ₹{totalExpensesAmount.toLocaleString('en-IN')}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-end justify-between mt-auto">
-              <span className="text-[11px] font-medium text-slate-400">
-                {filteredExpenses.length} Logged Payouts
+            <div className="flex items-end justify-between mt-1 sm:mt-auto">
+              <span className="text-[10px] sm:text-[11px] font-medium text-slate-400 truncate">
+                {filteredExpenses.length} Payouts
               </span>
 
-              {/* Pink Sparkline SVG */}
-              <svg className="w-20 h-7 text-rose-400" viewBox="0 0 100 35" fill="none" preserveAspectRatio="none">
+              {/* Pink Sparkline SVG (Desktop Only) */}
+              <svg className="hidden sm:block w-20 h-7 text-rose-400" viewBox="0 0 100 35" fill="none" preserveAspectRatio="none">
                 <path d="M0 32 Q 35 30, 60 22 T 100 8" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" fill="none" />
               </svg>
             </div>
           </div>
 
-          {/* Card 5: NET STUDIO PROFIT */}
-          <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-[0_2px_12px_rgba(0,0,0,0.03)] relative overflow-hidden flex flex-col justify-between h-32">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0 border border-purple-100/60">
-                <TrendingUp className="w-5 h-5 stroke-[2.2]" />
+          {/* Card 5: NET STUDIO PROFIT (2-COL MOBILE BANNER) */}
+          <div className="col-span-2 md:col-span-1 2xl:col-span-1 bg-gradient-to-r md:bg-white from-purple-50/90 via-indigo-50/90 to-purple-50/90 sm:from-white sm:to-white rounded-xl sm:rounded-2xl p-2.5 sm:p-4 border border-purple-200/80 sm:border-slate-100 shadow-[0_2px_10px_rgba(0,0,0,0.02)] relative overflow-hidden flex items-center sm:flex-col justify-between min-h-[64px] sm:min-h-[128px]">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="w-7 h-7 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-purple-100 sm:bg-purple-50 text-purple-700 sm:text-purple-600 flex items-center justify-center shrink-0 border border-purple-200/80 sm:border-purple-100/60">
+                <TrendingUp className="w-3.5 h-3.5 sm:w-5 sm:h-5 stroke-[2.2]" />
               </div>
               <div>
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Net Studio Profit</span>
-                <p className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight font-sans">
+                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-purple-900/70 sm:text-slate-400 block truncate">Net Studio Profit</span>
+                <p className="text-base sm:text-2xl font-black text-purple-950 sm:text-slate-900 tracking-tight font-sans truncate">
                   ₹{netProfit.toLocaleString('en-IN')}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-end justify-between mt-auto">
-              <span className="text-[11px] font-bold text-purple-600 flex items-center gap-1">
-                {profitMargin}% Profit Margin <CheckCircle2 className="w-3.5 h-3.5" />
+            <div className="flex items-center sm:items-end justify-between sm:w-full mt-0 sm:mt-auto">
+              <span className="px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-purple-200/70 sm:bg-transparent text-purple-900 sm:text-purple-600 flex items-center gap-1">
+                {profitMargin}% Margin <CheckCircle2 className="w-3 h-3 hidden sm:inline" />
               </span>
 
-              {/* Purple Sparkline SVG */}
-              <svg className="w-20 h-7 text-purple-500" viewBox="0 0 100 35" fill="none" preserveAspectRatio="none">
+              {/* Purple Sparkline SVG (Desktop Only) */}
+              <svg className="hidden sm:block w-20 h-7 text-purple-500" viewBox="0 0 100 35" fill="none" preserveAspectRatio="none">
                 <path d="M0 30 Q 30 25, 55 18 T 100 5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" fill="none" />
               </svg>
             </div>
@@ -2068,93 +2076,269 @@ export default function FinancePage() {
         {/* ─────────────────────────────────────────────────────────────
             🎛️ STREAMLINED ACTION BAR & CONTROLS (UNIFIED SINGLE-ROW)
         ───────────────────────────────────────────────────────────── */}
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-2 sm:p-3 shadow-xs flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+        <div className="bg-white rounded-2xl border border-slate-200/80 p-2 sm:p-3 shadow-xs space-y-2.5">
           
-          {/* Left Tabs (Horizontal Scrollable on Mobile) */}
-          <div className="flex items-center gap-4 sm:gap-6 border-b xl:border-b-0 border-slate-100 pb-2 xl:pb-0 overflow-x-auto no-scrollbar shrink-0">
-            <button
-              onClick={() => setActiveTab('clients')}
-              className={`flex items-center gap-1.5 pb-2 pt-1 text-xs font-bold transition relative whitespace-nowrap cursor-pointer ${
-                activeTab === 'clients'
-                  ? 'text-amber-800 font-black'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <FileText className="w-3.5 h-3.5" />
-              <span>Client Invoices & Milestones ({filteredRecords.length})</span>
-              {activeTab === 'clients' && (
-                <motion.div 
-                  layoutId="tabUnderline" 
-                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-amber-600 rounded-full"
-                />
-              )}
-            </button>
+          {/* Top Segmented Tabs Switcher (Mobile Native Grid + Desktop Underline Tabs) */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-2 md:pb-0">
+            
+            {/* Mobile 3-Column Segmented Tab Pill (< md) */}
+            <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100/90 rounded-2xl md:hidden text-center">
+              <button
+                type="button"
+                onClick={() => setActiveTab('clients')}
+                className={`py-1.5 px-1 rounded-xl text-xs font-bold transition truncate ${
+                  activeTab === 'clients'
+                    ? 'bg-white text-slate-900 shadow-xs font-black'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Invoices ({filteredRecords.length})
+              </button>
 
-            <button
-              onClick={() => setActiveTab('expenses')}
-              className={`flex items-center gap-1.5 pb-2 pt-1 text-xs font-bold transition relative whitespace-nowrap cursor-pointer ${
-                activeTab === 'expenses'
-                  ? 'text-amber-800 font-black'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <CreditCard className="w-3.5 h-3.5" />
-              <span>Team Payouts & Expenses ({filteredExpenses.length})</span>
-              {activeTab === 'expenses' && (
-                <motion.div 
-                  layoutId="tabUnderline" 
-                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-amber-600 rounded-full"
-                />
-              )}
-            </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('expenses')}
+                className={`py-1.5 px-1 rounded-xl text-xs font-bold transition truncate ${
+                  activeTab === 'expenses'
+                    ? 'bg-white text-slate-900 shadow-xs font-black'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Expenses ({filteredExpenses.length})
+              </button>
 
-            <button
-              onClick={() => setActiveTab('analytics')}
-              className={`flex items-center gap-1.5 pb-2 pt-1 text-xs font-bold transition relative whitespace-nowrap cursor-pointer ${
-                activeTab === 'analytics'
-                  ? 'text-amber-800 font-black'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <PieChart className="w-3.5 h-3.5" />
-              <span>Finance Analytics</span>
-              {activeTab === 'analytics' && (
-                <motion.div 
-                  layoutId="tabUnderline" 
-                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-amber-600 rounded-full"
-                />
+              <button
+                type="button"
+                onClick={() => setActiveTab('analytics')}
+                className={`py-1.5 px-1 rounded-xl text-xs font-bold transition truncate ${
+                  activeTab === 'analytics'
+                    ? 'bg-white text-slate-900 shadow-xs font-black'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Analytics
+              </button>
+            </div>
+
+            {/* Desktop Horizontal Tabs (>= md) */}
+            <div className="hidden md:flex items-center gap-6">
+              <button
+                onClick={() => setActiveTab('clients')}
+                className={`flex items-center gap-1.5 pb-2 pt-1 text-xs font-bold transition relative cursor-pointer ${
+                  activeTab === 'clients'
+                    ? 'text-amber-800 font-black'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Client Invoices & Milestones ({filteredRecords.length})</span>
+                {activeTab === 'clients' && (
+                  <motion.div 
+                    layoutId="tabUnderline" 
+                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-amber-600 rounded-full"
+                  />
+                )}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('expenses')}
+                className={`flex items-center gap-1.5 pb-2 pt-1 text-xs font-bold transition relative cursor-pointer ${
+                  activeTab === 'expenses'
+                    ? 'text-amber-800 font-black'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <CreditCard className="w-3.5 h-3.5" />
+                <span>Team Payouts & Expenses ({filteredExpenses.length})</span>
+                {activeTab === 'expenses' && (
+                  <motion.div 
+                    layoutId="tabUnderline" 
+                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-amber-600 rounded-full"
+                  />
+                )}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('analytics')}
+                className={`flex items-center gap-1.5 pb-2 pt-1 text-xs font-bold transition relative cursor-pointer ${
+                  activeTab === 'analytics'
+                    ? 'text-amber-800 font-black'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <PieChart className="w-3.5 h-3.5" />
+                <span>Finance Analytics</span>
+                {activeTab === 'analytics' && (
+                  <motion.div 
+                    layoutId="tabUnderline" 
+                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-amber-600 rounded-full"
+                  />
+                )}
+              </button>
+            </div>
+
+            {/* Desktop Action Icons (>= md) */}
+            <div className="hidden md:flex items-center gap-2">
+              {/* Notifications Bell */}
+              <div className="relative" ref={notificationRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsNotificationDropdownOpen(prev => !prev)}
+                  className="relative p-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 hover:bg-slate-100 shadow-2xs transition cursor-pointer"
+                  title="Due Date & Payment Alerts"
+                >
+                  <Bell className="w-4 h-4" />
+                  {overdueMilestonesList.length > 0 && (
+                    <span className="absolute -top-1 -right-1 px-1.5 py-0.5 rounded-full text-[9px] font-black bg-rose-500 text-white animate-pulse shadow-sm">
+                      {overdueMilestonesList.length}
+                    </span>
+                  )}
+                </button>
+
+                <AnimatePresence>
+                  {isNotificationDropdownOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                      className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl border border-slate-200 shadow-2xl p-4 z-40 space-y-3"
+                    >
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                        <div className="flex items-center gap-1.5">
+                          <Bell className="w-4 h-4 text-rose-500" />
+                          <h4 className="text-xs font-black text-slate-900">Overdue & Due Alerts</h4>
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-500">
+                          {overdueMilestonesList.length} pending
+                        </span>
+                      </div>
+
+                      <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
+                        {overdueMilestonesList.length === 0 ? (
+                          <div className="text-center py-6 text-slate-400 text-xs">
+                            <CheckCircle2 className="w-6 h-6 text-emerald-500 mx-auto mb-1.5" />
+                            <span>All milestone payments are up to date! 🎉</span>
+                          </div>
+                        ) : (
+                          overdueMilestonesList.map((item, idx) => (
+                            <div key={idx} className="p-2.5 bg-rose-50/60 rounded-xl border border-rose-200/70 space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <span className="font-extrabold text-slate-900 text-xs truncate max-w-[170px]">
+                                  {item.client.name}
+                                </span>
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-rose-100 text-rose-800">
+                                  {item.daysOverdue > 0 ? `${item.daysOverdue}d Overdue` : 'Due Today'}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="text-slate-600 font-medium">
+                                  {item.milestone.step_name || item.milestone.title}
+                                </span>
+                                <span className="font-mono font-black text-rose-900">
+                                  ₹{(Number(item.milestone.amount) || 0).toLocaleString('en-IN')}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-end gap-2 pt-1 border-t border-rose-100">
+                                {item.client.phone && (
+                                  <a
+                                    href={`https://wa.me/${item.client.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
+                                      `Hello ${item.client.name}, this is a reminder regarding your pending installment for ${item.milestone.step_name || 'Booking'} of ₹${(item.milestone.amount || 0).toLocaleString('en-IN')}.`
+                                    )}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-2 py-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-extrabold text-[10px] rounded-lg border border-emerald-200 flex items-center gap-1"
+                                  >
+                                    <Send className="w-2.5 h-2.5" /> WhatsApp
+                                  </a>
+                                )}
+                                <button
+                                  onClick={() => handleOpenCompletePaymentModal(item.record, item.milestone)}
+                                  className="px-2.5 py-1 bg-emerald-600 text-white font-extrabold text-[10px] rounded-lg shadow-xs hover:bg-emerald-700 flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Check className="w-2.5 h-2.5" /> Mark Paid
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* Import Excel */}
+              <button
+                type="button"
+                onClick={() => setIsExcelMigrationModalOpen(true)}
+                className="p-2 rounded-xl bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 hover:border-emerald-300 shadow-2xs transition cursor-pointer flex items-center gap-1"
+                title="Import Spreadsheets"
+              >
+                <Upload className="w-4 h-4 text-emerald-700" />
+              </button>
+
+              {/* Export Excel */}
+              <button
+                type="button"
+                onClick={() => exportCurrentFinanceToExcel(filteredRecords, clients)}
+                className="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs transition cursor-pointer flex items-center gap-1"
+                title="Export to Excel"
+              >
+                <Download className="w-4 h-4 text-slate-600" />
+              </button>
+
+              {/* Lock Vault */}
+              {isPinRequired && (
+                <button
+                  type="button"
+                  onClick={handleLockVault}
+                  className="p-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs transition cursor-pointer"
+                  title="Lock Vault"
+                >
+                  <Lock className="w-4 h-4 text-amber-700" />
+                </button>
               )}
-            </button>
+
+              {/* Audit Logs */}
+              <button
+                type="button"
+                onClick={() => setIsAuditDrawerOpen(true)}
+                className="p-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 hover:bg-slate-100 shadow-2xs transition cursor-pointer"
+                title="Audit Logs"
+              >
+                <Clock className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
-          {/* Right Controls: Search + Filters + Notifications + Compact Action Icons */}
-          <div className="flex items-center gap-2 flex-wrap justify-between xl:justify-end">
+          {/* Unified Action Row (Search + Filter + Mobile Action Icons) */}
+          <div className="flex items-center gap-2">
             
             {/* Search Input */}
-            <div className="relative flex-1 sm:w-56 md:w-64 min-w-[150px]">
+            <div className="relative flex-1 min-w-[120px]">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
               <input
                 type="text"
-                placeholder="Search client, member, event..."
+                placeholder="Search client, event, member..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-amber-500 focus:bg-white transition"
+                className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-800 focus:outline-none focus:border-amber-500 focus:bg-white transition"
               />
             </div>
 
-            {/* 🎛️ MASTER ADVANCED FILTERS DROPDOWN */}
+            {/* Filter Trigger Button */}
             <div className="relative" ref={filterDropdownRef}>
               <button
                 type="button"
                 onClick={() => setIsFilterDropdownOpen(prev => !prev)}
-                className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer ${
+                className={`h-9 px-2.5 sm:px-3 rounded-xl border text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer ${
                   activeFiltersCount > 0
                     ? 'bg-orange-50 text-orange-700 border-orange-200 font-black'
                     : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                 }`}
               >
-                <SlidersHorizontal className="w-3.5 h-3.5" />
-                <span>Filters</span>
+                <SlidersHorizontal className="w-3.5 h-3.5 text-orange-600" />
+                <span className="hidden sm:inline">Filters</span>
                 {activeFiltersCount > 0 && (
                   <span className="w-4 h-4 rounded-full bg-orange-600 text-white text-[10px] font-black flex items-center justify-center">
                     {activeFiltersCount}
@@ -2186,11 +2370,11 @@ export default function FinancePage() {
                       )}
                     </div>
 
-                    {/* 📅 DATE RANGE PICKER (FIRST PAYMENT DATE) */}
+                    {/* 📅 DATE RANGE PICKER */}
                     <div className="p-3 bg-amber-50/40 rounded-2xl border border-amber-200/60 space-y-2">
                       <div className="flex items-center justify-between">
                         <label className="text-[11px] font-black text-amber-950 uppercase tracking-wider flex items-center gap-1.5">
-                          <Calendar className="w-3.5 h-3.5 text-amber-700" /> Date Range (Payment Date)
+                          <Calendar className="w-3.5 h-3.5 text-amber-700" /> Date Range
                         </label>
                         {dateRangePreset !== 'all' && (
                           <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
@@ -2199,7 +2383,6 @@ export default function FinancePage() {
                         )}
                       </div>
 
-                      {/* Presets Selector matching Lead CRM */}
                       <div className="grid grid-cols-3 gap-1 text-[10px] font-extrabold">
                         {[
                           { id: 'all', label: 'All Time' },
@@ -2254,7 +2437,6 @@ export default function FinancePage() {
                         ))}
                       </div>
 
-                      {/* Custom Date Range Pickers */}
                       <div className="pt-1">
                         <div className="flex items-center gap-1.5 bg-white border border-amber-200 rounded-xl px-2 py-1.5 shadow-2xs">
                           <input
@@ -2280,10 +2462,10 @@ export default function FinancePage() {
                       </div>
                     </div>
 
-                    {/* 👥 TEAM MEMBER (HANDLED BY) FACET */}
+                    {/* 👥 TEAM MEMBER */}
                     <div>
                       <label className="text-[11px] font-bold text-slate-700 block mb-1 flex items-center gap-1">
-                        <Users className="w-3 h-3 text-purple-600" /> Filter by Team Member (Handled By)
+                        <Users className="w-3 h-3 text-purple-600" /> Team Member
                       </label>
                       <select
                         value={teamMemberFilter}
@@ -2375,136 +2557,106 @@ export default function FinancePage() {
               </AnimatePresence>
             </div>
 
-            {/* 🔔 Notifications Bell */}
-            <div className="relative" ref={notificationRef}>
+            {/* Mobile Only Action Icons (< md) */}
+            <div className="flex md:hidden items-center gap-1.5">
+              {/* Notification Bell */}
+              <div className="relative" ref={notificationRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsNotificationDropdownOpen(prev => !prev)}
+                  className="h-9 w-9 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 flex items-center justify-center relative cursor-pointer"
+                >
+                  <Bell className="w-4 h-4" />
+                  {overdueMilestonesList.length > 0 && (
+                    <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center">
+                      {overdueMilestonesList.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              {/* Audit Log */}
               <button
                 type="button"
-                onClick={() => setIsNotificationDropdownOpen(prev => !prev)}
-                className="relative p-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 hover:bg-slate-100 shadow-2xs transition cursor-pointer"
-                title="Due Date & Payment Alerts"
+                onClick={() => setIsAuditDrawerOpen(true)}
+                className="h-9 w-9 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 flex items-center justify-center cursor-pointer"
+                title="Audit Logs"
               >
-                <Bell className="w-4 h-4" />
-                {overdueMilestonesList.length > 0 && (
-                  <span className="absolute -top-1 -right-1 px-1.5 py-0.5 rounded-full text-[9px] font-black bg-rose-500 text-white animate-pulse shadow-sm">
-                    {overdueMilestonesList.length}
-                  </span>
-                )}
+                <Clock className="w-4 h-4" />
               </button>
 
-              {/* Notification Dropdown Panel */}
-              <AnimatePresence>
-                {isNotificationDropdownOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 8, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 8, scale: 0.95 }}
-                    className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl border border-slate-200 shadow-2xl p-4 z-40 space-y-3"
-                  >
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                      <div className="flex items-center gap-1.5">
-                        <Bell className="w-4 h-4 text-rose-500" />
-                        <h4 className="text-xs font-black text-slate-900">Overdue & Due Alerts</h4>
-                      </div>
-                      <span className="text-[10px] font-bold text-slate-500">
-                        {overdueMilestonesList.length} pending
-                      </span>
-                    </div>
+              {/* Lock Vault */}
+              {isPinRequired && (
+                <button
+                  type="button"
+                  onClick={handleLockVault}
+                  className="h-9 w-9 rounded-xl bg-amber-50 border border-amber-300 text-amber-800 flex items-center justify-center cursor-pointer"
+                  title="Lock Vault"
+                >
+                  <Lock className="w-4 h-4 text-amber-700" />
+                </button>
+              )}
 
-                    <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
-                      {overdueMilestonesList.length === 0 ? (
-                        <div className="text-center py-6 text-slate-400 text-xs">
-                          <CheckCircle2 className="w-6 h-6 text-emerald-500 mx-auto mb-1.5" />
-                          <span>All milestone payments are up to date! 🎉</span>
-                        </div>
-                      ) : (
-                        overdueMilestonesList.map((item, idx) => (
-                          <div key={idx} className="p-2.5 bg-rose-50/60 rounded-xl border border-rose-200/70 space-y-1.5">
-                            <div className="flex items-center justify-between">
-                              <span className="font-extrabold text-slate-900 text-xs truncate max-w-[170px]">
-                                {item.client.name}
-                              </span>
-                              <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-rose-100 text-rose-800">
-                                {item.daysOverdue > 0 ? `${item.daysOverdue}d Overdue` : 'Due Today'}
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between text-[11px]">
-                              <span className="text-slate-600 font-medium">
-                                {item.milestone.step_name || item.milestone.title}
-                              </span>
-                              <span className="font-mono font-black text-rose-900">
-                                ₹{(Number(item.milestone.amount) || 0).toLocaleString('en-IN')}
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-end gap-2 pt-1 border-t border-rose-100">
-                              {item.client.phone && (
-                                <a
-                                  href={`https://wa.me/${item.client.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
-                                    `Hello ${item.client.name}, this is a reminder regarding your pending installment for ${item.milestone.step_name || 'Booking'} of ₹${(item.milestone.amount || 0).toLocaleString('en-IN')}.`
-                                  )}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="px-2 py-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-extrabold text-[10px] rounded-lg border border-emerald-200 flex items-center gap-1"
-                                >
-                                  <Send className="w-2.5 h-2.5" /> WhatsApp
-                                </a>
-                              )}
-                              <button
-                                onClick={() => handleOpenCompletePaymentModal(item.record, item.milestone)}
-                                className="px-2.5 py-1 bg-emerald-600 text-white font-extrabold text-[10px] rounded-lg shadow-xs hover:bg-emerald-700 flex items-center gap-1"
-                              >
-                                <Check className="w-2.5 h-2.5" /> Mark Paid
-                              </button>
-                            </div>
-                          </div>
-                        ))
+              {/* Mobile More Actions (•••) Dropdown */}
+              <div className="relative" ref={moreMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsMoreMenuOpen(prev => !prev)}
+                  className="h-9 w-9 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 flex items-center justify-center cursor-pointer"
+                  title="More Tools"
+                >
+                  <MoreVertical className="w-4 h-4" />
+                </button>
+
+                <AnimatePresence>
+                  {isMoreMenuOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95, y: 5 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.95, y: 5 }}
+                      className="absolute right-0 mt-1 w-48 bg-white rounded-2xl border border-slate-200 shadow-xl py-1.5 z-40 space-y-0.5 text-xs font-bold font-sans"
+                    >
+                      <button
+                        onClick={() => {
+                          setIsMoreMenuOpen(false);
+                          exportCurrentFinanceToExcel(filteredRecords, clients);
+                        }}
+                        className="w-full px-3 py-2 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Export Excel (.xlsx)</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setIsMoreMenuOpen(false);
+                          setIsExcelMigrationModalOpen(true);
+                        }}
+                        className="w-full px-3 py-2 text-left text-emerald-800 hover:bg-emerald-50 flex items-center gap-2 cursor-pointer font-black"
+                      >
+                        <Upload className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Import Excel / CSV</span>
+                      </button>
+
+                      {activeTab === 'expenses' && (
+                        <button
+                          onClick={() => {
+                            setIsMoreMenuOpen(false);
+                            setShowAddExpenseModal(true);
+                          }}
+                          className="w-full px-3 py-2 text-left text-orange-700 hover:bg-orange-50 flex items-center gap-2 cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5 text-orange-600" />
+                          <span>Log New Expense</span>
+                        </button>
                       )}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
             </div>
 
-            {/* 📥 Compact Import Excel / CSV Button */}
-            <button
-              type="button"
-              onClick={() => setIsExcelMigrationModalOpen(true)}
-              className="p-2 rounded-xl bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 hover:border-emerald-300 shadow-2xs transition cursor-pointer flex items-center gap-1"
-              title="Import Clients & Finance from Legacy Excel / CSV Spreadsheet"
-            >
-              <Upload className="w-4 h-4 text-emerald-700" />
-            </button>
-
-            {/* 📤 Compact Export Finance to Excel */}
-            <button
-              type="button"
-              onClick={() => exportCurrentFinanceToExcel(filteredRecords, clients)}
-              className="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs transition cursor-pointer flex items-center gap-1"
-              title="Export Current Filtered Finance to Excel (.xlsx)"
-            >
-              <Download className="w-4 h-4 text-slate-600" />
-            </button>
-
-            {/* 🔐 Compact Re-lock Vault Button */}
-            {isPinRequired && (
-              <button
-                type="button"
-                onClick={handleLockVault}
-                className="p-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs transition cursor-pointer"
-                title="Lock Finance Vault"
-              >
-                <Lock className="w-4 h-4 text-amber-700" />
-              </button>
-            )}
-
-            {/* 📜 Compact Audit Log Trigger */}
-            <button
-              type="button"
-              onClick={() => setIsAuditDrawerOpen(true)}
-              className="p-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 hover:bg-slate-100 shadow-2xs transition cursor-pointer"
-              title="Finance Audit Stream"
-            >
-              <Clock className="w-4 h-4" />
-            </button>
           </div>
 
         </div>
@@ -2536,669 +2688,28 @@ export default function FinancePage() {
                 )}
               </div>
             ) : (
-              filteredRecords.map((record) => {
-                const isExpanded = expandedCards.has(record.id);
-                const client = record.client;
-                const milestones = record.milestones || [];
-                const finalTotal = record.final_total_amount || 0;
-                const recAmt = record.received_amount || 0;
-                const pendAmt = record.pending_amount || 0;
-                const handledBy = (client as any)?.handled_by || 'Unassigned';
-
-                // 🚨 CARD-LEVEL OVERDUE SUM
-                const clientOverdueSum = milestones
-                  .filter(m => m.due_date && m.due_date < todayStr && m.status !== 'completed' && m.status !== 'paid')
-                  .reduce((sum, m) => sum + (Number(m.amount) || 0), 0);
-
-                return (
-                  <motion.div
-                    key={record.id}
-                    layout
-                    className="bg-white rounded-3xl border border-slate-100 shadow-[0_2px_15px_rgba(0,0,0,0.03)] transition-all"
-                  >
-                    {/* ─── CLIENT HEADER ROW ─── */}
-                    <div 
-                      onClick={() => toggleCard(record.id)}
-                      className="p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 cursor-pointer hover:bg-slate-50/60 transition"
-                    >
-                      {/* Left: Avatar + Name + Tags + Handled By + Quotation Version */}
-                      <div className="flex items-center gap-3.5">
-                        <div className="w-11 h-11 rounded-full bg-purple-50 text-purple-600 font-bold text-sm flex items-center justify-center shrink-0 border border-purple-100">
-                          {client?.name ? client.name.slice(0, 2).toUpperCase() : <Users className="w-5 h-5" />}
-                        </div>
-
-                        <div>
-                          <div className="flex items-center gap-2.5 flex-wrap">
-                            <h3 className="text-base font-bold text-slate-900">
-                              {client?.name || 'Unnamed Client'}
-                            </h3>
-
-                            {/* 🚨 CARD-LEVEL OVERDUE DAYS & AMOUNT BADGE */}
-                            {clientOverdueSum > 0 && (() => {
-                              const maxDays = milestones
-                                .filter(m => m.due_date && m.due_date < todayStr && m.status !== 'completed' && m.status !== 'paid')
-                                .reduce((max, m) => {
-                                  const diff = Math.floor((new Date().getTime() - new Date(m.due_date!).getTime()) / (1000 * 60 * 60 * 24));
-                                  return Math.max(max, diff);
-                                }, 0);
-
-                              return (
-                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200 animate-pulse flex items-center gap-1 shadow-2xs">
-                                  <AlertTriangle className="w-3 h-3 text-rose-600 shrink-0" />
-                                  <span>⚠️ Overdue: <strong>₹{clientOverdueSum.toLocaleString('en-IN')}</strong> ({maxDays}d ago)</span>
-                                </span>
-                              );
-                            })()}
-
-                            {/* 👥 SLIM "HANDLED BY" TEAM ATTRIBUTION SELECTOR */}
-                            <div 
-                              onClick={(e) => e.stopPropagation()}
-                              className="relative inline-block"
-                            >
-                              {addingMemberForClientId === record.client_id ? (
-                                <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-xl p-1 shadow-sm">
-                                  <input
-                                    type="text"
-                                    placeholder="Enter member name..."
-                                    value={newMemberInputName}
-                                    onChange={(e) => setNewMemberInputName(e.target.value)}
-                                    onKeyDown={(e) => e.key === 'Enter' && handleAddNewTeamMember(record.client_id)}
-                                    className="px-2 py-0.5 text-[11px] font-bold text-slate-900 focus:outline-none w-32"
-                                    autoFocus
-                                  />
-                                  <button
-                                    onClick={() => handleAddNewTeamMember(record.client_id)}
-                                    className="p-1 bg-amber-600 text-white rounded-lg hover:bg-amber-700"
-                                  >
-                                    <Check className="w-3 h-3" />
-                                  </button>
-                                  <button
-                                    onClick={() => setAddingMemberForClientId(null)}
-                                    className="p-1 text-slate-400 hover:text-slate-600"
-                                  >
-                                    <X className="w-3 h-3" />
-                                  </button>
-                                </div>
-                              ) : (
-                                <div className="px-2 py-0.5 text-[11px] rounded-full inline-flex items-center gap-1.5 bg-slate-100/80 border border-slate-200/60 max-w-fit text-slate-700 font-medium transition hover:bg-slate-200/60">
-                                  <UserCheck className="w-3 h-3 text-slate-500" />
-                                  <span className="text-[10px] font-bold text-slate-500 uppercase">Handled By:</span>
-                                  <select
-                                    value={handledBy}
-                                    onChange={(e) => {
-                                      const val = e.target.value;
-                                      if (val === '__add_new__') {
-                                        setAddingMemberForClientId(record.client_id);
-                                        setNewMemberInputName('');
-                                      } else {
-                                        handleAssignTeamMember(record.client_id, val);
-                                      }
-                                    }}
-                                    className="bg-transparent text-[11px] font-bold text-slate-800 focus:outline-none cursor-pointer pr-1"
-                                  >
-                                    <option value="__add_new__">✨ + Add / Assign New Member</option>
-                                    <option value="Unassigned">Unassigned</option>
-                                    {teamMembersList.map(m => (
-                                      <option key={m} value={m}>{m}</option>
-                                    ))}
-                                  </select>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-3 text-xs text-slate-500 mt-1 flex-wrap font-medium">
-                            <span className="flex items-center gap-1 text-slate-600 font-bold">
-                              🏷️ {client?.event_type || 'Wedding Photography'}
-                            </span>
-                            <span>•</span>
-                            <span>
-                              Event Date: {client?.event_date ? new Date(client.event_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'TBD'}
-                            </span>
-                            {client?.phone && (
-                              <>
-                                <span>•</span>
-                                <span className="text-slate-600 font-mono font-medium">{client.phone}</span>
-                              </>
-                            )}
-                            {(client as any)?.city && (
-                              <>
-                                <span>•</span>
-                                <span className="text-slate-500 flex items-center gap-0.5">
-                                  <MapPin className="w-3 h-3 text-slate-400" /> {(client as any).city}
-                                </span>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Right: Dual Progress Bar + Action Buttons + Toggle */}
-                      <div className="flex items-center gap-4 justify-between lg:justify-end flex-wrap">
-                        
-                        {/* Dual Progress Bar */}
-                        <div className="w-48 text-right">
-                          <div className="flex justify-between text-[11px] font-bold mb-1">
-                            <span className="text-emerald-700 font-mono">Rec: ₹{recAmt.toLocaleString('en-IN')}</span>
-                            <span className="text-rose-600 font-mono">Pend: ₹{pendAmt.toLocaleString('en-IN')}</span>
-                          </div>
-
-                          {/* Dual colored bar */}
-                          <div className="w-full h-2 rounded-full bg-slate-100 flex overflow-hidden">
-                            <div 
-                              className="h-full bg-emerald-500 rounded-l-full"
-                              style={{ width: `${finalTotal > 0 ? (recAmt / finalTotal) * 100 : 0}%` }}
-                            />
-                            <div 
-                              className="h-full bg-rose-300 rounded-r-full"
-                              style={{ width: `${finalTotal > 0 ? (pendAmt / finalTotal) * 100 : 100}%` }}
-                            />
-                          </div>
-
-                          <span className="text-[10px] text-slate-400 font-medium block mt-0.5">
-                            Total: ₹{finalTotal.toLocaleString('en-IN')}
-                          </span>
-                        </div>
-
-                        {/* Record Payment Button */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setShowRecordPaymentModal({ open: true, client: record.client || undefined, financeRecord: record });
-                          }}
-                          className="px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition cursor-pointer active:scale-95 shadow-2xs whitespace-nowrap"
-                        >
-                          Record Payment
-                        </button>
-
-                        {/* Invoice Button */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setShowInvoiceModal({ open: true, client: record.client || undefined, financeRecord: record });
-                          }}
-                          className="px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition flex items-center gap-1.5 cursor-pointer active:scale-95 shadow-2xs whitespace-nowrap"
-                        >
-                          <FileText className="w-3.5 h-3.5 text-amber-700" />
-                          <span>Invoice</span>
-                        </button>
-
-                        {/* Three-dots Context Menu */}
-                        <div className="relative" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            type="button"
-                            onClick={() => setOpenMenuRecordId(openMenuRecordId === record.id ? null : record.id)}
-                            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
-                            title="More Actions"
-                          >
-                            <MoreVertical className="w-4 h-4" />
-                          </button>
-
-                          <AnimatePresence>
-                            {openMenuRecordId === record.id && (
-                              <motion.div
-                                initial={{ opacity: 0, scale: 0.95, y: 5 }}
-                                animate={{ opacity: 1, scale: 1, y: 0 }}
-                                exit={{ opacity: 0, scale: 0.95, y: 5 }}
-                                className="absolute right-0 mt-1 w-48 bg-white rounded-2xl border border-slate-200 shadow-xl py-1.5 z-30 space-y-0.5 text-xs font-bold font-sans"
-                              >
-                                <button
-                                  onClick={() => {
-                                    setOpenMenuRecordId(null);
-                                    handleOpenPricingEditModal(record);
-                                  }}
-                                  className="w-full px-3 py-2 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
-                                >
-                                  <Pencil className="w-3.5 h-3.5 text-slate-500" />
-                                  <span>Edit Pricing</span>
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setOpenMenuRecordId(null);
-                                    handleOpenQuotationModalForRecord(record);
-                                  }}
-                                  className="w-full px-3 py-2 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
-                                >
-                                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                                  <span>{record.has_final_quotation && record.final_quotation_version ? `Quotation: v${record.final_quotation_version}.0` : 'Select Final Quotation'}</span>
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setOpenMenuRecordId(null);
-                                    setShowInvoiceModal({ open: true, client: record.client || undefined, financeRecord: record });
-                                  }}
-                                  className="w-full px-3 py-2 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
-                                >
-                                  <FileText className="w-3.5 h-3.5 text-slate-500" />
-                                  <span>Download Invoice</span>
-                                </button>
-                                {record.client_id && (
-                                  <a
-                                    href={`/workspace/clients/${record.client_id}`}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="w-full px-3 py-2 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
-                                  >
-                                    <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
-                                    <span>Client Profile</span>
-                                  </a>
-                                )}
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-                        </div>
-
-                        {/* Round Chevron Toggle */}
-                        <div className="w-8 h-8 rounded-full border border-slate-200 text-slate-400 flex items-center justify-center hover:bg-slate-50">
-                          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* ─── EXPANDED CARD BODY: 2-COLUMN SPLIT ─── */}
-                    <AnimatePresence>
-                      {isExpanded && (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: 'auto' }}
-                          exit={{ opacity: 0, height: 0 }}
-                          className="border-t border-slate-100 p-5 sm:p-6 bg-white"
-                        >
-                          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                            
-                            {/* ══════════════════════════════════════════════
-                                LEFT COLUMN: PRICING DETAILS (5 Cols)
-                            ══════════════════════════════════════════════ */}
-                            <div className="lg:col-span-5 space-y-4 border-r-0 lg:border-r border-slate-100 lg:pr-6">
-                              <div className="flex items-center justify-between">
-                                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
-                                  Pricing Details
-                                </h4>
-
-                                {/* ✏️ EDIT PRICING BUTTON */}
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenPricingEditModal(record)}
-                                  className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-[11px] font-black flex items-center gap-1 transition cursor-pointer"
-                                >
-                                  <Pencil className="w-3 h-3 text-amber-700" /> Edit Pricing
-                                </button>
-                              </div>
-
-                              <div 
-                                onClick={() => handleOpenPricingEditModal(record)}
-                                className="space-y-2.5 text-xs cursor-pointer hover:opacity-90 transition"
-                                title="Click to edit pricing breakdown"
-                              >
-                                {/* Base Package Price */}
-                                <div className="flex items-center justify-between">
-                                  <span className="text-slate-600 font-medium">Base Package Price</span>
-                                  <span className="font-mono font-bold text-slate-900">
-                                    ₹{(Number(record.base_package_price) || 0).toLocaleString('en-IN')}
-                                  </span>
-                                </div>
-
-                                {/* Discount (Complimentary) */}
-                                <div className="flex items-center justify-between">
-                                  <span className="text-rose-500 font-bold">Discount (Complimentary)</span>
-                                  <span className="font-mono font-bold text-rose-500">
-                                    - ₹{(Number(record.discount_amount) || 0).toLocaleString('en-IN')}
-                                  </span>
-                                </div>
-
-                                {/* Accommodation Charges */}
-                                <div className="flex items-center justify-between">
-                                  <span className="text-slate-600 font-medium">Accommodation Charges</span>
-                                  <span className="font-mono font-bold text-slate-900">
-                                    ₹{(Number(record.accommodation_charges) || 0).toLocaleString('en-IN')}
-                                  </span>
-                                </div>
-
-                                {/* Travel Charges */}
-                                <div className="flex items-center justify-between">
-                                  <span className="text-slate-600 font-medium">Travel Charges</span>
-                                  <span className="font-mono font-bold text-slate-900">
-                                    ₹{(Number(record.travel_charges) || 0).toLocaleString('en-IN')}
-                                  </span>
-                                </div>
-
-                                {/* Additional Charges */}
-                                <div className="flex items-center justify-between">
-                                  <span className="text-slate-600 font-medium">Additional Charges</span>
-                                  <span className="font-mono font-bold text-slate-900">
-                                    ₹{(Number(record.additional_charges) || 0).toLocaleString('en-IN')}
-                                  </span>
-                                </div>
-
-                                <div className="border-t border-slate-100 pt-2.5 space-y-2">
-                                  {/* Subtotal (Gross Total) */}
-                                  <div className="flex items-center justify-between font-bold">
-                                    <span className="text-slate-800">Subtotal (Gross Total)</span>
-                                    <span className="font-mono text-slate-900">
-                                      ₹{(Number(record.subtotal_amount) || 0).toLocaleString('en-IN')}
-                                    </span>
-                                  </div>
-
-                                  {/* GST */}
-                                  <div className="flex items-center justify-between text-slate-500 font-medium">
-                                    <span>GST ({record.gst_rate || 0}%)</span>
-                                    <span className="font-mono">
-                                      ₹{(Number(record.gst_amount) || 0).toLocaleString('en-IN')}
-                                    </span>
-                                  </div>
-                                </div>
-
-                                {/* Final Net Investment Box (Peach/Cream Highlight Box) */}
-                                <div className="p-3.5 bg-orange-50/70 border border-orange-200/80 rounded-2xl flex items-center justify-between mt-4">
-                                  <div>
-                                    <span className="text-xs font-bold text-orange-900 block">Final Net Investment</span>
-                                    <span className="text-[10px] text-slate-500 font-medium">Inclusive of all Taxes & Fees</span>
-                                  </div>
-                                  <span className="text-lg font-mono font-black text-orange-600">
-                                    ₹{finalTotal.toLocaleString('en-IN')}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* ══════════════════════════════════════════════
-                                RIGHT COLUMN: PAYMENT TERMS & SCHEDULE (7 Cols)
-                            ══════════════════════════════════════════════ */}
-                            <div className="lg:col-span-7 space-y-4">
-                              <div className="flex items-center justify-between">
-                                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
-                                  Payment Terms & Schedule
-                                </h4>
-
-                                <button
-                                  type="button"
-                                  onClick={() => setShowAddStepModal({ open: true, recordId: record.id })}
-                                  className="px-3 py-1 bg-orange-50 hover:bg-orange-100 text-orange-700 text-xs font-bold rounded-xl border border-orange-200 flex items-center gap-1 cursor-pointer transition"
-                                >
-                                  + Add Step
-                                </button>
-                              </div>
-
-                              {/* Milestones Schedule Table */}
-                              {milestones.length === 0 ? (
-                                <div className="p-6 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-center text-xs text-slate-400 space-y-1">
-                                  <p className="font-bold text-slate-600">No installments scheduled yet.</p>
-                                  <p className="text-[11px]">Select a quotation above or click "+ Add Step" to schedule milestone payments.</p>
-                                </div>
-                              ) : (
-                                <div className="space-y-2.5">
-                                  {/* Table Column Headers (Desktop Only) */}
-                                  <div className="hidden md:grid grid-cols-12 gap-2 text-[10px] font-black uppercase text-slate-400 px-2">
-                                    <span className="col-span-3">Date</span>
-                                    <span className="col-span-4">Steps</span>
-                                    <span className="col-span-2 text-right">Amount</span>
-                                    <span className="col-span-2 text-center">Status & Mode</span>
-                                    <span className="col-span-1 text-right">Action</span>
-                                  </div>
-
-                                  {/* Milestone Rows */}
-                                  {milestones.map((ms) => {
-                                    const isPaid = ms.status === 'completed' || ms.status === 'paid' || (ms.status as string) === 'Completed';
-                                    const isOverdue = !isPaid && ms.due_date && ms.due_date < todayStr;
-                                    const overdueDays = isOverdue ? Math.max(1, Math.floor((new Date(todayStr).getTime() - new Date(ms.due_date!).getTime()) / (1000 * 60 * 60 * 24))) : 0;
-
-                                    return (
-                                      <div key={ms.id} className="space-y-2">
-                                        {/* Desktop Grid Row */}
-                                        <div
-                                          className={`hidden md:grid grid-cols-12 gap-2 items-center p-2.5 rounded-2xl transition border text-xs ${
-                                            isPaid
-                                              ? 'bg-emerald-50/40 border-emerald-100'
-                                              : isOverdue
-                                              ? 'bg-rose-50/40 border-rose-200'
-                                              : 'hover:bg-slate-50/80 border-slate-100'
-                                          }`}
-                                        >
-                                          {/* Date Field (Strictly ISO normalized YYYY-MM-DD) */}
-                                          <div className="col-span-3">
-                                            <input
-                                              type="date"
-                                              value={ms.due_date || ''}
-                                              onChange={(e) => handleMilestoneStepChange(record.id, ms.id, 'due_date', e.target.value)}
-                                              className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-xl text-[11px] font-medium text-slate-700 focus:outline-none focus:border-amber-500"
-                                            />
-                                            {isOverdue && (
-                                              <span className="text-[10px] font-black text-rose-600 flex items-center gap-0.5 mt-0.5 pl-0.5">
-                                                ⚠️ {overdueDays} Days Overdue
-                                              </span>
-                                            )}
-                                          </div>
-
-                                          {/* Step Name (3D Milestone Dropdown) */}
-                                          <div className="col-span-4">
-                                            <MilestoneStepDropdown
-                                              value={ms.step_name || ms.title || ''}
-                                              onChange={(newVal) => handleMilestoneStepChange(record.id, ms.id, 'step_name', newVal)}
-                                              templates={paymentMilestoneTemplates}
-                                              onAddTemplate={handleSaveNewMilestoneTemplate}
-                                              placeholder="Select Milestone"
-                                            />
-                                          </div>
-
-                                          {/* Amount */}
-                                          <div className="col-span-2 text-right">
-                                            <input
-                                              type="number"
-                                              value={ms.amount || 0}
-                                              onChange={(e) => handleMilestoneStepChange(record.id, ms.id, 'amount', Number(e.target.value))}
-                                              className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 text-right focus:outline-none focus:border-amber-500"
-                                            />
-                                          </div>
-
-                                          {/* 💳 STATUS & INLINE PAYMENT MODE BADGE */}
-                                          <div className="col-span-2 flex items-center justify-center gap-1.5 flex-wrap">
-                                            <button
-                                              type="button"
-                                              onClick={() => handleOpenCompletePaymentModal(record, ms)}
-                                              className={`px-2 py-0.5 text-xs font-medium rounded-full border transition cursor-pointer flex items-center gap-1 ${
-                                                isPaid
-                                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                                                  : isOverdue
-                                                  ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
-                                                  : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
-                                              }`}
-                                              title="Click to record/update payment status"
-                                            >
-                                              {isPaid ? (
-                                                <>✓ Completed</>
-                                              ) : isOverdue ? (
-                                                <span>⚠️ Overdue ({overdueDays}d)</span>
-                                              ) : (
-                                                'Pending'
-                                              )}
-                                            </button>
-
-                                            {/* Payment Mode Badge side-by-side with Completed */}
-                                            {isPaid && ms.payment_mode && (
-                                              <span className="px-2 py-0.5 text-xs font-semibold rounded bg-slate-100 text-slate-700 border border-slate-200 uppercase">
-                                                {ms.payment_mode}
-                                              </span>
-                                            )}
-                                          </div>
-
-                                          {/* Action / 3 Dots Menu */}
-                                          <div className="col-span-1 flex items-center justify-end relative">
-                                            <button
-                                              type="button"
-                                              onClick={() => setOpenActionMenuId(openActionMenuId === ms.id ? null : ms.id)}
-                                              className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
-                                            >
-                                              <MoreVertical className="w-4 h-4" />
-                                            </button>
-
-                                            {/* Dropdown Menu */}
-                                            {openActionMenuId === ms.id && (
-                                              <div className="absolute right-0 top-8 bg-white rounded-xl border border-slate-200 shadow-xl py-1.5 w-40 z-30 space-y-0.5 text-xs">
-                                                <button
-                                                  type="button"
-                                                  onClick={() => handleOpenCompletePaymentModal(record, ms)}
-                                                  className="w-full text-left px-3 py-1.5 hover:bg-slate-50 font-bold text-emerald-700 flex items-center gap-2"
-                                                >
-                                                  <CheckCircle2 className="w-3.5 h-3.5" /> Complete Payment
-                                                </button>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => handleOpenEditMilestone(record.id, ms)}
-                                                  className="w-full text-left px-3 py-1.5 hover:bg-slate-50 font-bold text-slate-700 flex items-center gap-2"
-                                                >
-                                                  <Pencil className="w-3.5 h-3.5" /> Edit Step
-                                                </button>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => handleDeleteMilestone(record.id, ms.id)}
-                                                  className="w-full text-left px-3 py-1.5 hover:bg-rose-50 font-bold text-rose-600 flex items-center gap-2"
-                                                >
-                                                  <Trash2 className="w-3.5 h-3.5" /> Delete
-                                                </button>
-                                              </div>
-                                            )}
-                                          </div>
-                                        </div>
-
-                                        {/* Mobile Native Card Layout (< md) */}
-                                        <div
-                                          className={`block md:hidden p-3 rounded-2xl border transition text-xs space-y-2.5 ${
-                                            isPaid
-                                              ? 'bg-emerald-50/30 border-emerald-100'
-                                              : isOverdue
-                                              ? 'bg-rose-50/40 border-rose-200'
-                                              : 'bg-slate-50/70 border-slate-200/70'
-                                          }`}
-                                        >
-                                          <div className="flex items-center justify-between gap-2">
-                                            <div className="flex-1">
-                                              <MilestoneStepDropdown
-                                                value={ms.step_name || ms.title || ''}
-                                                onChange={(newVal) => handleMilestoneStepChange(record.id, ms.id, 'step_name', newVal)}
-                                                templates={paymentMilestoneTemplates}
-                                                onAddTemplate={handleSaveNewMilestoneTemplate}
-                                                placeholder="Select Milestone"
-                                              />
-                                            </div>
-                                            <div className="flex items-center gap-1.5 shrink-0">
-                                              <button
-                                                type="button"
-                                                onClick={() => handleOpenCompletePaymentModal(record, ms)}
-                                                className={`px-2 py-0.5 text-[11px] font-bold rounded-full border transition flex items-center gap-1 ${
-                                                  isPaid
-                                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                                    : isOverdue
-                                                    ? 'bg-rose-50 text-rose-700 border-rose-200'
-                                                    : 'bg-amber-50 text-amber-700 border-amber-200'
-                                                }`}
-                                              >
-                                                {isPaid ? '✓ Done' : isOverdue ? `${overdueDays}d Late` : 'Pending'}
-                                              </button>
-                                              {isPaid && ms.payment_mode && (
-                                                <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-slate-100 text-slate-700 border border-slate-200 uppercase">
-                                                  {ms.payment_mode}
-                                                </span>
-                                              )}
-                                              <div className="relative">
-                                                <button
-                                                  type="button"
-                                                  onClick={() => setOpenActionMenuId(openActionMenuId === ms.id ? null : ms.id)}
-                                                  className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
-                                                >
-                                                  <MoreVertical className="w-3.5 h-3.5" />
-                                                </button>
-                                                {openActionMenuId === ms.id && (
-                                                  <div className="absolute right-0 top-7 bg-white rounded-xl border border-slate-200 shadow-xl py-1 w-36 z-30 space-y-0.5 text-xs font-bold">
-                                                    <button
-                                                      type="button"
-                                                      onClick={() => handleOpenCompletePaymentModal(record, ms)}
-                                                      className="w-full text-left px-2.5 py-1 text-emerald-700"
-                                                    >
-                                                      Complete
-                                                    </button>
-                                                    <button
-                                                      type="button"
-                                                      onClick={() => handleOpenEditMilestone(record.id, ms)}
-                                                      className="w-full text-left px-2.5 py-1 text-slate-700"
-                                                    >
-                                                      Edit
-                                                    </button>
-                                                    <button
-                                                      type="button"
-                                                      onClick={() => handleDeleteMilestone(record.id, ms.id)}
-                                                      className="w-full text-left px-2.5 py-1 text-rose-600"
-                                                    >
-                                                      Delete
-                                                    </button>
-                                                  </div>
-                                                )}
-                                              </div>
-                                            </div>
-                                          </div>
-
-                                          <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100">
-                                            <div className="flex-1">
-                                              <input
-                                                type="date"
-                                                value={ms.due_date || ''}
-                                                onChange={(e) => handleMilestoneStepChange(record.id, ms.id, 'due_date', e.target.value)}
-                                                className="w-full px-2 py-1 bg-white border border-slate-200 rounded-xl text-[11px] font-medium text-slate-700"
-                                              />
-                                            </div>
-                                            <div className="flex items-center gap-1 w-28">
-                                              <span className="text-xs font-mono font-bold text-slate-400">₹</span>
-                                              <input
-                                                type="number"
-                                                value={ms.amount || 0}
-                                                onChange={(e) => handleMilestoneStepChange(record.id, ms.id, 'amount', Number(e.target.value))}
-                                                className="w-full px-2 py-1 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 text-right"
-                                              />
-                                            </div>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
-
-                              {/* Bottom 3 Summary Cards */}
-                              <div className="grid grid-cols-3 gap-3 pt-3">
-                                {/* Fixed Amount */}
-                                <div className="p-3 bg-slate-50/80 rounded-2xl border border-slate-200/80 text-center">
-                                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">Fixed Amount</span>
-                                  <span className="font-mono font-bold text-sm text-slate-900 mt-0.5 block">
-                                    ₹{finalTotal.toLocaleString('en-IN')}
-                                  </span>
-                                </div>
-
-                                {/* Received Amount */}
-                                <div className="p-3 bg-emerald-50/70 rounded-2xl border border-emerald-200/80 text-center">
-                                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 block">Received Amount</span>
-                                  <span className="font-mono font-bold text-sm text-emerald-700 mt-0.5 block">
-                                    ₹{recAmt.toLocaleString('en-IN')}
-                                  </span>
-                                </div>
-
-                                {/* Pending Amount */}
-                                <div className="p-3 bg-rose-50/70 rounded-2xl border border-rose-200/80 text-center">
-                                  <span className="text-[10px] font-black uppercase tracking-wider text-rose-800 block">Pending Amount</span>
-                                  <span className="font-mono font-bold text-sm text-rose-600 mt-0.5 block">
-                                    ₹{pendAmt.toLocaleString('en-IN')}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </motion.div>
-                );
-              })
+              filteredRecords.map((record) => (
+                <ClientFinanceCard
+                  key={record.id}
+                  record={record}
+                  isExpanded={expandedCards.has(record.id)}
+                  onToggle={() => toggleCard(record.id)}
+                  todayStr={todayStr}
+                  teamMembersList={teamMembersList}
+                  paymentMilestoneTemplates={paymentMilestoneTemplates}
+                  onAssignTeamMember={handleAssignTeamMember}
+                  onAddNewTeamMember={handleAddNewTeamMember}
+                  onOpenPricingEditModal={handleOpenPricingEditModal}
+                  onOpenRecordPayment={(rec) => setShowRecordPaymentModal({ open: true, client: rec.client || undefined, financeRecord: rec })}
+                  onOpenInvoiceModal={(rec) => setShowInvoiceModal({ open: true, client: rec.client || undefined, financeRecord: rec })}
+                  onOpenCompletePaymentModal={handleOpenCompletePaymentModal}
+                  onOpenEditMilestone={handleOpenEditMilestone}
+                  onDeleteMilestone={handleDeleteMilestone}
+                  onMilestoneChange={handleMilestoneStepChange}
+                  onAddMilestoneStep={(recordId) => setShowAddStepModal({ open: true, recordId })}
+                  onSaveNewTemplate={handleSaveNewMilestoneTemplate}
+                />
+              ))
             )}
           </div>
         )}
@@ -3229,73 +2740,124 @@ export default function FinancePage() {
                   <p className="text-[11px] text-slate-400">Click "+ Log Expense" above to record crew payouts or travel expenses.</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500">
-                        <th className="pb-3 px-2">Category</th>
-                        <th className="pb-3 px-2">Title / Description</th>
-                        <th className="pb-3 px-2">Paid To</th>
-                        <th className="pb-3 px-2">Date</th>
-                        <th className="pb-3 px-2">Mode</th>
-                        <th className="pb-3 px-2 text-right">Amount (₹)</th>
-                        <th className="pb-3 px-2 text-center">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {filteredExpenses.map((exp) => (
-                        <tr key={exp.id} className="hover:bg-slate-50/80 transition">
-                          <td className="py-3 px-2">
-                            <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-orange-50 text-orange-800 border border-orange-200">
-                              {exp.category}
+                <>
+                  <div className="hidden md:block overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500">
+                          <th className="pb-3 px-2">Category</th>
+                          <th className="pb-3 px-2">Title / Description</th>
+                          <th className="pb-3 px-2">Paid To</th>
+                          <th className="pb-3 px-2">Date</th>
+                          <th className="pb-3 px-2">Mode</th>
+                          <th className="pb-3 px-2 text-right">Amount (₹)</th>
+                          <th className="pb-3 px-2 text-center">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredExpenses.map((exp) => (
+                          <tr key={exp.id} className="hover:bg-slate-50/80 transition">
+                            <td className="py-3 px-2">
+                              <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-orange-50 text-orange-800 border border-orange-200">
+                                {exp.category}
+                              </span>
+                            </td>
+                            <td className="py-3 px-2 font-bold text-slate-900">{exp.title}</td>
+                            <td className="py-3 px-2 text-slate-600 font-medium">{exp.paid_to || '—'}</td>
+                            <td className="py-3 px-2 text-slate-500 font-mono">
+                              {exp.payment_date ? new Date(exp.payment_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                            </td>
+                            <td className="py-3 px-2">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">
+                                {exp.payment_mode || 'UPI'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-2 text-right font-mono font-black text-slate-900 text-sm">
+                              ₹{(Number(exp.amount) || 0).toLocaleString('en-IN')}
+                            </td>
+                            <td className="py-3 px-2 text-center">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  onClick={() => handleOpenEditExpense(exp)}
+                                  className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition cursor-pointer"
+                                  title="Edit Expense"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => setDeleteConfirmExpenseId(exp.id)}
+                                  className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg transition cursor-pointer"
+                                  title="Delete Expense"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Mobile Stacked Expense Cards (< md) */}
+                  <div className="block md:hidden space-y-2.5">
+                    {filteredExpenses.map((exp) => (
+                      <div key={exp.id} className="p-3 bg-slate-50/80 rounded-2xl border border-slate-200/80 space-y-2 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black bg-orange-50 text-orange-800 border border-orange-200 truncate max-w-[170px]">
+                            {exp.category}
+                          </span>
+                          <span className="font-mono font-black text-slate-900 text-sm">
+                            ₹{(Number(exp.amount) || 0).toLocaleString('en-IN')}
+                          </span>
+                        </div>
+
+                        <div className="flex items-baseline justify-between gap-2 text-slate-700">
+                          <span className="font-bold text-slate-900 truncate">{exp.title}</span>
+                          <span className="text-[11px] text-slate-500 font-medium shrink-0">Paid to: {exp.paid_to || '—'}</span>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-slate-200/60 text-[11px] text-slate-500">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono">
+                              {exp.payment_date ? new Date(exp.payment_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
                             </span>
-                          </td>
-                          <td className="py-3 px-2 font-bold text-slate-900">{exp.title}</td>
-                          <td className="py-3 px-2 text-slate-600 font-medium">{exp.paid_to || '—'}</td>
-                          <td className="py-3 px-2 text-slate-500 font-mono">
-                            {exp.payment_date ? new Date(exp.payment_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
-                          </td>
-                          <td className="py-3 px-2">
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">
+                            <span className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 font-bold uppercase text-[9px]">
                               {exp.payment_mode || 'UPI'}
                             </span>
-                          </td>
-                          <td className="py-3 px-2 text-right font-mono font-black text-slate-900 text-sm">
-                            ₹{(Number(exp.amount) || 0).toLocaleString('en-IN')}
-                          </td>
-                          <td className="py-3 px-2 text-center">
-                            <div className="flex items-center justify-center gap-1.5">
-                              <button
-                                onClick={() => handleOpenEditExpense(exp)}
-                                className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition"
-                                title="Edit Expense"
-                              >
-                                <Pencil className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={() => setDeleteConfirmExpenseId(exp.id)}
-                                className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg transition"
-                                title="Delete Expense"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => handleOpenEditExpense(exp)}
+                              className="p-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg transition"
+                              title="Edit Expense"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => setDeleteConfirmExpenseId(exp.id)}
+                              className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-lg transition"
+                              title="Delete Expense"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
               )}
             </div>
           </div>
         )}
 
         {/* ─────────────────────────────────────────────────────────────
-            TAB 3: FINANCE ANALYTICS & 3D DASHBOARD
+            TAB 3: FINANCE ANALYTICS & INTERACTIVE DASHBOARD
         ───────────────────────────────────────────────────────────── */}
         {activeTab === 'analytics' && (
-          <FinanceAnalyticsDashboard
+          <FinanceAnalyticsView
             records={filteredRecords as any}
             expenses={filteredExpenses as any}
             clients={clients}
@@ -3304,7 +2866,6 @@ export default function FinancePage() {
             onOpenCompletePaymentModal={handleOpenCompletePaymentModal}
             onOpenRecordPayment={(rec) => setShowRecordPaymentModal({ open: true, client: rec.client || undefined, financeRecord: rec })}
             onOpenInvoice={(rec) => setShowInvoiceModal({ open: true, client: rec.client || undefined, financeRecord: rec })}
-            onOpenQuotationModal={handleOpenQuotationModalForRecord}
           />
         )}
 
@@ -3315,20 +2876,25 @@ export default function FinancePage() {
       ───────────────────────────────────────────────────────────── */}
       <AnimatePresence>
         {showPricingEditModal.open && showPricingEditModal.record && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl p-6 sm:p-7 max-w-lg w-full border border-slate-100 shadow-2xl space-y-4 font-sans"
+              className="bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-6 max-w-md w-full border border-slate-200 shadow-2xl space-y-3.5 font-sans max-h-[92vh] overflow-y-auto"
             >
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
                 <div>
-                  <h3 className="text-base font-black text-slate-900">Edit Pricing Breakdown</h3>
-                  <p className="text-xs text-slate-500 font-medium">For client: {showPricingEditModal.record.client?.name}</p>
+                  <h3 className="text-sm sm:text-base font-black text-slate-900">Edit Pricing Breakdown</h3>
+                  <p className="text-[11px] sm:text-xs text-slate-500 font-medium truncate max-w-[240px]">
+                    Client: {showPricingEditModal.record.client?.name}
+                  </p>
                 </div>
-                <button onClick={() => setShowPricingEditModal({ open: false })} className="p-1 text-slate-400 hover:text-slate-600">
-                  <X className="w-5 h-5" />
+                <button 
+                  onClick={() => setShowPricingEditModal({ open: false })} 
+                  className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition"
+                >
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
@@ -3345,67 +2911,67 @@ export default function FinancePage() {
 
                 return (
                   <div className="space-y-3 text-xs">
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 gap-2.5">
                       <div>
-                        <label className="font-bold text-slate-700 block mb-1">Base Package Price (₹)</label>
+                        <label className="text-[11px] font-semibold text-slate-600 block mb-1">Base Package (₹)</label>
                         <input
                           type="number"
                           value={pricingEditFormData.base_package_price}
                           onChange={(e) => setPricingEditFormData(prev => ({ ...prev, base_package_price: e.target.value }))}
-                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold text-slate-900"
+                          className="w-full h-9 px-2.5 bg-slate-50 border border-slate-200 rounded-lg font-mono font-bold text-slate-900 text-xs sm:text-sm focus:outline-none focus:bg-white focus:border-amber-500 transition"
                         />
                       </div>
 
                       <div>
-                        <label className="font-bold text-rose-600 block mb-1">Discount / Complimentary (₹)</label>
+                        <label className="text-[11px] font-semibold text-rose-600 block mb-1">Discount (₹)</label>
                         <input
                           type="number"
                           value={pricingEditFormData.discount_amount}
                           onChange={(e) => setPricingEditFormData(prev => ({ ...prev, discount_amount: e.target.value }))}
-                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold text-rose-600"
+                          className="w-full h-9 px-2.5 bg-rose-50/50 border border-rose-200 rounded-lg font-mono font-bold text-rose-600 text-xs sm:text-sm focus:outline-none focus:bg-white focus:border-rose-500 transition"
                         />
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 gap-2.5">
                       <div>
-                        <label className="font-bold text-slate-700 block mb-1">Accommodation Charges (₹)</label>
+                        <label className="text-[11px] font-semibold text-slate-600 block mb-1">Accommodation (₹)</label>
                         <input
                           type="number"
                           value={pricingEditFormData.accommodation_charges}
                           onChange={(e) => setPricingEditFormData(prev => ({ ...prev, accommodation_charges: e.target.value }))}
-                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold text-slate-900"
+                          className="w-full h-9 px-2.5 bg-slate-50 border border-slate-200 rounded-lg font-mono font-bold text-slate-900 text-xs sm:text-sm focus:outline-none focus:bg-white focus:border-amber-500 transition"
                         />
                       </div>
 
                       <div>
-                        <label className="font-bold text-slate-700 block mb-1">Traveling Charges (₹)</label>
+                        <label className="text-[11px] font-semibold text-slate-600 block mb-1">Travel Charges (₹)</label>
                         <input
                           type="number"
                           value={pricingEditFormData.travel_charges}
                           onChange={(e) => setPricingEditFormData(prev => ({ ...prev, travel_charges: e.target.value }))}
-                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold text-slate-900"
+                          className="w-full h-9 px-2.5 bg-slate-50 border border-slate-200 rounded-lg font-mono font-bold text-slate-900 text-xs sm:text-sm focus:outline-none focus:bg-white focus:border-amber-500 transition"
                         />
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 gap-2.5">
                       <div>
-                        <label className="font-bold text-slate-700 block mb-1">Additional Charges (₹)</label>
+                        <label className="text-[11px] font-semibold text-slate-600 block mb-1">Additional (₹)</label>
                         <input
                           type="number"
                           value={pricingEditFormData.additional_charges}
                           onChange={(e) => setPricingEditFormData(prev => ({ ...prev, additional_charges: e.target.value }))}
-                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold text-slate-900"
+                          className="w-full h-9 px-2.5 bg-slate-50 border border-slate-200 rounded-lg font-mono font-bold text-slate-900 text-xs sm:text-sm focus:outline-none focus:bg-white focus:border-amber-500 transition"
                         />
                       </div>
 
                       <div>
-                        <label className="font-bold text-slate-700 block mb-1">GST Rate (%)</label>
+                        <label className="text-[11px] font-semibold text-slate-600 block mb-1">GST Rate</label>
                         <select
                           value={pricingEditFormData.gst_rate}
                           onChange={(e) => setPricingEditFormData(prev => ({ ...prev, gst_rate: Number(e.target.value) }))}
-                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900"
+                          className="w-full h-9 px-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-slate-800 text-xs sm:text-sm focus:outline-none focus:bg-white focus:border-amber-500 transition"
                         >
                           <option value={0}>0% (No GST)</option>
                           <option value={5}>5% GST</option>
@@ -3417,31 +2983,34 @@ export default function FinancePage() {
                     </div>
 
                     {/* Live Calculated Highlight Card */}
-                    <div className="p-3.5 bg-orange-50/70 border border-orange-200 rounded-2xl space-y-1 mt-2">
-                      <div className="flex justify-between text-slate-600 font-bold">
-                        <span>Calculated Subtotal:</span>
-                        <span className="font-mono text-slate-900">₹{sub.toLocaleString('en-IN')}</span>
+                    <div className="p-3 bg-orange-50/80 border border-orange-200/80 rounded-xl space-y-1 mt-1 text-xs">
+                      <div className="flex justify-between text-slate-600">
+                        <span className="font-medium">Subtotal:</span>
+                        <span className="font-mono font-bold text-slate-900">₹{sub.toLocaleString('en-IN')}</span>
                       </div>
-                      <div className="flex justify-between text-slate-600 font-medium">
-                        <span>GST Amount ({pricingEditFormData.gst_rate}%):</span>
-                        <span className="font-mono text-slate-900">₹{gst.toLocaleString('en-IN')}</span>
+                      <div className="flex justify-between text-slate-600">
+                        <span className="font-medium">GST Amount ({pricingEditFormData.gst_rate}%):</span>
+                        <span className="font-mono font-bold text-slate-900">₹{gst.toLocaleString('en-IN')}</span>
                       </div>
-                      <div className="flex justify-between text-orange-950 font-black text-sm pt-1 border-t border-orange-200">
+                      <div className="flex justify-between text-orange-950 font-black text-xs sm:text-sm pt-1 border-t border-orange-200">
                         <span>Final Net Investment:</span>
-                        <span className="font-mono text-orange-600">₹{tot.toLocaleString('en-IN')}</span>
+                        <span className="font-mono text-orange-700">₹{tot.toLocaleString('en-IN')}</span>
                       </div>
                     </div>
 
-                    <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                    {/* Action Buttons */}
+                    <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
                       <button
+                        type="button"
                         onClick={() => setShowPricingEditModal({ open: false })}
-                        className="px-4 py-2 bg-slate-100 text-slate-600 font-bold rounded-xl cursor-pointer"
+                        className="flex-1 h-9 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
                       >
                         Cancel
                       </button>
                       <button
+                        type="button"
                         onClick={handleSavePricingBreakdown}
-                        className="px-4 py-2 bg-orange-500 hover:bg-orange-600 font-black text-white rounded-xl shadow-xs cursor-pointer"
+                        className="flex-1 h-9 bg-orange-500 hover:bg-orange-600 font-black text-white text-xs rounded-xl shadow-xs transition cursor-pointer"
                       >
                         Save Pricing Changes
                       </button>

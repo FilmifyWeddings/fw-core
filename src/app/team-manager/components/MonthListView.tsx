@@ -93,6 +93,7 @@ export default function MonthListView({
   const [statusFilter, setStatusFilter] = useState<'all' | 'unassigned' | 'fully_assigned' | 'overnight'>('all');
   const [selectedPmFilter, setSelectedPmFilter] = useState<string>('all');
   const [selectedMemberFilter, setSelectedMemberFilter] = useState<string>('all');
+  const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState<boolean>(false);
 
   const now = new Date();
   const currentMonthYearId = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -231,6 +232,13 @@ export default function MonthListView({
     };
   }, [projects, teamMembers, searchQuery, selectedRoleFilter, statusFilter, selectedPmFilter, selectedMemberFilter, currentMonthYearId]);
 
+  const totalEventsCount = useMemo(() => {
+    let count = tbdEvents.length;
+    Object.values(activeMonthGroups).forEach(arr => count += arr.length);
+    Object.values(pastMonthGroups).forEach(arr => count += arr.length);
+    return count;
+  }, [tbdEvents, activeMonthGroups, pastMonthGroups]);
+
   const toggleMonth = (monthKey: string) => {
     setCollapsedMonths((prev) => ({ ...prev, [monthKey]: !prev[monthKey] }));
   };
@@ -238,85 +246,138 @@ export default function MonthListView({
   return (
     <div className="space-y-6 select-none font-sans">
       
-      {/* ─── SMART FILTER SUITE TOOLBAR ─── */}
-      <div className="bg-white/95 backdrop-blur-md p-3.5 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-wrap items-center justify-between gap-3">
-        {/* Status Pills */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
-          <button
-            onClick={() => setStatusFilter('all')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer shrink-0 ${
-              statusFilter === 'all'
-                ? 'bg-slate-950 text-white shadow-xs'
-                : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
-            }`}
-          >
-            All Events
-          </button>
+      {/* ─── SMART COMPACT FILTER SUITE TOOLBAR ─── */}
+      <div className="bg-white/95 backdrop-blur-md px-3 py-2 rounded-2xl border border-slate-200/90 shadow-2xs flex items-center justify-between gap-2 relative">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+            <span className="text-xs font-black text-slate-800 tracking-tight">Month Register</span>
+            <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.2 rounded-md">
+              {totalEventsCount} Events
+            </span>
+          </div>
 
-          <button
-            onClick={() => setStatusFilter('unassigned')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-black transition flex items-center gap-1.5 cursor-pointer shrink-0 ${
-              statusFilter === 'unassigned'
-                ? 'bg-rose-600 text-white shadow-xs'
-                : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200/80'
-            }`}
-          >
-            <span className="w-2 h-2 rounded-full bg-rose-500" />
-            <span>🔴 Unassigned Only</span>
-          </button>
-
-          <button
-            onClick={() => setStatusFilter('fully_assigned')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-black transition flex items-center gap-1.5 cursor-pointer shrink-0 ${
-              statusFilter === 'fully_assigned'
-                ? 'bg-emerald-600 text-white shadow-xs'
-                : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80'
-            }`}
-          >
-            <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span>🟢 Fully Assigned</span>
-          </button>
-
-          <button
-            onClick={() => setStatusFilter('overnight')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-black transition flex items-center gap-1.5 cursor-pointer shrink-0 ${
-              statusFilter === 'overnight'
-                ? 'bg-indigo-600 text-white shadow-xs'
-                : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80'
-            }`}
-          >
-            <Moon className="w-3.5 h-3.5 text-indigo-600" />
-            <span>🌙 Overnight Shoots</span>
-          </button>
+          {/* Active Filter Indicators */}
+          {(statusFilter !== 'all' || selectedPmFilter !== 'all' || selectedMemberFilter !== 'all') && (
+            <div className="flex items-center gap-1 overflow-hidden">
+              {statusFilter !== 'all' && (
+                <span className="px-1.5 py-0.2 rounded bg-indigo-50 text-indigo-700 text-[9px] font-bold border border-indigo-200 shrink-0">
+                  {statusFilter === 'unassigned' ? 'Unassigned' : statusFilter === 'fully_assigned' ? 'Assigned' : 'Overnight'}
+                </span>
+              )}
+              {selectedPmFilter !== 'all' && (
+                <span className="px-1.5 py-0.2 rounded bg-amber-50 text-amber-800 text-[9px] font-bold border border-amber-200 truncate max-w-[70px]">
+                  PM: {selectedPmFilter}
+                </span>
+              )}
+              {selectedMemberFilter !== 'all' && (
+                <span className="px-1.5 py-0.2 rounded bg-purple-50 text-purple-800 text-[9px] font-bold border border-purple-200 truncate max-w-[70px]">
+                  Crew: {teamMembers.find(m => m.id === selectedMemberFilter)?.name || 'Filtered'}
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Dropdown Filters: Project Manager & Crew Member */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* PM Filter */}
-          {projectManagers.length > 0 && (
-            <select
-              value={selectedPmFilter}
-              onChange={(e) => setSelectedPmFilter(e.target.value)}
-              className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer shadow-2xs"
-            >
-              <option value="all">🔍 Filter by PM (All)</option>
-              {projectManagers.map(pm => (
-                <option key={pm} value={pm}>{pm}</option>
-              ))}
-            </select>
-          )}
-
-          {/* Member Filter */}
-          <select
-            value={selectedMemberFilter}
-            onChange={(e) => setSelectedMemberFilter(e.target.value)}
-            className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer shadow-2xs"
+        {/* SINGLE FILTER BUTTON */}
+        <div className="relative shrink-0">
+          <button
+            type="button"
+            onClick={() => setIsFilterDropdownOpen(!isFilterDropdownOpen)}
+            className={`h-6.5 px-2.5 rounded-lg text-[10px] font-bold transition flex items-center gap-1.5 cursor-pointer border shadow-2xs ${
+              statusFilter !== 'all' || selectedPmFilter !== 'all' || selectedMemberFilter !== 'all'
+                ? 'bg-indigo-50 text-indigo-700 border-indigo-300'
+                : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+            }`}
           >
-            <option value="all">👤 Filter by Crew (All)</option>
-            {teamMembers.map(m => (
-              <option key={m.id} value={m.id}>{m.name || 'Member'}</option>
-            ))}
-          </select>
+            <Filter className="w-3 h-3 text-slate-500" />
+            <span>Filter</span>
+            {(statusFilter !== 'all' || selectedPmFilter !== 'all' || selectedMemberFilter !== 'all') && (
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-pulse" />
+            )}
+            <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform duration-200 ${isFilterDropdownOpen ? 'rotate-180' : ''}`} />
+          </button>
+
+          {/* 3D DROPDOWN POPOVER FOR FILTERS */}
+          {isFilterDropdownOpen && (
+            <>
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setIsFilterDropdownOpen(false)}
+              />
+              <div className="absolute right-0 top-full mt-1.5 z-50 w-52 bg-white rounded-xl border border-slate-200 shadow-xl p-2.5 space-y-2 text-slate-800 animate-in fade-in zoom-in-95 duration-150">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-1">
+                  <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">
+                    Filter Options
+                  </span>
+                  {(statusFilter !== 'all' || selectedPmFilter !== 'all' || selectedMemberFilter !== 'all') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStatusFilter('all');
+                        setSelectedPmFilter('all');
+                        setSelectedMemberFilter('all');
+                      }}
+                      className="text-[9px] font-bold text-rose-500 hover:underline cursor-pointer"
+                    >
+                      Reset All
+                    </button>
+                  )}
+                </div>
+
+                {/* 1. Status Filter Dropdown */}
+                <div className="space-y-0.5">
+                  <label className="text-[9px] font-extrabold uppercase text-slate-500 tracking-wider block">
+                    Event Status
+                  </label>
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as any)}
+                    className="w-full h-6.5 px-2 bg-slate-50 border border-slate-200 rounded-md text-[11px] font-semibold text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                  >
+                    <option value="all">All Events</option>
+                    <option value="unassigned">🔴 Unassigned Only</option>
+                    <option value="fully_assigned">🟢 Fully Assigned</option>
+                    <option value="overnight">🌙 Overnight Shoots</option>
+                  </select>
+                </div>
+
+                {/* 2. Project Manager Dropdown */}
+                <div className="space-y-0.5">
+                  <label className="text-[9px] font-extrabold uppercase text-slate-500 tracking-wider block">
+                    Project Manager
+                  </label>
+                  <select
+                    value={selectedPmFilter}
+                    onChange={(e) => setSelectedPmFilter(e.target.value)}
+                    className="w-full h-6.5 px-2 bg-slate-50 border border-slate-200 rounded-md text-[11px] font-semibold text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                  >
+                    <option value="all">All PMs</option>
+                    {projectManagers.map(pm => (
+                      <option key={pm} value={pm}>{pm}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 3. Crew Member Dropdown */}
+                <div className="space-y-0.5">
+                  <label className="text-[9px] font-extrabold uppercase text-slate-500 tracking-wider block">
+                    Crew Member
+                  </label>
+                  <select
+                    value={selectedMemberFilter}
+                    onChange={(e) => setSelectedMemberFilter(e.target.value)}
+                    className="w-full h-6.5 px-2 bg-slate-50 border border-slate-200 rounded-md text-[11px] font-semibold text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                  >
+                    <option value="all">All Crew</option>
+                    {teamMembers.map(m => (
+                      <option key={m.id} value={m.id}>{m.name || 'Member'}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -497,33 +558,33 @@ export default function MonthListView({
           return (
             <div
               key={monthKey}
-              className="bg-[#FAF8F2] rounded-3xl border border-amber-200/80 p-4 md:p-6 space-y-4 shadow-sm"
+              className="bg-[#FAF8F2] rounded-3xl border border-amber-200/80 p-2.5 sm:p-4 space-y-3 shadow-sm"
             >
-              {/* MONTH HEADER ACCORDION BAR - LUXURY WARM INDIGO/AMBER */}
+              {/* MONTH HEADER ACCORDION BAR - COMPACT LIGHTWEIGHT */}
               <div
                 onClick={() => toggleMonth(monthKey)}
-                className="flex items-center justify-between bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 text-white px-5 py-3.5 rounded-2xl border border-slate-800 cursor-pointer hover:border-amber-400/60 transition shadow-md select-none"
+                className="flex items-center justify-between bg-slate-900 hover:bg-slate-800 text-white px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl border border-slate-800 cursor-pointer transition shadow-xs select-none"
               >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-white/10 text-amber-300 flex items-center justify-center font-black border border-white/10 shadow-inner">
-                    <Calendar className="w-5 h-5 text-amber-300" />
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-white/10 text-amber-300 flex items-center justify-center font-bold border border-white/10">
+                    <Calendar className="w-3.5 h-3.5 text-amber-300" />
                   </div>
                   <div>
-                    <h3 className="text-base md:text-lg font-black text-white tracking-tight">
+                    <h3 className="text-xs sm:text-sm font-bold text-white tracking-tight leading-none">
                       {monthKey}
                     </h3>
-                    <span className="text-xs font-bold text-amber-200/80">
+                    <span className="text-[10px] font-medium text-amber-200/80 block mt-0.5 leading-none">
                       {items.length} Sub-Event{items.length === 1 ? '' : 's'} Upcoming
                     </span>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3">
-                  <span className="px-3 py-1 rounded-full bg-white/10 text-amber-200 text-xs font-black border border-white/10 backdrop-blur-sm">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] px-2 py-0.5 rounded-md bg-white/10 text-amber-200 font-bold border border-white/10 backdrop-blur-sm">
                     {items.length} Events
                   </span>
                   <ChevronDown
-                    className={`w-5 h-5 text-amber-200 transition-transform duration-200 ${
+                    className={`w-4 h-4 text-amber-200 transition-transform duration-200 ${
                       isCollapsed ? 'rotate-180' : ''
                     }`}
                   />
@@ -532,7 +593,7 @@ export default function MonthListView({
 
               {/* MONTH EVENTS LIST */}
               {!isCollapsed && (
-                <div className="space-y-4 pt-1">
+                <div className="space-y-3 pt-1">
                   {items.map(({ subEvent, project, dateObj }) => {
                     const projectGradient = getGradientByProjectId(project.id || project.client_name);
 
@@ -558,56 +619,56 @@ export default function MonthListView({
                     return (
                       <div
                         key={subEvent.id}
-                        className="bg-white rounded-2xl border-2 border-amber-200/80 hover:border-amber-400 shadow-xs hover:shadow-md transition-all p-5 flex flex-col lg:flex-row items-stretch gap-5"
+                        className="bg-white rounded-xl border border-amber-200/80 hover:border-amber-300 shadow-2xs transition-all p-3 sm:p-4 flex flex-col lg:flex-row items-stretch gap-3 sm:gap-4"
                       >
                         {/* DATE BADGE COLUMN */}
                         <div
-                          className={`${projectGradient} w-full lg:w-32 rounded-xl p-3.5 shrink-0 flex lg:flex-col items-center justify-between text-center text-white`}
+                          className={`${projectGradient} w-full lg:w-28 rounded-xl px-3 py-2 lg:p-2.5 shrink-0 flex lg:flex-col items-center justify-between text-center text-white`}
                         >
                           <div className="flex lg:flex-col items-center gap-2 lg:gap-0">
-                            <span className="text-xs font-bold text-white/80 uppercase tracking-wider">
+                            <span className="text-[10px] sm:text-xs font-bold text-white/80 uppercase tracking-wider">
                               {dayName}
                             </span>
-                            <span className="text-2xl lg:text-3xl font-black text-white leading-none my-1">
+                            <span className="text-lg lg:text-2xl font-black text-white leading-none my-0.5 sm:my-1">
                               {dayNumber}
                             </span>
-                            <span className="text-xs font-black text-white/90 uppercase tracking-wider">
+                            <span className="text-[10px] sm:text-xs font-extrabold text-white/90 uppercase tracking-wider">
                               {monthAbbr} {yearStr}
                             </span>
                           </div>
-                          <div className="px-2.5 py-1 rounded-full bg-white/20 backdrop-blur-md text-[10px] font-black border border-white/20 mt-1">
+                          <div className="px-2 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-[9px] font-bold border border-white/20 mt-0.5">
                             {assignedCount}/{totalSlots} Crew
                           </div>
                         </div>
 
                         {/* MAIN CONTENT AREA */}
-                        <div className="flex-1 space-y-3.5">
+                        <div className="flex-1 space-y-2.5 min-w-0">
                           {/* HEADER: CLIENT NAME & SUB EVENT TITLE */}
-                          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-100 pb-3">
-                            <div className="flex items-center gap-3 flex-wrap">
-                              <span className="text-amber-950 font-black text-sm md:text-base tracking-tight">
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-100 pb-2">
+                            <div className="flex items-center gap-2 flex-wrap min-w-0">
+                              <span className="text-amber-950 font-black text-xs sm:text-sm tracking-tight truncate">
                                 {project.client_name}
                               </span>
 
-                              <span className="text-stone-300 text-sm font-light select-none">·</span>
+                              <span className="text-stone-300 text-xs font-light select-none">·</span>
 
-                              <h4 className="text-sm md:text-base font-bold text-indigo-700 tracking-tight">
+                              <h4 className="text-xs sm:text-sm font-bold text-indigo-700 tracking-tight truncate">
                                 {subEvent.event_title}
                               </h4>
 
                               {isOvernightShoot && (
-                                <span className="px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 font-extrabold text-[10px] flex items-center gap-1">
-                                  <Moon className="w-3 h-3" />
+                                <span className="px-1.5 py-0.2 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 font-extrabold text-[9px] flex items-center gap-1">
+                                  <Moon className="w-2.5 h-2.5" />
                                   <span>Overnight</span>
                                 </span>
                               )}
                             </div>
 
                             {/* LOCATION & TIME */}
-                            <div className="flex items-center gap-3 text-xs font-bold text-stone-600 flex-wrap">
+                            <div className="flex items-center gap-2 text-[11px] font-medium text-stone-600 flex-wrap">
                               {subEvent.roll_call_time && (
-                                <div className="flex items-center gap-1.5 text-stone-800 bg-amber-50/80 px-3 py-1.5 rounded-xl border border-amber-200/80 shadow-2xs">
-                                  <Clock className="w-4 h-4 text-amber-700 shrink-0" />
+                                <div className="flex items-center gap-1 text-stone-800 bg-amber-50/80 px-2 py-1 rounded-lg border border-amber-200/80 shadow-2xs">
+                                  <Clock className="w-3 h-3 text-amber-700 shrink-0" />
                                   <span>
                                     {format12HourTime(subEvent.roll_call_time)}
                                     {subEvent.dismissal_estimate_time
@@ -621,10 +682,10 @@ export default function MonthListView({
                                   href={subEvent.venue_map_link || `https://maps.google.com/?q=${encodeURIComponent(subEvent.venue_name)}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="flex items-center gap-1.5 text-indigo-600 hover:text-indigo-800 font-bold bg-stone-50 px-3 py-1.5 rounded-xl border border-stone-200 shadow-2xs transition hover:border-indigo-300"
+                                  className="flex items-center gap-1 text-indigo-600 hover:text-indigo-800 font-semibold bg-stone-50 px-2 py-1 rounded-lg border border-stone-200 shadow-2xs transition hover:border-indigo-300"
                                 >
-                                  <MapPin className="w-4 h-4 text-emerald-600 shrink-0" />
-                                  <span className="truncate max-w-[200px]">{subEvent.venue_name}</span>
+                                  <MapPin className="w-3 h-3 text-emerald-600 shrink-0" />
+                                  <span className="truncate max-w-[150px]">{subEvent.venue_name}</span>
                                 </a>
                               )}
                             </div>

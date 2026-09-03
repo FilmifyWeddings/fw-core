@@ -1,12 +1,11 @@
 'use client';
 import OperationsAnalyticsTab from './components/OperationsAnalyticsTab';
-import MonthlyPayrollTab from './components/MonthlyPayrollTab';
 import UnifiedTeamFilterModal, { UnifiedFilterState } from './components/UnifiedTeamFilterModal';
 
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { 
-  Users, Calendar, Calendar as CalendarIcon, List, Plus, Trash2, RotateCcw, Check, X, 
+  Users, UsersRound, Calendar, Calendar as CalendarIcon, List, Plus, Trash2, RotateCcw, Check, X, 
   Send, AlertCircle, Search, Filter, Loader2, Sparkles, MapPin, 
   Clock, CheckCircle, Info, Trash, ChevronDown, Edit2, TrendingUp, Award, Grid, Menu,
   Database, FileText, Layers, ArrowLeft, SlidersHorizontal, CheckSquare, Folder, Edit3, Pencil, Settings,
@@ -28,7 +27,7 @@ import { EventBlockData } from './components/EventBlock';
 import { saveOrUpdateEventPayout, batchFetchWorkspaceTeamFinancials, fetchMemberFinancialSummary, fetchWorkspaceMemberRatesMap, TeamFinancialSummary, unassignCrewSlot } from '@/lib/team-finance-sync';
 import TeamMemberFinanceDrawer from '../workspace/team/components/TeamMemberFinanceDrawer';
 import DeleteMemberWarningModal from '../workspace/team/components/DeleteMemberWarningModal';
-import { WorkspaceCrewRole, fetchWorkspaceCrewRoles, fetchWorkspaceEventTypes, saveAllWorkspaceEventTypes, getRoleShortCode } from '@/lib/workspace-settings';
+import { WorkspaceCrewRole, fetchWorkspaceCrewRoles, fetchWorkspaceEventTypes, saveAllWorkspaceEventTypes, getRoleShortCode, getRoleAbbr } from '@/lib/workspace-settings';
 import { useWorkspaceData } from '@/context/WorkspaceDataContext';
 
 // 1. Deterministic Client Gradient Consistency based on Project ID / Name Hash
@@ -523,6 +522,7 @@ export default function TeamManagerPage() {
       const payload = {
         name: cleanMemberData.name,
         primary_role: cleanMemberData.primary_role,
+        roles: roles || [cleanMemberData.primary_role],
         country_code: cleanMemberData.country_code || '+91',
         phone_number: cleanMemberData.phone_number,
         email: cleanMemberData.email || null,
@@ -557,10 +557,16 @@ export default function TeamManagerPage() {
         }
       }
 
-      await fetchAllData();
+      const scrollY = typeof window !== 'undefined' ? window.scrollY : 0;
+      await fetchAllData(undefined, true);
       setIsAddMemberOpen(false);
       setEditingMember(null);
       setActiveAssignmentForMember(null);
+      if (typeof window !== 'undefined') {
+        requestAnimationFrame(() => {
+          window.scrollTo({ top: scrollY, behavior: 'instant' });
+        });
+      }
     } catch (err: any) {
       console.error('[TeamManager] Save team member failed:', err);
       alert('Failed to save team member: ' + err.message);
@@ -1117,45 +1123,45 @@ export default function TeamManagerPage() {
   return (
     <div className="w-full min-h-screen bg-slate-100 text-[#0B111E] font-sans antialiased selection:bg-[#6C5CE7]/15 px-4 sm:px-6 lg:px-8 py-6 space-y-6 pb-20 md:pb-6">
       {/* PC STICKY TOP TOOLBAR WRAPPER */}
-        <div className="sticky top-0 z-30 bg-slate-100/95 backdrop-blur-md pb-4 pt-2 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 border-b border-slate-200/60 shadow-2xs space-y-4">
+        <div className="sticky top-0 z-30 bg-slate-100/95 backdrop-blur-md pb-2 pt-1.5 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 border-b border-slate-200/60 shadow-2xs space-y-2">
           {/* Top Responsive Header Block */}
-          <div className="flex flex-row items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
+          <div className="flex flex-row items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2">
               {/* BACK TO DASHBOARD / WORKSPACE BUTTON */}
               <Link
                 href="/workspace"
-                className="flex items-center justify-center w-9 h-9 rounded-xl bg-white border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50 text-slate-600 hover:text-indigo-700 transition shadow-2xs shrink-0"
+                className="flex items-center justify-center w-7.5 h-7.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50 text-slate-600 hover:text-indigo-700 transition shadow-2xs shrink-0"
                 title="Back to Workspace"
               >
-                <ArrowLeft className="w-4 h-4" />
+                <ArrowLeft className="w-3.5 h-3.5" />
               </Link>
 
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 text-white flex items-center justify-center shadow-md shadow-indigo-500/25 shrink-0">
-                  <Users className="w-5 h-5" />
+              <div className="flex items-center gap-2">
+                <div className="w-7.5 h-7.5 rounded-lg bg-purple-50 border border-purple-200/80 text-purple-600 flex items-center justify-center shadow-2xs shrink-0">
+                  <UsersRound className="w-4 h-4 text-purple-600" />
                 </div>
                 <div>
-                  <h1 className="text-xl sm:text-2xl font-black text-[#0B111E] tracking-tight leading-none">
+                  <h1 className="text-xs sm:text-sm font-black text-slate-800 tracking-tight leading-none">
                     Team Manager
                   </h1>
-                  <p className="text-xs font-bold text-[#4F5E74] mt-1 leading-none">
+                  <p className="text-[9px] font-medium text-slate-400 mt-0.5 leading-none">
                     {greetingInfo.text}, {studioName} {greetingInfo.emoji}
                   </p>
                 </div>
               </div>
             </div>
 
-            {/* RIGHT: Desktop action controls + mobile settings only */}
-            <div className="flex items-center gap-2 shrink-0">
+            {/* RIGHT: Desktop action controls */}
+            <div className="flex items-center gap-1.5 shrink-0">
               {/* Search - desktop only */}
-              <div className="relative hidden sm:block w-52 lg:w-64">
-                <Search className="w-4 h-4 text-[#4F5E74] absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <div className="relative hidden sm:block w-48 lg:w-60">
+                <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   placeholder="Search clients or sub-events..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-white border border-[#6C5CE7]/10 rounded-2xl text-xs font-bold text-[#0B111E] placeholder:text-[#4F5E74]/60 focus:outline-none focus:border-[#6C5CE7] transition shadow-2xs"
+                  className="w-full h-7.5 pl-7.5 pr-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 placeholder:text-slate-400 placeholder:text-[11px] focus:outline-none focus:border-[#6C5CE7] transition shadow-2xs"
                 />
               </div>
 
@@ -1167,9 +1173,9 @@ export default function TeamManagerPage() {
                       setActiveAssignmentForMember(null);
                       setIsAddMemberOpen(true);
                     }}
-                    className="hidden sm:flex bg-white border border-[#6C5CE7]/30 text-[#6C5CE7] text-xs font-extrabold py-2.5 px-3 rounded-2xl items-center justify-center gap-1.5 shadow-2xs shrink-0 cursor-pointer transition hover:border-[#6C5CE7]"
+                    className="hidden sm:flex bg-white border border-[#6C5CE7]/30 text-[#6C5CE7] text-xs font-extrabold h-7.5 px-3 rounded-xl items-center justify-center gap-1 shadow-2xs shrink-0 cursor-pointer transition hover:border-[#6C5CE7]"
                   >
-                    <UserPlus className="w-4 h-4" />
+                    <UserPlus className="w-3.5 h-3.5" />
                     <span>+ Member</span>
                   </button>
 
@@ -1177,61 +1183,50 @@ export default function TeamManagerPage() {
                   <button
                     type="button"
                     onClick={() => setIsUnifiedFilterOpen(true)}
-                    className="hidden sm:flex bg-white border border-slate-200 hover:border-indigo-400 text-slate-800 text-xs font-black py-2.5 px-3.5 rounded-2xl items-center justify-center gap-1.5 shadow-2xs shrink-0 cursor-pointer transition"
+                    className="hidden sm:flex bg-white border border-slate-200 hover:border-slate-300 text-slate-700 text-xs font-semibold h-7.5 px-3 rounded-xl items-center justify-center gap-1 shadow-2xs shrink-0 cursor-pointer transition-all"
                   >
-                    <SlidersHorizontal className="w-4 h-4 text-indigo-600" />
+                    <Filter className="w-3 h-3 text-slate-600" />
                     <span>Filter</span>
                     {(unifiedFilters?.monthYear !== 'all' || Boolean(unifiedFilters?.startDate) || (unifiedFilters?.eventTypes?.length ?? 0) > 0 || (unifiedFilters?.roles?.length ?? 0) > 0 || (unifiedFilters?.assignmentStatus && unifiedFilters.assignmentStatus !== 'all')) && (
-                      <span className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-pulse" />
                     )}
                   </button>
 
                   {/* + Project - desktop only */}
                   <button
                     onClick={() => { setEditingProject(null); setIsAddProjectOpen(true); }}
-                    className="hidden sm:flex bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-black py-2.5 px-4 rounded-2xl transition items-center justify-center gap-1.5 shadow-lg shadow-[#6C5CE7]/20 shrink-0 cursor-pointer"
+                    className="hidden sm:flex bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-black h-7.5 px-3.5 rounded-xl transition items-center justify-center gap-1 shadow-md shadow-[#6C5CE7]/20 shrink-0 cursor-pointer"
                   >
-                    <Plus className="w-4 h-4" />
+                    <Plus className="w-3.5 h-3.5" />
                     <span>+ Project</span>
                   </button>
                 </>
-              )}
-
-              {/* Settings - always visible for owner / admin */}
-              {isOwner && (
-                <button
-                  type="button"
-                  onClick={() => setIsSettingsModalOpen(true)}
-                  className="p-2.5 bg-white border border-slate-200 hover:border-indigo-500 rounded-2xl shadow-2xs text-indigo-600 transition-all cursor-pointer shrink-0"
-                  title="Team & Operations Settings"
-                >
-                  <Settings className="w-4 h-4"/>
-                </button>
               )}
             </div>
           </div>
 
           {/* Mobile search bar - full width below header */}
           <div className="sm:hidden relative w-full">
-            <Search className="w-4 h-4 text-[#4F5E74] absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               placeholder="Search clients or sub-events..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-white border border-[#6C5CE7]/10 rounded-2xl text-xs font-bold text-[#0B111E] placeholder:text-[#4F5E74]/60 focus:outline-none focus:border-[#6C5CE7] transition shadow-2xs"
+              className="w-full h-7.5 pl-7.5 pr-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 placeholder:text-slate-400 placeholder:text-[11px] focus:outline-none focus:border-[#6C5CE7] transition shadow-2xs"
             />
           </div>
+        </div>
 
-          {/* ─── VIEW MODE NAVIGATION SWITCHER BAR (DESKTOP) ─── */}
+        {/* ─── VIEW MODE NAVIGATION SWITCHER BAR (DESKTOP) ─── */}
           <div className="hidden md:flex items-center justify-between gap-3 bg-white/95 backdrop-blur-md p-2 rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
             <div className="flex items-center gap-1.5 overflow-x-auto w-full py-0.5 scrollbar-none">
               <button
                 onClick={() => setActiveTab('projects')}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer select-none shrink-0 ${
+                className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer select-none shrink-0 ${
                   activeTab === 'projects'
                     ? 'bg-[#6C5CE7] text-white shadow-md shadow-[#6C5CE7]/30'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    : 'text-slate-600 hover:bg-slate-100 bg-transparent border border-transparent'
                 }`}
               >
                 <Grid className="w-4 h-4" />
@@ -1240,10 +1235,10 @@ export default function TeamManagerPage() {
 
               <button
                 onClick={() => setActiveTab('list')}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer select-none shrink-0 ${
+                className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer select-none shrink-0 ${
                   activeTab === 'list'
                     ? 'bg-[#6C5CE7] text-white shadow-md shadow-[#6C5CE7]/30'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    : 'text-slate-600 hover:bg-slate-100 bg-transparent border border-transparent'
                 }`}
               >
                 <List className="w-4 h-4" />
@@ -1252,34 +1247,22 @@ export default function TeamManagerPage() {
 
               <button
                 onClick={() => setActiveTab('calendar')}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer select-none shrink-0 ${
+                className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer select-none shrink-0 ${
                   activeTab === 'calendar'
-                    ? 'bg-amber-950 text-amber-200 shadow-md shadow-amber-950/30'
-                    : 'text-amber-900 hover:text-amber-950 hover:bg-amber-50 border border-amber-200/80 bg-amber-50/50'
+                    ? 'bg-[#6C5CE7] text-white shadow-md shadow-[#6C5CE7]/30'
+                    : 'text-slate-600 hover:bg-slate-100 bg-transparent border border-transparent'
                 }`}
               >
-                <CalendarIcon className="w-4 h-4 text-amber-500" />
-                📅 Master Calendar View
-              </button>
-
-              <button
-                onClick={() => setActiveTab('payroll')}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer select-none shrink-0 ${
-                  activeTab === 'payroll'
-                    ? 'bg-gradient-to-r from-[#d97706] to-[#b45309] text-white shadow-md shadow-amber-950/30'
-                    : 'text-amber-900 hover:text-amber-950 hover:bg-amber-50 border border-amber-300/80 bg-amber-50/60'
-                }`}
-              >
-                <IndianRupee className="w-4 h-4 text-amber-600" />
-                💰 Monthly Payroll &amp; Salary
+                <Calendar className="w-4 h-4 text-slate-500" />
+                Calendar View
               </button>
 
               <button
                 onClick={() => setActiveTab('overview')}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer select-none shrink-0 ${
+                className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer select-none shrink-0 ${
                   activeTab === 'overview'
                     ? 'bg-[#6C5CE7] text-white shadow-md shadow-[#6C5CE7]/30'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    : 'text-slate-600 hover:bg-slate-100 bg-transparent border border-transparent'
                 }`}
               >
                 <TrendingUp className="w-4 h-4" />
@@ -1288,10 +1271,10 @@ export default function TeamManagerPage() {
 
               <button
                 onClick={() => setActiveTab('trash')}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer select-none shrink-0 ${
+                className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer select-none shrink-0 ${
                   activeTab === 'trash'
                     ? 'bg-rose-600 text-white shadow-md shadow-rose-500/30'
-                    : 'text-slate-600 hover:text-rose-600 hover:bg-rose-50'
+                    : 'text-slate-600 hover:text-rose-600 hover:bg-rose-50 bg-transparent border border-transparent'
                 }`}
               >
                 <Trash2 className="w-4 h-4" />
@@ -1299,7 +1282,6 @@ export default function TeamManagerPage() {
               </button>
             </div>
           </div>
-        </div>
 
         {/* ─── TAB VIEW: CARDS VIEW (SMART DUAL RESPONSIVE LAYOUT: PC DESKTOP + MOBILE APP CARDS) ─── */}
         {activeTab === 'projects' && (
@@ -1655,36 +1637,38 @@ export default function TeamManagerPage() {
 
                             // Robust assignment resolver ensuring roles are fetched via fw_assignments relation
                             const assignments = resolveSubEventAssignments(subEvent, teamMembers);
+                            const assignedCount = assignments.filter((a: any) => a.assigned_member_id !== null).length;
+                            const totalSlots = assignments.length;
 
                             return (
                               <div 
                                 key={subEvent.id}
                                 className="bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all flex flex-row items-stretch overflow-hidden"
                               >
-                                {/* LEFT VERTICAL GRADIENT DATE BLOCK */}
-                                <div className={`${projectGradient} w-28 shrink-0 flex flex-col items-center justify-between p-3.5 text-center`}>
+                                {/* LEFT VERTICAL GRADIENT DATE BLOCK (RESTORED FOR PC & TABLET) */}
+                                <div className={`${projectGradient} w-24 sm:w-28 shrink-0 flex flex-col items-center justify-between p-3 sm:p-3.5 text-center text-white select-none`}>
                                   <div>
-                                    <span className="text-xs font-bold text-white/80 uppercase tracking-wider block">
+                                    <span className="text-[10px] sm:text-xs font-bold text-white/80 uppercase tracking-wider block">
                                       {dayName}
                                     </span>
-                                    <span className={`font-black text-white leading-none my-1 block ${isTbd ? 'text-lg' : 'text-2xl'}`}>
+                                    <span className={`font-black text-white leading-none my-1 block ${isTbd ? 'text-base' : 'text-xl sm:text-2xl'}`}>
                                       {dayNumber}
                                     </span>
-                                    <span className="text-xs font-extrabold text-white/90 uppercase tracking-wider block">
+                                    <span className="text-[10px] sm:text-xs font-extrabold text-white/90 uppercase tracking-wider block">
                                       {monthAbbr}
                                     </span>
-                                    <span className="text-[10px] font-semibold text-white/70 tracking-widest mt-0.5 block">
+                                    <span className="text-[9px] font-semibold text-white/70 tracking-widest mt-0.5 block">
                                       {yearStr}
                                     </span>
                                   </div>
 
-                                  <div className="w-8 h-8 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white shadow-inner mt-2 border border-white/20">
+                                  <div className="w-7 h-7 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white shadow-inner mt-2 border border-white/20">
                                     <Calendar className="w-3.5 h-3.5" />
                                   </div>
                                 </div>
 
                                 {/* MAIN RIGHT CONTENT BODY */}
-                                <div className="flex-1 p-4 flex flex-col justify-between space-y-3">
+                                <div className="flex-1 p-4 flex flex-col justify-between space-y-3 min-w-0">
                                   <div>
                                     <div className="flex items-start justify-between gap-3 mb-1">
                                       <div className="flex items-center gap-2 flex-wrap">
@@ -1693,14 +1677,18 @@ export default function TeamManagerPage() {
                                         </h4>
                                         {isTbd && (
                                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black">
-                                            ⚠️ Date: TBD / Not Fixed
+                                            ⚠️ Date: TBD
                                           </span>
                                         )}
-                                        {Boolean((subEvent as any).is_overnight) && (
+                                        {isOvernightShoot && (
                                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-900 border border-indigo-300 text-[10px] font-black">
-                                            🌙 Overnight (Next Day End)
+                                            🌙 Overnight
                                           </span>
                                         )}
+                                      </div>
+
+                                      <div className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-bold border border-indigo-200">
+                                        {assignedCount}/{totalSlots} Roles
                                       </div>
                                     </div>
 
@@ -1763,8 +1751,7 @@ export default function TeamManagerPage() {
                                         const cleanName = rawName.replace(/\.\.\./g, '').trim();
                                         const role = assignment.required_role;
                                         const dropdownKey = assignment.id;
-
-                                        const { line1, line2 } = formatMemberName2Lines(cleanName);
+                                        const shortRole = getRoleAbbr(role);
 
                                         return (
                                           <div key={assignment.id} className="relative flex flex-col items-center min-w-[68px]">
@@ -1790,38 +1777,35 @@ export default function TeamManagerPage() {
                                             >
                                               {isAssigned ? (
                                                 memberObj?.avatar_url ? (
-                                                  // eslint-disable-next-next/no-img-element
                                                   <img 
                                                     src={memberObj.avatar_url} 
                                                     alt={cleanName} 
-                                                    className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm ring-2 ring-emerald-400 group-hover:scale-105 transition shrink-0" 
+                                                    className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm ring-2 ring-emerald-400 group-hover:scale-105 transition shrink-0" 
                                                   />
                                                 ) : (
-                                                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-xs flex items-center justify-center shadow-sm border-2 border-white ring-2 ring-indigo-200 group-hover:scale-105 transition shrink-0">
+                                                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-xs flex items-center justify-center shadow-sm border-2 border-white ring-2 ring-indigo-200 group-hover:scale-105 transition shrink-0">
                                                     {getInitials(cleanName || role)}
                                                   </div>
                                                 )
                                               ) : (
-                                                <div className="w-12 h-12 rounded-full border-2 border-dashed border-red-500 bg-red-50/90 text-red-600 font-black flex items-center justify-center shadow-xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
-                                                  <span className="text-xs font-black tracking-tight">{getRoleShortCode(role, customCrewRoles)}</span>
+                                                <div className="w-10 h-10 rounded-full border-2 border-dashed border-red-500 bg-red-50 text-red-600 flex items-center justify-center font-black group-hover:scale-105 transition shadow-2xs shrink-0">
+                                                  <Plus className="w-4 h-4 text-red-600 stroke-[3]" />
                                                 </div>
                                               )}
 
-                                              {/* Strict Short-Code Badge */}
-                                              <span className={`font-black text-[10px] uppercase tracking-wider block text-center mt-1 px-1.5 py-0.5 rounded-md border leading-none ${
-                                                isAssigned
-                                                  ? 'bg-indigo-50 text-indigo-900 border-indigo-200'
+                                              {/* STRICT SHORT ROLE CODE BADGE */}
+                                              <span className={`font-black text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full border mt-1 select-none leading-none ${
+                                                isAssigned 
+                                                  ? 'bg-slate-100 text-slate-700 border-slate-200' 
                                                   : 'bg-red-50 text-red-700 border-red-200'
                                               }`}>
-                                                {getRoleShortCode(role, customCrewRoles)}
+                                                {shortRole}
                                               </span>
 
-                                              {isAssigned && (
-                                                <div className="flex flex-col items-center text-center font-extrabold text-slate-900 text-[11px] leading-tight max-w-[85px] mt-1 justify-start">
-                                                  <span className="block leading-none truncate max-w-[85px]">{line1}</span>
-                                                  {line2 ? <span className="block leading-none truncate max-w-[85px] mt-0.5 text-[10px] text-slate-600">{line2}</span> : null}
-                                                </div>
-                                              )}
+                                              {/* MEMBER FULL CLEAN NAME (NOT CUT OFF) */}
+                                              <span className="font-semibold text-slate-800 text-[10px] truncate max-w-[70px] text-center leading-none mt-1 block" title={cleanName}>
+                                                {isAssigned ? (cleanName || 'Assign') : 'Assign'}
+                                              </span>
                                             </div>
                                           </div>
                                         );
@@ -1839,27 +1823,28 @@ export default function TeamManagerPage() {
                 </div>
 
                 {/* 2. MOBILE / TABLET CARDS VIEW (COMPACT STACKED CLIENT CARDS LAYOUT WITH COMMENTS VISIBLE) */}
-                <div className="block lg:hidden grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div className="block lg:hidden grid grid-cols-1 md:grid-cols-2 gap-4">
                   {filteredProjects.map((project) => {
                     const subEvents = project.fw_sub_events || [];
+                    const projectGradient = getGradientByProjectId(project.id || project.client_name);
 
                     return (
                       <div
                         key={project.id}
-                        className="bg-white rounded-3xl border-2 border-slate-200/90 shadow-md shadow-slate-200/40 overflow-hidden flex flex-col hover:border-indigo-300 transition duration-200 group"
+                        className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden flex flex-col hover:border-indigo-300 transition duration-200"
                       >
-                        {/* CLIENT CARD HEADER BAR */}
-                        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-4 flex flex-col gap-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-9 h-9 rounded-2xl bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center shadow-2xs shrink-0">
+                        {/* CLIENT CARD HEADER BAR - COMPACT */}
+                        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-3 flex flex-col gap-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="w-7 h-7 rounded-xl bg-amber-400 text-slate-950 font-black text-[11px] flex items-center justify-center shadow-2xs shrink-0">
                                 {getInitials(project.client_name)}
                               </div>
                               <div className="min-w-0">
-                                <h3 className="text-sm font-black text-white tracking-tight truncate">
+                                <h3 className="text-xs sm:text-sm font-black text-white tracking-tight truncate leading-tight">
                                   {project.client_name}
                                 </h3>
-                                <span className="text-[10px] font-bold text-slate-300">
+                                <span className="text-[9px] font-bold text-slate-300 block leading-tight">
                                   {subEvents.length} Sub-Event{subEvents.length === 1 ? '' : 's'} Configured
                                 </span>
                               </div>
@@ -1871,26 +1856,26 @@ export default function TeamManagerPage() {
                                   setEditingProject(project);
                                   setIsAddProjectOpen(true);
                                 }}
-                                className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-xl transition cursor-pointer shrink-0"
+                                className="p-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg transition cursor-pointer shrink-0"
                                 title="Edit Project Configuration"
                               >
-                                <Pencil className="w-3.5 h-3.5" />
+                                <Pencil className="w-3 h-3" />
                               </button>
                             )}
                           </div>
 
                           {/* Mobile PM Assignment Row */}
-                          <div className="pt-2 border-t border-white/10 flex items-center justify-between relative" onClick={(e) => e.stopPropagation()}>
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] font-black uppercase tracking-wider text-amber-300">PM:</span>
+                          <div className="pt-1.5 border-t border-white/10 flex items-center justify-between relative" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[9px] font-black uppercase tracking-wider text-amber-300">PM:</span>
                               <button
                                 type="button"
                                 onClick={() => setActivePmDropdownProjectId(activePmDropdownProjectId === `m_${project.id}` ? null : `m_${project.id}`)}
-                                className="px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/20 text-white text-[11px] font-bold flex items-center gap-1.5 transition cursor-pointer border border-white/15"
+                                className="px-2 py-0.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold flex items-center gap-1 transition cursor-pointer border border-white/15"
                               >
                                 {project.project_manager_name ? (
                                   <>
-                                    <div className="w-4 h-4 rounded-full bg-amber-500 text-slate-950 font-black text-[8px] flex items-center justify-center overflow-hidden shrink-0">
+                                    <div className="w-3.5 h-3.5 rounded-full bg-amber-500 text-slate-950 font-black text-[7px] flex items-center justify-center overflow-hidden shrink-0">
                                       {(() => {
                                         const assignedMem = teamMembers.find(m => m.id === project.project_manager_id || m.name === project.project_manager_name);
                                         if (assignedMem?.avatar_url) {
@@ -1899,21 +1884,21 @@ export default function TeamManagerPage() {
                                         return getInitials(project.project_manager_name);
                                       })()}
                                     </div>
-                                    <span className="truncate max-w-[140px]">{project.project_manager_name}</span>
+                                    <span className="truncate max-w-[120px]">{project.project_manager_name}</span>
                                   </>
                                 ) : (
-                                  <span className="text-amber-200/80 italic text-[10px]">Assign Project Manager</span>
+                                  <span className="text-amber-200/80 italic text-[9px]">Assign PM</span>
                                 )}
-                                <ChevronDown className="w-3 h-3 text-amber-300" />
+                                <ChevronDown className="w-2.5 h-2.5 text-amber-300" />
                               </button>
                             </div>
 
                             {/* Mobile PM Dropdown Modal/Popover */}
                             {activePmDropdownProjectId === `m_${project.id}` && (
                               <div 
-                                className="absolute left-0 right-0 top-full mt-2 z-[9999] max-h-72 overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl p-2 space-y-1.5 text-slate-800"
+                                className="absolute left-0 right-0 top-full mt-2 z-[9999] max-h-64 overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl p-2 space-y-1.5 text-slate-800"
                               >
-                                <div className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 flex items-center justify-between">
+                                <div className="px-2 py-1 text-[9px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 flex items-center justify-between">
                                   <span>Select Project Manager</span>
                                   {project.project_manager_name && (
                                     <button
@@ -1923,14 +1908,13 @@ export default function TeamManagerPage() {
                                         setActivePmDropdownProjectId(null);
                                         setPmSearchQuery('');
                                       }}
-                                      className="text-rose-500 hover:underline text-[10px] font-bold cursor-pointer"
+                                      className="text-rose-500 hover:underline text-[9px] font-bold cursor-pointer"
                                     >
                                       Clear PM
                                     </button>
                                   )}
                                 </div>
 
-                                {/* Search Input for Mobile */}
                                 <div className="relative px-1 pt-0.5">
                                   <input
                                     type="text"
@@ -1938,10 +1922,10 @@ export default function TeamManagerPage() {
                                     value={pmSearchQuery}
                                     onChange={e => setPmSearchQuery(e.target.value)}
                                     onClick={e => e.stopPropagation()}
-                                    className="w-full pl-7 pr-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-amber-500 focus:bg-white"
+                                    className="w-full pl-7 pr-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-amber-500"
                                     autoFocus
                                   />
-                                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                                  <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-2" />
                                 </div>
 
                                 {teamMembers
@@ -1961,12 +1945,12 @@ export default function TeamManagerPage() {
                                           setActivePmDropdownProjectId(null);
                                           setPmSearchQuery('');
                                         }}
-                                        className={`w-full flex items-center justify-between gap-2.5 p-2 rounded-xl text-left transition ${
+                                        className={`w-full flex items-center justify-between gap-2 p-1.5 rounded-lg text-left transition ${
                                           isSelected ? 'bg-amber-50 text-amber-950 font-bold border border-amber-200' : 'hover:bg-slate-50 text-slate-700'
                                         }`}
                                       >
-                                        <div className="flex items-center gap-2 min-w-0">
-                                          <div className="w-6 h-6 rounded-full bg-amber-500 text-white font-black text-[9px] flex items-center justify-center shrink-0 overflow-hidden">
+                                        <div className="flex items-center gap-1.5 min-w-0">
+                                          <div className="w-5 h-5 rounded-full bg-amber-500 text-white font-black text-[8px] flex items-center justify-center shrink-0 overflow-hidden">
                                             {m.avatar_url ? (
                                               <img src={m.avatar_url} alt="" className="w-full h-full object-cover" />
                                             ) : (
@@ -1974,11 +1958,11 @@ export default function TeamManagerPage() {
                                             )}
                                           </div>
                                           <div className="min-w-0">
-                                            <p className="text-xs font-black truncate text-slate-900">{m.name}</p>
-                                            <p className="text-[9px] text-slate-400 font-semibold truncate">{m.primary_role || 'Crew'}</p>
+                                            <p className="text-xs font-black truncate text-slate-900 leading-none">{m.name}</p>
+                                            <p className="text-[8px] text-slate-400 font-semibold truncate leading-none mt-0.5">{m.primary_role || 'Crew'}</p>
                                           </div>
                                         </div>
-                                        {isSelected && <Check className="w-3.5 h-3.5 text-amber-600 shrink-0" />}
+                                        {isSelected && <Check className="w-3 h-3 text-amber-600 shrink-0" />}
                                       </button>
                                     );
                                   })}
@@ -1987,16 +1971,43 @@ export default function TeamManagerPage() {
                           </div>
                         </div>
 
-                        {/* SUB-EVENTS LIST */}
-                        <div className="p-4 space-y-4 flex-1 bg-slate-50/40">
+                        {/* SUB-EVENTS LIST - PC-STYLE COMPACT CARDS WITH LEFT GRADIENT DATE BLOCK */}
+                        <div className="p-3 space-y-3 flex-1 bg-slate-50/50">
                           {subEvents.length === 0 ? (
-                            <div className="text-center py-4 text-xs text-slate-400 italic">No sub-events added yet.</div>
+                            <div className="text-center py-3 text-xs text-slate-400 italic">No sub-events added yet.</div>
                           ) : (
                             subEvents.map((subEvent) => {
                               const isDateNotFixed = !subEvent.event_date || 
                                 subEvent.event_date.toLowerCase().includes('not fix') || 
                                 subEvent.event_date.toLowerCase().includes('tbd') || 
                                 isNaN(new Date(subEvent.event_date).getTime());
+
+                              const isOvernightShoot = Boolean((subEvent as any).is_overnight) && Boolean((subEvent as any).end_date) && !isNaN(new Date((subEvent as any).end_date).getTime());
+
+                              const startDateObj = !isDateNotFixed ? new Date(subEvent.event_date) : null;
+                              const endDateObj = isOvernightShoot ? new Date((subEvent as any).end_date) : null;
+
+                              let dayNumber = 'TBD';
+                              let dayName = 'DATE';
+                              let monthAbbr = 'NOT';
+                              let yearStr = 'FIXED';
+
+                              if (!isDateNotFixed && startDateObj) {
+                                const sDay = startDateObj.getDate().toString().padStart(2, '0');
+                                const sDayName = startDateObj.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+                                monthAbbr = startDateObj.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+                                yearStr = startDateObj.getFullYear().toString();
+
+                                if (isOvernightShoot && endDateObj) {
+                                  const eDay = endDateObj.getDate().toString().padStart(2, '0');
+                                  const eDayName = endDateObj.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+                                  dayNumber = `${sDay}-${eDay}`;
+                                  dayName = `${sDayName}-${eDayName}`;
+                                } else {
+                                  dayNumber = sDay;
+                                  dayName = sDayName;
+                                }
+                              }
 
                               const assignments = resolveSubEventAssignments(subEvent, teamMembers);
                               const assignedCount = assignments.filter((a: any) => a.assigned_member_id !== null).length;
@@ -2005,130 +2016,149 @@ export default function TeamManagerPage() {
                               return (
                                 <div
                                   key={subEvent.id}
-                                  className="bg-white rounded-2xl border border-slate-200 p-3.5 space-y-3 shadow-2xs"
+                                  className="bg-white rounded-xl border border-slate-200/90 shadow-2xs hover:shadow-xs transition flex flex-col overflow-hidden"
                                 >
-                                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                                    <div>
-                                      <h4 className="font-extrabold text-slate-900 text-xs">
-                                        {subEvent.event_title}
-                                      </h4>
-                                      {isDateNotFixed ? (
-                                        <span className="text-[10px] font-black text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full inline-block mt-0.5 border border-amber-300">
-                                          ⚠️ Date Not Fixed (Edit to set)
+                                  {/* TOP HORIZONTAL GRADIENT DATE BANNER (MATCHES MONTH VIEW) */}
+                                  <div className={`${projectGradient} w-full px-3 py-1.5 sm:px-3.5 sm:py-2 text-white flex items-center justify-between`}>
+                                    <div className="flex items-center gap-1.5 sm:gap-2">
+                                      <span className="text-[11px] sm:text-xs font-black tracking-wider uppercase">
+                                        {dayName} {dayNumber} {monthAbbr} {yearStr}
+                                      </span>
+                                      {isDateNotFixed && (
+                                        <span className="text-[8px] sm:text-[9px] font-black px-1.5 py-0.2 rounded bg-amber-400 text-slate-950">
+                                          TBD
                                         </span>
-                                      ) : (
-                                        <span className="text-[10px] font-bold text-slate-500 block mt-0.5">
-                                          {subEvent.event_date} ({getCountdownBadge(subEvent.event_date)})
+                                      )}
+                                      {isOvernightShoot && (
+                                        <span className="text-[8px] sm:text-[9px] font-black px-1.5 py-0.2 rounded bg-indigo-200 text-indigo-950 flex items-center gap-0.5">
+                                          <Moon className="w-2.5 h-2.5" /> Overnight
                                         </span>
                                       )}
                                     </div>
 
-                                    <span className="px-2 py-0.5 rounded-xl bg-indigo-50 text-indigo-700 font-extrabold text-[10px] border border-indigo-100">
+                                    <div className="px-2 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-[9px] font-bold border border-white/20">
                                       {assignedCount}/{totalSlots} Roles
-                                    </span>
-                                  </div>
-
-                                  <div className="flex items-center gap-2 text-xs font-bold text-slate-600 flex-wrap">
-                                    {subEvent.roll_call_time && (
-                                      <div className="flex items-center gap-1 text-slate-700 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200 text-[11px]">
-                                        <Clock className="w-3 h-3 text-indigo-600" />
-                                        <span>
-                                          {format12HourTime(subEvent.roll_call_time)}
-                                          {subEvent.dismissal_estimate_time ? ` - ${format12HourTime(subEvent.dismissal_estimate_time)}` : ''}
-                                        </span>
-                                      </div>
-                                    )}
-
-                                    {(subEvent as any).shift_hours_slot && (
-                                      <div className="flex items-center gap-1 text-amber-800 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200 text-[11px] font-extrabold">
-                                        <Zap className="w-3 h-3 text-amber-500 shrink-0 fill-amber-400" />
-                                        <span>{(subEvent as any).shift_hours_slot}</span>
-                                      </div>
-                                    )}
-
-                                    {subEvent.venue_name && (
-                                      <div className="flex items-center gap-1 text-emerald-700 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200 text-[11px]">
-                                        <MapPin className="w-3 h-3 text-emerald-600" />
-                                        <span className="truncate max-w-[120px]">{subEvent.venue_name}</span>
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  {/* MOBILE SUB-EVENT OPERATIONAL NOTES / COMMENTS BANNER */}
-                                  {subEvent.operational_notes && (
-                                    <div className="bg-amber-50/90 border-l-4 border-amber-400 p-2.5 rounded-r-xl text-[11px] text-amber-950 font-medium flex items-center gap-2 my-1">
-                                      <FileText className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                                      <span className="break-words">{subEvent.operational_notes}</span>
                                     </div>
-                                  )}
+                                  </div>
 
-                                  <div>
-                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block mb-1.5">
-                                      Crew Placements
-                                    </span>
-                                    <div className="flex items-start gap-3 flex-wrap">
-                                      {assignments.map((assignment: any) => {
-                                        const member = assignment.fw_team_members || teamMembers.find(m => m.id === assignment.assigned_member_id);
-                                        const isAssigned = member !== undefined && member !== null;
-                                        const role = assignment.required_role || 'Crew';
-                                        const cleanName = member?.name ? member.name.replace(/\.\.\./g, '').trim() : '';
-                                        const { line1, line2 } = formatMemberName2Lines(cleanName);
+                                  {/* MAIN CONTENT AREA */}
+                                  <div className="p-2.5 space-y-2 min-w-0">
+                                    <div className="flex items-start justify-between gap-1.5 mb-1">
+                                      <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                        <h4 className="font-extrabold text-slate-900 text-xs tracking-tight truncate">
+                                          {subEvent.event_title}
+                                        </h4>
+                                      </div>
+                                    </div>
 
-                                        return (
-                                          <div
-                                            key={assignment.id}
-                                            data-assignment-id={assignment.id}
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              const rect = e.currentTarget.getBoundingClientRect();
-                                              setDropdownPos({
-                                                top: Math.min(rect.bottom + 6, window.innerHeight - 280),
-                                                left: Math.max(10, Math.min(rect.left - 40, window.innerWidth - 270)),
-                                              });
-                                              setActiveDropdownId(activeDropdownId === assignment.id ? null : assignment.id);
-                                            }}
-                                            className="flex flex-col items-center group/node cursor-pointer select-none relative w-16 text-center"
-                                          >
-                                            {/* ANCHORED 40px CIRCLE BASELINE */}
-                                            <div className="w-10 h-10 flex items-center justify-center shrink-0 mb-1">
-                                              {isAssigned ? (
-                                                member.avatar_url ? (
-                                                  // eslint-disable-next-next/no-img-element
-                                                  <img
-                                                    src={member.avatar_url}
-                                                    alt={cleanName}
-                                                    className="w-10 h-10 rounded-full object-cover shadow-sm border-2 border-white ring-2 ring-emerald-400 shrink-0"
-                                                    onError={(e) => {
-                                                      (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName)}`;
-                                                    }}
-                                                  />
+                                    {/* COMPACT TIMING, SLOT & VENUE */}
+                                    <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500 font-medium">
+                                      {(subEvent.roll_call_time || subEvent.dismissal_estimate_time) && (
+                                        <div className="flex items-center gap-1 text-slate-700 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200">
+                                          <Clock className="w-2.5 h-2.5 text-indigo-600 shrink-0" />
+                                          <span>
+                                            {format12HourTime(subEvent.roll_call_time)}
+                                            {subEvent.dismissal_estimate_time ? ` – ${format12HourTime(subEvent.dismissal_estimate_time)}` : ''}
+                                          </span>
+                                        </div>
+                                      )}
+
+                                      {(subEvent as any).shift_hours_slot && (
+                                        <div className="flex items-center gap-0.5 text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 text-[9px] font-bold">
+                                          <Zap className="w-2.5 h-2.5 text-amber-500 shrink-0 fill-amber-400" />
+                                          <span>{(subEvent as any).shift_hours_slot}</span>
+                                        </div>
+                                      )}
+
+                                      {subEvent.venue_name && (
+                                        <a
+                                          href={subEvent.venue_map_link || `https://maps.google.com/?q=${encodeURIComponent(subEvent.venue_name)}`}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="flex items-center gap-1 text-indigo-600 hover:text-indigo-800 font-semibold bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200"
+                                        >
+                                          <MapPin className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
+                                          <span className="truncate max-w-[120px]">{subEvent.venue_name}</span>
+                                        </a>
+                                      )}
+                                    </div>
+
+                                    {/* OPERATIONAL COMMENTS */}
+                                    {subEvent.operational_notes && (
+                                      <div className="bg-amber-50/90 border-l-2 border-amber-400 px-2 py-1 rounded-r-md text-[10px] text-amber-950 font-medium flex items-center gap-1.5">
+                                        <FileText className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                                        <span className="truncate">{subEvent.operational_notes}</span>
+                                      </div>
+                                    )}
+
+                                    {/* CREW PLACEMENTS */}
+                                    <div className="pt-1.5 border-t border-slate-100">
+                                      <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider block mb-1">
+                                        Crew Placements
+                                      </span>
+                                      <div className="flex items-start gap-2.5 flex-wrap">
+                                        {assignments.map((assignment: any) => {
+                                          const isAssigned = assignment.assigned_member_id !== null;
+                                          const memberObj = assignment.fw_team_members || teamMembers.find(m => m.id === assignment.assigned_member_id);
+                                          const rawName = memberObj?.name || '';
+                                          const cleanName = rawName.replace(/\.\.\./g, '').trim();
+                                          const role = assignment.required_role;
+                                          const shortRole = getRoleAbbr(role);
+
+                                          return (
+                                            <div
+                                              key={assignment.id}
+                                              data-assignment-id={assignment.id}
+                                              onClick={(e) => {
+                                                if (isTmReadOnly) return;
+                                                const rect = e.currentTarget.getBoundingClientRect();
+                                                setDropdownPos({
+                                                  top: Math.min(rect.bottom + 6, window.innerHeight - 280),
+                                                  left: Math.max(10, Math.min(rect.left - 40, window.innerWidth - 270)),
+                                                });
+                                                setActiveDropdownId(activeDropdownId === assignment.id ? null : assignment.id);
+                                              }}
+                                              className="flex flex-col items-center group cursor-pointer select-none relative w-12 text-center"
+                                            >
+                                              {/* 32px CIRCLE AVATAR */}
+                                              <div className="w-8 h-8 rounded-full border border-white shadow-xs overflow-hidden shrink-0 flex items-center justify-center">
+                                                {isAssigned ? (
+                                                  memberObj?.avatar_url ? (
+                                                    <img
+                                                      src={memberObj.avatar_url}
+                                                      alt={cleanName}
+                                                      className="w-8 h-8 rounded-full object-cover shrink-0"
+                                                      onError={(e) => {
+                                                        (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName)}`;
+                                                      }}
+                                                    />
+                                                  ) : (
+                                                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-[9px] flex items-center justify-center shrink-0">
+                                                      {getInitials(cleanName || role)}
+                                                    </div>
+                                                  )
                                                 ) : (
-                                                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-xs flex items-center justify-center shadow-sm border-2 border-white ring-2 ring-indigo-200 shrink-0">
-                                                    {getInitials(cleanName || role)}
+                                                  <div className="w-8 h-8 rounded-full border border-dashed border-red-500 bg-red-50 text-red-600 font-black flex items-center justify-center shadow-2xs shrink-0">
+                                                    <Plus className="w-3.5 h-3.5 text-red-600 stroke-[3]" />
                                                   </div>
-                                                )
-                                              ) : (
-                                                <div className="w-10 h-10 rounded-full border-2 border-dashed border-red-500 bg-red-50 text-red-600 font-black flex items-center justify-center shadow-2xs shrink-0">
-                                                  <span className="text-[10px] font-black tracking-tight">{getRoleShortCode(role, customCrewRoles)}</span>
-                                                </div>
-                                              )}
-                                            </div>
-
-                                            <span className={`font-bold text-[9px] uppercase tracking-wide block text-center leading-none ${
-                                              isAssigned ? 'text-indigo-600' : 'text-red-600 font-extrabold'
-                                            }`}>
-                                              {isAssigned ? role : getRoleShortCode(role, customCrewRoles)}
-                                            </span>
-
-                                            {isAssigned && (
-                                              <div className="flex flex-col items-center text-center font-extrabold text-slate-900 text-[10px] leading-tight max-w-[75px] mt-0.5">
-                                                <span className="block leading-none truncate max-w-[75px]">{line1}</span>
-                                                {line2 ? <span className="block leading-none truncate max-w-[75px] mt-0.5">{line2}</span> : null}
+                                                )}
                                               </div>
-                                            )}
-                                          </div>
-                                        );
-                                      })}
+
+                                              {/* Role Pill - STRICT SHORT FORM ONLY */}
+                                              <span className={`font-black text-[9px] uppercase tracking-wider block text-center leading-none mt-0.5 ${
+                                                isAssigned ? 'text-slate-600' : 'text-red-600 font-extrabold'
+                                              }`}>
+                                                {shortRole}
+                                              </span>
+
+                                              {/* Member Full Name - not cut into first word initials! */}
+                                              <span className="text-[9px] font-semibold text-slate-800 truncate max-w-[50px] text-center leading-none mt-0.5 block" title={cleanName}>
+                                                {isAssigned ? (cleanName || 'Assign') : 'Assign'}
+                                              </span>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
                                     </div>
                                   </div>
                                 </div>
@@ -2196,6 +2226,10 @@ export default function TeamManagerPage() {
               setInitialDateForModal(initialDate || '');
               setIsAddProjectOpen(true);
             }}
+            onEditProject={(proj) => {
+              setEditingProject(proj);
+              setIsAddProjectOpen(true);
+            }}
           />
         )}
 
@@ -2250,73 +2284,76 @@ export default function TeamManagerPage() {
         )}
 
       {/* ─── MOBILE STICKY BOTTOM FOOTER NAVIGATION BAR (FLOATING PILL STYLE) ─── */}
-      <div className="md:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-sm">
-        <div className="bg-white/95 backdrop-blur-xl border border-slate-200/80 shadow-2xl shadow-slate-300/40 rounded-[2rem] px-4 py-2.5 flex items-center justify-around relative">
+      <div className="md:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-1.5rem)] max-w-sm">
+        <div className="bg-white/95 backdrop-blur-xl border border-slate-200/80 shadow-2xl shadow-slate-300/40 rounded-[2rem] px-2 py-2 flex items-center justify-around relative">
+          
           {/* TAB 1: Cards */}
           <button
+            type="button"
             onClick={() => setActiveTab('projects')}
-            className={`flex flex-col items-center gap-0.5 py-1 px-3 rounded-2xl transition-all duration-200 ${
+            className={`flex flex-col items-center gap-0.5 py-1 px-2 rounded-xl transition-all cursor-pointer ${
               activeTab === 'projects' ? 'text-[#6C5CE7]' : 'text-slate-400 hover:text-slate-600'
             }`}
           >
-            <div className={`transition-all duration-200 ${
-              activeTab === 'projects' ? 'scale-110' : ''
-            }`}>
-              <Grid className="w-5 h-5" />
-            </div>
-            <span className={`text-[9px] font-black transition-all ${
-              activeTab === 'projects' ? 'text-[#6C5CE7]' : 'text-slate-400'
+            <Grid className="w-4 h-4" />
+            <span className={`text-[10px] font-semibold transition-all ${
+              activeTab === 'projects' ? 'text-[#6C5CE7] font-bold' : 'text-slate-500'
             }`}>Cards</span>
-            {activeTab === 'projects' && (
-              <span className="absolute -top-1 left-1/2 -translate-x-[280%] w-1 h-1 rounded-full bg-[#6C5CE7]" />
-            )}
           </button>
 
-          {/* TAB 2: Month List */}
+          {/* TAB 2: Month */}
           <button
+            type="button"
             onClick={() => setActiveTab('list')}
-            className={`flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-2xl transition-all duration-200 ${
+            className={`flex flex-col items-center gap-0.5 py-1 px-2 rounded-xl transition-all cursor-pointer ${
               activeTab === 'list' ? 'text-[#6C5CE7]' : 'text-slate-400 hover:text-slate-600'
             }`}
           >
-            <div className={`transition-all duration-200 ${
-              activeTab === 'list' ? 'scale-110' : ''
-            }`}>
-              <List className="w-5 h-5" />
-            </div>
-            <span className={`text-[9px] font-black transition-all ${
-              activeTab === 'list' ? 'text-[#6C5CE7]' : 'text-slate-400'
+            <List className="w-4 h-4" />
+            <span className={`text-[10px] font-semibold transition-all ${
+              activeTab === 'list' ? 'text-[#6C5CE7] font-bold' : 'text-slate-500'
             }`}>Month</span>
           </button>
 
           {/* CENTER FLOATING + CREATE PROJECT BUTTON */}
-          <div className="relative -mt-6 mx-1">
+          <div className="relative -mt-6 mx-0.5">
             <button
+              type="button"
               onClick={() => { setEditingProject(null); setIsAddProjectOpen(true); }}
-              className="w-13 h-13 rounded-full bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white flex items-center justify-center shadow-xl shadow-[#6C5CE7]/40 border-4 border-white transition-all active:scale-95 cursor-pointer"
+              className="w-12 h-12 rounded-full bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white flex items-center justify-center shadow-xl shadow-[#6C5CE7]/40 border-3 border-white transition-all active:scale-95 cursor-pointer"
               title="Create New Project"
             >
-              <Plus className="w-6 h-6" />
+              <Plus className="w-5 h-5" />
             </button>
           </div>
 
           {/* TAB 3: Calendar */}
           <button
+            type="button"
             onClick={() => setActiveTab('calendar')}
-            className={`flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-2xl transition-all duration-200 ${
-              activeTab === 'calendar' ? 'text-amber-700' : 'text-slate-400 hover:text-slate-600'
+            className={`flex flex-col items-center gap-0.5 py-1 px-2 rounded-xl transition-all cursor-pointer ${
+              activeTab === 'calendar' ? 'text-[#6C5CE7]' : 'text-slate-400 hover:text-slate-600'
             }`}
           >
-            <div className={`transition-all duration-200 ${
-              activeTab === 'calendar' ? 'scale-110' : ''
-            }`}>
-              <CalendarIcon className="w-5 h-5" />
-            </div>
-            <span className={`text-[9px] font-black transition-all ${
-              activeTab === 'calendar' ? 'text-amber-700 font-extrabold' : 'text-slate-400'
+            <CalendarIcon className="w-4 h-4" />
+            <span className={`text-[10px] font-semibold transition-all ${
+              activeTab === 'calendar' ? 'text-[#6C5CE7] font-bold' : 'text-slate-500'
             }`}>Calendar</span>
           </button>
 
+          {/* TAB 4: Overview */}
+          <button
+            type="button"
+            onClick={() => setActiveTab('overview')}
+            className={`flex flex-col items-center gap-0.5 py-1 px-2 rounded-xl transition-all cursor-pointer ${
+              activeTab === 'overview' ? 'text-[#6C5CE7]' : 'text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            <TrendingUp className="w-4 h-4" />
+            <span className={`text-[10px] font-semibold transition-all ${
+              activeTab === 'overview' ? 'text-[#6C5CE7] font-bold' : 'text-slate-500'
+            }`}>Overview</span>
+          </button>
 
         </div>
       </div>

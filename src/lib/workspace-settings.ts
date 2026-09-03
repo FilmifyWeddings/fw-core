@@ -263,6 +263,9 @@ export function getRoleShortCode(roleName?: string | null, customRoles?: Workspa
 
   // 3. Fallback heuristic mappings
   const lower = clean.toLowerCase();
+  if (lower.includes('project') || lower.includes('pm')) return 'PM';
+  if (lower.includes('team') || lower.includes('tm')) return 'TM';
+  if (lower.includes('lead')) return 'LP';
   if (lower.includes('trad') && lower.includes('photo')) return 'TP';
   if (lower.includes('trad') && (lower.includes('vid') || lower.includes('cine'))) return 'TV';
   if (lower.includes('candid') && lower.includes('photo')) return 'CP';
@@ -275,13 +278,27 @@ export function getRoleShortCode(roleName?: string | null, customRoles?: Workspa
   if (lower.includes('album')) return 'AD';
   if (lower.includes('edit') && lower.includes('photo')) return 'PE';
   if (lower.includes('edit') && lower.includes('vid')) return 'VE';
+  if (lower.includes('editor')) return 'ED';
 
   // 4. Generate initials from words
-  const words = clean.split(/[\\s\\-_]+/);
+  const words = clean.split(/[\s\-_]+/);
   if (words.length >= 2) {
     return (words[0][0] + words[1][0]).toUpperCase();
   }
   return clean.slice(0, 3).toUpperCase();
+}
+
+export function getRoleAbbr(role: string = ''): string {
+  const r = (role || '').toLowerCase();
+  if (r.includes('project') || r.includes('pm')) return 'PM';
+  if (r.includes('team') || r.includes('tm')) return 'TM';
+  if (r.includes('cinematographer') || r.includes('cin')) return 'CIN';
+  if (r.includes('candid') || r.includes('cp')) return 'CP';
+  if (r.includes('traditional') || r.includes('tp')) return 'TP';
+  if (r.includes('drone')) return 'DP';
+  if (r.includes('lead')) return 'LP';
+  if (r.includes('editor') || r.includes('ed')) return 'ED';
+  return role.slice(0, 2).toUpperCase() || 'CR';
 }
 
 /**

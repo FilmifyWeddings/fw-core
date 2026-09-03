@@ -96,12 +96,12 @@ export default function EventBlock({
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.98 }}
-      className="bg-[#FEFDF8] rounded-3xl border-2 border-amber-200/90 p-5 space-y-4 shadow-sm relative group"
+      className="bg-[#FEFDF8] rounded-2xl border border-amber-200/90 p-3 sm:p-3.5 space-y-2.5 shadow-2xs relative group"
     >
       {/* HEADER ROW WITH BLOCK INDEX & ACTIONS */}
-      <div className="flex items-center justify-between border-b border-amber-200/80 pb-3">
+      <div className="flex items-center justify-between border-b border-amber-200/70 pb-2">
         <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-lg bg-amber-100 text-amber-900 font-black text-xs flex items-center justify-center border border-amber-300">
+          <div className="w-5 h-5 rounded-md bg-amber-100 text-amber-900 font-black text-[10px] flex items-center justify-center border border-amber-300">
             {index + 1}
           </div>
           <h4 className="text-xs font-black text-amber-950 uppercase tracking-wider flex items-center gap-1.5">
@@ -145,7 +145,7 @@ export default function EventBlock({
       />
 
       {/* 2. DATE SETTINGS (TBD + OVERNIGHT DUAL DAY OPTIONS) */}
-      <div className="p-3 bg-amber-50/50 border border-amber-200/80 rounded-2xl space-y-3">
+      <div className="p-2 sm:p-2.5 bg-amber-50/50 border border-amber-200/80 rounded-xl space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           {/* TBD Checkbox */}
           <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -245,11 +245,10 @@ export default function EventBlock({
             <Zap className="w-3 h-3 text-amber-500" />
             <span>Shift</span>
           </label>
-
           <button
             type="button"
             onClick={() => setIsSlotDropdownOpen(!isSlotDropdownOpen)}
-            className={`w-full py-2.5 px-2 rounded-2xl border-2 font-extrabold text-xs transition flex items-center justify-between cursor-pointer shadow-xs ${
+            className={`w-full h-7.5 px-2 rounded-lg border font-bold text-xs transition flex items-center justify-between cursor-pointer shadow-2xs ${
               block.shiftSlot && block.shiftSlot !== 'None (Standard)'
                 ? 'bg-amber-50 border-amber-300 text-amber-900'
                 : 'bg-white border-amber-200 text-zinc-700 hover:border-amber-400'
@@ -259,7 +258,7 @@ export default function EventBlock({
             <span className="truncate text-[11px]">
               {block.shiftSlot && block.shiftSlot !== 'None (Standard)' ? block.shiftSlot : 'Slot'}
             </span>
-            <ChevronDown className={`w-3.5 h-3.5 shrink-0 text-zinc-500 transition-transform ${isSlotDropdownOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown className={`w-3 h-3 shrink-0 text-zinc-500 transition-transform ${isSlotDropdownOpen ? 'rotate-180' : ''}`} />
           </button>
 
           <AnimatePresence>
@@ -267,8 +266,8 @@ export default function EventBlock({
               <motion.div
                 initial={{ opacity: 0, y: -4, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -4, scale: 0.95 }}
-                className="absolute right-0 top-full mt-1.5 w-44 bg-white/95 backdrop-blur-xl border-2 border-amber-200 rounded-2xl shadow-xl p-1.5 z-50 space-y-0.5"
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="absolute right-0 top-full mt-1 w-40 bg-white border border-amber-200 rounded-xl shadow-xl p-1 z-50 space-y-0.5"
               >
                 {SLOT_OPTIONS.map((option) => {
                   const isSelected = (block.shiftSlot || 'None (Standard)') === option;
@@ -280,14 +279,14 @@ export default function EventBlock({
                         onUpdate(block.id, { shiftSlot: option === 'None (Standard)' ? '' : option });
                         setIsSlotDropdownOpen(false);
                       }}
-                      className={`w-full text-left px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center justify-between cursor-pointer ${
+                      className={`w-full text-left px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center justify-between cursor-pointer ${
                         isSelected
                           ? 'bg-amber-500 text-white font-extrabold shadow-xs'
                           : 'hover:bg-amber-50 text-zinc-800'
                       }`}
                     >
                       <span>{option}</span>
-                      {isSelected && <Check className="w-3.5 h-3.5 text-white" />}
+                      {isSelected && <Check className="w-3 h-3 text-white" />}
                     </button>
                   );
                 })}
@@ -298,30 +297,30 @@ export default function EventBlock({
       </div>
 
       {/* 4. Venue Coordinates / Location */}
-      <div className="space-y-2">
-        <label className="text-[11px] font-bold text-amber-950 uppercase tracking-wider block flex items-center gap-1.5">
-          <MapPin className="w-3.5 h-3.5 text-zinc-500" />
+      <div className="space-y-1.5">
+        <label className="text-[10px] font-black text-amber-950 uppercase tracking-wider block flex items-center gap-1.5">
+          <MapPin className="w-3 h-3 text-zinc-500" />
           <span>Venue Coordinates / Location</span>
-          <span className="text-zinc-400 font-normal lowercase">(optional)</span>
+          <span className="text-zinc-400 font-normal lowercase text-[9px]">(optional)</span>
         </label>
         <div className="relative">
-          <MapPin className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <MapPin className="w-3 h-3 text-zinc-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="e.g. Royal Lawn Room, Mumbai"
             value={block.venueLocation}
             onChange={(e) => onUpdate(block.id, { venueLocation: e.target.value })}
-            className="w-full bg-white border border-amber-200/90 focus:border-amber-500 pl-9 pr-3 py-2 rounded-xl text-xs font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none transition shadow-2xs"
+            className="w-full h-7.5 bg-white border border-amber-200/90 focus:border-amber-500 pl-7.5 pr-2.5 rounded-lg text-base sm:text-xs font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none transition shadow-2xs"
           />
         </div>
         <div className="relative">
-          <LinkIcon className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <LinkIcon className="w-3 h-3 text-zinc-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
           <input
             type="url"
-            placeholder="Map Link (e.g. https://maps.google.com/...)"
+            placeholder="Map Link (e.g. https://maps.google.com/?q=...)"
             value={block.mapLink}
             onChange={(e) => onUpdate(block.id, { mapLink: e.target.value })}
-            className="w-full bg-white border border-amber-200/90 focus:border-amber-500 pl-9 pr-3 py-2 rounded-xl text-xs font-medium text-zinc-700 placeholder:text-zinc-400 focus:outline-none transition shadow-2xs"
+            className="w-full h-7.5 bg-white border border-amber-200/90 focus:border-amber-500 pl-7.5 pr-2.5 rounded-lg text-base sm:text-xs font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none transition shadow-2xs font-mono"
           />
         </div>
       </div>

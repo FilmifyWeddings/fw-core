@@ -82,7 +82,7 @@ export default function TimePicker12H({
         </label>
       )}
       
-      <div className={`flex items-center gap-1 p-1 bg-white border-2 rounded-2xl shadow-xs transition-all ${
+      <div className={`flex items-center gap-1 h-7.5 px-2 bg-white border rounded-lg shadow-2xs transition-all ${
         hasError ? 'border-rose-400 bg-rose-50/20' : 'border-amber-200/90 focus-within:border-amber-500'
       }`}>
         <Clock className="w-3.5 h-3.5 text-amber-600 ml-2 shrink-0" />

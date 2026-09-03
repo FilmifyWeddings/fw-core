@@ -1479,18 +1479,18 @@ export default function ClientWorkspaceDetailPage() {
                           <button
                             onClick={() => handleSetFinalQuotation(doc)}
                             disabled={settingFinalId === doc.template_id}
-                            className="px-3.5 py-2 text-xs font-black text-emerald-800 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                            className="px-3.5 py-2 text-xs font-black text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-sm active:scale-95"
                           >
                             {settingFinalId === doc.template_id ? (
                               <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                             ) : (
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                              <Crown className="w-3.5 h-3.5 text-amber-200" />
                             )}
-                            Set As Final
+                            Finalize Quotation
                           </button>
                         ) : (
-                          <span className="px-3 py-1.5 text-xs font-black text-emerald-700 bg-emerald-100/80 border border-emerald-300 rounded-xl flex items-center gap-1">
-                            <CheckCheck className="w-4 h-4 text-emerald-600" /> Active Final
+                          <span className="px-3 py-1.5 text-xs font-black text-emerald-800 bg-emerald-100 border border-emerald-300 rounded-xl flex items-center gap-1.5">
+                            <CheckCheck className="w-4 h-4 text-emerald-600" /> Approved Final
                           </span>
                         )}
 

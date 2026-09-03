@@ -74,7 +74,7 @@ export default function ProgramTypeSelect({ selected, onChange, onAddCustom, has
   return (
     <div className="relative" ref={dropdownRef}>
       {/* RENAME TO EVENT TYPE */}
-      <label className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider block mb-1.5 flex items-center gap-1">
+      <label className="text-[10px] font-bold text-[#0B111E] uppercase tracking-wider block mb-1 flex items-center gap-1">
         <span>Event Type</span>
         <span className="text-rose-500 font-black">*</span>
       </label>

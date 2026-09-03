@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FWAssignment, FWTeamMember } from '@/types';
 import { Search, Plus, Check } from 'lucide-react';
-import { getRoleShortCode } from '@/lib/workspace-settings';
+import { getRoleShortCode, getRoleAbbr } from '@/lib/workspace-settings';
 
 interface RoleAssignDropdownProps {
   assignment: FWAssignment;
@@ -108,47 +108,46 @@ export default function RoleAssignDropdown({
           </span>
         </div>
       ) : (
-        /* 3-LAYER CIRCULAR AVATAR VARIANT (MATCHES CARDS VIEW) */
+        /* STRICT SHORT-FORM ROLE AVATAR (NO OVERFLOW) */
         <div
           onClick={handleOpenPopover}
-          className="flex flex-col items-center group cursor-pointer min-w-[64px]"
+          className="flex flex-col items-center group cursor-pointer min-w-[50px] max-w-[60px]"
           title={isAssigned ? `${cleanName} (${role})` : `Unassigned: ${role}`}
         >
-          {isAssigned ? (
-            memberObj?.avatar_url ? (
-              // eslint-disable-next-next/no-img-element
-              <img
-                src={memberObj.avatar_url}
-                alt={cleanName}
-                className="w-11 h-11 rounded-full object-cover border-2 border-white shadow-sm ring-2 ring-emerald-400 group-hover:scale-105 transition shrink-0"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName)}`;
-                }}
-              />
+          {/* Avatar */}
+          <div className="w-8 h-8 rounded-full border border-white shadow-xs overflow-hidden shrink-0 flex items-center justify-center">
+            {isAssigned ? (
+              memberObj?.avatar_url ? (
+                // eslint-disable-next-next/no-img-element
+                <img
+                  src={memberObj.avatar_url}
+                  alt={cleanName}
+                  className="w-8 h-8 rounded-full object-cover shrink-0"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName)}`;
+                  }}
+                />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-[10px] flex items-center justify-center shrink-0">
+                  {cleanName.slice(0, 2).toUpperCase() || getRoleAbbr(role)}
+                </div>
+              )
             ) : (
-              <div className="w-11 h-11 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-xs flex items-center justify-center shadow-sm border-2 border-white ring-2 ring-indigo-200 group-hover:scale-105 transition shrink-0">
-                {cleanName.slice(0, 2).toUpperCase() || role.slice(0, 2).toUpperCase()}
+              <div className="w-8 h-8 rounded-full border border-dashed border-red-500 bg-red-50/90 text-red-600 font-black flex items-center justify-center shadow-2xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
+                <Plus className="w-3.5 h-3.5 text-red-600 stroke-[3]" />
               </div>
-            )
-          ) : (
-            <div className="w-11 h-11 rounded-full border-2 border-dashed border-red-500 bg-red-50/90 text-red-600 font-black flex items-center justify-center shadow-xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
-              <Plus className="w-4 h-4 text-red-600 stroke-[3]" />
-            </div>
-          )}
+            )}
+          </div>
 
-          <span className={`font-black text-[10px] uppercase tracking-wider block text-center mt-1 px-1.5 py-0.5 rounded-md border leading-none ${
-            isAssigned
-              ? 'bg-indigo-50 text-indigo-900 border-indigo-200'
-              : 'bg-red-50 text-red-700 border-red-200'
-          }`}>
-            {getRoleShortCode(role)}
+          {/* Role Pill */}
+          <span className="text-[9px] font-extrabold uppercase text-slate-600 tracking-wider mt-0.5 leading-none block text-center">
+            {getRoleAbbr(role)}
           </span>
 
-          {isAssigned && (
-            <span className="block font-black text-slate-900 text-[11px] truncate max-w-[80px] mt-0.5 text-center leading-none">
-              {cleanName.split(' ')[0]}
-            </span>
-          )}
+          {/* Member Full Clean Name */}
+          <span className="text-[10px] font-semibold text-slate-800 truncate max-w-[70px] text-center leading-none mt-0.5 block" title={cleanName}>
+            {isAssigned ? (cleanName || 'Assign') : 'Assign'}
+          </span>
         </div>
       )}
 

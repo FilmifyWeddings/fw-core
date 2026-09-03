@@ -296,56 +296,59 @@ export default function AddProjectModal({
           exit={{ opacity: 0, scale: 0.95, y: 10 }}
           className="bg-[#FEFDF8] border-2 border-amber-200/90 rounded-3xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden"
         >
+          {/* ABSOLUTE TOP-RIGHT CORNER CRISP CLOSE BUTTON */}
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute top-3 right-3 z-30 w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-900 text-white flex items-center justify-center cursor-pointer shadow-md transition"
+            title="Close Modal"
+          >
+            <X className="w-4 h-4 stroke-[2.5]" />
+          </button>
+
           {/* HEADER BAR */}
-          <div className="p-4 sm:p-6 border-b border-amber-200/80 bg-gradient-to-r from-amber-50/80 via-white to-amber-50/60 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-b from-amber-400 to-amber-600 border border-amber-300 text-white flex items-center justify-center font-black shadow-md">
-                <Sparkles className="w-5 h-5" />
+          <div className="p-3 sm:p-4 border-b border-amber-200/80 bg-gradient-to-r from-amber-50/80 via-white to-amber-50/60 flex items-center justify-between pr-10">
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-xl bg-gradient-to-b from-amber-400 to-amber-600 border border-amber-300 text-white flex items-center justify-center font-black shadow-xs shrink-0">
+                <Sparkles className="w-3.5 h-3.5" />
               </div>
               <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-base sm:text-lg font-black text-amber-950">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <h3 className="text-xs sm:text-sm font-black text-amber-950">
                     {projectToEdit ? 'Edit Wedding Shoot Project' : 'Add New Wedding Shoot & Events'}
                   </h3>
                   {isDraftRestored && !projectToEdit && (
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
-                      <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                      Auto-Draft Restored
+                    <span className="px-1.5 py-0.2 rounded-md text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-0.5">
+                      <ShieldCheck className="w-2.5 h-2.5 text-emerald-600" />
+                      Auto-Draft
                     </span>
                   )}
                 </div>
-                <p className="text-xs font-semibold text-zinc-500">
+                <p className="text-[9px] sm:text-[10px] font-medium text-zinc-500">
                   Configure client couple profile, multi-day functions, overnight shoots, and crew placements.
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               {isDraftRestored && !projectToEdit && (
                 <button
                   type="button"
                   onClick={resetFormState}
-                  className="px-3 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-xl border border-rose-200 cursor-pointer"
+                  className="px-2 py-0.5 text-[9px] font-bold text-rose-600 hover:bg-rose-50 rounded-lg border border-rose-200 cursor-pointer"
                   title="Discard cached draft"
                 >
-                  Discard Draft
+                  Discard
                 </button>
               )}
-              <button
-                type="button"
-                onClick={onClose}
-                className="p-2 rounded-xl bg-white hover:bg-amber-100/70 border border-amber-200 text-amber-900 cursor-pointer shadow-xs transition"
-              >
-                <X className="w-4 h-4" />
-              </button>
             </div>
           </div>
 
           {/* SCROLLABLE BODY CONTENT */}
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+          <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3 sm:space-y-4">
             {/* 1. CLIENT COUPLE PROFILE INPUT */}
-            <div className="p-4 rounded-2xl bg-white border-2 border-amber-200/90 shadow-sm space-y-2">
-              <label className="text-xs font-black text-amber-950 uppercase tracking-wider block flex items-center gap-1.5">
+            <div className="p-2.5 sm:p-3 rounded-xl bg-white border border-amber-200/90 shadow-2xs space-y-1.5">
+              <label className="text-[10px] font-black text-amber-950 uppercase tracking-wider block flex items-center gap-1.5">
                 <User className="w-4 h-4 text-amber-600" />
                 <span>Client Couple Name / Project Title</span>
                 <span className="text-rose-500 font-bold">*</span>
@@ -355,7 +358,7 @@ export default function AddProjectModal({
                 placeholder="e.g. Rahul & Sneha (Wedding)"
                 value={couplingName}
                 onChange={(e) => setCouplingName(e.target.value)}
-                className={`w-full px-4 py-2.5 bg-[#FEFDF8] border-2 rounded-xl text-xs font-black text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:bg-white transition ${
+                className={`w-full h-8 px-3 bg-[#FEFDF8] border rounded-lg text-sm sm:text-xs font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:bg-white transition ${
                   validatedAttempt && !couplingName.trim()
                     ? 'border-rose-400 bg-rose-50/20'
                     : 'border-amber-200/90 focus:border-amber-500'
@@ -387,7 +390,7 @@ export default function AddProjectModal({
                 <button
                   type="button"
                   onClick={addEventBlock}
-                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-b from-amber-400 to-amber-600 hover:from-amber-500 hover:to-amber-700 text-white font-black text-xs shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  className="px-2.5 py-1 rounded-lg bg-gradient-to-b from-amber-400 to-amber-600 hover:from-amber-500 hover:to-amber-700 text-white font-black text-[11px] shadow-2xs flex items-center gap-1 cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>+ Add Another Function</span>
@@ -416,7 +419,7 @@ export default function AddProjectModal({
                 <button
                   type="button"
                   onClick={addEventBlock}
-                  className="w-full py-3.5 px-4 rounded-2xl border-2 border-dashed border-amber-300 hover:border-amber-500 bg-amber-50/60 hover:bg-amber-100/80 text-amber-950 font-black text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs active:translate-y-0.5"
+                  className="w-full py-2 px-3 rounded-xl border border-dashed border-amber-300 hover:border-amber-500 bg-amber-50/60 hover:bg-amber-100/80 text-amber-950 font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
                 >
                   <Plus className="w-4 h-4 text-amber-600 stroke-[3]" />
                   <span>+ Add Another Function / Sub-Event</span>
@@ -426,7 +429,7 @@ export default function AddProjectModal({
           </div>
 
           {/* FOOTER ACTION BAR */}
-          <div className="p-4 sm:p-6 border-t border-amber-200/80 bg-gradient-to-r from-amber-50/80 via-white to-amber-50/60 flex items-center justify-between gap-3">
+          <div className="p-2.5 sm:p-3 border-t border-amber-200/80 bg-gradient-to-r from-amber-50/80 via-white to-amber-50/60 flex items-center justify-between gap-2">
             {projectToEdit && onDeleteProject ? (
               <div>
                 {showDeleteConfirm ? (
@@ -464,7 +467,7 @@ export default function AddProjectModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="px-5 py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs rounded-2xl cursor-pointer"
+                className="h-7.5 px-3.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs rounded-lg cursor-pointer flex items-center justify-center"
               >
                 Cancel
               </button>
@@ -473,7 +476,7 @@ export default function AddProjectModal({
                 type="button"
                 disabled={isSubmitting}
                 onClick={handleSubmit}
-                className="px-6 py-2.5 bg-gradient-to-b from-amber-400 via-amber-500 to-amber-600 hover:from-amber-500 hover:to-amber-700 text-white font-black text-xs rounded-2xl shadow-md shadow-amber-500/25 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                className="h-7.5 px-4 bg-gradient-to-b from-amber-400 via-amber-500 to-amber-600 hover:from-amber-500 hover:to-amber-700 text-white font-black text-xs rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
               >
                 {isSubmitting ? (
                   <>
