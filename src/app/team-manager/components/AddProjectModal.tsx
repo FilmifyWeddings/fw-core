@@ -294,16 +294,16 @@ export default function AddProjectModal({
           initial={{ opacity: 0, scale: 0.95, y: 10 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 10 }}
-          className="bg-[#FEFDF8] border-2 border-amber-200/90 rounded-3xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden"
+          className="relative bg-[#FEFDF8] border-2 border-amber-200/90 rounded-3xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden"
         >
-          {/* ABSOLUTE TOP-RIGHT CORNER CRISP CLOSE BUTTON */}
+          {/* TOP-RIGHT CORNER CLOSE BUTTON */}
           <button
             type="button"
             onClick={onClose}
-            className="absolute top-3 right-3 z-30 w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-900 text-white flex items-center justify-center cursor-pointer shadow-md transition"
-            title="Close Modal"
+            className="absolute top-3 right-3 p-1 text-slate-500 hover:text-slate-800 transition-colors bg-transparent border-none outline-none cursor-pointer z-20"
+            aria-label="Close"
           >
-            <X className="w-4 h-4 stroke-[2.5]" />
+            <X className="w-5 h-5" />
           </button>
 
           {/* HEADER BAR */}
