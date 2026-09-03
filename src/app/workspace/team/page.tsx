@@ -33,6 +33,8 @@ interface TeamMember {
   country_code?: string;
   phone_number?: string;
   primary_role: string;
+  role?: string;
+  type?: string;
   roles?: string[];
   member_types?: string[];
   primary_type?: string;
@@ -72,7 +74,9 @@ export default function WorkspaceTeamPage() {
   const [logsLoading, setLogsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('All');
-  const [selectedRoleFilter, setSelectedRoleFilter] = useState('all');
+  const [selectedRole, setSelectedRole] = useState('all');
+  const selectedRoleFilter = selectedRole;
+  const setSelectedRoleFilter = setSelectedRole;
   const [selectedLogModule, setSelectedLogModule] = useState('ALL');
   
   // Modal states
@@ -485,45 +489,97 @@ export default function WorkspaceTeamPage() {
     }
   };
 
-  // Dynamic Distinct Roles from all members
+  // 2. Populate "All Roles" Dropdown Dynamically
   const availableRoles = useMemo(() => {
-    const set = new Set<string>();
-    members.forEach(m => {
-      if (m.primary_role) set.add(m.primary_role);
-      if (m.roles && Array.isArray(m.roles)) {
-        m.roles.forEach(r => set.add(r));
+    const roleSet = new Set<string>();
+    members.forEach((m) => {
+      if (Array.isArray(m.roles)) {
+        m.roles.forEach((r: string) => r && roleSet.add(r.trim()));
+      } else if (m.role) {
+        roleSet.add(m.role.trim());
+      } else if (m.primary_role) {
+        roleSet.add(m.primary_role.trim());
       }
     });
-    return Array.from(set).filter(Boolean).sort();
+    return Array.from(roleSet).sort();
   }, [members]);
 
-  // Filter & Search
-  const filteredMembers = members.filter(m => {
-    const matchesSearch = 
-      m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      m.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      m.phone?.includes(searchQuery) ||
-      m.primary_role.toLowerCase().includes(searchQuery.toLowerCase());
+  // 1. Robust Universal Search (Name, Role, Phone, Email) & Multi-Criteria Filtering
+  const filteredMembers = useMemo(() => {
+    return members.filter((member) => {
+      // 1. Tab Classification Filter (All Crew, In-House, Freelancers, Partners)
+      const tabKey = (selectedFilter || '').toLowerCase().replace(/[-_\s]/g, '');
+      const memType = String(member.type || member.primary_type || '').toLowerCase().replace(/[-_\s]/g, '');
+      const memTypes = Array.isArray(member.member_types)
+        ? member.member_types.map((t: string) => String(t).toLowerCase().replace(/[-_\s]/g, ''))
+        : [];
 
-    if (!matchesSearch) return false;
+      const isAll = !tabKey || tabKey === 'all' || tabKey === 'allcrew';
+      if (!isAll) {
+        const isInHouse = memType === 'inhouse' || memTypes.includes('inhouse');
+        const isFreelancer = memType === 'freelancer' || memTypes.includes('freelancer');
+        const isPartner = memType === 'partner' || memTypes.includes('partner');
 
-    if (selectedFilter === 'All') return true;
-    if (selectedFilter === 'In-House') return m.member_types?.includes('IN_HOUSE') || m.primary_type === 'IN_HOUSE';
-    if (selectedFilter === 'Freelancers') return m.member_types?.includes('FREELANCER') || m.primary_type === 'FREELANCER';
-    if (selectedFilter === 'Partners') return m.member_types?.includes('PARTNER') || m.primary_type === 'PARTNER';
-    if (selectedFilter === 'Photographers') return m.primary_role.toLowerCase().includes('photo') || m.roles?.some(r => r.toLowerCase().includes('photo'));
-    if (selectedFilter === 'Cinematographers') return m.primary_role.toLowerCase().includes('cine') || m.roles?.some(r => r.toLowerCase().includes('cine'));
-    if (selectedFilter === 'Editors') return m.primary_role.toLowerCase().includes('edit') || m.roles?.some(r => r.toLowerCase().includes('edit'));
-    if (selectedFilter === 'Labs') return m.primary_role.toLowerCase().includes('lab') || m.primary_role.toLowerCase().includes('print') || m.roles?.some(r => r.toLowerCase().includes('lab'));
+        if ((tabKey === 'inhouse' || tabKey === 'in_house') && !isInHouse) return false;
+        if (tabKey === 'freelancers' && !isFreelancer) return false;
+        if (tabKey === 'partners' && !isPartner) return false;
 
-    if (selectedRoleFilter && selectedRoleFilter !== 'all') {
-      const rLower = selectedRoleFilter.toLowerCase();
-      const matchPrimary = m.primary_role?.toLowerCase() === rLower;
-      const matchRoles = m.roles?.some(r => r.toLowerCase() === rLower);
-      if (!matchPrimary && !matchRoles) return false;
-    }
-    return true;
-  });
+        // Specialized sub-filters
+        if (tabKey === 'photographers') {
+          const isPhoto = String(member.primary_role || member.role || '').toLowerCase().includes('photo') || 
+            (Array.isArray(member.roles) && member.roles.some((r: string) => String(r).toLowerCase().includes('photo')));
+          if (!isPhoto) return false;
+        }
+        if (tabKey === 'cinematographers') {
+          const isCine = String(member.primary_role || member.role || '').toLowerCase().includes('cine') || 
+            (Array.isArray(member.roles) && member.roles.some((r: string) => String(r).toLowerCase().includes('cine')));
+          if (!isCine) return false;
+        }
+        if (tabKey === 'editors') {
+          const isEdit = String(member.primary_role || member.role || '').toLowerCase().includes('edit') || 
+            (Array.isArray(member.roles) && member.roles.some((r: string) => String(r).toLowerCase().includes('edit')));
+          if (!isEdit) return false;
+        }
+        if (tabKey === 'labs') {
+          const isLab = String(member.primary_role || member.role || '').toLowerCase().includes('lab') || 
+            String(member.primary_role || member.role || '').toLowerCase().includes('print') || 
+            (Array.isArray(member.roles) && member.roles.some((r: string) => String(r).toLowerCase().includes('lab')));
+          if (!isLab) return false;
+        }
+      }
+
+      // 2. Role Dropdown Filter
+      if (selectedRole && selectedRole !== 'all' && selectedRole !== 'All Roles') {
+        const targetRole = selectedRole.trim().toLowerCase();
+        const memberRoles = Array.isArray(member.roles) && member.roles.length > 0
+          ? member.roles.map((r: string) => String(r).trim().toLowerCase())
+          : [String(member.role || member.primary_role || '').trim().toLowerCase()];
+        
+        const hasRole = memberRoles.some((r: string) => r === targetRole || r.includes(targetRole));
+        if (!hasRole) return false;
+      }
+
+      // 3. Universal Search Bar Query
+      if (searchQuery && searchQuery.trim() !== '') {
+        const q = searchQuery.trim().toLowerCase();
+        
+        const nameMatch = (member.name || '').toLowerCase().includes(q);
+        const phoneMatch = (member.phone || member.phone_number || '').includes(q);
+        const emailMatch = (member.email || '').toLowerCase().includes(q);
+        
+        // Search inside roles array
+        const rolesMatch = Array.isArray(member.roles) && member.roles.length > 0
+          ? member.roles.some((r: string) => String(r).toLowerCase().includes(q))
+          : String(member.role || member.primary_role || '').toLowerCase().includes(q);
+
+        if (!nameMatch && !phoneMatch && !emailMatch && !rolesMatch) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [members, selectedFilter, selectedRole, searchQuery]);
 
   // Incremental Batch Scroll (15 Members at a Time)
   const [visibleCount, setVisibleCount] = useState(15);
@@ -531,7 +587,7 @@ export default function WorkspaceTeamPage() {
 
   useEffect(() => {
     setVisibleCount(15);
-  }, [selectedFilter, selectedRoleFilter, searchQuery]);
+  }, [selectedFilter, selectedRole, searchQuery]);
 
   // Metrics
   const totalCount = members.length;
@@ -665,7 +721,10 @@ export default function WorkspaceTeamPage() {
               ].map((tab) => (
                 <button
                   key={tab.id}
-                  onClick={() => setSelectedFilter(tab.id)}
+                  onClick={() => {
+                    setSelectedFilter(tab.id);
+                    setVisibleCount(15);
+                  }}
                   className={`flex-1 sm:flex-initial text-center py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                     selectedFilter === tab.id ? 'bg-black text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
                   }`}
@@ -683,24 +742,31 @@ export default function WorkspaceTeamPage() {
                   type="text"
                   placeholder="Search name, phone, email, role..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-3 py-1.5 h-8.5 bg-slate-50 rounded-xl border border-slate-200 text-xs font-semibold text-slate-900 focus:bg-white focus:outline-none focus:border-amber-500 transition"
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setVisibleCount(15);
+                  }}
+                  className="w-full pl-9 pr-3 py-1.5 h-9 bg-slate-50 rounded-xl border border-slate-200 text-xs font-semibold text-slate-900 focus:bg-white focus:outline-none focus:border-amber-500 transition"
                 />
               </div>
 
               {/* Dedicated Role Filter Dropdown */}
               <div className="relative shrink-0">
                 <select
-                  value={selectedRoleFilter}
-                  onChange={(e) => setSelectedRoleFilter(e.target.value)}
-                  className="h-8.5 pl-2.5 pr-7 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:border-amber-500 cursor-pointer appearance-none shadow-2xs"
+                  value={selectedRole}
+                  onChange={(e) => {
+                    setSelectedRole(e.target.value);
+                    setVisibleCount(15); // reset pagination on filter change
+                  }}
+                  className="h-9 text-xs font-semibold px-2.5 rounded-lg border border-slate-200 bg-white text-slate-700 outline-none cursor-pointer"
                 >
-                  <option value="all">🎭 All Roles ({members.length})</option>
-                  {availableRoles.map(role => (
-                    <option key={role} value={role}>{role}</option>
+                  <option value="all">All Roles ({availableRoles.length})</option>
+                  {availableRoles.map((role) => (
+                    <option key={role} value={role}>
+                      {role}
+                    </option>
                   ))}
                 </select>
-                <ChevronDown className="w-3.5 h-3.5 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" />
               </div>
             </div>
           </div>
