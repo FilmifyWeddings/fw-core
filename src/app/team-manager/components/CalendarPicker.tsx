@@ -28,9 +28,21 @@ interface CalendarPickerProps {
   value: string;
   onChange: (date: string) => void;
   hasError?: boolean;
+  disabled?: boolean;
+  placeholder?: string;
+  hideLabel?: boolean;
+  label?: string;
 }
 
-export default function CalendarPicker({ value, onChange, hasError }: CalendarPickerProps) {
+export default function CalendarPicker({
+  value,
+  onChange,
+  hasError,
+  disabled = false,
+  placeholder = 'Pick a date...',
+  hideLabel = false,
+  label = 'Program Date',
+}: CalendarPickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const now = new Date();
   const [viewYear, setViewYear] = useState(now.getFullYear());
@@ -82,28 +94,33 @@ export default function CalendarPicker({ value, onChange, hasError }: CalendarPi
 
   return (
     <div className="relative" ref={calendarRef}>
-      <label className="text-[10px] font-bold text-[#0B111E] uppercase tracking-wider block mb-1 flex items-center gap-1">
-        <span>Program Date</span>
-        <span className="text-rose-500 font-black">*</span>
-      </label>
+      {!hideLabel && (
+        <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1 flex items-center gap-1">
+          <span>{label}</span>
+          <span className="text-red-500 font-black">*</span>
+        </label>
+      )}
 
       <button
         type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className={`w-full bg-white border h-7.5 px-2.5 py-1 rounded-lg text-xs font-bold text-slate-900 focus:outline-none transition flex items-center justify-between shadow-2xs ${
-          hasError
+        disabled={disabled}
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        className={`h-9 w-full px-3 text-xs rounded-lg border border-slate-200 bg-white transition-all flex items-center justify-between shadow-2xs ${
+          disabled
+            ? 'opacity-40 cursor-not-allowed bg-slate-100 text-slate-400'
+            : hasError
             ? 'border-rose-500 ring-2 ring-rose-500/40 animate-pulse bg-rose-50/50'
             : 'border-slate-200 focus:border-[#6C5CE7]'
         }`}
       >
-        <span className={displayValue ? '' : 'text-slate-400 font-semibold'}>
-          {displayValue || 'Pick a date...'}
+        <span className={displayValue && !disabled ? 'text-slate-900 font-bold' : 'text-slate-400 font-semibold'}>
+          {disabled ? placeholder : (displayValue || placeholder)}
         </span>
-        <Calendar className="w-4 h-4 text-slate-600" />
+        <Calendar className="w-4 h-4 text-slate-400" />
       </button>
 
       <AnimatePresence>
-        {isOpen && (
+        {isOpen && !disabled && (
           <motion.div
             initial={{ opacity: 0, y: -4, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}

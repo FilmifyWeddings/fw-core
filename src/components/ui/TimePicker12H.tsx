@@ -79,15 +79,15 @@ export default function TimePicker12H({
   return (
     <div className={`space-y-1 ${className}`}>
       {label && (
-        <label className="text-[10px] font-black text-amber-950 uppercase tracking-wider block">
+        <label className="text-[10px] font-black uppercase tracking-wider block text-slate-500">
           {label}
         </label>
       )}
       
-      <div className={`flex items-center gap-1 h-7.5 px-2 bg-white border rounded-lg shadow-2xs transition-all ${
-        hasError ? 'border-rose-400 bg-rose-50/20' : 'border-amber-200/90 focus-within:border-amber-500'
+      <div className={`flex items-center gap-1 h-9 px-2 bg-white border rounded-lg shadow-2xs transition-all ${
+        hasError ? 'border-rose-400 bg-rose-50/20' : 'border-slate-200 focus-within:border-[#6C5CE7]'
       }`}>
-        <Clock className="w-3.5 h-3.5 text-amber-600 ml-2 shrink-0" />
+        <Clock className="w-3.5 h-3.5 text-amber-600 ml-1.5 shrink-0" />
         
         {/* HOUR SELECTOR */}
         <select

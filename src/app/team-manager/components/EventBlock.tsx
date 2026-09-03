@@ -91,6 +91,9 @@ export default function EventBlock({
     adjustNotesHeight();
   }, [block.notes]);
 
+  const isDateNotFixed = Boolean(block.isDateTbd);
+  const isOvernight = Boolean(block.isOvernight);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -144,14 +147,22 @@ export default function EventBlock({
         hasError={hasProgramTypeError}
       />
 
-      {/* 2. DATE SETTINGS (TBD + OVERNIGHT DUAL DAY OPTIONS) */}
-      <div className="p-2 sm:p-2.5 bg-amber-50/50 border border-amber-200/80 rounded-xl space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          {/* TBD Checkbox */}
-          <label className="flex items-center gap-2 cursor-pointer select-none">
+      {/* 2. PROGRAM DATE & CHECKBOXES GROUP */}
+      <div>
+        {/* Label Header */}
+        <div className="flex items-center justify-between mt-3 mb-1.5">
+          <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+            Program Date <span className="text-red-500">*</span>
+          </label>
+        </div>
+
+        {/* Directly below the label, render the Checkbox row */}
+        <div className="flex flex-wrap items-center gap-4 mb-2">
+          {/* Date Not Fixed Checkbox */}
+          <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-700 select-none">
             <input
               type="checkbox"
-              checked={Boolean(block.isDateTbd)}
+              checked={isDateNotFixed}
               onChange={(e) => {
                 const isTbd = e.target.checked;
                 onUpdate(block.id, {
@@ -161,68 +172,77 @@ export default function EventBlock({
               }}
               className="h-4 w-4 rounded border-slate-300 text-amber-500 shadow-inner focus:ring-amber-400 cursor-pointer accent-amber-600"
             />
-            <span className="text-xs font-black text-amber-950">
-              Date Not Fixed (TBD)
-            </span>
+            <span>Date Not Fixed (TBD)</span>
           </label>
 
-          {/* Overnight Toggle */}
-          <label className="flex items-center gap-2 cursor-pointer select-none">
+          {/* Spans Overnight Checkbox */}
+          <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-700 select-none">
             <input
               type="checkbox"
-              checked={Boolean(block.isOvernight)}
+              checked={isOvernight}
               onChange={(e) => {
-                const isOvernight = e.target.checked;
+                const isOvernightVal = e.target.checked;
                 onUpdate(block.id, {
-                  isOvernight,
-                  endDate: isOvernight ? (block.endDate || block.subEventDate) : '',
+                  isOvernight: isOvernightVal,
+                  endDate: isOvernightVal ? (block.endDate || block.subEventDate) : '',
                 });
               }}
               className="h-4 w-4 rounded border-slate-300 text-amber-500 shadow-inner focus:ring-amber-400 cursor-pointer accent-indigo-600"
             />
-            <span className="text-xs font-black text-indigo-950 flex items-center">
-              <Moon className="w-3.5 h-3.5 text-indigo-500 inline-block mr-1" />
-              <span>Spans Overnight (Next Day End)</span>
-            </span>
+            <Moon className="w-3.5 h-3.5 text-indigo-500 inline-block" />
+            <span>Spans Overnight (Next Day End)</span>
           </label>
         </div>
 
-        {/* Calendar Picker Row */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="text-[10px] font-black text-amber-950 uppercase tracking-wider block mb-1">
-              {block.isOvernight ? 'Start Date' : 'Event Date'}
-            </label>
-            {block.isDateTbd ? (
-              <div className="p-2.5 bg-amber-100/70 border border-amber-300 rounded-xl text-xs font-bold text-amber-900 flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-amber-700" />
-                <span>Date: TBD / Not Fixed</span>
-              </div>
-            ) : (
-              <CalendarPicker
-                value={block.subEventDate}
-                onChange={(date) => onUpdate(block.id, { subEventDate: date })}
-                hasError={hasDateError}
-              />
-            )}
-          </div>
-
-          {block.isOvernight && !block.isDateTbd && (
+        {/* Directly below the checkboxes, render the Date Input */}
+        {isOvernight && !isDateNotFixed ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="text-[10px] font-black text-indigo-950 uppercase tracking-wider block mb-1">
+              <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                Start Date
+              </label>
+              <div className="relative">
+                <CalendarPicker
+                  value={block.subEventDate}
+                  onChange={(date) => onUpdate(block.id, { subEventDate: date })}
+                  hasError={hasDateError}
+                  disabled={isDateNotFixed}
+                  hideLabel
+                  placeholder="Pick start date..."
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-wider text-indigo-950 block mb-1">
                 End Date (Next Day)
               </label>
-              <CalendarPicker
-                value={block.endDate || block.subEventDate}
-                onChange={(date) => onUpdate(block.id, { endDate: date })}
-              />
+              <div className="relative">
+                <CalendarPicker
+                  value={block.endDate || block.subEventDate}
+                  onChange={(date) => onUpdate(block.id, { endDate: date })}
+                  hideLabel
+                  placeholder="Pick end date..."
+                />
+              </div>
             </div>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="relative">
+            <CalendarPicker
+              value={block.subEventDate}
+              onChange={(date) => onUpdate(block.id, { subEventDate: date })}
+              hasError={hasDateError}
+              disabled={isDateNotFixed}
+              hideLabel
+              placeholder={isDateNotFixed ? "Pick a date..." : "Pick a date..."}
+            />
+          </div>
+        )}
       </div>
 
       {/* 3. UNIVERSAL 12-HOUR TIME PICKERS & SHIFT SLOT */}
-      <div className="grid grid-cols-1 sm:grid-cols-7 gap-3 items-end">
+      <div className="grid grid-cols-1 sm:grid-cols-7 gap-3 items-end pt-1">
         <div className="sm:col-span-3">
           <TimePicker12H
             label="Roll Call Time (Start)"
@@ -241,17 +261,17 @@ export default function EventBlock({
 
         {/* SINGLE SHIFT SLOT DROPDOWN */}
         <div className="sm:col-span-1 relative" ref={slotDropdownRef}>
-          <label className="text-[10px] text-amber-950 font-black uppercase tracking-wider block mb-1 flex items-center gap-1">
+          <label className="text-[10px] text-slate-500 font-black uppercase tracking-wider block mb-1 flex items-center gap-1">
             <Zap className="w-3 h-3 text-amber-500" />
             <span>Shift</span>
           </label>
           <button
             type="button"
             onClick={() => setIsSlotDropdownOpen(!isSlotDropdownOpen)}
-            className={`w-full h-7.5 px-2 rounded-lg border font-bold text-xs transition flex items-center justify-between cursor-pointer shadow-2xs ${
+            className={`w-full h-9 px-2 rounded-lg border font-bold text-xs transition flex items-center justify-between cursor-pointer shadow-2xs ${
               block.shiftSlot && block.shiftSlot !== 'None (Standard)'
                 ? 'bg-amber-50 border-amber-300 text-amber-900'
-                : 'bg-white border-amber-200 text-zinc-700 hover:border-amber-400'
+                : 'bg-white border-slate-200 text-zinc-700 hover:border-amber-400'
             }`}
             title="Select Shift Slot Duration"
           >
