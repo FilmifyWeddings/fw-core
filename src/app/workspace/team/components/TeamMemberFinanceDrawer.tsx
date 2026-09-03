@@ -501,26 +501,27 @@ export default function TeamMemberFinanceDrawer({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-[9999] overflow-hidden">
+      <div className="fixed inset-0 z-[120] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs">
         {/* Backdrop */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={onClose}
-          className="absolute inset-0 bg-slate-950/60 backdrop-blur-xs transition-opacity"
+          className="absolute inset-0 bg-transparent transition-opacity"
         />
 
-        {/* 3D Slide-Over Drawer Container */}
+        {/* Centered Modal Content */}
         <motion.div
-          initial={{ x: '100%' }}
-          animate={{ x: 0 }}
-          exit={{ x: '100%' }}
-          transition={{ type: 'spring', damping: 28, stiffness: 260 }}
-          className="absolute inset-y-0 right-0 max-w-2xl w-full bg-[#FAF8F2] shadow-2xl border-l border-amber-200/80 flex flex-col z-10 font-sans"
+          initial={{ opacity: 0, scale: 0.95, y: 10 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 10 }}
+          transition={{ type: 'spring', damping: 26, stiffness: 280 }}
+          className="w-[94vw] max-w-2xl bg-white rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto flex flex-col z-10 font-sans border border-slate-200"
+          onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="p-4 sm:p-5 bg-gradient-to-r from-stone-900 via-zinc-900 to-amber-950 text-white flex items-center justify-between shadow-md">
+          <div className="p-4 sm:p-5 bg-gradient-to-r from-stone-900 via-zinc-900 to-amber-950 text-white flex items-center justify-between shadow-md rounded-t-2xl shrink-0">
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-11 h-11 rounded-2xl bg-amber-500/20 border-2 border-amber-400/40 overflow-hidden flex items-center justify-center shrink-0">
                 {member.avatar_url ? (

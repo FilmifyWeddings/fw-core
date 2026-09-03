@@ -530,7 +530,7 @@ export default function WorkspaceTeamPage() {
     <div className="min-h-screen bg-[#FAF9F6] p-3 sm:p-5 lg:p-6 space-y-4 w-full font-sans">
       
       {/* 1. TOP HEADER & NAVIGATION TABS */}
-      <div className="bg-white rounded-3xl p-6 sm:p-8 border border-zinc-200 shadow-sm relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div className="bg-white rounded-2xl sm:rounded-3xl p-3.5 sm:p-5 border border-zinc-200 shadow-sm relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-4 sm:gap-6">
         <div className="space-y-1.5">
           <div className="flex items-center gap-2">
             <span className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1.5">
@@ -542,18 +542,18 @@ export default function WorkspaceTeamPage() {
             </span>
           </div>
 
-          <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
-            Studio Team &amp; Partner Governance
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-black text-zinc-900 tracking-tight">
+            Studio Team &amp; Partners
           </h1>
-          <p className="text-xs sm:text-sm text-zinc-500 font-medium max-w-2xl">
+          <p className="hidden md:block text-xs sm:text-sm text-zinc-500 font-medium max-w-2xl">
             Manage in-house staff, freelance crew, and printing lab partners with granular RBAC permissions and a real-time audit activity log.
           </p>
 
           {/* Tab Switcher */}
-          <div className="flex items-center gap-2 pt-3">
+          <div className="flex items-center gap-2 pt-1.5 sm:pt-2">
             <button
               onClick={() => setActiveTab('directory')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+              className={`px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
                 activeTab === 'directory'
                   ? 'bg-zinc-900 text-white shadow-xs'
                   : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
@@ -565,7 +565,7 @@ export default function WorkspaceTeamPage() {
 
             <button
               onClick={() => setActiveTab('activity_logs')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+              className={`px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
                 activeTab === 'activity_logs'
                   ? 'bg-zinc-900 text-white shadow-xs'
                   : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
@@ -580,21 +580,10 @@ export default function WorkspaceTeamPage() {
         <div className="flex items-center gap-3 shrink-0">
           <button
             onClick={() => {
-              if (activeTab === 'directory') loadMembers();
-              else loadActivityLogs();
-            }}
-            className="p-2.5 rounded-2xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 transition cursor-pointer"
-            title="Refresh Data"
-          >
-            <RefreshCw className={`w-4 h-4 ${(loading || logsLoading) ? 'animate-spin text-amber-600' : ''}`} />
-          </button>
-
-          <button
-            onClick={() => {
               setMemberToEdit(null);
               setIsAddModalOpen(true);
             }}
-            className="px-5 py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-xs shadow-md shadow-amber-500/20 transition flex items-center gap-2 cursor-pointer"
+            className="h-9 px-3.5 sm:px-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-xs shadow-xs transition flex items-center gap-2 cursor-pointer shrink-0"
           >
             <UserPlus className="w-4 h-4" />
             <span>+ Add Team Member / Partner</span>
@@ -605,67 +594,52 @@ export default function WorkspaceTeamPage() {
       {activeTab === 'directory' ? (
         <>
           {/* 2. STATS OVERVIEW CARDS (WITH IN-HOUSE / FREELANCER / PARTNER BREAKDOWN) */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-            <div className="bg-white p-5 rounded-2xl border border-zinc-200 shadow-2xs space-y-1">
-              <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Total Crew &amp; Partners</span>
-              <div className="text-2xl font-black text-zinc-900">{totalCount}</div>
-            </div>
-
-            <div className="bg-white p-5 rounded-2xl border border-zinc-200 shadow-2xs space-y-1">
-              <span className="text-[11px] font-bold text-emerald-600 uppercase tracking-wider">🏢 In-House Staff</span>
-              <div className="text-2xl font-black text-emerald-900">{inHouseCount}</div>
-            </div>
-
-            <div className="bg-white p-5 rounded-2xl border border-zinc-200 shadow-2xs space-y-1">
-              <span className="text-[11px] font-bold text-sky-600 uppercase tracking-wider">📸 Freelancers</span>
-              <div className="text-2xl font-black text-sky-900">{freelancerCount}</div>
-            </div>
-
-            <div className="bg-white p-5 rounded-2xl border border-zinc-200 shadow-2xs space-y-1">
-              <span className="text-[11px] font-bold text-purple-600 uppercase tracking-wider">🤝 Printing Labs &amp; Partners</span>
-              <div className="text-2xl font-black text-purple-900">{partnerCount}</div>
-            </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 my-3">
+            {[
+              { label: 'Total Crew', count: totalCount },
+              { label: 'In-House', count: inHouseCount },
+              { label: 'Freelancers', count: freelancerCount },
+              { label: 'Partners', count: partnerCount },
+            ].map((s, idx) => (
+              <div key={idx} className="bg-white border border-slate-200/80 rounded-xl p-2.5 flex items-center justify-between shadow-2xs">
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">{s.label}</span>
+                <span className="text-sm font-black text-slate-800">{s.count}</span>
+              </div>
+            ))}
           </div>
 
           {/* 3. SEARCH & CLASSIFICATION FILTER BAR */}
-          <div className="bg-white p-3 sm:p-4 rounded-2xl border border-stone-200/90 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-3">
-            {/* Classification Type Pills */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
+          <div className="bg-white p-2.5 sm:p-3.5 rounded-2xl border border-slate-200/80 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+            {/* Filter Tabs (No More Awkward Horizontal Scroll) */}
+            <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100/80 rounded-xl w-full sm:w-auto">
               {[
                 { id: 'All', label: 'All Crew', count: totalCount },
-                { id: 'In-House', label: '🏢 In-House', count: inHouseCount },
-                { id: 'Freelancers', label: '📸 Freelancers', count: freelancerCount },
-                { id: 'Partners', label: '🤝 Partners', count: partnerCount },
-              ].map((f) => (
+                { id: 'In-House', label: 'In-House', count: inHouseCount },
+                { id: 'Freelancers', label: 'Freelancers', count: freelancerCount },
+                { id: 'Partners', label: 'Partners', count: partnerCount },
+              ].map((tab) => (
                 <button
-                  key={f.id}
-                  onClick={() => setSelectedFilter(f.id)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-                    selectedFilter === f.id
-                      ? 'bg-stone-900 text-white shadow-xs'
-                      : 'bg-stone-50 text-stone-600 hover:bg-stone-100 border border-stone-200'
+                  key={tab.id}
+                  onClick={() => setSelectedFilter(tab.id)}
+                  className={`flex-1 sm:flex-initial text-center py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    selectedFilter === tab.id ? 'bg-black text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  <span>{f.label}</span>
-                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
-                    selectedFilter === f.id ? 'bg-white/20 text-white' : 'bg-stone-200 text-stone-700'
-                  }`}>
-                    {f.count}
-                  </span>
+                  {tab.label} <span className="opacity-70 text-[10px]">({tab.count})</span>
                 </button>
               ))}
             </div>
 
             {/* Right: Search + Role Filter Dropdown */}
-            <div className="flex items-center gap-2.5 flex-1 max-w-lg md:ml-auto">
+            <div className="flex items-center gap-2 flex-1 max-w-lg md:ml-auto w-full">
               <div className="relative flex-1">
-                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
                   placeholder="Search name, phone, email, role..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-3 py-1.5 h-8.5 bg-stone-50 rounded-xl border border-stone-200 text-xs font-semibold text-stone-900 focus:bg-white focus:outline-none focus:border-amber-500 transition"
+                  className="w-full pl-9 pr-3 py-1.5 h-8.5 bg-slate-50 rounded-xl border border-slate-200 text-xs font-semibold text-slate-900 focus:bg-white focus:outline-none focus:border-amber-500 transition"
                 />
               </div>
 
@@ -674,14 +648,14 @@ export default function WorkspaceTeamPage() {
                 <select
                   value={selectedRoleFilter}
                   onChange={(e) => setSelectedRoleFilter(e.target.value)}
-                  className="h-8.5 pl-2.5 pr-7 bg-stone-50 border border-stone-200 rounded-lg text-xs font-bold text-stone-800 focus:bg-white focus:outline-none focus:border-amber-500 cursor-pointer appearance-none shadow-2xs"
+                  className="h-8.5 pl-2.5 pr-7 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:border-amber-500 cursor-pointer appearance-none shadow-2xs"
                 >
                   <option value="all">🎭 All Roles ({members.length})</option>
                   {availableRoles.map(role => (
                     <option key={role} value={role}>{role}</option>
                   ))}
                 </select>
-                <ChevronDown className="w-3.5 h-3.5 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-stone-400" />
+                <ChevronDown className="w-3.5 h-3.5 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" />
               </div>
             </div>
           </div>
@@ -728,15 +702,16 @@ export default function WorkspaceTeamPage() {
                   const isFreelancer = member.primary_type === 'FREELANCER' || member.member_types?.includes('FREELANCER') || (member as any).type === 'freelancer';
                   const isPartner = member.primary_type === 'PARTNER' || member.member_types?.includes('PARTNER') || (member as any).type === 'partner';
                   const memberTypeLabel = isPartner ? 'Partner' : isFreelancer ? 'Freelancer' : (member.primary_type || 'In-House');
-                  const leadsBadge = formatLeadsBadge(member.permissions?.leads_access);
-                  const teamBadge = formatTeamManagerBadge(member.permissions?.team_manager_access);
-                  const crmAccessText = (member as any).crm_access ? `CRM: ${(member as any).crm_access}` : leadsBadge.label;
-                  const teamAccessText = (member as any).team_access ? `Team: ${(member as any).team_access}` : teamBadge.label;
+                  const rawCrm = (member as any).crm_access || (member.permissions?.leads_access ? member.permissions.leads_access.replace(/_/g, ' ') : '');
+                  const rawTeam = (member as any).team_access || (member.permissions?.team_manager_access ? member.permissions.team_manager_access.replace(/_/g, ' ') : '');
+                  const showCrm = rawCrm && !rawCrm.toLowerCase().includes('hidden') && !rawCrm.toLowerCase().includes('none');
+                  const showTeam = rawTeam && !rawTeam.toLowerCase().includes('hidden') && !rawTeam.toLowerCase().includes('none');
 
                   return (
                     <div 
                       key={member.id}
-                      className="px-4 py-3.5 sm:px-5 hover:bg-slate-50/70 transition-colors flex flex-col md:grid md:grid-cols-12 gap-3 md:gap-4 items-start md:items-center"
+                      onClick={() => handleOpenDetails(member)}
+                      className="px-4 py-3.5 sm:px-5 hover:bg-slate-50/70 transition-colors flex flex-col md:grid md:grid-cols-12 gap-3 md:gap-4 items-start md:items-center cursor-pointer"
                     >
                       {/* 1. Member Profile & Name (Clickable) */}
                       <div className="col-span-4 flex items-center gap-3 w-full">
@@ -748,13 +723,9 @@ export default function WorkspaceTeamPage() {
                           )}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenDetails(member)}
-                            className="text-left font-bold text-xs sm:text-sm text-slate-800 hover:text-indigo-600 truncate block transition-colors cursor-pointer"
-                          >
+                          <span className="font-bold text-xs sm:text-sm text-slate-800 hover:text-indigo-600 truncate block transition-colors">
                             {member.name}
-                          </button>
+                          </span>
                           <div className="flex items-center gap-2 text-[11px] text-slate-500 truncate">
                             {member.phone && <span>{member.phone}</span>}
                             {member.phone && member.email && <span>•</span>}
@@ -799,24 +770,36 @@ export default function WorkspaceTeamPage() {
                         </div>
                       </div>
 
-                      {/* 4. Portal Access */}
-                      <div className="col-span-2 flex flex-wrap gap-1 items-center w-full">
-                        <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">
-                          {crmAccessText}
-                        </span>
-                        <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">
-                          {teamAccessText}
-                        </span>
+                      {/* 4. Portal Access (Only show if granted and not hidden) */}
+                      <div className="col-span-2 flex flex-wrap gap-1.5 items-center w-full">
+                        {showCrm && (
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-semibold border border-blue-200">
+                            CRM: {rawCrm}
+                          </span>
+                        )}
+                        {showTeam && (
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-purple-50 text-purple-700 font-semibold border border-purple-200">
+                            Team: {rawTeam}
+                          </span>
+                        )}
+                        {!showCrm && !showTeam && (
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-slate-50 text-slate-400 font-medium border border-slate-200/60">
+                            No Access
+                          </span>
+                        )}
                       </div>
 
-                      {/* 5. Direct Action Icons (No Three-Dots) */}
+                      {/* 5. Direct Action Icons (Responsive Consistent Sizing) */}
                       <div className="col-span-1 flex items-center justify-end gap-1.5 w-full md:w-auto">
                         {/* Details Action */}
                         <button
                           type="button"
                           title="View Details"
-                          onClick={() => handleOpenDetails(member)}
-                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenDetails(member);
+                          }}
+                          className="h-8 w-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
                         >
                           <Eye className="w-4 h-4"/>
                         </button>
@@ -824,8 +807,11 @@ export default function WorkspaceTeamPage() {
                         <button
                           type="button"
                           title="Edit Member"
-                          onClick={() => handleEditMember(member)}
-                          className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEditMember(member);
+                          }}
+                          className="h-8 w-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-amber-600 transition-colors cursor-pointer"
                         >
                           <Pencil className="w-4 h-4"/>
                         </button>
@@ -833,8 +819,11 @@ export default function WorkspaceTeamPage() {
                         <button
                           type="button"
                           title="Delete Member"
-                          onClick={() => handleDeleteMember(member.id)}
-                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteMember(member.id);
+                          }}
+                          className="h-8 w-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-rose-600 transition-colors cursor-pointer"
                         >
                           <Trash2 className="w-4 h-4"/>
                         </button>

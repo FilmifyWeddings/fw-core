@@ -481,7 +481,7 @@ export default function AddTeamMemberModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || isSelfEmail || isDuplicateEmail || isDisposableEmail) return;
+    if (!name.trim() || !phoneNumber.trim() || isSelfEmail || isDuplicateEmail || isDisposableEmail) return;
 
     setLoading(true);
     try {
@@ -637,74 +637,69 @@ export default function AddTeamMemberModal({
               </div>
             )}
 
-            {/* ── 1. MEMBER TYPE CLASSIFICATION (3D Multi-Select Checkboxes) ── */}
-            <div className="space-y-2">
-              <label className="text-[11px] font-black text-zinc-800 uppercase tracking-wider flex items-center justify-between">
-                <span>Member Type Classification (Select All That Apply) *</span>
-                <span className="text-[10px] text-amber-600 font-bold lowercase">
-                  {selectedMemberTypes.length} selected
-                </span>
-              </label>
+            {/* ── 1. FULL NAME & AVATAR ── */}
+            <div className="flex items-center gap-3 mb-3">
+              <div className="relative group shrink-0">
+                <div className="w-12 h-12 rounded-xl bg-zinc-100 border-2 border-dashed border-zinc-200 flex items-center justify-center overflow-hidden">
+                  {avatarUrl ? (
+                    <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                  ) : (
+                    <User className="w-5 h-5 text-zinc-300" />
+                  )}
+                  {isCompressing && (
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                      <Loader2 className="w-4 h-4 text-white animate-spin" />
+                    </div>
+                  )}
+                </div>
+                <label className="absolute -bottom-1 -right-1 w-5 h-5 bg-amber-500 hover:bg-amber-600 text-white rounded-md flex items-center justify-center cursor-pointer shadow-xs transition">
+                  <Camera className="w-3 h-3" />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageSelect}
+                    className="hidden"
+                  />
+                </label>
+              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                {MEMBER_TYPE_OPTIONS.map((opt) => {
-                  const isChecked = selectedMemberTypes.includes(opt.id);
-                  return (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => toggleMemberType(opt.id)}
-                      className={`p-3 rounded-2xl text-left border transition-all cursor-pointer flex flex-col justify-between ${
-                        isChecked
-                          ? 'bg-gradient-to-b from-amber-50 to-amber-100/60 border-amber-400 shadow-sm shadow-amber-500/10'
-                          : 'bg-zinc-50/70 hover:bg-zinc-100 border-zinc-200 text-zinc-600'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between w-full mb-1">
-                        <span className={`text-xs font-black ${isChecked ? 'text-amber-950' : 'text-zinc-800'}`}>
-                          {opt.label}
-                        </span>
-                        <div className={`w-4 h-4 rounded-md flex items-center justify-center border transition ${
-                          isChecked
-                            ? 'bg-amber-500 border-amber-600 text-white'
-                            : 'border-zinc-300 bg-white'
-                        }`}>
-                          {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
-                        </div>
-                      </div>
-                      <p className="text-[9.5px] text-zinc-500 font-medium leading-tight">
-                        {opt.desc}
-                      </p>
-                    </button>
-                  );
-                })}
+              <div className="flex-1">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                  Full Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Rahul Sharma"
+                  className="h-9 w-full rounded-lg border border-slate-200 px-3 text-xs focus:bg-white focus:border-amber-500 focus:outline-none transition"
+                />
               </div>
             </div>
 
-            {/* ── 2. EMAIL DIRECTORY SEARCH & AUTOCOMPLETE ── */}
-            <div className="space-y-1.5 relative">
-              <label className="text-[11px] font-bold text-zinc-700 flex items-center justify-between">
-                <span className="flex items-center gap-1">
-                  <Mail className="w-3 h-3 text-zinc-400" />
-                  <span>Email (For Partner Portal Login) *</span>
-                </span>
+            {/* ── 2. EMAIL ID (FOR PARTNER PORTAL LOGIN) ── */}
+            <div className="relative mb-3">
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">
+                  Email ID (For Partner Portal Login)
+                </label>
                 {isRegisteredUser && (
                   <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1">
                     <CheckCircle2 className="w-3 h-3" />
                     Registered StudioCore User
                   </span>
                 )}
-              </label>
+              </div>
 
               <div className="relative">
                 <input
                   type="email"
-                  required
-                  placeholder="Type real email (@gmail.com, etc.)..."
                   value={email}
                   onChange={(e) => handleEmailChange(e.target.value)}
                   onFocus={() => searchResults.length > 0 && setShowSuggestions(true)}
-                  className="w-full px-3.5 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-semibold text-zinc-900 focus:bg-white focus:border-amber-500 focus:outline-hidden transition"
+                  placeholder="e.g. rahul@example.com"
+                  className="h-9 w-full rounded-lg border border-slate-200 px-3 text-xs focus:bg-white focus:border-amber-500 focus:outline-none transition"
                 />
                 {isSearching && (
                   <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -761,64 +756,75 @@ export default function AddTeamMemberModal({
 
               {/* Unregistered User Helper Info */}
               {!isRegisteredUser && cleanEnteredEmail && !isSearching && searchResults.length === 0 && !isSelfEmail && !isDuplicateEmail && !isDisposableEmail && (
-                <p className="text-[10px] text-zinc-400 font-medium pt-0.5 flex items-center gap-1">
+                <p className="text-[10px] text-zinc-400 font-medium pt-1 flex items-center gap-1">
                   <Sparkles className="w-3 h-3 text-amber-500 shrink-0" />
                   <span>Naya user: Jab yeh person StudioCore par signup/login karenge, yeh studio unke dashboard me automatically link ho jayega.</span>
                 </p>
               )}
             </div>
 
-            {/* ── 3. AVATAR & FULL NAME ── */}
-            <div className="flex items-center gap-4">
-              <div className="relative group shrink-0">
-                <div className="w-16 h-16 rounded-2xl bg-zinc-100 border-2 border-dashed border-zinc-200 flex items-center justify-center overflow-hidden">
-                  {avatarUrl ? (
-                    <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
-                  ) : (
-                    <User className="w-6 h-6 text-zinc-300" />
-                  )}
-                  {isCompressing && (
-                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                      <Loader2 className="w-4 h-4 text-white animate-spin" />
-                    </div>
-                  )}
-                </div>
-                <label className="absolute -bottom-1 -right-1 w-6 h-6 bg-amber-500 hover:bg-amber-600 text-white rounded-lg flex items-center justify-center cursor-pointer shadow-xs transition">
-                  <Camera className="w-3.5 h-3.5" />
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageSelect}
-                    className="hidden"
-                  />
-                </label>
-              </div>
-
-              <div className="flex-1 space-y-1.5">
-                <label className="text-[11px] font-bold text-zinc-600">Full Name *</label>
+            {/* ── 3. MOBILE PHONE (STRICTLY REQUIRED) ── */}
+            <div className="mb-3">
+              <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                Mobile Phone <span className="text-red-500">*</span>
+              </label>
+              <div className="flex gap-2">
+                <span className="h-9 px-2.5 rounded-lg border border-slate-200 bg-slate-50 flex items-center text-xs font-semibold text-slate-600 shrink-0">
+                  IN +91
+                </span>
                 <input
-                  type="text"
+                  type="tel"
                   required
-                  placeholder="e.g. Rahul Sharma"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-semibold text-zinc-900 focus:bg-white focus:border-amber-500 focus:outline-hidden transition"
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                  placeholder="98765 43210"
+                  className="h-9 flex-1 rounded-lg border border-slate-200 px-3 text-xs focus:bg-white focus:border-amber-500 focus:outline-none transition"
                 />
               </div>
             </div>
 
-            {/* ── 4. MOBILE PHONE ── */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-zinc-600 flex items-center gap-1">
-                <Phone className="w-3 h-3 text-zinc-400" />
-                <span>Mobile Phone</span>
+            {/* ── 4. MEMBER TYPE CLASSIFICATION (3D Multi-Select Checkboxes) ── */}
+            <div className="space-y-2 mb-3">
+              <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 flex items-center justify-between">
+                <span>Member Type Classification (Select All That Apply) *</span>
+                <span className="text-[10px] text-amber-600 font-bold lowercase">
+                  {selectedMemberTypes.length} selected
+                </span>
               </label>
-              <CountryFlagPhoneInput
-                countryCode={countryCode}
-                phoneNumber={phoneNumber}
-                onCountryCodeChange={setCountryCode}
-                onPhoneNumberChange={setPhoneNumber}
-              />
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {MEMBER_TYPE_OPTIONS.map((opt) => {
+                  const isChecked = selectedMemberTypes.includes(opt.id);
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => toggleMemberType(opt.id)}
+                      className={`p-3 rounded-2xl text-left border transition-all cursor-pointer flex flex-col justify-between ${
+                        isChecked
+                          ? 'bg-gradient-to-b from-amber-50 to-amber-100/60 border-amber-400 shadow-sm shadow-amber-500/10'
+                          : 'bg-zinc-50/70 hover:bg-zinc-100 border-zinc-200 text-zinc-600'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between w-full mb-1">
+                        <span className={`text-xs font-black ${isChecked ? 'text-amber-950' : 'text-zinc-800'}`}>
+                          {opt.label}
+                        </span>
+                        <div className={`w-4 h-4 rounded-md flex items-center justify-center border transition ${
+                          isChecked
+                            ? 'bg-amber-500 border-amber-600 text-white'
+                            : 'border-zinc-300 bg-white'
+                        }`}>
+                          {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
+                        </div>
+                      </div>
+                      <p className="text-[9.5px] text-zinc-500 font-medium leading-tight">
+                        {opt.desc}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {/* ── 5. SETTINGS-LINKED 3D MULTI-ROLE DROPDOWN ── */}
@@ -1165,7 +1171,7 @@ export default function AddTeamMemberModal({
               </button>
               <button
                 type="submit"
-                disabled={loading || !name.trim() || isSelfEmail || isDuplicateEmail || isDisposableEmail}
+                disabled={loading || !name.trim() || !phoneNumber.trim() || isSelfEmail || isDuplicateEmail || isDisposableEmail}
                 className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white text-xs font-bold shadow-md shadow-amber-500/20 transition cursor-pointer flex items-center gap-2"
               >
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
