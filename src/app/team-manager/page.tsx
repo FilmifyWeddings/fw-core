@@ -1121,9 +1121,9 @@ export default function TeamManagerPage() {
   }
 
   return (
-    <div className="w-full min-h-screen bg-slate-100 text-[#0B111E] font-sans antialiased selection:bg-[#6C5CE7]/15 px-4 sm:px-6 lg:px-8 py-6 space-y-6 pb-20 md:pb-6">
+    <div className="w-full min-h-screen bg-slate-100 text-[#0B111E] font-sans antialiased selection:bg-[#6C5CE7]/15 px-4 sm:px-6 lg:px-8 pt-2 pb-20 md:pb-6 space-y-6">
       {/* PC STICKY TOP TOOLBAR WRAPPER */}
-        <div className="sticky top-0 z-30 bg-slate-100/95 backdrop-blur-md pb-2 pt-1.5 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 border-b border-slate-200/60 shadow-2xs space-y-2">
+        <div className="sticky top-[54px] lg:top-0 z-30 bg-slate-50/95 backdrop-blur-md pt-2 pb-2 px-3 sm:px-6 lg:px-8 -mx-4 sm:-mx-6 lg:-mx-8 border-b border-slate-200/60 shadow-2xs space-y-2 transition-all">
           {/* Top Responsive Header Block */}
           <div className="flex flex-row items-center justify-between gap-2.5">
             <div className="flex items-center gap-2">
@@ -1420,9 +1420,7 @@ export default function TeamManagerPage() {
 
                                 {/* CREW ALLOCATION AVATARS */}
                                 <div>
-                                  <span className="text-[10px] font-black text-rose-400 uppercase tracking-wider block mb-1.5">
-                                    Assigned Crew Roster (Click avatar to assign team member & dispatch WhatsApp)
-                                  </span>
+                                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">Crew</span>
                                   <div className="flex items-center gap-4 flex-wrap pt-1">
                                     {assignments.map((assignment) => (
                                       <RoleAssignDropdown
@@ -1740,9 +1738,7 @@ export default function TeamManagerPage() {
 
                                   {/* CREW PLACEMENT ROLE BADGES GRID */}
                                   <div>
-                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1.5">
-                                      Assigned Crew Roster (Click avatar to assign role)
-                                    </span>
+                                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">Crew</span>
                                     <div className="flex items-start gap-4 flex-wrap">
                                       {assignments.map((assignment: any) => {
                                         const isAssigned = assignment.assigned_member_id !== null;

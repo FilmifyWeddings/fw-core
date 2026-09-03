@@ -514,9 +514,7 @@ export default function MonthListView({
 
                       {/* CREW ALLOCATION AVATARS GRID WITH CLICKABLE ASSIGN POPOVERS */}
                       <div>
-                        <span className="text-[10px] font-black text-rose-400 uppercase tracking-wider block mb-1.5">
-                          Assigned Crew Roster (Click avatar to assign team member & dispatch WhatsApp)
-                        </span>
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">Crew</span>
                         <div className="flex items-center gap-4 flex-wrap pt-1">
                           {assignments.map((assignment) => (
                             <RoleAssignDropdown
@@ -693,9 +691,7 @@ export default function MonthListView({
 
                           {/* CREW ALLOCATION CHIPS GRID WITH CLICKABLE ASSIGN POPOVERS */}
                           <div>
-                            <span className="text-[10px] font-black text-stone-400 uppercase tracking-wider block mb-1.5">
-                              Assigned Crew Roster (Click avatar to assign team member & dispatch WhatsApp)
-                            </span>
+                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">Crew</span>
                             <div className="flex items-center gap-4 flex-wrap pt-1">
                               {assignments.map((assignment) => (
                                 <RoleAssignDropdown
@@ -875,9 +871,7 @@ export default function MonthListView({
 
                                 {/* CREW ALLOCATION AVATARS */}
                                 <div>
-                                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1.5">
-                                    Assigned Crew Roster
-                                  </span>
+                                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">Crew</span>
                                   <div className="flex items-center gap-4 flex-wrap pt-1">
                                     {assignments.map((assignment) => (
                                       <RoleAssignDropdown

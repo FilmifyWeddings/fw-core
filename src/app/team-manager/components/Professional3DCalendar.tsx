@@ -681,9 +681,7 @@ export default function Professional3DCalendar({
 
                               {/* CREW PLACEMENT ROLE BADGES GRID */}
                               <div>
-                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1.5">
-                                  Assigned Crew Roster (Click avatar to assign role)
-                                </span>
+                                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">Crew</span>
                                 <div className="flex items-start gap-4 flex-wrap">
                                   {assignments.map((assignment: any) => (
                                     <RoleAssignDropdown

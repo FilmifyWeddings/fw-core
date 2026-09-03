@@ -5,7 +5,7 @@ import { FWProject } from '@/types';
 import { 
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid 
 } from 'recharts';
-import { BarChart3, TrendingUp, Sparkles } from 'lucide-react';
+import { TrendingUp } from 'lucide-react';
 
 interface OverviewAnalyticsProps {
   projects: FWProject[];
@@ -25,24 +25,19 @@ const MONTH_SHORTS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'S
 // Custom Interactive Tooltip as requested:
 // {Date: September 2026}
 // {Shoot Volume: 14 Shoots}
-// {Realized Margin: ₹1,45,000}
 const CustomTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
     return (
-      <div className="bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-2xl p-3.5 shadow-xl text-xs space-y-1.5 min-w-[190px] animate-in fade-in zoom-in-95 duration-150 select-none">
+      <div className="bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-2xl p-3 shadow-xl text-xs space-y-1.5 min-w-[160px] animate-in fade-in zoom-in-95 duration-150 select-none">
         <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
           <span className="font-black text-slate-900 text-xs">{data.fullMonth}</span>
           <span className="w-2 h-2 rounded-full bg-emerald-500" />
         </div>
-        <div className="space-y-1 pt-0.5">
+        <div className="pt-0.5">
           <div className="flex items-center justify-between gap-3">
             <span className="text-slate-500 font-bold text-[11px]">Shoot Volume:</span>
             <span className="font-black text-emerald-700">{data.count} {data.count === 1 ? 'Shoot' : 'Shoots'}</span>
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-slate-500 font-bold text-[11px]">Realized Margin:</span>
-            <span className="font-black text-slate-900">{data.formattedMargin}</span>
           </div>
         </div>
       </div>
@@ -70,37 +65,18 @@ export default function OverviewAnalytics({
 
       const count = monthSubEvents.length;
 
-      // Calculate realized margin based on volume (e.g. ₹45,000 average profit margin per wedding event)
-      const realizedMargin = count > 0 ? count * 45000 : 0;
-      const formattedMargin = new Intl.NumberFormat('en-IN', {
-        style: 'currency',
-        currency: 'INR',
-        maximumFractionDigits: 0,
-      }).format(realizedMargin);
-
       return {
         month: shortLabel,
         fullMonth: `${MONTH_NAMES[idx]} ${selectedYear}`,
         monthIndex: idx,
         val: String(idx),
         count,
-        realizedMargin,
-        formattedMargin,
       };
     });
   }, [activeProjects, selectedYear]);
 
   const totalYearShoots = useMemo(() => {
     return chartData.reduce((acc, curr) => acc + curr.count, 0);
-  }, [chartData]);
-
-  const totalYearMargin = useMemo(() => {
-    const total = chartData.reduce((acc, curr) => acc + curr.realizedMargin, 0);
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0,
-    }).format(total);
   }, [chartData]);
 
   return (
@@ -117,14 +93,14 @@ export default function OverviewAnalytics({
               Monthly Shoot Volume ({selectedYear})
             </h4>
             <p className="text-[11px] sm:text-xs text-slate-500 font-bold">
-              Interactive trendline with realized profit margin tooltips
+              Interactive monthly shoot volume trendline
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
           <span className="px-3 py-1 rounded-xl bg-emerald-50 text-emerald-900 text-xs font-black border border-emerald-200/90 shadow-2xs">
-            {totalYearShoots} Shoots ({totalYearMargin} Margin)
+            {totalYearShoots} Shoots
           </span>
           <span className="px-3 py-1 rounded-xl bg-slate-100 text-slate-700 text-xs font-black border border-slate-200">
             Year {selectedYear}
