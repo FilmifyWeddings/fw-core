@@ -18,6 +18,7 @@ import { LeadQuotationModal } from '@/components/dashboard/lead-quotation-modal'
 import { InvoiceModalDialog } from '@/components/finance/invoice-modal-dialog';
 import { ExcelMigrationModal } from '@/components/finance/excel-migration-modal';
 import MilestoneStepDropdown from '@/components/finance/MilestoneStepDropdown';
+import { FinancePinVerificationCard } from '@/components/finance/FinancePinVerificationCard';
 import { exportCurrentFinanceToExcel } from '@/lib/excel-finance-migration';
 import type { 
   WorkspaceClient, ClientFinanceRecord, FinanceMilestoneItem, FinanceExpenseItem, 
@@ -81,14 +82,12 @@ export default function FinancePage() {
   ]);
 
   // ─────────────────────────────────────────────────────────────
-  // 🔐 ADMIN SECURITY GATE & PIN VAULT
+  // 🔐 ADMIN SECURITY GATE & HARD PIN LOCK (ZERO DOM EXPOSURE)
   // ─────────────────────────────────────────────────────────────
   const [securitySettings, setSecuritySettings] = useState<FinanceSecuritySettings | null>(null);
-  const [isVaultLocked, setIsVaultLocked] = useState(false);
-  const [pinInput, setPinInput] = useState('');
-  const [passwordInput, setPasswordInput] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [unlockError, setUnlockError] = useState('');
+  const [isPinVerified, setIsPinVerified] = useState<boolean>(false);
+  const [isCheckingPinStatus, setIsCheckingPinStatus] = useState<boolean>(true);
+  const [isPinRequired, setIsPinRequired] = useState<boolean>(false);
 
   // ─────────────────────────────────────────────────────────────
   // 🔍 UNIFIED ADVANCED FILTERS & SEARCH
@@ -365,10 +364,83 @@ export default function FinancePage() {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // 🚀 INITIAL DATA LOAD & SECURITY CHECK
+  // 🚀 INITIAL SECURITY CHECK (HARD PIN GATE INITIALIZATION)
   // ─────────────────────────────────────────────────────────────
   useEffect(() => {
-    checkSecurityAndFetchData();
+    let isMounted = true;
+
+    async function initSecurityAndSession() {
+      setIsCheckingPinStatus(true);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const wsId = session?.user?.id || 'ws_demo';
+        if (isMounted) {
+          setCurrentWorkspaceId(wsId);
+        }
+
+        // Fetch security settings from DB
+        let secData: FinanceSecuritySettings | null = null;
+        try {
+          let secQuery = supabase.from('finance_security_settings').select('*');
+          if (wsId && wsId !== 'ws_demo') {
+            secQuery = secQuery.or(`user_id.eq.${wsId},workspace_id.eq.${wsId}`);
+          }
+          const { data } = await secQuery.maybeSingle();
+          secData = data;
+        } catch (e) {
+          console.warn('Finance security settings notice:', e);
+        }
+
+        if (isMounted) {
+          setSecuritySettings(secData);
+
+          if (secData && secData.is_locked) {
+            setIsPinRequired(true);
+            const unlockTimestamp = sessionStorage.getItem(`finance_unlocked_${wsId}`);
+            if (unlockTimestamp) {
+              const elapsedMinutes = (Date.now() - parseInt(unlockTimestamp, 10)) / (1000 * 60);
+              const timeoutMinutes = secData.session_timeout_minutes || 15;
+              if (elapsedMinutes < timeoutMinutes) {
+                setIsPinVerified(true);
+              } else {
+                sessionStorage.removeItem(`finance_unlocked_${wsId}`);
+                setIsPinVerified(false);
+              }
+            } else {
+              setIsPinVerified(false);
+            }
+          } else {
+            setIsPinRequired(false);
+            setIsPinVerified(true);
+          }
+        }
+      } catch (err) {
+        console.error('Error during security check:', err);
+        if (isMounted) {
+          setIsPinRequired(false);
+          setIsPinVerified(true);
+        }
+      } finally {
+        if (isMounted) {
+          setIsCheckingPinStatus(false);
+        }
+      }
+    }
+
+    initSecurityAndSession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // ─────────────────────────────────────────────────────────────
+  // 📥 GUARDED DATA FETCH: ONLY DOWNLOADS WHEN PIN IS 100% VERIFIED
+  // ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (isCheckingPinStatus || !isPinVerified || !currentWorkspaceId) return;
+
+    fetchFinanceData();
 
     const handleExpensesUpdated = () => {
       fetchFinanceData();
@@ -379,75 +451,13 @@ export default function FinancePage() {
       window.removeEventListener('finance_expenses_updated', handleExpensesUpdated);
       window.removeEventListener('team_finance_updated', handleExpensesUpdated);
     };
-  }, []);
+  }, [isPinVerified, isCheckingPinStatus, currentWorkspaceId]);
 
-  const checkSecurityAndFetchData = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const workspaceId = session?.user?.id || 'ws_demo';
-
-      // 1. Fetch Security Settings
-      try {
-        let secQuery = supabase.from('finance_security_settings').select('*');
-        if (workspaceId && workspaceId !== 'ws_demo') {
-          secQuery = secQuery.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
-        }
-        const { data: secData } = await secQuery.maybeSingle();
-        if (secData) {
-          setSecuritySettings(secData);
-          if (secData.is_locked) {
-            const unlockedTime = sessionStorage.getItem('finance_vault_unlocked_time');
-            if (unlockedTime) {
-              const elapsed = Date.now() - parseInt(unlockedTime, 10);
-              const timeoutMs = (secData.session_timeout_minutes || 60) * 60 * 1000;
-              if (elapsed < timeoutMs) {
-                setIsVaultLocked(false);
-              } else {
-                setIsVaultLocked(true);
-              }
-            } else {
-              setIsVaultLocked(true);
-            }
-          } else {
-            setIsVaultLocked(false);
-          }
-        }
-      } catch (secErr) {
-        console.warn('Security settings notice:', secErr);
-      }
-
-      // 2. Fetch Finance Data
-      await fetchFinanceData();
-    } catch (e) {
-      console.error('Error during initial finance load:', e);
+  const handleLockVault = () => {
+    if (currentWorkspaceId) {
+      sessionStorage.removeItem(`finance_unlocked_${currentWorkspaceId}`);
     }
-  };
-
-  const handleUnlockVault = () => {
-    setUnlockError('');
-    if (!securitySettings) {
-      setIsVaultLocked(false);
-      return;
-    }
-
-    const correctPin = securitySettings.pin_hash || '123456';
-    const correctPassword = securitySettings.master_password_hash || '';
-
-    if (pinInput && pinInput === correctPin) {
-      sessionStorage.setItem('finance_vault_unlocked_time', String(Date.now()));
-      setIsVaultLocked(false);
-      setPinInput('');
-      return;
-    }
-
-    if (passwordInput && (passwordInput === correctPassword || passwordInput === correctPin)) {
-      sessionStorage.setItem('finance_vault_unlocked_time', String(Date.now()));
-      setIsVaultLocked(false);
-      setPasswordInput('');
-      return;
-    }
-
-    setUnlockError('Incorrect 6-digit PIN or master password. Please try again.');
+    setIsPinVerified(false);
   };
 
   // ─────────────────────────────────────────────────────────────
@@ -1807,96 +1817,37 @@ export default function FinancePage() {
     setIsQuotationModalOpen(true);
   };
 
+  // 1. Loading state while verifying PIN status
+  if (isCheckingPinStatus) {
+    return (
+      <div className="flex min-h-screen w-full items-center justify-center bg-[#FDFBF7]">
+        <div className="flex flex-col items-center gap-3">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-amber-600" />
+          <p className="text-xs font-bold text-stone-500 uppercase tracking-wider">Verifying Security...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. HARD PIN-LOCK GATE: If PIN is required and not verified, render ONLY the PIN Gate Card (ZERO Finance DOM)
+  if (isPinRequired && !isPinVerified) {
+    return (
+      <div className="flex min-h-[85vh] w-full items-center justify-center p-4 bg-[#FDFBF7]">
+        <FinancePinVerificationCard
+          securitySettings={securitySettings}
+          workspaceId={currentWorkspaceId}
+          onSuccess={() => {
+            sessionStorage.setItem(`finance_unlocked_${currentWorkspaceId}`, Date.now().toString());
+            setIsPinVerified(true);
+          }}
+        />
+      </div>
+    );
+  }
+
+  // 3. ONLY REACHED IF 100% VERIFIED
   return (
     <div className="min-h-screen bg-[#FDFBF7] text-slate-900 pb-28 pt-4 px-4 sm:px-6 lg:px-8 font-sans selection:bg-amber-100 selection:text-amber-900">
-      
-      {/* ─────────────────────────────────────────────────────────────
-          🔐 FROSTED-GLASS PIN VAULT SECURITY GATE
-      ───────────────────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {isVaultLocked && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xl"
-          >
-            <motion.div
-              initial={{ scale: 0.92, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.92, opacity: 0 }}
-              className="bg-white/95 backdrop-blur-2xl rounded-3xl p-7 sm:p-9 max-w-md w-full border border-white/40 shadow-2xl space-y-6 text-center"
-            >
-              <div className="w-16 h-16 rounded-3xl bg-amber-500/10 border border-amber-500/20 text-amber-600 flex items-center justify-center mx-auto shadow-inner">
-                <Lock className="w-8 h-8" />
-              </div>
-
-              <div>
-                <h2 className="text-xl font-black text-slate-900 tracking-tight">Finance Vault Locked 🔐</h2>
-                <p className="text-xs font-medium text-slate-500 mt-1">
-                  Enter your 6-digit Master PIN or Admin Password to access workspace finance.
-                </p>
-              </div>
-
-              {unlockError && (
-                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-bold flex items-center gap-2 text-left">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{unlockError}</span>
-                </div>
-              )}
-
-              <div className="space-y-4 text-left">
-                <div>
-                  <label className="text-xs font-black text-slate-700 block mb-1.5 uppercase tracking-wider">
-                    Enter 6-Digit PIN
-                  </label>
-                  <input
-                    type="password"
-                    maxLength={6}
-                    placeholder="• • • • • •"
-                    value={pinInput}
-                    onChange={(e) => setPinInput(e.target.value.replace(/[^0-9]/g, ''))}
-                    onKeyDown={(e) => e.key === 'Enter' && handleUnlockVault()}
-                    className="w-full text-center tracking-[1em] text-2xl font-black px-4 py-3 bg-slate-100/80 border border-slate-200 rounded-2xl text-slate-900 focus:outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10"
-                    autoFocus
-                  />
-                </div>
-
-                <div className="relative">
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-[11px] font-bold text-slate-500">Or Master Admin Password</label>
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(p => !p)}
-                      className="text-[10px] font-bold text-slate-400 hover:text-slate-600"
-                    >
-                      {showPassword ? 'Hide' : 'Show'}
-                    </button>
-                  </div>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    placeholder="Enter admin password..."
-                    value={passwordInput}
-                    onChange={(e) => setPasswordInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleUnlockVault()}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleUnlockVault}
-                  className="w-full py-3 bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-600 text-white font-black text-sm rounded-2xl shadow-lg shadow-amber-500/25 hover:brightness-105 active:scale-98 transition flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <Unlock className="w-4 h-4" />
-                  Unlock Finance Suite
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       <div className="max-w-7xl mx-auto space-y-6">
 
         {/* ─────────────────────────────────────────────────────────────
@@ -2459,6 +2410,19 @@ export default function FinancePage() {
               <Download className="w-3.5 h-3.5 text-slate-600" />
               <span className="hidden sm:inline">Export Excel</span>
             </button>
+
+            {/* 🔐 Re-lock Vault Button */}
+            {isPinRequired && (
+              <button
+                type="button"
+                onClick={handleLockVault}
+                className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                title="Lock Finance Vault"
+              >
+                <Lock className="w-3.5 h-3.5 text-amber-700" />
+                <span className="hidden sm:inline">Lock Vault</span>
+              </button>
+            )}
 
             {/* 📜 Audit Log Trigger */}
             <button
