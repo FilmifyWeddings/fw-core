@@ -128,6 +128,11 @@ export default function TeamManagerPage() {
   const { workspaceId, workspaceName, isOwner, userRole, permissions } = useWorkspace();
   const { crewRoles: globalCrewRoles, eventTypesList: globalEventTypesList } = useWorkspaceData();
   const [activeTab, setActiveTab] = useState<'overview' | 'projects' | 'list' | 'calendar' | 'trash'>('projects');
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
   
   // Dynamic Time-Based Greeting & Studio Profile Name
   const greetingInfo = useMemo(() => {
@@ -1144,7 +1149,7 @@ export default function TeamManagerPage() {
                   <h1 className="text-xs sm:text-sm font-black text-slate-800 tracking-tight leading-none">
                     Team Manager
                   </h1>
-                  <p className="text-[9px] font-medium text-slate-400 mt-0.5 leading-none">
+                  <p suppressHydrationWarning className="text-[9px] font-medium text-slate-400 mt-0.5 leading-none">
                     {greetingInfo.text}, {studioName} {greetingInfo.emoji}
                   </p>
                 </div>
@@ -2280,7 +2285,10 @@ export default function TeamManagerPage() {
         )}
 
       {/* ─── MOBILE STICKY BOTTOM FOOTER NAVIGATION BAR (FLOATING PILL STYLE) ─── */}
-      <div className="md:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-1.5rem)] max-w-sm">
+      <div 
+        suppressHydrationWarning
+        className="md:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-1.5rem)] max-w-sm"
+      >
         <div className="bg-white/95 backdrop-blur-xl border border-slate-200/80 shadow-2xl shadow-slate-300/40 rounded-[2rem] px-2 py-2 flex items-center justify-around relative">
           
           {/* TAB 1: Cards */}
