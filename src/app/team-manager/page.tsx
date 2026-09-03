@@ -238,6 +238,7 @@ export default function TeamManagerPage() {
     eventTypes: [],
     roles: [],
     assignmentStatus: 'all',
+    pmId: 'all',
   });
   const [memberToDelete, setMemberToDelete] = useState<FWTeamMember | null>(null);
   const [isDeletingMember, setIsDeletingMember] = useState<boolean>(false);
@@ -1019,6 +1020,34 @@ export default function TeamManagerPage() {
     return days > 0 ? `In ${days} Days` : days === 0 ? 'Today' : `${Math.abs(days)} Days Ago`;
   };
 
+  // Extract unique active project managers from current projects
+  const assignedPms = useMemo(() => {
+    const map = new Map<string, { id: string; name: string }>();
+    projects.forEach((p: any) => {
+      if (p.is_archived) return;
+      if (p.project_manager) {
+        if (typeof p.project_manager === 'object') {
+          const id = p.project_manager.id || p.project_manager_id || p.project_manager.name;
+          const name = p.project_manager.name || p.project_manager_name;
+          if (id && name) map.set(String(id), { id: String(id), name: String(name) });
+        } else if (typeof p.project_manager === 'string' && p.project_manager.trim()) {
+          const val = p.project_manager.trim();
+          map.set(val, { id: val, name: val });
+        }
+      }
+      if (p.project_manager_id && p.project_manager_name) {
+        map.set(String(p.project_manager_id), { id: String(p.project_manager_id), name: String(p.project_manager_name) });
+      } else if (p.project_manager_name && typeof p.project_manager_name === 'string' && p.project_manager_name.trim()) {
+        const val = p.project_manager_name.trim();
+        map.set(val, { id: val, name: val });
+      } else if (p.lead_assigned_to && typeof p.lead_assigned_to === 'string' && p.lead_assigned_to.trim()) {
+        const val = p.lead_assigned_to.trim();
+        map.set(val, { id: val, name: val });
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [projects]);
+
   // Filtered Projects List with Unified Filter Support
   const filteredProjects = useMemo(() => {
     return projects.filter(p => {
@@ -1079,11 +1108,36 @@ export default function TeamManagerPage() {
           se.fw_assignments?.some(a => !a.assigned_member_id)
         );
         if (!hasUnassigned) return false;
-      } else if (unifiedFilters?.assignmentStatus === 'assigned') {
-        const allAssigned = p.fw_sub_events?.every(se =>
+      } else if (unifiedFilters?.assignmentStatus === 'fully_assigned' || unifiedFilters?.assignmentStatus === 'assigned') {
+        const allAssigned = (p.fw_sub_events?.length ?? 0) > 0 && p.fw_sub_events.every(se =>
           se.fw_assignments && se.fw_assignments.length > 0 && se.fw_assignments.every(a => Boolean(a.assigned_member_id))
         );
         if (!allAssigned) return false;
+      } else if (unifiedFilters?.assignmentStatus === 'partially_assigned' || unifiedFilters?.assignmentStatus === 'partial') {
+        let totalSlots = 0;
+        let assignedSlots = 0;
+        p.fw_sub_events?.forEach(se => {
+          se.fw_assignments?.forEach(a => {
+            totalSlots++;
+            if (a.assigned_member_id) assignedSlots++;
+          });
+        });
+        if (totalSlots === 0 || assignedSlots === 0 || assignedSlots >= totalSlots) return false;
+      }
+
+      // 8. Unified Project Manager (PM) Filter
+      if (unifiedFilters?.pmId && unifiedFilters.pmId !== 'all') {
+        const targetPm = unifiedFilters.pmId.toLowerCase();
+        const pObj: any = p;
+        const pmId = String(pObj.project_manager_id || pObj.project_manager?.id || '').toLowerCase();
+        const pmName = String(
+          pObj.project_manager_name ||
+          pObj.project_manager?.name ||
+          (typeof pObj.project_manager === 'string' ? pObj.project_manager : '') ||
+          pObj.lead_assigned_to ||
+          ''
+        ).toLowerCase();
+        if (pmId !== targetPm && pmName !== targetPm) return false;
       }
 
       return true;
@@ -1192,7 +1246,7 @@ export default function TeamManagerPage() {
                   >
                     <Filter className="w-3 h-3 text-slate-600" />
                     <span>Filter</span>
-                    {(unifiedFilters?.monthYear !== 'all' || Boolean(unifiedFilters?.startDate) || (unifiedFilters?.eventTypes?.length ?? 0) > 0 || (unifiedFilters?.roles?.length ?? 0) > 0 || (unifiedFilters?.assignmentStatus && unifiedFilters.assignmentStatus !== 'all')) && (
+                    {(unifiedFilters?.monthYear !== 'all' || Boolean(unifiedFilters?.startDate) || (unifiedFilters?.eventTypes?.length ?? 0) > 0 || (unifiedFilters?.roles?.length ?? 0) > 0 || (unifiedFilters?.assignmentStatus && unifiedFilters.assignmentStatus !== 'all') || (unifiedFilters?.pmId && unifiedFilters.pmId !== 'all')) && (
                       <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-pulse" />
                     )}
                   </button>
@@ -1229,7 +1283,7 @@ export default function TeamManagerPage() {
             >
               <Filter className="w-3.5 h-3.5 text-slate-500"/>
               <span className="hidden sm:inline">Filter</span>
-              {(unifiedFilters?.monthYear !== 'all' || Boolean(unifiedFilters?.startDate) || (unifiedFilters?.eventTypes?.length ?? 0) > 0 || (unifiedFilters?.roles?.length ?? 0) > 0 || (unifiedFilters?.assignmentStatus && unifiedFilters.assignmentStatus !== 'all')) && (
+              {(unifiedFilters?.monthYear !== 'all' || Boolean(unifiedFilters?.startDate) || (unifiedFilters?.eventTypes?.length ?? 0) > 0 || (unifiedFilters?.roles?.length ?? 0) > 0 || (unifiedFilters?.assignmentStatus && unifiedFilters.assignmentStatus !== 'all') || (unifiedFilters?.pmId && unifiedFilters.pmId !== 'all')) && (
                 <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-pulse" />
               )}
             </button>
@@ -2202,7 +2256,7 @@ export default function TeamManagerPage() {
         {/* ─── TAB VIEW: LIST REGISTER (MONTH-WISE) ─── */}
         {activeTab === 'list' && (
           <MonthListView
-            projects={projects}
+            projects={filteredProjects}
             teamMembers={teamMembers}
             searchQuery={searchQuery}
             selectedRoleFilter={selectedRoleFilter}
@@ -2694,6 +2748,7 @@ export default function TeamManagerPage() {
             eventTypes: [],
             roles: [],
             assignmentStatus: 'all',
+            pmId: 'all',
           });
         }}
         availableEventTypes={eventTypesList}
@@ -2702,6 +2757,7 @@ export default function TeamManagerPage() {
           'Cinematographer', 'Drone Pilot', 'Assistant / Helper', 'Editor',
           ...customCrewRoles.map(r => r.name)
         ]))}
+        assignedPms={assignedPms}
         totalFilteredCount={filteredProjects.length}
       />
 

@@ -13,7 +13,8 @@ export interface UnifiedFilterState {
   endDate: string;
   eventTypes: string[]; // ['Wedding', 'Sangeet', etc.]
   roles: string[]; // ['Lead Photographer', etc.]
-  assignmentStatus: 'all' | 'assigned' | 'unassigned' | 'partial';
+  assignmentStatus: 'all' | 'assigned' | 'fully_assigned' | 'unassigned' | 'partial' | 'partially_assigned';
+  pmId?: string;
 }
 
 export interface UnifiedTeamFilterModalProps {
@@ -24,6 +25,7 @@ export interface UnifiedTeamFilterModalProps {
   onResetFilters: () => void;
   availableEventTypes: string[];
   availableRoles: string[];
+  assignedPms?: { id: string; name: string }[];
   totalFilteredCount: number;
 }
 
@@ -73,6 +75,7 @@ export default function UnifiedTeamFilterModal({
   onResetFilters,
   availableEventTypes = [],
   availableRoles = [],
+  assignedPms = [],
   totalFilteredCount,
 }: UnifiedTeamFilterModalProps) {
   const [draft, setDraft] = React.useState<UnifiedFilterState>(filters);
@@ -180,33 +183,21 @@ export default function UnifiedTeamFilterModal({
               </div>
             </div>
 
-            {/* 3. Crew Assignment Status (Segmented Pill) */}
+            {/* 3. Crew Assignment Status */}
             <div>
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                <Users className="w-3.5 h-3.5 text-indigo-600" />
-                <span>Crew Assignment Status</span>
+              <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1 block">
+                Crew Assignment Status
               </label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 p-1 bg-slate-100 rounded-xl border border-slate-200">
-                {[
-                  { id: 'all', label: 'All' },
-                  { id: 'assigned', label: 'Fully Assigned' },
-                  { id: 'partial', label: 'Partially Assigned' },
-                  { id: 'unassigned', label: 'Unassigned Slots' },
-                ].map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => setDraft(prev => ({ ...prev, assignmentStatus: s.id as any }))}
-                    className={`py-2 px-1.5 rounded-lg text-[11px] font-bold transition text-center cursor-pointer ${
-                      draft.assignmentStatus === s.id
-                        ? 'bg-white text-slate-900 shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
+              <select 
+                value={draft.assignmentStatus || 'all'}
+                onChange={(e) => setDraft(prev => ({ ...prev, assignmentStatus: e.target.value as any }))}
+                className="h-8 text-xs font-semibold px-2.5 rounded-lg border border-slate-200 bg-white text-slate-800 w-full outline-none"
+              >
+                <option value="all">All Statuses</option>
+                <option value="fully_assigned">Fully Assigned</option>
+                <option value="partially_assigned">Partially Assigned</option>
+                <option value="unassigned">Unassigned Slots</option>
+              </select>
             </div>
 
             {/* 4. Event Types (3D Dropdown) */}
@@ -235,7 +226,26 @@ export default function UnifiedTeamFilterModal({
               </div>
             </div>
 
-            {/* 5. Crew Roles (3D Dropdown) */}
+            {/* 5. Project Manager (PM) */}
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1 block">
+                Project Manager (PM)
+              </label>
+              <select 
+                value={draft.pmId || 'all'}
+                onChange={(e) => setDraft(prev => ({ ...prev, pmId: e.target.value }))}
+                className="h-8 text-xs font-semibold px-2.5 rounded-lg border border-slate-200 bg-white text-slate-800 w-full outline-none"
+              >
+                <option value="all">All Assigned PMs</option>
+                {assignedPms.map((pm) => (
+                  <option key={pm.id} value={pm.id}>
+                    {pm.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* 6. Crew Roles (3D Dropdown) */}
             <div>
               <label className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
                 <Layers className="w-3.5 h-3.5 text-indigo-600" />

@@ -4,7 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { FWProject, FWSubEvent, FWTeamMember, FWAssignment } from '@/types';
 import { 
   Calendar, Clock, MapPin, ChevronDown, ChevronUp, AlertCircle, 
-  Moon, CheckCircle2, User, Users, Filter, Sparkles, Search, Plus
+  Moon, CheckCircle2, User, Users, Sparkles, Search, Plus
 } from 'lucide-react';
 import RoleAssignDropdown from './RoleAssignDropdown';
 
@@ -89,37 +89,8 @@ export default function MonthListView({
   const [isPastSectionExpanded, setIsPastSectionExpanded] = useState<boolean>(false);
   const [isTbdSectionExpanded, setIsTbdSectionExpanded] = useState<boolean>(false);
 
-  // Smart Filter Suite States
-  const [statusFilter, setStatusFilter] = useState<'all' | 'unassigned' | 'fully_assigned' | 'overnight'>('all');
-  const [selectedPmFilter, setSelectedPmFilter] = useState<string>('all');
-  const [selectedMemberFilter, setSelectedMemberFilter] = useState<string>('all');
-  const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState<boolean>(false);
-
   const now = new Date();
   const currentMonthYearId = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-
-  // Dynamic Project Managers list
-  const projectManagers = useMemo(() => {
-    const pms = new Set<string>();
-    // 1. From projects
-    projects.forEach(p => {
-      if ((p as any).project_manager_name) pms.add((p as any).project_manager_name);
-      if ((p as any).project_manager) pms.add((p as any).project_manager);
-      if ((p as any).lead_assigned_to) pms.add((p as any).lead_assigned_to);
-      if ((p as any).project_manager_id) {
-        const found = teamMembers.find(m => m.id === (p as any).project_manager_id);
-        if (found?.name) pms.add(found.name);
-      }
-    });
-    // 2. From team members with PM or Manager roles
-    teamMembers.forEach(m => {
-      const roleStr = `${m.primary_role || ''} ${(m.roles || []).join(' ')}`.toLowerCase();
-      if (roleStr.includes('project') || roleStr.includes('manager') || roleStr.includes('pm')) {
-        if (m.name) pms.add(m.name);
-      }
-    });
-    return Array.from(pms).filter(Boolean).sort();
-  }, [projects, teamMembers]);
 
   // Flatten and categorize sub-events
   const { tbdEvents, activeMonthGroups, pastMonthGroups, activeMonthOrder, pastMonthOrder } = useMemo(() => {
@@ -136,43 +107,17 @@ export default function MonthListView({
 
       const matchClientName = !q || project.client_name.toLowerCase().includes(q);
 
-      // Project Manager Filter
-      if (selectedPmFilter !== 'all') {
-        const pmName = (project as any).project_manager_name ||
-          (project as any).project_manager ||
-          (project as any).lead_assigned_to ||
-          (teamMembers.find(m => m.id === (project as any).project_manager_id)?.name) ||
-          '';
-        if (pmName.toLowerCase() !== selectedPmFilter.toLowerCase()) return;
-      }
-
       (project.fw_sub_events || []).forEach((se) => {
         const matchSubTitle = !q || se.event_title.toLowerCase().includes(q);
         if (!matchClientName && !matchSubTitle) return;
 
         const assignments = resolveSubEventAssignments(se, teamMembers);
-        const assignedCount = assignments.filter((a) => a.assigned_member_id).length;
-        const totalSlots = assignments.length;
 
         // Role filter
         if (selectedRoleFilter !== 'All') {
           const hasRole = assignments.some((a) => a.required_role === selectedRoleFilter);
           if (!hasRole) return;
         }
-
-        // Specific Crew Member filter
-        if (selectedMemberFilter !== 'all') {
-          const hasMember = assignments.some((a) => a.assigned_member_id === selectedMemberFilter);
-          if (!hasMember) return;
-        }
-
-        // Accurate overnight check: strictly when user explicitly marks is_overnight
-        const isOvernight = Boolean((se as any).is_overnight === true || (se as any).is_overnight === 'true');
-
-        // Smart Status Filters
-        if (statusFilter === 'unassigned' && assignedCount === totalSlots && totalSlots > 0) return;
-        if (statusFilter === 'fully_assigned' && (assignedCount < totalSlots || totalSlots === 0)) return;
-        if (statusFilter === 'overnight' && !isOvernight) return;
 
         const isTbd = Boolean((se as any).is_date_tbd) || !se.event_date || se.event_date.toLowerCase() === 'tbd';
         const d = se.event_date ? new Date(se.event_date) : null;
@@ -247,7 +192,7 @@ export default function MonthListView({
       activeMonthOrder: sortedActiveOrder,
       pastMonthOrder: sortedPastOrder,
     };
-  }, [projects, teamMembers, searchQuery, selectedRoleFilter, statusFilter, selectedPmFilter, selectedMemberFilter, currentMonthYearId]);
+  }, [projects, teamMembers, searchQuery, selectedRoleFilter, currentMonthYearId]);
 
   const totalEventsCount = useMemo(() => {
     let count = tbdEvents.length;
@@ -263,138 +208,15 @@ export default function MonthListView({
   return (
     <div className="space-y-6 select-none font-sans">
       
-      {/* ─── SMART COMPACT FILTER SUITE TOOLBAR ─── */}
-      <div className="bg-white/95 backdrop-blur-md px-3 py-2 rounded-2xl border border-slate-200/90 shadow-2xs flex items-center justify-between gap-2 relative">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="flex items-center gap-1.5 shrink-0">
-            <Calendar className="w-3.5 h-3.5 text-indigo-600" />
-            <span className="text-xs font-black text-slate-800 tracking-tight">Month Register</span>
-            <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.2 rounded-md">
-              {totalEventsCount} Events
-            </span>
-          </div>
-
-          {/* Active Filter Indicators */}
-          {(statusFilter !== 'all' || selectedPmFilter !== 'all' || selectedMemberFilter !== 'all') && (
-            <div className="flex items-center gap-1 overflow-hidden">
-              {statusFilter !== 'all' && (
-                <span className="px-1.5 py-0.2 rounded bg-indigo-50 text-indigo-700 text-[9px] font-bold border border-indigo-200 shrink-0">
-                  {statusFilter === 'unassigned' ? 'Unassigned' : statusFilter === 'fully_assigned' ? 'Assigned' : 'Overnight'}
-                </span>
-              )}
-              {selectedPmFilter !== 'all' && (
-                <span className="px-1.5 py-0.2 rounded bg-amber-50 text-amber-800 text-[9px] font-bold border border-amber-200 truncate max-w-[70px]">
-                  PM: {selectedPmFilter}
-                </span>
-              )}
-              {selectedMemberFilter !== 'all' && (
-                <span className="px-1.5 py-0.2 rounded bg-purple-50 text-purple-800 text-[9px] font-bold border border-purple-200 truncate max-w-[70px]">
-                  Crew: {teamMembers.find(m => m.id === selectedMemberFilter)?.name || 'Filtered'}
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* SINGLE FILTER BUTTON */}
-        <div className="relative shrink-0">
-          <button
-            type="button"
-            onClick={() => setIsFilterDropdownOpen(!isFilterDropdownOpen)}
-            className={`h-6.5 px-2.5 rounded-lg text-[10px] font-bold transition flex items-center gap-1.5 cursor-pointer border shadow-2xs ${
-              statusFilter !== 'all' || selectedPmFilter !== 'all' || selectedMemberFilter !== 'all'
-                ? 'bg-indigo-50 text-indigo-700 border-indigo-300'
-                : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
-            }`}
-          >
-            <Filter className="w-3 h-3 text-slate-500" />
-            <span>Filter</span>
-            {(statusFilter !== 'all' || selectedPmFilter !== 'all' || selectedMemberFilter !== 'all') && (
-              <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-pulse" />
-            )}
-            <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform duration-200 ${isFilterDropdownOpen ? 'rotate-180' : ''}`} />
-          </button>
-
-          {/* 3D DROPDOWN POPOVER FOR FILTERS */}
-          {isFilterDropdownOpen && (
-            <>
-              <div
-                className="fixed inset-0 z-[99]"
-                onClick={() => setIsFilterDropdownOpen(false)}
-              />
-              <div className="fixed top-14 inset-x-3 z-[100] sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-1.5 sm:z-[100] sm:w-56 bg-white rounded-xl border border-slate-200 shadow-xl p-2.5 space-y-2 text-slate-800 animate-in fade-in zoom-in-95 duration-150">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-1">
-                  <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">
-                    Filter Options
-                  </span>
-                  {(statusFilter !== 'all' || selectedPmFilter !== 'all' || selectedMemberFilter !== 'all') && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setStatusFilter('all');
-                        setSelectedPmFilter('all');
-                        setSelectedMemberFilter('all');
-                      }}
-                      className="text-[9px] font-bold text-rose-500 hover:underline cursor-pointer"
-                    >
-                      Reset All
-                    </button>
-                  )}
-                </div>
-
-                {/* 1. Status Filter Dropdown */}
-                <div className="space-y-0.5">
-                  <label className="text-[9px] font-extrabold uppercase text-slate-500 tracking-wider block">
-                    Event Status
-                  </label>
-                  <select
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value as any)}
-                    className="w-full h-6.5 px-2 bg-slate-50 border border-slate-200 rounded-md text-[11px] font-semibold text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer"
-                  >
-                    <option value="all">All Events</option>
-                    <option value="unassigned">🔴 Unassigned Only</option>
-                    <option value="fully_assigned">🟢 Fully Assigned</option>
-                    <option value="overnight">🌙 Overnight Shoots</option>
-                  </select>
-                </div>
-
-                {/* 2. Project Manager Dropdown */}
-                <div className="space-y-0.5">
-                  <label className="text-[9px] font-extrabold uppercase text-slate-500 tracking-wider block">
-                    Project Manager
-                  </label>
-                  <select
-                    value={selectedPmFilter}
-                    onChange={(e) => setSelectedPmFilter(e.target.value)}
-                    className="w-full h-6.5 px-2 bg-slate-50 border border-slate-200 rounded-md text-[11px] font-semibold text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer"
-                  >
-                    <option value="all">All PMs</option>
-                    {projectManagers.map(pm => (
-                      <option key={pm} value={pm}>{pm}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* 3. Crew Member Dropdown */}
-                <div className="space-y-0.5">
-                  <label className="text-[9px] font-extrabold uppercase text-slate-500 tracking-wider block">
-                    Crew Member
-                  </label>
-                  <select
-                    value={selectedMemberFilter}
-                    onChange={(e) => setSelectedMemberFilter(e.target.value)}
-                    className="w-full h-6.5 px-2 bg-slate-50 border border-slate-200 rounded-md text-[11px] font-semibold text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer"
-                  >
-                    <option value="all">All Crew</option>
-                    {teamMembers.map(m => (
-                      <option key={m.id} value={m.id}>{m.name || 'Member'}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </>
-          )}
+      {/* ─── MONTH REGISTER TOOLBAR ─── */}
+      <div className="bg-white/95 backdrop-blur-md px-3 py-2 rounded-2xl border border-slate-200/90 shadow-2xs flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 shrink-0">
+          <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+          <span className="text-xs font-black text-slate-800 tracking-tight">Month Register</span>
+          <span className="text-slate-300 font-bold text-xs">•</span>
+          <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+            {totalEventsCount} {totalEventsCount === 1 ? 'Event' : 'Events'}
+          </span>
         </div>
       </div>
 
