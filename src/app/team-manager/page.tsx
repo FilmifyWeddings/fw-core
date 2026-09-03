@@ -1840,40 +1840,44 @@ export default function TeamManagerPage() {
                                                   });
                                                 }
                                               }}
-                                              className="flex flex-col items-center group cursor-pointer"
+                                              className="flex flex-col items-center group cursor-pointer min-w-[50px] max-w-[75px]"
                                               title={isAssigned ? `${cleanName} (${role})` : `Unassigned: ${role}`}
                                             >
                                               {isAssigned ? (
-                                                memberObj?.avatar_url ? (
-                                                  <img 
-                                                    src={memberObj.avatar_url} 
-                                                    alt={cleanName} 
-                                                    className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm ring-2 ring-emerald-400 group-hover:scale-105 transition shrink-0" 
-                                                  />
-                                                ) : (
-                                                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-xs flex items-center justify-center shadow-sm border-2 border-white ring-2 ring-indigo-200 group-hover:scale-105 transition shrink-0">
-                                                    {getInitials(cleanName || role)}
-                                                  </div>
-                                                )
+                                                <div className="relative w-9 h-9 rounded-full ring-2 ring-emerald-500 ring-offset-1 p-0.5 overflow-hidden flex items-center justify-center bg-emerald-50 shrink-0 shadow-xs">
+                                                  {memberObj?.avatar_url ? (
+                                                    <img 
+                                                      src={memberObj.avatar_url} 
+                                                      alt={cleanName} 
+                                                      className="w-full h-full rounded-full object-cover shrink-0" 
+                                                    />
+                                                  ) : (
+                                                    <div className="w-full h-full rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-[10px] flex items-center justify-center shrink-0">
+                                                      {getInitials(cleanName || role)}
+                                                    </div>
+                                                  )}
+                                                </div>
                                               ) : (
-                                                <div className="w-10 h-10 rounded-full border-2 border-dashed border-red-500 bg-red-50 text-red-600 flex items-center justify-center font-black group-hover:scale-105 transition shadow-2xs shrink-0">
-                                                  <Plus className="w-4 h-4 text-red-600 stroke-[3]" />
+                                                <div className="w-9 h-9 rounded-full border border-dashed border-red-500 bg-red-50/90 text-red-600 font-black flex items-center justify-center shadow-2xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
+                                                  <Plus className="w-3.5 h-3.5 text-red-600 stroke-[3]" />
                                                 </div>
                                               )}
 
                                               {/* STRICT SHORT ROLE CODE BADGE */}
-                                              <span className={`font-black text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full border mt-1 select-none leading-none ${
-                                                isAssigned 
-                                                  ? 'bg-slate-100 text-slate-700 border-slate-200' 
-                                                  : 'bg-red-50 text-red-700 border-red-200'
-                                              }`}>
+                                              <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider mt-0.5 leading-none block text-center">
                                                 {shortRole}
                                               </span>
 
                                               {/* MEMBER FULL CLEAN NAME (NOT CUT OFF) */}
-                                              <span className="font-semibold text-slate-800 text-[10px] truncate max-w-[70px] text-center leading-none mt-1 block" title={cleanName}>
-                                                {isAssigned ? (cleanName || 'Assign') : 'Assign'}
-                                              </span>
+                                              {isAssigned ? (
+                                                <span className="text-[11px] font-extrabold text-indigo-600 dark:text-indigo-400 text-center leading-tight truncate max-w-[75px] block mt-0.5" title={cleanName}>
+                                                  {cleanName}
+                                                </span>
+                                              ) : (
+                                                <span className="text-[10px] font-semibold text-slate-400 truncate max-w-[75px] text-center leading-none mt-0.5 block">
+                                                  Assign
+                                                </span>
+                                              )}
                                             </div>
                                           </div>
                                         );
@@ -2186,43 +2190,47 @@ export default function TeamManagerPage() {
                                                 });
                                                 setActiveDropdownId(activeDropdownId === assignment.id ? null : assignment.id);
                                               }}
-                                              className="flex flex-col items-center group cursor-pointer select-none relative w-12 text-center"
+                                              className="flex flex-col items-center group cursor-pointer select-none relative min-w-[48px] max-w-[75px] text-center"
                                             >
-                                              {/* 32px CIRCLE AVATAR */}
-                                              <div className="w-8 h-8 rounded-full border border-white shadow-xs overflow-hidden shrink-0 flex items-center justify-center">
-                                                {isAssigned ? (
-                                                  memberObj?.avatar_url ? (
+                                              {/* CIRCLE AVATAR */}
+                                              {isAssigned ? (
+                                                <div className="relative w-9 h-9 rounded-full ring-2 ring-emerald-500 ring-offset-1 p-0.5 overflow-hidden flex items-center justify-center bg-emerald-50 shrink-0 shadow-xs">
+                                                  {memberObj?.avatar_url ? (
                                                     <img
                                                       src={memberObj.avatar_url}
                                                       alt={cleanName}
-                                                      className="w-8 h-8 rounded-full object-cover shrink-0"
+                                                      className="w-full h-full rounded-full object-cover shrink-0"
                                                       onError={(e) => {
                                                         (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName)}`;
                                                       }}
                                                     />
                                                   ) : (
-                                                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-[9px] flex items-center justify-center shrink-0">
+                                                    <div className="w-full h-full rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-[9px] flex items-center justify-center shrink-0">
                                                       {getInitials(cleanName || role)}
                                                     </div>
-                                                  )
-                                                ) : (
-                                                  <div className="w-8 h-8 rounded-full border border-dashed border-red-500 bg-red-50 text-red-600 font-black flex items-center justify-center shadow-2xs shrink-0">
-                                                    <Plus className="w-3.5 h-3.5 text-red-600 stroke-[3]" />
-                                                  </div>
-                                                )}
-                                              </div>
+                                                  )}
+                                                </div>
+                                              ) : (
+                                                <div className="w-9 h-9 rounded-full border border-dashed border-red-500 bg-red-50 text-red-600 font-black flex items-center justify-center shadow-2xs shrink-0">
+                                                  <Plus className="w-3.5 h-3.5 text-red-600 stroke-[3]" />
+                                                </div>
+                                              )}
 
                                               {/* Role Pill - STRICT SHORT FORM ONLY */}
-                                              <span className={`font-black text-[9px] uppercase tracking-wider block text-center leading-none mt-0.5 ${
-                                                isAssigned ? 'text-slate-600' : 'text-red-600 font-extrabold'
-                                              }`}>
+                                              <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider block text-center leading-none mt-0.5">
                                                 {shortRole}
                                               </span>
 
-                                              {/* Member Full Name - not cut into first word initials! */}
-                                              <span className="text-[9px] font-semibold text-slate-800 truncate max-w-[50px] text-center leading-none mt-0.5 block" title={cleanName}>
-                                                {isAssigned ? (cleanName || 'Assign') : 'Assign'}
-                                              </span>
+                                              {/* Member Full Name */}
+                                              {isAssigned ? (
+                                                <span className="text-[11px] font-extrabold text-indigo-600 dark:text-indigo-400 text-center leading-tight truncate max-w-[75px] block mt-0.5" title={cleanName}>
+                                                  {cleanName}
+                                                </span>
+                                              ) : (
+                                                <span className="text-[10px] font-semibold text-slate-400 truncate max-w-[75px] text-center leading-none mt-0.5 block">
+                                                  Assign
+                                                </span>
+                                              )}
                                             </div>
                                           );
                                         })}

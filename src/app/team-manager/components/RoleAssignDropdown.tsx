@@ -111,43 +111,49 @@ export default function RoleAssignDropdown({
         /* STRICT SHORT-FORM ROLE AVATAR (NO OVERFLOW) */
         <div
           onClick={handleOpenPopover}
-          className="flex flex-col items-center group cursor-pointer min-w-[50px] max-w-[60px]"
+          className="flex flex-col items-center group cursor-pointer min-w-[50px] max-w-[75px]"
           title={isAssigned ? `${cleanName} (${role})` : `Unassigned: ${role}`}
         >
           {/* Avatar */}
-          <div className="w-8 h-8 rounded-full border border-white shadow-xs overflow-hidden shrink-0 flex items-center justify-center">
-            {isAssigned ? (
-              memberObj?.avatar_url ? (
+          {isAssigned ? (
+            <div className="relative w-9 h-9 rounded-full ring-2 ring-emerald-500 ring-offset-1 p-0.5 overflow-hidden flex items-center justify-center bg-emerald-50 shrink-0 shadow-xs">
+              {memberObj?.avatar_url ? (
                 // eslint-disable-next-next/no-img-element
                 <img
                   src={memberObj.avatar_url}
                   alt={cleanName}
-                  className="w-8 h-8 rounded-full object-cover shrink-0"
+                  className="w-full h-full rounded-full object-cover shrink-0"
                   onError={(e) => {
                     (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName)}`;
                   }}
                 />
               ) : (
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-[10px] flex items-center justify-center shrink-0">
+                <div className="w-full h-full rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-[10px] flex items-center justify-center shrink-0">
                   {cleanName.slice(0, 2).toUpperCase() || getRoleAbbr(role)}
                 </div>
-              )
-            ) : (
-              <div className="w-8 h-8 rounded-full border border-dashed border-red-500 bg-red-50/90 text-red-600 font-black flex items-center justify-center shadow-2xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
-                <Plus className="w-3.5 h-3.5 text-red-600 stroke-[3]" />
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          ) : (
+            <div className="w-9 h-9 rounded-full border border-dashed border-red-500 bg-red-50/90 text-red-600 font-black flex items-center justify-center shadow-2xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
+              <Plus className="w-3.5 h-3.5 text-red-600 stroke-[3]" />
+            </div>
+          )}
 
           {/* Role Pill */}
-          <span className="text-[9px] font-extrabold uppercase text-slate-600 tracking-wider mt-0.5 leading-none block text-center">
+          <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider mt-0.5 leading-none block text-center">
             {getRoleAbbr(role)}
           </span>
 
           {/* Member Full Clean Name */}
-          <span className="text-[10px] font-semibold text-slate-800 truncate max-w-[70px] text-center leading-none mt-0.5 block" title={cleanName}>
-            {isAssigned ? (cleanName || 'Assign') : 'Assign'}
-          </span>
+          {isAssigned ? (
+            <span className="text-[11px] font-extrabold text-indigo-600 dark:text-indigo-400 text-center leading-tight truncate max-w-[75px] block mt-0.5" title={cleanName}>
+              {cleanName}
+            </span>
+          ) : (
+            <span className="text-[10px] font-semibold text-slate-400 truncate max-w-[75px] text-center leading-none mt-0.5 block">
+              Assign
+            </span>
+          )}
         </div>
       )}
 

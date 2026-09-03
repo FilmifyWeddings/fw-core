@@ -272,12 +272,12 @@ Please confirm your slot.
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs p-0 sm:p-4">
+      <div className="fixed inset-0 z-[120] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs">
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 15 }}
-          className="bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 overflow-hidden w-full max-w-4xl flex flex-col my-0 sm:my-auto max-h-[92vh]"
+          className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 overflow-hidden w-[94vw] max-w-4xl flex flex-col my-auto max-h-[90vh] animate-in fade-in zoom-in-95"
         >
           {/* Top Modal Navigation Header */}
           <div className="px-4 sm:px-5 py-3.5 bg-white text-slate-900 flex items-center justify-between border-b border-slate-200 shrink-0">

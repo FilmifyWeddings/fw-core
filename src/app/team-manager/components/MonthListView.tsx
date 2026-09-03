@@ -207,18 +207,6 @@ export default function MonthListView({
 
   return (
     <div className="space-y-6 select-none font-sans">
-      
-      {/* ─── MONTH REGISTER TOOLBAR ─── */}
-      <div className="bg-white/95 backdrop-blur-md px-3 py-2 rounded-2xl border border-slate-200/90 shadow-2xs flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 shrink-0">
-          <Calendar className="w-3.5 h-3.5 text-indigo-600" />
-          <span className="text-xs font-black text-slate-800 tracking-tight">Month Register</span>
-          <span className="text-slate-300 font-bold text-xs">•</span>
-          <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
-            {totalEventsCount} {totalEventsCount === 1 ? 'Event' : 'Events'}
-          </span>
-        </div>
-      </div>
 
       {/* ─── 1. COLLAPSIBLE LUXURY REDDISH "DATE NOT FIXED (TBD)" SECTION ─── */}
       {tbdEvents.length > 0 && (
