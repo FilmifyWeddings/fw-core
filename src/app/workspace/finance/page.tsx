@@ -2184,7 +2184,10 @@ export default function FinancePage() {
               <div className="relative" ref={notificationRef}>
                 <button
                   type="button"
-                  onClick={() => setIsNotificationDropdownOpen(prev => !prev)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsNotificationDropdownOpen(prev => !prev);
+                  }}
                   className="relative p-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 hover:bg-slate-100 shadow-2xs transition cursor-pointer"
                   title="Due Date & Payment Alerts"
                 >
@@ -2202,7 +2205,7 @@ export default function FinancePage() {
                       initial={{ opacity: 0, y: 8, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 8, scale: 0.95 }}
-                      className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl border border-slate-200 shadow-2xl p-4 z-40 space-y-3"
+                      className="hidden md:block absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl border border-slate-200 shadow-2xl p-4 z-50 space-y-3"
                     >
                       <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                         <div className="flex items-center gap-1.5">
@@ -2378,11 +2381,15 @@ export default function FinancePage() {
             {/* Mobile Only Action Icons (< md) */}
             <div className="flex md:hidden items-center gap-1.5">
               {/* Notification Bell */}
-              <div className="relative" ref={notificationRef}>
+              <div>
                 <button
                   type="button"
-                  onClick={() => setIsNotificationDropdownOpen(prev => !prev)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsNotificationDropdownOpen(prev => !prev);
+                  }}
                   className="h-8 w-8 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 flex items-center justify-center relative cursor-pointer"
+                  title="Due Date Alerts"
                 >
                   <Bell className="w-4 h-4" />
                   {overdueMilestonesList.length > 0 && (
@@ -3844,6 +3851,99 @@ export default function FinancePage() {
                 >
                   Yes, Delete
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 📱 Mobile & Tablet Due Date Alert Centered Modal (< 768px / md:hidden) */}
+      <AnimatePresence>
+        {isNotificationDropdownOpen && (
+          <div 
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4 md:hidden"
+            onClick={() => setIsNotificationDropdownOpen(false)}
+          >
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="w-full max-w-sm bg-white rounded-2xl p-4 shadow-2xl max-h-[80vh] overflow-y-auto space-y-3 font-sans" 
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100 mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center">
+                    <Bell className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black text-slate-800">Due Date Alerts</h4>
+                    <p className="text-[10px] text-slate-500 font-medium">
+                      {overdueMilestonesList.length} pending installment{overdueMilestonesList.length === 1 ? '' : 's'}
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  type="button" 
+                  onClick={() => setIsNotificationDropdownOpen(false)} 
+                  className="text-slate-400 hover:text-slate-600 p-1 text-xs cursor-pointer rounded-lg hover:bg-slate-100 transition"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {overdueMilestonesList.length === 0 ? (
+                  <div className="text-center py-6 text-slate-400 text-xs">
+                    <CheckCircle2 className="w-6 h-6 text-emerald-500 mx-auto mb-1.5" />
+                    <span>All milestone payments are up to date! 🎉</span>
+                  </div>
+                ) : (
+                  overdueMilestonesList.map((item, idx) => (
+                    <div key={idx} className="p-2.5 bg-rose-50/60 rounded-xl border border-rose-200/70 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-extrabold text-slate-900 text-xs truncate max-w-[170px]">
+                          {item.client.name}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-rose-100 text-rose-800">
+                          {item.daysOverdue > 0 ? `${item.daysOverdue}d Overdue` : 'Due Today'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-600 font-medium truncate max-w-[170px]">
+                          {item.milestone.step_name || item.milestone.title}
+                        </span>
+                        <span className="font-mono font-black text-rose-900">
+                          ₹{(Number(item.milestone.amount) || 0).toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-end gap-2 pt-1 border-t border-rose-100">
+                        {item.client.phone && (
+                          <a
+                            href={`https://wa.me/${item.client.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
+                              `Hello ${item.client.name}, this is a reminder regarding your pending installment for ${item.milestone.step_name || 'Booking'} of ₹${(item.milestone.amount || 0).toLocaleString('en-IN')}.`
+                            )}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2 py-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-extrabold text-[10px] rounded-lg border border-emerald-200 flex items-center gap-1"
+                          >
+                            <Send className="w-2.5 h-2.5" /> WhatsApp
+                          </a>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsNotificationDropdownOpen(false);
+                            handleOpenCompletePaymentModal(item.record, item.milestone);
+                          }}
+                          className="px-2.5 py-1 bg-emerald-600 text-white font-extrabold text-[10px] rounded-lg shadow-xs hover:bg-emerald-700 flex items-center gap-1 cursor-pointer"
+                        >
+                          <Check className="w-2.5 h-2.5" /> Mark Paid
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </motion.div>
           </div>

@@ -304,9 +304,9 @@ export function ClientFinanceCard({
                     <h4 className="text-[11px] font-black tracking-wider uppercase text-slate-700">
                       Pricing Breakdown
                     </h4>
-                    <div className="flex items-center gap-1.5 mt-0.5 max-w-full text-xs font-semibold font-sans [font-variant-numeric:normal]">
+                    <div className="flex items-center gap-1.5 py-0.5 max-w-full overflow-hidden">
                       <UserCheck className="w-3 h-3 text-purple-600 shrink-0" />
-                      <span className="text-[10px] font-medium text-slate-400">Handled by:</span>
+                      <span className="text-[11px] font-semibold text-slate-500 shrink-0">Handled by:</span>
                       {addingMember ? (
                         <div className="flex items-center gap-1">
                           <input
@@ -315,13 +315,13 @@ export function ClientFinanceCard({
                             value={newMemberName}
                             onChange={(e) => setNewMemberName(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleSaveMember()}
-                            className="px-1.5 py-0.5 text-[11px] border border-slate-300 rounded bg-white font-bold text-slate-800 w-20 focus:outline-none"
+                            className="px-1.5 py-0.5 text-[11px] font-bold text-purple-700 border border-slate-300 rounded bg-white w-24 focus:outline-none"
                             autoFocus
                           />
-                          <button onClick={handleSaveMember} className="p-0.5 bg-amber-600 text-white rounded hover:bg-amber-700">
+                          <button type="button" onClick={handleSaveMember} className="p-0.5 bg-amber-600 text-white rounded hover:bg-amber-700 cursor-pointer">
                             <Check className="w-2.5 h-2.5" />
                           </button>
-                          <button onClick={() => setAddingMember(false)} className="p-0.5 text-slate-400 hover:text-slate-600">
+                          <button type="button" onClick={() => setAddingMember(false)} className="p-0.5 text-slate-400 hover:text-slate-600 cursor-pointer">
                             <X className="w-2.5 h-2.5" />
                           </button>
                         </div>
@@ -337,7 +337,7 @@ export function ClientFinanceCard({
                               onAssignTeamMember(record.client_id, val);
                             }
                           }}
-                          className="bg-transparent text-xs font-semibold font-sans [font-variant-numeric:normal] text-purple-700 hover:text-purple-900 border-none outline-none p-0 cursor-pointer max-w-full truncate"
+                          className="text-[11px] font-bold text-purple-700 truncate max-w-[200px] sm:max-w-[260px] bg-transparent border-none p-0 focus:ring-0 cursor-pointer outline-none"
                         >
                           <option value="__add_new__">✨ + Add Member</option>
                           <option value="Unassigned">Unassigned</option>
