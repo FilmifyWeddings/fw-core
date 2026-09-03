@@ -2315,14 +2315,14 @@ export default function FinancePage() {
           <div className="flex items-center gap-2">
             
             {/* Search Input */}
-            <div className="relative flex-1 min-w-[120px]">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+            <div className="relative flex-1 min-w-[120px] h-8 flex items-center">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 placeholder="Search client, event, member..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-800 focus:outline-none focus:border-amber-500 focus:bg-white transition"
+                className="w-full h-8 pl-8 pr-3 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-amber-500 shadow-2xs transition"
               />
             </div>
 
@@ -2331,7 +2331,7 @@ export default function FinancePage() {
               <button
                 type="button"
                 onClick={() => setIsFilterDropdownOpen(prev => !prev)}
-                className={`h-9 px-2.5 sm:px-3 rounded-xl border text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer ${
+                className={`h-8 px-2.5 sm:px-3 rounded-xl border text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer ${
                   activeFiltersCount > 0
                     ? 'bg-orange-50 text-orange-700 border-orange-200 font-black'
                     : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
@@ -2564,7 +2564,7 @@ export default function FinancePage() {
                 <button
                   type="button"
                   onClick={() => setIsNotificationDropdownOpen(prev => !prev)}
-                  className="h-9 w-9 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 flex items-center justify-center relative cursor-pointer"
+                  className="h-8 w-8 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 flex items-center justify-center relative cursor-pointer"
                 >
                   <Bell className="w-4 h-4" />
                   {overdueMilestonesList.length > 0 && (
@@ -2579,7 +2579,7 @@ export default function FinancePage() {
               <button
                 type="button"
                 onClick={() => setIsAuditDrawerOpen(true)}
-                className="h-9 w-9 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 flex items-center justify-center cursor-pointer"
+                className="h-8 w-8 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 flex items-center justify-center cursor-pointer"
                 title="Audit Logs"
               >
                 <Clock className="w-4 h-4" />
@@ -2590,7 +2590,7 @@ export default function FinancePage() {
                 <button
                   type="button"
                   onClick={handleLockVault}
-                  className="h-9 w-9 rounded-xl bg-amber-50 border border-amber-300 text-amber-800 flex items-center justify-center cursor-pointer"
+                  className="h-8 w-8 rounded-xl bg-amber-50 border border-amber-300 text-amber-800 flex items-center justify-center cursor-pointer"
                   title="Lock Vault"
                 >
                   <Lock className="w-4 h-4 text-amber-700" />
@@ -2602,7 +2602,7 @@ export default function FinancePage() {
                 <button
                   type="button"
                   onClick={() => setIsMoreMenuOpen(prev => !prev)}
-                  className="h-9 w-9 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 flex items-center justify-center cursor-pointer"
+                  className="h-8 w-8 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 flex items-center justify-center cursor-pointer"
                   title="More Tools"
                 >
                   <MoreVertical className="w-4 h-4" />

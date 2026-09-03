@@ -127,9 +127,22 @@ export function ClientFinanceCard({
           </div>
 
           <div className="min-w-0 flex-1">
-            <h3 className="text-xs sm:text-sm md:text-base font-black text-slate-900 truncate max-w-[180px] sm:max-w-[280px]">
-              {client?.name || 'Unnamed Client'}
-            </h3>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-xs sm:text-sm md:text-base font-black text-slate-900 truncate max-w-[180px] sm:max-w-[280px]">
+                {client?.name || 'Unnamed Client'}
+              </h3>
+
+              {/* Status Badge */}
+              <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md ${
+                record.payment_status === 'paid' || (finalTotal > 0 && pendAmt === 0)
+                  ? 'bg-emerald-50 text-emerald-700'
+                  : recAmt > 0
+                  ? 'bg-orange-50 text-orange-700'
+                  : 'bg-rose-50 text-rose-700'
+              }`}>
+                {record.payment_status === 'paid' || (finalTotal > 0 && pendAmt === 0) ? 'Paid Full' : recAmt > 0 ? 'Partially Paid' : 'Pending'}
+              </span>
+            </div>
 
             <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mt-0.5 truncate font-medium">
               <span className="truncate">
@@ -347,9 +360,9 @@ export function ClientFinanceCard({
                   <button
                     type="button"
                     onClick={() => onOpenPricingEditModal(record)}
-                    className="h-6 px-2 text-[10px] font-bold rounded-lg border border-amber-300 bg-amber-50 text-amber-800 shrink-0 cursor-pointer hover:bg-amber-100 transition flex items-center gap-1"
+                    className="h-7 px-2.5 text-xs font-bold text-slate-800 rounded-md border border-amber-300 bg-amber-50 shrink-0 cursor-pointer hover:bg-amber-100 transition flex items-center gap-1"
                   >
-                    <Pencil className="w-2.5 h-2.5 text-amber-700" /> Edit Pricing
+                    <Pencil className="w-3 h-3 text-amber-700" /> Edit Pricing
                   </button>
                 </div>
 
@@ -437,9 +450,9 @@ export function ClientFinanceCard({
                   <button
                     type="button"
                     onClick={() => onAddMilestoneStep(record.id)}
-                    className="h-7 px-2.5 text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80 hover:bg-emerald-100 rounded-md flex items-center gap-1 cursor-pointer transition active:scale-95"
+                    className="h-7 px-2.5 text-xs font-bold text-slate-800 bg-emerald-50 border border-emerald-200/80 hover:bg-emerald-100 rounded-md flex items-center gap-1 cursor-pointer transition active:scale-95"
                   >
-                    <Plus className="w-3.5 h-3.5" /> Add Step
+                    <Plus className="w-3.5 h-3.5 text-emerald-700" /> Add Step
                   </button>
                 </div>
 
@@ -519,7 +532,7 @@ export function ClientFinanceCard({
                               <button
                                 type="button"
                                 onClick={() => onOpenCompletePaymentModal(record, ms)}
-                                className={`w-full h-7 sm:h-7.5 px-2 text-[10px] font-bold uppercase tracking-wider rounded-lg border transition cursor-pointer flex items-center justify-center truncate ${
+                                className={`w-full h-7 sm:h-7.5 px-2 text-[10px] font-extrabold uppercase rounded-md border transition cursor-pointer flex items-center justify-center truncate ${
                                   isPaid
                                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
                                     : isOverdue
@@ -629,7 +642,7 @@ export function ClientFinanceCard({
                                 <button
                                   type="button"
                                   onClick={() => onOpenCompletePaymentModal(record, ms)}
-                                  className={`w-full h-6 text-[9px] font-extrabold uppercase px-1 py-0.5 rounded border transition flex items-center justify-center truncate cursor-pointer ${
+                                  className={`w-full h-6 text-[10px] font-extrabold uppercase px-1 py-0.5 rounded-md border transition flex items-center justify-center truncate cursor-pointer ${
                                     isPaid
                                       ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
                                       : isOverdue
