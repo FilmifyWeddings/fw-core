@@ -650,12 +650,14 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
 }
 
 export async function updateCrewAssignmentPayment(
-  workspaceId: string,
-  assignmentId: string,
+  workspaceOrAssignmentId: string,
+  assignmentIdOrAmount: string | number,
   params: {
-    advanceAmount: number;
-    paymentStatus: 'pending' | 'partial' | 'completed';
+    advanceAmount?: number;
+    paymentStatus?: 'pending' | 'partial' | 'completed';
     paymentMethod?: string;
+    paymentMode?: string;
+    paymentRef?: string;
     paymentDate?: string;
     notes?: string;
     teamMemberId?: string;
@@ -664,23 +666,40 @@ export async function updateCrewAssignmentPayment(
     eventName?: string;
     roleName?: string;
     agreedAmount?: number;
-  }
+  } = {}
 ): Promise<{ success: boolean; expenseId?: string }> {
   try {
-    const paymentMethod = params.paymentMethod || 'UPI / Bank Transfer';
+    let workspaceId: string;
+    let assignmentId: string;
+    let advanceAmount: number;
+
+    if (typeof assignmentIdOrAmount === 'number') {
+      assignmentId = String(workspaceOrAssignmentId || '');
+      advanceAmount = assignmentIdOrAmount;
+      workspaceId = '';
+    } else {
+      workspaceId = String(workspaceOrAssignmentId || '');
+      assignmentId = String(assignmentIdOrAmount || '');
+      advanceAmount = Number(params.advanceAmount) || 0;
+    }
+
+    const safeAssignmentId = assignmentId ? String(assignmentId) : `pay_${Date.now()}`;
+    const isCustom = String(safeAssignmentId || '').includes('custom_');
+
+    const paymentMethod = params.paymentMethod || params.paymentMode || 'UPI / Bank Transfer';
     const paymentDate = params.paymentDate || new Date().toISOString().split('T')[0];
-    const advanceAmount = Number(params.advanceAmount) || 0;
     const agreedAmount = Number(params.agreedAmount) || 0;
     const balanceAmount = Math.max(0, agreedAmount - advanceAmount);
-    const amountToLog = params.paymentStatus === 'completed' ? agreedAmount : advanceAmount;
+    const paymentStatus = params.paymentStatus || (advanceAmount >= agreedAmount && agreedAmount > 0 ? 'completed' : advanceAmount > 0 ? 'partial' : 'pending');
+    const amountToLog = paymentStatus === 'completed' ? (agreedAmount > 0 ? agreedAmount : advanceAmount) : advanceAmount;
 
     // 1. Try Supabase RPC first
     try {
       const { data: rpcRes, error: rpcErr } = await supabase.rpc('update_crew_assignment_payment', {
-        p_assignment_id: assignmentId,
+        p_assignment_id: safeAssignmentId,
         p_workspace_id: workspaceId,
         p_advance_amount: advanceAmount,
-        p_payment_status: params.paymentStatus,
+        p_payment_status: paymentStatus,
         p_payment_method: paymentMethod,
         p_payment_date: paymentDate
       });
@@ -696,33 +715,34 @@ export async function updateCrewAssignmentPayment(
 
     // 2. Direct Sync Fallback
     // A. Sync into Finance Expenses & Transactions if paid > 0
-    if (amountToLog > 0) {
+    if (amountToLog > 0 && workspaceId) {
       await syncTeamPaymentToFinanceExpense(workspaceId, {
         title: `Crew Payout: ${params.teamMemberName || 'Member'} (${params.roleName || 'Crew'})`,
         category: 'Crew & Freelancer Payout',
         amount: amountToLog,
         date: paymentDate,
         payment_mode: paymentMethod,
-        notes: params.notes || `Shoot: ${params.eventName || 'Event'} | Client: ${params.clientName || 'Client'} | Status: ${params.paymentStatus}`,
+        notes: params.notes || `Shoot: ${params.eventName || 'Event'} | Client: ${params.clientName || 'Client'} | Status: ${paymentStatus}`,
         team_member_name: params.teamMemberName,
         team_member_id: params.teamMemberId,
         client_name: params.clientName,
         event_name: params.eventName,
-        linked_event_id: assignmentId
+        linked_event_id: safeAssignmentId
       });
     }
 
     // B. Update fw_assignments
-    if (assignmentId && !assignmentId.includes('-role-')) {
+    const strAssignmentId = String(safeAssignmentId || '');
+    if (strAssignmentId && !strAssignmentId.includes('-role-') && !isCustom) {
       await supabase.from('fw_assignments').update({
         advance_amount: advanceAmount,
         balance_amount: balanceAmount,
-        payment_status: params.paymentStatus,
+        payment_status: paymentStatus,
         payment_method: paymentMethod,
         payment_date: paymentDate,
         notes: params.notes || undefined,
         updated_at: new Date().toISOString()
-      }).eq('id', assignmentId);
+      }).eq('id', strAssignmentId);
     }
 
     // C. Update crew_assignments_finance
@@ -730,12 +750,12 @@ export async function updateCrewAssignmentPayment(
       await supabase.from('crew_assignments_finance').update({
         advance_paid_amount: advanceAmount,
         balance_amount: balanceAmount,
-        payment_status: params.paymentStatus,
+        payment_status: paymentStatus,
         payment_method: paymentMethod,
         payment_date: paymentDate,
         notes: params.notes || undefined,
         updated_at: new Date().toISOString()
-      }).eq('id', assignmentId);
+      }).eq('id', strAssignmentId);
     } catch (_) {}
 
     // D. Update team_event_payouts
@@ -743,12 +763,12 @@ export async function updateCrewAssignmentPayment(
       await supabase.from('team_event_payouts').update({
         paid_amount: advanceAmount,
         balance_amount: balanceAmount,
-        status: params.paymentStatus === 'completed' ? 'PAID' : params.paymentStatus === 'partial' ? 'PARTIAL' : 'PENDING',
+        status: paymentStatus === 'completed' ? 'PAID' : paymentStatus === 'partial' ? 'PARTIAL' : 'PENDING',
         payment_method: paymentMethod,
         payment_date: paymentDate,
         notes: params.notes || undefined,
         updated_at: new Date().toISOString()
-      }).eq('id', assignmentId);
+      }).eq('id', strAssignmentId);
     } catch (_) {}
 
     // E. Broadcast live event for real-time drawer & page refresh
@@ -761,6 +781,107 @@ export async function updateCrewAssignmentPayment(
   } catch (err) {
     console.error('[updateCrewAssignmentPayment] error:', err);
     return { success: false };
+  }
+}
+
+export async function syncTeamPaymentToExpensesAndAnalytics(
+  workspaceId: string,
+  params: {
+    paymentType?: string;
+    memberName: string;
+    memberId?: string;
+    memberType?: string;
+    paidAmount: number;
+    paymentDate?: string;
+    paymentMethod?: string;
+    safeAssignmentId?: string;
+    notes?: string;
+  }
+) {
+  const {
+    paymentType = 'Salary/Payout',
+    memberName,
+    memberId,
+    memberType = 'team_member',
+    paidAmount,
+    paymentDate = new Date().toISOString().split('T')[0],
+    paymentMethod = 'UPI / Bank Transfer',
+    safeAssignmentId = `pay_${Date.now()}`,
+    notes
+  } = params;
+
+  // 1. Insert into expenses table
+  const expensePayload: any = {
+    workspace_id: workspaceId,
+    user_id: workspaceId,
+    title: `${paymentType} - ${memberName}`,
+    category: (memberType || '').toLowerCase().includes('partner') || (memberType || '').toLowerCase().includes('lab') ? 'Lab & Printing Partner' : 'Crew & Team',
+    amount: Number(paidAmount),
+    expense_date: paymentDate,
+    payment_date: paymentDate,
+    payment_method: paymentMethod,
+    payment_mode: paymentMethod,
+    payment_status: 'PAID',
+    status: 'paid',
+    recipient_type: memberType || 'team_member',
+    team_member_id: memberId,
+    team_member_name: memberName,
+    paid_to: memberName,
+    reference_assignment_id: String(safeAssignmentId),
+    notes: notes ? `Payment for ${memberName}: ${notes}` : `Direct disbursement to ${memberName}`,
+  };
+
+  try {
+    const { data: expData, error: expError } = await supabase
+      .from('expenses')
+      .insert([expensePayload])
+      .select()
+      .single();
+
+    if (expError) {
+      console.warn('[expenses insert fallback]:', expError.message);
+      await supabase.from('expenses').insert([{
+        workspace_id: workspaceId,
+        user_id: workspaceId,
+        title: expensePayload.title,
+        category: expensePayload.category,
+        amount: expensePayload.amount,
+        payment_date: expensePayload.payment_date,
+        payment_mode: expensePayload.payment_mode,
+        paid_to: memberName,
+        notes: expensePayload.notes,
+      }]);
+    }
+  } catch (err) {
+    console.warn('[expenses insert caught]:', err);
+  }
+
+  // 2. Deep sync into finance_expenses and finance_transactions
+  await syncTeamPaymentToFinanceExpense(workspaceId, {
+    title: expensePayload.title,
+    category: expensePayload.category === 'Lab & Printing Partner' ? 'Album Printing & Binding' : 'Crew & Freelancer Payout',
+    amount: Number(paidAmount),
+    date: paymentDate,
+    payment_mode: paymentMethod,
+    notes: expensePayload.notes,
+    team_member_name: memberName,
+    team_member_id: memberId,
+    linked_event_id: String(safeAssignmentId)
+  });
+
+  // 3. Broadcast real-time events & trigger mutate
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('team_finance_updated', {
+      detail: { memberId, amount: Number(paidAmount), safeAssignmentId }
+    }));
+    window.dispatchEvent(new CustomEvent('finance_expenses_updated', {
+      detail: { memberId, amount: Number(paidAmount), safeAssignmentId }
+    }));
+    try {
+      if (typeof (window as any).mutate === 'function') {
+        (window as any).mutate((key: any) => typeof key === 'string' && (key.includes('expenses') || key.includes('analytics') || key.includes('team') || key.includes('finance')), undefined, { revalidate: true });
+      }
+    } catch (_) {}
   }
 }
 

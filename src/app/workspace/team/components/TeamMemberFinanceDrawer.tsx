@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useRouter } from 'next/navigation';
 import { 
   X, IndianRupee, Calendar, CreditCard, Plus, CheckCircle2, Clock, 
   AlertCircle, ChevronRight, Edit3, Trash2, Sparkles, Building2, 
@@ -26,7 +27,8 @@ import {
   recordSalaryPayment,
   updateCrewAssignmentPayment,
   fetchMemberFinancialSummary,
-  syncTeamPaymentToFinanceExpense 
+  syncTeamPaymentToFinanceExpense,
+  syncTeamPaymentToExpensesAndAnalytics
 } from '@/lib/team-finance-sync';
 import { supabase } from '@/lib/supabase';
 
@@ -63,6 +65,16 @@ export default function TeamMemberFinanceDrawer({
   initialSummary,
   onFinancialUpdate,
 }: TeamMemberFinanceDrawerProps) {
+  const router = useRouter();
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 4000);
+  }, []);
+
   // 3 Primary Tabs
   const [activeTab, setActiveTab] = useState<'bookings' | 'payroll' | 'analytics'>('bookings');
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -361,16 +373,27 @@ export default function TeamMemberFinanceDrawer({
 
       // 2. Automatically sync to Studio Expenses & Ledger if enabled
       if (salaryAutoSyncExpense) {
-        await syncTeamPaymentToFinanceExpense(workspaceId, {
-          title: `Staff Salary: ${member.name} (${monthTitle})`,
-          category: 'Studio Staff Salary',
-          amount: net,
-          date: salaryDate,
-          payment_mode: salaryPaymentMode,
-          notes: `Base: ₹${base.toLocaleString('en-IN')} | Incentive: ₹${incentive.toLocaleString('en-IN')} | Ded: ₹${ded.toLocaleString('en-IN')} | Ref: ${salaryRefNo || 'N/A'}`,
-          team_member_name: member.name,
-          team_member_id: member.id
+        const safeSalaryAssignmentId = newSlip.id ? String(newSlip.id) : `sal_${Date.now()}`;
+        await syncTeamPaymentToExpensesAndAnalytics(workspaceId, {
+          paymentType: 'Salary',
+          memberName: member.name,
+          memberId: member.id,
+          memberType: 'team_member',
+          paidAmount: net,
+          paymentDate: salaryDate,
+          paymentMethod: salaryPaymentMode,
+          safeAssignmentId: safeSalaryAssignmentId,
+          notes: `Base: ₹${base.toLocaleString('en-IN')} | Incentive: ₹${incentive.toLocaleString('en-IN')} | Ded: ₹${ded.toLocaleString('en-IN')} | Ref: ${salaryRefNo || 'N/A'}`
         });
+
+        // Immediate cache revalidation & success toast
+        try {
+          if (typeof (window as any).mutate === 'function') {
+            (window as any).mutate((key: any) => typeof key === 'string' && (key.includes('expenses') || key.includes('analytics') || key.includes('team') || key.includes('finance')), undefined, { revalidate: true });
+          }
+        } catch (_) {}
+        router.refresh();
+        showToast(`Payment of ₹${net.toLocaleString('en-IN')} logged & synced to Expenses & Analytics!`);
       }
 
       // Optimistic UI update
@@ -439,17 +462,28 @@ export default function TeamMemberFinanceDrawer({
     setSubmittingPayment(true);
     try {
       const amount = Number(paymentAmount);
+      const safeAssignmentId = paymentTarget?.id ? String(paymentTarget.id) : `pay_${Date.now()}`;
+      const memberId = member?.id;
+      const memberName = member?.name || 'Team Member';
+      const mType = member?.primary_type?.toLowerCase() || ((member as any)?.member_types?.includes('PARTNER') ? 'partner' : 'team_member');
+      const paymentType = paymentTarget.type === 'EVENT' ? 'Shoot Fee' : paymentTarget.type === 'ALBUM' ? 'Album / Lab Fee' : 'Advance Payout';
 
       if (paymentTarget.type === 'EVENT') {
-        await updateCrewAssignmentPayment(paymentTarget.id, amount, {
-          paymentMode,
-          paymentRef,
-          notes: paymentNotes,
+        await updateCrewAssignmentPayment(workspaceId, safeAssignmentId, {
+          advanceAmount: amount,
+          paymentStatus: amount >= paymentTarget.balanceAmount ? 'completed' : 'partial',
+          paymentMethod: paymentMode,
           paymentDate,
+          notes: paymentNotes,
+          teamMemberId: memberId,
+          teamMemberName: memberName,
+          clientName: paymentTarget.clientName,
+          eventName: paymentTarget.title,
+          roleName: paymentTarget.role,
           agreedAmount: paymentTarget.totalAmount
         });
 
-        await recordPayoutTransaction(workspaceId, paymentTarget.id, member!.id, {
+        await recordPayoutTransaction(workspaceId, safeAssignmentId, member!.id, {
           amount,
           payment_date: paymentDate,
           payment_mode: paymentMode,
@@ -462,7 +496,7 @@ export default function TeamMemberFinanceDrawer({
           role: paymentTarget.role
         });
       } else if (paymentTarget.type === 'ALBUM') {
-        await recordAlbumOrderPayment(workspaceId, paymentTarget.id, member!.id, {
+        await recordAlbumOrderPayment(workspaceId, safeAssignmentId, member!.id, {
           amount,
           payment_date: paymentDate,
           payment_mode: paymentMode,
@@ -472,6 +506,28 @@ export default function TeamMemberFinanceDrawer({
           clientName: paymentTarget.clientName
         });
       }
+
+      // Auto-Record Payment into expenses Table (Deep Detailed Sync)
+      await syncTeamPaymentToExpensesAndAnalytics(workspaceId, {
+        paymentType,
+        memberName,
+        memberId,
+        memberType: mType,
+        paidAmount: amount,
+        paymentDate,
+        paymentMethod: paymentMode,
+        safeAssignmentId,
+        notes: paymentNotes || `${paymentType} for ${paymentTarget.title || 'Assignment'}`
+      });
+
+      // Immediate Real-Time Cache Revalidation & Sync
+      try {
+        if (typeof (window as any).mutate === 'function') {
+          (window as any).mutate((key: any) => typeof key === 'string' && (key.includes('expenses') || key.includes('analytics') || key.includes('team') || key.includes('finance')), undefined, { revalidate: true });
+        }
+      } catch (_) {}
+      router.refresh();
+      showToast(`Payment of ₹${amount.toLocaleString('en-IN')} logged & synced to Expenses & Analytics!`);
 
       const updatedMetrics = {
         ...summary,
@@ -502,6 +558,23 @@ export default function TeamMemberFinanceDrawer({
   return (
     <AnimatePresence>
       <div className="fixed inset-0 z-[120] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs">
+        {/* Floating Toast Notification */}
+        <AnimatePresence>
+          {toastMessage && (
+            <motion.div
+              initial={{ opacity: 0, y: -20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -20, scale: 0.95 }}
+              className="fixed top-6 right-6 z-[99999] bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-slate-700 max-w-md pointer-events-auto"
+            >
+              <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                <CheckCircle2 className="w-4 h-4" />
+              </div>
+              <p className="text-xs font-bold">{toastMessage}</p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Backdrop */}
         <motion.div
           initial={{ opacity: 0 }}
