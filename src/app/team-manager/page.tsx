@@ -724,14 +724,14 @@ export default function TeamManagerPage() {
               if (assignErr) {
                 console.error('[TeamManager] Assignment update error:', assignErr.message);
               }
-            } else if (!assignmentId.includes('-role-')) {
+            } else if (!String(assignmentId || '').includes('-role-')) {
               const { error: assignErr } = await supabase
                 .from('fw_assignments')
                 .update({ 
                   assigned_member_id: memberId,
                   ...(currentUserId ? { user_id: currentUserId, workspace_id: currentUserId } : {})
                 })
-                .eq('id', assignmentId);
+                .eq('id', String(assignmentId));
 
               if (assignErr) {
                 console.error('[TeamManager] Assignment update error:', assignErr.message);

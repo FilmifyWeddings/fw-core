@@ -804,56 +804,45 @@ export async function syncTeamPaymentToExpensesAndAnalytics(
     memberId,
     memberType = 'team_member',
     paidAmount,
-    paymentDate = new Date().toISOString().split('T')[0],
+    paymentDate,
     paymentMethod = 'UPI / Bank Transfer',
     safeAssignmentId = `pay_${Date.now()}`,
     notes
   } = params;
 
-  // 1. Insert into expenses table
+  const paymentDateFormatted = paymentDate || new Date().toISOString().split('T')[0];
+
+  // 1. Insert sync record into expenses table (matches text ID & dual date schema)
   const expensePayload: any = {
-    workspace_id: workspaceId,
-    user_id: workspaceId,
-    title: `${paymentType} - ${memberName}`,
-    category: (memberType || '').toLowerCase().includes('partner') || (memberType || '').toLowerCase().includes('lab') ? 'Lab & Printing Partner' : 'Crew & Team',
+    title: `${paymentType || 'Payout'} - ${memberName}`,
+    category: memberType === 'partner' || (memberType || '').toLowerCase().includes('partner') || (memberType || '').toLowerCase().includes('lab') ? 'Lab & Printing Partner' : 'Crew & Team',
     amount: Number(paidAmount),
-    expense_date: paymentDate,
-    payment_date: paymentDate,
-    payment_method: paymentMethod,
-    payment_mode: paymentMethod,
+    expense_date: paymentDateFormatted,
+    date: paymentDateFormatted, // fallback for legacy schema
+    payment_method: paymentMethod || 'UPI / Bank Transfer',
     payment_status: 'PAID',
-    status: 'paid',
     recipient_type: memberType || 'team_member',
-    team_member_id: memberId,
-    team_member_name: memberName,
-    paid_to: memberName,
-    reference_assignment_id: String(safeAssignmentId),
-    notes: notes ? `Payment for ${memberName}: ${notes}` : `Direct disbursement to ${memberName}`,
+    team_member_id: memberId ? String(memberId) : null,
+    team_member_name: memberName || '',
+    reference_assignment_id: safeAssignmentId ? String(safeAssignmentId) : `pay_${Date.now()}`,
+    notes: notes ? `Payment for ${memberName}: ${notes}` : `Disbursement to ${memberName}`,
+    ...(workspaceId ? { workspace_id: workspaceId, user_id: workspaceId } : {})
   };
 
-  try {
-    const { data: expData, error: expError } = await supabase
-      .from('expenses')
-      .insert([expensePayload])
-      .select()
-      .single();
+  const { error: expError } = await supabase
+    .from('expenses')
+    .insert([expensePayload]);
 
-    if (expError) {
-      console.warn('[expenses insert fallback]:', expError.message);
-      await supabase.from('expenses').insert([{
-        workspace_id: workspaceId,
-        user_id: workspaceId,
-        title: expensePayload.title,
-        category: expensePayload.category,
-        amount: expensePayload.amount,
-        payment_date: expensePayload.payment_date,
-        payment_mode: expensePayload.payment_mode,
-        paid_to: memberName,
-        notes: expensePayload.notes,
-      }]);
+  if (expError) {
+    console.error('Auto-sync to expenses warning:', expError.message);
+    // If tenant columns caused an issue, retry without workspace_id / user_id
+    if (expError.message?.includes('workspace_id') || expError.message?.includes('user_id')) {
+      const { workspace_id, user_id, ...purePayload } = expensePayload;
+      const { error: retryError } = await supabase.from('expenses').insert([purePayload]);
+      if (retryError) {
+        console.error('Auto-sync to expenses retry warning:', retryError.message);
+      }
     }
-  } catch (err) {
-    console.warn('[expenses insert caught]:', err);
   }
 
   // 2. Deep sync into finance_expenses and finance_transactions
@@ -861,11 +850,11 @@ export async function syncTeamPaymentToExpensesAndAnalytics(
     title: expensePayload.title,
     category: expensePayload.category === 'Lab & Printing Partner' ? 'Album Printing & Binding' : 'Crew & Freelancer Payout',
     amount: Number(paidAmount),
-    date: paymentDate,
+    date: paymentDateFormatted,
     payment_mode: paymentMethod,
     notes: expensePayload.notes,
     team_member_name: memberName,
-    team_member_id: memberId,
+    team_member_id: memberId ? String(memberId) : undefined,
     linked_event_id: String(safeAssignmentId)
   });
 
@@ -1121,7 +1110,8 @@ export async function unassignCrewSlot(params: {
     } catch (_) {}
 
     // 2. Direct clean up in fw_assignments
-    if (params.assignmentId && !params.assignmentId.includes('-role-')) {
+    const cleanAssignId = String(params.assignmentId || '');
+    if (cleanAssignId && !cleanAssignId.includes('-role-')) {
       await supabase.from('fw_assignments').update({
         assigned_member_id: null,
         assigned_member_name: null,
@@ -1131,7 +1121,7 @@ export async function unassignCrewSlot(params: {
         balance_amount: 0,
         payment_status: 'pending',
         notes: null
-      }).eq('id', params.assignmentId);
+      }).eq('id', cleanAssignId);
     } else if (params.subEventId && params.roleName) {
       await supabase.from('fw_assignments').update({
         assigned_member_id: null,
@@ -1234,11 +1224,12 @@ async function persistAssignmentSlot(params: {
     };
 
     // 2. Perform fw_assignments update or insert
-    if (params.assignmentId && !params.assignmentId.includes('-role-')) {
+    const cleanAssignId = String(params.assignmentId || '');
+    if (cleanAssignId && !cleanAssignId.includes('-role-')) {
       await supabase
         .from('fw_assignments')
         .update(assignmentPayload)
-        .eq('id', params.assignmentId);
+        .eq('id', cleanAssignId);
     } else if (params.subEventId) {
       const { data: existing } = await supabase
         .from('fw_assignments')
