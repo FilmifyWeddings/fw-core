@@ -8,7 +8,8 @@ import {
   CheckCircle2, RefreshCw, ChevronRight, ChevronDown, User, MoreVertical,
   ExternalLink, Sparkles, AlertCircle, Building2, Briefcase,
   Target, FileText, IndianRupee, Layers, Check, Activity,
-  Clock, Calendar, UserCheck, ShieldAlert
+  Clock, Calendar, UserCheck, ShieldAlert,
+  Eye, Pencil
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
@@ -427,6 +428,26 @@ export default function WorkspaceTeamPage() {
     }
   };
 
+  // Direct Member Action Handlers
+  const handleOpenDetails = (member: TeamMember) => {
+    setSelectedFinanceMember(member);
+    setIsFinanceDrawerOpen(true);
+  };
+
+  const handleEditMember = (member: TeamMember) => {
+    setMemberToEdit(member);
+    setIsAddModalOpen(true);
+  };
+
+  const handleDeleteMember = (memberIdOrMember: string | TeamMember) => {
+    if (typeof memberIdOrMember === 'string') {
+      const target = members.find(m => m.id === memberIdOrMember);
+      if (target) setMemberToDelete(target);
+    } else {
+      setMemberToDelete(memberIdOrMember);
+    }
+  };
+
   // Dynamic Distinct Roles from all members
   const availableRoles = useMemo(() => {
     const set = new Set<string>();
@@ -687,177 +708,141 @@ export default function WorkspaceTeamPage() {
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredMembers.map((member) => {
-                const leadsBadge = formatLeadsBadge(member.permissions?.leads_access);
-                const teamBadge = formatTeamManagerBadge(member.permissions?.team_manager_access);
+            <div className="w-full bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden mt-4">
+              {/* Desktop Table Header */}
+              <div className="hidden md:grid grid-cols-12 gap-4 px-5 py-3.5 bg-slate-50/75 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                <div className="col-span-4">Member Info</div>
+                <div className="col-span-2">Type & Role</div>
+                <div className="col-span-3">Commercials (Agreed / Paid / Due)</div>
+                <div className="col-span-2">Portal Access</div>
+                <div className="col-span-1 text-right">Actions</div>
+              </div>
 
-                return (
-                  <div
-                    key={member.id}
-                    className="bg-white rounded-3xl p-5 border border-zinc-200/80 shadow-2xs hover:shadow-md transition-all flex flex-col justify-between space-y-4 relative group"
-                  >
-                    {/* Top Row: Avatar & Details */}
-                    <div className="space-y-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div 
-                          className="flex items-center gap-3 min-w-0 cursor-pointer group/title"
-                          onClick={() => {
-                            setSelectedFinanceMember(member);
-                            setIsFinanceDrawerOpen(true);
-                          }}
-                        >
-                          <div className="w-12 h-12 rounded-2xl bg-zinc-100 border border-zinc-200 overflow-hidden flex items-center justify-center shrink-0 group-hover/title:scale-105 transition">
-                            {member.avatar_url ? (
-                              <img src={member.avatar_url} alt={member.name} className="w-full h-full object-cover" />
-                            ) : (
-                              <div className="w-full h-full bg-gradient-to-tr from-amber-400 via-amber-500 to-amber-600 text-white font-black text-sm flex items-center justify-center">
-                                {member.name.slice(0, 2).toUpperCase()}
-                              </div>
-                            )}
-                          </div>
+              {/* Row List */}
+              <div className="divide-y divide-slate-100">
+                {filteredMembers.map((member) => {
+                  const fin = memberFinancials[member.id];
+                  const agreedVal = fin?.total_agreed ?? (member as any).agreed ?? 0;
+                  const paidVal = fin?.total_paid ?? (member as any).paid ?? 0;
+                  const balanceVal = fin?.total_balance ?? (member as any).balance ?? 0;
+                  const isFreelancer = member.primary_type === 'FREELANCER' || member.member_types?.includes('FREELANCER') || (member as any).type === 'freelancer';
+                  const isPartner = member.primary_type === 'PARTNER' || member.member_types?.includes('PARTNER') || (member as any).type === 'partner';
+                  const memberTypeLabel = isPartner ? 'Partner' : isFreelancer ? 'Freelancer' : (member.primary_type || 'In-House');
+                  const leadsBadge = formatLeadsBadge(member.permissions?.leads_access);
+                  const teamBadge = formatTeamManagerBadge(member.permissions?.team_manager_access);
+                  const crmAccessText = (member as any).crm_access ? `CRM: ${(member as any).crm_access}` : leadsBadge.label;
+                  const teamAccessText = (member as any).team_access ? `Team: ${(member as any).team_access}` : teamBadge.label;
 
-                          <div className="min-w-0">
-                            <h3 className="text-sm font-black text-zinc-900 truncate leading-tight group-hover/title:text-amber-700 transition">{member.name}</h3>
-                            
-                            {/* Member Type Badges */}
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {(member.member_types || [member.primary_type || 'IN_HOUSE']).map((t) => (
-                                <span 
-                                  key={t}
-                                  className={`px-1.5 py-0.5 rounded-md text-[9.5px] font-black uppercase tracking-wider border ${
-                                    t === 'IN_HOUSE'
-                                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                      : t === 'PARTNER'
-                                        ? 'bg-purple-50 text-purple-800 border-purple-200'
-                                        : 'bg-sky-50 text-sky-800 border-sky-200'
-                                  }`}
-                                >
-                                  {t === 'IN_HOUSE' ? '🏢 In-House' : t === 'PARTNER' ? '🤝 Partner' : '📸 Freelancer'}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
+                  return (
+                    <div 
+                      key={member.id}
+                      className="px-4 py-3.5 sm:px-5 hover:bg-slate-50/70 transition-colors flex flex-col md:grid md:grid-cols-12 gap-3 md:gap-4 items-start md:items-center"
+                    >
+                      {/* 1. Member Profile & Name (Clickable) */}
+                      <div className="col-span-4 flex items-center gap-3 w-full">
+                        <div className="w-10 h-10 rounded-full shrink-0 overflow-hidden bg-amber-100 text-amber-800 font-bold flex items-center justify-center text-xs border border-slate-200">
+                          {member.avatar_url ? (
+                            <img src={member.avatar_url} alt={member.name} className="w-full h-full object-cover"/>
+                          ) : (
+                            <span>{member.name?.slice(0, 2).toUpperCase()}</span>
+                          )}
                         </div>
-
-                        {/* Actions */}
-                        <div className="flex items-center gap-1">
+                        <div className="min-w-0 flex-1">
                           <button
-                            onClick={() => {
-                              setMemberToEdit(member);
-                              setIsAddModalOpen(true);
-                            }}
-                            className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition cursor-pointer"
-                            title="Edit Member & RBAC Permissions"
+                            type="button"
+                            onClick={() => handleOpenDetails(member)}
+                            className="text-left font-bold text-xs sm:text-sm text-slate-800 hover:text-indigo-600 truncate block transition-colors cursor-pointer"
                           >
-                            <Edit3 className="w-4 h-4" />
+                            {member.name}
                           </button>
-
-                          <button
-                            onClick={() => setMemberToDelete(member)}
-                            disabled={deletingId === member.id}
-                            className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
-                            title="Remove Member"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <div className="flex items-center gap-2 text-[11px] text-slate-500 truncate">
+                            {member.phone && <span>{member.phone}</span>}
+                            {member.phone && member.email && <span>•</span>}
+                            {member.email && <span className="truncate">{member.email}</span>}
+                          </div>
                         </div>
                       </div>
 
-                      {/* Contact Info */}
-                      <div className="space-y-1 text-xs">
-                        {member.email && (
-                          <div className="flex items-center gap-2 text-zinc-600 truncate">
-                            <Mail className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                            <span className="truncate">{member.email}</span>
-                          </div>
-                        )}
-
-                        {member.phone && (
-                          <div className="flex items-center gap-2 text-zinc-600">
-                            <Phone className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                            <span>{member.phone}</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Multi-Role Tags & Default Rate */}
-                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                        {member.roles && member.roles.length > 0 && member.roles.map((r) => (
-                          <span key={r} className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-zinc-100 text-zinc-600 border border-zinc-200">
+                      {/* 2. Type & Role */}
+                      <div className="col-span-2 flex flex-wrap items-center gap-1.5 w-full">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
+                          isPartner 
+                            ? 'bg-purple-100 text-purple-700' 
+                            : isFreelancer 
+                              ? 'bg-amber-100 text-amber-700' 
+                              : 'bg-emerald-100 text-emerald-700'
+                        }`}>
+                          {memberTypeLabel}
+                        </span>
+                        {(member.roles && member.roles.length > 0 ? member.roles : [member.primary_role]).filter(Boolean).map((r: string, idx: number) => (
+                          <span key={idx} className="px-1.5 py-0.5 rounded text-[10px] bg-slate-100 text-slate-600 font-medium">
                             {r}
                           </span>
                         ))}
-                        {Boolean(member.default_daily_rate && member.default_daily_rate > 0) && (
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-amber-50 text-amber-900 border border-amber-300 flex items-center gap-1">
-                            <IndianRupee className="w-2.5 h-2.5" />
-                            <span>{Number(member.default_daily_rate).toLocaleString('en-IN')}/day</span>
-                          </span>
-                        )}
                       </div>
 
-                      {/* Financial Quick Widget */}
-                      {(() => {
-                        const fin = memberFinancials[member.id];
-                        const totalAgreed = fin?.total_agreed || 0;
-                        const totalPaid = fin?.total_paid || 0;
-                        const totalBal = fin?.total_balance || 0;
-
-                        return (
-                          <div className="bg-stone-50/80 rounded-xl p-2.5 border border-stone-200/80 grid grid-cols-3 gap-1.5 text-center">
-                            <div>
-                              <span className="text-[9px] font-bold text-stone-400 block uppercase">Agreed</span>
-                              <span className="text-[11px] font-black text-stone-800">
-                                ₹{totalAgreed.toLocaleString('en-IN')}
-                              </span>
-                            </div>
-                            <div>
-                              <span className="text-[9px] font-bold text-emerald-600 block uppercase">Paid</span>
-                              <span className="text-[11px] font-black text-emerald-700">
-                                ₹{totalPaid.toLocaleString('en-IN')}
-                              </span>
-                            </div>
-                            <div>
-                              <span className="text-[9px] font-bold text-rose-500 block uppercase">Balance</span>
-                              <span className="text-[11px] font-black text-rose-700">
-                                ₹{totalBal.toLocaleString('en-IN')}
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </div>
-
-                    {/* Permissions & Security Summary */}
-                    <div className="pt-3 border-t border-zinc-100 space-y-2">
-                      <div className="flex flex-wrap gap-1.5">
-                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${leadsBadge.color}`}>
-                          {leadsBadge.label}
-                        </span>
-                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${teamBadge.color}`}>
-                          {teamBadge.label}
-                        </span>
-                      </div>
-
-                      {/* Action Row: Open Finance & Bookings Details Drawer */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedFinanceMember(member);
-                          setIsFinanceDrawerOpen(true);
-                        }}
-                        className="w-full py-2.5 px-3.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-black shadow-xs flex items-center justify-between transition active:scale-98 cursor-pointer group/btn"
-                      >
-                        <div className="flex items-center gap-2">
-                          <Calendar className="w-3.5 h-3.5 text-amber-400" />
-                          <span>Details</span>
+                      {/* 3. Commercials (Agreed / Paid / Balance) */}
+                      <div className="col-span-3 w-full flex items-center gap-3 text-xs">
+                        <div>
+                          <span className="text-[9px] uppercase font-bold text-slate-400 block">Agreed</span>
+                          <span className="font-bold text-slate-700">₹{agreedVal.toLocaleString('en-IN')}</span>
                         </div>
-                        <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover/btn:translate-x-0.5 transition" />
-                      </button>
+                        <div className="h-5 w-px bg-slate-200"></div>
+                        <div>
+                          <span className="text-[9px] uppercase font-bold text-slate-400 block">Paid</span>
+                          <span className="font-bold text-emerald-600">₹{paidVal.toLocaleString('en-IN')}</span>
+                        </div>
+                        <div className="h-5 w-px bg-slate-200"></div>
+                        <div>
+                          <span className="text-[9px] uppercase font-bold text-slate-400 block">Balance</span>
+                          <span className="font-bold text-amber-600">₹{balanceVal.toLocaleString('en-IN')}</span>
+                        </div>
+                      </div>
+
+                      {/* 4. Portal Access */}
+                      <div className="col-span-2 flex flex-wrap gap-1 items-center w-full">
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">
+                          {crmAccessText}
+                        </span>
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">
+                          {teamAccessText}
+                        </span>
+                      </div>
+
+                      {/* 5. Direct Action Icons (No Three-Dots) */}
+                      <div className="col-span-1 flex items-center justify-end gap-1.5 w-full md:w-auto">
+                        {/* Details Action */}
+                        <button
+                          type="button"
+                          title="View Details"
+                          onClick={() => handleOpenDetails(member)}
+                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                        >
+                          <Eye className="w-4 h-4"/>
+                        </button>
+                        {/* Edit Action */}
+                        <button
+                          type="button"
+                          title="Edit Member"
+                          onClick={() => handleEditMember(member)}
+                          className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+                        >
+                          <Pencil className="w-4 h-4"/>
+                        </button>
+                        {/* Delete Action */}
+                        <button
+                          type="button"
+                          title="Delete Member"
+                          onClick={() => handleDeleteMember(member.id)}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4"/>
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           )}
         </>
