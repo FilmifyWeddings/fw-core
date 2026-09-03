@@ -337,7 +337,8 @@ export function ClientFinanceCard({
                               onAssignTeamMember(record.client_id, val);
                             }
                           }}
-                          className="text-[11px] font-bold text-purple-700 truncate max-w-[200px] sm:max-w-[260px] bg-transparent border-none p-0 focus:ring-0 cursor-pointer outline-none"
+                          className="!text-[11px] leading-tight font-bold text-purple-700 truncate max-w-[180px] sm:max-w-[260px] bg-transparent border-none p-0 focus:ring-0 cursor-pointer outline-none [font-size:11px!important]"
+                          style={{ fontSize: '11px' }}
                         >
                           <option value="__add_new__">✨ + Add Member</option>
                           <option value="Unassigned">Unassigned</option>
