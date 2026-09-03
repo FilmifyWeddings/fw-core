@@ -6,6 +6,15 @@ import { Sparkles, RefreshCw, AlertCircle, ArrowUpCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 export function VersionGuard({ children }: { children: React.ReactNode }) {
+  // 1. Disable in Development Mode: strictly runs ONLY in production
+  if (process.env.NODE_ENV !== 'production') {
+    return <>{children}</>;
+  }
+
+  return <VersionGuardInner>{children}</VersionGuardInner>;
+}
+
+function VersionGuardInner({ children }: { children: React.ReactNode }) {
   const [currentVersion, setCurrentVersion] = useState<string | null>(null);
   const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
   const [releaseNotes, setReleaseNotes] = useState<string>('');
@@ -62,9 +71,27 @@ export function VersionGuard({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const handleSync = () => {
-    // Force reload bypassing browser cache to fetch fresh bundle
-    window.location.reload();
+  // 2. Clear service worker registrations, cache, and hard reload
+  const handleSync = async () => {
+    try {
+      if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const registration of registrations) {
+          await registration.unregister();
+        }
+      }
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('app_version');
+        localStorage.removeItem('studiocore_build_hash');
+        sessionStorage.removeItem('last_global_chunk_reload');
+        sessionStorage.removeItem('sc_chunk_reload');
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    if (typeof window !== 'undefined') {
+      window.location.reload();
+    }
   };
 
   return (

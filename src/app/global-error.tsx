@@ -11,22 +11,54 @@ export default function GlobalError({
 }) {
   useEffect(() => {
     console.error('[Global App Error Caught]:', error);
-    // If it's a chunk loading or version mismatch error, auto-reload once to fetch fresh assets
-    const isChunkError =
-      error?.message?.includes('ChunkLoadError') ||
-      error?.message?.includes('Loading chunk') ||
-      error?.message?.includes('Failed to fetch') ||
-      error?.name === 'ChunkLoadError';
+    // If it's a chunk loading or version mismatch error, auto-reload once to fetch fresh assets in production
+    if (process.env.NODE_ENV === 'production') {
+      const isChunkError =
+        error?.message?.includes('ChunkLoadError') ||
+        error?.message?.includes('Loading chunk') ||
+        error?.message?.includes('Failed to fetch') ||
+        error?.name === 'ChunkLoadError';
 
-    if (isChunkError && typeof window !== 'undefined') {
-      const lastReload = sessionStorage.getItem('last_global_chunk_reload');
-      const now = Date.now();
-      if (!lastReload || now - parseInt(lastReload, 10) > 10000) {
-        sessionStorage.setItem('last_global_chunk_reload', now.toString());
-        window.location.reload();
+      if (isChunkError && typeof window !== 'undefined') {
+        const lastReload = sessionStorage.getItem('last_global_chunk_reload');
+        const now = Date.now();
+        if (!lastReload || now - parseInt(lastReload, 10) > 10000) {
+          sessionStorage.setItem('last_global_chunk_reload', now.toString());
+          window.location.reload();
+        }
       }
     }
   }, [error]);
+
+  // 1. Disable in Development Mode: strictly runs ONLY in production
+  if (process.env.NODE_ENV !== 'production') {
+    return null; // completely disable in local dev
+  }
+
+  // 2. Full unregister, storage clear, and hard reload
+  const handleReload = async () => {
+    try {
+      if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const registration of registrations) {
+          await registration.unregister();
+        }
+      }
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('app_version');
+        localStorage.removeItem('studiocore_build_hash');
+        sessionStorage.removeItem('last_global_chunk_reload');
+        sessionStorage.removeItem('sc_chunk_reload');
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    if (typeof window !== 'undefined') {
+      window.location.reload();
+    } else {
+      reset();
+    }
+  };
 
   return (
     <html lang="en">
@@ -47,13 +79,7 @@ export default function GlobalError({
 
           <div className="flex items-center justify-center gap-3 pt-2">
             <button
-              onClick={() => {
-                if (typeof window !== 'undefined') {
-                  window.location.reload();
-                } else {
-                  reset();
-                }
-              }}
+              onClick={handleReload}
               className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-bold transition shadow-sm cursor-pointer"
             >
               Reload StudioCore
