@@ -158,7 +158,7 @@ export default function Professional3DCalendar({
   const [internalSearch, setInternalSearch] = useState<string>('');
   const [isMonthDropdownOpen, setIsMonthDropdownOpen] = useState<boolean>(false);
   const currentRealYear = new Date().getFullYear();
-  const availableYears = useMemo(() => Array.from({ length: 8 }, (_, i) => currentRealYear - 2 + i), [currentRealYear]);
+  const availableYears = useMemo(() => Array.from({ length: 15 }, (_, i) => currentRealYear - 5 + i), [currentRealYear]);
   const [activePmDropdownId, setActivePmDropdownId] = useState<string | null>(null);
   const [pmSearchQuery, setPmSearchQuery] = useState<string>('');
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -187,6 +187,17 @@ export default function Professional3DCalendar({
 
   const nextMonth = () => {
     setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+  };
+
+  // Mobile swipe handlers to change month
+  const touchStartXRef = useRef<number>(0);
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartXRef.current = e.touches[0].clientX;
+  };
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const diffX = touchStartXRef.current - e.changedTouches[0].clientX;
+    if (diffX > 50) nextMonth(); // swiped left -> next month
+    if (diffX < -50) prevMonth(); // swiped right -> prev month
   };
 
   const goToToday = () => {
@@ -725,8 +736,12 @@ export default function Professional3DCalendar({
          ───────────────────────────────────────────────────────────── */}
       <div className="lg:hidden space-y-4">
         
-        {/* Mobile Mini Month Picker Card */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
+        {/* Mobile Mini Month Picker Card with Left/Right Touch Swipe */}
+        <div 
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs select-none"
+        >
           <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
             <div className="flex items-center gap-1.5">
               <div className="relative">

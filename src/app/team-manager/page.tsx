@@ -1210,16 +1210,29 @@ export default function TeamManagerPage() {
             </div>
           </div>
 
-          {/* Mobile search bar - full width below header */}
-          <div className="sm:hidden relative w-full">
-            <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search clients or sub-events..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full h-7.5 pl-7.5 pr-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 placeholder:text-slate-400 placeholder:text-[11px] focus:outline-none focus:border-[#6C5CE7] transition shadow-2xs"
-            />
+          {/* Mobile search bar with unified filter button */}
+          <div className="sm:hidden flex items-center gap-2 w-full">
+            <div className="relative flex-1">
+              <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search clients or sub-events..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full h-8 pl-7.5 pr-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 placeholder:text-slate-400 placeholder:text-[11px] focus:outline-none focus:border-[#6C5CE7] transition shadow-2xs"
+              />
+            </div>
+            <button 
+              type="button"
+              onClick={() => setIsUnifiedFilterOpen(!isUnifiedFilterOpen)}
+              className="h-8 px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center gap-1 text-xs font-bold shrink-0 shadow-xs cursor-pointer"
+            >
+              <Filter className="w-3.5 h-3.5 text-slate-500"/>
+              <span className="hidden sm:inline">Filter</span>
+              {(unifiedFilters?.monthYear !== 'all' || Boolean(unifiedFilters?.startDate) || (unifiedFilters?.eventTypes?.length ?? 0) > 0 || (unifiedFilters?.roles?.length ?? 0) > 0 || (unifiedFilters?.assignmentStatus && unifiedFilters.assignmentStatus !== 'all')) && (
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-pulse" />
+              )}
+            </button>
           </div>
         </div>
 

@@ -159,10 +159,10 @@ export default function EventBlock({
                   subEventDate: isTbd ? '' : block.subEventDate,
                 });
               }}
-              className="w-4 h-4 accent-amber-600 rounded cursor-pointer"
+              className="h-4 w-4 rounded border-slate-300 text-amber-500 shadow-inner focus:ring-amber-400 cursor-pointer accent-amber-600"
             />
             <span className="text-xs font-black text-amber-950">
-              📅 Date Not Fixed (TBD)
+              Date Not Fixed (TBD)
             </span>
           </label>
 
@@ -178,11 +178,11 @@ export default function EventBlock({
                   endDate: isOvernight ? (block.endDate || block.subEventDate) : '',
                 });
               }}
-              className="w-4 h-4 accent-indigo-600 rounded cursor-pointer"
+              className="h-4 w-4 rounded border-slate-300 text-amber-500 shadow-inner focus:ring-amber-400 cursor-pointer accent-indigo-600"
             />
-            <span className="text-xs font-black text-indigo-950 flex items-center gap-1">
-              <Moon className="w-3.5 h-3.5 text-indigo-600" />
-              <span>🌙 Spans Overnight (Next Day End)</span>
+            <span className="text-xs font-black text-indigo-950 flex items-center">
+              <Moon className="w-3.5 h-3.5 text-indigo-500 inline-block mr-1" />
+              <span>Spans Overnight (Next Day End)</span>
             </span>
           </label>
         </div>
@@ -210,7 +210,7 @@ export default function EventBlock({
           {block.isOvernight && !block.isDateTbd && (
             <div>
               <label className="text-[10px] font-black text-indigo-950 uppercase tracking-wider block mb-1">
-                🌙 End Date (Next Day)
+                End Date (Next Day)
               </label>
               <CalendarPicker
                 value={block.endDate || block.subEventDate}
@@ -344,10 +344,15 @@ export default function EventBlock({
           <textarea
             ref={notesRef}
             rows={1}
-            placeholder="Important operational notes for crew..."
+            placeholder="Operational notes, gear requirements, or guidelines..."
             value={block.notes}
+            onInput={(e) => {
+              const target = e.target as HTMLTextAreaElement;
+              target.style.height = 'auto';
+              target.style.height = `${target.scrollHeight}px`;
+            }}
             onChange={(e) => onUpdate(block.id, { notes: e.target.value })}
-            className="w-full bg-white border border-amber-200/90 focus:border-amber-500 pl-9 pr-3 py-2 rounded-xl text-xs font-medium text-zinc-900 placeholder:text-zinc-400 focus:outline-none transition shadow-2xs resize-none"
+            className="w-full text-xs p-2.5 rounded-lg border border-slate-200 bg-slate-50/50 resize-none overflow-hidden transition-all focus:bg-white text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-amber-500 shadow-2xs"
           />
         </div>
       </div>

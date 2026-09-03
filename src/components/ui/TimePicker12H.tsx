@@ -11,14 +11,14 @@ interface TimePicker12HProps {
   className?: string;
 }
 
-const HOURS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
+const HOURS = ['00', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
 const MINUTES = ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'];
 
 // Parse input string to { hour, minute, period }
 function parseTimeTo12H(val?: string): { hour: string; minute: string; period: 'AM' | 'PM' } {
-  if (!val) return { hour: '10', minute: '00', period: 'AM' };
+  if (!val) return { hour: '00', minute: '00', period: 'AM' };
   
-  // Format: "10:00 AM" or "06:30 PM"
+  // Format: "10:00 AM" or "06:30 PM" or "00:00 AM"
   const match12h = val.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
   if (match12h) {
     const h = parseInt(match12h[1], 10);
@@ -37,7 +37,9 @@ function parseTimeTo12H(val?: string): { hour: string; minute: string; period: '
     const minute = match24h[2];
     const period: 'AM' | 'PM' = h >= 12 ? 'PM' : 'AM';
     h = h % 12;
-    if (h === 0) h = 12;
+    if (h === 0 && (val.startsWith('12:') || val.startsWith('00:'))) {
+      h = val.startsWith('12:') ? 12 : 0;
+    }
     return {
       hour: h.toString().padStart(2, '0'),
       minute,
@@ -45,7 +47,7 @@ function parseTimeTo12H(val?: string): { hour: string; minute: string; period: '
     };
   }
 
-  return { hour: '10', minute: '00', period: 'AM' };
+  return { hour: '00', minute: '00', period: 'AM' };
 }
 
 export default function TimePicker12H({

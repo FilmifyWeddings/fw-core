@@ -98,15 +98,28 @@ export default function MonthListView({
   const now = new Date();
   const currentMonthYearId = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-  // Unique Project Managers list
+  // Dynamic Project Managers list
   const projectManagers = useMemo(() => {
     const pms = new Set<string>();
+    // 1. From projects
     projects.forEach(p => {
+      if ((p as any).project_manager_name) pms.add((p as any).project_manager_name);
       if ((p as any).project_manager) pms.add((p as any).project_manager);
       if ((p as any).lead_assigned_to) pms.add((p as any).lead_assigned_to);
+      if ((p as any).project_manager_id) {
+        const found = teamMembers.find(m => m.id === (p as any).project_manager_id);
+        if (found?.name) pms.add(found.name);
+      }
     });
-    return Array.from(pms).filter(Boolean);
-  }, [projects]);
+    // 2. From team members with PM or Manager roles
+    teamMembers.forEach(m => {
+      const roleStr = `${m.primary_role || ''} ${(m.roles || []).join(' ')}`.toLowerCase();
+      if (roleStr.includes('project') || roleStr.includes('manager') || roleStr.includes('pm')) {
+        if (m.name) pms.add(m.name);
+      }
+    });
+    return Array.from(pms).filter(Boolean).sort();
+  }, [projects, teamMembers]);
 
   // Flatten and categorize sub-events
   const { tbdEvents, activeMonthGroups, pastMonthGroups, activeMonthOrder, pastMonthOrder } = useMemo(() => {
@@ -125,7 +138,11 @@ export default function MonthListView({
 
       // Project Manager Filter
       if (selectedPmFilter !== 'all') {
-        const pmName = (project as any).project_manager || (project as any).lead_assigned_to || '';
+        const pmName = (project as any).project_manager_name ||
+          (project as any).project_manager ||
+          (project as any).lead_assigned_to ||
+          (teamMembers.find(m => m.id === (project as any).project_manager_id)?.name) ||
+          '';
         if (pmName.toLowerCase() !== selectedPmFilter.toLowerCase()) return;
       }
 
@@ -302,10 +319,10 @@ export default function MonthListView({
           {isFilterDropdownOpen && (
             <>
               <div
-                className="fixed inset-0 z-40"
+                className="fixed inset-0 z-[99]"
                 onClick={() => setIsFilterDropdownOpen(false)}
               />
-              <div className="absolute right-0 top-full mt-1.5 z-50 w-52 bg-white rounded-xl border border-slate-200 shadow-xl p-2.5 space-y-2 text-slate-800 animate-in fade-in zoom-in-95 duration-150">
+              <div className="fixed top-14 inset-x-3 z-[100] sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-1.5 sm:z-[100] sm:w-56 bg-white rounded-xl border border-slate-200 shadow-xl p-2.5 space-y-2 text-slate-800 animate-in fade-in zoom-in-95 duration-150">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-1">
                   <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">
                     Filter Options

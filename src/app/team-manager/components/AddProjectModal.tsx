@@ -27,8 +27,8 @@ const DEFAULT_BLOCK: EventBlockData = {
   endDate: '',
   venueLocation: '',
   mapLink: '',
-  startTime: '10:00 AM',
-  endTime: '06:00 PM',
+  startTime: '00:00 AM',
+  endTime: '00:00 AM',
   roles: [],
   notes: '',
 };
@@ -315,7 +315,7 @@ export default function AddProjectModal({
               <div>
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <h3 className="text-xs sm:text-sm font-black text-amber-950">
-                    {projectToEdit ? 'Edit Wedding Shoot Project' : 'Add New Wedding Shoot & Events'}
+                    {projectToEdit ? 'Edit Event' : 'Add New Event'}
                   </h3>
                   {isDraftRestored && !projectToEdit && (
                     <span className="px-1.5 py-0.2 rounded-md text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-0.5">
@@ -390,10 +390,10 @@ export default function AddProjectModal({
                 <button
                   type="button"
                   onClick={addEventBlock}
-                  className="px-2.5 py-1 rounded-lg bg-gradient-to-b from-amber-400 to-amber-600 hover:from-amber-500 hover:to-amber-700 text-white font-black text-[11px] shadow-2xs flex items-center gap-1 cursor-pointer"
+                  className="h-7 px-2.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white flex items-center gap-1 shadow-xs cursor-pointer"
                 >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>+ Add Another Function</span>
+                  <Plus className="w-3.5 h-3.5"/>
+                  <span>Add Event</span>
                 </button>
               </div>
 
@@ -414,15 +414,15 @@ export default function AddProjectModal({
                 />
               ))}
 
-              {/* BOTTOM ADD FUNCTION BUTTON */}
+              {/* BOTTOM ADD EVENT BUTTON */}
               <div className="pt-2">
                 <button
                   type="button"
                   onClick={addEventBlock}
                   className="w-full py-2 px-3 rounded-xl border border-dashed border-amber-300 hover:border-amber-500 bg-amber-50/60 hover:bg-amber-100/80 text-amber-950 font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
                 >
-                  <Plus className="w-4 h-4 text-amber-600 stroke-[3]" />
-                  <span>+ Add Another Function / Sub-Event</span>
+                  <Plus className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Add Event</span>
                 </button>
               </div>
             </div>
@@ -486,7 +486,7 @@ export default function AddProjectModal({
                 ) : (
                   <>
                     <Save className="w-4 h-4" />
-                    <span>{projectToEdit ? 'Save Changes' : 'Create Wedding Project'}</span>
+                    <span>{projectToEdit ? 'Save Changes' : 'Create Project'}</span>
                   </>
                 )}
               </button>
