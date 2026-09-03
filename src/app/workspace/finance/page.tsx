@@ -109,9 +109,12 @@ export default function FinancePage() {
 
   // Expanded client cards set
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
+  const [openMenuRecordId, setOpenMenuRecordId] = useState<string | null>(null);
 
-  // Category list for expenses
+  // Category list for expenses & Custom Category creation
   const [expenseCategories, setExpenseCategories] = useState<string[]>(DEFAULT_EXPENSE_CATEGORIES);
+  const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
 
   // ─────────────────────────────────────────────────────────────
   // 📜 REAL-TIME AUDIT LOG DRAWER
@@ -253,6 +256,7 @@ export default function FinancePage() {
     title: string;
     amount: string;
     paid_to: string;
+    team_member_id: string;
     payment_mode: string;
     payment_date: string;
     client_id: string;
@@ -263,6 +267,7 @@ export default function FinancePage() {
     title: '',
     amount: '',
     paid_to: '',
+    team_member_id: '',
     payment_mode: 'UPI',
     payment_date: new Date().toISOString().split('T')[0],
     client_id: '',
@@ -277,6 +282,7 @@ export default function FinancePage() {
     title: string;
     amount: string;
     paid_to: string;
+    team_member_id: string;
     payment_mode: string;
     payment_date: string;
     client_id: string;
@@ -288,6 +294,7 @@ export default function FinancePage() {
     title: '',
     amount: '',
     paid_to: '',
+    team_member_id: '',
     payment_mode: 'UPI',
     payment_date: new Date().toISOString().split('T')[0],
     client_id: '',
@@ -562,6 +569,24 @@ export default function FinancePage() {
         } catch (_) {}
 
         setPaymentMilestoneTemplates(Array.from(templateSet));
+
+        // E. Fetch Workspace Custom Expense Categories
+        if (workspaceId && workspaceId !== 'ws_demo') {
+          try {
+            const { data: catData } = await supabase
+              .from('workspace_expense_categories')
+              .select('category_name')
+              .eq('workspace_id', workspaceId)
+              .order('created_at', { ascending: true });
+
+            if (catData && catData.length > 0) {
+              const customCats = catData.map(c => c.category_name);
+              setExpenseCategories(Array.from(new Set([...DEFAULT_EXPENSE_CATEGORIES, ...customCats])));
+            }
+          } catch (catErr) {
+            console.warn('Expense categories lookup notice:', catErr);
+          }
+        }
       } catch (err) {
         console.warn('Error loading team members or finance settings:', err);
       }
@@ -1450,6 +1475,31 @@ export default function FinancePage() {
   // ─────────────────────────────────────────────────────────────
   // 💸 EXPENSES & TEAM PAYOUTS MANAGEMENT
   // ─────────────────────────────────────────────────────────────
+  const handleCreateCustomCategory = async () => {
+    const trimmed = newCategoryName.trim();
+    if (!trimmed) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const wsId = session?.user?.id || currentWorkspaceId;
+      if (wsId && wsId !== 'ws_demo') {
+        await supabase
+          .from('workspace_expense_categories')
+          .insert({
+            workspace_id: wsId,
+            category_name: trimmed,
+            is_default: false
+          });
+      }
+      setExpenseCategories(prev => Array.from(new Set([...prev, trimmed])));
+      setExpenseFormData(prev => ({ ...prev, category: trimmed }));
+      setExpenseEditFormData(prev => ({ ...prev, category: trimmed }));
+      setNewCategoryName('');
+      setShowAddCategoryModal(false);
+    } catch (err) {
+      console.error('Error creating custom category:', err);
+    }
+  };
+
   const handleSaveExpense = async () => {
     const amt = Math.round(parseFloat(expenseFormData.amount) || 0);
     if (!expenseFormData.title || amt <= 0) {
@@ -1461,7 +1511,7 @@ export default function FinancePage() {
       const { data: { session } } = await supabase.auth.getSession();
       const workspaceId = session?.user?.id || 'ws_demo';
 
-      const newExp: FinanceExpenseItem = {
+      const newExp: FinanceExpenseItem & { team_member_id?: string | null } = {
         id: `exp_${Date.now()}`,
         user_id: workspaceId,
         workspace_id: workspaceId,
@@ -1471,6 +1521,7 @@ export default function FinancePage() {
         title: expenseFormData.title,
         amount: amt,
         paid_to: expenseFormData.paid_to || null,
+        team_member_id: expenseFormData.team_member_id || null,
         payment_mode: expenseFormData.payment_mode,
         payment_date: expenseFormData.payment_date,
         status: 'paid',
@@ -1498,10 +1549,11 @@ export default function FinancePage() {
       setShowAddExpenseModal(false);
       setExpenseFormData({
         expense_type: 'project_expense',
-        category: 'Photographer Payout',
+        category: expenseCategories[0] || 'Photographer Payout',
         title: '',
         amount: '',
         paid_to: '',
+        team_member_id: '',
         payment_mode: 'UPI',
         payment_date: new Date().toISOString().split('T')[0],
         client_id: '',
@@ -1512,7 +1564,7 @@ export default function FinancePage() {
     }
   };
 
-  const handleOpenEditExpense = (exp: FinanceExpenseItem) => {
+  const handleOpenEditExpense = (exp: FinanceExpenseItem & { team_member_id?: string | null }) => {
     setExpenseEditFormData({
       id: exp.id,
       expense_type: exp.expense_type || 'project_expense',
@@ -1520,6 +1572,7 @@ export default function FinancePage() {
       title: exp.title || '',
       amount: String(exp.amount || 0),
       paid_to: exp.paid_to || '',
+      team_member_id: exp.team_member_id || '',
       payment_mode: exp.payment_mode || 'UPI',
       payment_date: exp.payment_date || new Date().toISOString().split('T')[0],
       client_id: exp.client_id || '',
@@ -1539,7 +1592,7 @@ export default function FinancePage() {
       const { data: { session } } = await supabase.auth.getSession();
       const workspaceId = session?.user?.id || 'ws_demo';
 
-      const updatedExp: FinanceExpenseItem = {
+      const updatedExp: FinanceExpenseItem & { team_member_id?: string | null } = {
         id: expenseEditFormData.id,
         workspace_id: workspaceId,
         user_id: workspaceId,
@@ -1549,6 +1602,7 @@ export default function FinancePage() {
         title: expenseEditFormData.title,
         amount: amt,
         paid_to: expenseEditFormData.paid_to || null,
+        team_member_id: expenseEditFormData.team_member_id || null,
         payment_mode: expenseEditFormData.payment_mode,
         payment_date: expenseEditFormData.payment_date,
         status: 'paid',
@@ -1675,17 +1729,23 @@ export default function FinancePage() {
       if (statusFilter === 'overdue_only') {
         const hasOverdue = (rec.milestones || []).some(m => m.due_date && m.due_date < todayStr && m.status !== 'completed' && m.status !== 'paid');
         matchesStatus = hasOverdue;
-      } else if (statusFilter !== 'all') {
-        matchesStatus = rec.payment_status === statusFilter;
+      } else if (statusFilter === 'pending') {
+        matchesStatus = Number(rec.pending_amount) > 0;
+      } else if (statusFilter === 'paid') {
+        matchesStatus = rec.payment_status === 'paid' || (Number(rec.final_total_amount) > 0 && Number(rec.pending_amount) === 0);
+      } else if (statusFilter === 'partially_paid') {
+        matchesStatus = rec.payment_status === 'partially_paid' || (Number(rec.received_amount) > 0 && Number(rec.pending_amount) > 0);
       }
 
       // Location
-      const matchesLocation = locationFilter === 'all' || (client as any)?.city === locationFilter || (client as any)?.venue === locationFilter;
+      const matchesLocation = locationFilter === 'all' || 
+        ((client as any)?.city && (client as any).city.toLowerCase() === locationFilter.toLowerCase()) || 
+        ((client as any)?.venue && (client as any).venue.toLowerCase() === locationFilter.toLowerCase());
 
       // Payment Mode
       let matchesMode = true;
       if (paymentModeFilter !== 'all') {
-        matchesMode = (rec.milestones || []).some(m => m.payment_mode === paymentModeFilter);
+        matchesMode = (rec.milestones || []).some(m => m.payment_mode && m.payment_mode.toLowerCase() === paymentModeFilter.toLowerCase());
       }
 
       // 👥 Team Member (Handled By) Filter
@@ -1694,17 +1754,31 @@ export default function FinancePage() {
         if (teamMemberFilter === 'unassigned') {
           matchesTeam = !handled || handled === 'Unassigned';
         } else {
-          matchesTeam = handled === teamMemberFilter;
+          matchesTeam = handled === teamMemberFilter || 
+            ((client as any)?.assigned_team_member_name === teamMemberFilter) ||
+            ((client as any)?.handled_by === teamMemberFilter) ||
+            ((rec as any)?.handled_by === teamMemberFilter);
         }
       }
 
-      // Date Range Match
+      // 📅 Date Range Match: First Completed Milestone Payment Date (Fallback to Event Date or Created At)
       let matchesDate = true;
-      if (dateRangePreset !== 'all' || (startDate && endDate)) {
-        const clientDate = client?.event_date || rec.created_at?.split('T')[0];
-        if (clientDate) {
-          if (startDate && clientDate < startDate) matchesDate = false;
-          if (endDate && clientDate > endDate) matchesDate = false;
+      if (dateRangePreset !== 'all' || startDate || endDate) {
+        const completedMilestones = (rec.milestones || []).filter(m => m.status === 'completed' || m.status === 'paid');
+        let firstPaymentDate: string | undefined;
+        if (completedMilestones.length > 0) {
+          const dates = completedMilestones
+            .map(m => m.due_date || (m as any).payment_date)
+            .filter(Boolean)
+            .sort();
+          if (dates.length > 0) {
+            firstPaymentDate = dates[0];
+          }
+        }
+        const effectiveDate = firstPaymentDate || client?.event_date || rec.created_at?.split('T')[0];
+        if (effectiveDate) {
+          if (startDate && effectiveDate < startDate) matchesDate = false;
+          if (endDate && effectiveDate > endDate) matchesDate = false;
         }
       }
 
@@ -1847,16 +1921,16 @@ export default function FinancePage() {
 
   // 3. ONLY REACHED IF 100% VERIFIED
   return (
-    <div className="min-h-screen bg-[#FDFBF7] text-slate-900 pb-28 pt-4 px-4 sm:px-6 lg:px-8 font-sans selection:bg-amber-100 selection:text-amber-900">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className="min-h-screen bg-[#FDFBF7] text-slate-900 pb-28 pt-3 px-3 sm:px-5 lg:px-7 font-sans selection:bg-amber-100 selection:text-amber-900">
+      <div className="w-full max-w-[1680px] mx-auto space-y-4 sm:space-y-5">
 
         {/* ─────────────────────────────────────────────────────────────
             TOP 5 METRIC CARDS WITH SPARKLINES (DYNAMIC TO FILTERS & TEAM)
         ───────────────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
           
           {/* Card 1: GROSS INVOICED */}
-          <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-100 shadow-[0_2px_12px_rgba(0,0,0,0.03)] relative overflow-hidden flex flex-col justify-between h-32">
+          <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-[0_2px_12px_rgba(0,0,0,0.03)] relative overflow-hidden flex flex-col justify-between h-32">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-orange-50 text-orange-500 flex items-center justify-center shrink-0 border border-orange-100/60">
                 <FileText className="w-5 h-5 stroke-[2.2]" />
@@ -1882,7 +1956,7 @@ export default function FinancePage() {
           </div>
 
           {/* Card 2: CASH RECEIVED */}
-          <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-100 shadow-[0_2px_12px_rgba(0,0,0,0.03)] relative overflow-hidden flex flex-col justify-between h-32">
+          <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-[0_2px_12px_rgba(0,0,0,0.03)] relative overflow-hidden flex flex-col justify-between h-32">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 border border-emerald-100/60">
                 <Wallet className="w-5 h-5 stroke-[2.2]" />
@@ -1910,7 +1984,7 @@ export default function FinancePage() {
           {/* Card 3: PENDING RECEIVABLES (CLICKABLE DRILL-DOWN) */}
           <div 
             onClick={() => setShowOverdueModal(true)}
-            className="bg-white hover:bg-orange-50/20 rounded-2xl p-4 sm:p-5 border border-slate-100 shadow-[0_2px_12px_rgba(0,0,0,0.03)] relative overflow-hidden flex flex-col justify-between h-32 cursor-pointer transition"
+            className="bg-white hover:bg-orange-50/20 rounded-2xl p-4 border border-slate-100 shadow-[0_2px_12px_rgba(0,0,0,0.03)] relative overflow-hidden flex flex-col justify-between h-32 cursor-pointer transition"
           >
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-orange-50 text-orange-500 flex items-center justify-center shrink-0 border border-orange-100/60">
@@ -1937,7 +2011,7 @@ export default function FinancePage() {
           </div>
 
           {/* Card 4: TEAM & EXPENSES */}
-          <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-100 shadow-[0_2px_12px_rgba(0,0,0,0.03)] relative overflow-hidden flex flex-col justify-between h-32">
+          <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-[0_2px_12px_rgba(0,0,0,0.03)] relative overflow-hidden flex flex-col justify-between h-32">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-500 flex items-center justify-center shrink-0 border border-rose-100/60">
                 <CreditCard className="w-5 h-5 stroke-[2.2]" />
@@ -1963,7 +2037,7 @@ export default function FinancePage() {
           </div>
 
           {/* Card 5: NET STUDIO PROFIT */}
-          <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-100 shadow-[0_2px_12px_rgba(0,0,0,0.03)] relative overflow-hidden flex flex-col justify-between h-32">
+          <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-[0_2px_12px_rgba(0,0,0,0.03)] relative overflow-hidden flex flex-col justify-between h-32">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0 border border-purple-100/60">
                 <TrendingUp className="w-5 h-5 stroke-[2.2]" />
@@ -1991,83 +2065,83 @@ export default function FinancePage() {
         </div>
 
         {/* ─────────────────────────────────────────────────────────────
-            CLEAN TABS & UNIFIED FILTER BAR (SINGLE RIGHT-SIDE FILTER)
+            🎛️ STREAMLINED ACTION BAR & CONTROLS (UNIFIED SINGLE-ROW)
         ───────────────────────────────────────────────────────────── */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200/80 pb-3">
+        <div className="bg-white rounded-2xl border border-slate-200/80 p-2 sm:p-3 shadow-xs flex flex-col xl:flex-row xl:items-center justify-between gap-3">
           
-          {/* Left Tabs */}
-          <div className="flex items-center gap-6">
+          {/* Left Tabs (Horizontal Scrollable on Mobile) */}
+          <div className="flex items-center gap-4 sm:gap-6 border-b xl:border-b-0 border-slate-100 pb-2 xl:pb-0 overflow-x-auto no-scrollbar shrink-0">
             <button
               onClick={() => setActiveTab('clients')}
-              className={`flex items-center gap-2 pb-3 pt-1 text-xs font-bold transition relative cursor-pointer ${
+              className={`flex items-center gap-1.5 pb-2 pt-1 text-xs font-bold transition relative whitespace-nowrap cursor-pointer ${
                 activeTab === 'clients'
-                  ? 'text-orange-600 font-black'
+                  ? 'text-amber-800 font-black'
                   : 'text-slate-500 hover:text-slate-800'
               }`}
             >
-              <FileText className="w-4 h-4" />
-              <span>Client Invoices & Milestones</span>
+              <FileText className="w-3.5 h-3.5" />
+              <span>Client Invoices & Milestones ({filteredRecords.length})</span>
               {activeTab === 'clients' && (
                 <motion.div 
                   layoutId="tabUnderline" 
-                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-600 rounded-full"
+                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-amber-600 rounded-full"
                 />
               )}
             </button>
 
             <button
               onClick={() => setActiveTab('expenses')}
-              className={`flex items-center gap-2 pb-3 pt-1 text-xs font-bold transition relative cursor-pointer ${
+              className={`flex items-center gap-1.5 pb-2 pt-1 text-xs font-bold transition relative whitespace-nowrap cursor-pointer ${
                 activeTab === 'expenses'
-                  ? 'text-orange-600 font-black'
+                  ? 'text-amber-800 font-black'
                   : 'text-slate-500 hover:text-slate-800'
               }`}
             >
-              <CreditCard className="w-4 h-4" />
+              <CreditCard className="w-3.5 h-3.5" />
               <span>Team Payouts & Expenses ({filteredExpenses.length})</span>
               {activeTab === 'expenses' && (
                 <motion.div 
                   layoutId="tabUnderline" 
-                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-600 rounded-full"
+                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-amber-600 rounded-full"
                 />
               )}
             </button>
 
             <button
               onClick={() => setActiveTab('analytics')}
-              className={`flex items-center gap-2 pb-3 pt-1 text-xs font-bold transition relative cursor-pointer ${
+              className={`flex items-center gap-1.5 pb-2 pt-1 text-xs font-bold transition relative whitespace-nowrap cursor-pointer ${
                 activeTab === 'analytics'
-                  ? 'text-orange-600 font-black'
+                  ? 'text-amber-800 font-black'
                   : 'text-slate-500 hover:text-slate-800'
               }`}
             >
-              <PieChart className="w-4 h-4" />
+              <PieChart className="w-3.5 h-3.5" />
               <span>Financial Analytics</span>
               {activeTab === 'analytics' && (
                 <motion.div 
                   layoutId="tabUnderline" 
-                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-600 rounded-full"
+                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-amber-600 rounded-full"
                 />
               )}
             </button>
           </div>
 
-          {/* Right Filters Strip (Clean Search, Single Filter Dropdown, Alerts, Audit) */}
-          <div className="flex items-center gap-3 flex-wrap">
+          {/* Right Controls: Search + Filters + Notifications + Compact Action Icons */}
+          <div className="flex items-center gap-2 flex-wrap justify-between xl:justify-end">
             
             {/* Search Input */}
-            <div className="relative w-52 sm:w-64">
+            <div className="relative flex-1 sm:w-56 md:w-64 min-w-[150px]">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
               <input
                 type="text"
                 placeholder="Search client, member, event..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-amber-500 shadow-2xs"
+                className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-amber-500 focus:bg-white transition"
               />
             </div>
 
-            {/* 🎛️ MASTER ADVANCED FILTERS DROPDOWN (WITH LEAD CRM CALENDAR) */}
+            {/* 🎛️ MASTER ADVANCED FILTERS DROPDOWN */}
             <div className="relative" ref={filterDropdownRef}>
               <button
                 type="button"
@@ -2111,11 +2185,11 @@ export default function FinancePage() {
                       )}
                     </div>
 
-                    {/* 📅 LEAD CRM CALENDAR DATE RANGE PICKER (DIRECTLY AT TOP) */}
+                    {/* 📅 DATE RANGE PICKER (FIRST PAYMENT DATE) */}
                     <div className="p-3 bg-amber-50/40 rounded-2xl border border-amber-200/60 space-y-2">
                       <div className="flex items-center justify-between">
                         <label className="text-[11px] font-black text-amber-950 uppercase tracking-wider flex items-center gap-1.5">
-                          <Calendar className="w-3.5 h-3.5 text-amber-700" /> Date Range Filter
+                          <Calendar className="w-3.5 h-3.5 text-amber-700" /> Date Range (Payment Date)
                         </label>
                         {dateRangePreset !== 'all' && (
                           <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
@@ -2305,7 +2379,7 @@ export default function FinancePage() {
               <button
                 type="button"
                 onClick={() => setIsNotificationDropdownOpen(prev => !prev)}
-                className="relative p-2 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-2xs transition cursor-pointer"
+                className="relative p-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 hover:bg-slate-100 shadow-2xs transition cursor-pointer"
                 title="Due Date & Payment Alerts"
               >
                 <Bell className="w-4 h-4" />
@@ -2389,46 +2463,43 @@ export default function FinancePage() {
               </AnimatePresence>
             </div>
 
-            {/* 📥 Import Excel / CSV Button */}
+            {/* 📥 Compact Import Excel / CSV Button */}
             <button
               type="button"
               onClick={() => setIsExcelMigrationModalOpen(true)}
-              className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-black transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+              className="p-2 rounded-xl bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 hover:border-emerald-300 shadow-2xs transition cursor-pointer flex items-center gap-1"
               title="Import Clients & Finance from Legacy Excel / CSV Spreadsheet"
             >
-              <Upload className="w-3.5 h-3.5 text-emerald-700" />
-              <span className="hidden sm:inline">Import Excel / CSV</span>
+              <Upload className="w-4 h-4 text-emerald-700" />
             </button>
 
-            {/* 📤 Export Finance to Excel */}
+            {/* 📤 Compact Export Finance to Excel */}
             <button
               type="button"
               onClick={() => exportCurrentFinanceToExcel(filteredRecords, clients)}
-              className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+              className="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs transition cursor-pointer flex items-center gap-1"
               title="Export Current Filtered Finance to Excel (.xlsx)"
             >
-              <Download className="w-3.5 h-3.5 text-slate-600" />
-              <span className="hidden sm:inline">Export Excel</span>
+              <Download className="w-4 h-4 text-slate-600" />
             </button>
 
-            {/* 🔐 Re-lock Vault Button */}
+            {/* 🔐 Compact Re-lock Vault Button */}
             {isPinRequired && (
               <button
                 type="button"
                 onClick={handleLockVault}
-                className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                className="p-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs transition cursor-pointer"
                 title="Lock Finance Vault"
               >
-                <Lock className="w-3.5 h-3.5 text-amber-700" />
-                <span className="hidden sm:inline">Lock Vault</span>
+                <Lock className="w-4 h-4 text-amber-700" />
               </button>
             )}
 
-            {/* 📜 Audit Log Trigger */}
+            {/* 📜 Compact Audit Log Trigger */}
             <button
               type="button"
               onClick={() => setIsAuditDrawerOpen(true)}
-              className="p-2 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-2xs transition cursor-pointer"
+              className="p-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 hover:bg-slate-100 shadow-2xs transition cursor-pointer"
               title="Finance Audit Stream"
             >
               <Clock className="w-4 h-4" />
@@ -2673,23 +2744,78 @@ export default function FinancePage() {
                             e.stopPropagation();
                             setShowRecordPaymentModal({ open: true, client: record.client || undefined, financeRecord: record });
                           }}
-                          className="px-4 py-2 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition cursor-pointer active:scale-95 shadow-2xs"
+                          className="px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition cursor-pointer active:scale-95 shadow-2xs whitespace-nowrap"
                         >
                           Record Payment
                         </button>
 
-                        {/* Tax Invoice Button */}
+                        {/* Invoice Button */}
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             setShowInvoiceModal({ open: true, client: record.client || undefined, financeRecord: record });
                           }}
-                          className="px-4 py-2 text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition flex items-center gap-1.5 cursor-pointer active:scale-95 shadow-2xs"
+                          className="px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition flex items-center gap-1.5 cursor-pointer active:scale-95 shadow-2xs whitespace-nowrap"
                         >
                           <FileText className="w-3.5 h-3.5 text-amber-700" />
-                          Tax Invoice
+                          <span>Invoice</span>
                         </button>
+
+                        {/* Three-dots Context Menu */}
+                        <div className="relative" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => setOpenMenuRecordId(openMenuRecordId === record.id ? null : record.id)}
+                            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                            title="More Actions"
+                          >
+                            <MoreVertical className="w-4 h-4" />
+                          </button>
+
+                          <AnimatePresence>
+                            {openMenuRecordId === record.id && (
+                              <motion.div
+                                initial={{ opacity: 0, scale: 0.95, y: 5 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.95, y: 5 }}
+                                className="absolute right-0 mt-1 w-48 bg-white rounded-2xl border border-slate-200 shadow-xl py-1.5 z-30 space-y-0.5 text-xs font-bold font-sans"
+                              >
+                                <button
+                                  onClick={() => {
+                                    setOpenMenuRecordId(null);
+                                    handleOpenPricingEditModal(record);
+                                  }}
+                                  className="w-full px-3 py-2 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
+                                >
+                                  <Pencil className="w-3.5 h-3.5 text-slate-500" />
+                                  Edit Pricing
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setOpenMenuRecordId(null);
+                                    handleOpenQuotationModalForRecord(record);
+                                  }}
+                                  className="w-full px-3 py-2 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
+                                >
+                                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                                  Quotation Version
+                                </button>
+                                {record.client_id && (
+                                  <a
+                                    href={`/workspace/clients/${record.client_id}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="w-full px-3 py-2 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
+                                  >
+                                    <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
+                                    Client Profile
+                                  </a>
+                                )}
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
 
                         {/* Round Chevron Toggle */}
                         <div className="w-8 h-8 rounded-full border border-slate-200 text-slate-400 flex items-center justify-center hover:bg-slate-50">
@@ -2892,32 +3018,32 @@ export default function FinancePage() {
                                           />
                                         </div>
 
-                                        {/* 💳 STATUS & INLINE PAYMENT MODE BADGE (ONLY WHEN COMPLETED) */}
+                                        {/* 💳 STATUS & INLINE PAYMENT MODE BADGE */}
                                         <div className="col-span-2 flex items-center justify-center gap-1.5 flex-wrap">
                                           <button
                                             type="button"
                                             onClick={() => handleOpenCompletePaymentModal(record, ms)}
-                                            className={`px-2.5 py-1 rounded-full text-[10px] font-black border transition cursor-pointer flex items-center gap-1 shadow-2xs ${
+                                            className={`px-2 py-0.5 text-xs font-medium rounded-full border transition cursor-pointer flex items-center gap-1 ${
                                               isPaid
                                                 ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
                                                 : isOverdue
                                                 ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
-                                                : 'bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100'
+                                                : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
                                             }`}
                                             title="Click to record/update payment status"
                                           >
                                             {isPaid ? (
-                                              <><Check className="w-3 h-3 text-emerald-600" /> Completed</>
+                                              <>✓ Completed</>
                                             ) : isOverdue ? (
-                                              <span className="flex items-center gap-1 font-black">⚠️ Overdue by {overdueDays} Days</span>
+                                              <span>⚠️ Overdue ({overdueDays}d)</span>
                                             ) : (
                                               'Pending'
                                             )}
                                           </button>
 
-                                          {/* Payment Mode Badge on right of Completed (Strictly hidden when Pending) */}
+                                          {/* Payment Mode Badge side-by-side with Completed */}
                                           {isPaid && ms.payment_mode && (
-                                            <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                            <span className="px-2 py-0.5 text-xs font-semibold rounded bg-slate-100 text-slate-700 border border-slate-200 uppercase">
                                               {ms.payment_mode}
                                             </span>
                                           )}
@@ -3916,14 +4042,15 @@ export default function FinancePage() {
             >
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <h3 className="text-base font-black text-slate-900">Record Team Payout / Expense</h3>
-                <button onClick={() => setShowAddExpenseModal(false)} className="p-1 text-slate-400 hover:text-slate-600">
+                <button onClick={() => setShowAddExpenseModal(false)} className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer">
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
               <div className="space-y-3 text-xs">
+                {/* 1. Select Client */}
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">Select Client (Optional)</label>
+                  <label className="font-bold text-slate-700 block mb-1">1. Select Client (Optional)</label>
                   <select
                     value={expenseFormData.client_id}
                     onChange={(e) => setExpenseFormData(prev => ({ ...prev, client_id: e.target.value }))}
@@ -3931,35 +4058,76 @@ export default function FinancePage() {
                   >
                     <option value="">None / General Studio Expense</option>
                     {clients.map(c => (
-                      <option key={c.id} value={c.id}>{c.name} — {c.event_type}</option>
+                      <option key={c.id} value={c.id}>{c.name} — {c.event_type || 'Event'}</option>
                     ))}
                   </select>
                 </div>
 
+                {/* 2. Team Member Dropdown */}
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">Category</label>
+                  <label className="font-bold text-slate-700 block mb-1">2. Team Member / Crew</label>
+                  <select
+                    value={expenseFormData.paid_to}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setExpenseFormData(prev => ({
+                        ...prev,
+                        paid_to: val,
+                        team_member_id: val
+                      }));
+                    }}
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold"
+                  >
+                    <option value="">Select Crew / Staff Member...</option>
+                    {teamMembersList.map(m => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 3. Category (with + Add Category option) */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-bold text-slate-700 block">3. Expense Category</label>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddCategoryModal(true)}
+                      className="text-[10px] font-black text-amber-700 hover:text-amber-900 hover:underline cursor-pointer"
+                    >
+                      + Add New Category
+                    </button>
+                  </div>
                   <select
                     value={expenseFormData.category}
-                    onChange={(e) => setExpenseFormData(prev => ({ ...prev, category: e.target.value }))}
+                    onChange={(e) => {
+                      if (e.target.value === '__add_new__') {
+                        setShowAddCategoryModal(true);
+                      } else {
+                        setExpenseFormData(prev => ({ ...prev, category: e.target.value }));
+                      }
+                    }}
                     className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold"
                   >
                     {expenseCategories.map(cat => (
                       <option key={cat} value={cat}>{cat}</option>
                     ))}
+                    <option value="__add_new__">✨ + Add Custom Category...</option>
                   </select>
                 </div>
 
+                {/* 4. Title / Description */}
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">Title / Description</label>
+                  <label className="font-bold text-slate-700 block mb-1">4. Title / Description</label>
                   <input
                     type="text"
-                    placeholder="e.g. Lead Photographer Advance"
+                    placeholder="e.g. Lead Photographer Advance / Hotel Stay"
                     value={expenseFormData.title}
                     onChange={(e) => setExpenseFormData(prev => ({ ...prev, title: e.target.value }))}
                     className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-semibold"
                   />
                 </div>
 
+                {/* 5. Amount & Paid To Custom Name */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="font-bold text-slate-700 block mb-1">Amount (₹)</label>
@@ -3973,10 +4141,10 @@ export default function FinancePage() {
                   </div>
 
                   <div>
-                    <label className="font-bold text-slate-700 block mb-1">Paid To</label>
+                    <label className="font-bold text-slate-700 block mb-1">Paid To / Payee</label>
                     <input
                       type="text"
-                      placeholder="e.g. Amit Sharma"
+                      placeholder="e.g. Amit Sharma / Vendor"
                       value={expenseFormData.paid_to}
                       onChange={(e) => setExpenseFormData(prev => ({ ...prev, paid_to: e.target.value }))}
                       className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-semibold"
@@ -3984,6 +4152,7 @@ export default function FinancePage() {
                   </div>
                 </div>
 
+                {/* 6. Payment Mode & Date */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="font-bold text-slate-700 block mb-1">Payment Mode</label>
@@ -3996,6 +4165,7 @@ export default function FinancePage() {
                       <option value="Bank Transfer">Bank Transfer</option>
                       <option value="Cash">Cash</option>
                       <option value="Card">Card</option>
+                      <option value="Cheque">Cheque</option>
                     </select>
                   </div>
 
@@ -4044,27 +4214,82 @@ export default function FinancePage() {
             >
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <h3 className="text-base font-black text-slate-900">Edit Logged Expense</h3>
-                <button onClick={() => setShowEditExpenseModal(false)} className="p-1 text-slate-400 hover:text-slate-600">
+                <button onClick={() => setShowEditExpenseModal(false)} className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer">
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
               <div className="space-y-3 text-xs">
+                {/* 1. Client */}
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">Category</label>
+                  <label className="font-bold text-slate-700 block mb-1">1. Select Client (Optional)</label>
+                  <select
+                    value={expenseEditFormData.client_id}
+                    onChange={(e) => setExpenseEditFormData(prev => ({ ...prev, client_id: e.target.value }))}
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold"
+                  >
+                    <option value="">None / General Studio Expense</option>
+                    {clients.map(c => (
+                      <option key={c.id} value={c.id}>{c.name} — {c.event_type || 'Event'}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 2. Team Member Dropdown */}
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">2. Team Member / Crew</label>
+                  <select
+                    value={expenseEditFormData.paid_to}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setExpenseEditFormData(prev => ({
+                        ...prev,
+                        paid_to: val,
+                        team_member_id: val
+                      }));
+                    }}
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold"
+                  >
+                    <option value="">Select Crew / Staff Member...</option>
+                    {teamMembersList.map(m => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 3. Category */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-bold text-slate-700 block">3. Expense Category</label>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddCategoryModal(true)}
+                      className="text-[10px] font-black text-amber-700 hover:text-amber-900 hover:underline cursor-pointer"
+                    >
+                      + Add New Category
+                    </button>
+                  </div>
                   <select
                     value={expenseEditFormData.category}
-                    onChange={(e) => setExpenseEditFormData(prev => ({ ...prev, category: e.target.value }))}
+                    onChange={(e) => {
+                      if (e.target.value === '__add_new__') {
+                        setShowAddCategoryModal(true);
+                      } else {
+                        setExpenseEditFormData(prev => ({ ...prev, category: e.target.value }));
+                      }
+                    }}
                     className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold"
                   >
                     {expenseCategories.map(cat => (
                       <option key={cat} value={cat}>{cat}</option>
                     ))}
+                    <option value="__add_new__">✨ + Add Custom Category...</option>
                   </select>
                 </div>
 
+                {/* 4. Title / Description */}
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">Title / Description</label>
+                  <label className="font-bold text-slate-700 block mb-1">4. Title / Description</label>
                   <input
                     type="text"
                     value={expenseEditFormData.title}
@@ -4073,6 +4298,7 @@ export default function FinancePage() {
                   />
                 </div>
 
+                {/* 5. Amount & Paid To */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="font-bold text-slate-700 block mb-1">Amount (₹)</label>
@@ -4085,7 +4311,7 @@ export default function FinancePage() {
                   </div>
 
                   <div>
-                    <label className="font-bold text-slate-700 block mb-1">Paid To</label>
+                    <label className="font-bold text-slate-700 block mb-1">Paid To / Payee</label>
                     <input
                       type="text"
                       value={expenseEditFormData.paid_to}
@@ -4095,6 +4321,7 @@ export default function FinancePage() {
                   </div>
                 </div>
 
+                {/* 6. Payment Mode & Date */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="font-bold text-slate-700 block mb-1">Payment Mode</label>
@@ -4107,6 +4334,7 @@ export default function FinancePage() {
                       <option value="Bank Transfer">Bank Transfer</option>
                       <option value="Cash">Cash</option>
                       <option value="Card">Card</option>
+                      <option value="Cheque">Cheque</option>
                     </select>
                   </div>
 
@@ -4133,6 +4361,59 @@ export default function FinancePage() {
                     className="px-4 py-2 bg-orange-500 hover:bg-orange-600 font-black text-white rounded-xl shadow-xs cursor-pointer"
                   >
                     Save Changes
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ─────────────────────────────────────────────────────────────
+          MODAL: ADD CUSTOM EXPENSE CATEGORY (SUPABASE SYNC)
+      ───────────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showAddCategoryModal && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl p-6 max-w-sm w-full border border-slate-100 shadow-2xl space-y-4 font-sans"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-black text-slate-900">Add Custom Expense Category</h3>
+                <button onClick={() => setShowAddCategoryModal(false)} className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Category Name</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Drone License / Background Score"
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleCreateCustomCategory()}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:outline-none focus:border-amber-500"
+                    autoFocus
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    onClick={() => setShowAddCategoryModal(false)}
+                    className="px-3.5 py-1.5 bg-slate-100 text-slate-600 font-bold rounded-xl cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleCreateCustomCategory}
+                    className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 font-black text-white rounded-xl shadow-xs cursor-pointer"
+                  >
+                    Save Category
                   </button>
                 </div>
               </div>

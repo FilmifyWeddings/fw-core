@@ -688,28 +688,35 @@ export function InvoiceModalDialog({
                 </div>
 
                 {/* 6. Direct Bank Details & Custom Uploaded QR Code */}
-                <div className="grid grid-cols-1 sm:grid-cols-12 gap-5 pt-4 border-t border-slate-200 text-xs font-sans items-center">
-                  <div className="sm:col-span-8 space-y-1.5">
-                    <p className="font-black text-slate-800 uppercase tracking-wider text-[10px]">BANK PAYMENT DETAILS</p>
-                    <p className="font-semibold text-slate-700">Bank: {config.bankName} • Acc: <span className="font-mono font-bold">{config.accountNo}</span></p>
-                    <p className="text-slate-600">IFSC: <span className="font-mono font-bold">{config.ifsc}</span> • A/C Name: {config.accountHolder}</p>
-                    <p className="font-bold" style={{ color: activeAccentColor }}>UPI ID: <span className="font-mono">{config.upiId}</span></p>
-                  </div>
+                {(() => {
+                  const hasValidQr = Boolean(config.showUpiQr && displayQrCodeUrl && financeRecord.pending_amount > 0);
+                  return (
+                    <div className={`grid grid-cols-1 ${hasValidQr ? 'sm:grid-cols-12' : 'sm:grid-cols-1'} gap-5 pt-4 border-t border-slate-200 text-xs font-sans items-center`}>
+                      <div className={`${hasValidQr ? 'sm:col-span-8' : 'sm:col-span-12'} space-y-1.5`}>
+                        <p className="font-black text-slate-800 uppercase tracking-wider text-[10px]">BANK PAYMENT DETAILS</p>
+                        <p className="font-semibold text-slate-700">Bank: {config.bankName} • Acc: <span className="font-mono font-bold">{config.accountNo}</span></p>
+                        <p className="text-slate-600">IFSC: <span className="font-mono font-bold">{config.ifsc}</span> • A/C Name: {config.accountHolder}</p>
+                        {config.upiId && (
+                          <p className="font-bold" style={{ color: activeAccentColor }}>UPI ID: <span className="font-mono">{config.upiId}</span></p>
+                        )}
+                      </div>
 
-                  {/* QR Code Display (Uploaded Custom QR or Generated UPI QR) */}
-                  {config.showUpiQr && displayQrCodeUrl && financeRecord.pending_amount > 0 && (
-                    <div className="sm:col-span-4 flex flex-col items-center justify-center p-3 bg-[#FAF7F2] rounded-2xl border border-[#EDE4D5] text-center space-y-1.5">
-                      <img 
-                        src={displayQrCodeUrl} 
-                        alt="Payment QR Code" 
-                        className="w-24 h-24 object-contain rounded-lg border border-slate-200 bg-white p-1 shadow-2xs" 
-                      />
-                      <span className="text-[9px] font-extrabold uppercase tracking-wider" style={{ color: activeAccentColor }}>
-                        Scan to Pay via Any UPI App
-                      </span>
+                      {/* QR Code Display (Uploaded Custom QR or Generated UPI QR) */}
+                      {hasValidQr && (
+                        <div className="sm:col-span-4 flex flex-col items-center justify-center p-3 bg-[#FAF7F2] rounded-2xl border border-[#EDE4D5] text-center space-y-1.5">
+                          <img 
+                            src={displayQrCodeUrl} 
+                            alt="Payment QR Code" 
+                            className="w-24 h-24 object-contain rounded-lg border border-slate-200 bg-white p-1 shadow-2xs" 
+                          />
+                          <span className="text-[9px] font-extrabold uppercase tracking-wider" style={{ color: activeAccentColor }}>
+                            Scan to Pay via Any UPI App
+                          </span>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
+                  );
+                })()}
 
                 {/* 7. Terms & Footer Disclaimer */}
                 <div className="pt-4 border-t border-slate-200 text-[10px] text-slate-500 space-y-2 font-sans">
