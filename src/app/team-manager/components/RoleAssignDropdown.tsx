@@ -156,7 +156,7 @@ export default function RoleAssignDropdown({
         <>
           {/* BACKDROP OVERLAY TO CLOSE */}
           <div
-            className="fixed inset-0 z-[99998]"
+            className="fixed inset-0 z-[90]"
             onClick={handleClose}
           />
           <AnimatePresence>
@@ -169,7 +169,7 @@ export default function RoleAssignDropdown({
                 position: 'fixed',
                 top: `${popoverPos.top}px`,
                 left: `${popoverPos.left}px`,
-                zIndex: 99999,
+                zIndex: 95,
               }}
               className="w-64 bg-white border border-[#6C5CE7]/20 rounded-[18px] shadow-[0_25px_60px_rgba(0,0,0,0.35)] p-3 space-y-2 text-left select-none"
             >
@@ -211,8 +211,8 @@ export default function RoleAssignDropdown({
                 <button
                   type="button"
                   onClick={() => {
-                    onAssignMember(assignment.id, null);
                     handleClose();
+                    onAssignMember(assignment.id, null);
                   }}
                   className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
                     !isAssigned
@@ -234,8 +234,8 @@ export default function RoleAssignDropdown({
                       key={m.id}
                       type="button"
                       onClick={() => {
-                        onAssignMember(assignment.id, m.id);
                         handleClose();
+                        onAssignMember(assignment.id, m.id);
                       }}
                       className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
                         isSelected

@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  X, Check, Copy, MessageCircle, Send, Calendar, Clock, MapPin, 
+  X, Check, Copy, MessageCircle, MessageSquare, Send, Calendar, Clock, MapPin, 
   User, CheckCheck, Sparkles, Phone, ExternalLink, IndianRupee,
   CreditCard, CheckCircle2, ShieldCheck, Tag, FileText, ArrowRight
 } from 'lucide-react';
@@ -156,6 +156,16 @@ export default function WhatsAppAssignmentModal({
     }
   };
 
+  // Lock body scroll when this modal is active to stop background bottom sheets or other drawers from scrolling up into view
+  useEffect(() => {
+    if (!isOpen) return;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [isOpen]);
+
   if (!isOpen || !member) return null;
 
   const cleanMemberName = member.name ? member.name.replace(/\.\.\./g, '').trim() : 'Team Member';
@@ -262,32 +272,35 @@ Please confirm your slot.
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-md overflow-y-auto">
+      <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs p-0 sm:p-4">
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 15 }}
-          className="bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden w-full max-w-4xl flex flex-col my-auto max-h-[92vh]"
+          className="bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 overflow-hidden w-full max-w-4xl flex flex-col my-0 sm:my-auto max-h-[92vh]"
         >
           {/* Top Modal Navigation Header */}
-          <div className="px-5 py-3.5 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800 shrink-0">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-400/30 flex items-center justify-center text-amber-400 font-bold text-xs">
+          <div className="px-4 sm:px-5 py-3.5 bg-white text-slate-900 flex items-center justify-between border-b border-slate-200 shrink-0">
+            <div className="flex items-center gap-2.5 min-w-0 pr-2">
+              <div className="w-8 h-8 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 font-bold text-xs shrink-0">
                 <Sparkles className="w-4 h-4" />
               </div>
-              <div>
-                <h3 className="text-sm font-black text-white">Crew Assignment &amp; Commercials</h3>
-                <p className="text-[10px] text-slate-400">Set commercial terms, sync to finance, and dispatch WhatsApp confirmation</p>
+              <div className="min-w-0">
+                <h3 className="text-sm font-black text-slate-900 truncate">Crew Assignment &amp; Commercials</h3>
+                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                  <MessageSquare className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span className="truncate">Send to Finance &amp; WhatsApp Confirmation</span>
+                </div>
               </div>
             </div>
 
             {/* Mobile Tab Switcher */}
-            <div className="flex md:hidden items-center bg-slate-800 rounded-xl p-1">
+            <div className="flex md:hidden items-center bg-slate-100 rounded-xl p-1 shrink-0 mx-2">
               <button
                 type="button"
                 onClick={() => setActiveTab('commercials')}
                 className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
-                  activeTab === 'commercials' ? 'bg-amber-500 text-white' : 'text-slate-400'
+                  activeTab === 'commercials' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500'
                 }`}
               >
                 Commercials
@@ -296,7 +309,7 @@ Please confirm your slot.
                 type="button"
                 onClick={() => setActiveTab('whatsapp')}
                 className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
-                  activeTab === 'whatsapp' ? 'bg-emerald-600 text-white' : 'text-slate-400'
+                  activeTab === 'whatsapp' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-500'
                 }`}
               >
                 WhatsApp
@@ -306,7 +319,8 @@ Please confirm your slot.
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer shrink-0"
+              aria-label="Close"
             >
               <X className="w-5 h-5" />
             </button>
