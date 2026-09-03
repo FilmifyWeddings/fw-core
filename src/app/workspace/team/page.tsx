@@ -14,6 +14,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import AddTeamMemberModal from '@/app/team-manager/components/AddTeamMemberModal';
+import TeamMemberCard from './components/TeamMemberCard';
 import TeamMemberFinanceDrawer from './components/TeamMemberFinanceDrawer';
 import DeleteMemberWarningModal from './components/DeleteMemberWarningModal';
 import { 
@@ -246,87 +247,81 @@ export default function WorkspaceTeamPage() {
     }
   }, [activeTab, loadActivityLogs]);
 
-  // Handle Save (Add or Edit)
+  // Instant Millisecond Optimistic Creation & Background Sync
   const handleSaveMember = async (memberData: any) => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const currentUid = session?.user?.id;
-      if (!currentUid) return;
+    const tempId = `temp_${Date.now()}`;
+    const formattedPhone = `${memberData.country_code || '+91'} ${memberData.phone_number}`.trim();
+    const isEdit = !!memberToEdit;
+    const editingMemberId = memberToEdit?.id;
 
-      const effectiveWsId = workspaceId || currentUid;
+    const optimisticMember: TeamMember = {
+      id: isEdit && editingMemberId ? editingMemberId : tempId,
+      name: memberData.name,
+      email: memberData.email,
+      phone: formattedPhone,
+      country_code: memberData.country_code || '+91',
+      phone_number: memberData.phone_number,
+      primary_role: memberData.primary_role,
+      roles: memberData.roles || [memberData.primary_role],
+      member_types: memberData.member_types || [memberData.primary_type || 'IN_HOUSE'],
+      primary_type: memberData.primary_type || 'IN_HOUSE',
+      avatar_url: memberData.avatar_url,
+      default_daily_rate: memberData.default_daily_rate || 0,
+      default_currency: memberData.default_currency || 'INR',
+      payout_frequency: memberData.payout_frequency || 'daily',
+      permissions: memberData.permissions,
+      ...({ agreed: 0, paid: 0, balance: 0 } as any)
+    };
 
-      // 1. Insert/Update in fw_team_members for scheduling calendar & attendance
-      const fwPayload = {
-        name: memberData.name,
-        primary_role: memberData.primary_role,
-        country_code: memberData.country_code || '+91',
-        phone_number: memberData.phone_number,
-        email: memberData.email || null,
-        avatar_url: memberData.avatar_url || null,
-        member_types: memberData.member_types || [memberData.primary_type || 'IN_HOUSE'],
-        primary_type: memberData.primary_type || 'IN_HOUSE',
-        roles: memberData.roles || [memberData.primary_role || 'IN_HOUSE'],
-        default_daily_rate: memberData.default_daily_rate || 0,
-        default_currency: memberData.default_currency || 'INR',
-        payout_frequency: memberData.payout_frequency || 'daily',
-        user_id: currentUid,
-      };
+    // 1. Instant 0ms UI update
+    if (!isEdit) {
+      setMembers(prev => [optimisticMember, ...prev]);
+    } else {
+      setMembers(prev => prev.map(m => m.id === editingMemberId ? { ...m, ...optimisticMember } : m));
+    }
+    setIsAddModalOpen(false);
+    setMemberToEdit(null);
 
-      let savedMemberId = memberToEdit?.id;
+    // 2. Background async save
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const currentUid = session?.user?.id;
+        if (!currentUid) return;
 
-      if (memberToEdit) {
-        await supabase
-          .from('fw_team_members')
-          .update(fwPayload)
-          .eq('id', memberToEdit.id);
-      } else {
-        const { data: insertedData } = await supabase
-          .from('fw_team_members')
-          .insert([fwPayload])
-          .select('id')
-          .maybeSingle();
-        if (insertedData?.id) savedMemberId = insertedData.id;
-      }
+        const effectiveWsId = workspaceId || currentUid;
 
-      // Save isolated studio member rate
-      if (savedMemberId && memberData.default_daily_rate != null) {
-        await saveWorkspaceMemberRate(effectiveWsId, savedMemberId, Number(memberData.default_daily_rate), memberData.default_currency || 'INR', memberData.payout_frequency || 'daily');
-      }
+        // 1. Insert/Update in fw_team_members for scheduling calendar & attendance
+        const fwPayload = {
+          name: memberData.name,
+          primary_role: memberData.primary_role,
+          country_code: memberData.country_code || '+91',
+          phone_number: memberData.phone_number,
+          email: memberData.email || null,
+          avatar_url: memberData.avatar_url || null,
+          member_types: memberData.member_types || [memberData.primary_type || 'IN_HOUSE'],
+          primary_type: memberData.primary_type || 'IN_HOUSE',
+          roles: memberData.roles || [memberData.primary_role || 'IN_HOUSE'],
+          default_daily_rate: memberData.default_daily_rate || 0,
+          default_currency: memberData.default_currency || 'INR',
+          payout_frequency: memberData.payout_frequency || 'daily',
+          user_id: currentUid,
+        };
 
-      // 2. Insert/Update in workspace_members API for Multi-Tenant RBAC
-      if (session?.access_token) {
-        const memberRes = await fetch('/api/workspace/members', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            id: memberToEdit?.id || savedMemberId,
-            member_id: memberToEdit?.id || savedMemberId,
-            workspace_id: effectiveWsId,
-            name: memberData.name,
-            email: memberData.email || `${memberData.name.toLowerCase().replace(/\s+/g, '')}@partner.studiocore.in`,
-            phone: `${memberData.country_code || '+91'} ${memberData.phone_number}`.trim(),
-            primary_role: memberData.primary_role,
-            roles: memberData.roles || [memberData.primary_role],
-            member_types: memberData.member_types || ['IN_HOUSE'],
-            primary_type: memberData.primary_type || 'IN_HOUSE',
-            avatar_url: memberData.avatar_url || null,
-            default_daily_rate: Number(memberData.default_daily_rate) || 0,
-            default_currency: memberData.default_currency || 'INR',
-            payout_frequency: memberData.payout_frequency || 'daily',
-            permissions: memberData.permissions,
-          }),
-        }).catch(() => null);
+        let savedMemberId = editingMemberId;
 
-        if (memberRes && memberRes.ok) {
-          try {
-            const resJson = await memberRes.json();
-            if (resJson?.savedMember?.id) {
-              savedMemberId = resJson.savedMember.id;
-            }
-          } catch (_) {}
+        if (isEdit && editingMemberId) {
+          await supabase
+            .from('fw_team_members')
+            .update(fwPayload)
+            .eq('id', editingMemberId);
+        } else {
+          const { data: insertedData } = await supabase
+            .from('fw_team_members')
+            .insert([fwPayload])
+            .select('id')
+            .maybeSingle();
+          if (insertedData?.id) savedMemberId = insertedData.id;
         }
 
         // Save isolated studio member rate
@@ -334,37 +329,79 @@ export default function WorkspaceTeamPage() {
           await saveWorkspaceMemberRate(effectiveWsId, savedMemberId, Number(memberData.default_daily_rate), memberData.default_currency || 'INR', memberData.payout_frequency || 'daily');
         }
 
-        // 3. Log Audit Activity
-        await fetch('/api/workspace/activity-logs', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            workspace_id: effectiveWsId,
-            module: 'TEAM',
-            action: memberToEdit ? 'MEMBER_PERMISSIONS_UPDATED' : 'MEMBER_INVITED',
-            description: `${memberToEdit ? 'Updated permissions for' : 'Added new team member'} ${memberData.name} (${memberData.primary_role})`,
-            details: {
-              memberName: memberData.name,
-              primaryRole: memberData.primary_role,
-              memberTypes: memberData.member_types,
-              permissions: memberData.permissions,
+        // 2. Insert/Update in workspace_members API for Multi-Tenant RBAC
+        if (session?.access_token) {
+          const memberRes = await fetch('/api/workspace/members', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session.access_token}`,
             },
-            user_name: userName || 'Studio Admin',
-            user_role: isOwner ? 'OWNER' : 'ADMIN',
-          }),
-        }).catch(() => {});
-      }
+            body: JSON.stringify({
+              id: memberToEdit?.id || savedMemberId,
+              member_id: memberToEdit?.id || savedMemberId,
+              workspace_id: effectiveWsId,
+              name: memberData.name,
+              email: memberData.email || `${memberData.name.toLowerCase().replace(/\s+/g, '')}@partner.studiocore.in`,
+              phone: `${memberData.country_code || '+91'} ${memberData.phone_number}`.trim(),
+              primary_role: memberData.primary_role,
+              roles: memberData.roles || [memberData.primary_role],
+              member_types: memberData.member_types || ['IN_HOUSE'],
+              primary_type: memberData.primary_type || 'IN_HOUSE',
+              avatar_url: memberData.avatar_url || null,
+              default_daily_rate: Number(memberData.default_daily_rate) || 0,
+              default_currency: memberData.default_currency || 'INR',
+              payout_frequency: memberData.payout_frequency || 'daily',
+              permissions: memberData.permissions,
+            }),
+          }).catch(() => null);
 
-      await loadMembers();
-      setIsAddModalOpen(false);
-      setMemberToEdit(null);
-    } catch (err: any) {
-      console.error('[WorkspaceTeamPage] Save failed:', err);
-      alert('Failed to save team member: ' + err.message);
-    }
+          if (memberRes && memberRes.ok) {
+            try {
+              const resJson = await memberRes.json();
+              if (resJson?.savedMember?.id) {
+                savedMemberId = resJson.savedMember.id;
+              }
+            } catch (_) {}
+          }
+
+          // Save isolated studio member rate
+          if (savedMemberId && memberData.default_daily_rate != null) {
+            await saveWorkspaceMemberRate(effectiveWsId, savedMemberId, Number(memberData.default_daily_rate), memberData.default_currency || 'INR', memberData.payout_frequency || 'daily');
+          }
+
+          // 3. Log Audit Activity
+          await fetch('/api/workspace/activity-logs', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({
+              workspace_id: effectiveWsId,
+              module: 'TEAM',
+              action: isEdit ? 'MEMBER_PERMISSIONS_UPDATED' : 'MEMBER_INVITED',
+              description: `${isEdit ? 'Updated permissions for' : 'Added new team member'} ${memberData.name} (${memberData.primary_role})`,
+              details: {
+                memberName: memberData.name,
+                primaryRole: memberData.primary_role,
+                memberTypes: memberData.member_types,
+                permissions: memberData.permissions,
+              },
+              user_name: userName || 'Studio Admin',
+              user_role: isOwner ? 'OWNER' : 'ADMIN',
+            }),
+          }).catch(() => {});
+        }
+
+        // Replace optimistic tempId with real DB savedMemberId if newly inserted
+        if (!isEdit && savedMemberId) {
+          setMembers(prev => prev.map(m => m.id === tempId ? { ...m, id: savedMemberId! } : m));
+        }
+      } catch (err: any) {
+        console.error('[WorkspaceTeamPage] Background save failed:', err);
+      }
+    })();
   };
 
   // Execute Member Delete (Cascading delete across permissions, rates, assignments, and team tables)
@@ -487,6 +524,14 @@ export default function WorkspaceTeamPage() {
     }
     return true;
   });
+
+  // Incremental Batch Scroll (15 Members at a Time)
+  const [visibleCount, setVisibleCount] = useState(15);
+  const displayedMembers = useMemo(() => filteredMembers.slice(0, visibleCount), [filteredMembers, visibleCount]);
+
+  useEffect(() => {
+    setVisibleCount(15);
+  }, [selectedFilter, selectedRoleFilter, searchQuery]);
 
   // Metrics
   const totalCount = members.length;
@@ -682,157 +727,197 @@ export default function WorkspaceTeamPage() {
               </button>
             </div>
           ) : (
-            <div className="w-full bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden mt-4">
-              {/* Desktop Table Header */}
-              <div className="hidden md:grid grid-cols-12 gap-4 px-5 py-3.5 bg-slate-50/75 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-400">
-                <div className="col-span-4">Member Info</div>
-                <div className="col-span-2">Type & Role</div>
-                <div className="col-span-3">Commercials (Agreed / Paid / Due)</div>
-                <div className="col-span-2">Portal Access</div>
-                <div className="col-span-1 text-right">Actions</div>
-              </div>
-
-              {/* Row List */}
-              <div className="divide-y divide-slate-100">
-                {filteredMembers.map((member) => {
+            <>
+              {/* 1. Mobile Member Cards (Ultra-Compact Mobile Layout) */}
+              <div className="md:hidden space-y-2.5 mt-4">
+                {displayedMembers.map((member) => {
                   const fin = memberFinancials[member.id];
-                  const agreedVal = fin?.total_agreed ?? (member as any).agreed ?? 0;
-                  const paidVal = fin?.total_paid ?? (member as any).paid ?? 0;
-                  const balanceVal = fin?.total_balance ?? (member as any).balance ?? 0;
-                  const isFreelancer = member.primary_type === 'FREELANCER' || member.member_types?.includes('FREELANCER') || (member as any).type === 'freelancer';
-                  const isPartner = member.primary_type === 'PARTNER' || member.member_types?.includes('PARTNER') || (member as any).type === 'partner';
-                  const memberTypeLabel = isPartner ? 'Partner' : isFreelancer ? 'Freelancer' : (member.primary_type || 'In-House');
-                  const rawCrm = (member as any).crm_access || (member.permissions?.leads_access ? member.permissions.leads_access.replace(/_/g, ' ') : '');
-                  const rawTeam = (member as any).team_access || (member.permissions?.team_manager_access ? member.permissions.team_manager_access.replace(/_/g, ' ') : '');
-                  const showCrm = rawCrm && !rawCrm.toLowerCase().includes('hidden') && !rawCrm.toLowerCase().includes('none');
-                  const showTeam = rawTeam && !rawTeam.toLowerCase().includes('hidden') && !rawTeam.toLowerCase().includes('none');
-
                   return (
-                    <div 
+                    <TeamMemberCard
                       key={member.id}
-                      onClick={() => handleOpenDetails(member)}
-                      className="px-4 py-3.5 sm:px-5 hover:bg-slate-50/70 transition-colors flex flex-col md:grid md:grid-cols-12 gap-3 md:gap-4 items-start md:items-center cursor-pointer"
-                    >
-                      {/* 1. Member Profile & Name (Clickable) */}
-                      <div className="col-span-4 flex items-center gap-3 w-full">
-                        <div className="w-10 h-10 rounded-full shrink-0 overflow-hidden bg-amber-100 text-amber-800 font-bold flex items-center justify-center text-xs border border-slate-200">
-                          {member.avatar_url ? (
-                            <img src={member.avatar_url} alt={member.name} className="w-full h-full object-cover"/>
-                          ) : (
-                            <span>{member.name?.slice(0, 2).toUpperCase()}</span>
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <span className="font-bold text-xs sm:text-sm text-slate-800 hover:text-indigo-600 truncate block transition-colors">
-                            {member.name}
-                          </span>
-                          <div className="flex items-center gap-2 text-[11px] text-slate-500 truncate">
-                            {member.phone && <span>{member.phone}</span>}
-                            {member.phone && member.email && <span>•</span>}
-                            {member.email && <span className="truncate">{member.email}</span>}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* 2. Type & Role */}
-                      <div className="col-span-2 flex flex-wrap items-center gap-1.5 w-full">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
-                          isPartner 
-                            ? 'bg-purple-100 text-purple-700' 
-                            : isFreelancer 
-                              ? 'bg-amber-100 text-amber-700' 
-                              : 'bg-emerald-100 text-emerald-700'
-                        }`}>
-                          {memberTypeLabel}
-                        </span>
-                        {(member.roles && member.roles.length > 0 ? member.roles : [member.primary_role]).filter(Boolean).map((r: string, idx: number) => (
-                          <span key={idx} className="px-1.5 py-0.5 rounded text-[10px] bg-slate-100 text-slate-600 font-medium">
-                            {r}
-                          </span>
-                        ))}
-                      </div>
-
-                      {/* 3. Commercials (Agreed / Paid / Balance) */}
-                      <div className="col-span-3 w-full flex items-center gap-3 text-xs">
-                        <div>
-                          <span className="text-[9px] uppercase font-bold text-slate-400 block">Agreed</span>
-                          <span className="font-bold text-slate-700">₹{agreedVal.toLocaleString('en-IN')}</span>
-                        </div>
-                        <div className="h-5 w-px bg-slate-200"></div>
-                        <div>
-                          <span className="text-[9px] uppercase font-bold text-slate-400 block">Paid</span>
-                          <span className="font-bold text-emerald-600">₹{paidVal.toLocaleString('en-IN')}</span>
-                        </div>
-                        <div className="h-5 w-px bg-slate-200"></div>
-                        <div>
-                          <span className="text-[9px] uppercase font-bold text-slate-400 block">Balance</span>
-                          <span className="font-bold text-amber-600">₹{balanceVal.toLocaleString('en-IN')}</span>
-                        </div>
-                      </div>
-
-                      {/* 4. Portal Access (Only show if granted and not hidden) */}
-                      <div className="col-span-2 flex flex-wrap gap-1.5 items-center w-full">
-                        {showCrm && (
-                          <span className="text-[10px] px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-semibold border border-blue-200">
-                            CRM: {rawCrm}
-                          </span>
-                        )}
-                        {showTeam && (
-                          <span className="text-[10px] px-2 py-0.5 rounded bg-purple-50 text-purple-700 font-semibold border border-purple-200">
-                            Team: {rawTeam}
-                          </span>
-                        )}
-                        {!showCrm && !showTeam && (
-                          <span className="text-[10px] px-2 py-0.5 rounded bg-slate-50 text-slate-400 font-medium border border-slate-200/60">
-                            No Access
-                          </span>
-                        )}
-                      </div>
-
-                      {/* 5. Direct Action Icons (Responsive Consistent Sizing) */}
-                      <div className="col-span-1 flex items-center justify-end gap-1.5 w-full md:w-auto">
-                        {/* Details Action */}
-                        <button
-                          type="button"
-                          title="View Details"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenDetails(member);
-                          }}
-                          className="h-8 w-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
-                        >
-                          <Eye className="w-4 h-4"/>
-                        </button>
-                        {/* Edit Action */}
-                        <button
-                          type="button"
-                          title="Edit Member"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleEditMember(member);
-                          }}
-                          className="h-8 w-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-amber-600 transition-colors cursor-pointer"
-                        >
-                          <Pencil className="w-4 h-4"/>
-                        </button>
-                        {/* Delete Action */}
-                        <button
-                          type="button"
-                          title="Delete Member"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteMember(member.id);
-                          }}
-                          className="h-8 w-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-rose-600 transition-colors cursor-pointer"
-                        >
-                          <Trash2 className="w-4 h-4"/>
-                        </button>
-                      </div>
-                    </div>
+                      member={member}
+                      agreed={fin?.total_agreed}
+                      paid={fin?.total_paid}
+                      balance={fin?.total_balance}
+                      handleOpenDetails={handleOpenDetails}
+                      handleEditMember={handleEditMember}
+                      handleDeleteMember={handleDeleteMember}
+                    />
                   );
                 })}
               </div>
-            </div>
+
+              {/* 2. Desktop Member Table (12-Column Responsive Layout) */}
+              <div className="hidden md:block w-full bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden mt-4">
+                {/* Desktop Table Header */}
+                <div className="grid grid-cols-12 gap-4 px-5 py-3.5 bg-slate-50/75 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                  <div className="col-span-4">Member Info</div>
+                  <div className="col-span-2">Type & Role</div>
+                  <div className="col-span-3">Commercials (Agreed / Paid / Due)</div>
+                  <div className="col-span-2">Portal Access</div>
+                  <div className="col-span-1 text-right">Actions</div>
+                </div>
+
+                {/* Row List */}
+                <div className="divide-y divide-slate-100">
+                  {displayedMembers.map((member) => {
+                    const fin = memberFinancials[member.id];
+                    const agreedVal = fin?.total_agreed ?? (member as any).agreed ?? 0;
+                    const paidVal = fin?.total_paid ?? (member as any).paid ?? 0;
+                    const balanceVal = fin?.total_balance ?? (member as any).balance ?? 0;
+                    const isFreelancer = member.primary_type === 'FREELANCER' || member.member_types?.includes('FREELANCER') || (member as any).type === 'freelancer';
+                    const isPartner = member.primary_type === 'PARTNER' || member.member_types?.includes('PARTNER') || (member as any).type === 'partner';
+                    const memberTypeLabel = isPartner ? 'Partner' : isFreelancer ? 'Freelancer' : (member.primary_type || 'In-House');
+                    const rawCrm = (member as any).crm_access || (member.permissions?.leads_access ? member.permissions.leads_access.replace(/_/g, ' ') : '');
+                    const rawTeam = (member as any).team_access || (member.permissions?.team_manager_access ? member.permissions.team_manager_access.replace(/_/g, ' ') : '');
+                    const showCrm = rawCrm && !rawCrm.toLowerCase().includes('hidden') && !rawCrm.toLowerCase().includes('none');
+                    const showTeam = rawTeam && !rawTeam.toLowerCase().includes('hidden') && !rawTeam.toLowerCase().includes('none');
+
+                    return (
+                      <div 
+                        key={member.id}
+                        onClick={() => handleOpenDetails(member)}
+                        className="px-4 py-3.5 sm:px-5 hover:bg-slate-50/70 transition-colors grid grid-cols-12 gap-4 items-center cursor-pointer"
+                      >
+                        {/* 1. Member Profile & Name (Clickable) */}
+                        <div className="col-span-4 flex items-center gap-3 w-full">
+                          <div className="w-10 h-10 rounded-full shrink-0 overflow-hidden bg-amber-100 text-amber-800 font-bold flex items-center justify-center text-xs border border-slate-200">
+                            {member.avatar_url ? (
+                              <img src={member.avatar_url} alt={member.name} className="w-full h-full object-cover"/>
+                            ) : (
+                              <span>{member.name?.slice(0, 2).toUpperCase()}</span>
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <span className="font-bold text-xs sm:text-sm text-slate-800 hover:text-indigo-600 truncate block transition-colors">
+                              {member.name}
+                            </span>
+                            <div className="flex items-center gap-2 text-[11px] text-slate-500 truncate">
+                              {member.phone && <span>{member.phone}</span>}
+                              {member.phone && member.email && <span>•</span>}
+                              {member.email && <span className="truncate">{member.email}</span>}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 2. Type & Role */}
+                        <div className="col-span-2 flex flex-wrap items-center gap-1.5 w-full">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
+                            isPartner 
+                              ? 'bg-purple-100 text-purple-700' 
+                              : isFreelancer 
+                                ? 'bg-amber-100 text-amber-700' 
+                                : 'bg-emerald-100 text-emerald-700'
+                          }`}>
+                            {memberTypeLabel}
+                          </span>
+                          {(member.roles && member.roles.length > 0 ? member.roles : [member.primary_role]).filter(Boolean).map((r: string, idx: number) => (
+                            <span key={idx} className="px-1.5 py-0.5 rounded text-[10px] bg-slate-100 text-slate-600 font-medium">
+                              {r}
+                            </span>
+                          ))}
+                        </div>
+
+                        {/* 3. Commercials (Agreed / Paid / Balance) */}
+                        <div className="col-span-3 w-full flex items-center gap-3 text-xs">
+                          <div>
+                            <span className="text-[9px] uppercase font-bold text-slate-400 block">Agreed</span>
+                            <span className="font-bold text-slate-700">₹{agreedVal.toLocaleString('en-IN')}</span>
+                          </div>
+                          <div className="h-5 w-px bg-slate-200"></div>
+                          <div>
+                            <span className="text-[9px] uppercase font-bold text-slate-400 block">Paid</span>
+                            <span className="font-bold text-emerald-600">₹{paidVal.toLocaleString('en-IN')}</span>
+                          </div>
+                          <div className="h-5 w-px bg-slate-200"></div>
+                          <div>
+                            <span className="text-[9px] uppercase font-bold text-slate-400 block">Balance</span>
+                            <span className="font-bold text-amber-600">₹{balanceVal.toLocaleString('en-IN')}</span>
+                          </div>
+                        </div>
+
+                        {/* 4. Portal Access (Only show if granted and not hidden) */}
+                        <div className="col-span-2 flex flex-wrap gap-1.5 items-center w-full">
+                          {showCrm && (
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-semibold border border-blue-200">
+                              CRM: {rawCrm}
+                            </span>
+                          )}
+                          {showTeam && (
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-purple-50 text-purple-700 font-semibold border border-purple-200">
+                              Team: {rawTeam}
+                            </span>
+                          )}
+                          {!showCrm && !showTeam && (
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-slate-50 text-slate-400 font-medium border border-slate-200/60">
+                              No Access
+                            </span>
+                          )}
+                        </div>
+
+                        {/* 5. Direct Action Icons */}
+                        <div className="col-span-1 flex items-center justify-end gap-1.5 w-full md:w-auto">
+                          {/* Details Action */}
+                          <button
+                            type="button"
+                            title="View Details"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenDetails(member);
+                            }}
+                            className="h-8 w-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
+                          >
+                            <Eye className="w-4 h-4"/>
+                          </button>
+                          {/* Edit Action */}
+                          <button
+                            type="button"
+                            title="Edit Member"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEditMember(member);
+                            }}
+                            className="h-8 w-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-amber-600 transition-colors cursor-pointer"
+                          >
+                            <Pencil className="w-4 h-4"/>
+                          </button>
+                          {/* Delete Action */}
+                          <button
+                            type="button"
+                            title="Delete Member"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteMember(member.id);
+                            }}
+                            className="h-8 w-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-rose-600 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4"/>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 3. Incremental Batch Scroll Sentinel (Loads 15 more on intersect) */}
+              {visibleCount < filteredMembers.length && (
+                <div 
+                  ref={(node) => {
+                    if (!node) return;
+                    const observer = new IntersectionObserver((entries) => {
+                      if (entries[0]?.isIntersecting) {
+                        setVisibleCount((prev) => prev + 15);
+                      }
+                    });
+                    observer.observe(node);
+                  }} 
+                  className="py-4 text-center text-xs text-slate-400 font-bold"
+                >
+                  Loading more members...
+                </div>
+              )}
+            </>
           )}
         </>
       ) : (

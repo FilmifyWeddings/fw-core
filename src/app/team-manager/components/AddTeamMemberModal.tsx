@@ -83,6 +83,12 @@ export default function AddTeamMemberModal({
   const [isCompressing, setIsCompressing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showPermissions, setShowPermissions] = useState(false);
+  const [alertToast, setAlertToast] = useState<string | null>(null);
+
+  const showAlertToast = useCallback((msg: string) => {
+    setAlertToast(msg);
+    setTimeout(() => setAlertToast(null), 3500);
+  }, []);
   
     // ── SETTINGS-LINKED CREW ROLES (SYNCED WITH STUDIO SETTINGS & MASTER_CREW_ROLES) ──
   const [settingsRoles, setSettingsRoles] = useState<Array<{ id: string; name: string; short_code?: string }>>([]);
@@ -481,7 +487,19 @@ export default function AddTeamMemberModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !phoneNumber.trim() || isSelfEmail || isDuplicateEmail || isDisposableEmail) return;
+    if (!name.trim()) {
+      showAlertToast('Please enter member name');
+      return;
+    }
+    if (!phoneNumber.trim()) {
+      showAlertToast('Phone number is strictly required');
+      return;
+    }
+    if (!email.trim()) {
+      showAlertToast('Email ID is strictly required for portal login');
+      return;
+    }
+    if (isSelfEmail || isDuplicateEmail || isDisposableEmail) return;
 
     setLoading(true);
     try {
@@ -597,7 +615,20 @@ export default function AddTeamMemberModal({
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-5">
-            
+            <AnimatePresence>
+              {alertToast && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2"
+                >
+                  <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                  <span>{alertToast}</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             {/* Self-Add Warning Banner */}
             {isSelfEmail && (
               <div className="p-3 bg-rose-50 rounded-2xl border border-rose-200 flex items-start gap-2.5 text-xs text-rose-800">
@@ -682,7 +713,7 @@ export default function AddTeamMemberModal({
             <div className="relative mb-3">
               <div className="flex items-center justify-between mb-1">
                 <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">
-                  Email ID (For Partner Portal Login)
+                  Email ID (Portal Login) <span className="text-red-500">*</span>
                 </label>
                 {isRegisteredUser && (
                   <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1">
@@ -695,10 +726,11 @@ export default function AddTeamMemberModal({
               <div className="relative">
                 <input
                   type="email"
+                  required
                   value={email}
                   onChange={(e) => handleEmailChange(e.target.value)}
                   onFocus={() => searchResults.length > 0 && setShowSuggestions(true)}
-                  placeholder="e.g. rahul@example.com"
+                  placeholder="e.g. name@studiocore.in"
                   className="h-9 w-full rounded-lg border border-slate-200 px-3 text-xs focus:bg-white focus:border-amber-500 focus:outline-none transition"
                 />
                 {isSearching && (
@@ -1171,7 +1203,7 @@ export default function AddTeamMemberModal({
               </button>
               <button
                 type="submit"
-                disabled={loading || !name.trim() || !phoneNumber.trim() || isSelfEmail || isDuplicateEmail || isDisposableEmail}
+                disabled={loading || !name.trim() || !phoneNumber.trim() || !email.trim() || isSelfEmail || isDuplicateEmail || isDisposableEmail}
                 className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white text-xs font-bold shadow-md shadow-amber-500/20 transition cursor-pointer flex items-center gap-2"
               >
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
