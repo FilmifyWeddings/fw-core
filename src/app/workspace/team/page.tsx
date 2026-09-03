@@ -9,7 +9,7 @@ import {
   ExternalLink, Sparkles, AlertCircle, Building2, Briefcase,
   Target, FileText, IndianRupee, Layers, Check, Activity,
   Clock, Calendar, UserCheck, ShieldAlert,
-  Eye, Pencil
+  Eye, Pencil, Users, DollarSign
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
@@ -834,10 +834,28 @@ export default function WorkspaceTeamPage() {
                     const isFreelancer = member.primary_type === 'FREELANCER' || member.member_types?.includes('FREELANCER') || (member as any).type === 'freelancer';
                     const isPartner = member.primary_type === 'PARTNER' || member.member_types?.includes('PARTNER') || (member as any).type === 'partner';
                     const memberTypeLabel = isPartner ? 'Partner' : isFreelancer ? 'Freelancer' : (member.primary_type || 'In-House');
-                    const rawCrm = (member as any).crm_access || (member.permissions?.leads_access ? member.permissions.leads_access.replace(/_/g, ' ') : '');
-                    const rawTeam = (member as any).team_access || (member.permissions?.team_manager_access ? member.permissions.team_manager_access.replace(/_/g, ' ') : '');
-                    const showCrm = rawCrm && !rawCrm.toLowerCase().includes('hidden') && !rawCrm.toLowerCase().includes('none');
-                    const showTeam = rawTeam && !rawTeam.toLowerCase().includes('hidden') && !rawTeam.toLowerCase().includes('none');
+                    // Safe portal access resolution - eliminates raw DB metadata dump completely
+                    const crmAccess = (member as any).crm_access || member.permissions?.leads_access || member.permissions?.crm_access;
+                    const teamAccess = (member as any).team_access || member.permissions?.team_manager_access || member.permissions?.team_access;
+                    const quotationsAccess = (member as any).quotations_access || member.permissions?.quotations_access;
+                    const postProductionAccess = (member as any).post_production_access || member.permissions?.post_production_access;
+                    const financeAccess = (member as any).finance_access || member.permissions?.finance_access;
+                    const isAdmin = (member as any).is_admin || (member as any).role === 'admin' || (member as any).role === 'owner' || member.primary_type === 'ADMIN' || member.permissions?.is_admin;
+
+                    const isGranted = (val: any) => {
+                      if (!val) return false;
+                      const s = String(val).trim().toLowerCase();
+                      return !['none', 'hidden', 'false', '0', 'undefined', 'null'].includes(s);
+                    };
+
+                    const hasAnyAccess = Boolean(
+                      isAdmin || 
+                      isGranted(crmAccess) || 
+                      isGranted(teamAccess) || 
+                      isGranted(quotationsAccess) || 
+                      isGranted(postProductionAccess) || 
+                      isGranted(financeAccess)
+                    );
 
                     return (
                       <div 
@@ -902,19 +920,75 @@ export default function WorkspaceTeamPage() {
                           </div>
                         </div>
 
-                        {/* 4. Portal Access (Only show if granted and not hidden) */}
+                        {/* 4. Portal Access (Clean Distinct Micro-Icon Badges) */}
                         <div className="col-span-2 flex flex-wrap gap-1.5 items-center w-full">
-                          {showCrm && (
-                            <span className="text-[10px] px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-semibold border border-blue-200">
-                              CRM: {rawCrm}
-                            </span>
+                          {/* Admin / Full Access */}
+                          {isAdmin && (
+                            <div 
+                              title="Admin / Full Access"
+                              className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-600 border border-indigo-200/70 text-[10px] font-bold"
+                            >
+                              <ShieldCheck className="w-3 h-3 text-indigo-600"/>
+                              <span className="hidden lg:inline">Admin</span>
+                            </div>
                           )}
-                          {showTeam && (
-                            <span className="text-[10px] px-2 py-0.5 rounded bg-purple-50 text-purple-700 font-semibold border border-purple-200">
-                              Team: {rawTeam}
-                            </span>
+
+                          {/* Leads & CRM Access */}
+                          {isGranted(crmAccess) && (
+                            <div 
+                              title={`Leads / CRM: ${crmAccess}`}
+                              className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-600 border border-blue-200/70 text-[10px] font-bold"
+                            >
+                              <UserCheck className="w-3 h-3 text-blue-600"/>
+                              <span className="hidden lg:inline">CRM</span>
+                            </div>
                           )}
-                          {!showCrm && !showTeam && (
+
+                          {/* Team Portal Access */}
+                          {isGranted(teamAccess) && (
+                            <div 
+                              title={`Team Manager: ${teamAccess}`}
+                              className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-purple-50 text-purple-600 border border-purple-200/70 text-[10px] font-bold"
+                            >
+                              <Users className="w-3 h-3 text-purple-600"/>
+                              <span className="hidden lg:inline">Team</span>
+                            </div>
+                          )}
+
+                          {/* Quotations Access */}
+                          {isGranted(quotationsAccess) && (
+                            <div 
+                              title={`Quotations: ${quotationsAccess}`}
+                              className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-600 border border-amber-200/70 text-[10px] font-bold"
+                            >
+                              <FileText className="w-3 h-3 text-amber-600"/>
+                              <span className="hidden lg:inline">Quotes</span>
+                            </div>
+                          )}
+
+                          {/* Post-Production Access */}
+                          {isGranted(postProductionAccess) && (
+                            <div 
+                              title={`Post Production: ${postProductionAccess}`}
+                              className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-50 text-rose-600 border border-rose-200/70 text-[10px] font-bold"
+                            >
+                              <Film className="w-3 h-3 text-rose-600"/>
+                              <span className="hidden lg:inline">Post</span>
+                            </div>
+                          )}
+
+                          {/* Finance Access */}
+                          {isGranted(financeAccess) && (
+                            <div 
+                              title={`Finance: ${financeAccess}`}
+                              className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-600 border border-emerald-200/70 text-[10px] font-bold"
+                            >
+                              <DollarSign className="w-3 h-3 text-emerald-600"/>
+                              <span className="hidden lg:inline">Finance</span>
+                            </div>
+                          )}
+
+                          {!hasAnyAccess && (
                             <span className="text-[10px] px-2 py-0.5 rounded bg-slate-50 text-slate-400 font-medium border border-slate-200/60">
                               No Access
                             </span>
