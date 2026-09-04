@@ -9,8 +9,9 @@ import {
   Send, AlertCircle, Search, Filter, Loader2, Sparkles, MapPin, 
   Clock, CheckCircle, Info, Trash, ChevronDown, Edit2, TrendingUp, Award, Grid, Menu,
   Database, FileText, Layers, ArrowLeft, SlidersHorizontal, CheckSquare, Folder, Edit3, Pencil, Settings,
-  HardDrive, UserPlus, AlertTriangle, Zap, Lock, IndianRupee, Users2
+  HardDrive, UserPlus, AlertTriangle, Zap, Lock, IndianRupee, Users2, Moon
 } from 'lucide-react';
+import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import { supabase } from '@/lib/supabase';
@@ -1160,6 +1161,10 @@ export default function TeamManagerPage() {
     return list;
   }, [projects]);
 
+  if (loading) {
+    return <StudioCoreLiquidLoader label="Loading Bookings & Operations..." />;
+  }
+
   if (!isOwner && tmAccess === 'NONE') {
     return (
       <div className="min-h-screen bg-[#FAF9F6] p-8 flex items-center justify-center">
@@ -1359,10 +1364,7 @@ export default function TeamManagerPage() {
         {activeTab === 'projects' && (
           <div className="space-y-8">
             {loading ? (
-              <div className="flex flex-col items-center justify-center py-24 bg-white rounded-3xl border border-slate-200 space-y-3">
-                <Loader2 className="w-8 h-8 text-[#6C5CE7] animate-spin" />
-                <span className="text-xs font-bold text-[#4F5E74]">Hydrating Client Operations Workspace...</span>
-              </div>
+              <StudioCoreLiquidLoader label="Loading Bookings & Operations..." fullscreen={false} />
             ) : filteredProjects.length === 0 ? (
               <div className="bg-white p-12 rounded-3xl border border-slate-200 text-center space-y-4 shadow-2xs">
                 <div className="w-16 h-16 rounded-full bg-indigo-50 text-[#6C5CE7] flex items-center justify-center mx-auto">

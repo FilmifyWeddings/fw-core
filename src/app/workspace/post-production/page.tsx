@@ -16,6 +16,7 @@ import AiMicButton from '@/components/AiMicButton';
 import type { 
   PostProductionProject, DeliverableItem, DeliverableCategory, DeliverableStatus, WorkspaceClient, DeliverableComment 
 } from '@/types';
+import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 
 // Color Palette Themes for Categories
 export type CategoryColorTheme = 'indigo' | 'rose' | 'amber' | 'emerald' | 'purple' | 'cyan' | 'pink' | 'orange';
@@ -940,10 +941,7 @@ export default function PostProductionPage() {
               CLIENT POST-PRODUCTION CARDS LIST
           ───────────────────────────────────────────────────────────── */}
           {loading ? (
-            <div className="bg-[#FFFDF9] p-12 rounded-2xl border border-[#EAE5DA] text-center space-y-3 shadow-xs">
-              <RefreshCw className="w-8 h-8 mx-auto animate-spin text-amber-600" />
-              <p className="text-sm font-bold text-slate-700">Loading Post-Production Projects...</p>
-            </div>
+            <StudioCoreLiquidLoader label="Loading Production Pipelines..." fullscreen={false} />
           ) : filteredProjects.length === 0 ? (
             <div className="bg-[#FFFDF9] p-12 rounded-2xl border border-dashed border-amber-300/80 text-center space-y-4 shadow-xs">
               <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-700 mx-auto flex items-center justify-center">

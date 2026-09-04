@@ -10,6 +10,7 @@ import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { LeadTable } from '@/components/dashboard/lead-table';
 import { MasterSettingsHub } from '@/components/settings/master-settings-hub';
 import { extractFinancialsFromQuotation, findFinalQuotationForLead, syncQuotationToTeamManagerEvents } from '@/lib/quotation-finance-sync';
+import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 
 const MOCK_WORKSPACE_ID = '00000000-0000-0000-0000-000000000000';
 
@@ -1132,11 +1133,9 @@ export default function LeadsPage() {
         
         {/* Lead Table Container */}
         {loading ? (
-          <div className="py-20 flex items-center justify-center">
-            <RefreshCw className="w-8 h-8 animate-spin text-zinc-500" />
-          </div>
+          <StudioCoreLiquidLoader label="Loading Leads & Pipelines..." fullscreen={false} />
         ) : (
-          <React.Suspense fallback={<div className="py-20 flex items-center justify-center"><RefreshCw className="w-8 h-8 animate-spin text-zinc-500" /></div>}>
+          <React.Suspense fallback={<StudioCoreLiquidLoader label="Loading Leads & Pipelines..." fullscreen={false} />}>
             <LeadTable 
               leads={leads} 
               stages={stages}

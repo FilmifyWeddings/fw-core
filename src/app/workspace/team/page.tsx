@@ -24,6 +24,7 @@ import {
   fetchWorkspaceMemberRatesMap, 
   saveWorkspaceMemberRate 
 } from '@/lib/team-finance-sync';
+import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 
 interface TeamMember {
   id: string;
@@ -626,6 +627,10 @@ export default function WorkspaceTeamPage() {
       default: return { label: '⚙️ Workspace', color: 'bg-zinc-100 text-zinc-700 border-zinc-200' };
     }
   };
+
+  if (loading) {
+    return <StudioCoreLiquidLoader label="Loading Team & Partners..." />;
+  }
 
   return (
     <div className="min-h-screen bg-[#FAF9F6] p-3 sm:p-5 lg:p-6 space-y-4 w-full font-sans">

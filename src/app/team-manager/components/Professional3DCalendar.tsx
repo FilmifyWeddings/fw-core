@@ -6,7 +6,7 @@ import {
   Calendar as CalendarIcon, ChevronLeft, ChevronRight, Clock, MapPin, 
   UserCheck, AlertCircle, Plus, Users, CheckCircle2, Search,
   Briefcase, ChevronDown, UserPlus, Sparkles, X, Filter,
-  Pencil, Calendar, Zap, FileText, Check
+  Pencil, Calendar, Zap, FileText, Check, Moon
 } from 'lucide-react';
 import RoleAssignDropdown from './RoleAssignDropdown';
 

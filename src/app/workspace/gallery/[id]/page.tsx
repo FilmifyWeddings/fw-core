@@ -41,6 +41,7 @@ import {
   Clock,
   Layers,
 } from 'lucide-react';
+import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import { supabase } from '@/lib/supabase';
 import { batchUploadPhotos } from '@/lib/imageProcessor';
 import { getPublicGalleryUrl } from '@/lib/r2';
@@ -554,12 +555,7 @@ function AlbumStudioContent() {
   const totalSizeMb = (totalSizeBytes / (1024 * 1024)).toFixed(1);
 
   if (loading && !gallery) {
-    return (
-      <div className="min-h-screen bg-[#FAF9F5] flex flex-col items-center justify-center p-8 space-y-3">
-        <RefreshCw className="w-8 h-8 animate-spin text-amber-500" />
-        <p className="text-xs font-bold text-zinc-600">Loading Album Studio Workspace...</p>
-      </div>
-    );
+    return <StudioCoreLiquidLoader label="Loading Galleries & Media..." />;
   }
 
   if (!gallery) {

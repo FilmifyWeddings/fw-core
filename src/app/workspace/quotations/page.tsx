@@ -17,6 +17,7 @@ import { removeCachedDocumentLocal } from '@/lib/indexeddb-cache';
 
 import { getThemeFromKey } from '@/lib/quotation-theme';
 import QuotationDocumentCanvas from '@/components/QuotationDocumentCanvas';
+import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 
 interface SavedQuotation {
   id: string;
@@ -806,6 +807,10 @@ export default function WorkspaceQuotationsGalleryPage() {
     q.client_name?.toLowerCase().includes(quotationSearch.toLowerCase()) ||
     q.quotation_number?.toLowerCase().includes(quotationSearch.toLowerCase())
   );
+
+  if (loading) {
+    return <StudioCoreLiquidLoader label="Loading Quotations & Proposals..." />;
+  }
 
   return (
     <div className="min-h-screen bg-[#FAF9F6] dark:bg-[#070708] text-slate-800 dark:text-zinc-100 p-4 lg:p-8 space-y-6 lg:space-y-8 pb-24 lg:pb-8">

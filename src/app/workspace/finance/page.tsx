@@ -29,6 +29,7 @@ import type {
   FinanceAuditLog, FinanceSecuritySettings, Lead, LeadStatus, LeadScore 
 } from '@/types';
 import { useWorkspaceData } from '@/context/WorkspaceDataContext';
+import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 
 // Default expense categories
 const DEFAULT_EXPENSE_CATEGORIES = [
@@ -1903,14 +1904,7 @@ export default function FinancePage() {
 
   // 1. Loading state while verifying PIN status
   if (isCheckingPinStatus) {
-    return (
-      <div className="flex min-h-screen w-full items-center justify-center bg-[#FDFBF7]">
-        <div className="flex flex-col items-center gap-3">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-amber-600" />
-          <p className="text-xs font-bold text-stone-500 uppercase tracking-wider">Verifying Security...</p>
-        </div>
-      </div>
-    );
+    return <StudioCoreLiquidLoader label="Loading Finance & Accounts..." />;
   }
 
   // 2. HARD PIN-LOCK GATE: If PIN is required and not verified, render ONLY the PIN Gate Card (ZERO Finance DOM)
@@ -2492,10 +2486,7 @@ export default function FinancePage() {
         {activeTab === 'clients' && (
           <div className="space-y-4">
             {loading ? (
-              <div className="text-center py-20 bg-white rounded-3xl border border-slate-100">
-                <RefreshCw className="w-8 h-8 text-amber-500 animate-spin mx-auto mb-3" />
-                <p className="text-xs font-bold text-slate-500">Loading client financial records...</p>
-              </div>
+              <StudioCoreLiquidLoader label="Loading Finance & Accounts..." fullscreen={false} />
             ) : filteredRecords.length === 0 ? (
               <div className="text-center py-16 bg-white rounded-3xl border border-slate-100 space-y-3">
                 <Receipt className="w-10 h-10 text-slate-300 mx-auto" />

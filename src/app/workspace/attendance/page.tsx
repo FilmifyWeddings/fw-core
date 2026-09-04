@@ -22,6 +22,7 @@ import { analyzeAttendanceRecordTiming, formatMinutesToHumanReadable } from '@/l
 import MemberKundaliModal from '@/components/attendance/MemberKundaliModal';
 import AddTeamMemberModal from '@/components/attendance/AddTeamMemberModal';
 import CompanyHolidayModal from '@/components/attendance/CompanyHolidayModal';
+import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 
 const GeofenceMapPicker = dynamic(
   () => import('@/components/attendance/GeofenceMapPicker'),
@@ -611,6 +612,10 @@ export default function AttendancePage() {
   const absentCount = Math.max(0, totalEmployees - presentCount);
   const onLeaveCount = leaveRequests.filter(l => l.status === 'approved' && l.start_date <= selectedDate && l.end_date >= selectedDate).length;
   const liveWorkingCount = records.filter(r => r.check_in_time && !r.check_out_time).length;
+
+  if (loading) {
+    return <StudioCoreLiquidLoader label="Loading Attendance Roster..." />;
+  }
 
   return (
     <div className="min-h-screen bg-[#FDFCF7] text-slate-900 pb-24 pt-2 px-4 sm:px-6 lg:px-8 font-sans">

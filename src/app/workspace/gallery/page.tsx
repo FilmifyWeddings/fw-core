@@ -28,6 +28,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { batchUploadPhotos } from '@/lib/imageProcessor';
+import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 
 interface EventGallery {
   id: string;
@@ -281,10 +282,7 @@ export default function GalleryManagerPage() {
         </div>
 
         {loading && galleries.length === 0 ? (
-          <div className="p-16 text-center bg-white rounded-3xl border border-zinc-200 text-zinc-400">
-            <RefreshCw className="w-8 h-8 animate-spin mx-auto text-amber-500 mb-3" />
-            <p className="text-xs font-bold">Loading your AI event galleries...</p>
-          </div>
+          <StudioCoreLiquidLoader label="Loading Galleries & Media..." fullscreen={false} />
         ) : galleries.length === 0 ? (
           <div className="bg-white rounded-3xl p-12 text-center border border-zinc-200 space-y-4 shadow-2xs">
             <div className="w-16 h-16 rounded-3xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center mx-auto shadow-sm">

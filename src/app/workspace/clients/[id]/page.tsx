@@ -24,6 +24,7 @@ import { fetchWorkspaceTeamMembers, type WorkspaceMemberOption } from '@/lib/tea
 import type { 
   WorkspaceClient, PostProductionProject, DeliverableItem, ClientFinanceRecord, DeliverableStatus, DeliverableComment
 } from '@/types';
+import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 
 // Helper to compute initials from client name
 function getClientInitials(name: string): string {
@@ -942,13 +943,7 @@ export default function ClientWorkspaceDetailPage() {
 
   // Loading View
   if (loading) {
-    return (
-      <div className="min-h-screen bg-[#FAF9F5] p-12 text-center text-slate-900 space-y-4">
-        <RefreshCw className="w-10 h-10 mx-auto animate-spin text-amber-600" />
-        <h2 className="text-base font-black">Loading Client 360 Workspace...</h2>
-        <p className="text-xs text-slate-500 font-medium">Fetching client profiles, quotations, events, post-production and finance.</p>
-      </div>
-    );
+    return <StudioCoreLiquidLoader label="Loading Client 360 Workspace..." />;
   }
 
   // Error View

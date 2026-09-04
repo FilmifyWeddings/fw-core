@@ -18,6 +18,7 @@ import {
 import { ExcelMigrationModal } from '@/components/finance/excel-migration-modal';
 import { fetchWorkspaceTeamMembers, type WorkspaceMemberOption } from '@/lib/team-helpers';
 import type { WorkspaceClient, Lead, ClientFinanceRecord, FinanceMilestoneItem } from '@/types';
+import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 
 const DEFAULT_EVENT_TYPES = [
   'Wedding Photography',
@@ -687,10 +688,7 @@ export default function ClientsPage() {
             CLIENT CARDS / TABLE LIST (CLICKABLE FOR 360 WORKSPACE)
         ───────────────────────────────────────────────────────────── */}
         {loading ? (
-          <div className="bg-[#FFFDF9] p-12 rounded-2xl border border-[#EAE5DA] text-center space-y-3 shadow-xs">
-            <RefreshCw className="w-8 h-8 mx-auto animate-spin text-amber-600" />
-            <p className="text-sm font-bold text-slate-700">Loading Clients Directory...</p>
-          </div>
+          <StudioCoreLiquidLoader label="Loading Clients Directory..." fullscreen={false} />
         ) : filteredClients.length === 0 ? (
           <div className="bg-[#FFFDF9] p-12 rounded-2xl border border-dashed border-amber-300/80 text-center space-y-4 shadow-xs">
             <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-700 mx-auto flex items-center justify-center">
