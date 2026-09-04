@@ -62,6 +62,48 @@ const MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December'
 ];
 
+export const resolveClientName = (item: any): string => {
+  if (!item) return 'Client Not Assigned';
+
+  // Check direct properties first
+  if (item.client_name && typeof item.client_name === 'string' && item.client_name.trim() !== '' && !item.client_name.toLowerCase().includes('client not') && !item.client_name.toLowerCase().includes('wedding shoot')) {
+    const cleaned = item.client_name.split(' - ')[0].split(' • ')[0].trim();
+    if (cleaned) return cleaned;
+  }
+  
+  // Check nested project/booking/lead structures
+  const potentialName = 
+    item.project?.client_name ||
+    item.project?.title ||
+    item.project?.couple_name ||
+    item.fw_projects?.client_name ||
+    item.booking?.client_name ||
+    item.booking?.title ||
+    item.booking?.couple_title ||
+    item.event?.client_name ||
+    item.event?.project?.client_name ||
+    item.sub_event?.client_name ||
+    item.fw_sub_events?.client_name ||
+    item.lead?.name;
+
+  if (potentialName && typeof potentialName === 'string' && potentialName.trim() !== '') {
+    // If title has format like "Dinesh & Aishwarya - Wedding", extract the couple name
+    const cleaned = potentialName.split(' - ')[0].split(' • ')[0].trim();
+    if (cleaned) return cleaned;
+  }
+
+  // Fallback check from global projects cache/map if available
+  if (typeof window !== 'undefined' && item.project_id && (window as any).__PROJECTS_CACHE?.[item.project_id]) {
+    const cached = (window as any).__PROJECTS_CACHE[item.project_id];
+    const name = typeof cached === 'string' ? cached : (cached.client_name || cached.title || '');
+    if (name && typeof name === 'string' && name.trim() !== '') {
+      return name.split(' - ')[0].split(' • ')[0].trim();
+    }
+  }
+
+  return 'Client Not Assigned';
+};
+
 export default function TeamMemberFinanceDrawer({
   isOpen,
   onClose,
@@ -218,27 +260,23 @@ export default function TeamMemberFinanceDrawer({
               balance_amount,
               payment_status,
               sub_event_id,
+              project_id,
               workspace_id,
+              client_name,
+              sub_event_name,
+              sub_event_date,
               created_at,
               updated_at,
-              fw_sub_events (
-                id,
-                project_id,
-                event_title,
-                event_date,
-                start_time,
-                end_time,
-                venue,
-                location,
-                client_name
-              )
+              project:fw_projects(id, client_name, main_date, main_venue, status),
+              sub_event:fw_sub_events(id, project_id, event_title, event_date, venue_name, start_time_12h, end_time_12h)
             `)
             .eq('assigned_member_id', member.id);
 
           if (assignmentsData && assignmentsData.length > 0) {
             const rawData = assignmentsData.filter((a: any) => !a.workspace_id || a.workspace_id === workspaceId);
             eventPayouts = rawData.map((a: any) => {
-              const se = a.fw_sub_events;
+              const se = a.sub_event || a.fw_sub_events;
+              const proj = a.project || a.fw_projects;
               const rawAgreed = a.agreed_amount !== undefined && a.agreed_amount !== null ? Number(a.agreed_amount) : 0;
               const isSyntheticMultiplier = rawAgreed === 18000 || (member?.default_daily_rate && rawAgreed === Number(member.default_daily_rate));
               const hasExplicitCustomPayout = Boolean(a.custom_payout || a.custom_rate || a.is_custom_payout);
@@ -253,24 +291,33 @@ export default function TeamMemberFinanceDrawer({
                 ? 'PARTIAL'
                 : 'PENDING';
 
+              const clientName = resolveClientName({
+                ...a,
+                client_name: a.client_name,
+                project: proj,
+                sub_event: se
+              });
+
               return {
                 id: a.id,
                 workspace_id: a.workspace_id || workspaceId,
                 member_id: member.id,
                 member_name: member.name || '',
-                project_id: se?.project_id || '',
+                project_id: a.project_id || se?.project_id || '',
                 sub_event_id: a.sub_event_id || '',
-                client_name: se?.client_name || 'Client Not Assigned',
-                event_name: se?.event_title || 'Shoot Event',
-                event_date: se?.event_date || new Date().toISOString().split('T')[0],
+                client_name: clientName,
+                event_name: se?.event_title || a.sub_event_name || 'Shoot Event',
+                event_date: se?.event_date || a.sub_event_date || new Date().toISOString().split('T')[0],
                 role: a.required_role || member.primary_role || 'Crew',
                 agreed_amount: agreed,
                 paid_amount: paid,
                 balance_amount: bal,
                 status: pStatus,
-                venue: se?.venue || se?.location || '',
-                start_time: se?.start_time || '',
-                end_time: se?.end_time || '',
+                venue: se?.venue_name || proj?.main_venue || '',
+                start_time: se?.start_time_12h || '',
+                end_time: se?.end_time_12h || '',
+                project: proj,
+                sub_event: se,
                 created_at: a.created_at,
                 updated_at: a.updated_at
               };
@@ -870,10 +917,8 @@ export default function TeamMemberFinanceDrawer({
                       const cardPaid = Number(payout.paid_amount || 0);
                       const cardDue = Math.max(0, cardAgreed - cardPaid);
                       const isPaid = (cardAgreed > 0 && cardDue <= 0) || payout.status === 'PAID' || payout.status === 'completed';
-                      const displayClient = (payout.client_name && payout.client_name.trim() !== '' && payout.client_name.toLowerCase() !== 'wedding shoot')
-                        ? payout.client_name
-                        : 'Client Not Assigned';
-                      const displayEvent = payout.event_name || 'Shoot Event';
+                      const displayClient = resolveClientName(payout);
+                      const displayEvent = payout.event_name || payout.sub_event?.event_title || 'Shoot Event';
 
                       return (
                         <div
@@ -934,8 +979,8 @@ export default function TeamMemberFinanceDrawer({
                                 setPaymentTarget({
                                   type: 'EVENT',
                                   id: payout.id,
-                                  title: payout.event_name,
-                                  clientName: payout.client_name,
+                                  title: displayEvent,
+                                  clientName: displayClient,
                                   totalAmount: cardAgreed,
                                   balanceAmount: cardDue,
                                   role: payout.role

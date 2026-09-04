@@ -23,6 +23,11 @@ export interface TeamEventPayout {
   payment_date?: string;
   notes?: string;
   synced_expense_id?: string;
+  project?: any;
+  sub_event?: any;
+  booking?: any;
+  lead?: any;
+  [key: string]: any;
   created_at?: string;
   updated_at?: string;
 }
@@ -387,8 +392,8 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
     const [assignRes, crewFinRes, teamPayoutRes] = await Promise.all([
       Promise.resolve(
         (idList.length === 1 
-          ? supabase.from('fw_assignments').select('*').eq('assigned_member_id', idList[0])
-          : supabase.from('fw_assignments').select('*').in('assigned_member_id', idList)
+          ? supabase.from('fw_assignments').select('*, project:fw_projects(id, client_name, main_date, main_venue, status), sub_event:fw_sub_events(id, project_id, event_title, event_date, venue_name, start_time_12h, end_time_12h)').eq('assigned_member_id', idList[0])
+          : supabase.from('fw_assignments').select('*, project:fw_projects(id, client_name, main_date, main_venue, status), sub_event:fw_sub_events(id, project_id, event_title, event_date, venue_name, start_time_12h, end_time_12h)').in('assigned_member_id', idList)
         ).order('created_at', { ascending: false })
       ).catch(() => ({ data: null, error: null })),
 
@@ -408,10 +413,10 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
 
       const [seListRes, pListRes] = await Promise.all([
         subEventIds.length > 0
-          ? Promise.resolve(supabase.from('fw_sub_events').select('id, project_id, event_title, event_date, start_time, end_time, venue, location, client_name, couple_name').in('id', subEventIds)).catch(() => ({ data: null }))
+          ? Promise.resolve(supabase.from('fw_sub_events').select('id, project_id, event_title, event_date, venue_name, start_time_12h, end_time_12h').in('id', subEventIds)).catch(() => ({ data: null }))
           : Promise.resolve({ data: null }),
         projectIds.length > 0
-          ? Promise.resolve(supabase.from('fw_projects').select('id, client_name, project_name, bride_name, groom_name, couple_name, venue_location').in('id', projectIds)).catch(() => ({ data: null }))
+          ? Promise.resolve(supabase.from('fw_projects').select('id, client_name, main_date, main_venue, status').in('id', projectIds)).catch(() => ({ data: null }))
           : Promise.resolve({ data: null })
       ]);
 
@@ -438,7 +443,7 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
         try {
           const { data: addProjs } = await supabase
             .from('fw_projects')
-            .select('id, client_name, project_name, bride_name, groom_name, couple_name, venue_location')
+            .select('id, client_name, main_date, main_venue, status')
             .in('id', additionalProjIds);
           if (addProjs) {
             addProjs.forEach((p: any) => { projectsMap[p.id] = p; });
@@ -447,8 +452,14 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
       }
 
       assignData.forEach((a: any) => {
-        const se = a.sub_event_id ? subEventsMap[a.sub_event_id] : null;
-        const proj = (a.project_id || se?.project_id) ? projectsMap[a.project_id || se?.project_id] : null;
+        const se = a.sub_event || (a.sub_event_id ? subEventsMap[a.sub_event_id] : null);
+        const proj = a.project || ((a.project_id || se?.project_id) ? projectsMap[a.project_id || se?.project_id] : null);
+
+        // Cache project in global cache if available
+        if (typeof window !== 'undefined' && proj?.id && proj?.client_name) {
+          (window as any).__PROJECTS_CACHE = (window as any).__PROJECTS_CACHE || {};
+          (window as any).__PROJECTS_CACHE[proj.id] = proj;
+        }
 
         // STRICT MULTI-TENANT ISOLATION: Studio Owner A must never see shoots assigned by Studio Owner B
         if (!isFreelancerPortal && workspaceId) {
@@ -469,26 +480,26 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
 
         // Intelligent Couple / Client Name Resolution
         let resolvedClientName = '';
-        if (proj?.couple_name && proj.couple_name.trim()) {
-          resolvedClientName = proj.couple_name.trim();
-        } else if (proj?.bride_name && proj?.groom_name) {
-          resolvedClientName = `${proj.bride_name} & ${proj.groom_name}`;
+        if (a.client_name && a.client_name.trim() && !a.client_name.toLowerCase().includes('client not') && !a.client_name.toLowerCase().includes('wedding shoot')) {
+          resolvedClientName = a.client_name.trim();
         } else if (proj?.client_name && proj.client_name.trim()) {
           resolvedClientName = proj.client_name.trim();
-        } else if (proj?.project_name && proj.project_name.trim()) {
-          resolvedClientName = proj.project_name.trim();
-        } else if (proj?.bride_name) {
-          resolvedClientName = proj.bride_name.trim();
-        } else if (proj?.groom_name) {
-          resolvedClientName = proj.groom_name.trim();
-        } else if (se?.couple_name && se.couple_name.trim()) {
-          resolvedClientName = se.couple_name.trim();
+        } else if (proj?.couple_name && proj.couple_name.trim()) {
+          resolvedClientName = proj.couple_name.trim();
+        } else if (proj?.title && proj.title.trim()) {
+          resolvedClientName = proj.title.trim();
         } else if (se?.client_name && se.client_name.trim()) {
           resolvedClientName = se.client_name.trim();
-        } else if (a.client_name && a.client_name.trim()) {
-          resolvedClientName = a.client_name.trim();
+        } else if (se?.couple_name && se.couple_name.trim()) {
+          resolvedClientName = se.couple_name.trim();
+        } else if (se?.event_title && se.event_title.trim()) {
+          resolvedClientName = se.event_title.trim();
         } else {
-          resolvedClientName = proj?.client_name || se?.event_title || 'Wedding Shoot';
+          resolvedClientName = a.sub_event_name || 'Wedding Shoot';
+        }
+
+        if (resolvedClientName && typeof resolvedClientName === 'string') {
+          resolvedClientName = resolvedClientName.split(' - ')[0].split(' • ')[0].trim();
         }
 
         const rawAgreed = Number(a.agreed_amount) || 0;
@@ -509,9 +520,9 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
 
         const eventTitle = se?.event_title || a.sub_event_name || a.event_name || a.required_role || 'Shoot Event';
         const eventDate = se?.event_date || a.sub_event_date || a.payment_date || new Date().toISOString().split('T')[0];
-        const venue = se?.venue || se?.location || proj?.venue_location || a.venue || '';
-        const startTime = se?.start_time || a.start_time || '';
-        const endTime = se?.end_time || a.end_time || '';
+        const venue = se?.venue_name || proj?.main_venue || a.venue || '';
+        const startTime = se?.start_time_12h || a.start_time || '';
+        const endTime = se?.end_time_12h || a.end_time || '';
 
         const item: TeamEventPayout = {
           id: a.id,
@@ -520,7 +531,7 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
           member_name: a.assigned_member_name || memberName || '',
           project_id: a.project_id || a.event_id || se?.project_id || '',
           sub_event_id: a.sub_event_id || '',
-          client_name: resolvedClientName || 'Client Shoot',
+          client_name: resolvedClientName || 'Client Not Assigned',
           event_name: eventTitle,
           event_date: eventDate,
           role: a.required_role || a.role_name || 'Crew',
@@ -535,6 +546,8 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
           venue: venue,
           start_time: startTime,
           end_time: endTime,
+          project: proj,
+          sub_event: se,
           created_at: a.created_at,
           updated_at: a.updated_at
         };
