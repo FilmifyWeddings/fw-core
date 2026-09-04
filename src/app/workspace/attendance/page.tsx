@@ -130,24 +130,71 @@ export default function AttendancePage() {
     return false;
   }, []);
 
+  const fetchInHouseStaff = async (workspaceId?: string) => {
+    // 1. Get logged-in admin user ID
+    const { data: { user } } = await supabase.auth.getUser();
+    const targetUserId = workspaceId || user?.id;
+    if (!targetUserId) return [];
+
+    // 2. Fetch in-house staff scoped strictly to this user_id
+    const { data: staffList, error } = await supabase
+      .from('fw_team_members')
+      .select('*')
+      .eq('user_id', targetUserId)
+      .or('primary_type.ilike.%in-house%,primary_type.ilike.%in_house%')
+      .or('is_active.is.null,is_active.eq.true')
+      .order('name', { ascending: true });
+
+    if (error || !staffList) return [];
+
+    // Strict deduplication by name & elimination of any marked as freelancer
+    const seenNames = new Set<string>();
+    const strictInHouse = staffList.filter((member: any) => {
+      if (member.is_active === false || member.active_status === false) return false;
+
+      const rawType = String(member.primary_type || '').toLowerCase().trim();
+      const isFreelancer = rawType.includes('freelance') || 
+        (member.name || '').toLowerCase().includes(' tp') || 
+        (member.name || '').toLowerCase().includes(' ref');
+
+      if (isFreelancer) return false;
+
+      // Deduplicate duplicates in list
+      const cleanName = (member.name || '').toLowerCase().trim();
+      if (!cleanName || seenNames.has(cleanName)) return false;
+      seenNames.add(cleanName);
+
+      return rawType === 'in-house' || rawType === 'in_house';
+    });
+
+    return strictInHouse;
+  };
+
   const fetchAttendanceData = async () => {
     setLoading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const workspaceId = session?.user?.id || 'ws_demo';
+      // 1. Get logged-in admin user ID
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+      const workspaceId = user.id;
 
-      // 1. Fetch Team Members
-      let teamQuery = supabase
+      // 2. Fetch in-house staff scoped strictly to this user_id
+      const { data: staffList, error } = await supabase
         .from('fw_team_members')
         .select('*')
+        .eq('user_id', user.id)
+        .or('primary_type.ilike.%in-house%,primary_type.ilike.%in_house%')
+        .or('is_active.is.null,is_active.eq.true')
         .order('name', { ascending: true });
 
-      if (workspaceId !== 'ws_demo') {
-        teamQuery = teamQuery.eq('user_id', workspaceId);
+      if (error) {
+        console.warn('[attendance] Scoped staffList fetch warning:', error);
       }
 
-      const { data: membersData } = await teamQuery;
-      const rawMembers = membersData || [];
+      const rawMembers = staffList || [];
 
       // Deduplicate members and build Alias Map so updated emails never disconnect historical attendance
       const uniqueMembers: any[] = [];
@@ -192,25 +239,25 @@ export default function AttendancePage() {
 
       setTeamMembers(uniqueMembers);
 
-      // 2. Fetch Attendance Records & attendance_logs for selected date
+      // 2. Fetch Attendance Records & attendance_logs for selected date strictly scoped to user_id
       let recQuery = supabase
         .from('attendance_records')
         .select('*, member:fw_team_members(*)')
-        .eq('date', selectedDate);
-
-      if (workspaceId !== 'ws_demo') {
-        recQuery = recQuery.eq('user_id', workspaceId);
-      }
+        .eq('date', selectedDate)
+        .eq('user_id', workspaceId);
 
       const { data: recordsData } = await recQuery;
 
-      // Also query attendance_logs for selectedDate
-      let logsQuery = supabase
-        .from('attendance_logs')
-        .select('*')
-        .eq('date', selectedDate);
-
-      const { data: logsData } = await logsQuery;
+      // Also query attendance_logs for selectedDate scoped strictly to member IDs in this workspace
+      let logsData: any[] = [];
+      if (uniqueMembers.length > 0) {
+        const { data } = await supabase
+          .from('attendance_logs')
+          .select('*')
+          .eq('date', selectedDate)
+          .in('member_id', uniqueMembers.map(u => String(u.id)));
+        logsData = data || [];
+      }
 
       const mergedMap = new Map<string, any>();
       (recordsData || []).forEach((r: any) => {
@@ -598,26 +645,42 @@ export default function AttendancePage() {
     }
   };
 
-  // ── 1. Strictly In-House Staff Filter (Excluding Freelancers, Partners, Printing Labs) ──
-  const inHouseStaff = useMemo(() => {
-    return teamMembers.filter((m: any) => {
-      const rawType = String(m.type || m.primary_type || '').toLowerCase().replace(/_/g, '-');
-      const memberTypes = Array.isArray(m.member_types)
-        ? m.member_types.map((t: string) => String(t).toLowerCase().replace(/_/g, '-'))
-        : [];
+  // ── 1. Strictly In-House Staff Filter (Using primary_type & member_types) ──
+  const strictInHouse = useMemo(() => {
+    const seenNames = new Set<string>();
+    return teamMembers.filter((member: any) => {
+      if (member.is_active === false || member.active_status === false) return false;
 
-      // Exclude all freelancers, external partners, and printing labs
-      if (
-        rawType === 'freelancer' || rawType === 'partner' || rawType === 'lab' || rawType === 'printing-lab' || rawType === 'external' ||
-        memberTypes.includes('freelancer') || memberTypes.includes('partner') || memberTypes.includes('lab') || memberTypes.includes('printing-lab') || memberTypes.includes('external')
-      ) {
-        return false;
-      }
+      const rawType = String(member.primary_type || '').toLowerCase().trim();
+      const typesList = Array.isArray(member.member_types)
+        ? member.member_types.map((t: string) => String(t).toLowerCase().trim())
+        : [rawType];
 
-      // Strictly in-house staff
-      return rawType === 'in-house' || memberTypes.includes('in-house') || (!rawType && memberTypes.length === 0);
+      const isFreelancer = 
+        rawType.includes('freelance') || 
+        typesList.some((t: string) => t.includes('freelance')) ||
+        (member.name || '').toLowerCase().includes(' tp') || 
+        (member.name || '').toLowerCase().includes(' ref');
+
+      if (isFreelancer) return false;
+
+      // Deduplicate duplicates in list
+      const cleanName = (member.name || '').toLowerCase().trim();
+      if (!cleanName || seenNames.has(cleanName)) return false;
+      seenNames.add(cleanName);
+
+      const isInHouse = 
+        rawType === 'in-house' || 
+        rawType === 'in_house' || 
+        typesList.includes('in-house') || 
+        typesList.includes('in_house');
+
+      return isInHouse;
     });
   }, [teamMembers]);
+
+  // Use strictInHouse for all Attendance Roster tables and header counts
+  const inHouseStaff = strictInHouse;
 
   // ── 2. Live 1-Second Continuous Work Timer ──
   const [nowTick, setNowTick] = useState<number>(() => Date.now());

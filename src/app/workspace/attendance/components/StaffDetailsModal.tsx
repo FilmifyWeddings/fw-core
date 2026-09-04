@@ -165,26 +165,12 @@ export default function StaffDetailsModal({
     const loadMemberHistory = async () => {
       setLoadingRecords(true);
       try {
-        const memberIdStr = String(member.id);
-        const altMemberId = (member as any).member_id ? String((member as any).member_id) : memberIdStr;
-
-        // Loose matching for stringified ID vs UUID vs staff_id
-        let recQuery = supabase
-          .from('attendance_records')
-          .select('*')
-          .or(`member_id.eq.${memberIdStr},member_id.eq.${altMemberId}`)
-          .order('date', { ascending: false });
-
-        if (startDate) recQuery = recQuery.gte('date', startDate);
-        if (endDate) recQuery = recQuery.lte('date', endDate);
-
-        const { data: recData, error: recError } = await recQuery;
-        if (recError) console.warn('attendance_records query error:', recError);
+        const targetId = String(member.id);
 
         let logQuery = supabase
           .from('attendance_logs')
           .select('*')
-          .or(`member_id.eq.${memberIdStr},member_id.eq.${altMemberId}`)
+          .eq('member_id', targetId)
           .order('date', { ascending: false });
 
         if (startDate) logQuery = logQuery.gte('date', startDate);
@@ -192,6 +178,18 @@ export default function StaffDetailsModal({
 
         const { data: logData, error: logError } = await logQuery;
         if (logError) console.warn('attendance_logs query error:', logError);
+
+        let recQuery = supabase
+          .from('attendance_records')
+          .select('*')
+          .eq('member_id', targetId)
+          .order('date', { ascending: false });
+
+        if (startDate) recQuery = recQuery.gte('date', startDate);
+        if (endDate) recQuery = recQuery.lte('date', endDate);
+
+        const { data: recData, error: recError } = await recQuery;
+        if (recError) console.warn('attendance_records query error:', recError);
 
         const mergedMap = new Map<string, any>();
         (recData || []).forEach((r: any) => {
@@ -253,7 +251,7 @@ export default function StaffDetailsModal({
             mergedMap.set(log.date, {
               id: log.id,
               log_id: log.id,
-              member_id: memberIdStr,
+              member_id: targetId,
               date: log.date,
               status: (log.status || 'present').toLowerCase(),
               check_in_time: log.punch_in_time,
@@ -296,7 +294,7 @@ export default function StaffDetailsModal({
 
     loadMemberHistory();
     return () => { isMounted = false; };
-  }, [isOpen, member?.id, (member as any)?.member_id, startDate, endDate]);
+  }, [isOpen, member?.id, startDate, endDate]);
 
   const memberRecords = useMemo(() => {
     return fetchedRecords.filter(r => {

@@ -83,45 +83,30 @@ export default function EditStaffAttendanceModal({
   onMemberUpdated
 }: EditStaffAttendanceModalProps) {
   const customInit = (member?.custom_data as any) || {};
-  const initLat = Number(
-    (member as any)?.office_latitude || 
-    (member as any)?.assigned_lat || 
-    member?.latitude || 
-    customInit.office_latitude || 
-    customInit.assigned_lat || 
-    customInit.latitude
-  ) || null;
-  const initLng = Number(
-    (member as any)?.office_longitude || 
-    (member as any)?.assigned_lng || 
-    member?.longitude || 
-    customInit.office_longitude || 
-    customInit.assigned_lng || 
-    customInit.longitude
-  ) || null;
-  const initRadius = Number(
-    (member as any)?.geofence_radius_meters || 
-    (member as any)?.geofence_radius || 
-    member?.radius_meters || 
-    customInit.geofence_radius_meters || 
-    customInit.radius_meters
-  ) || 50;
+  const initLat = member?.office_latitude !== undefined && member?.office_latitude !== null
+    ? (member.office_latitude !== '' ? Number(member.office_latitude) : null)
+    : (Number((member as any)?.assigned_lat || member?.latitude || customInit.office_latitude) || null);
+
+  const initLng = member?.office_longitude !== undefined && member?.office_longitude !== null
+    ? (member.office_longitude !== '' ? Number(member.office_longitude) : null)
+    : (Number((member as any)?.assigned_lng || member?.longitude || customInit.office_longitude) || null);
+
+  const initRadius = member?.geofence_radius_meters !== undefined && member?.geofence_radius_meters !== null
+    ? (Number(member.geofence_radius_meters) || 100)
+    : (Number((member as any)?.geofence_radius || member?.radius_meters || customInit.geofence_radius_meters) || 100);
+
   const initAddress = 
-    (member as any)?.office_address || 
+    member?.office_address || 
     (member as any)?.assigned_venue || 
     member?.location_name || 
     (member as any)?.address || 
     customInit.office_address || 
     customInit.location_name || 
     '';
+
   const initExempt = Boolean(
-    (member as any)?.geofence_exempt ||
-    member?.is_geofence_exempt || 
-    (member as any)?.geofence_required === false || 
-    customInit.geofence_exempt ||
-    customInit.is_geofence_exempt || 
-    customInit.allow_anywhere ||
-    false
+    member?.geofence_exempt !== undefined ? member.geofence_exempt :
+    ((member as any)?.is_geofence_exempt || (member as any)?.geofence_required === false || customInit.geofence_exempt || false)
   );
 
   const [submitting, setSubmitting] = useState(false);
@@ -178,7 +163,7 @@ export default function EditStaffAttendanceModal({
       setShiftEndTime(parse24to12(rawEnd, '07', '00', 'PM'));
 
       // Weekly Offs (Multiple)
-      const rawOffs = member.weekly_offs || custom.weekly_offs || ['Sunday'];
+      const rawOffs = member.weekly_off_days || member.weekly_offs || custom.weekly_off_days || custom.weekly_offs || ['Sunday'];
       const normalizedOffs: string[] = [];
       if (Array.isArray(rawOffs)) {
         rawOffs.forEach((d: string) => {
@@ -192,34 +177,20 @@ export default function EditStaffAttendanceModal({
       setSelectedWeeklyOffs(normalizedOffs.length > 0 ? normalizedOffs : ['Sunday']);
 
       // Hydrate coordinates, radius, address, and exemption directly from saved values
-      const savedLat = Number(
-        (member as any).office_latitude || 
-        (member as any).assigned_lat || 
-        member.latitude || 
-        custom.office_latitude || 
-        custom.assigned_lat || 
-        custom.latitude
-      ) || null;
+      const savedLat = member.office_latitude !== undefined && member.office_latitude !== null
+        ? (member.office_latitude !== '' ? Number(member.office_latitude) : null)
+        : (Number((member as any).assigned_lat || member.latitude || custom.office_latitude) || null);
 
-      const savedLng = Number(
-        (member as any).office_longitude || 
-        (member as any).assigned_lng || 
-        member.longitude || 
-        custom.office_longitude || 
-        custom.assigned_lng || 
-        custom.longitude
-      ) || null;
+      const savedLng = member.office_longitude !== undefined && member.office_longitude !== null
+        ? (member.office_longitude !== '' ? Number(member.office_longitude) : null)
+        : (Number((member as any).assigned_lng || member.longitude || custom.office_longitude) || null);
 
-      const savedRadius = Number(
-        (member as any).geofence_radius_meters || 
-        (member as any).geofence_radius || 
-        member.radius_meters || 
-        custom.geofence_radius_meters || 
-        custom.radius_meters
-      ) || 50;
+      const savedRadius = member.geofence_radius_meters !== undefined && member.geofence_radius_meters !== null
+        ? (Number(member.geofence_radius_meters) || 100)
+        : (Number((member as any).geofence_radius || member.radius_meters || custom.geofence_radius_meters) || 100);
 
       const savedAddress = 
-        (member as any).office_address || 
+        member.office_address || 
         (member as any).assigned_venue || 
         member.location_name || 
         (member as any).address || 
@@ -228,13 +199,8 @@ export default function EditStaffAttendanceModal({
         '';
 
       const isExempt = Boolean(
-        (member as any).geofence_exempt ||
-        member.is_geofence_exempt || 
-        (member as any).geofence_required === false || 
-        custom.geofence_exempt ||
-        custom.is_geofence_exempt || 
-        custom.allow_anywhere ||
-        false
+        member.geofence_exempt !== undefined ? member.geofence_exempt :
+        ((member as any).is_geofence_exempt || (member as any).geofence_required === false || custom.geofence_exempt || false)
       );
 
       setOfficeLat(savedLat);
@@ -255,63 +221,22 @@ export default function EditStaffAttendanceModal({
       const shiftStart24 = format12to24(shiftStartTime);
       const shiftEnd24 = format12to24(shiftEndTime);
 
-      const latNum = officeLat !== null && officeLat !== undefined ? Number(officeLat) : null;
-      const lngNum = officeLng !== null && officeLng !== undefined ? Number(officeLng) : null;
-      const radiusNum = Number(geofenceRadius) || 50;
-      const addressStr = officeAddress || '';
-
-      const existingCustom = (member.custom_data as any) || {};
-      const updatedCustom = {
-        ...existingCustom,
-        shift_start: shiftStart24,
-        shift_start_time: shiftStart24,
-        shift_end: shiftEnd24,
-        shift_end_time: shiftEnd24,
-        weekly_offs: selectedWeeklyOffs,
-        weekly_off_days: selectedWeeklyOffs,
-        is_geofence_exempt: noGeofence,
-        geofence_exempt: noGeofence,
-        geofence_required: !noGeofence,
-        allow_anywhere: noGeofence,
-        office_address: addressStr,
-        address: addressStr,
-        location_name: addressStr,
-        latitude: latNum,
-        longitude: lngNum,
-        office_latitude: latNum,
-        office_longitude: lngNum,
-        assigned_lat: latNum,
-        assigned_lng: lngNum,
-        radius_meters: radiusNum,
-        geofence_radius_meters: radiusNum
-      };
-
-      const payload = {
-        office_latitude: latNum,
-        office_longitude: lngNum,
-        office_address: addressStr,
-        latitude: latNum,
-        longitude: lngNum,
-        location_name: addressStr,
-        geofence_radius_meters: radiusNum,
-        radius_meters: radiusNum,
+      const updatePayload = {
+        office_latitude: officeLat ? Number(officeLat) : null,
+        office_longitude: officeLng ? Number(officeLng) : null,
+        office_address: officeAddress || '',
+        geofence_radius_meters: Number(geofenceRadius) || 100,
         geofence_exempt: Boolean(noGeofence),
-        is_geofence_exempt: Boolean(noGeofence),
-        geofence_required: !Boolean(noGeofence),
         weekly_off_days: selectedWeeklyOffs,
-        weekly_offs: selectedWeeklyOffs,
-        shift_start_time: shiftStart24,
-        shift_start: shiftStart24,
-        shift_end_time: shiftEnd24,
-        shift_end: shiftEnd24,
-        custom_data: updatedCustom,
+        shift_start: shiftStart24, // maps to time without time zone
+        shift_end: shiftEnd24,     // maps to time without time zone
         updated_at: new Date().toISOString()
       };
 
       const { data, error } = await supabase
         .from('fw_team_members')
-        .update(payload)
-        .eq('id', String(member.id))
+        .update(updatePayload)
+        .eq('id', member.id)
         .select()
         .single();
 
@@ -323,9 +248,9 @@ export default function EditStaffAttendanceModal({
       if (onMemberUpdated) {
         onMemberUpdated({
           ...member,
-          ...payload,
-          assigned_lat: latNum,
-          assigned_lng: lngNum,
+          ...updatePayload,
+          assigned_lat: updatePayload.office_latitude,
+          assigned_lng: updatePayload.office_longitude,
           shift_start: shiftStart24,
           shift_end: shiftEnd24
         });

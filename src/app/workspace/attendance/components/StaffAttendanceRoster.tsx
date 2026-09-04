@@ -110,25 +110,41 @@ export default function StaffAttendanceRoster({
     return false;
   }, []);
 
-  // 1. Strictly in-house staff filter
-  const inHouseStaff = useMemo(() => {
-    return members.filter((m) => {
-      const rawType = String(m.type || m.primary_type || '').toLowerCase().replace(/_/g, '-');
-      const memberTypes = Array.isArray(m.member_types)
-        ? m.member_types.map((t: string) => String(t).toLowerCase().replace(/_/g, '-'))
-        : [];
+  // 1. Strictly in-house staff filter (Case-insensitive & deduplicated)
+  const strictInHouse = useMemo(() => {
+    const seenNames = new Set<string>();
+    return members.filter((member: any) => {
+      if (member.is_active === false || member.active_status === false) return false;
 
-      // Exclude all freelancers, external partners, and printing labs
-      if (
-        rawType === 'freelancer' || rawType === 'partner' || rawType === 'lab' || rawType === 'printing-lab' || rawType === 'external' ||
-        memberTypes.includes('freelancer') || memberTypes.includes('partner') || memberTypes.includes('lab') || memberTypes.includes('printing-lab') || memberTypes.includes('external')
-      ) {
-        return false;
-      }
+      const rawType = String(member.primary_type || '').toLowerCase().trim();
+      const typesList = Array.isArray(member.member_types)
+        ? member.member_types.map((t: string) => String(t).toLowerCase().trim())
+        : [rawType];
 
-      return rawType === 'in-house' || memberTypes.includes('in-house') || (!rawType && memberTypes.length === 0);
+      const isFreelancer = 
+        rawType.includes('freelance') || 
+        typesList.some((t: string) => t.includes('freelance')) ||
+        (member.name || '').toLowerCase().includes(' tp') || 
+        (member.name || '').toLowerCase().includes(' ref');
+
+      if (isFreelancer) return false;
+
+      // Deduplicate duplicates in list
+      const cleanName = (member.name || '').toLowerCase().trim();
+      if (!cleanName || seenNames.has(cleanName)) return false;
+      seenNames.add(cleanName);
+
+      const isInHouse = 
+        rawType === 'in-house' || 
+        rawType === 'in_house' || 
+        typesList.includes('in-house') || 
+        typesList.includes('in_house');
+
+      return isInHouse;
     });
   }, [members]);
+
+  const inHouseStaff = strictInHouse;
 
   // Extract distinct roles for filter dropdown
   const distinctRoles = useMemo(() => {
