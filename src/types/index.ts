@@ -326,6 +326,12 @@ export interface FWTeamMember {
   longitude?: number | null;
   radius_meters?: number | null;
   location_name?: string | null;
+  office_latitude?: number | string | null;
+  office_longitude?: number | string | null;
+  office_address?: string | null;
+  geofence_radius_meters?: number | string | null;
+  geofence_exempt?: boolean | null;
+  weekly_off_days?: string[] | null;
   shift_start?: string | null; // e.g. '10:00:00' or '10:00'
   shift_end?: string | null; // e.g. '19:00:00' or '19:00'
   weekly_offs?: string[] | null; // e.g. ['Sun']
@@ -380,6 +386,12 @@ export interface FWAssignment {
   required_role: string;
   assigned_member_id?: string | null;
   status?: string;
+  agreed_amount?: number | null;
+  advance_amount?: number | null;
+  paid_amount?: number | null;
+  payment_status?: string | null;
+  payment_method?: string | null;
+  payment_date?: string | null;
   notes?: string;
   created_at?: string;
   updated_at?: string;

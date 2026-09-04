@@ -336,10 +336,14 @@ export default function AddTeamMemberModal({
         shift_start: shiftStart || '10:00:00',
         shift_end: shiftEnd || '19:00:00',
         weekly_offs: Array.isArray(weeklyOffs) && weeklyOffs.length > 0 ? weeklyOffs : ['Sun'],
-        daily_rate: parseFloat(dailyRate) || 0,
-        monthly_salary: parseFloat(monthlySalary) || 0,
+        daily_rate: dailyRate && dailyRate.trim() !== '' && !isNaN(parseFloat(dailyRate)) ? parseFloat(dailyRate) : 0,
+        default_daily_rate: dailyRate && dailyRate.trim() !== '' && !isNaN(parseFloat(dailyRate)) ? parseFloat(dailyRate) : 0,
+        monthly_salary: monthlySalary && monthlySalary.trim() !== '' && !isNaN(parseFloat(monthlySalary)) ? parseFloat(monthlySalary) : 0,
         whatsapp_number: whatsappNumber.trim() || phoneNumber.trim()
       };
+
+      const cleanDaily = dailyRate && dailyRate.trim() !== '' && !isNaN(parseFloat(dailyRate)) ? parseFloat(dailyRate) : 0;
+      const cleanMonthly = monthlySalary && monthlySalary.trim() !== '' && !isNaN(parseFloat(monthlySalary)) ? parseFloat(monthlySalary) : 0;
 
       const payload: Record<string, any> = {
         user_id: workspaceId,
@@ -359,8 +363,9 @@ export default function AddTeamMemberModal({
         shift_start: shiftStart || '10:00:00',
         shift_end: shiftEnd || '19:00:00',
         weekly_offs: Array.isArray(weeklyOffs) && weeklyOffs.length > 0 ? weeklyOffs : ['Sun'],
-        daily_rate: parseFloat(dailyRate) || 0,
-        monthly_salary: parseFloat(monthlySalary) || 0,
+        daily_rate: cleanDaily,
+        default_daily_rate: cleanDaily,
+        monthly_salary: cleanMonthly,
         custom_data: customDataObj,
         notes: JSON.stringify(customDataObj),
         is_active: true,

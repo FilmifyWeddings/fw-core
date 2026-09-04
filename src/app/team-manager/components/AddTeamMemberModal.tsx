@@ -29,6 +29,8 @@ interface AddTeamMemberModalProps {
     email?: string;
     avatar_url?: string;
     default_daily_rate?: number;
+    daily_rate?: number;
+    monthly_salary?: number;
     default_currency?: string;
     roles?: string[];
     member_types?: string[];
@@ -101,8 +103,8 @@ export default function AddTeamMemberModal({
   // Load roles directly from Studio Settings (master_crew_roles + localStorage + defaults)
   const loadSettingsRoles = useCallback(async () => {
     try {
-      const effectiveWsId = workspaceId || userId || userEmail;
-      const roles = await fetchWorkspaceCrewRoles(effectiveWsId);
+      const effectiveWsId = (workspaceId || userId || userEmail) as string;
+      const roles = await fetchWorkspaceCrewRoles(effectiveWsId || undefined);
 
       let localRoles = [];
       if (typeof window !== 'undefined') {
@@ -114,46 +116,70 @@ export default function AddTeamMemberModal({
 
       const roleMap = new Map();
 
-      // 1. Seed defaults from MULTI_ROLES_OPTIONS
-      MULTI_ROLES_OPTIONS.forEach(opt => {
-        roleMap.set(opt.id.toLowerCase(), {
-          id: opt.id,
-          name: opt.id,
-          short_code: opt.id.slice(0, 2).toUpperCase()
+      // 1. Settings roles from master_crew_roles
+      if (roles && Array.isArray(roles)) {
+        roles.forEach((r: any) => {
+          if (r?.name) {
+            roleMap.set(r.name.toLowerCase(), {
+              id: r.name,
+              name: r.name,
+              short_code: r.short_code || r.name.slice(0, 2).toUpperCase()
+            });
+          }
         });
+      }
+
+      // 2. Custom roles cached in localStorage
+      if (Array.isArray(localRoles)) {
+        localRoles.forEach((r: any) => {
+          if (r?.name && !roleMap.has(r.name.toLowerCase())) {
+            roleMap.set(r.name.toLowerCase(), {
+              id: r.name,
+              name: r.name,
+              short_code: r.short_code || r.name.slice(0, 2).toUpperCase()
+            });
+          }
+        });
+      }
+
+      // 3. Current active context crewRoles
+      if (crewRoles && Array.isArray(crewRoles)) {
+        crewRoles.forEach((r: any) => {
+          if (r?.name && !roleMap.has(r.name.toLowerCase())) {
+            roleMap.set(r.name.toLowerCase(), {
+              id: r.name,
+              name: r.name,
+              short_code: r.short_code || r.name.slice(0, 2).toUpperCase()
+            });
+          }
+        });
+      }
+
+      // 4. Fallback defaults
+      MULTI_ROLES_OPTIONS.forEach(def => {
+        if (!roleMap.has(def.id.toLowerCase())) {
+          roleMap.set(def.id.toLowerCase(), {
+            id: def.id,
+            name: def.id,
+            short_code: def.id.slice(0, 2).toUpperCase()
+          });
+        }
       });
 
-      // 2. Merge roles from WorkspaceDataContext (instant cache)
-      if (Array.isArray(crewRoles) && crewRoles.length > 0) {
-        crewRoles.forEach(r => {
-          if (r.name) {
-            roleMap.set(r.name.toLowerCase(), {
-              id: r.name,
-              name: r.name,
-              short_code: r.short_code
-            });
-          }
+      // Also merge any existing custom roles passed via initialRole
+      if (initialRole && !roleMap.has(initialRole.toLowerCase())) {
+        roleMap.set(initialRole.toLowerCase(), {
+          id: initialRole,
+          name: initialRole,
+          short_code: initialRole.slice(0, 2).toUpperCase()
         });
       }
 
-      // 3. Merge database roles from master_crew_roles
-      if (Array.isArray(roles) && roles.length > 0) {
-        roles.forEach(r => {
-          if (r.name) {
-            roleMap.set(r.name.toLowerCase(), {
-              id: r.name,
-              name: r.name,
-              short_code: r.short_code
-            });
-          }
-        });
-      }
-
-      // 4. Merge local custom roles
-      if (Array.isArray(localRoles) && localRoles.length > 0) {
-        localRoles.forEach((r) => {
-          const rName = typeof r === 'string' ? r : r.name;
-          if (rName) {
+      // Merge current member's custom roles if any
+      if (memberToEdit?.roles && Array.isArray(memberToEdit.roles)) {
+        memberToEdit.roles.forEach((r: any) => {
+          const rName = typeof r === 'string' ? r : r?.name;
+          if (rName && !roleMap.has(rName.toLowerCase())) {
             roleMap.set(rName.toLowerCase(), {
               id: rName,
               name: rName,
@@ -163,18 +189,6 @@ export default function AddTeamMemberModal({
         });
       }
 
-      // 5. Ensure memberToEdit roles are present
-      if (memberToEdit?.roles && Array.isArray(memberToEdit.roles)) {
-        memberToEdit.roles.forEach((r) => {
-          if (r && !roleMap.has(r.toLowerCase())) {
-            roleMap.set(r.toLowerCase(), {
-              id: r,
-              name: r,
-              short_code: r.slice(0, 2).toUpperCase()
-            });
-          }
-        });
-      }
       if (memberToEdit?.primary_role && !roleMap.has(memberToEdit.primary_role.toLowerCase())) {
         roleMap.set(memberToEdit.primary_role.toLowerCase(), {
           id: memberToEdit.primary_role,
@@ -224,7 +238,7 @@ export default function AddTeamMemberModal({
 
     try {
       // 1. Save directly to master_crew_roles
-      await saveWorkspaceCrewRole(effectiveWsId, cleanName, cleanCode);
+      await saveWorkspaceCrewRole(effectiveWsId || undefined, cleanName, cleanCode);
 
       // 2. Update local state
       setSettingsRoles(prev => {
@@ -511,6 +525,11 @@ export default function AddTeamMemberModal({
         finance_access: financeAccess,
       };
 
+      // If commercial payout is 0 or empty, save explicitly as 0 (no ghost rates)
+      const cleanRate = defaultDailyRate && defaultDailyRate.trim() !== '' && !isNaN(Number(defaultDailyRate))
+        ? Number(defaultDailyRate)
+        : 0;
+
       // 1. Trigger parent onSave for UI state
       await onSave({
         name: name.trim(),
@@ -522,7 +541,9 @@ export default function AddTeamMemberModal({
         phone_number: cleanEnteredPhone,
         email: email.trim() || undefined,
         avatar_url: avatarUrl || undefined,
-        default_daily_rate: defaultDailyRate ? Number(defaultDailyRate) : 0,
+        default_daily_rate: cleanRate,
+        daily_rate: cleanRate,
+        monthly_salary: payoutFrequency === 'monthly' ? cleanRate : 0,
         default_currency: 'INR',
         payout_frequency: payoutFrequency,
         permissions: permissionsObj,
@@ -550,7 +571,9 @@ export default function AddTeamMemberModal({
               member_types: selectedMemberTypes,
               primary_type: selectedMemberTypes[0] || 'IN_HOUSE',
               avatar_url: avatarUrl || null,
-              default_daily_rate: defaultDailyRate ? Number(defaultDailyRate) : 0,
+              default_daily_rate: cleanRate,
+              daily_rate: cleanRate,
+              monthly_salary: payoutFrequency === 'monthly' ? cleanRate : 0,
               default_currency: 'INR',
               payout_frequency: payoutFrequency,
               permissions: permissionsObj,
@@ -560,7 +583,7 @@ export default function AddTeamMemberModal({
       }
 
       if (workspaceId && memberToEdit?.id) {
-        await saveWorkspaceMemberRate(workspaceId, memberToEdit.id, defaultDailyRate ? Number(defaultDailyRate) : 0, 'INR', payoutFrequency).catch(() => {});
+        await saveWorkspaceMemberRate(workspaceId, memberToEdit.id, cleanRate, 'INR', payoutFrequency).catch(() => {});
       }
 
       onClose();

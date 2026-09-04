@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Search, Plus, MoreVertical, CheckCircle2, XCircle, Clock, Timer, 
   Trash2, ShieldCheck, FileText, Image as ImageIcon, 
-  Vote, HelpCircle, PhoneCall, Link2, X, PlusCircle, Check, RefreshCw,
+  Vote, HelpCircle, PhoneCall, Link2, Reply, X, PlusCircle, Check, RefreshCw,
   Edit, Copy, ChevronDown, Users, Bell, Send, MessageSquare, HardDrive, AlertTriangle, Folder,
   UserCheck, Sparkles, Globe, Calendar, Type, CheckSquare, Upload, Video, ExternalLink, Layers
 } from 'lucide-react';
@@ -22,6 +22,13 @@ interface WhatsappTemplatesProps {
   shootType?: string; // 'all' | 'wedding' | 'commercial'
 }
 
+export interface TemplateButton {
+  id: string;
+  type: 'cta_url' | 'quick_reply' | 'cta_call' | 'url' | 'phone';
+  text: string;
+  value: string;
+}
+
 interface TemplateRow {
   id: string;
   name: string;
@@ -32,7 +39,7 @@ interface TemplateRow {
   created_at: string;
   updated_at: string;
   payload: any;
-  buttons: any[];
+  buttons: TemplateButton[];
   meta_approval_required: boolean;
 }
 
@@ -261,7 +268,7 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
   ]);
 
   // Actions / Buttons states
-  const [buttons, setButtons] = useState<Array<{ id: string; type: 'url' | 'phone'; text: string; value: string }>>([]);
+  const [buttons, setButtons] = useState<TemplateButton[]>([]);
   const [metaApprovalRequired, setMetaApprovalRequired] = useState(false);
 
   const [editTemplateId, setEditTemplateId] = useState<string | null>(null);
@@ -281,7 +288,12 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     setPollAllowMultiple(!!payload.allowMultiple || !!payload.multipleAnswers);
     setPollOptions(payload.options || [{ id: '1', text: '' }, { id: '2', text: '' }]);
     
-    setButtons(template.buttons || []);
+    setButtons((template.buttons || []).map((b: any, idx: number) => ({
+      id: b.id || String(Date.now() + idx),
+      type: b.type === 'url' ? 'cta_url' : (b.type === 'phone' || b.type === 'call') ? 'cta_call' : (b.type || 'quick_reply'),
+      text: b.text || b.display_text || '',
+      value: b.value || b.url || b.phone_number || ''
+    })));
     setMetaApprovalRequired(template.meta_approval_required || false);
     setShowBuilder(true);
   };
@@ -301,7 +313,12 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     setPollAllowMultiple(!!payload.allowMultiple || !!payload.multipleAnswers);
     setPollOptions(payload.options || [{ id: '1', text: '' }, { id: '2', text: '' }]);
     
-    setButtons(template.buttons || []);
+    setButtons((template.buttons || []).map((b: any, idx: number) => ({
+      id: b.id || String(Date.now() + idx),
+      type: b.type === 'url' ? 'cta_url' : (b.type === 'phone' || b.type === 'call') ? 'cta_call' : (b.type || 'quick_reply'),
+      text: b.text || b.display_text || '',
+      value: b.value || b.url || b.phone_number || ''
+    })));
     setMetaApprovalRequired(template.meta_approval_required || false);
     setShowBuilder(true);
   };
@@ -844,19 +861,27 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     );
   };
 
-  // Add Button Modifier
-  const handleAddButton = (type: 'url' | 'phone') => {
+  // Add Interactive Button Modifier (Max 3 Allowed by WhatsApp)
+  const handleAddButton = (type: 'cta_url' | 'quick_reply' | 'cta_call') => {
     if (buttons.length >= 3) {
-      alert('Maximum of 3 action links allowed.');
+      alert('Maximum of 3 interactive buttons allowed by WhatsApp.');
       return;
     }
-    const label = type === 'url' ? 'Link URL' : 'Call Number';
+    let defaultLabel = 'Visit Website';
+    let defaultValue = 'https://';
+    if (type === 'quick_reply') {
+      defaultLabel = 'Confirm Booking';
+      defaultValue = 'confirm_booking';
+    } else if (type === 'cta_call') {
+      defaultLabel = 'Call Studio';
+      defaultValue = '+91';
+    }
     
     setButtons(prev => [...prev, {
-      id: String(Date.now()),
+      id: String(Date.now() + Math.random()),
       type,
-      text: label,
-      value: ''
+      text: defaultLabel,
+      value: defaultValue
     }]);
   };
 
@@ -1385,57 +1410,134 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                       )}
                     </div>
 
-                    {/* Action Quick Links */}
-                    <div className="p-4 border border-zinc-200 dark:border-zinc-850 rounded-xl bg-zinc-50/40 dark:bg-zinc-900/20 space-y-3">
-                      <div className="flex items-center justify-between">
+                    {/* Interactive Native Flow Buttons Builder */}
+                    <div className="p-4 border border-zinc-200 dark:border-zinc-800 rounded-2xl bg-zinc-50/50 dark:bg-zinc-900/30 space-y-3.5 shadow-xs">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-200/60 dark:border-zinc-800 pb-2.5">
                         <div>
-                          <h4 className="text-xs font-bold text-zinc-900 dark:text-white">Quick Action Buttons</h4>
-                          <p className="text-[9px] text-zinc-400">Add tap-to-call or URL redirect buttons (max 3)</p>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm">⚡</span>
+                            <h4 className="text-xs font-black text-zinc-900 dark:text-white">Interactive Native Flow Buttons</h4>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200/60">
+                              {buttons.length}/3 Added
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-0.5">
+                            Add clickable URL links, quick reply choices, or direct call buttons (Max 3 supported by WhatsApp)
+                          </p>
                         </div>
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleAddButton('url')}
-                            className="px-2 py-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 text-[10px] font-bold rounded-lg cursor-pointer hover:border-zinc-300"
-                          >
-                            + URL Link
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleAddButton('phone')}
-                            className="px-2 py-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 text-[10px] font-bold rounded-lg cursor-pointer hover:border-zinc-300"
-                          >
-                            + Call Phone
-                          </button>
-                        </div>
+
+                        {/* Add Button Dropdown / Triggers */}
+                        {buttons.length < 3 && (
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => handleAddButton('cta_url')}
+                              className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border border-blue-200/70 dark:border-blue-800 text-[11px] font-bold rounded-xl cursor-pointer transition flex items-center gap-1 shadow-2xs"
+                            >
+                              <Link2 className="w-3 h-3" />
+                              <span>+ URL Link</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleAddButton('quick_reply')}
+                              className="px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 border border-purple-200/70 dark:border-purple-800 text-[11px] font-bold rounded-xl cursor-pointer transition flex items-center gap-1 shadow-2xs"
+                            >
+                              <Reply className="w-3 h-3" />
+                              <span>+ Quick Reply</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleAddButton('cta_call')}
+                              className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-800 text-[11px] font-bold rounded-xl cursor-pointer transition flex items-center gap-1 shadow-2xs"
+                            >
+                              <PhoneCall className="w-3 h-3" />
+                              <span>+ Call Button</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
 
-                      {buttons.map(btn => (
-                        <div key={btn.id} className="flex items-center gap-2 p-2 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-xs">
-                          <span className="text-[9px] font-mono text-zinc-400 font-bold uppercase">{btn.type}</span>
-                          <input
-                            type="text"
-                            value={btn.text}
-                            onChange={e => setButtons(prev => prev.map(b => b.id === btn.id ? { ...b, text: e.target.value } : b))}
-                            placeholder="Button label"
-                            className="flex-1 bg-transparent border-b border-zinc-200 dark:border-zinc-700 px-1 py-0.5 text-xs text-zinc-800 dark:text-zinc-200 focus:outline-none"
-                          />
-                          <input
-                            type="text"
-                            value={btn.value}
-                            onChange={e => setButtons(prev => prev.map(b => b.id === btn.id ? { ...b, value: e.target.value } : b))}
-                            placeholder={btn.type === 'url' ? 'https://...' : '+91...'}
-                            className="flex-1 bg-transparent border-b border-zinc-200 dark:border-zinc-700 px-1 py-0.5 text-xs font-mono text-zinc-800 dark:text-zinc-200 focus:outline-none"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveButton(btn.id)}
-                            className="text-zinc-400 hover:text-rose-500 p-1"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                      {/* Empty state */}
+                      {buttons.length === 0 && (
+                        <div className="p-3.5 rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800 text-center space-y-1">
+                          <p className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
+                            No interactive buttons added yet
+                          </p>
+                          <p className="text-[9.5px] text-zinc-400">
+                            Click above to add up to 3 URL, Quick Reply, or Phone Call buttons
+                          </p>
                         </div>
-                      ))}
+                      )}
+
+                      {/* Buttons List */}
+                      <div className="space-y-2">
+                        {buttons.map((btn, index) => {
+                          const isUrl = btn.type === 'cta_url' || btn.type === 'url';
+                          const isCall = btn.type === 'cta_call' || btn.type === 'phone';
+                          const isQuick = btn.type === 'quick_reply';
+
+                          return (
+                            <div 
+                              key={btn.id} 
+                              className="p-2.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 shadow-2xs space-y-2"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[10px] font-black text-zinc-400 font-mono">#{index + 1}</span>
+                                  {isUrl && (
+                                    <span className="px-2 py-0.5 rounded-md text-[9.5px] font-black uppercase bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300 border border-blue-200 dark:border-blue-800 flex items-center gap-1">
+                                      <Link2 className="w-2.5 h-2.5" /> URL Link
+                                    </span>
+                                  )}
+                                  {isQuick && (
+                                    <span className="px-2 py-0.5 rounded-md text-[9.5px] font-black uppercase bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300 border border-purple-200 dark:border-purple-800 flex items-center gap-1">
+                                      <Reply className="w-2.5 h-2.5" /> Quick Reply
+                                    </span>
+                                  )}
+                                  {isCall && (
+                                    <span className="px-2 py-0.5 rounded-md text-[9.5px] font-black uppercase bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
+                                      <PhoneCall className="w-2.5 h-2.5" /> Call Button
+                                    </span>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveButton(btn.id)}
+                                  className="text-zinc-400 hover:text-rose-500 p-1 transition cursor-pointer"
+                                  title="Remove button"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <div>
+                                  <label className="text-[10px] font-bold text-zinc-500 mb-0.5 block">Button Label *</label>
+                                  <input
+                                    type="text"
+                                    value={btn.text}
+                                    onChange={e => setButtons(prev => prev.map(b => b.id === btn.id ? { ...b, text: e.target.value } : b))}
+                                    placeholder={isUrl ? 'e.g. View Quotation' : isQuick ? 'e.g. Confirm Booking' : 'e.g. Call Studio'}
+                                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-900 dark:text-zinc-100 font-semibold focus:bg-white dark:focus:bg-zinc-900 focus:outline-none focus:border-amber-500"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-[10px] font-bold text-zinc-500 mb-0.5 block">
+                                    {isUrl ? 'Target URL *' : isQuick ? 'Payload / Button ID *' : 'Phone Number (with country code) *'}
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={btn.value}
+                                    onChange={e => setButtons(prev => prev.map(b => b.id === btn.id ? { ...b, value: e.target.value } : b))}
+                                    placeholder={isUrl ? 'https://example.com/quotation' : isQuick ? 'confirm_booking' : '+919876543210'}
+                                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs font-mono text-zinc-900 dark:text-zinc-100 focus:bg-white dark:focus:bg-zinc-900 focus:outline-none focus:border-amber-500"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
 
                   </div>
@@ -1538,15 +1640,25 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
 
                         </div>
 
-                        {/* Quick Action Link Buttons */}
+                        {/* Interactive Native Flow Action Buttons */}
                         {buttons.length > 0 && (
                           <div className="max-w-[90%] self-end w-full space-y-1 mt-1.5">
-                            {buttons.map(b => (
-                              <div key={b.id} className="w-full py-2 bg-[#202C33] text-[#53BDEB] text-xs font-bold text-center rounded-xl border border-white/5 flex items-center justify-center gap-1.5 shadow-sm">
-                                {b.type === 'url' ? <ExternalLink className="w-3 h-3" /> : <PhoneCall className="w-3 h-3" />}
-                                <span>{b.text || 'Action Button'}</span>
-                              </div>
-                            ))}
+                            {buttons.map(b => {
+                              const isUrl = b.type === 'cta_url' || b.type === 'url';
+                              const isCall = b.type === 'cta_call' || b.type === 'phone';
+                              const isQuickReply = b.type === 'quick_reply';
+                              return (
+                                <div 
+                                  key={b.id} 
+                                  className="w-full py-2 px-3 bg-[#202C33] hover:bg-[#2A3942] text-[#53BDEB] text-xs font-bold text-center rounded-xl border border-white/5 flex items-center justify-center gap-1.5 shadow-sm transition-colors cursor-pointer select-none"
+                                >
+                                  {isUrl && <ExternalLink className="w-3.5 h-3.5 shrink-0" />}
+                                  {isCall && <PhoneCall className="w-3.5 h-3.5 shrink-0" />}
+                                  {isQuickReply && <Reply className="w-3.5 h-3.5 shrink-0" />}
+                                  <span className="truncate">{b.text || (isUrl ? 'Visit Website' : isCall ? 'Call Studio' : 'Quick Reply')}</span>
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
 

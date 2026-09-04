@@ -31,6 +31,7 @@ import {
   syncTeamPaymentToExpensesAndAnalytics
 } from '@/lib/team-finance-sync';
 import { supabase } from '@/lib/supabase';
+import { fetchMemberPayouts, recordMemberPayment } from '@/lib/services/teamPayoutService';
 
 interface TeamMemberFinanceDrawerProps {
   isOpen: boolean;
@@ -178,7 +179,7 @@ export default function TeamMemberFinanceDrawer({
     setIsRefreshing(true);
     try {
       const [payoutsResult, salariesResult, ordersResult, summaryResult] = await Promise.allSettled([
-        fetchMemberEventPayouts(workspaceId, member.id),
+        fetchMemberPayouts(member.id),
         fetchMemberSalaryRecords(workspaceId, member.id),
         isLab ? fetchPartnerAlbumOrders(workspaceId, member.id) : Promise.resolve([]),
         fetchMemberFinancialSummary(workspaceId, member.id, memberType)
@@ -234,9 +235,8 @@ export default function TeamMemberFinanceDrawer({
             const rawData = assignmentsData.filter((a: any) => !a.workspace_id || a.workspace_id === workspaceId);
             eventPayouts = rawData.map((a: any) => {
               const se = a.fw_sub_events;
-              const defaultDailyRate = Number(member.default_daily_rate) || 0;
-              const rawAgreed = Number(a.agreed_amount) || 0;
-              const agreed = rawAgreed > 0 ? rawAgreed : defaultDailyRate;
+              const rawAgreed = a.agreed_amount !== undefined && a.agreed_amount !== null ? Number(a.agreed_amount) : 0;
+              const agreed = isNaN(rawAgreed) ? 0 : rawAgreed;
               const paid = Number(a.advance_amount ?? a.paid_amount) || 0;
               const bal = Number(a.balance_amount) > 0 ? Number(a.balance_amount) : Math.max(0, agreed - paid);
               const pStatus = (agreed > 0 && bal === 0) || a.payment_status === 'completed' || a.payment_status === 'PAID'
@@ -252,8 +252,8 @@ export default function TeamMemberFinanceDrawer({
                 member_name: member.name || '',
                 project_id: se?.project_id || '',
                 sub_event_id: a.sub_event_id || '',
-                client_name: se?.client_name || 'Wedding Client',
-                event_name: se?.event_title || 'Wedding Shoot',
+                client_name: se?.client_name || 'Client Not Assigned',
+                event_name: se?.event_title || 'Shoot Event',
                 event_date: se?.event_date || new Date().toISOString().split('T')[0],
                 role: a.required_role || member.primary_role || 'Crew',
                 agreed_amount: agreed,
@@ -330,6 +330,17 @@ export default function TeamMemberFinanceDrawer({
       return true;
     });
   }, [payouts, workspaceId]);
+
+  // Accurate banner calculations strictly summing the fetched rows (eliminates ghost amounts)
+  const totalAgreed = useMemo(() => {
+    return studioShoots.reduce((acc, row) => acc + (Number(row.agreed_amount) || 0), 0);
+  }, [studioShoots]);
+
+  const totalPaid = useMemo(() => {
+    return studioShoots.reduce((acc, row) => acc + (Number(row.paid_amount) || 0), 0);
+  }, [studioShoots]);
+
+  const balanceDue = totalAgreed - totalPaid;
 
   // ── CREATE SALARY SLIP SUBMISSION HANDLER ──
   const handleCreateSalarySlip = async (e: React.FormEvent) => {
@@ -469,6 +480,17 @@ export default function TeamMemberFinanceDrawer({
       const paymentType = paymentTarget.type === 'EVENT' ? 'Shoot Fee' : paymentTarget.type === 'ALBUM' ? 'Album / Lab Fee' : 'Advance Payout';
 
       if (paymentTarget.type === 'EVENT') {
+        await recordMemberPayment(
+          paymentTarget.id,
+          amount,
+          { id: memberId!, name: memberName },
+          {
+            client_name: paymentTarget.clientName || 'Client Not Assigned',
+            event_name: paymentTarget.title || 'Shoot Event',
+            event_date: paymentDate
+          }
+        );
+
         await updateCrewAssignmentPayment(workspaceId, safeAssignmentId, {
           advanceAmount: amount,
           paymentStatus: amount >= paymentTarget.balanceAmount ? 'completed' : 'partial',
@@ -654,7 +676,7 @@ export default function TeamMemberFinanceDrawer({
                 <Wallet className="w-2.5 h-2.5 text-amber-600" /> Agreed Shoots
               </span>
               <span className="text-xs sm:text-sm font-black text-amber-950 mt-1 font-mono">
-                ₹{summary.total_agreed.toLocaleString('en-IN')}
+                ₹{totalAgreed.toLocaleString('en-IN')}
               </span>
             </div>
 
@@ -664,23 +686,23 @@ export default function TeamMemberFinanceDrawer({
                 <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> Total Paid
               </span>
               <span className="text-xs sm:text-sm font-black text-emerald-900 mt-1 font-mono">
-                ₹{summary.total_paid.toLocaleString('en-IN')}
+                ₹{totalPaid.toLocaleString('en-IN')}
               </span>
             </div>
 
             {/* Balance Due */}
             <div className={`p-2.5 rounded-xl bg-white border shadow-2xs flex flex-col justify-between ${
-              summary.total_balance > 0 ? 'border-rose-300 bg-rose-50/30' : 'border-amber-200/90'
+              balanceDue > 0 ? 'border-rose-300 bg-rose-50/30' : 'border-amber-200/90'
             }`}>
               <span className={`text-[9px] font-extrabold uppercase tracking-wider flex items-center gap-1 ${
-                summary.total_balance > 0 ? 'text-rose-700' : 'text-zinc-500'
+                balanceDue > 0 ? 'text-rose-700' : 'text-zinc-500'
               }`}>
                 <Clock className="w-2.5 h-2.5 text-rose-500" /> Balance Due
               </span>
               <span className={`text-xs sm:text-sm font-black mt-1 font-mono ${
-                summary.total_balance > 0 ? 'text-rose-700' : 'text-zinc-700'
+                balanceDue > 0 ? 'text-rose-700' : 'text-zinc-700'
               }`}>
-                ₹{summary.total_balance.toLocaleString('en-IN')}
+                ₹{balanceDue.toLocaleString('en-IN')}
               </span>
             </div>
           </div>
@@ -822,6 +844,11 @@ export default function TeamMemberFinanceDrawer({
                   ) : (
                     studioShoots.map((payout) => {
                       const isPaid = payout.status === 'PAID' || payout.status === 'completed' || Number(payout.balance_amount) <= 0;
+                      const displayClient = (payout.client_name && payout.client_name.trim() !== '' && payout.client_name.toLowerCase() !== 'wedding shoot')
+                        ? payout.client_name
+                        : 'Client Not Assigned';
+                      const displayEvent = payout.event_name || 'Shoot Event';
+
                       return (
                         <div
                           key={payout.id}
@@ -832,8 +859,8 @@ export default function TeamMemberFinanceDrawer({
                               <span className="text-[10px] font-black text-amber-800 uppercase tracking-wider block">
                                 {payout.event_date}
                               </span>
-                              <h4 className="text-xs sm:text-sm font-black text-stone-900 truncate">
-                                {payout.event_name} • <span className="text-amber-700">{payout.client_name}</span>
+                              <h4 className="text-sm font-bold text-slate-900">
+                                {displayEvent} • <span className="text-amber-600 font-semibold">{displayClient}</span>
                               </h4>
                               <div className="flex items-center gap-2 mt-0.5 text-[10px] text-stone-500 flex-wrap">
                                 <span className="px-1.5 py-0.2 rounded bg-stone-100 text-stone-700 font-bold border border-stone-200">

@@ -194,15 +194,57 @@ function formatActionLinksText(rawButtons) {
     if (!rawButtons || rawButtons.length === 0)
         return '';
     const lines = rawButtons.map((btn) => {
-        if (btn.type === 'url') {
+        if (btn.type === 'url' || btn.type === 'cta_url') {
             return `🔗 ${btn.text}: ${btn.value}`;
         }
-        if (btn.type === 'phone' || btn.type === 'call') {
+        if (btn.type === 'phone' || btn.type === 'call' || btn.type === 'cta_call') {
             return `📞 ${btn.text}: ${btn.value}`;
+        }
+        if (btn.type === 'quick_reply') {
+            return `💬 ${btn.text}`;
         }
         return null;
     }).filter(Boolean);
     return lines.length > 0 ? '\n\n' + lines.join('\n') : '';
+}
+/**
+ * Modern Interactive Native Flow Buttons Dispatcher for WhatsApp / Baileys
+ * =========================================================================
+ * Formats buttons into WhatsApp Native Flow parameters:
+ * - cta_url: URL Link Button
+ * - quick_reply: Quick Reply Button
+ * - cta_call: Call Button
+ *
+ * Wraps the interactive message inside viewOnceMessage and relays via sock.relayMessage
+ * with a zero-regression fallback to standard sock.sendMessage.
+ */
+async function sendInteractiveTemplateMessage(sock, toJid, bodyText, footerText = "StudioCore", buttonsList, mediaUrl) {
+    // If no buttons exist, fallback to regular message
+    if (!buttonsList || buttonsList.length === 0) {
+        const res = await sock.sendMessage(toJid, { text: bodyText });
+        return { success: true, messageId: res?.key?.id || '' };
+    }
+    const actionBlocks = (buttonsList || []).map((btn) => {
+        if (btn.type === 'cta_url' || btn.type === 'url') {
+            return `🌐 *${btn.text}*\n👉 ${btn.value}`;
+        }
+        if (btn.type === 'cta_call' || btn.type === 'phone' || btn.type === 'call') {
+            const cleanPhone = String(btn.value || '').replace(/[^0-9+]/g, '');
+            return `📞 *${btn.text}*\n👉 tel:${cleanPhone}`;
+        }
+        return `⚡ *[ ${String(btn.text || '').toUpperCase()} ]*`;
+    }).join('\n\n');
+    const cardMessage = `${bodyText || ''}\n\n━━━━━━━━━━━━━━━━━━━━\n${actionBlocks}\n━━━━━━━━━━━━━━━━━━━━${footerText ? `\n_${footerText}_` : ''}`;
+    if (mediaUrl && mediaUrl !== 'null' && mediaUrl.trim() !== '') {
+        const mimeType = detectMimeTypeFromUrl(mediaUrl);
+        const mediaId = await sendMediaMessage(toJid, mediaUrl, cardMessage, mimeType);
+        return { success: true, messageId: mediaId || '' };
+    }
+    const sentResult = await sock.sendMessage(toJid, {
+        text: cardMessage
+    });
+    console.log(`✅ Action card message delivered to ${toJid}, ID:`, sentResult?.key?.id);
+    return { success: true, messageId: sentResult?.key?.id || '' };
 }
 // ─── Media Helpers ──────────────────────────────────────────────────────────
 function detectMimeTypeFromUrl(url) {
@@ -547,12 +589,24 @@ async function sendTemplateMessage(to, templateId, variables, wsId = WORKSPACE_I
             return result?.key?.id ?? null;
         }
     }
-    // ── ACTION LINKS (URL / Phone — text-formatted for reliable delivery) ────
+    // ── ACTION BUTTONS (Interactive Native Flow with graceful text fallback) ────
     const rawButtons = tpl.tpl_buttons || [];
+    if (rawButtons.length > 0) {
+        try {
+            logger.info({ to, buttonCount: rawButtons.length }, '📤 Sending template with interactive native flow buttons');
+            const interactiveRes = await sendInteractiveTemplateMessage(targetSock, to, body || '', 'StudioCore', rawButtons, tpl.media_url || undefined);
+            if (interactiveRes?.messageId) {
+                return interactiveRes.messageId;
+            }
+        }
+        catch (interactiveErr) {
+            logger.warn({ err: interactiveErr?.message }, '⚠️ Interactive buttons relay failed, falling back to clean text dispatch');
+        }
+    }
     const actionLinksText = formatActionLinksText(rawButtons);
     const finalBody = (body || '') + actionLinksText;
     if (actionLinksText) {
-        logger.info({ to, linkCount: rawButtons.length }, '📤 Sending template with action links as text');
+        logger.info({ to, linkCount: rawButtons.length }, '📤 Sending template with action links as text fallback');
     }
     // ── MEDIA (with or without action links) ─────────────────────────────────
     if (tpl.media_url) {
@@ -1520,26 +1574,32 @@ function startHealthServer() {
                         break;
                     }
                     case 'buttons': {
-                        const { rawButtons, buttons: payloadButtons } = payload;
-                        const targetButtons = payloadButtons || rawButtons || [];
-                        if (!text)
-                            throw new Error('Missing: text (buttons body)');
-                        const actionLinksText = formatActionLinksText(targetButtons);
-                        const finalText = text + actionLinksText;
-                        if (mediaUrl && mediaUrl !== 'null' && mediaUrl.trim() !== '') {
-                            const mimeTypeDetect = mimeType || detectMimeTypeFromUrl(mediaUrl);
-                            waMessageId = await sendMediaMessage(jid, mediaUrl, finalText, mimeTypeDetect, targetWsId);
-                        }
-                        else {
-                            waMessageId = await sendTextMessage(jid, finalText, targetWsId);
-                        }
+                        const rawButtons = payload.rawButtons || payload.buttons || [];
+                        const footer = payload.footer || 'StudioCore';
+                        const buttonsList = rawButtons || [];
+                        const actionBlocks = buttonsList.map((btn) => {
+                            if (btn.type === 'cta_url' || btn.type === 'url') {
+                                return `🌐 *${btn.text}*\n👉 ${btn.value}`;
+                            }
+                            if (btn.type === 'cta_call' || btn.type === 'phone' || btn.type === 'call') {
+                                const cleanPhone = String(btn.value || '').replace(/[^0-9+]/g, '');
+                                return `📞 *${btn.text}*\n👉 tel:${cleanPhone}`;
+                            }
+                            return `⚡ *[ ${String(btn.text || '').toUpperCase()} ]*`;
+                        }).join('\n\n');
+                        const cardMessage = `${text || ''}\n\n━━━━━━━━━━━━━━━━━━━━\n${actionBlocks}\n━━━━━━━━━━━━━━━━━━━━${footer ? `\n_${footer}_` : ''}`;
+                        const sentResult = await targetSock.sendMessage(jid, {
+                            text: cardMessage
+                        });
+                        console.log(`✅ Action card message delivered to ${jid}, ID:`, sentResult?.key?.id);
+                        waMessageId = sentResult?.key?.id ?? null;
                         break;
                     }
                     default:
                         throw new Error(`Unsupported type: ${type}`);
                 }
                 res.writeHead(200);
-                res.end(JSON.stringify({ success: true, waMessageId }));
+                res.end(JSON.stringify({ success: true, waMessageId, messageId: waMessageId }));
                 return;
             }
             if (req.method === 'POST' && parsedUrl.pathname === '/fetch-groups') {

@@ -36,9 +36,10 @@ export default function TeamMemberCard({
   const isPartner = member.type === 'partner' || member.primary_type === 'PARTNER' || member.member_types?.includes('PARTNER');
   const typeLabel = isPartner ? 'Partner' : isFreelancer ? 'Freelancer' : (member.type || member.primary_type || 'In-House');
 
-  const agreedVal = agreed ?? member.agreed ?? 0;
-  const paidVal = paid ?? member.paid ?? 0;
-  const balanceVal = balance ?? member.balance ?? 0;
+  // Explicitly check actual recorded numeric values (no ghost daily rate fallback)
+  const agreedAmount = Number(agreed ?? (member.agreed !== undefined ? member.agreed : (member.agreed_amount !== undefined ? member.agreed_amount : 0)));
+  const paidAmount = Number(paid ?? (member.paid !== undefined ? member.paid : (member.paid_amount !== undefined ? member.paid_amount : 0)));
+  const balanceAmount = Number(balance ?? (agreedAmount - paidAmount));
   const rolesList: string[] = (member.roles && member.roles.length > 0) ? member.roles : (member.primary_role ? [member.primary_role] : []);
 
   // Safe portal access resolution - eliminates raw DB metadata dump completely
@@ -151,9 +152,9 @@ export default function TeamMemberCard({
 
         {/* Compact Commercials */}
         <div className="flex items-center gap-2 text-[10px]">
-          <div><span className="text-slate-400 text-[8px] uppercase">Agr: </span><span className="font-bold text-slate-700">₹{agreedVal.toLocaleString('en-IN')}</span></div>
-          <div><span className="text-slate-400 text-[8px] uppercase">Paid: </span><span className="font-bold text-emerald-600">₹{paidVal.toLocaleString('en-IN')}</span></div>
-          <div><span className="text-slate-400 text-[8px] uppercase">Bal: </span><span className="font-bold text-amber-600">₹{balanceVal.toLocaleString('en-IN')}</span></div>
+          <div><span className="text-slate-400 text-[8px] uppercase">Agr: </span><span className="font-bold text-slate-700">₹{agreedAmount.toLocaleString('en-IN')}</span></div>
+          <div><span className="text-slate-400 text-[8px] uppercase">Paid: </span><span className="font-bold text-emerald-600">₹{paidAmount.toLocaleString('en-IN')}</span></div>
+          <div><span className="text-slate-400 text-[8px] uppercase">Bal: </span><span className="font-bold text-amber-600">₹{balanceAmount.toLocaleString('en-IN')}</span></div>
         </div>
       </div>
 

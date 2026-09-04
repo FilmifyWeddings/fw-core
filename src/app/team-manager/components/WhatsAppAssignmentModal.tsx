@@ -65,7 +65,7 @@ export default function WhatsAppAssignmentModal({
         const inMemoryAssign = (subEvent?.fw_assignments || []).find(
           (a: any) => a.required_role?.toLowerCase() === role?.toLowerCase()
         );
-        if (inMemoryAssign && Number(inMemoryAssign.agreed_amount) > 0) {
+        if (inMemoryAssign && inMemoryAssign.agreed_amount !== undefined && inMemoryAssign.agreed_amount !== null) {
           existingAgreed = Number(inMemoryAssign.agreed_amount);
           existingAdvance = Number(inMemoryAssign.advance_amount ?? inMemoryAssign.paid_amount) || 0;
           existingStatus = (inMemoryAssign.payment_status as any) || 'pending';
@@ -81,7 +81,7 @@ export default function WhatsAppAssignmentModal({
               .eq('required_role', role)
               .maybeSingle();
 
-            if (assignRow && Number(assignRow.agreed_amount) > 0) {
+            if (assignRow && assignRow.agreed_amount !== undefined && assignRow.agreed_amount !== null) {
               existingAgreed = Number(assignRow.agreed_amount);
               existingAdvance = Number(assignRow.advance_amount) || 0;
               existingStatus = (assignRow.payment_status as any) || 'pending';
@@ -108,11 +108,11 @@ export default function WhatsAppAssignmentModal({
             existingAgreed = 0;
           } else {
             let rate = member.default_daily_rate ?? member.daily_rate;
-            if ((rate == null || rate === 0) && effectiveWsId) {
+            if (rate == null && effectiveWsId) {
               const wsRate = await fetchWorkspaceMemberRate(effectiveWsId, member.id);
-              if (wsRate != null && wsRate > 0) rate = wsRate;
+              if (wsRate != null) rate = wsRate;
             }
-            existingAgreed = rate != null ? rate : 0;
+            existingAgreed = (rate != null && rate !== undefined) ? rate : 0;
           }
         }
 
