@@ -101,11 +101,11 @@ export default function GeofenceMapPicker({
           delete (mapContainerRef.current as any)._leaflet_id;
         }
 
-        const initialLat = Number(latitude) || 19.0596;
-        const initialLng = Number(longitude) || 72.8295;
+        const targetLat = Number(latitude) || 19.0596;
+        const targetLng = Number(longitude) || 72.8295;
 
         const map = L.map(mapContainerRef.current, {
-          center: [initialLat, initialLng],
+          center: [targetLat, targetLng],
           zoom: 16,
           zoomControl: true,
           attributionControl: false
@@ -131,27 +131,27 @@ export default function GeofenceMapPicker({
           className: 'custom-geofence-pin',
           html: `
             <div style="position: relative; display: flex; align-items: center; justify-content: center; width: 40px; height: 40px;">
-              <div style="position: absolute; width: 36px; height: 36px; border-radius: 50%; background: rgba(200, 148, 53, 0.4); animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
-              <div style="width: 32px; height: 32px; border-radius: 50%; background: #C89435; border: 3px solid #FFFFFF; box-shadow: 0 4px 14px rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; color: white; font-size: 16px;">📍</div>
+              <div style="position: absolute; width: 36px; height: 36px; border-radius: 50%; background: rgba(245, 158, 11, 0.4); animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
+              <div style="width: 32px; height: 32px; border-radius: 50%; background: #f59e0b; border: 3px solid #FFFFFF; box-shadow: 0 4px 14px rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; color: white; font-size: 16px;">📍</div>
             </div>
           `,
           iconSize: [40, 40],
           iconAnchor: [20, 20]
         });
 
-        const marker = L.marker([initialLat, initialLng], {
+        const marker = L.marker([targetLat, targetLng], {
           icon: goldIcon,
           draggable: isEditable
         }).addTo(map);
         leafletMarkerRef.current = marker;
 
         // Radial Geofence Circle
-        const circle = L.circle([initialLat, initialLng], {
-          radius: Number(radiusMeters) || 150,
-          color: '#C89435',
+        const circle = L.circle([targetLat, targetLng], {
+          radius: Number(radiusMeters) || 50,
+          color: '#f59e0b',
           weight: 2.5,
-          fillColor: '#C89435',
-          fillOpacity: 0.22
+          fillColor: '#f59e0b',
+          fillOpacity: 0.25
         }).addTo(map);
         leafletCircleRef.current = circle;
 
@@ -300,23 +300,26 @@ export default function GeofenceMapPicker({
   // Update Circle Radius when slider changes
   useEffect(() => {
     if (leafletCircleRef.current) {
-      leafletCircleRef.current.setRadius(Number(radiusMeters) || 150);
+      leafletCircleRef.current.setRadius(Number(radiusMeters) || 50);
     }
   }, [radiusMeters]);
 
-  // Update Coordinates when props change externally
+  // Controller effect: Instantly center map and circle onto saved employee coordinate
   useEffect(() => {
-    if (latitude && longitude) {
-      if (leafletMarkerRef.current) leafletMarkerRef.current.setLatLng([latitude, longitude]);
-      if (leafletCircleRef.current) leafletCircleRef.current.setLatLng([latitude, longitude]);
+    const latNum = Number(latitude);
+    const lngNum = Number(longitude);
+    if (latNum && lngNum && !isNaN(latNum) && !isNaN(lngNum)) {
+      if (leafletMarkerRef.current) leafletMarkerRef.current.setLatLng([latNum, lngNum]);
+      if (leafletCircleRef.current) leafletCircleRef.current.setLatLng([latNum, lngNum]);
       if (leafletMapRef.current) {
-        leafletMapRef.current.setView([latitude, longitude], 16);
+        leafletMapRef.current.setView([latNum, lngNum], 16, { animate: false });
+        leafletMapRef.current.invalidateSize();
       }
     }
     if (locationName) {
       setSearchQuery(locationName);
     }
-  }, [latitude, longitude, locationName]);
+  }, [latitude, longitude, locationName, mapLoaded]);
 
   return (
     <div className={`relative rounded-2xl overflow-hidden border border-[#EAE5DA] shadow-xs bg-[#1A1816] ${className}`}>
@@ -410,26 +413,28 @@ export default function GeofenceMapPicker({
             <Compass className="w-4 h-4 text-amber-600" />
             <span>Geofence Radius:</span>
             <span className="font-mono text-amber-900 font-black bg-amber-100 px-2 py-0.5 rounded-md border border-amber-200">
-              {radiusMeters || 150}m
+              {radiusMeters || 50}m
             </span>
           </div>
 
           <div className="flex-1 max-w-md flex items-center gap-3">
             <input
               type="range"
-              min={30}
-              max={600}
-              step={10}
-              value={radiusMeters || 150}
+              min={10}
+              max={500}
+              step={5}
+              value={radiusMeters || 50}
               onChange={(e) => onRadiusChange && onRadiusChange(Number(e.target.value))}
               className="w-full accent-amber-600 cursor-pointer"
             />
             <div className="flex gap-1 text-[10px] font-bold text-slate-400 whitespace-nowrap">
+              <span>10m</span>
+              <span>•</span>
               <span>50m</span>
               <span>•</span>
-              <span>150m</span>
+              <span>100m</span>
               <span>•</span>
-              <span>300m</span>
+              <span>250m</span>
               <span>•</span>
               <span>500m</span>
             </div>

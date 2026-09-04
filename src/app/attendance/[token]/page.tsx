@@ -10,7 +10,7 @@ import {
   Compass, ArrowUpRight, TrendingUp, Navigation, Pause, Play, Sun
 } from 'lucide-react';
 import type { AttendanceRecord, AttendanceBreak, AttendanceLocation } from '@/types';
-import { validateCoordinatesAgainstGeofences, GeofenceValidationResult, calculateHaversineDistanceMeters } from '@/lib/attendance/geo-fence';
+import { validateCoordinatesAgainstGeofences, GeofenceValidationResult, calculateDistance, calculateHaversineDistanceMeters } from '@/lib/attendance/geo-fence';
 import { captureAndCompressVideoFrame } from '@/lib/attendance/image-compression';
 import { saveOfflinePunch, getOfflinePunches, removeOfflinePunch } from '@/lib/attendance/offline-store';
 import { analyzeAttendanceRecordTiming, formatMinutesToHumanReadable } from '@/lib/attendance/time-calculations';
@@ -43,6 +43,13 @@ export default function PersonalAttendancePage() {
   const [currentAllowedRadius, setCurrentAllowedRadius] = useState<number>(150);
   const [lastExitTime, setLastExitTime] = useState<string | null>(null);
 
+  // Formatted distance display: >= 1000m shows "X.X km", else "X m"
+  const formattedDistance = useMemo(() => {
+    return currentDistanceMeters >= 1000 
+      ? `${(currentDistanceMeters / 1000).toFixed(1)} km` 
+      : `${currentDistanceMeters} m`;
+  }, [currentDistanceMeters]);
+
   // Verification modal state
   const [showVerifyModal, setShowVerifyModal] = useState<'check_in' | 'check_out' | null>(null);
   const [cameraActive, setCameraActive] = useState(false);
@@ -67,11 +74,14 @@ export default function PersonalAttendancePage() {
     const custom = (member.custom_data as any) || {};
 
     return Boolean(
+      member.geofence_exempt === true ||
       member.is_geofence_exempt === true ||
       member.geofence_required === false ||
+      custom.geofence_exempt === true ||
       custom.is_geofence_exempt === true ||
       custom.allow_anywhere === true ||
       custom.geofence_required === false ||
+      parsedNotes.geofence_exempt === true ||
       parsedNotes.is_geofence_exempt === true ||
       parsedNotes.allow_anywhere === true ||
       parsedNotes.geofence_required === false
@@ -376,7 +386,10 @@ export default function PersonalAttendancePage() {
 
     // Strict client-side Geofence blocker (only for non-exempt staff)
     if (!isGeofenceExempt && geofenceResult && !geofenceResult.isWithinGeofence) {
-      setErrorMessage(`Outside Geofence (${geofenceResult.distanceMeters}m away). Check-in allowed only inside studio/venue perimeter (${geofenceResult.allowedRadiusMeters}m).`);
+      const formattedDist = geofenceResult.distanceMeters >= 1000 
+        ? `${(geofenceResult.distanceMeters / 1000).toFixed(1)} km` 
+        : `${geofenceResult.distanceMeters} m`;
+      setErrorMessage(`Outside Geofence (${formattedDist} away). Check-in allowed only inside studio/venue perimeter (${geofenceResult.allowedRadiusMeters}m).`);
       return;
     }
 
@@ -494,15 +507,16 @@ export default function PersonalAttendancePage() {
     }
   };
 
-  // Calculate live working duration in IST (Respecting real-time pauses)
+  // Calculate live working duration in IST (Continuous timer until explicit Punch Out)
   const getLiveDurationString = () => {
     if (!todayRecord || !todayRecord.check_in_time) return '0h 00m';
     const startMs = new Date(todayRecord.check_in_time).getTime();
     const endMs = todayRecord.check_out_time ? new Date(todayRecord.check_out_time).getTime() : currentTime.getTime();
-    const diffMin = Math.max(0, Math.floor((endMs - startMs) / 60000) - (todayRecord.break_duration_minutes || 0));
-    const hrs = Math.floor(diffMin / 60);
-    const mins = diffMin % 60;
-    return `${hrs}h ${mins < 10 ? '0' : ''}${mins}m`;
+    const diffSec = Math.max(0, Math.floor((endMs - startMs) / 1000));
+    const hrs = Math.floor(diffSec / 3600);
+    const mins = Math.floor((diffSec % 3600) / 60);
+    const secs = diffSec % 60;
+    return `${hrs}h ${mins < 10 ? '0' : ''}${mins}m ${secs < 10 ? '0' : ''}${secs}s`;
   };
 
   // Today's Real-time Shift Timing & Late/Early Arrival Analyzer
@@ -714,40 +728,20 @@ export default function PersonalAttendancePage() {
           </div>
         )}
 
-        {/* Real-Time Out-of-Radius Auto-Pause Alert Banner */}
+        {/* Real-Time Continuous Live Working Status Banner */}
         {isCheckedIn && !isCheckedOut && (
-          <div className={`mt-2.5 p-2.5 rounded-[12px] text-xs flex items-center justify-between border transition-all ${
-            isGeofenceExempt || isInsideGeofence 
-              ? 'bg-[#E8F5E9] text-[#2E7D32] border-[#C8E6C9]'
-              : 'bg-[#FFEBEE] text-[#C62828] border-[#FFCDD2] shadow-sm animate-pulse'
-          }`}>
+          <div className="mt-2.5 p-2.5 rounded-[12px] text-xs flex items-center justify-between border transition-all bg-[#E8F5E9] text-[#2E7D32] border-[#C8E6C9]">
             <div className="flex items-center gap-2">
-              {isGeofenceExempt ? (
-                <>
-                  <span className="w-2.5 h-2.5 rounded-full bg-[#2E7D32] animate-ping" />
-                  <span className="font-bold">🟢 Remote Active</span>
-                  <span className="text-[10.5px] opacity-80">(Anywhere Punch Authorized)</span>
-                </>
-              ) : isInsideGeofence ? (
-                <>
-                  <span className="w-2.5 h-2.5 rounded-full bg-[#2E7D32] animate-ping" />
-                  <span className="font-bold">🟢 Active in Zone</span>
-                  <span className="text-[10.5px] opacity-80">({currentDistanceMeters}m from studio)</span>
-                </>
-              ) : (
-                <>
-                  <Pause className="w-4 h-4 text-[#C62828] flex-shrink-0" />
-                  <div>
-                    <span className="font-black block">⚠️ Timer Paused</span>
-                    <span className="text-[10px] opacity-90">
-                      You are {currentDistanceMeters}m outside allowed radius ({currentAllowedRadius}m). Return to zone to resume.
-                    </span>
-                  </div>
-                </>
-              )}
+              <span className="w-2.5 h-2.5 rounded-full bg-[#2E7D32] animate-ping shrink-0" />
+              <div>
+                <span className="font-bold">🟢 Live Duty Active</span>
+                <span className="text-[10.5px] opacity-80 ml-1.5 font-medium">
+                  {isGeofenceExempt ? '(Remote Authorized)' : isInsideGeofence ? `(${formattedDistance} from studio)` : '(Field/Outdoor Duty)'}
+                </span>
+              </div>
             </div>
-            <span className="text-[10.5px] font-mono font-bold whitespace-nowrap pl-2">
-              {isGeofenceExempt ? 'Remote GPS' : todayRecord?.break_duration_minutes ? `Paused: ${todayRecord.break_duration_minutes}m` : 'Live GPS'}
+            <span className="text-[10.5px] font-mono font-black whitespace-nowrap pl-2 text-emerald-800">
+              {getLiveDurationString()}
             </span>
           </div>
         )}
@@ -1157,7 +1151,7 @@ export default function PersonalAttendancePage() {
                     <div className="mt-1 text-[11px] font-bold text-[#81C784] bg-emerald-950/40 border border-emerald-500/30 px-2.5 py-1 rounded-lg flex items-center justify-between">
                       <span>✓ Remote Authorized (Punch Allowed)</span>
                       {currentDistanceMeters > 0 && (
-                        <span className="text-[10px] font-normal opacity-80">({currentDistanceMeters}m from base)</span>
+                        <span className="text-[10px] font-normal opacity-80">({formattedDistance} from base)</span>
                       )}
                     </div>
                   ) : geofenceResult ? (
@@ -1202,7 +1196,7 @@ export default function PersonalAttendancePage() {
               ) : isPunchBlockedByGeofence ? (
                 <>
                   <AlertTriangle className="w-4 h-4" />
-                  <span>Outside Geofence Zone ({currentDistanceMeters}m)</span>
+                  <span>Outside Geofence Zone ({formattedDistance})</span>
                 </>
               ) : (
                 <>

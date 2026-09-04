@@ -261,6 +261,23 @@ export async function POST(request: NextRequest) {
       checkoutMsg = `Clocked out at ${formattedIstTime} IST (+${otStr} Overtime | Worked: ${workHoursFormatted})`;
     }
 
+    // Sync to attendance_logs table
+    try {
+      await supabaseAdmin
+        .from('attendance_logs')
+        .update({
+          punch_out_time: nowTime.toISOString(),
+          punch_out_lat: lat ? Number(lat) : null,
+          punch_out_lng: lng ? Number(lng) : null,
+          total_work_minutes: netWorkMinutes,
+          status: 'COMPLETED'
+        })
+        .eq('member_id', String(link.member_id))
+        .eq('date', todayDate);
+    } catch (logErr) {
+      console.warn('attendance_logs punch-out sync notice:', logErr);
+    }
+
     return NextResponse.json({
       success: true,
       record: updatedRecord,

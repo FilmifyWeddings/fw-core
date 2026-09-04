@@ -9,7 +9,7 @@ import {
   Sparkles, Link2, Copy, Check, ShieldCheck, FileText, ChevronRight, 
   ChevronDown, Edit3, Trash2, X, ExternalLink, ArrowRight, UserCheck,
   Send, MessageCircle, Printer, Sliders, Globe, Camera, Award, Eye,
-  UserPlus, Compass, Star
+  UserPlus, Compass, Star, PlusCircle
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import type { 
@@ -19,7 +19,10 @@ import type {
 import dynamic from 'next/dynamic';
 import AttendanceErrorBoundary from '@/components/attendance/AttendanceErrorBoundary';
 import { analyzeAttendanceRecordTiming, formatMinutesToHumanReadable } from '@/lib/attendance/time-calculations';
-import MemberKundaliModal from '@/components/attendance/MemberKundaliModal';
+import StaffDetailsModal from './components/StaffDetailsModal';
+import StaffAttendanceRoster from './components/StaffAttendanceRoster';
+import MonthlyMatrixPayroll from './components/MonthlyMatrixPayroll';
+import EditStaffAttendanceModal from './components/EditStaffAttendanceModal';
 import AddTeamMemberModal from '@/components/attendance/AddTeamMemberModal';
 import CompanyHolidayModal from '@/components/attendance/CompanyHolidayModal';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
@@ -30,9 +33,23 @@ const GeofenceMapPicker = dynamic(
 );
 
 export default function AttendancePage() {
-  const [activeTab, setActiveTab] = useState<'roster' | 'live' | 'matrix' | 'leaves' | 'locations' | 'shifts' | 'links'>('roster');
+  const [activeTab, setActiveTab] = useState<'roster' | 'live' | 'matrix' | 'leaves'>('roster');
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+
+  // Punch Alert Toast state (5-second auto dismiss)
+  const [punchAlert, setPunchAlert] = useState<{
+    message: string;
+    type: 'success' | 'warning' | 'info';
+  } | null>(null);
+
+  useEffect(() => {
+    if (!punchAlert) return;
+    const timer = setTimeout(() => {
+      setPunchAlert(null);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [punchAlert]);
 
   // Data states
   const [teamMembers, setTeamMembers] = useState<FWTeamMember[]>([]);
@@ -94,54 +111,10 @@ export default function AttendancePage() {
   const [overrideCheckIn, setOverrideCheckIn] = useState('09:30');
   const [overrideCheckOut, setOverrideCheckOut] = useState('18:30');
 
-  // 📅 Monthly Timesheet Matrix & Payroll State
-  const [selectedMatrixMonth, setSelectedMatrixMonth] = useState(() => {
-    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date());
-  });
-  const [matrixMonthlyRecords, setMatrixMonthlyRecords] = useState<AttendanceRecord[]>([]);
-  const [loadingMatrixRecords, setLoadingMatrixRecords] = useState(false);
-
   // Load Data
   useEffect(() => {
     fetchAttendanceData();
   }, [selectedDate]);
-
-  // Load Monthly Records for Payroll Matrix when month or tab changes
-  useEffect(() => {
-    if (activeTab === 'matrix') {
-      const fetchMonthlyMatrix = async () => {
-        setLoadingMatrixRecords(true);
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          const workspaceId = session?.user?.id || 'ws_demo';
-
-          const startOfMonth = `${selectedMatrixMonth}-01`;
-          const endOfMonth = `${selectedMatrixMonth}-31`;
-
-          let q = supabase
-            .from('attendance_records')
-            .select('*, member:fw_team_members(*)')
-            .gte('date', startOfMonth)
-            .lte('date', endOfMonth);
-
-          if (workspaceId !== 'ws_demo') {
-            q = q.eq('user_id', workspaceId);
-          }
-
-          const { data, error } = await q;
-          if (!error && data) {
-            setMatrixMonthlyRecords(data);
-          }
-        } catch (err) {
-          console.error('Error fetching monthly matrix records:', err);
-        } finally {
-          setLoadingMatrixRecords(false);
-        }
-      };
-
-      fetchMonthlyMatrix();
-    }
-  }, [activeTab, selectedMatrixMonth]);
 
   // Helper to match any attendance record / link to a member by ID, alias ID, name, or email
   const isRecordForMember = useCallback((rec: any, mem: FWTeamMember | null | undefined) => {
@@ -219,7 +192,7 @@ export default function AttendancePage() {
 
       setTeamMembers(uniqueMembers);
 
-      // 2. Fetch Attendance Records for selected date
+      // 2. Fetch Attendance Records & attendance_logs for selected date
       let recQuery = supabase
         .from('attendance_records')
         .select('*, member:fw_team_members(*)')
@@ -230,7 +203,74 @@ export default function AttendancePage() {
       }
 
       const { data: recordsData } = await recQuery;
-      setRecords(recordsData || []);
+
+      // Also query attendance_logs for selectedDate
+      let logsQuery = supabase
+        .from('attendance_logs')
+        .select('*')
+        .eq('date', selectedDate);
+
+      const { data: logsData } = await logsQuery;
+
+      const mergedMap = new Map<string, any>();
+      (recordsData || []).forEach((r: any) => {
+        mergedMap.set(String(r.member_id), { ...r });
+      });
+
+      (logsData || []).forEach((log: any) => {
+        const memId = String(log.member_id);
+        const existing = mergedMap.get(memId);
+        if (existing) {
+          existing.log_id = log.id;
+          if (log.punch_in_time) {
+            existing.punch_in_time = log.punch_in_time;
+            if (!existing.check_in_time) existing.check_in_time = log.punch_in_time;
+          }
+          if (log.punch_out_time) {
+            existing.punch_out_time = log.punch_out_time;
+            if (!existing.check_out_time) existing.check_out_time = log.punch_out_time;
+          }
+          if (log.total_work_minutes !== undefined && log.total_work_minutes !== null) {
+            existing.total_work_minutes = log.total_work_minutes;
+            if (!existing.work_duration_minutes) existing.work_duration_minutes = log.total_work_minutes;
+          }
+          if (log.punch_in_lat) existing.punch_in_lat = log.punch_in_lat;
+          if (log.punch_in_lng) existing.punch_in_lng = log.punch_in_lng;
+          if (log.punch_out_lat) existing.punch_out_lat = log.punch_out_lat;
+          if (log.punch_out_lng) existing.punch_out_lng = log.punch_out_lng;
+          if (log.is_geofence_exempt !== undefined) existing.is_geofence_exempt = log.is_geofence_exempt;
+          if (log.status && !existing.status) existing.status = log.status.toLowerCase();
+        } else {
+          mergedMap.set(memId, {
+            id: log.id,
+            log_id: log.id,
+            member_id: log.member_id,
+            user_id: workspaceId,
+            workspace_id: workspaceId,
+            date: log.date,
+            status: (log.status || 'present').toLowerCase(),
+            check_in_time: log.punch_in_time,
+            punch_in_time: log.punch_in_time,
+            check_out_time: log.punch_out_time,
+            punch_out_time: log.punch_out_time,
+            punch_in_lat: log.punch_in_lat,
+            punch_in_lng: log.punch_in_lng,
+            punch_out_lat: log.punch_out_lat,
+            punch_out_lng: log.punch_out_lng,
+            check_in_lat: log.punch_in_lat,
+            check_in_lng: log.punch_in_lng,
+            check_out_lat: log.punch_out_lat,
+            check_out_lng: log.punch_out_lng,
+            work_duration_minutes: log.total_work_minutes || 0,
+            total_work_minutes: log.total_work_minutes || 0,
+            is_geofence_exempt: log.is_geofence_exempt || false,
+            check_in_geofence_status: log.is_geofence_exempt ? 'verified' : (log.punch_in_lat ? 'verified' : 'no_geofence'),
+            notes: log.notes
+          });
+        }
+      });
+
+      setRecords(Array.from(mergedMap.values()));
 
       // 3. Fetch Geofence Locations
       // 3. Fetch Geofence Locations via dedicated backend endpoint
@@ -332,6 +372,11 @@ export default function AttendancePage() {
       setCopiedLinkId(memberId);
       setTimeout(() => setCopiedLinkId(null), 2500);
 
+      // Trigger clear UI Toast
+      setPunchAlert({
+        message: 'Punch-in link copied to clipboard!',
+        type: 'success'
+      });
     } catch (err) {
       console.error('Copy link error:', err);
     }
@@ -553,21 +598,308 @@ export default function AttendancePage() {
     }
   };
 
+  // ── 1. Strictly In-House Staff Filter (Excluding Freelancers, Partners, Printing Labs) ──
+  const inHouseStaff = useMemo(() => {
+    return teamMembers.filter((m: any) => {
+      const rawType = String(m.type || m.primary_type || '').toLowerCase().replace(/_/g, '-');
+      const memberTypes = Array.isArray(m.member_types)
+        ? m.member_types.map((t: string) => String(t).toLowerCase().replace(/_/g, '-'))
+        : [];
+
+      // Exclude all freelancers, external partners, and printing labs
+      if (
+        rawType === 'freelancer' || rawType === 'partner' || rawType === 'lab' || rawType === 'printing-lab' || rawType === 'external' ||
+        memberTypes.includes('freelancer') || memberTypes.includes('partner') || memberTypes.includes('lab') || memberTypes.includes('printing-lab') || memberTypes.includes('external')
+      ) {
+        return false;
+      }
+
+      // Strictly in-house staff
+      return rawType === 'in-house' || memberTypes.includes('in-house') || (!rawType && memberTypes.length === 0);
+    });
+  }, [teamMembers]);
+
+  // ── 2. Live 1-Second Continuous Work Timer ──
+  const [nowTick, setNowTick] = useState<number>(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNowTick(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Format live duration as HH:MM:SS
+  const formatLiveDuration = useCallback((inTimeStr?: string | null, outTimeStr?: string | null): string => {
+    if (!inTimeStr) return '—';
+    const startMs = new Date(inTimeStr).getTime();
+    const endMs = outTimeStr ? new Date(outTimeStr).getTime() : nowTick;
+    const diffSec = Math.max(0, Math.floor((endMs - startMs) / 1000));
+    const hrs = Math.floor(diffSec / 3600);
+    const mins = Math.floor((diffSec % 3600) / 60);
+    const secs = diffSec % 60;
+    return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }, [nowTick]);
+
+  // Check if punch log missed punch out (punch_in exists, punch_out is null, and log is from past date or >16h old)
+  const isMissedPunchOut = useCallback((inTimeStr?: string | null, outTimeStr?: string | null, recordDate?: string): boolean => {
+    if (!inTimeStr || outTimeStr) return false;
+    const todayIst = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+    if (recordDate && recordDate < todayIst) return true;
+    const elapsedHours = (nowTick - new Date(inTimeStr).getTime()) / (1000 * 60 * 60);
+    return elapsedHours >= 16;
+  }, [nowTick]);
+
+  // ── 3. Direct Punch In / Out Actions targeting attendance_logs ──
+  const [punchingMemberId, setPunchingMemberId] = useState<string | null>(null);
+
+  const handlePunchIn = async (member: FWTeamMember) => {
+    setPunchingMemberId(member.id);
+    try {
+      const now = new Date();
+      const nowIso = now.toISOString();
+      const todayStr = selectedDate || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(now);
+
+      let punchLat: number | null = null;
+      let punchLng: number | null = null;
+
+      const isExempt = Boolean(
+        member.is_geofence_exempt || 
+        (member as any).geofence_required === false ||
+        (member.custom_data as any)?.is_geofence_exempt ||
+        (member.custom_data as any)?.allow_anywhere
+      );
+
+      // Location Check strictly at the moment of Punch In (unless is_geofence_exempt is true)
+      if (!isExempt) {
+        try {
+          const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+            if (!navigator.geolocation) {
+              reject(new Error('Geolocation not supported by browser'));
+            } else {
+              navigator.geolocation.getCurrentPosition(resolve, reject, {
+                enableHighAccuracy: true,
+                timeout: 8000,
+                maximumAge: 0
+              });
+            }
+          });
+
+          punchLat = position.coords.latitude;
+          punchLng = position.coords.longitude;
+
+          const officeLat = Number(member.latitude) || Number((member.custom_data as any)?.latitude);
+          const officeLng = Number(member.longitude) || Number((member.custom_data as any)?.longitude);
+          const allowedRadius = Number(member.radius_meters) || Number((member.custom_data as any)?.radius_meters) || 150;
+
+          if (officeLat && officeLng) {
+            const R = 6371e3;
+            const φ1 = punchLat * Math.PI / 180;
+            const φ2 = officeLat * Math.PI / 180;
+            const Δφ = (officeLat - punchLat) * Math.PI / 180;
+            const Δλ = (officeLng - punchLng) * Math.PI / 180;
+            const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                      Math.cos(φ1) * Math.cos(φ2) *
+                      Math.sin(Δλ/2) * Math.sin(Δλ/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            const dist = R * c;
+
+            if (dist > allowedRadius) {
+              const proceed = window.confirm(
+                `⚠️ Location Alert: You are ${Math.round(dist)}m away from assigned office (allowed radius: ${allowedRadius}m).\n\nDo you want to proceed with Punch In anyway?`
+              );
+              if (!proceed) {
+                setPunchingMemberId(null);
+                return;
+              }
+            }
+          }
+        } catch (geoErr) {
+          console.warn('Geolocation notice on punch in:', geoErr);
+          const proceedWithoutGps = window.confirm(
+            '⚠️ GPS signal unavailable or permission denied. Proceed with Punch In without GPS verification?'
+          );
+          if (!proceedWithoutGps) {
+            setPunchingMemberId(null);
+            return;
+          }
+        }
+      }
+
+      // Calculate early/late minutes for arrival timing indicator
+      const shiftStartTimeStr = member.shift_start || shifts[0]?.start_time || '10:00';
+      const [shiftH = 10, shiftM = 0] = shiftStartTimeStr.split(':').map(Number);
+      const nowH = now.getHours();
+      const nowM = now.getMinutes();
+      const shiftTotalMins = shiftH * 60 + shiftM;
+      const nowTotalMins = nowH * 60 + nowM;
+      const diffMins = nowTotalMins - shiftTotalMins;
+
+      let arrivalIndicator = 'On time';
+      let alertType: 'success' | 'warning' = 'success';
+      const earlyMinutes = diffMins < 0 ? Math.abs(diffMins) : 0;
+      const lateMinutes = diffMins > 0 ? diffMins : 0;
+      const isLate = diffMins > 0;
+
+      if (diffMins < -1) {
+        arrivalIndicator = `Arrived ${earlyMinutes}m early`;
+      } else if (diffMins > 0) {
+        arrivalIndicator = `Arrived ${lateMinutes}m late`;
+        alertType = 'warning';
+      }
+
+      // Save to Supabase attendance_logs table
+      const { error: logErr } = await supabase
+        .from('attendance_logs')
+        .insert([{
+          member_id: String(member.id),
+          member_name: member.name,
+          date: todayStr,
+          punch_in_time: nowIso,
+          punch_in_lat: punchLat,
+          punch_in_lng: punchLng,
+          early_minutes: earlyMinutes,
+          late_minutes: lateMinutes,
+          is_late: isLate,
+          is_geofence_exempt: isExempt,
+          status: 'PRESENT'
+        }]);
+
+      if (logErr) {
+        console.error('attendance_logs insert error:', logErr);
+      }
+
+      // Dual-sync to attendance_records for backward compatibility
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const workspaceId = session?.user?.id || 'ws_demo';
+        await supabase
+          .from('attendance_records')
+          .upsert([{
+            user_id: workspaceId,
+            workspace_id: workspaceId,
+            member_id: member.id,
+            date: todayStr,
+            status: 'present',
+            check_in_time: nowIso,
+            check_in_lat: punchLat,
+            check_in_lng: punchLng,
+            check_in_verified: true,
+            check_in_geofence_status: isExempt ? 'verified' : (punchLat ? 'verified' : 'no_geofence'),
+            updated_at: nowIso
+          }], { onConflict: 'member_id,date' });
+      } catch (recSyncErr) {
+        console.warn('attendance_records sync notice:', recSyncErr);
+      }
+
+      setPunchAlert({
+        message: `${member.name}: Checked in successfully • ${arrivalIndicator}`,
+        type: alertType
+      });
+
+      await fetchAttendanceData();
+    } catch (err: any) {
+      console.error('Punch in error:', err);
+      alert(`Error during Punch In: ${err.message || err}`);
+    } finally {
+      setPunchingMemberId(null);
+    }
+  };
+
+  const handlePunchOut = async (member: FWTeamMember, record: any) => {
+    setPunchingMemberId(member.id);
+    try {
+      const now = new Date();
+      const nowIso = now.toISOString();
+      const punchInTime = record.punch_in_time || record.check_in_time;
+      const startMs = punchInTime ? new Date(punchInTime).getTime() : now.getTime();
+      const endMs = now.getTime();
+      const calculatedMinutes = Math.max(1, Math.round((endMs - startMs) / (1000 * 60)));
+
+      let punchLat: number | null = null;
+      let punchLng: number | null = null;
+      try {
+        if (navigator.geolocation) {
+          const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
+          });
+          punchLat = pos.coords.latitude;
+          punchLng = pos.coords.longitude;
+        }
+      } catch (_) {}
+
+      // Update Supabase attendance_logs
+      let updateLogQ = supabase
+        .from('attendance_logs')
+        .update({
+          punch_out_time: nowIso,
+          punch_out_lat: punchLat,
+          punch_out_lng: punchLng,
+          total_work_minutes: calculatedMinutes,
+          status: 'COMPLETED'
+        });
+
+      if (record.log_id) {
+        updateLogQ = updateLogQ.eq('id', record.log_id);
+      } else {
+        updateLogQ = updateLogQ.eq('member_id', String(member.id)).eq('date', record.date || selectedDate);
+      }
+
+      const { error: logUpdateErr } = await updateLogQ;
+      if (logUpdateErr) console.warn('attendance_logs update notice:', logUpdateErr);
+
+      // Dual-update attendance_records
+      try {
+        await supabase
+          .from('attendance_records')
+          .update({
+            check_out_time: nowIso,
+            check_out_lat: punchLat,
+            check_out_lng: punchLng,
+            check_out_verified: true,
+            work_duration_minutes: calculatedMinutes,
+            total_work_minutes: calculatedMinutes,
+            status: 'present',
+            updated_at: nowIso
+          })
+          .eq('member_id', member.id)
+          .eq('date', record.date || selectedDate);
+      } catch (_) {}
+
+      const hours = Math.floor(calculatedMinutes / 60);
+      const mins = calculatedMinutes % 60;
+      const durationStr = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+
+      setPunchAlert({
+        message: `${member.name}: Checked out successfully • Worked ${durationStr}`,
+        type: 'success'
+      });
+
+      await fetchAttendanceData();
+    } catch (err: any) {
+      console.error('Punch out error:', err);
+      alert(`Error during Punch Out: ${err.message || err}`);
+    } finally {
+      setPunchingMemberId(null);
+    }
+  };
+
   // Export Timesheet to CSV
   const handleExportCSV = () => {
-    if (teamMembers.length === 0) return;
+    if (inHouseStaff.length === 0) return;
 
-    const headers = ['Employee Name', 'Role', 'Date', 'Status', 'Check In (IST)', 'Check Out (IST)', 'Active Duration (Mins)', 'Late (Mins)', 'Overtime (Mins)'];
-    const rows = teamMembers.map(member => {
+    const headers = ['Employee Name', 'Role', 'Date', 'Status', 'Check In (IST)', 'Check Out (IST)', 'Active Duration', 'Late (Mins)', 'Overtime (Mins)'];
+    const rows = inHouseStaff.map(member => {
       const rec = records.find(r => isRecordForMember(r, member));
+      const inTime = rec?.check_in_time || rec?.punch_in_time;
+      const outTime = rec?.check_out_time || rec?.punch_out_time;
       return [
         member.name,
         member.primary_role || 'Crew',
         selectedDate,
         rec?.status || 'absent',
-        rec?.check_in_time ? new Date(rec.check_in_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '',
-        rec?.check_out_time ? new Date(rec.check_out_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '',
-        rec?.work_duration_minutes || 0,
+        inTime ? new Date(inTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '',
+        outTime ? new Date(outTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '',
+        rec?.work_duration_minutes || rec?.total_work_minutes || 0,
         rec?.late_minutes || 0,
         rec?.overtime_minutes || 0
       ];
@@ -583,35 +915,18 @@ export default function AttendancePage() {
     document.body.removeChild(link);
   };
 
-  // Filtered daily roster list with dynamic shift timing analyzer
-  const rosterList = useMemo(() => {
-    return teamMembers.map(member => {
-      const record = records.find(r => isRecordForMember(r, member));
-      const timing = analyzeAttendanceRecordTiming(record, member);
-      return { member, record, timing };
-    }).filter(({ member, record, timing }) => {
-      const nameMatch = member.name.toLowerCase().includes(searchQuery.toLowerCase());
-      const roleMatch = roleFilter === 'all' || (member.primary_role || '').toLowerCase().includes(roleFilter.toLowerCase());
-      const statusMatch = statusFilter === 'all' || (
-        statusFilter === 'late' ? timing.isLate :
-        statusFilter === 'present' ? (record && record.status === 'present' && !timing.isLate) :
-        (record ? record.status === statusFilter : statusFilter === 'absent')
-      );
-      return nameMatch && roleMatch && statusMatch;
-    });
-  }, [teamMembers, records, searchQuery, roleFilter, statusFilter, isRecordForMember]);
-
-  // Summaries calculation
-  const totalEmployees = teamMembers.length;
+  // Summaries calculation strictly for in-house workforce
+  const totalEmployees = inHouseStaff.length;
   const lateCount = records.filter(r => {
-    const mem = teamMembers.find(m => isRecordForMember(r, m));
+    const mem = inHouseStaff.find(m => isRecordForMember(r, m));
+    if (!mem) return false;
     const t = analyzeAttendanceRecordTiming(r, mem);
     return t.isLate;
   }).length;
-  const presentCount = teamMembers.filter(m => records.some(r => isRecordForMember(r, m) && r.check_in_time)).length;
+  const presentCount = inHouseStaff.filter(m => records.some(r => isRecordForMember(r, m) && (r.check_in_time || r.punch_in_time))).length;
   const absentCount = Math.max(0, totalEmployees - presentCount);
   const onLeaveCount = leaveRequests.filter(l => l.status === 'approved' && l.start_date <= selectedDate && l.end_date >= selectedDate).length;
-  const liveWorkingCount = records.filter(r => r.check_in_time && !r.check_out_time).length;
+  const liveWorkingCount = inHouseStaff.filter(m => records.some(r => isRecordForMember(r, m) && (r.check_in_time || r.punch_in_time) && !(r.check_out_time || r.punch_out_time))).length;
 
   if (loading) {
     return <StudioCoreLiquidLoader label="Loading Attendance Roster..." />;
@@ -624,28 +939,16 @@ export default function AttendancePage() {
         {/* ─────────────────────────────────────────────────────────────
             HEADER & ACTION CONTROLS
         ───────────────────────────────────────────────────────────── */}
-        <div className="bg-white/90 backdrop-blur-md rounded-2xl p-6 border border-[#E9DFD2] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#C89435] to-[#8C6D33] flex items-center justify-center shadow-md shadow-[#C89435]/20 text-white">
-              <Clock className="w-6 h-6 stroke-[2.5]" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2.5">
-                <h1 className="text-2xl font-black tracking-tight text-slate-900">Workforce & Smart Attendance</h1>
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-[#FAF3E6] text-[#8C6D33] border border-[#E9DFD2]">
-                  IST Timezone &amp; Google Places
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Google Maps Places radar editor, live geofence heartbeat auto-checkout &amp; staff Kundali analytics.
-              </p>
-            </div>
+        <div className="bg-white/90 backdrop-blur-md rounded-2xl p-4 sm:p-5 border border-[#E9DFD2] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5">
+            <Clock className="w-5 h-5 text-amber-600" />
+            <h1 className="text-base font-bold text-slate-900">Workforce &amp; Smart Attendance</h1>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center flex-wrap gap-2.5">
             {/* Date Navigation */}
             <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 shadow-2xs">
-              <Calendar className="w-4 h-4 text-[#C89435]" />
+              <Calendar className="w-3.5 h-3.5 text-amber-600" />
               <input
                 type="date"
                 value={selectedDate}
@@ -654,46 +957,31 @@ export default function AttendancePage() {
               />
             </div>
 
-            {/* Onboard Team Member Button */}
-            <button
-              onClick={() => { setMemberToEdit(null); setShowAddMemberModal(true); }}
-              className="px-3.5 py-2 text-xs font-black text-slate-900 bg-amber-400 hover:bg-amber-500 rounded-xl transition flex items-center gap-1.5 shadow-xs cursor-pointer"
-            >
-              <UserPlus className="w-3.5 h-3.5" />
-              + Onboard Staff
-            </button>
-
-            {/* Holidays & Calendar Modal Trigger */}
+            {/* Holidays & Leaves Trigger */}
             <button
               onClick={() => setShowHolidayModal(true)}
-              className="px-3.5 py-2 text-xs font-bold text-purple-900 bg-purple-100 hover:bg-purple-200 border border-purple-200 rounded-xl transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+              className="px-3.5 py-1.5 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
             >
-              <Calendar className="w-3.5 h-3.5 text-purple-700" />
-              Holidays &amp; Leaves
+              <Calendar className="w-3.5 h-3.5 text-amber-600" />
+              <span>Holidays &amp; Leaves</span>
             </button>
 
+            {/* Export CSV Trigger */}
             <button
               onClick={handleExportCSV}
-              className="px-3.5 py-2 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+              className="px-3.5 py-1.5 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
             >
-              <Download className="w-3.5 h-3.5" />
-              Export CSV
+              <Download className="w-3.5 h-3.5 text-slate-600" />
+              <span>Export CSV</span>
             </button>
 
+            {/* Apply Leave Trigger */}
             <button
               onClick={() => setShowLeaveModal(true)}
-              className="px-3.5 py-2 text-xs font-bold text-slate-800 bg-amber-100 hover:bg-amber-200 border border-amber-200 rounded-xl transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+              className="px-3.5 py-1.5 text-xs font-bold text-amber-950 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-xl transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
             >
-              <Plus className="w-3.5 h-3.5 text-amber-700" />
-              Apply Leave
-            </button>
-
-            <button
-              onClick={fetchAttendanceData}
-              className="p-2 text-slate-500 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition shadow-2xs cursor-pointer"
-              title="Refresh Attendance Data"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              <PlusCircle className="w-3.5 h-3.5 text-amber-700" />
+              <span>Apply Leave</span>
             </button>
           </div>
         </div>
@@ -809,8 +1097,6 @@ export default function AttendancePage() {
               { id: 'live', label: 'Live Floor View', icon: Users },
               { id: 'matrix', label: 'Monthly Matrix & Payroll', icon: Calendar },
               { id: 'leaves', label: 'Leaves & Approvals', icon: Coffee },
-              { id: 'shifts', label: 'Shift Timings', icon: Sliders },
-              { id: 'links', label: 'Employee Mobile Links', icon: Link2 },
             ].map(tab => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -833,228 +1119,31 @@ export default function AttendancePage() {
         </div>
 
         {/* ─────────────────────────────────────────────────────────────
-            TAB 1: DAILY ROSTER (WITH KUNDALI DRILLDOWN & IST)
+            TAB 1: DAILY ROSTER (STAFF ATTENDANCE ROSTER)
         ───────────────────────────────────────────────────────────── */}
         {activeTab === 'roster' && (
-          <div className="space-y-4">
-            <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase text-slate-500 tracking-wider">
-                      <th className="py-3 px-4">Employee</th>
-                      <th className="py-3 px-4">Status</th>
-                      <th className="py-3 px-4">Check In (IST)</th>
-                      <th className="py-3 px-4">Check Out (IST)</th>
-                      <th className="py-3 px-4">Active Work Hours</th>
-                      <th className="py-3 px-4">Location / GPS</th>
-                      <th className="py-3 px-4">Selfie Evidence</th>
-                      <th className="py-3 px-4 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {rosterList.map(({ member, record, timing }) => {
-                      const isPresent = record?.status === 'present' && !timing.isLate;
-                      const isLate = timing.isLate;
-                      const isAbsent = !record || record.status === 'absent';
-
-                      return (
-                        <tr key={member.id} className="hover:bg-slate-50 transition">
-                          {/* Employee Name & Kundali Click */}
-                          <td className="py-3 px-4">
-                            <div 
-                              onClick={() => setShowKundaliModal({ open: true, member })}
-                              className="flex items-center gap-2.5 cursor-pointer group"
-                            >
-                              <div className="w-8 h-8 rounded-xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-900 font-bold text-xs group-hover:scale-105 transition-transform overflow-hidden shrink-0">
-                                {member.avatar_url ? (
-                                  <img src={member.avatar_url} alt={member.name} className="w-full h-full object-cover" />
-                                ) : (
-                                  member.name.slice(0, 2).toUpperCase()
-                                )}
-                              </div>
-                              <div>
-                                <h4 className="font-extrabold text-slate-900 group-hover:text-[#C89435] flex items-center gap-1 transition-colors">
-                                  <span>{member.name}</span>
-                                  <Eye className="w-3 h-3 text-[#8C847B] opacity-0 group-hover:opacity-100 transition-opacity" />
-                                </h4>
-                                <p className="text-[10px] font-semibold text-slate-500">{member.primary_role || 'Crew'}</p>
-                              </div>
-                            </div>
-                          </td>
-
-                          <td className="py-3 px-4">
-                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border ${
-                              record?.status === 'holiday' || record?.device_info?.is_holiday_work
-                                ? 'bg-purple-100 text-purple-900 border-purple-300'
-                                : record?.status === 'week_off' || record?.device_info?.is_week_off_work
-                                ? 'bg-indigo-100 text-indigo-900 border-indigo-300'
-                                : record?.status === 'half_day'
-                                ? 'bg-orange-100 text-orange-900 border-orange-200'
-                                : isLate
-                                ? 'bg-amber-100 text-amber-900 border-amber-300'
-                                : isPresent
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : record?.status === 'leave'
-                                ? 'bg-sky-50 text-sky-700 border-sky-200'
-                                : 'bg-rose-50 text-rose-700 border-rose-200'
-                            }`}>
-                              {record?.status === 'holiday' || record?.device_info?.is_holiday_work
-                                ? '🎉 Holiday Duty'
-                                : record?.status === 'week_off' || record?.device_info?.is_week_off_work
-                                ? '🏖️ Week-Off Duty'
-                                : record?.status === 'half_day'
-                                ? '🌗 Half-Day'
-                                : isLate
-                                ? `Late (${timing.lateFormattedText})`
-                                : isPresent
-                                ? '✓ Present'
-                                : record?.status === 'leave'
-                                ? 'On Leave'
-                                : 'Absent'}
-                            </span>
-                          </td>
-
-                          <td className="py-3 px-4">
-                            {record?.check_in_time ? (
-                              <div>
-                                <span className="font-bold text-slate-800 font-mono text-xs block">
-                                  {new Date(record.check_in_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })}
-                                </span>
-                                {timing.isLate ? (
-                                  <span className="text-[9.5px] font-bold text-amber-700 block">
-                                    Late by {timing.lateFormattedText}
-                                  </span>
-                                ) : timing.isEarlyArrival ? (
-                                  <span className="text-[9.5px] font-bold text-emerald-700 block">
-                                    Arrived {timing.earlyArrivalFormattedText} early
-                                  </span>
-                                ) : (
-                                  <span className="text-[9px] font-semibold text-emerald-600 block">✓ On-time</span>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-slate-400 font-mono text-xs">—</span>
-                            )}
-                          </td>
-
-                          <td className="py-3 px-4">
-                            {record?.check_out_time ? (
-                              <div>
-                                <span className="font-bold text-slate-800 font-mono text-xs block">
-                                  {new Date(record.check_out_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })}
-                                </span>
-                                {timing.isEarlyCheckout ? (
-                                  <span className="text-[9.5px] font-bold text-rose-700 block">
-                                    Left {timing.earlyCheckoutFormattedText} early
-                                  </span>
-                                ) : timing.isOvertime ? (
-                                  <span className="text-[9.5px] font-bold text-emerald-700 block">
-                                    +{timing.overtimeFormattedText} Overtime
-                                  </span>
-                                ) : (
-                                  <span className="text-[9px] font-semibold text-emerald-600 block">✓ On-time</span>
-                                )}
-                              </div>
-                            ) : record?.check_in_time ? (
-                              selectedDate === new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()) ? (
-                                <span className="text-emerald-600 font-bold text-[10px] animate-pulse">In Progress</span>
-                              ) : (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-50 text-rose-800 border border-rose-200">
-                                  Missed Out
-                                </span>
-                              )
-                            ) : (
-                              <span className="text-slate-400 font-mono text-xs">—</span>
-                            )}
-                          </td>
-
-                          <td className="py-3 px-4 font-extrabold text-slate-900 font-mono">
-                            {record?.work_duration_minutes ? (
-                              `${Math.floor(record.work_duration_minutes / 60)}h ${record.work_duration_minutes % 60}m`
-                            ) : isPresent ? (
-                              <span className="text-emerald-600 animate-pulse">Working in-zone...</span>
-                            ) : '—'}
-                          </td>
-
-                          <td className="py-3 px-4">
-                            {record?.check_in_geofence_status === 'verified' ? (
-                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1 w-max">
-                                <MapPin className="w-3 h-3" /> Geofence Verified
-                              </span>
-                            ) : record?.check_in_geofence_status === 'outside_geofence' ? (
-                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-orange-50 text-orange-700 border border-orange-200 flex items-center gap-1 w-max">
-                                <AlertTriangle className="w-3 h-3" /> Outside Perimeter
-                              </span>
-                            ) : (
-                              <span className="text-slate-400 text-[10px]">No GPS</span>
-                            )}
-                          </td>
-
-                          <td className="py-3 px-4">
-                            {record?.check_in_photo_path ? (
-                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1 w-max">
-                                <ShieldCheck className="w-3 h-3" /> Selfie Verified
-                              </span>
-                            ) : (
-                              <span className="text-slate-400 text-[10px]">No Photo</span>
-                            )}
-                          </td>
-
-                          <td className="py-3 px-4 text-right space-x-1.5 whitespace-nowrap">
-                            <button
-                              type="button"
-                              onClick={() => setShowKundaliModal({ open: true, member })}
-                              className="px-2.5 py-1 text-[11px] font-black text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-lg transition cursor-pointer"
-                              title="View Deep Staff Attendance Card & Logs"
-                            >
-                              Kundali
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setMemberToEdit(member);
-                                setShowAddMemberModal(true);
-                              }}
-                              className="px-2.5 py-1 text-[11px] font-black text-slate-800 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition cursor-pointer"
-                              title="Edit Staff Profile, Geofence & Timings"
-                            >
-                              Edit Profile
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => handleGenerateOrCopyLink(member.id)}
-                              className="px-2.5 py-1 text-[11px] font-black text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition cursor-pointer"
-                              title="Copy Personal Punch Portal Link"
-                            >
-                              {copiedLinkId === member.id ? '✓ Copied' : 'Punch Link'}
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setShowOverrideModal({
-                                  open: true,
-                                  member,
-                                  record: record || undefined
-                                });
-                              }}
-                              className="px-2 py-1 text-[11px] font-bold text-slate-500 hover:text-slate-800 rounded-lg transition cursor-pointer"
-                              title="Manual Override"
-                            >
-                              Override
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
+          <StaffAttendanceRoster
+            members={inHouseStaff}
+            records={records}
+            selectedDate={selectedDate}
+            shifts={shifts}
+            onOpenDetails={(member) => setShowKundaliModal({ open: true, member })}
+            onEditMember={(member) => {
+              setMemberToEdit(member);
+            }}
+            onPunchIn={handlePunchIn}
+            onPunchOut={handlePunchOut}
+            punchingMemberId={punchingMemberId}
+            onGenerateOrCopyLink={handleGenerateOrCopyLink}
+            copiedLinkId={copiedLinkId}
+            onOverride={(member, record) => {
+              setShowOverrideModal({
+                open: true,
+                member,
+                record: record || undefined
+              });
+            }}
+          />
         )}
 
         {/* ─────────────────────────────────────────────────────────────
@@ -1072,48 +1161,55 @@ export default function AttendancePage() {
               </span>
             </div>
 
-            {records.filter(r => r.check_in_time && !r.check_out_time).length === 0 ? (
+            {inHouseStaff.filter(m => records.some(r => isRecordForMember(r, m) && (r.check_in_time || r.punch_in_time) && !(r.check_out_time || r.punch_out_time))).length === 0 ? (
               <div className="bg-white p-12 rounded-2xl border border-dashed border-slate-200 text-center text-slate-400 space-y-2">
                 <Users className="w-8 h-8 mx-auto" />
-                <p className="text-xs font-semibold">No crew currently clocked-in on duty.</p>
+                <p className="text-xs font-semibold">No in-house staff currently clocked-in on duty.</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {records.filter(r => r.check_in_time && !r.check_out_time).map(rec => (
-                  <div key={rec.id} className="bg-white p-5 rounded-2xl border border-emerald-200 shadow-xs space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-900 font-black flex items-center justify-center text-xs overflow-hidden shrink-0 border border-emerald-300">
-                          {rec.member?.avatar_url ? (
-                            <img src={rec.member.avatar_url} alt={rec.member.name} className="w-full h-full object-cover" />
-                          ) : (
-                            rec.member?.name?.slice(0, 2).toUpperCase() || 'CW'
-                          )}
+                {inHouseStaff.filter(m => records.some(r => isRecordForMember(r, m) && (r.check_in_time || r.punch_in_time) && !(r.check_out_time || r.punch_out_time))).map(mem => {
+                  const rec = records.find(r => isRecordForMember(r, mem));
+                  const inTime = rec?.punch_in_time || rec?.check_in_time;
+                  return (
+                    <div key={mem.id} className="bg-white p-5 rounded-2xl border border-emerald-200 shadow-xs space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-900 font-black flex items-center justify-center text-xs overflow-hidden shrink-0 border border-emerald-300">
+                            {mem.avatar_url ? (
+                              <img src={mem.avatar_url} alt={mem.name} className="w-full h-full object-cover" />
+                            ) : (
+                              mem.name.slice(0, 2).toUpperCase()
+                            )}
+                          </div>
+                          <div>
+                            <h4 className="font-extrabold text-slate-900">{mem.name}</h4>
+                            <p className="text-[10px] font-semibold text-slate-500">{mem.primary_role || 'In-House Staff'}</p>
+                          </div>
                         </div>
-                        <div>
-                          <h4 className="font-extrabold text-slate-900">{rec.member?.name || 'Crew Member'}</h4>
-                          <p className="text-[10px] font-semibold text-slate-500">{rec.member?.primary_role || 'Photography'}</p>
-                        </div>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800">
+                          Clocked In
+                        </span>
                       </div>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800">
-                        Clocked In
-                      </span>
-                    </div>
 
-                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs flex justify-between">
-                      <div>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase">Started At (IST)</span>
-                        <p className="font-mono font-bold text-slate-800">
-                          {new Date(rec.check_in_time!).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase">Geofence</span>
-                        <p className="font-bold text-emerald-700">{rec.check_in_geofence_status}</p>
+                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs flex justify-between items-center">
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">Started At (IST)</span>
+                          <p className="font-mono font-bold text-slate-800">
+                            {inTime ? new Date(inTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '--:--'}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">Live Duration</span>
+                          <p className="font-mono font-bold text-emerald-700 flex items-center gap-1 justify-end">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                            {formatLiveDuration(inTime)}
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1123,188 +1219,11 @@ export default function AttendancePage() {
             TAB 3: MONTHLY TIMESHEET MATRIX & PAYROLL
         ───────────────────────────────────────────────────────────── */}
         {activeTab === 'matrix' && (
-          <div className="space-y-4">
-            <div className="bg-white p-5 rounded-2xl border border-[#E9DFD2] shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h3 className="text-base font-black text-slate-900">Monthly Timesheet Matrix &amp; Payroll Summary</h3>
-                <p className="text-xs text-slate-500">Comprehensive attendance breakdown for salary calculation, overtime, and leave deductions.</p>
-              </div>
-
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 shadow-2xs">
-                  <Calendar className="w-3.5 h-3.5 text-amber-600" />
-                  <span className="text-xs font-bold text-slate-700">Month:</span>
-                  <input
-                    type="month"
-                    value={selectedMatrixMonth}
-                    onChange={(e) => setSelectedMatrixMonth(e.target.value)}
-                    className="bg-transparent text-xs font-black text-slate-900 focus:outline-none font-mono cursor-pointer"
-                  />
-                </div>
-
-                <button
-                  onClick={() => window.print()}
-                  className="px-3.5 py-1.5 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
-                >
-                  <Printer className="w-3.5 h-3.5" />
-                  Print Timesheet
-                </button>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-              {loadingMatrixRecords ? (
-                <div className="p-12 text-center text-slate-400 space-y-2">
-                  <RefreshCw className="w-6 h-6 animate-spin mx-auto text-amber-600" />
-                  <p className="text-xs font-bold text-slate-600">Calculating monthly timesheet &amp; payroll metrics...</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs min-w-[700px]">
-                    <thead>
-                      <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase text-slate-500">
-                        <th className="py-3.5 px-4">Employee</th>
-                        <th className="py-3.5 px-4">Role</th>
-                        <th className="py-3.5 px-4 text-center">Present Days</th>
-                        <th className="py-3.5 px-4 text-center">Late Penalties</th>
-                        <th className="py-3.5 px-4 text-center">Approved Leaves</th>
-                        <th className="py-3.5 px-4 text-center">Total Overtime</th>
-                        <th className="py-3.5 px-4 text-right">Payable Units / Salary</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 font-sans">
-                      {teamMembers.map(m => {
-                        const mRecords = matrixMonthlyRecords.filter(r => isRecordForMember(r, m));
-                        
-                        // Distinct calendar days present
-                        const uniquePresentDays = new Set(
-                          mRecords
-                            .filter(r => r.check_in_time || r.status === 'present' || r.status === 'late' || r.status === 'half_day')
-                            .map(r => r.date)
-                            .filter(Boolean)
-                        ).size;
-
-                        let totalLateCount = 0;
-                        let totalLateMinutes = 0;
-                        let totalOvertimeCount = 0;
-                        let totalOvertimeMinutes = 0;
-
-                        mRecords.forEach(r => {
-                          const t = analyzeAttendanceRecordTiming(r, m, shifts[0]?.start_time || '10:00', shifts[0]?.end_time || '19:00');
-                          if (t.isLate) {
-                            totalLateCount++;
-                            totalLateMinutes += t.lateMinutes;
-                          }
-                          if (t.isOvertime) {
-                            totalOvertimeCount++;
-                            totalOvertimeMinutes += t.overtimeMinutes;
-                          }
-                        });
-
-                        const approvedLeavesCount = leaveRequests.filter(l => 
-                          (isRecordForMember(l, m) || l.member_id === m.id) && 
-                          l.status === 'approved' && 
-                          (l.start_date.substring(0, 7) <= selectedMatrixMonth && l.end_date.substring(0, 7) >= selectedMatrixMonth)
-                        ).length;
-
-                        const dailyRate = Number(m.daily_rate) || Number((m.custom_data as any)?.daily_rate) || 0;
-                        const monthlySalary = Number(m.monthly_salary) || Number((m.custom_data as any)?.monthly_salary) || 0;
-                        const isMonthly = monthlySalary > 0 || m.payout_type === 'monthly';
-
-                        return (
-                          <tr key={m.id} className="hover:bg-slate-50 transition">
-                            <td className="py-3 px-4">
-                              <div className="flex items-center gap-2.5">
-                                <div className="w-8 h-8 rounded-xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-900 font-black text-xs shrink-0 overflow-hidden">
-                                  {m.avatar_url ? (
-                                    <img src={m.avatar_url} alt={m.name} className="w-full h-full object-cover" />
-                                  ) : (
-                                    m.name.slice(0, 2).toUpperCase()
-                                  )}
-                                </div>
-                                <div>
-                                  <span className="font-extrabold text-slate-900 block">{m.name}</span>
-                                  <span className="text-[10px] text-slate-400 font-mono">{m.phone_number || ''}</span>
-                                </div>
-                              </div>
-                            </td>
-
-                            <td className="py-3 px-4 font-semibold text-slate-600">
-                              {m.primary_role || 'Staff Member'}
-                            </td>
-
-                            <td className="py-3 px-4 text-center">
-                              <span className={`px-2.5 py-0.5 rounded-full text-xs font-black border ${
-                                uniquePresentDays > 0 
-                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
-                                  : 'bg-slate-50 text-slate-400 border-slate-200'
-                              }`}>
-                                {uniquePresentDays} {uniquePresentDays === 1 ? 'Day' : 'Days'}
-                              </span>
-                            </td>
-
-                            <td className="py-3 px-4 text-center">
-                              {totalLateCount > 0 ? (
-                                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-amber-50 text-amber-900 border border-amber-200">
-                                  {totalLateCount} ({formatMinutesToHumanReadable(totalLateMinutes)})
-                                </span>
-                              ) : (
-                                <span className="text-slate-400 text-xs font-semibold">0m</span>
-                              )}
-                            </td>
-
-                            <td className="py-3 px-4 text-center">
-                              {approvedLeavesCount > 0 ? (
-                                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-sky-50 text-sky-800 border border-sky-200">
-                                  {approvedLeavesCount} {approvedLeavesCount === 1 ? 'Day' : 'Days'}
-                                </span>
-                              ) : (
-                                <span className="text-slate-400 text-xs font-semibold">0</span>
-                              )}
-                            </td>
-
-                            <td className="py-3 px-4 text-center">
-                              {totalOvertimeCount > 0 ? (
-                                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-emerald-50 text-emerald-800 border border-emerald-200">
-                                  +{Math.round((totalOvertimeMinutes / 60) * 10) / 10}h ({totalOvertimeCount})
-                                </span>
-                              ) : (
-                                <span className="text-slate-400 text-xs font-semibold">0h</span>
-                              )}
-                            </td>
-
-                            <td className="py-3 px-4 text-right">
-                              {isMonthly ? (
-                                <div>
-                                  <span className="font-mono font-black text-slate-900 text-xs block">
-                                    ₹{monthlySalary.toLocaleString('en-IN')}
-                                  </span>
-                                  <span className="text-[10px] text-slate-400 font-semibold block">Fixed Monthly</span>
-                                </div>
-                              ) : dailyRate > 0 ? (
-                                <div>
-                                  <span className="font-mono font-black text-slate-900 text-xs block">
-                                    ₹{(uniquePresentDays * dailyRate).toLocaleString('en-IN')}
-                                  </span>
-                                  <span className="text-[10px] text-slate-400 font-semibold block">
-                                    {uniquePresentDays}d × ₹{dailyRate.toLocaleString('en-IN')}
-                                  </span>
-                                </div>
-                              ) : (
-                                <span className="font-black text-slate-800 font-mono text-xs">
-                                  {uniquePresentDays}.0 Units
-                                </span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
+          <MonthlyMatrixPayroll
+            members={inHouseStaff}
+            shifts={shifts}
+            leaveRequests={leaveRequests}
+          />
         )}
 
         {/* ─────────────────────────────────────────────────────────────
@@ -1399,229 +1318,14 @@ export default function AttendancePage() {
           </div>
         )}
 
-        {/* ─────────────────────────────────────────────────────────────
-            TAB 5: GOOGLE PLACES GEOFENCE & SAVED LOCATIONS CRUD
-        ───────────────────────────────────────────────────────────── */}
-        {activeTab === 'locations' && (
-          <div className="space-y-6">
-            <div className="bg-white p-5 rounded-2xl border border-emerald-200 shadow-sm flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-black text-slate-900">Google Places Geofence Manager</h3>
-                <p className="text-xs text-slate-500">Google Maps Places Autocomplete search, draggable pin, and dynamic radius perimeter (20m to 1000m).</p>
-              </div>
-              <button
-                onClick={() => setShowAddLocationModal(true)}
-                className="px-3.5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs transition flex items-center gap-1.5"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                + Add Venue / Branch
-              </button>
-            </div>
-
-            {/* Interactive Map Editor */}
-            {selectedLocation && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-full bg-[#C89435]" />
-                    <h4 className="font-bold text-sm text-slate-900">{selectedLocation.name}</h4>
-                    <span className="text-xs text-slate-400 font-mono">({selectedLocation.radius_meters}m allowed radius)</span>
-                  </div>
-                  {selectedLocation.address && (
-                    <span className="text-xs text-slate-500 truncate max-w-md">{selectedLocation.address}</span>
-                  )}
-                </div>
-
-                <GeofenceMapPicker
-                  latitude={selectedLocation.latitude}
-                  longitude={selectedLocation.longitude}
-                  radiusMeters={selectedLocation.radius_meters}
-                  locationName={selectedLocation.name}
-                  isEditable={true}
-                  height="450px"
-                  onCoordinatesChange={(lat, lng, address, placeName) => handleUpdateGeofenceOnMap(lat, lng, address, placeName)}
-                  onRadiusChange={(r) => handleUpdateGeofenceOnMap(selectedLocation.latitude, selectedLocation.longitude, selectedLocation.address || undefined, selectedLocation.name, r)}
-                />
-              </div>
-            )}
-
-            {/* Saved Locations List Table */}
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden space-y-2">
-              <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-                <h4 className="font-bold text-xs uppercase tracking-wider text-slate-600">Saved Geofence Venues ({locations.length})</h4>
-              </div>
-
-              <div className="divide-y divide-slate-100">
-                {locations.map(loc => (
-                  <div key={loc.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center">
-                        <MapPin className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h5 className="font-bold text-slate-900 text-xs">{loc.name}</h5>
-                          {selectedLocation?.id === loc.id && (
-                            <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-[#FAF3E6] text-[#8C6D33] border border-[#E9DFD2]">
-                              Active on Map
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[11px] text-slate-500 mt-0.5">{loc.address || `Lat: ${loc.latitude.toFixed(4)}, Lng: ${loc.longitude.toFixed(4)}`}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-mono font-bold">
-                        {loc.radius_meters}m
-                      </span>
-
-                      <button
-                        onClick={() => setSelectedLocation(loc)}
-                        className="px-3 py-1 text-xs font-bold text-[#8C6D33] bg-[#FAF3E6] hover:bg-[#F2E5CC] rounded-lg transition"
-                      >
-                        Edit on Map
-                      </button>
-
-                      <button
-                        onClick={() => handleDeleteGeofence(loc.id)}
-                        className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition"
-                        title="Delete Geofence"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ─────────────────────────────────────────────────────────────
-            TAB 6: SHIFTS & GRACE PERIOD MANAGER
-        ───────────────────────────────────────────────────────────── */}
-        {activeTab === 'shifts' && (
-          <div className="space-y-4">
-            <div className="bg-white p-5 rounded-2xl border border-[#E9DFD2] shadow-sm flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-black text-slate-900">Work Shifts &amp; Timings</h3>
-                <p className="text-xs text-slate-500">Configure studio work timings, grace periods for late punches, and overtime thresholds.</p>
-              </div>
-              <button
-                onClick={() => setShowAddShiftModal(true)}
-                className="px-3.5 py-2 text-xs font-bold text-white bg-[#C89435] hover:bg-[#B3802B] rounded-xl shadow-xs transition flex items-center gap-1.5"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                + Add Shift
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {shifts.map(sh => (
-                <div key={sh.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-lg bg-[#FAF3E6] text-[#8C6D33] flex items-center justify-center">
-                        <Clock className="w-4 h-4" />
-                      </div>
-                      <h4 className="font-extrabold text-slate-900">{sh.name}</h4>
-                    </div>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700">
-                      Active
-                    </span>
-                  </div>
-
-                  <div className="p-3 bg-slate-50 rounded-xl text-xs space-y-1 font-mono text-slate-600">
-                    <p>Start: {sh.start_time.substring(0, 5)} • End: {sh.end_time.substring(0, 5)} (IST)</p>
-                    <p className="text-[11px] font-sans text-slate-500">Grace Period: {sh.grace_period_minutes} mins</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ─────────────────────────────────────────────────────────────
-            TAB 7: MEMBER ATTENDANCE LINKS MANAGER
-        ───────────────────────────────────────────────────────────── */}
-        {activeTab === 'links' && (
-          <div className="space-y-4">
-            <div className="bg-white p-5 rounded-2xl border border-amber-200 shadow-sm flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-black text-slate-900">Personal Employee Attendance Links</h3>
-                <p className="text-xs text-slate-500">Each employee has a unique, secure 32-character token URL to clock-in from their mobile phone.</p>
-              </div>
-              <button
-                onClick={() => setShowAddMemberModal(true)}
-                className="px-3.5 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-xl transition flex items-center gap-1.5 shadow-xs"
-              >
-                <UserPlus className="w-3.5 h-3.5" />
-                Onboard Staff
-              </button>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase text-slate-500">
-                    <th className="py-3 px-4">Employee</th>
-                    <th className="py-3 px-4">Role</th>
-                    <th className="py-3 px-4">Secure Link Status</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {teamMembers.map(member => {
-                    const link = memberLinks.find(l => l.member_id === member.id);
-                    return (
-                      <tr key={member.id} className="hover:bg-slate-50 transition">
-                        <td className="py-3 px-4 font-bold text-slate-900">
-                          {member.name}
-                        </td>
-                        <td className="py-3 px-4 font-semibold text-slate-500">
-                          {member.primary_role || 'Crew'}
-                        </td>
-                        <td className="py-3 px-4">
-                          {link ? (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              Active Token Generated
-                            </span>
-                          ) : (
-                            <span className="text-slate-400 text-[10px]">Not generated</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-right space-x-2">
-                          <button
-                            onClick={() => handleGenerateOrCopyLink(member.id)}
-                            className="px-3 py-1 text-xs font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 rounded-lg transition"
-                          >
-                            {copiedLinkId === member.id ? '✓ Link Copied' : 'Copy Mobile Link'}
-                          </button>
-                          <button
-                            onClick={() => handleShareLinkWhatsApp(member)}
-                            className="px-3 py-1 text-xs font-bold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 rounded-lg transition"
-                          >
-                            WhatsApp Link
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
       </div>
 
       {/* ─────────────────────────────────────────────────────────────
-          MODAL: STAFF MEMBER "KUNDALI" DEEP ANALYTICS DRAWER
+          MODAL: STAFF MEMBER DETAILS & ANALYTICS MODAL
       ───────────────────────────────────────────────────────────── */}
-      <AttendanceErrorBoundary fallbackTitle="Could not load Staff Kundali Drawer">
+      <AttendanceErrorBoundary fallbackTitle="Could not load Staff Details Modal">
         {showKundaliModal.open && showKundaliModal.member && (
-          <MemberKundaliModal
+          <StaffDetailsModal
             isOpen={showKundaliModal.open}
             onClose={() => setShowKundaliModal({ open: false, member: null })}
             member={showKundaliModal.member}
@@ -1636,7 +1340,26 @@ export default function AttendancePage() {
       </AttendanceErrorBoundary>
 
       {/* ─────────────────────────────────────────────────────────────
-          MODAL: ONBOARD / EDIT TEAM MEMBER & MAGIC LINK
+          MODAL: EDIT STAFF ATTENDANCE & WORK SHIFT TIMINGS
+      ───────────────────────────────────────────────────────────── */}
+      <AttendanceErrorBoundary fallbackTitle="Could not load Edit Staff Attendance Modal">
+        {memberToEdit && (
+          <EditStaffAttendanceModal
+            isOpen={!!memberToEdit}
+            onClose={() => setMemberToEdit(null)}
+            member={memberToEdit}
+            onMemberUpdated={(updated) => {
+              if (updated && updated.id) {
+                setTeamMembers(prev => prev.map(m => m.id === updated.id ? { ...m, ...updated } : m));
+              }
+              fetchAttendanceData();
+            }}
+          />
+        )}
+      </AttendanceErrorBoundary>
+
+      {/* ─────────────────────────────────────────────────────────────
+          MODAL: ONBOARD NEW TEAM MEMBER & MAGIC LINK
       ───────────────────────────────────────────────────────────── */}
       <AttendanceErrorBoundary fallbackTitle="Could not load Staff Profile Modal">
         {showAddMemberModal && (
@@ -1646,7 +1369,7 @@ export default function AttendancePage() {
               setShowAddMemberModal(false);
               setMemberToEdit(null);
             }}
-            memberToEdit={memberToEdit}
+            memberToEdit={null}
             locations={locations}
             shifts={shifts}
             onMemberCreated={fetchAttendanceData}
@@ -1866,7 +1589,7 @@ export default function AttendancePage() {
                     className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none font-semibold"
                   >
                     <option value="">-- Choose Employee --</option>
-                    {teamMembers.map(m => (
+                    {inHouseStaff.map(m => (
                       <option key={m.id} value={m.id}>{m.name} ({m.primary_role || 'Staff'})</option>
                     ))}
                   </select>
@@ -2017,6 +1740,39 @@ export default function AttendancePage() {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* ─────────────────────────────────────────────────────────────
+          5-SECOND AUTO-DISMISSING PUNCH ALERT TOAST
+      ───────────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {punchAlert && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            transition={{ duration: 0.25 }}
+            className="fixed top-6 right-6 z-[100060] max-w-md bg-slate-900/95 backdrop-blur-md text-white px-4 py-3 rounded-2xl shadow-2xl border border-slate-700/60 flex items-center gap-3 font-sans"
+          >
+            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+              punchAlert.type === 'warning' 
+                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' 
+                : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+            }`}>
+              <CheckCircle2 className="w-4 h-4" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-white tracking-wide truncate">{punchAlert.message}</p>
+              <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Studio Core Smart Attendance</p>
+            </div>
+            <button
+              onClick={() => setPunchAlert(null)}
+              className="text-slate-400 hover:text-white p-1 transition rounded-lg hover:bg-slate-800"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </motion.div>
         )}
       </AnimatePresence>
 

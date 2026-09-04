@@ -299,8 +299,8 @@ export default function MemberKundaliModal({
           exit={{ scale: 0.96, opacity: 0, y: 10 }}
           className="bg-[#FFFDF9] text-slate-900 w-full max-w-5xl rounded-3xl border border-[#EAE5DA] shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
         >
-          {/* ── TOP DRAWER HEADER ── */}
-          <div className="px-6 py-5 bg-[#FAF9F5] border-b border-[#EAE5DA] flex flex-col md:flex-row md:items-center justify-between gap-4">
+          {/* ── TOP DRAWER HEADER (STICKY PINNED) ── */}
+          <div className="sticky top-0 z-30 shrink-0 px-6 py-5 bg-[#FAF9F5]/95 backdrop-blur-md border-b border-[#EAE5DA] flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-center gap-4">
               <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-200 to-amber-300 border-2 border-amber-400 overflow-hidden flex items-center justify-center font-black text-lg text-amber-900 shadow-xs shrink-0">
                 {member.avatar_url ? (

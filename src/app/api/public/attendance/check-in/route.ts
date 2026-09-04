@@ -49,10 +49,10 @@ export async function POST(request: NextRequest) {
       if (member.notes && member.notes.startsWith('{')) parsedNotes = JSON.parse(member.notes);
     } catch (_) {}
 
-    const mLat = Number(member.latitude) || Number(custom.latitude) || Number((parsedNotes as any).latitude);
-    const mLng = Number(member.longitude) || Number(custom.longitude) || Number((parsedNotes as any).longitude);
-    const mRadius = Number(member.radius_meters) || Number(custom.radius_meters) || Number((parsedNotes as any).radius_meters) || 150;
-    const mLocName = member.location_name || custom.location_name || (parsedNotes as any).location_name || 'Assigned Work Location';
+    const mLat = Number(member.office_latitude) || Number(member.assigned_lat) || Number(member.latitude) || Number(custom.office_latitude) || Number(custom.assigned_lat) || Number(custom.latitude) || Number((parsedNotes as any).office_latitude) || Number((parsedNotes as any).latitude);
+    const mLng = Number(member.office_longitude) || Number(member.assigned_lng) || Number(member.longitude) || Number(custom.office_longitude) || Number(custom.assigned_lng) || Number(custom.longitude) || Number((parsedNotes as any).office_longitude) || Number((parsedNotes as any).longitude);
+    const mRadius = Number(member.geofence_radius_meters) || Number(member.radius_meters) || Number(custom.geofence_radius_meters) || Number(custom.radius_meters) || Number((parsedNotes as any).radius_meters) || 100;
+    const mLocName = member.office_address || member.location_name || custom.office_address || custom.location_name || (parsedNotes as any).location_name || 'Assigned Work Location';
 
     if (mLat && mLng) {
       const staffLoc = {
@@ -82,11 +82,14 @@ export async function POST(request: NextRequest) {
     let allowedRadius = mRadius || 150;
 
     const isGeofenceExempt = Boolean(
+      member.geofence_exempt === true ||
       member.is_geofence_exempt === true || 
       member.geofence_required === false || 
+      custom.geofence_exempt === true ||
       custom.is_geofence_exempt === true || 
       custom.allow_anywhere === true || 
       custom.geofence_required === false ||
+      (parsedNotes as any).geofence_exempt === true ||
       (parsedNotes as any).is_geofence_exempt === true ||
       (parsedNotes as any).allow_anywhere === true ||
       (parsedNotes as any).geofence_required === false
@@ -343,6 +346,23 @@ export async function POST(request: NextRequest) {
       const finalRes = await finalQuery;
       if (finalRes.error) throw finalRes.error;
       savedRecord = finalRes.data;
+    }
+
+    // Sync to attendance_logs table
+    try {
+      await supabaseAdmin.from('attendance_logs').insert([{
+        member_id: String(link.member_id),
+        member_name: member?.name || 'Staff Member',
+        date: istDateStr,
+        punch_in_time: nowTime.toISOString(),
+        punch_in_lat: lat ? Number(lat) : null,
+        punch_in_lng: lng ? Number(lng) : null,
+        is_geofence_exempt: isGeofenceExempt,
+        status: 'PRESENT',
+        notes: punchAddress
+      }]);
+    } catch (logErr) {
+      console.warn('attendance_logs punch-in sync notice:', logErr);
     }
 
     return NextResponse.json({

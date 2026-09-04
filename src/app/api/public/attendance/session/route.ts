@@ -135,20 +135,23 @@ export async function GET(request: NextRequest) {
     } catch (_) {}
 
     const isMemberExempt = Boolean(
+      member.geofence_exempt === true ||
       member.is_geofence_exempt === true ||
       member.geofence_required === false ||
+      custom.geofence_exempt === true ||
       custom.is_geofence_exempt === true ||
       custom.allow_anywhere === true ||
       custom.geofence_required === false ||
+      (parsedNotes as any).geofence_exempt === true ||
       (parsedNotes as any).is_geofence_exempt === true ||
       (parsedNotes as any).allow_anywhere === true ||
       (parsedNotes as any).geofence_required === false
     );
 
-    const mLat = Number(member.latitude) || Number(custom.latitude) || Number((parsedNotes as any).latitude);
-    const mLng = Number(member.longitude) || Number(custom.longitude) || Number((parsedNotes as any).longitude);
-    const mRadius = Number(member.radius_meters) || Number(custom.radius_meters) || Number((parsedNotes as any).radius_meters) || 150;
-    const mLocName = member.location_name || custom.location_name || (parsedNotes as any).location_name || 'Assigned Studio/Office';
+    const mLat = Number(member.office_latitude) || Number(member.assigned_lat) || Number(member.latitude) || Number(custom.office_latitude) || Number(custom.assigned_lat) || Number(custom.latitude) || Number((parsedNotes as any).office_latitude) || Number((parsedNotes as any).latitude);
+    const mLng = Number(member.office_longitude) || Number(member.assigned_lng) || Number(member.longitude) || Number(custom.office_longitude) || Number(custom.assigned_lng) || Number(custom.longitude) || Number((parsedNotes as any).office_longitude) || Number((parsedNotes as any).longitude);
+    const mRadius = Number(member.geofence_radius_meters) || Number(member.radius_meters) || Number(custom.geofence_radius_meters) || Number(custom.radius_meters) || Number((parsedNotes as any).radius_meters) || 100;
+    const mLocName = member.office_address || member.location_name || custom.office_address || custom.location_name || (parsedNotes as any).location_name || 'Assigned Studio/Office';
 
     if (isMemberExempt) {
       locations = [{

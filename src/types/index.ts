@@ -340,6 +340,10 @@ export interface FWTeamMember {
   notes?: string | null;
   active_status?: boolean;
   is_active?: boolean;
+  primary_type?: string | null;
+  type?: string | null;
+  member_types?: string[] | null;
+  agreed?: number | null;
   custom_data?: Record<string, any> | null;
   created_at?: string;
   updated_at?: string;
@@ -648,6 +652,14 @@ export interface AttendanceRecord {
   shift_id?: string | null;
   device_info?: Record<string, any>;
   notes?: string | null;
+  punch_in_time?: string | null;
+  punch_out_time?: string | null;
+  punch_in_lat?: number | null;
+  punch_in_lng?: number | null;
+  punch_out_lat?: number | null;
+  punch_out_lng?: number | null;
+  is_geofence_exempt?: boolean | null;
+  log_id?: string | null;
   created_at?: string;
   updated_at?: string;
 }
