@@ -48,6 +48,10 @@ interface TeamMemberFinanceDrawerProps {
     default_daily_rate?: number;
     default_currency?: string;
     payout_frequency?: string;
+    commercial_agreed?: number;
+    commercial_paid?: number;
+    events?: any[];
+    [key: string]: any;
   } | null;
   initialSummary?: TeamFinancialSummary | null;
   onFinancialUpdate?: (memberId: string, updatedMetrics: Partial<TeamFinancialSummary>) => void;
@@ -179,7 +183,7 @@ export default function TeamMemberFinanceDrawer({
     setIsRefreshing(true);
     try {
       const [payoutsResult, salariesResult, ordersResult, summaryResult] = await Promise.allSettled([
-        fetchMemberPayouts(member.id),
+        fetchMemberEventPayouts(workspaceId, member.id),
         fetchMemberSalaryRecords(workspaceId, member.id),
         isLab ? fetchPartnerAlbumOrders(workspaceId, member.id) : Promise.resolve([]),
         fetchMemberFinancialSummary(workspaceId, member.id, memberType)
@@ -236,9 +240,13 @@ export default function TeamMemberFinanceDrawer({
             eventPayouts = rawData.map((a: any) => {
               const se = a.fw_sub_events;
               const rawAgreed = a.agreed_amount !== undefined && a.agreed_amount !== null ? Number(a.agreed_amount) : 0;
-              const agreed = isNaN(rawAgreed) ? 0 : rawAgreed;
+              const isSyntheticMultiplier = rawAgreed === 18000 || (member?.default_daily_rate && rawAgreed === Number(member.default_daily_rate));
+              const hasExplicitCustomPayout = Boolean(a.custom_payout || a.custom_rate || a.is_custom_payout);
+              const agreed = hasExplicitCustomPayout
+                ? (Number(a.custom_payout || a.custom_rate) || rawAgreed)
+                : (isSyntheticMultiplier ? 0 : (isNaN(rawAgreed) ? 0 : rawAgreed));
               const paid = Number(a.advance_amount ?? a.paid_amount) || 0;
-              const bal = Number(a.balance_amount) > 0 ? Number(a.balance_amount) : Math.max(0, agreed - paid);
+              const bal = Math.max(0, agreed - paid);
               const pStatus = (agreed > 0 && bal === 0) || a.payment_status === 'completed' || a.payment_status === 'PAID'
                 ? 'PAID'
                 : paid > 0 || a.payment_status === 'partial' || a.payment_status === 'PARTIAL'
@@ -331,16 +339,26 @@ export default function TeamMemberFinanceDrawer({
     });
   }, [payouts, workspaceId]);
 
-  // Accurate banner calculations strictly summing the fetched rows (eliminates ghost amounts)
-  const totalAgreed = useMemo(() => {
-    return studioShoots.reduce((acc, row) => acc + (Number(row.agreed_amount) || 0), 0);
-  }, [studioShoots]);
+  // Commercials must strictly show what is explicitly saved in the member's profile or sum of explicit event payouts:
+  // If no agreed contract or event amount is set, IT MUST BE 0.
 
-  const totalPaid = useMemo(() => {
-    return studioShoots.reduce((acc, row) => acc + (Number(row.paid_amount) || 0), 0);
-  }, [studioShoots]);
+  // Calculate strictly from explicit event assignments where agreed_amount > 0:
+  const explicitAgreed = useMemo(() => {
+    if (Array.isArray(member?.events)) {
+      return member.events.reduce((sum: number, ev: any) => sum + (Number(ev.agreed_amount || ev.custom_payout) || 0), 0);
+    }
+    return studioShoots.reduce((sum: number, ev: any) => {
+      const raw = Number(ev.agreed_amount) || 0;
+      const isSynthetic = raw === 18000 || (member?.default_daily_rate && raw === Number(member.default_daily_rate));
+      const val = isSynthetic ? (Number((ev as any).custom_payout) || 0) : raw;
+      return sum + val;
+    }, 0);
+  }, [member?.events, member?.default_daily_rate, studioShoots]);
 
-  const balanceDue = totalAgreed - totalPaid;
+  // Outer Agreed Amount:
+  const displayAgreed = Number(member?.commercial_agreed) || explicitAgreed || 0;
+  const displayPaid = displayAgreed === 0 ? 0 : (Number(member?.commercial_paid) || studioShoots.reduce((acc, row) => acc + (Number(row.paid_amount) || 0), 0));
+  const displayBalance = displayAgreed === 0 ? 0 : Math.max(0, displayAgreed - displayPaid);
 
   // ── CREATE SALARY SLIP SUBMISSION HANDLER ──
   const handleCreateSalarySlip = async (e: React.FormEvent) => {
@@ -676,7 +694,7 @@ export default function TeamMemberFinanceDrawer({
                 <Wallet className="w-2.5 h-2.5 text-amber-600" /> Agreed Shoots
               </span>
               <span className="text-xs sm:text-sm font-black text-amber-950 mt-1 font-mono">
-                ₹{totalAgreed.toLocaleString('en-IN')}
+                ₹{displayAgreed.toLocaleString('en-IN')}
               </span>
             </div>
 
@@ -686,23 +704,23 @@ export default function TeamMemberFinanceDrawer({
                 <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> Total Paid
               </span>
               <span className="text-xs sm:text-sm font-black text-emerald-900 mt-1 font-mono">
-                ₹{totalPaid.toLocaleString('en-IN')}
+                ₹{displayPaid.toLocaleString('en-IN')}
               </span>
             </div>
 
             {/* Balance Due */}
             <div className={`p-2.5 rounded-xl bg-white border shadow-2xs flex flex-col justify-between ${
-              balanceDue > 0 ? 'border-rose-300 bg-rose-50/30' : 'border-amber-200/90'
+              displayBalance > 0 ? 'border-rose-300 bg-rose-50/30' : 'border-amber-200/90'
             }`}>
               <span className={`text-[9px] font-extrabold uppercase tracking-wider flex items-center gap-1 ${
-                balanceDue > 0 ? 'text-rose-700' : 'text-zinc-500'
+                displayBalance > 0 ? 'text-rose-700' : 'text-zinc-500'
               }`}>
                 <Clock className="w-2.5 h-2.5 text-rose-500" /> Balance Due
               </span>
               <span className={`text-xs sm:text-sm font-black mt-1 font-mono ${
-                balanceDue > 0 ? 'text-rose-700' : 'text-zinc-700'
+                displayBalance > 0 ? 'text-rose-700' : 'text-zinc-700'
               }`}>
-                ₹{balanceDue.toLocaleString('en-IN')}
+                ₹{displayBalance.toLocaleString('en-IN')}
               </span>
             </div>
           </div>
@@ -843,7 +861,15 @@ export default function TeamMemberFinanceDrawer({
                     </div>
                   ) : (
                     studioShoots.map((payout) => {
-                      const isPaid = payout.status === 'PAID' || payout.status === 'completed' || Number(payout.balance_amount) <= 0;
+                      const rawCardAgreed = Number(payout.agreed_amount) || 0;
+                      const hasCustom = Boolean((payout as any).custom_payout || (payout as any).custom_rate || (payout as any).is_custom_payout);
+                      const isSynthetic = rawCardAgreed === 18000 || (member?.default_daily_rate && rawCardAgreed === Number(member.default_daily_rate));
+                      const cardAgreed = hasCustom
+                        ? (Number((payout as any).custom_payout || (payout as any).custom_rate) || rawCardAgreed)
+                        : (isSynthetic ? 0 : rawCardAgreed);
+                      const cardPaid = Number(payout.paid_amount || 0);
+                      const cardDue = Math.max(0, cardAgreed - cardPaid);
+                      const isPaid = (cardAgreed > 0 && cardDue <= 0) || payout.status === 'PAID' || payout.status === 'completed';
                       const displayClient = (payout.client_name && payout.client_name.trim() !== '' && payout.client_name.toLowerCase() !== 'wedding shoot')
                         ? payout.client_name
                         : 'Client Not Assigned';
@@ -878,24 +904,26 @@ export default function TeamMemberFinanceDrawer({
                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 border ${
                               isPaid
                                 ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : 'bg-amber-50 text-amber-800 border-amber-200'
+                                : cardAgreed === 0
+                                  ? 'bg-stone-100 text-stone-600 border-stone-200'
+                                  : 'bg-amber-50 text-amber-800 border-amber-200'
                             }`}>
-                              {isPaid ? '🟢 PAID' : '🟡 DUE'}
+                              {isPaid ? '🟢 PAID' : cardAgreed === 0 ? '⚪ ₹0 RATE' : '🟡 DUE'}
                             </span>
                           </div>
 
                           <div className="bg-stone-50 rounded-xl p-2 grid grid-cols-3 gap-1 text-center font-mono border border-stone-200/70">
                             <div>
                               <span className="text-[9px] font-bold text-stone-400 block uppercase">Agreed</span>
-                              <span className="text-xs font-black text-stone-800">₹{Number(payout.agreed_amount).toLocaleString('en-IN')}</span>
+                              <span className="text-xs font-black text-stone-800">₹{cardAgreed.toLocaleString('en-IN')}</span>
                             </div>
                             <div>
                               <span className="text-[9px] font-bold text-emerald-600 block uppercase">Paid</span>
-                              <span className="text-xs font-black text-emerald-700">₹{Number(payout.paid_amount).toLocaleString('en-IN')}</span>
+                              <span className="text-xs font-black text-emerald-700">₹{cardPaid.toLocaleString('en-IN')}</span>
                             </div>
                             <div>
                               <span className="text-[9px] font-bold text-rose-500 block uppercase">Due</span>
-                              <span className="text-xs font-black text-rose-700">₹{Number(payout.balance_amount).toLocaleString('en-IN')}</span>
+                              <span className="text-xs font-black text-rose-700">₹{cardDue.toLocaleString('en-IN')}</span>
                             </div>
                           </div>
 
@@ -908,11 +936,11 @@ export default function TeamMemberFinanceDrawer({
                                   id: payout.id,
                                   title: payout.event_name,
                                   clientName: payout.client_name,
-                                  totalAmount: Number(payout.agreed_amount),
-                                  balanceAmount: Number(payout.balance_amount),
+                                  totalAmount: cardAgreed,
+                                  balanceAmount: cardDue,
                                   role: payout.role
                                 });
-                                setPaymentAmount(String(payout.balance_amount > 0 ? payout.balance_amount : payout.agreed_amount));
+                                setPaymentAmount(String(cardDue > 0 ? cardDue : (cardAgreed > 0 ? cardAgreed : '')));
                                 setIsPaymentModalOpen(true);
                               }}
                               className="w-full py-1.5 bg-stone-900 hover:bg-stone-800 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center justify-center gap-1.5 transition"

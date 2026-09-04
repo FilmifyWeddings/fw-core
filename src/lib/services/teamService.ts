@@ -59,6 +59,7 @@ export {
   syncTeamPaymentToExpensesAndAnalytics,
   fetchMemberFinancialSummary,
   fetchMemberEventPayouts,
+  fetchMemberEventPayouts as fetchMemberAssignments,
   saveOrUpdateEventPayout,
   recordPayoutTransaction
 };

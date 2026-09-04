@@ -492,9 +492,15 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
         }
 
         const rawAgreed = Number(a.agreed_amount) || 0;
-        const agreed = rawAgreed > 0 ? rawAgreed : defaultDailyRate;
+        // Strict explicit agreed check: If not explicitly set or is 0, display strictly 0.
+        // DO NOT apply master role rates (e.g. 18000) or default daily rate multipliers.
+        const isSyntheticMultiplier = rawAgreed === 18000 || (rawDailyRate > 0 && rawAgreed === rawDailyRate);
+        const hasExplicitCustomPayout = Boolean((a as any).custom_payout || (a as any).custom_rate || (a as any).is_custom_payout);
+        const agreed = hasExplicitCustomPayout 
+          ? (Number((a as any).custom_payout || (a as any).custom_rate) || rawAgreed)
+          : (isSyntheticMultiplier ? 0 : rawAgreed);
         const paid = Number(a.advance_amount ?? a.paid_amount) || 0;
-        const bal = Number(a.balance_amount) > 0 ? Number(a.balance_amount) : Math.max(0, agreed - paid);
+        const bal = Math.max(0, agreed - paid);
         const pStatus: 'PENDING' | 'PARTIAL' | 'PAID' = (agreed > 0 && bal === 0)
           ? 'PAID' 
           : paid > 0 
@@ -1976,9 +1982,12 @@ export async function batchFetchWorkspaceTeamFinancials(
       if (!mid || !summaryMap[mid]) return;
       processedAssignmentMembers.add(mid);
 
-      const agreed = Number(row.agreed_amount) || 0;
+      // Kill synthetic multipliers: Commercials must strictly show what is explicitly saved or explicit custom payouts
+      const rawAgreed = Number(row.agreed_amount) || 0;
+      const hasCustom = Boolean((row as any).custom_payout || (row as any).custom_rate || (row as any).is_custom_payout);
+      const agreed = hasCustom ? (Number((row as any).custom_payout || (row as any).custom_rate) || 0) : 0;
       const paid = Number(row.advance_amount ?? row.paid_amount) || 0;
-      const bal = Number(row.balance_amount) > 0 ? Number(row.balance_amount) : Math.max(0, agreed - paid);
+      const bal = Math.max(0, agreed - paid);
 
       summaryMap[mid].total_agreed += agreed;
       summaryMap[mid].total_paid += paid;

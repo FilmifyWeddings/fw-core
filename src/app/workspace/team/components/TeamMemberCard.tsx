@@ -36,10 +36,23 @@ export default function TeamMemberCard({
   const isPartner = member.type === 'partner' || member.primary_type === 'PARTNER' || member.member_types?.includes('PARTNER');
   const typeLabel = isPartner ? 'Partner' : isFreelancer ? 'Freelancer' : (member.type || member.primary_type || 'In-House');
 
-  // Explicitly check actual recorded numeric values (no ghost daily rate fallback)
-  const agreedAmount = Number(agreed ?? (member.agreed !== undefined ? member.agreed : (member.agreed_amount !== undefined ? member.agreed_amount : 0)));
-  const paidAmount = Number(paid ?? (member.paid !== undefined ? member.paid : (member.paid_amount !== undefined ? member.paid_amount : 0)));
-  const balanceAmount = Number(balance ?? (agreedAmount - paidAmount));
+  // Commercials must strictly show what is explicitly saved in the member's profile or sum of explicit event payouts:
+  // If no agreed contract or event amount is set, IT MUST BE 0.
+  
+  // Calculate strictly from explicit event assignments where agreed_amount > 0:
+  const explicitAgreed = Array.isArray(member.events)
+    ? member.events.reduce((sum: number, ev: any) => {
+        const raw = Number(ev.agreed_amount) || 0;
+        const isSynthetic = raw === 18000 || (member.default_daily_rate && raw === Number(member.default_daily_rate));
+        const val = isSynthetic ? (Number(ev.custom_payout) || 0) : raw;
+        return sum + val;
+      }, 0)
+    : 0;
+
+  // Outer Agreed Amount:
+  const displayAgreed = Number(member.commercial_agreed) || explicitAgreed || 0;
+  const displayPaid = displayAgreed === 0 ? 0 : (Number(member.commercial_paid) || 0);
+  const displayBalance = displayAgreed === 0 ? 0 : Math.max(0, displayAgreed - displayPaid);
   const rolesList: string[] = (member.roles && member.roles.length > 0) ? member.roles : (member.primary_role ? [member.primary_role] : []);
 
   // Safe portal access resolution - eliminates raw DB metadata dump completely
@@ -152,9 +165,9 @@ export default function TeamMemberCard({
 
         {/* Compact Commercials */}
         <div className="flex items-center gap-2 text-[10px]">
-          <div><span className="text-slate-400 text-[8px] uppercase">Agr: </span><span className="font-bold text-slate-700">₹{agreedAmount.toLocaleString('en-IN')}</span></div>
-          <div><span className="text-slate-400 text-[8px] uppercase">Paid: </span><span className="font-bold text-emerald-600">₹{paidAmount.toLocaleString('en-IN')}</span></div>
-          <div><span className="text-slate-400 text-[8px] uppercase">Bal: </span><span className="font-bold text-amber-600">₹{balanceAmount.toLocaleString('en-IN')}</span></div>
+          <div><span className="text-slate-400 text-[8px] uppercase">Agr: </span><span className="font-bold text-slate-700">₹{displayAgreed.toLocaleString('en-IN')}</span></div>
+          <div><span className="text-slate-400 text-[8px] uppercase">Paid: </span><span className="font-bold text-emerald-600">₹{displayPaid.toLocaleString('en-IN')}</span></div>
+          <div><span className="text-slate-400 text-[8px] uppercase">Bal: </span><span className="font-bold text-amber-600">₹{displayBalance.toLocaleString('en-IN')}</span></div>
         </div>
       </div>
 

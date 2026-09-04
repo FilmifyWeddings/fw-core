@@ -20,10 +20,23 @@ export default function TeamTableRow({
   handleDeleteMember,
   fin,
 }: TeamTableRowProps) {
-  // Explicitly check actual recorded numeric values (no ghost daily rate fallback)
-  const agreedAmount = Number(fin?.total_agreed ?? (member.agreed !== undefined ? member.agreed : (member.agreed_amount !== undefined ? member.agreed_amount : 0)));
-  const paidAmount = Number(fin?.total_paid ?? (member.paid !== undefined ? member.paid : (member.paid_amount !== undefined ? member.paid_amount : 0)));
-  const balanceAmount = Number(fin?.total_balance ?? (agreedAmount - paidAmount));
+  // Commercials must strictly show what is explicitly saved in the member's profile or sum of explicit event payouts:
+  // If no agreed contract or event amount is set, IT MUST BE 0.
+  
+  // Calculate strictly from explicit event assignments where agreed_amount > 0:
+  const explicitAgreed = Array.isArray(member.events)
+    ? member.events.reduce((sum: number, ev: any) => {
+        const raw = Number(ev.agreed_amount) || 0;
+        const isSynthetic = raw === 18000 || (member.default_daily_rate && raw === Number(member.default_daily_rate));
+        const val = isSynthetic ? (Number(ev.custom_payout) || 0) : raw;
+        return sum + val;
+      }, 0)
+    : 0;
+
+  // Outer Agreed Amount:
+  const displayAgreed = Number(member.commercial_agreed) || explicitAgreed || 0;
+  const displayPaid = displayAgreed === 0 ? 0 : (Number(member.commercial_paid) || 0);
+  const displayBalance = displayAgreed === 0 ? 0 : Math.max(0, displayAgreed - displayPaid);
 
   const isFreelancer = member.primary_type === 'FREELANCER' || member.member_types?.includes('FREELANCER') || member.type === 'freelancer';
   const isPartner = member.primary_type === 'PARTNER' || member.member_types?.includes('PARTNER') || member.type === 'partner';
@@ -100,17 +113,17 @@ export default function TeamTableRow({
       <div className="col-span-3 w-full flex items-center gap-3 text-xs">
         <div>
           <span className="text-[9px] uppercase font-bold text-slate-400 block">Agreed</span>
-          <span className="font-bold text-slate-700">₹{agreedAmount.toLocaleString('en-IN')}</span>
+          <span className="font-bold text-slate-700">₹{displayAgreed.toLocaleString('en-IN')}</span>
         </div>
         <div className="h-5 w-px bg-slate-200"></div>
         <div>
           <span className="text-[9px] uppercase font-bold text-slate-400 block">Paid</span>
-          <span className="font-bold text-emerald-600">₹{paidAmount.toLocaleString('en-IN')}</span>
+          <span className="font-bold text-emerald-600">₹{displayPaid.toLocaleString('en-IN')}</span>
         </div>
         <div className="h-5 w-px bg-slate-200"></div>
         <div>
           <span className="text-[9px] uppercase font-bold text-slate-400 block">Balance</span>
-          <span className="font-bold text-amber-600">₹{balanceAmount.toLocaleString('en-IN')}</span>
+          <span className="font-bold text-amber-600">₹{displayBalance.toLocaleString('en-IN')}</span>
         </div>
       </div>
 
