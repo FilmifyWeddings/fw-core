@@ -13,26 +13,24 @@ export function AuthRedirectGuard() {
   const pathname = usePathname();
   const router = useRouter();
 
-  // Auto-healing: Destroy broken or corrupted supabase cookies on sign-out or initial empty session on public routes
+  // Auto-healing: Clean cookies only on explicit user SIGN_OUT event
   useEffect(() => {
     try {
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-        if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session)) {
-          if (pathname === '/login' || pathname === '/') {
-            if (typeof document !== 'undefined' && document.cookie) {
-              document.cookie.split(';').forEach((c) => {
-                const trimmed = c.trim();
-                if (trimmed.startsWith('sb-') && (trimmed.includes('auth-token') || trimmed.includes('-token'))) {
-                  document.cookie = trimmed.replace(/^ +/, '').replace(/=.*/, '=;expires=' + new Date(0).toUTCString() + ';path=/;SameSite=Lax');
-                }
-              });
-            }
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+        if (event === 'SIGNED_OUT') {
+          if (typeof document !== 'undefined' && document.cookie) {
+            document.cookie.split(';').forEach((c) => {
+              const trimmed = c.trim();
+              if (trimmed.startsWith('sb-') && (trimmed.includes('auth-token') || trimmed.includes('-token'))) {
+                document.cookie = trimmed.replace(/^ +/, '').replace(/=.*/, '=;expires=' + new Date(0).toUTCString() + ';path=/;SameSite=Lax');
+              }
+            });
           }
         }
       });
       return () => subscription.unsubscribe();
     } catch (_) {}
-  }, [pathname]);
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;

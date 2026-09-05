@@ -3,9 +3,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
-import { supabase } from '@/lib/supabase';
+import { supabase, clearAllSupabaseAuthCookies } from '@/lib/supabase';
 import {
   User,
   Lock,
@@ -84,6 +83,40 @@ export const OfficialStudioCoreLogo = () => (
   </div>
 );
 
+// Safe redirect URL decoder and sanitizer to eliminate circular redirect loops
+export const getSanitizedRedirectUrl = (rawRedirect: string | null | undefined, defaultPath: string): string => {
+  if (!rawRedirect) return defaultPath;
+
+  try {
+    let decoded = decodeURIComponent(rawRedirect).trim();
+    // In case of double-encoded params (e.g. %252Fworkspace)
+    if (decoded.includes('%')) {
+      try {
+        decoded = decodeURIComponent(decoded).trim();
+      } catch (_) {}
+    }
+
+    // Security & Circular Loop Prevention:
+    // 1. Must be a relative path starting with '/'
+    // 2. Must not start with '//' (prevents open protocol-relative redirects)
+    // 3. Must not start with '/login' or '/auth' (prevents infinite login bounce loops)
+    // 4. Must not contain dangerous URI schemes
+    const lower = decoded.toLowerCase();
+    if (
+      decoded.startsWith('/') &&
+      !decoded.startsWith('//') &&
+      !lower.startsWith('/login') &&
+      !lower.startsWith('/auth') &&
+      !lower.includes('javascript:') &&
+      !lower.includes('data:')
+    ) {
+      return decoded;
+    }
+  } catch (_) {}
+
+  return defaultPath;
+};
+
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -159,6 +192,22 @@ export default function LoginPage() {
     }
   }, [searchParams]);
 
+  // Auto-redirect if already authenticated and no explicit error or logout state
+  useEffect(() => {
+    async function checkExistingSession() {
+      try {
+        if (searchParams.get('error') || searchParams.get('logout') || searchParams.get('portal')) return;
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const defaultPath = portal === 'team' ? '/team/dashboard' : '/workspace';
+          const destination = getSanitizedRedirectUrl(searchParams.get('redirectTo'), defaultPath);
+          window.location.href = destination;
+        }
+      } catch (_) {}
+    }
+    checkExistingSession();
+  }, [portal, searchParams]);
+
   // Real-Time Check: Email Already Registered (in Sign Up Mode)
   useEffect(() => {
     const currentEmail = authMode === 'signup' ? (portal === 'studio' ? signupEmail : teamEmail) : '';
@@ -220,6 +269,9 @@ export default function LoginPage() {
     setError(null);
 
     try {
+      // Clear any conflicting or stale session chunks before fresh login
+      clearAllSupabaseAuthCookies();
+
       const cleanIdent = identifier.trim().toLowerCase();
 
       const { data, error: authErr } = await supabase.auth.signInWithPassword({
@@ -246,11 +298,13 @@ export default function LoginPage() {
       }
 
       if (data?.user) {
-        if (portal === 'team') {
-          router.push('/team/dashboard');
-        } else {
-          router.push('/workspace');
-        }
+        const defaultPath = portal === 'team' ? '/team/dashboard' : '/workspace';
+        const destination = getSanitizedRedirectUrl(searchParams.get('redirectTo'), defaultPath);
+
+        // HARD NAVIGATION:
+        // Ensures the browser commits and flushes document.cookie to HTTP request headers,
+        // bypasses the Next.js client router cache, and prevents infinite redirect loops.
+        window.location.href = destination;
       }
     } catch (err: any) {
       console.error('[Login] Error:', err);
@@ -346,7 +400,8 @@ export default function LoginPage() {
               email: cleanEmail,
               password: teamPassword,
             });
-            router.push('/team/dashboard');
+            const destination = getSanitizedRedirectUrl(searchParams.get('redirectTo'), '/team/dashboard');
+            window.location.href = destination;
             return;
           }
         }
@@ -372,11 +427,9 @@ export default function LoginPage() {
   // Handle OTP Verification Success
   const handleOtpVerified = async () => {
     setShowOtpModal(false);
-    if (portal === 'team' || otpPendingMeta?.isTeamPortal) {
-      router.push('/team/dashboard');
-    } else {
-      router.push('/workspace');
-    }
+    const defaultPath = (portal === 'team' || otpPendingMeta?.isTeamPortal) ? '/team/dashboard' : '/workspace';
+    const destination = getSanitizedRedirectUrl(searchParams.get('redirectTo'), defaultPath);
+    window.location.href = destination;
   };
 
   const filteredCountries = COUNTRIES.filter(

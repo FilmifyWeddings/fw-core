@@ -128,8 +128,10 @@ export async function proxy(request: NextRequest) {
         },
       });
 
-      const { data } = await supabase.auth.getUser();
-      user = data.user;
+      const { data, error: userError } = await supabase.auth.getUser();
+      if (!userError && data?.user) {
+        user = data.user;
+      }
     } catch {
       /* ignore */
     }
@@ -275,7 +277,17 @@ export async function proxy(request: NextRequest) {
       }
       const loginUrl = new URL('/login', request.url);
       loginUrl.searchParams.set('redirectTo', pathname);
-      return NextResponse.redirect(loginUrl, { status: 307 });
+      const redirectResponse = NextResponse.redirect(loginUrl, { status: 303 });
+
+      // If user had stale/corrupted cookies that failed auth, purge them so the browser stops sending dead chunks
+      const allCookies = request.cookies.getAll();
+      allCookies.forEach(c => {
+        if (c.name.includes('-token') || c.name.startsWith('sb-')) {
+          redirectResponse.cookies.set(c.name, '', { maxAge: 0, path: '/' });
+        }
+      });
+
+      return redirectResponse;
     }
 
     return response;

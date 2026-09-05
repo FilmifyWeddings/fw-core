@@ -57,34 +57,45 @@ export default function RootLayout({
               __html: `
                 (function() {
                   try {
+                    function safeGet(k) {
+                      try { return typeof window !== 'undefined' && window.sessionStorage ? window.sessionStorage.getItem(k) : null; } catch(_) { return null; }
+                    }
+                    function safeSet(k, v) {
+                      try { if (typeof window !== 'undefined' && window.sessionStorage) window.sessionStorage.setItem(k, v); } catch(_) {}
+                    }
+
                     // 1. Chunk load error & deployment mismatch auto-recovery
                     window.addEventListener('error', function(e) {
-                      var target = e.target || e.srcElement;
-                      var isAsset = target && (target.tagName === 'SCRIPT' || target.tagName === 'LINK');
-                      var src = (target && (target.src || target.href)) || '';
-                      if (isAsset && src.indexOf('/_next/static/') !== -1) {
-                        console.warn('[StudioCore Recovery]: Stale chunk detected after deployment update. Refreshing...');
-                        var lastReload = sessionStorage.getItem('sc_chunk_reload');
-                        var now = Date.now();
-                        if (!lastReload || (now - parseInt(lastReload, 10)) > 8000) {
-                          sessionStorage.setItem('sc_chunk_reload', now.toString());
-                          window.location.reload();
+                      try {
+                        var target = e.target || e.srcElement;
+                        var isAsset = target && (target.tagName === 'SCRIPT' || target.tagName === 'LINK');
+                        var src = (target && (target.src || target.href)) || '';
+                        if (isAsset && src.indexOf('/_next/static/') !== -1) {
+                          console.warn('[StudioCore Recovery]: Stale chunk detected after deployment update. Refreshing...');
+                          var lastReload = safeGet('sc_chunk_reload');
+                          var now = Date.now();
+                          if (!lastReload || (now - parseInt(lastReload, 10)) > 8000) {
+                            safeSet('sc_chunk_reload', now.toString());
+                            window.location.reload();
+                          }
                         }
-                      }
+                      } catch(_) {}
                     }, true);
 
                     window.addEventListener('unhandledrejection', function(e) {
-                      var reason = e.reason;
-                      var msg = (reason && (reason.message || reason.name || '')) || '';
-                      if (msg.indexOf('ChunkLoadError') !== -1 || msg.indexOf('Loading chunk') !== -1 || msg.indexOf('Failed to fetch dynamically imported module') !== -1) {
-                        console.warn('[StudioCore Recovery]: ChunkLoadError caught. Refreshing to get latest app version...');
-                        var lastReload = sessionStorage.getItem('sc_chunk_reload');
-                        var now = Date.now();
-                        if (!lastReload || (now - parseInt(lastReload, 10)) > 8000) {
-                          sessionStorage.setItem('sc_chunk_reload', now.toString());
-                          window.location.reload();
+                      try {
+                        var reason = e.reason;
+                        var msg = (reason && (reason.message || reason.name || '')) || '';
+                        if (msg.indexOf('ChunkLoadError') !== -1 || msg.indexOf('Loading chunk') !== -1 || msg.indexOf('Failed to fetch dynamically imported module') !== -1) {
+                          console.warn('[StudioCore Recovery]: ChunkLoadError caught. Refreshing to get latest app version...');
+                          var lastReload = safeGet('sc_chunk_reload');
+                          var now = Date.now();
+                          if (!lastReload || (now - parseInt(lastReload, 10)) > 8000) {
+                            safeSet('sc_chunk_reload', now.toString());
+                            window.location.reload();
+                          }
                         }
-                      }
+                      } catch(_) {}
                     });
                   } catch(e){}
                 })();
