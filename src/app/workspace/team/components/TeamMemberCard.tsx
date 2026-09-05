@@ -36,23 +36,26 @@ export default function TeamMemberCard({
   const isPartner = member.type === 'partner' || member.primary_type === 'PARTNER' || member.member_types?.includes('PARTNER');
   const typeLabel = isPartner ? 'Partner' : isFreelancer ? 'Freelancer' : (member.type || member.primary_type || 'In-House');
 
-  // Commercials must strictly show what is explicitly saved in the member's profile or sum of explicit event payouts:
-  // If no agreed contract or event amount is set, IT MUST BE 0.
-  
-  // Calculate strictly from explicit event assignments where agreed_amount > 0:
-  const explicitAgreed = Array.isArray(member.events)
-    ? member.events.reduce((sum: number, ev: any) => {
-        const raw = Number(ev.agreed_amount) || 0;
-        const isSynthetic = raw === 18000 || (member.default_daily_rate && raw === Number(member.default_daily_rate));
-        const val = isSynthetic ? (Number(ev.custom_payout) || 0) : raw;
-        return sum + val;
-      }, 0)
-    : 0;
+  // For each member, aggregate actual active assignments:
+  const activeItems = (member.payouts && member.payouts.length > 0)
+    ? member.payouts
+    : (member.assignments && member.assignments.length > 0)
+    ? member.assignments
+    : (Array.isArray(member.events) && member.events.length > 0)
+    ? member.events
+    : [];
 
-  // Outer Agreed Amount:
-  const displayAgreed = Number(member.commercial_agreed) || explicitAgreed || 0;
-  const displayPaid = displayAgreed === 0 ? 0 : (Number(member.commercial_paid) || 0);
-  const displayBalance = displayAgreed === 0 ? 0 : Math.max(0, displayAgreed - displayPaid);
+  const displayAgreed = activeItems.length > 0
+    ? activeItems.reduce((sum: number, item: any) => sum + (Number(item.agreed_amount) || 0), 0)
+    : (agreed !== undefined ? Number(agreed) : (Number(member.commercial_agreed) || 0));
+
+  const displayPaid = activeItems.length > 0
+    ? activeItems.reduce((sum: number, item: any) => sum + (Number(item.paid_amount ?? item.advance_amount) || 0), 0)
+    : (paid !== undefined ? Number(paid) : (Number(member.commercial_paid) || 0));
+
+  const displayBalance = activeItems.length > 0
+    ? Math.max(0, displayAgreed - displayPaid)
+    : (balance !== undefined ? Number(balance) : Math.max(0, displayAgreed - displayPaid));
   const rolesList: string[] = (member.roles && member.roles.length > 0) ? member.roles : (member.primary_role ? [member.primary_role] : []);
 
   // Safe portal access resolution - eliminates raw DB metadata dump completely

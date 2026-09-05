@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { FWTeamMember, FWProject, FWSubEvent } from '@/types';
 import { assignCrewMemberWithCommercials, fetchWorkspaceMemberRate } from '@/lib/team-finance-sync';
+import { saveCrewAssignmentCommercials } from '@/lib/services/crewAssignmentService';
 
 export interface WhatsAppAssignmentModalProps {
   isOpen: boolean;
@@ -21,7 +22,7 @@ export interface WhatsAppAssignmentModalProps {
   workspaceId?: string;
   studioName?: string;
   projectManagerName?: string;
-  onCommercialsSaved?: () => void;
+  onCommercialsSaved?: (savedData?: any) => void;
 }
 
 export default function WhatsAppAssignmentModal({
@@ -38,10 +39,40 @@ export default function WhatsAppAssignmentModal({
 }: WhatsAppAssignmentModalProps) {
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<'commercials' | 'whatsapp'>('commercials');
-  
-  // Commercials State
-  const [agreedAmount, setAgreedAmount] = useState<string>('0');
-  const [advancePaid, setAdvancePaid] = useState<string>('0');
+
+  // 1. Identify target assignment slot from in-memory subEvent synchronously
+  const existingAssignment = useMemo(() => {
+    return (subEvent?.fw_assignments || []).find(
+      (a: any) => a.required_role?.toLowerCase() === role?.toLowerCase()
+    );
+  }, [subEvent?.fw_assignments, role]);
+
+  // 2. Synchronous initial value calculation based strictly on target slot:
+  const resolvedInitialRate = useMemo(() => {
+    // 1. If this exact assignment slot already has an explicit saved rate, use it:
+    if (existingAssignment?.agreed_amount !== undefined && existingAssignment.agreed_amount !== null && Number(existingAssignment.agreed_amount) > 0) {
+      return Number(existingAssignment.agreed_amount);
+    }
+    // 2. Otherwise use the member's configured default daily rate:
+    const memberDefault = Number(
+      (member as any)?.default_rate ?? 
+      member?.default_daily_rate ?? 
+      member?.daily_rate ?? 
+      (member as any)?.day_rate ?? 
+      (member as any)?.per_day_rate ?? 
+      (member as any)?.custom_rate ?? 
+      0
+    );
+    return memberDefault;
+  }, [existingAssignment?.id, existingAssignment?.agreed_amount, member]);
+
+  const resolvedInitialAdvance = useMemo(() => {
+    return Number(existingAssignment?.paid_amount ?? existingAssignment?.advance_amount ?? 0);
+  }, [existingAssignment?.id, existingAssignment?.paid_amount, existingAssignment?.advance_amount]);
+
+  // Commercials State initialized directly with resolved initial rate (NO 0 FLASH!)
+  const [agreedAmount, setAgreedAmount] = useState<string>(() => String(resolvedInitialRate));
+  const [advancePaid, setAdvancePaid] = useState<string>(() => String(resolvedInitialAdvance));
   const [paymentStatus, setPaymentStatus] = useState<'pending' | 'partial' | 'completed'>('pending');
   const [paymentDate, setPaymentDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [paymentMethod, setPaymentMethod] = useState<'UPI/Bank Transfer' | 'Cash' | 'Cheque'>('UPI/Bank Transfer');
@@ -49,84 +80,21 @@ export default function WhatsAppAssignmentModal({
   const [isSavingCommercials, setIsSavingCommercials] = useState(false);
   const [commercialsSaved, setCommercialsSaved] = useState(false);
 
-  // Initialize or reset on open (Preserve custom negotiated fee if already saved)
+  // Reset cleanly ONLY when the assignment target changes, not on random re-renders:
   useEffect(() => {
-    if (isOpen && member) {
-      (async () => {
-        const effectiveWsId = workspaceId || (member as any).workspace_id || '';
-        let existingAgreed: number | null = null;
-        let existingAdvance: number | null = null;
-        let existingStatus: 'pending' | 'partial' | 'completed' = 'pending';
-        let existingMethod = 'UPI/Bank Transfer';
-        let existingDate = new Date().toISOString().split('T')[0];
-        let existingNotes = '';
-
-        // 1. Check in-memory subEvent.fw_assignments first (0ms, 0 network calls)
-        const inMemoryAssign = (subEvent?.fw_assignments || []).find(
-          (a: any) => a.required_role?.toLowerCase() === role?.toLowerCase()
-        );
-        if (inMemoryAssign && inMemoryAssign.agreed_amount !== undefined && inMemoryAssign.agreed_amount !== null) {
-          existingAgreed = Number(inMemoryAssign.agreed_amount);
-          existingAdvance = Number(inMemoryAssign.advance_amount ?? inMemoryAssign.paid_amount) || 0;
-          existingStatus = (inMemoryAssign.payment_status as any) || 'pending';
-          if (inMemoryAssign.payment_method) existingMethod = inMemoryAssign.payment_method;
-          if (inMemoryAssign.payment_date) existingDate = inMemoryAssign.payment_date;
-          if (inMemoryAssign.notes) existingNotes = inMemoryAssign.notes;
-        } else if (subEvent?.id) {
-          try {
-            const { data: assignRow } = await supabase
-              .from('fw_assignments')
-              .select('agreed_amount, advance_amount, payment_status, payment_method, payment_date, notes')
-              .eq('sub_event_id', subEvent.id)
-              .eq('required_role', role)
-              .maybeSingle();
-
-            if (assignRow && assignRow.agreed_amount !== undefined && assignRow.agreed_amount !== null) {
-              existingAgreed = Number(assignRow.agreed_amount);
-              existingAdvance = Number(assignRow.advance_amount) || 0;
-              existingStatus = (assignRow.payment_status as any) || 'pending';
-              if (assignRow.payment_method) existingMethod = assignRow.payment_method;
-              if (assignRow.payment_date) existingDate = assignRow.payment_date;
-              if (assignRow.notes) existingNotes = assignRow.notes;
-            }
-          } catch (_) {}
-        }
-
-        // 2. If no custom agreed rate exists for this shoot:
-        // In-House / Monthly salaried members default to 0, Freelancers default to their daily rate
-        if (existingAgreed == null) {
-          const isInHouse = 
-            (member as any).payout_frequency === 'monthly' ||
-            (member as any).primary_type === 'IN_HOUSE' ||
-            (member as any).primary_type === 'in_house' ||
-            (member as any).type === 'IN_HOUSE' ||
-            (member as any).type === 'in_house' ||
-            ((member as any).member_types && (member as any).member_types.includes('IN_HOUSE')) ||
-            ((member as any).member_types && (member as any).member_types.includes('in_house'));
-
-          if (isInHouse) {
-            existingAgreed = 0;
-          } else {
-            let rate = member.default_daily_rate ?? member.daily_rate;
-            if (rate == null && effectiveWsId) {
-              const wsRate = await fetchWorkspaceMemberRate(effectiveWsId, member.id);
-              if (wsRate != null) rate = wsRate;
-            }
-            existingAgreed = (rate != null && rate !== undefined) ? rate : 0;
-          }
-        }
-
-        setAgreedAmount(String(existingAgreed));
-        setAdvancePaid(String(existingAdvance || 0));
-        setPaymentStatus(existingStatus);
-        setPaymentDate(existingDate);
-        setPaymentMethod(existingMethod as any);
-        setNotes(existingNotes);
-      })();
+    if (isOpen) {
+      setAgreedAmount(String(resolvedInitialRate));
+      setAdvancePaid(String(resolvedInitialAdvance));
+      const adv = resolvedInitialAdvance;
+      const agr = resolvedInitialRate;
+      setPaymentStatus(agr > 0 && adv >= agr ? 'completed' : adv > 0 ? 'partial' : 'pending');
+      setPaymentDate(existingAssignment?.payment_date || new Date().toISOString().split('T')[0]);
+      setPaymentMethod((existingAssignment?.payment_method as any) || 'UPI/Bank Transfer');
+      setNotes(existingAssignment?.notes || '');
       setCommercialsSaved(false);
       setCopied(false);
     }
-  }, [isOpen, member, subEvent?.id, role, workspaceId]);
+  }, [isOpen, resolvedInitialRate, resolvedInitialAdvance, existingAssignment?.id]);
 
   // Handle Advance change and auto update status
   const handleAdvanceChange = (val: string) => {
@@ -244,31 +212,48 @@ Please confirm your slot.
 
     // 2. TRIGGER BACKGROUND SILENT ASYNC PERSISTENCE
     const effectiveWsId = workspaceId || (member as any).workspace_id || '';
-    assignCrewMemberWithCommercials({
+    const assignmentId = (subEvent?.fw_assignments || []).find(
+      (a: any) => a.required_role?.toLowerCase() === role?.toLowerCase()
+    )?.id;
+
+    saveCrewAssignmentCommercials({
       workspaceId: effectiveWsId,
-      eventId: project?.id || '',
-      subEventId: subEvent?.id || '',
-      teamMemberId: member.id,
-      teamMemberName: cleanMemberName,
-      teamMemberPhone: member.phone_number || member.phone || '',
-      roleName: role,
-      finalAgreedAmount: numericAgreed,
-      advancePaidAmount: numericAdvance,
+      assignmentId,
+      projectId: project?.id,
+      subEventId: subEvent?.id,
+      member: {
+        id: member.id,
+        name: cleanMemberName,
+        phone: member.phone_number || member.phone || '',
+        primary_role: role
+      },
+      assignedRole: role,
+      agreedAmount: numericAgreed,
+      advancePaid: numericAdvance,
       paymentStatus: paymentStatus,
       paymentDate: paymentDate,
       paymentMethod: paymentMethod,
       notes: notes || `Assigned via Team Manager for ${clientName} (${eventTitle})`,
       clientName: clientName,
-      eventName: eventTitle
-    }).then(() => {
-      if (onCommercialsSaved) onCommercialsSaved();
+      eventName: eventTitle,
+      eventDate: subEvent?.event_date
+    }).then((res) => {
+      if (onCommercialsSaved) onCommercialsSaved(res);
     }).catch(err => {
       console.error('[WhatsAppAssignmentModal] Background save error:', err);
     });
   };
 
   const currentTimeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-  const configuredDefaultRate = member.default_daily_rate ?? member.daily_rate ?? 0;
+  const configuredDefaultRate = Number(
+    (member as any)?.default_rate ?? 
+    member?.default_daily_rate ?? 
+    member?.daily_rate ?? 
+    (member as any)?.day_rate ?? 
+    (member as any)?.per_day_rate ?? 
+    (member as any)?.custom_rate ?? 
+    0
+  );
 
   return (
     <AnimatePresence>

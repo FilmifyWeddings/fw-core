@@ -266,13 +266,14 @@ export function getRoleShortCode(roleName?: string | null, customRoles?: Workspa
   if (lower.includes('project') || lower.includes('pm')) return 'PM';
   if (lower.includes('team') || lower.includes('tm')) return 'TM';
   if (lower.includes('lead')) return 'LP';
-  if (lower.includes('trad') && lower.includes('photo')) return 'TP';
-  if (lower.includes('trad') && (lower.includes('vid') || lower.includes('cine'))) return 'TV';
-  if (lower.includes('candid') && lower.includes('photo')) return 'CP';
+  // CHECK VIDEOGRAPHER / CINE FIRST BEFORE PHOTO / TRADITIONAL
+  if (lower.includes('trad') && (lower.includes('vid') || lower.includes('cine') || lower.includes('tv'))) return 'TV';
+  if (lower.includes('trad') && (lower.includes('photo') || lower.includes('tp'))) return 'TP';
   if (lower.includes('candid') && (lower.includes('cine') || lower.includes('vid'))) return 'CV';
+  if (lower.includes('candid') && lower.includes('photo')) return 'CP';
   if (lower.includes('cine') || lower.includes('video')) return 'CV';
-  if (lower.includes('drone')) return 'DP';
-  if (lower.includes('assist') || lower.includes('helper')) return 'AS';
+  if (lower.includes('drone') || lower.includes('dp')) return 'DP';
+  if (lower.includes('assist') || lower.includes('helper') || lower.includes('as') || lower.includes('ast')) return 'AS';
   if (lower.includes('reel') || lower.includes('social')) return 'RC';
   if (lower.includes('live')) return 'LS';
   if (lower.includes('album')) return 'AD';
@@ -288,17 +289,38 @@ export function getRoleShortCode(roleName?: string | null, customRoles?: Workspa
   return clean.slice(0, 3).toUpperCase();
 }
 
-export function getRoleAbbr(role: string = ''): string {
-  const r = (role || '').toLowerCase();
+export function getRoleAbbr(role: string = '', customRoles?: WorkspaceCrewRole[]): string {
+  const clean = (role || '').trim();
+  if (!clean) return 'CR';
+
+  // 1. Check in custom / loaded roles
+  if (customRoles && customRoles.length > 0) {
+    const found = customRoles.find(r => r.name.toLowerCase() === clean.toLowerCase() || r.short_code.toLowerCase() === clean.toLowerCase());
+    if (found?.short_code) return found.short_code.toUpperCase();
+  }
+
+  // 2. Check in default roles
+  const defaultFound = DEFAULT_CREW_ROLES.find(r => r.name.toLowerCase() === clean.toLowerCase() || r.short_code.toLowerCase() === clean.toLowerCase());
+  if (defaultFound?.short_code) return defaultFound.short_code.toUpperCase();
+
+  const r = clean.toLowerCase();
   if (r.includes('project') || r.includes('pm')) return 'PM';
   if (r.includes('team') || r.includes('tm')) return 'TM';
-  if (r.includes('cinematographer') || r.includes('cin')) return 'CIN';
-  if (r.includes('candid') || r.includes('cp')) return 'CP';
+
+  // CHECK VIDEOGRAPHER / CINE FIRST BEFORE PHOTO / TRADITIONAL
+  if (r.includes('traditional') && (r.includes('video') || r.includes('vid') || r.includes('tv') || r.includes('cine'))) return 'TV';
+  if (r.includes('tv') && !r.includes('photo')) return 'TV';
   if (r.includes('traditional') || r.includes('tp')) return 'TP';
-  if (r.includes('drone')) return 'DP';
-  if (r.includes('lead')) return 'LP';
+  if (r.includes('cinematographer') || r.includes('cin') || r.includes('cv') || r.includes('video')) return 'CV';
+  if (r.includes('candid') || r.includes('cp')) return 'CP';
+  if (r.includes('drone') || r.includes('dp')) return 'DP';
+  if (r.includes('lead') || r.includes('lp')) return 'LP';
   if (r.includes('editor') || r.includes('ed')) return 'ED';
-  return role.slice(0, 2).toUpperCase() || 'CR';
+  if (r.includes('assist') || r.includes('helper') || r.includes('ast') || r.includes('as')) return 'AS';
+  if (r.includes('reel') || r.includes('social') || r.includes('rc')) return 'RC';
+  if (r.includes('family') || r.includes('fp')) return 'FP';
+
+  return clean.slice(0, 2).toUpperCase() || 'CR';
 }
 
 /**
@@ -655,16 +677,8 @@ export async function fetchWorkspaceCrewRoles(workspaceId?: string, userId?: str
           target_user_id: userId || wsId
         });
 
-        if (!rpcErr && Array.isArray(rpcData)) {
-          return rpcData.map((d: any, idx: number) => ({
-            id: d.id,
-            workspace_id: d.workspace_id,
-            name: d.name,
-            short_code: (d.short_code || getRoleShortCode(d.name)).toUpperCase(),
-            category: d.category || 'Photography',
-            is_default: !d.is_customized,
-            display_order: d.display_order || idx + 1
-          }));
+        if (!rpcErr && Array.isArray(rpcData) && rpcData.length > 0) {
+          return deduplicateCrewRoles(rpcData);
         }
       } catch (_) {}
 
@@ -676,26 +690,18 @@ export async function fetchWorkspaceCrewRoles(workspaceId?: string, userId?: str
         .order('created_at', { ascending: true });
 
       if (!error && data && data.length > 0) {
-        return data.map((d: any, idx: number) => ({
-          id: d.id,
-          workspace_id: d.workspace_id,
-          name: d.name,
-          short_code: (d.short_code || getRoleShortCode(d.name)).toUpperCase(),
-          category: d.category || 'Photography',
-          is_default: !d.is_customized,
-          display_order: d.display_order || idx + 1
-        }));
+        return deduplicateCrewRoles(data);
       }
 
-      // 3. If brand new workspace with 0 roles in DB, seed the 8 default roles directly
+      // 3. If brand new workspace with 0 roles in DB, seed the 8 default roles directly with harmonized codes
       const defaultSeed = [
         { name: 'Team Manager', short_code: 'TM', category: 'Management' },
         { name: 'Candid Photographer', short_code: 'CP', category: 'Photography' },
-        { name: 'Cinematographer', short_code: 'CIN', category: 'Cinematography' },
+        { name: 'Cinematographer', short_code: 'CV', category: 'Cinematography' },
         { name: 'Traditional Photographer', short_code: 'TP', category: 'Photography' },
         { name: 'Traditional Videographer', short_code: 'TV', category: 'Cinematography' },
-        { name: 'Assistant', short_code: 'AST', category: 'Assistance' },
-        { name: 'Drone Pilot', short_code: 'DR', category: 'Drone' },
+        { name: 'Assistant', short_code: 'AS', category: 'Assistance' },
+        { name: 'Drone Pilot', short_code: 'DP', category: 'Drone' },
         { name: 'Family Photographer', short_code: 'FP', category: 'Photography' },
       ];
 
@@ -715,15 +721,7 @@ export async function fetchWorkspaceCrewRoles(workspaceId?: string, userId?: str
         .select();
 
       if (!seedErr && seeded && seeded.length > 0) {
-        return seeded.map((d: any, idx: number) => ({
-          id: d.id,
-          workspace_id: d.workspace_id,
-          name: d.name,
-          short_code: (d.short_code || getRoleShortCode(d.name)).toUpperCase(),
-          category: d.category || 'Photography',
-          is_default: !d.is_customized,
-          display_order: idx + 1
-        }));
+        return deduplicateCrewRoles(seeded);
       }
     }
   } catch (err) {
@@ -735,7 +733,30 @@ export async function fetchWorkspaceCrewRoles(workspaceId?: string, userId?: str
 }
 
 /**
- * Save new crew role strictly for current workspace
+ * Deduplicate crew roles array by lowercase name preserving first occurrence
+ */
+function deduplicateCrewRoles(roles: any[]): WorkspaceCrewRole[] {
+  const seen = new Set<string>();
+  const unique: WorkspaceCrewRole[] = [];
+  for (const d of roles) {
+    const key = (d.name || '').trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    unique.push({
+      id: d.id,
+      workspace_id: d.workspace_id,
+      name: d.name,
+      short_code: (d.short_code || getRoleShortCode(d.name)).toUpperCase(),
+      category: d.category || 'Photography',
+      is_default: !d.is_customized,
+      display_order: d.display_order || unique.length + 1
+    });
+  }
+  return unique;
+}
+
+/**
+ * Save new crew role strictly for current workspace (IDEMPOTENT: Never duplicates existing role)
  */
 export async function saveWorkspaceCrewRole(
   workspaceId?: string,
@@ -751,6 +772,27 @@ export async function saveWorkspaceCrewRole(
 
   try {
     if (wsId) {
+      // 1. Idempotency Check: Return existing role if already present for this workspace
+      const { data: existing } = await supabase
+        .from('master_crew_roles')
+        .select('id, workspace_id, name, short_code, is_customized, is_default')
+        .eq('workspace_id', wsId)
+        .ilike('name', cleanName)
+        .limit(1)
+        .maybeSingle();
+
+      if (existing) {
+        return {
+          id: existing.id,
+          workspace_id: existing.workspace_id,
+          name: existing.name || cleanName,
+          short_code: (existing.short_code || cleanCode).toUpperCase(),
+          category,
+          is_default: existing.is_default || !existing.is_customized
+        };
+      }
+
+      // 2. Insert new record
       const { data: masterData, error } = await supabase
         .from('master_crew_roles')
         .insert([{
@@ -914,6 +956,7 @@ export async function syncQuotationCrewRole(
           .select('id')
           .eq('workspace_id', wsId)
           .ilike('name', cleanOld)
+          .limit(1)
           .maybeSingle();
 
         if (existing?.id) {
@@ -955,6 +998,7 @@ export async function deleteQuotationCrewRole(
         .select('id')
         .eq('workspace_id', wsId)
         .ilike('name', clean)
+        .limit(1)
         .maybeSingle();
 
       if (existing?.id) {

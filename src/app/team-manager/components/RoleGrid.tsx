@@ -41,11 +41,18 @@ export default function RoleGrid({ selectedRoles, onToggle, onAddCustom }: RoleG
     }
   };
 
-  // Build authoritative list of roles from Settings + any already selected custom role
-  const displayItems = dbRoles.map(r => ({
-    name: r.name,
-    code: r.short_code || getRoleShortCode(r.name, dbRoles)
-  }));
+  // Build authoritative list of roles from Settings + any already selected custom role (deduplicated)
+  const seenNames = new Set<string>();
+  const displayItems: Array<{ name: string; code: string }> = [];
+  dbRoles.forEach(r => {
+    const key = (r.name || '').trim().toLowerCase();
+    if (!key || seenNames.has(key)) return;
+    seenNames.add(key);
+    displayItems.push({
+      name: r.name,
+      code: r.short_code || getRoleShortCode(r.name, dbRoles)
+    });
+  });
 
   // Ensure any selected roles not in dbRoles are also displayed
   selectedRoles.forEach(sel => {

@@ -59,6 +59,7 @@ const DEFAULT_CREW_ROLES = [
   'Lead Photographer',
   'Candid Photographer',
   'Traditional Photographer',
+  'Traditional Videographer',
   'Cinematographer',
   'Drone Pilot',
   'Assistant / Helper',

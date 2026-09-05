@@ -1253,6 +1253,11 @@ export default function SettingsPage() {
                         if (!newRoleName.trim()) return;
                         const cleanName = newRoleName.trim();
                         const cleanCode = newRoleCode.trim().toUpperCase() || getRoleShortCode(cleanName);
+                        if (crewRoles.some(r => r.name.toLowerCase() === cleanName.toLowerCase())) {
+                          setSaveToast(`Crew Role "${cleanName}" already exists!`);
+                          setTimeout(() => setSaveToast(null), 3000);
+                          return;
+                        }
                         const created = await saveWorkspaceCrewRole(workspaceId, cleanName, cleanCode, 'Photography');
                         if (created) {
                           setCrewRoles(prev => [...prev.filter(r => r.name.toLowerCase() !== cleanName.toLowerCase()), created]);
@@ -1282,7 +1287,7 @@ export default function SettingsPage() {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 pt-2">
-                    {crewRoles
+                    {Array.from(new Map(crewRoles.map(r => [r.name.toLowerCase().trim(), r])).values())
                       .filter(r => r.name.toLowerCase().includes(roleSearch.toLowerCase()) || r.short_code.toLowerCase().includes(roleSearch.toLowerCase()))
                       .map((item) => (
                         <div

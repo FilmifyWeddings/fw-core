@@ -392,8 +392,8 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
     const [assignRes, crewFinRes, teamPayoutRes] = await Promise.all([
       Promise.resolve(
         (idList.length === 1 
-          ? supabase.from('fw_assignments').select('*, project:fw_projects(id, client_name, main_date, main_venue, status), sub_event:fw_sub_events(id, project_id, event_title, event_date, venue_name, start_time_12h, end_time_12h)').eq('assigned_member_id', idList[0])
-          : supabase.from('fw_assignments').select('*, project:fw_projects(id, client_name, main_date, main_venue, status), sub_event:fw_sub_events(id, project_id, event_title, event_date, venue_name, start_time_12h, end_time_12h)').in('assigned_member_id', idList)
+          ? supabase.from('fw_assignments').select('*, project:fw_projects(id, client_name, main_date, main_venue, status, user_id), sub_event:fw_sub_events(id, project_id, event_title, event_date, venue_name, start_time_12h, end_time_12h)').eq('assigned_member_id', idList[0])
+          : supabase.from('fw_assignments').select('*, project:fw_projects(id, client_name, main_date, main_venue, status, user_id), sub_event:fw_sub_events(id, project_id, event_title, event_date, venue_name, start_time_12h, end_time_12h)').in('assigned_member_id', idList)
         ).order('created_at', { ascending: false })
       ).catch(() => ({ data: null, error: null })),
 
@@ -416,7 +416,7 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
           ? Promise.resolve(supabase.from('fw_sub_events').select('id, project_id, event_title, event_date, venue_name, start_time_12h, end_time_12h').in('id', subEventIds)).catch(() => ({ data: null }))
           : Promise.resolve({ data: null }),
         projectIds.length > 0
-          ? Promise.resolve(supabase.from('fw_projects').select('id, client_name, main_date, main_venue, status').in('id', projectIds)).catch(() => ({ data: null }))
+          ? Promise.resolve(supabase.from('fw_projects').select('id, client_name, main_date, main_venue, status, user_id').in('id', projectIds)).catch(() => ({ data: null }))
           : Promise.resolve({ data: null })
       ]);
 
@@ -443,7 +443,7 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
         try {
           const { data: addProjs } = await supabase
             .from('fw_projects')
-            .select('id, client_name, main_date, main_venue, status')
+            .select('id, client_name, main_date, main_venue, status, user_id')
             .in('id', additionalProjIds);
           if (addProjs) {
             addProjs.forEach((p: any) => { projectsMap[p.id] = p; });
@@ -467,13 +467,11 @@ export async function fetchMemberEventPayouts(workspaceId: string, memberId: str
           const projWs = (proj as any)?.workspace_id || (proj as any)?.user_id;
           const seWs = (se as any)?.workspace_id || (se as any)?.user_id;
 
-          if (assignWs && assignWs !== workspaceId && assignWs !== 'all') {
-            return;
-          }
-          if (projWs && projWs !== workspaceId && projWs !== 'all') {
-            return;
-          }
-          if (seWs && seWs !== workspaceId && seWs !== 'all') {
+          const matchAssign = assignWs && (assignWs === workspaceId || assignWs === 'all');
+          const matchProj = projWs && (projWs === workspaceId || projWs === 'all');
+          const matchSe = seWs && (seWs === workspaceId || seWs === 'all');
+
+          if (!matchAssign && !matchProj && !matchSe) {
             return;
           }
         }
@@ -1238,6 +1236,7 @@ async function persistAssignmentSlot(params: {
       payment_date: pDate,
       notes: params.notes || null,
       workspace_id: params.workspaceId || null,
+      user_id: params.workspaceId || null,
       sub_event_name: params.eventName || null,
       client_name: params.clientName || null
     };
@@ -1439,11 +1438,16 @@ export async function recordPayoutTransaction(
 
 export async function fetchPartnerAlbumOrders(workspaceId: string, partnerId: string): Promise<PartnerAlbumOrder[]> {
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('partner_album_orders')
       .select('*')
-      .eq('partner_id', partnerId)
-      .order('order_date', { ascending: false });
+      .eq('partner_id', partnerId);
+
+    if (workspaceId && workspaceId !== 'all') {
+      query = query.eq('workspace_id', workspaceId);
+    }
+
+    const { data, error } = await query.order('order_date', { ascending: false });
 
     if (!error && data && data.length > 0) {
       if (typeof window !== 'undefined') {
@@ -1609,11 +1613,16 @@ export async function recordAlbumOrderPayment(
 
 export async function fetchMemberSalaryRecords(workspaceId: string, memberId: string): Promise<TeamSalaryRecord[]> {
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('team_salary_records')
       .select('*')
-      .eq('member_id', memberId)
-      .order('month_year', { ascending: false });
+      .eq('member_id', memberId);
+
+    if (workspaceId && workspaceId !== 'all') {
+      query = query.eq('workspace_id', workspaceId);
+    }
+
+    const { data, error } = await query.order('month_year', { ascending: false });
 
     if (!error && data && data.length > 0) {
       if (typeof window !== 'undefined') {
@@ -1969,20 +1978,38 @@ export async function batchFetchWorkspaceTeamFinancials(
     const [assignmentsRes, payoutsRes, salariesRes] = await Promise.allSettled([
       supabase
         .from('fw_assignments')
-        .select('id, assigned_member_id, agreed_amount, advance_amount, paid_amount, balance_amount, payment_status')
+        .select(`
+          id,
+          assigned_member_id,
+          agreed_amount,
+          advance_amount,
+          paid_amount,
+          balance_amount,
+          payment_status,
+          workspace_id,
+          user_id,
+          project:fw_projects(id, user_id)
+        `)
         .in('assigned_member_id', uniqueIds),
       supabase
         .from('team_event_payouts')
-        .select('member_id, agreed_amount, paid_amount, balance_amount, status, event_date')
+        .select('member_id, agreed_amount, paid_amount, balance_amount, status, event_date, workspace_id, user_id')
         .in('member_id', uniqueIds)
-        .eq('workspace_id', workspaceId),
+        .or(`workspace_id.eq.${workspaceId},user_id.eq.${workspaceId}`),
       supabase
         .from('team_salary_records')
-        .select('member_id, base_salary, incentive_amount, deductions, net_payable, paid_amount, payment_status, month_year, paid_date')
+        .select('member_id, base_salary, incentive_amount, deductions, net_payable, paid_amount, payment_status, month_year, paid_date, workspace_id, user_id')
         .in('member_id', uniqueIds)
+        .or(`workspace_id.eq.${workspaceId},user_id.eq.${workspaceId}`)
     ]);
 
-    const assignmentsData = assignmentsRes.status === 'fulfilled' && assignmentsRes.value.data ? assignmentsRes.value.data : [];
+    const rawAssignmentsData = assignmentsRes.status === 'fulfilled' && assignmentsRes.value.data ? assignmentsRes.value.data : [];
+    const assignmentsData = rawAssignmentsData.filter((row: any) => {
+      const proj = row.project || row.fw_projects;
+      const matchWs = (row.workspace_id && row.workspace_id === workspaceId) || (row.user_id && row.user_id === workspaceId);
+      const matchProjUser = proj?.user_id && proj.user_id === workspaceId;
+      return matchWs || matchProjUser;
+    });
     const payoutsData = payoutsRes.status === 'fulfilled' && payoutsRes.value.data ? payoutsRes.value.data : [];
     const salariesData = salariesRes.status === 'fulfilled' && salariesRes.value.data ? salariesRes.value.data : [];
 
@@ -1995,10 +2022,10 @@ export async function batchFetchWorkspaceTeamFinancials(
       if (!mid || !summaryMap[mid]) return;
       processedAssignmentMembers.add(mid);
 
-      // Kill synthetic multipliers: Commercials must strictly show what is explicitly saved or explicit custom payouts
+      // Commercials must strictly show what is explicitly saved or explicit custom payouts
       const rawAgreed = Number(row.agreed_amount) || 0;
       const hasCustom = Boolean((row as any).custom_payout || (row as any).custom_rate || (row as any).is_custom_payout);
-      const agreed = hasCustom ? (Number((row as any).custom_payout || (row as any).custom_rate) || 0) : 0;
+      const agreed = hasCustom ? (Number((row as any).custom_payout || (row as any).custom_rate) || rawAgreed) : rawAgreed;
       const paid = Number(row.advance_amount ?? row.paid_amount) || 0;
       const bal = Math.max(0, agreed - paid);
 

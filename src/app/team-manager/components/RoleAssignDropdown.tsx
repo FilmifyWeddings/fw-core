@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { FWAssignment, FWTeamMember } from '@/types';
 import { Search, Plus, Check } from 'lucide-react';
 import { getRoleShortCode, getRoleAbbr } from '@/lib/workspace-settings';
+import { useWorkspaceData } from '@/context/WorkspaceDataContext';
 
 interface RoleAssignDropdownProps {
   assignment: FWAssignment;
@@ -26,6 +27,7 @@ export default function RoleAssignDropdown({
   onAddNewMember,
   variant = 'avatar',
 }: RoleAssignDropdownProps) {
+  const { crewRoles } = useWorkspaceData();
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [popoverPos, setPopoverPos] = useState<{ top: number; left: number } | null>(null);
@@ -100,7 +102,7 @@ export default function RoleAssignDropdown({
               isAssigned ? 'bg-emerald-600' : 'bg-rose-500'
             }`}
           >
-            {role.slice(0, 2).toUpperCase()}
+            {getRoleAbbr(role, crewRoles)}
           </div>
           <span className="font-extrabold">{role}:</span>
           <span className={isAssigned ? 'font-black text-emerald-900' : 'font-extrabold italic text-rose-600'}>
@@ -129,7 +131,7 @@ export default function RoleAssignDropdown({
                 />
               ) : (
                 <div className="w-full h-full rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 text-white font-black text-[10px] flex items-center justify-center shrink-0">
-                  {cleanName.slice(0, 2).toUpperCase() || getRoleAbbr(role)}
+                  {cleanName.slice(0, 2).toUpperCase() || getRoleAbbr(role, crewRoles)}
                 </div>
               )}
             </div>
@@ -141,7 +143,7 @@ export default function RoleAssignDropdown({
 
           {/* Role Label */}
           <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 leading-tight block text-center">
-            {getRoleAbbr(role)}
+            {getRoleAbbr(role, crewRoles)}
           </span>
 
           {/* Member Full Clean Name */}

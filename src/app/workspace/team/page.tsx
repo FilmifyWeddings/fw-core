@@ -183,6 +183,68 @@ export default function WorkspaceTeamPage() {
         }
       }
 
+      // 4. Fetch aggregated assignments & payouts to hydrate live commercials
+      const allMemberIds = combinedMembers.map(m => m.id).filter(Boolean);
+      if (allMemberIds.length > 0) {
+        try {
+          const [assignRes, payoutRes] = await Promise.allSettled([
+            supabase
+              .from('fw_assignments')
+              .select('id, assigned_member_id, agreed_amount, advance_amount, paid_amount, balance_amount, payment_status, workspace_id, user_id, project:fw_projects(id, user_id)')
+              .in('assigned_member_id', allMemberIds),
+            supabase
+              .from('team_event_payouts')
+              .select('id, member_id, agreed_amount, paid_amount, balance_amount, status, workspace_id, user_id')
+              .in('member_id', allMemberIds)
+              .or(`workspace_id.eq.${effectiveWsId},user_id.eq.${effectiveWsId}`)
+          ]);
+
+          const rawAssigns = assignRes.status === 'fulfilled' && assignRes.value.data ? assignRes.value.data : [];
+          const assigns = rawAssigns.filter((a: any) => {
+            const proj = a.project || a.fw_projects;
+            const matchWs = (a.workspace_id && a.workspace_id === effectiveWsId) || (a.user_id && a.user_id === effectiveWsId);
+            const matchProjUser = proj?.user_id && proj.user_id === effectiveWsId;
+            return matchWs || matchProjUser;
+          });
+          const payouts = payoutRes.status === 'fulfilled' && payoutRes.value.data ? payoutRes.value.data : [];
+
+          const assignsByMember: Record<string, any[]> = {};
+          assigns.forEach((a: any) => {
+            const mid = a.assigned_member_id;
+            if (!assignsByMember[mid]) assignsByMember[mid] = [];
+            assignsByMember[mid].push(a);
+          });
+
+          const payoutsByMember: Record<string, any[]> = {};
+          payouts.forEach((p: any) => {
+            const mid = p.member_id;
+            if (!payoutsByMember[mid]) payoutsByMember[mid] = [];
+            payoutsByMember[mid].push(p);
+          });
+
+          combinedMembers = combinedMembers.map(m => {
+            const mAssigns = assignsByMember[m.id] || [];
+            const mPayouts = payoutsByMember[m.id] || [];
+            const activeList = mPayouts.length > 0 ? mPayouts : mAssigns;
+
+            const agreed = activeList.reduce((sum: number, item: any) => sum + (Number(item.agreed_amount) || 0), 0);
+            const paid = activeList.reduce((sum: number, item: any) => sum + (Number(item.paid_amount ?? item.advance_amount) || 0), 0);
+            const balance = Math.max(0, agreed - paid);
+
+            return {
+              ...m,
+              assignments: mAssigns,
+              payouts: mPayouts,
+              commercial_agreed: agreed,
+              commercial_paid: paid,
+              commercial_balance: balance
+            };
+          });
+        } catch (commErr) {
+          console.warn('[WorkspaceTeamPage] Commercials hydration note:', commErr);
+        }
+      }
+
       setMembers(combinedMembers);
       loadFinancialSummaries(combinedMembers);
     } catch (err) {

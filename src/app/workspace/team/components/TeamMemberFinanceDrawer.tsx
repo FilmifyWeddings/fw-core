@@ -262,18 +262,24 @@ export default function TeamMemberFinanceDrawer({
               sub_event_id,
               project_id,
               workspace_id,
+              user_id,
               client_name,
               sub_event_name,
               sub_event_date,
               created_at,
               updated_at,
-              project:fw_projects(id, client_name, main_date, main_venue, status),
+              project:fw_projects(id, client_name, main_date, main_venue, status, user_id),
               sub_event:fw_sub_events(id, project_id, event_title, event_date, venue_name, start_time_12h, end_time_12h)
             `)
             .eq('assigned_member_id', member.id);
 
           if (assignmentsData && assignmentsData.length > 0) {
-            const rawData = assignmentsData.filter((a: any) => !a.workspace_id || a.workspace_id === workspaceId);
+            const rawData = assignmentsData.filter((a: any) => {
+              const proj = a.project || a.fw_projects;
+              const matchDirect = (a.workspace_id && a.workspace_id === workspaceId) || (a.user_id && a.user_id === workspaceId);
+              const matchProjUser = proj?.user_id && proj.user_id === workspaceId;
+              return matchDirect || matchProjUser;
+            });
             eventPayouts = rawData.map((a: any) => {
               const se = a.sub_event || a.fw_sub_events;
               const proj = a.project || a.fw_projects;
@@ -386,26 +392,25 @@ export default function TeamMemberFinanceDrawer({
     });
   }, [payouts, workspaceId]);
 
-  // Commercials must strictly show what is explicitly saved in the member's profile or sum of explicit event payouts:
-  // If no agreed contract or event amount is set, IT MUST BE 0.
+  // Ensure top banner cards strictly sum all rows currently listed in Bookings & Events:
+  const fallbackEvents = useMemo(() => {
+    if (!Array.isArray(member?.events)) return [];
+    if (!workspaceId || workspaceId === 'all') return member.events;
+    return member.events.filter((e: any) => {
+      const eWs = e.workspace_id || e.user_id;
+      return !eWs || eWs === workspaceId;
+    });
+  }, [member?.events, workspaceId]);
 
-  // Calculate strictly from explicit event assignments where agreed_amount > 0:
-  const explicitAgreed = useMemo(() => {
-    if (Array.isArray(member?.events)) {
-      return member.events.reduce((sum: number, ev: any) => sum + (Number(ev.agreed_amount || ev.custom_payout) || 0), 0);
-    }
-    return studioShoots.reduce((sum: number, ev: any) => {
-      const raw = Number(ev.agreed_amount) || 0;
-      const isSynthetic = raw === 18000 || (member?.default_daily_rate && raw === Number(member.default_daily_rate));
-      const val = isSynthetic ? (Number((ev as any).custom_payout) || 0) : raw;
-      return sum + val;
-    }, 0);
-  }, [member?.events, member?.default_daily_rate, studioShoots]);
+  const events = studioShoots.length > 0 ? studioShoots : fallbackEvents;
 
-  // Outer Agreed Amount:
-  const displayAgreed = Number(member?.commercial_agreed) || explicitAgreed || 0;
-  const displayPaid = displayAgreed === 0 ? 0 : (Number(member?.commercial_paid) || studioShoots.reduce((acc, row) => acc + (Number(row.paid_amount) || 0), 0));
-  const displayBalance = displayAgreed === 0 ? 0 : Math.max(0, displayAgreed - displayPaid);
+  const totalAgreed = events.reduce((s: number, e: any) => s + (Number(e.agreed_amount) || 0), 0);
+  const totalPaid = events.reduce((s: number, e: any) => s + (Number(e.paid_amount ?? e.advance_amount) || 0), 0);
+  const totalBalance = Math.max(0, totalAgreed - totalPaid);
+
+  const displayAgreed = totalAgreed || Number(member?.commercial_agreed) || 0;
+  const displayPaid = totalPaid || Number(member?.commercial_paid) || 0;
+  const displayBalance = Math.max(0, displayAgreed - displayPaid);
 
   // ── CREATE SALARY SLIP SUBMISSION HANDLER ──
   const handleCreateSalarySlip = async (e: React.FormEvent) => {
@@ -908,12 +913,7 @@ export default function TeamMemberFinanceDrawer({
                     </div>
                   ) : (
                     studioShoots.map((payout) => {
-                      const rawCardAgreed = Number(payout.agreed_amount) || 0;
-                      const hasCustom = Boolean((payout as any).custom_payout || (payout as any).custom_rate || (payout as any).is_custom_payout);
-                      const isSynthetic = rawCardAgreed === 18000 || (member?.default_daily_rate && rawCardAgreed === Number(member.default_daily_rate));
-                      const cardAgreed = hasCustom
-                        ? (Number((payout as any).custom_payout || (payout as any).custom_rate) || rawCardAgreed)
-                        : (isSynthetic ? 0 : rawCardAgreed);
+                      const cardAgreed = Number(payout.agreed_amount) || 0;
                       const cardPaid = Number(payout.paid_amount || 0);
                       const cardDue = Math.max(0, cardAgreed - cardPaid);
                       const isPaid = (cardAgreed > 0 && cardDue <= 0) || payout.status === 'PAID' || payout.status === 'completed';

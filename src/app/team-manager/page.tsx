@@ -691,7 +691,15 @@ export default function TeamManagerPage() {
                 ((matchedMemberObj as any).member_types && (matchedMemberObj as any).member_types.includes('IN_HOUSE')) ||
                 ((matchedMemberObj as any).member_types && (matchedMemberObj as any).member_types.includes('in_house'));
 
-              const defaultAmount = isInHouse ? 0 : (matchedMemberObj.default_daily_rate || 0);
+              const defaultAmount = isInHouse ? 0 : Number(
+                (matchedMemberObj as any)?.default_rate ?? 
+                matchedMemberObj.default_daily_rate ?? 
+                (matchedMemberObj as any)?.daily_rate ?? 
+                (matchedMemberObj as any)?.day_rate ?? 
+                (matchedMemberObj as any)?.per_day_rate ?? 
+                (matchedMemberObj as any)?.custom_rate ?? 
+                0
+              );
 
               await saveOrUpdateEventPayout(workspaceId || currentUserId, {
                 member_id: memberId,
@@ -1821,7 +1829,7 @@ export default function TeamManagerPage() {
                                         const cleanName = rawName.replace(/\.\.\./g, '').trim();
                                         const role = assignment.required_role;
                                         const dropdownKey = assignment.id;
-                                        const shortRole = getRoleAbbr(role);
+                                        const shortRole = getRoleAbbr(role, customCrewRoles);
 
                                         return (
                                           <div key={assignment.id} className="relative flex flex-col items-center min-w-[68px]">
@@ -2177,7 +2185,7 @@ export default function TeamManagerPage() {
                                           const rawName = memberObj?.name || '';
                                           const cleanName = rawName.replace(/\.\.\./g, '').trim();
                                           const role = assignment.required_role;
-                                          const shortRole = getRoleAbbr(role);
+                                          const shortRole = getRoleAbbr(role, customCrewRoles);
 
                                           return (
                                             <div
@@ -2725,7 +2733,47 @@ export default function TeamManagerPage() {
         workspaceId={workspaceId || currentUserId}
         studioName={studioName || 'Filmify Weddings'}
         projectManagerName={(whatsappModalData.project as any)?.project_manager_name || 'Studio Manager'}
-        onCommercialsSaved={() => fetchAllData(undefined, true)}
+        onCommercialsSaved={(savedData) => {
+          if (savedData) {
+            setProjects(prevProjects =>
+              prevProjects.map(proj => {
+                if (savedData.projectId && proj.id !== savedData.projectId && proj.id !== whatsappModalData.project?.id) {
+                  return proj;
+                }
+                return {
+                  ...proj,
+                  fw_sub_events: (proj.fw_sub_events || []).map(se => {
+                    const targetSubEventId = whatsappModalData.subEvent?.id || savedData.subEventId;
+                    if (targetSubEventId && se.id !== targetSubEventId) return se;
+
+                    const updated = (se.fw_assignments || []).map(a => {
+                      const isMatch =
+                        (savedData.assignmentId && a.id === savedData.assignmentId) ||
+                        (whatsappModalData.role && a.required_role?.toLowerCase() === whatsappModalData.role.toLowerCase()) ||
+                        (savedData.role && a.required_role?.toLowerCase() === savedData.role.toLowerCase());
+
+                      if (isMatch) {
+                        return {
+                          ...a,
+                          id: savedData.assignmentId || a.id,
+                          agreed_amount: savedData.agreedAmount,
+                          paid_amount: savedData.advancePaid,
+                          advance_amount: savedData.advancePaid,
+                          balance_amount: savedData.balanceDue,
+                          payment_status: savedData.status || (savedData.balanceDue <= 0 && savedData.agreedAmount > 0 ? 'completed' : savedData.advancePaid > 0 ? 'partial' : 'pending'),
+                          ...(savedData.savedAssignment ? { ...savedData.savedAssignment } : {})
+                        };
+                      }
+                      return a;
+                    });
+                    return { ...se, fw_assignments: updated };
+                  })
+                };
+              })
+            );
+          }
+          loadFinancialSummaries(teamMembers);
+        }}
       />
 
       {/* 3D Tactile Financial Drawer */}
@@ -2734,7 +2782,7 @@ export default function TeamManagerPage() {
         onClose={() => {
           setIsFinanceDrawerOpen(false);
           setSelectedFinanceMember(null);
-          fetchAllData(undefined, true);
+          loadFinancialSummaries(teamMembers);
         }}
         workspaceId={workspaceId || currentUserId}
         member={selectedFinanceMember}
@@ -2763,7 +2811,7 @@ export default function TeamManagerPage() {
         }}
         availableEventTypes={eventTypesList}
         availableRoles={Array.from(new Set([
-          'Lead Photographer', 'Candid Photographer', 'Traditional Photographer', 
+          'Lead Photographer', 'Candid Photographer', 'Traditional Photographer', 'Traditional Videographer',
           'Cinematographer', 'Drone Pilot', 'Assistant / Helper', 'Editor',
           ...customCrewRoles.map(r => r.name)
         ]))}
