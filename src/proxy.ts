@@ -18,6 +18,15 @@ export async function proxy(request: NextRequest) {
 
     const { pathname } = request.nextUrl;
 
+    // Instant recovery route to immediately resolve 431 header size bloat on any client
+    if (pathname === '/clear-cookies' || pathname === '/fix-431') {
+      const clearResponse = NextResponse.redirect(new URL('/login', request.url), { status: 303 });
+      request.cookies.getAll().forEach((c) => {
+        clearResponse.cookies.set(c.name, '', { maxAge: 0, path: '/' });
+      });
+      return clearResponse;
+    }
+
     // 1. UNCONDITIONAL PASS FOR PUBLIC & AUTH PATHS
     const isPublicRoute =
       pathname === '/login' ||
@@ -136,6 +145,21 @@ export async function proxy(request: NextRequest) {
       }
     } catch {
       /* ignore */
+    }
+
+    // Proactively prune stale/orphaned auth token chunks if cookie count is bloated (> 6)
+    const allExistingCookies = request.cookies.getAll();
+    if (allExistingCookies.length > 6) {
+      let currentRef = '';
+      try {
+        currentRef = new URL(supabaseUrl).hostname.split('.')[0];
+      } catch (_) {}
+
+      allExistingCookies.forEach((c) => {
+        if (c.name.startsWith('sb-') && currentRef && !c.name.startsWith(`sb-${currentRef}`)) {
+          response.cookies.set(c.name, '', { maxAge: 0, path: '/' });
+        }
+      });
     }
 
     // Fallback 1: Direct cookie token inspection with proper chunk reassembly
