@@ -21,6 +21,8 @@ export async function proxy(request: NextRequest) {
     // 1. UNCONDITIONAL PASS FOR PUBLIC & AUTH PATHS
     const isPublicRoute =
       pathname === '/login' ||
+      pathname === '/blocked' ||
+      pathname.startsWith('/blocked') ||
       pathname === '/' ||
       pathname.startsWith('/pdf-preview') ||
       pathname.startsWith('/auth') ||
@@ -256,6 +258,67 @@ export async function proxy(request: NextRequest) {
         });
         return signOutResponse;
       }
+    }
+
+    // =========================================================================
+    // 3. ZERO-LEAK ROUTE PROTECTION: SUPERADMIN GOD-MODE (/sushant-1023-fw)
+    // =========================================================================
+    if (pathname.startsWith('/sushant-1023-fw')) {
+      // 1. If unauthenticated: Redirect cleanly to /login?redirectTo=%2Fsushant-1023-fw
+      if (!user) {
+        const loginUrl = new URL('/login', request.url);
+        loginUrl.searchParams.set('redirectTo', '/sushant-1023-fw');
+        return NextResponse.redirect(loginUrl, { status: 303 });
+      }
+
+      // 2. If authenticated: Check if user is SuperAdmin
+      const superAdminEmails = ['sushantnawale700@gmail.com', 'filmifyweddings@gmail.com'];
+      const userEmail = (user.email || '').trim().toLowerCase();
+      const isHardcodedAdmin =
+        user.id === 'f9359a12-3f2e-430c-9cec-2ec9841ec83e' ||
+        superAdminEmails.includes(userEmail);
+
+      let isSuperAdmin = isHardcodedAdmin;
+
+      if (!isSuperAdmin && supabaseUrl && supabaseAnonKey) {
+        try {
+          const client = createClient(supabaseUrl, supabaseAnonKey);
+          const { data: prof } = await client
+            .from('profiles')
+            .select('platform_role')
+            .eq('id', user.id)
+            .maybeSingle();
+
+          if (prof?.platform_role === 'superadmin') {
+            isSuperAdmin = true;
+          }
+        } catch (_) {}
+      }
+
+      // 3. If NOT superadmin: Strict HTTP 404 rewrite (Not Found) - appears non-existent
+      if (!isSuperAdmin) {
+        return NextResponse.rewrite(new URL('/not-found', request.url), { status: 404 });
+      }
+
+      return response;
+    }
+
+    // =========================================================================
+    // 4. TENANT ACCESS GOVERNANCE: CHECK IS_PLATFORM_BLOCKED FOR /workspace
+    // =========================================================================
+    if (user && (pathname === '/workspace' || pathname.startsWith('/workspace/'))) {
+      try {
+        const client = createClient(supabaseUrl, supabaseAnonKey);
+        const { data: prof } = await client
+          .from('profiles')
+          .select('is_platform_blocked')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (prof?.is_platform_blocked === true) {
+          return NextResponse.redirect(new URL('/blocked', request.url), { status: 303 });
+        }
+      } catch (_) {}
     }
 
     const isProtectedRoute =
