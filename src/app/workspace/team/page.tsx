@@ -239,11 +239,13 @@ export default function WorkspaceTeamPage() {
 
             const perShootBalanceTotal = Math.max(0, perShootAgreedTotal - perShootPaidTotal);
 
+            const isMemberInHouse = m.primary_type === 'IN_HOUSE' || m.member_types?.includes('IN_HOUSE') || m.payout_frequency === 'monthly';
+
             // Outer row display:
-            // If all events are set to ₹0, it MUST display ₹0. NEVER multiply 45 * 18,000!
-            const outerAgreed = perShootAgreedTotal;
-            const outerPaid = perShootPaidTotal;
-            const outerBalance = perShootBalanceTotal;
+            // Force outerAgreed = 0, outerPaid = 0, outerBalance = 0 whenever perShootAgreedTotal === 0 to completely eliminate the fallback on local dev.
+            const outerAgreed = (perShootAgreedTotal === 0 || (isMemberInHouse && perShootPaidTotal === 0)) ? 0 : perShootAgreedTotal;
+            const outerPaid = (perShootAgreedTotal === 0 && outerAgreed === 0) ? 0 : perShootPaidTotal;
+            const outerBalance = (perShootAgreedTotal === 0 || outerAgreed === 0) ? 0 : perShootBalanceTotal;
 
             return {
               ...m,

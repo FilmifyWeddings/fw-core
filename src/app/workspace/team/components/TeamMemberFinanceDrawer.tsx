@@ -358,17 +358,47 @@ export default function TeamMemberFinanceDrawer({
     return payouts;
   }, [payouts]);
 
+  // Member in-house / staff status
+  const isInHouse = member?.primary_type === 'IN_HOUSE' || member?.member_types?.includes('IN_HOUSE') || member?.payout_frequency === 'monthly';
+
+  // Year filter for studio shoots to align with calendar view (e.g. 2026 vs All)
+  const [shootsYearFilter, setShootsYearFilter] = useState<string>('All');
+
+  const availableShootsYears = useMemo(() => {
+    const set = new Set<string>();
+    studioShoots.forEach(s => {
+      const d = s.event_date || s.sub_event?.event_date || s.created_at;
+      if (d && d.length >= 4) {
+        set.add(d.slice(0, 4));
+      }
+    });
+    return Array.from(set).sort().reverse();
+  }, [studioShoots]);
+
+  const filteredShoots = useMemo(() => {
+    if (shootsYearFilter === 'All') return studioShoots;
+    return studioShoots.filter(s => {
+      const d = s.event_date || s.sub_event?.event_date || s.created_at;
+      return d && d.startsWith(shootsYearFilter);
+    });
+  }, [studioShoots, shootsYearFilter]);
+
   // Ensure top banner cards strictly sum all rows currently listed in Bookings & Events:
   const fallbackEvents = useMemo(() => {
     if (!Array.isArray(member?.events)) return [];
     return member.events;
   }, [member?.events]);
 
-  const events = studioShoots.length > 0 ? studioShoots : fallbackEvents;
+  const events = filteredShoots.length > 0 ? filteredShoots : (shootsYearFilter === 'All' && studioShoots.length === 0 ? fallbackEvents : []);
 
   const computedAgreed = useMemo(() => {
-    return (events || []).reduce((acc, curr) => acc + (Number(curr.agreed_amount) || 0), 0);
-  }, [events]);
+    return (events || []).reduce((acc, curr) => {
+      const rawAmt = Number(curr.agreed_amount) || 0;
+      // If member is in-house on monthly salary and rate matches default daily rate (synthetic 18,000 bug), ignore it as 0
+      const amt = (isInHouse && rawAmt === Number(member?.default_daily_rate) && (Number(curr.paid_amount) || 0) === 0) ? 0 : rawAmt;
+      return acc + amt;
+    }, 0);
+  }, [events, isInHouse, member?.default_daily_rate]);
 
   const computedPaid = useMemo(() => {
     return (events || []).reduce((acc, curr) => acc + (Number(curr.paid_amount || curr.advance_amount) || 0), 0);
@@ -376,7 +406,7 @@ export default function TeamMemberFinanceDrawer({
 
   const computedBalance = Math.max(0, computedAgreed - computedPaid);
 
-  const displayAgreed = computedAgreed;
+  const displayAgreed = computedAgreed === 0 ? 0 : computedAgreed;
   const displayPaid = computedPaid;
   const displayBalance = computedBalance;
 
@@ -672,10 +702,15 @@ export default function TeamMemberFinanceDrawer({
                   <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black uppercase tracking-wider bg-amber-400/20 text-amber-300 border border-amber-400/30">
                     {member.primary_role || 'Crew'}
                   </span>
-                  {Boolean(member.default_daily_rate && member.default_daily_rate > 0) && (
+                  {Boolean(member.default_daily_rate && member.default_daily_rate > 0 && !isInHouse) && (
                     <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 flex items-center gap-0.5">
                       <IndianRupee className="w-2.5 h-2.5" />
-                      <span>{Number(member.default_daily_rate).toLocaleString('en-IN')}/{member.payout_frequency === 'monthly' ? 'mo' : 'day'}</span>
+                      <span>{Number(member.default_daily_rate).toLocaleString('en-IN')}/day</span>
+                    </span>
+                  )}
+                  {isInHouse && (
+                    <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black bg-purple-500/20 text-purple-300 border border-purple-400/30">
+                      In-House Staff
                     </span>
                   )}
                 </div>
@@ -755,7 +790,7 @@ export default function TeamMemberFinanceDrawer({
                   : 'border-transparent text-stone-500 hover:text-stone-800'
               }`}
             >
-              📅 Bookings &amp; Events ({studioShoots.length})
+              📅 Bookings &amp; Events ({filteredShoots.length})
             </button>
             <button
               onClick={() => setActiveTab('payroll')}
@@ -871,18 +906,57 @@ export default function TeamMemberFinanceDrawer({
                   </div>
                 )}
 
+                {/* Shoots Roster Year Selector Pills */}
+                {availableShootsYears.length > 1 && (
+                  <div className="flex items-center gap-1.5 flex-wrap pb-1">
+                    <span className="text-[10px] font-black text-stone-400 uppercase tracking-wider mr-1">Year Scope:</span>
+                    <button
+                      type="button"
+                      onClick={() => setShootsYearFilter('All')}
+                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-black transition cursor-pointer ${
+                        shootsYearFilter === 'All'
+                          ? 'bg-amber-600 text-white shadow-2xs'
+                          : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                      }`}
+                    >
+                      All ({studioShoots.length})
+                    </button>
+                    {availableShootsYears.map((yr) => {
+                      const yrCount = studioShoots.filter(s => {
+                        const d = s.event_date || s.sub_event?.event_date || s.created_at;
+                        return d && d.startsWith(yr);
+                      }).length;
+                      return (
+                        <button
+                          key={yr}
+                          type="button"
+                          onClick={() => setShootsYearFilter(yr)}
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-black transition cursor-pointer ${
+                            shootsYearFilter === yr
+                              ? 'bg-amber-600 text-white shadow-2xs'
+                              : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                          }`}
+                        >
+                          {yr} ({yrCount})
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
                 {/* Shoots Roster */}
                 <div className="space-y-2.5">
-                  {studioShoots.length === 0 ? (
+                  {filteredShoots.length === 0 ? (
                     <div className="p-8 text-center bg-white rounded-2xl border border-stone-200 text-stone-400 space-y-1">
                       <Calendar className="w-8 h-8 text-stone-300 mx-auto mb-2" />
                       <p className="text-xs font-bold text-stone-600">No Shoot Assignments Found</p>
                       <p className="text-[11px] text-stone-400">Assign this member to upcoming events in Team Manager or add a custom event above.</p>
                     </div>
                   ) : (
-                    studioShoots.map((payout) => {
-                      const cardAgreed = Number(payout.agreed_amount) || 0;
+                    filteredShoots.map((payout) => {
+                      const rawCardAgreed = Number(payout.agreed_amount) || 0;
                       const cardPaid = Number(payout.paid_amount || 0);
+                      const cardAgreed = (isInHouse && rawCardAgreed === Number(member?.default_daily_rate) && cardPaid === 0) ? 0 : rawCardAgreed;
                       const cardDue = Math.max(0, cardAgreed - cardPaid);
                       const isPaid = (cardAgreed > 0 && cardDue <= 0) || payout.status === 'PAID' || payout.status === 'completed';
                       const displayClient = resolveClientName(payout);

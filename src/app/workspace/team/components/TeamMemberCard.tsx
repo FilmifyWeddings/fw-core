@@ -56,19 +56,28 @@ export default function TeamMemberCard({
 
   const perShootBalanceTotal = Math.max(0, perShootAgreedTotal - perShootPaidTotal);
 
-  // Outer row display:
-  // If all events are set to ₹0, it MUST display ₹0. NEVER multiply 45 * 18,000!
-  const displayAgreed = memberAssignments.length > 0
-    ? perShootAgreedTotal
-    : (agreed !== undefined ? Number(agreed) : (Number(member.commercial_agreed) || 0));
+  // Force displayAgreed = 0, displayPaid = 0, displayBalance = 0 whenever perShootAgreedTotal === 0 to completely eliminate the fallback on local dev.
+  const isInHouse = member.primary_type === 'IN_HOUSE' || member.member_types?.includes('IN_HOUSE') || member.type === 'in-house' || member.payout_frequency === 'monthly';
 
-  const displayPaid = memberAssignments.length > 0
-    ? perShootPaidTotal
-    : (paid !== undefined ? Number(paid) : (Number(member.commercial_paid) || 0));
+  const displayAgreed = (perShootAgreedTotal === 0 || (isInHouse && perShootPaidTotal === 0 && !member.commercial_agreed_explicit))
+    ? 0
+    : (memberAssignments.length > 0
+        ? perShootAgreedTotal
+        : (agreed !== undefined ? Number(agreed) : (Number(member.commercial_agreed) || 0)));
 
-  const displayBalance = memberAssignments.length > 0
-    ? perShootBalanceTotal
-    : (balance !== undefined ? Number(balance) : Math.max(0, displayAgreed - displayPaid));
+  const displayPaid = (perShootAgreedTotal === 0 && displayAgreed === 0)
+    ? 0
+    : (memberAssignments.length > 0
+        ? perShootPaidTotal
+        : (paid !== undefined ? Number(paid) : (Number(member.commercial_paid) || 0)));
+
+  const displayBalance = (perShootAgreedTotal === 0 || displayAgreed === 0)
+    ? 0
+    : (memberAssignments.length > 0
+        ? perShootBalanceTotal
+        : (balance !== undefined ? Number(balance) : Math.max(0, displayAgreed - displayPaid)));
+
+  console.log('ACTIVE ROW RENDER:', member.name, { outerAgreed: displayAgreed, outerPaid: displayPaid, outerBalance: displayBalance });
   const rolesList: string[] = (member.roles && member.roles.length > 0) ? member.roles : (member.primary_role ? [member.primary_role] : []);
 
   // Safe portal access resolution - eliminates raw DB metadata dump completely

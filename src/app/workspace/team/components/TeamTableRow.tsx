@@ -40,17 +40,28 @@ export default function TeamTableRow({
 
   const perShootBalanceTotal = Math.max(0, perShootAgreedTotal - perShootPaidTotal);
 
-  // Outer row display:
-  // If all events are set to ₹0, it MUST display ₹0. NEVER multiply 45 * 18,000!
-  const outerAgreed = memberAssignments.length > 0
-    ? perShootAgreedTotal
-    : (Number(fin?.total_agreed) || Number(member.commercial_agreed) || 0);
-  const outerPaid = memberAssignments.length > 0
-    ? perShootPaidTotal
-    : (Number(fin?.total_paid) || Number(member.commercial_paid) || 0);
-  const outerBalance = memberAssignments.length > 0
-    ? perShootBalanceTotal
-    : (fin?.total_balance !== undefined ? Number(fin.total_balance) : Math.max(0, outerAgreed - outerPaid));
+  // Force outerAgreed = 0, outerPaid = 0, outerBalance = 0 whenever perShootAgreedTotal === 0 to completely eliminate the fallback on local dev.
+  const isInHouse = member.primary_type === 'IN_HOUSE' || member.member_types?.includes('IN_HOUSE') || member.type === 'in-house' || member.payout_frequency === 'monthly';
+
+  const outerAgreed = (perShootAgreedTotal === 0 || (isInHouse && perShootPaidTotal === 0 && !member.commercial_agreed_explicit))
+    ? 0
+    : (memberAssignments.length > 0
+        ? perShootAgreedTotal
+        : (Number(fin?.total_agreed) || Number(member.commercial_agreed) || 0));
+
+  const outerPaid = (perShootAgreedTotal === 0 && outerAgreed === 0)
+    ? 0
+    : (memberAssignments.length > 0
+        ? perShootPaidTotal
+        : (Number(fin?.total_paid) || Number(member.commercial_paid) || 0));
+
+  const outerBalance = (perShootAgreedTotal === 0 || outerAgreed === 0)
+    ? 0
+    : (memberAssignments.length > 0
+        ? perShootBalanceTotal
+        : (fin?.total_balance !== undefined ? Number(fin.total_balance) : Math.max(0, outerAgreed - outerPaid)));
+
+  console.log('ACTIVE ROW RENDER:', member.name, { outerAgreed, outerPaid, outerBalance });
 
   const isFreelancer = member.primary_type === 'FREELANCER' || member.member_types?.includes('FREELANCER') || member.type === 'freelancer';
   const isPartner = member.primary_type === 'PARTNER' || member.member_types?.includes('PARTNER') || member.type === 'partner';
