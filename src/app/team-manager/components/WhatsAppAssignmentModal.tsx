@@ -49,9 +49,18 @@ export default function WhatsAppAssignmentModal({
 
   // 2. Synchronous initial value calculation based strictly on target slot:
   const resolvedInitialRate = useMemo(() => {
-    // 1. If this exact assignment slot already has an explicit saved rate, use it:
-    if (existingAssignment?.agreed_amount !== undefined && existingAssignment.agreed_amount !== null && Number(existingAssignment.agreed_amount) > 0) {
+    // 1. If this exact assignment slot already has an explicit saved rate, use it (including ₹0):
+    if (existingAssignment?.agreed_amount !== undefined && existingAssignment.agreed_amount !== null && !isNaN(Number(existingAssignment.agreed_amount))) {
       return Number(existingAssignment.agreed_amount);
+    }
+    // If member is In-House on monthly salary, default per-shoot rate strictly to 0
+    const isInHouse = 
+      (member as any)?.payout_frequency === 'monthly' ||
+      (member as any)?.primary_type === 'IN_HOUSE' ||
+      (member as any)?.member_types?.includes('IN_HOUSE') ||
+      (member as any)?.type === 'in_house';
+    if (isInHouse) {
+      return 0;
     }
     // 2. Otherwise use the member's configured default daily rate:
     const memberDefault = Number(
@@ -63,7 +72,7 @@ export default function WhatsAppAssignmentModal({
       (member as any)?.custom_rate ?? 
       0
     );
-    return memberDefault;
+    return isNaN(memberDefault) ? 0 : memberDefault;
   }, [existingAssignment?.id, existingAssignment?.agreed_amount, member]);
 
   const resolvedInitialAdvance = useMemo(() => {

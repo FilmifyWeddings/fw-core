@@ -21,25 +21,36 @@ export default function TeamTableRow({
   fin,
 }: TeamTableRowProps) {
   // For each member, aggregate actual active assignments:
-  const activeItems = (member.payouts && member.payouts.length > 0)
-    ? member.payouts
-    : (member.assignments && member.assignments.length > 0)
+  const memberAssignments = (member.assignments && member.assignments.length > 0)
     ? member.assignments
+    : (member.payouts && member.payouts.length > 0)
+    ? member.payouts
     : (Array.isArray(member.events) && member.events.length > 0)
     ? member.events
     : [];
 
-  const memberAgreed = activeItems.length > 0
-    ? activeItems.reduce((sum: number, item: any) => sum + (Number(item.agreed_amount) || 0), 0)
+  // Sum ONLY explicit event agreed amounts for per-shoot commercials:
+  const perShootAgreedTotal = (memberAssignments || []).reduce((sum: number, item: any) => {
+    return sum + (Number(item.agreed_amount) || 0);
+  }, 0);
+
+  const perShootPaidTotal = (memberAssignments || []).reduce((sum: number, item: any) => {
+    return sum + (Number(item.paid_amount ?? item.advance_amount) || 0);
+  }, 0);
+
+  const perShootBalanceTotal = Math.max(0, perShootAgreedTotal - perShootPaidTotal);
+
+  // Outer row display:
+  // If all events are set to ₹0, it MUST display ₹0. NEVER multiply 45 * 18,000!
+  const outerAgreed = memberAssignments.length > 0
+    ? perShootAgreedTotal
     : (Number(fin?.total_agreed) || Number(member.commercial_agreed) || 0);
-
-  const memberPaid = activeItems.length > 0
-    ? activeItems.reduce((sum: number, item: any) => sum + (Number(item.paid_amount ?? item.advance_amount) || 0), 0)
+  const outerPaid = memberAssignments.length > 0
+    ? perShootPaidTotal
     : (Number(fin?.total_paid) || Number(member.commercial_paid) || 0);
-
-  const memberBalance = activeItems.length > 0
-    ? Math.max(0, memberAgreed - memberPaid)
-    : (fin?.total_balance !== undefined ? Number(fin.total_balance) : Math.max(0, memberAgreed - memberPaid));
+  const outerBalance = memberAssignments.length > 0
+    ? perShootBalanceTotal
+    : (fin?.total_balance !== undefined ? Number(fin.total_balance) : Math.max(0, outerAgreed - outerPaid));
 
   const isFreelancer = member.primary_type === 'FREELANCER' || member.member_types?.includes('FREELANCER') || member.type === 'freelancer';
   const isPartner = member.primary_type === 'PARTNER' || member.member_types?.includes('PARTNER') || member.type === 'partner';
@@ -116,18 +127,18 @@ export default function TeamTableRow({
       <div className="col-span-3 w-full flex items-center gap-3 text-xs">
         <div>
           <span className="text-[9px] uppercase font-bold text-slate-400 block">Agreed</span>
-          <span className="font-bold text-slate-700">₹{memberAgreed.toLocaleString('en-IN')}</span>
+          <span className="font-bold text-slate-700">₹{outerAgreed.toLocaleString('en-IN')}</span>
         </div>
         <div className="h-5 w-px bg-slate-200"></div>
         <div>
           <span className="text-[9px] uppercase font-bold text-slate-400 block">Paid</span>
-          <span className="font-bold text-emerald-600">₹{memberPaid.toLocaleString('en-IN')}</span>
+          <span className="font-bold text-emerald-600">₹{outerPaid.toLocaleString('en-IN')}</span>
         </div>
         <div className="h-5 w-px bg-slate-200"></div>
         <div>
           <span className="text-[9px] uppercase font-bold text-slate-400 block">Balance</span>
-          <span className={`font-bold ${memberBalance > 0 ? 'text-amber-600' : 'text-slate-700'}`}>
-            ₹{memberBalance.toLocaleString('en-IN')}
+          <span className={`font-bold ${outerBalance > 0 ? 'text-amber-600' : 'text-slate-700'}`}>
+            ₹{outerBalance.toLocaleString('en-IN')}
           </span>
         </div>
       </div>

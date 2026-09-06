@@ -43,20 +43,24 @@ export async function saveCrewAssignmentCommercials(params: SaveCrewAssignmentCo
   let updatedAssignId = params.assignmentId;
   const cleanAssignId = String(params.assignmentId || '');
 
-  // 1. Ensure member row exists in fw_team_members
+  // 1. Ensure member row exists in fw_team_members without altering member's profile rate
+  let currentUid: string | undefined;
   if (params.member?.id) {
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const currentUid = session?.user?.id;
-      await supabase.from('fw_team_members').upsert({
+      currentUid = session?.user?.id;
+      const memberUpsert: any = {
         id: params.member.id,
         name: params.member.name || 'Team Member',
         phone_number: params.member.phone_number || params.member.phone || null,
         primary_role: params.assignedRole || params.member.primary_role || 'Crew',
         user_id: currentUid || undefined,
         is_active: true,
-        default_daily_rate: agreed > 0 ? agreed : undefined
-      }, { onConflict: 'id' });
+      };
+      if (params.member.default_daily_rate !== undefined) {
+        memberUpsert.default_daily_rate = params.member.default_daily_rate;
+      }
+      await supabase.from('fw_team_members').upsert(memberUpsert, { onConflict: 'id' });
     } catch (_) {}
   }
 
@@ -74,7 +78,8 @@ export async function saveCrewAssignmentCommercials(params: SaveCrewAssignmentCo
     status: assignStatus,
     notes: params.notes || null,
     updated_at: new Date().toISOString(),
-    ...(params.workspaceId ? { workspace_id: params.workspaceId, user_id: params.workspaceId } : {}),
+    ...(params.workspaceId ? { workspace_id: params.workspaceId } : {}),
+    ...(currentUid || params.workspaceId ? { user_id: currentUid || params.workspaceId } : {}),
     ...(params.eventName ? { sub_event_name: params.eventName } : {}),
     ...(params.clientName ? { client_name: params.clientName } : {})
   };

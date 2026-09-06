@@ -37,24 +37,37 @@ export default function TeamMemberCard({
   const typeLabel = isPartner ? 'Partner' : isFreelancer ? 'Freelancer' : (member.type || member.primary_type || 'In-House');
 
   // For each member, aggregate actual active assignments:
-  const activeItems = (member.payouts && member.payouts.length > 0)
-    ? member.payouts
-    : (member.assignments && member.assignments.length > 0)
+  const memberAssignments = (member.assignments && member.assignments.length > 0)
     ? member.assignments
+    : (member.payouts && member.payouts.length > 0)
+    ? member.payouts
     : (Array.isArray(member.events) && member.events.length > 0)
     ? member.events
     : [];
 
-  const displayAgreed = activeItems.length > 0
-    ? activeItems.reduce((sum: number, item: any) => sum + (Number(item.agreed_amount) || 0), 0)
+  // Sum ONLY explicit event agreed amounts for per-shoot commercials:
+  const perShootAgreedTotal = (memberAssignments || []).reduce((sum: number, item: any) => {
+    return sum + (Number(item.agreed_amount) || 0);
+  }, 0);
+
+  const perShootPaidTotal = (memberAssignments || []).reduce((sum: number, item: any) => {
+    return sum + (Number(item.paid_amount ?? item.advance_amount) || 0);
+  }, 0);
+
+  const perShootBalanceTotal = Math.max(0, perShootAgreedTotal - perShootPaidTotal);
+
+  // Outer row display:
+  // If all events are set to ₹0, it MUST display ₹0. NEVER multiply 45 * 18,000!
+  const displayAgreed = memberAssignments.length > 0
+    ? perShootAgreedTotal
     : (agreed !== undefined ? Number(agreed) : (Number(member.commercial_agreed) || 0));
 
-  const displayPaid = activeItems.length > 0
-    ? activeItems.reduce((sum: number, item: any) => sum + (Number(item.paid_amount ?? item.advance_amount) || 0), 0)
+  const displayPaid = memberAssignments.length > 0
+    ? perShootPaidTotal
     : (paid !== undefined ? Number(paid) : (Number(member.commercial_paid) || 0));
 
-  const displayBalance = activeItems.length > 0
-    ? Math.max(0, displayAgreed - displayPaid)
+  const displayBalance = memberAssignments.length > 0
+    ? perShootBalanceTotal
     : (balance !== undefined ? Number(balance) : Math.max(0, displayAgreed - displayPaid));
   const rolesList: string[] = (member.roles && member.roles.length > 0) ? member.roles : (member.primary_role ? [member.primary_role] : []);
 

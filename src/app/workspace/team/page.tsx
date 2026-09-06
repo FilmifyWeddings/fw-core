@@ -202,8 +202,9 @@ export default function WorkspaceTeamPage() {
           const rawAssigns = assignRes.status === 'fulfilled' && assignRes.value.data ? assignRes.value.data : [];
           const assigns = rawAssigns.filter((a: any) => {
             const proj = a.project || a.fw_projects;
-            const matchWs = (a.workspace_id && a.workspace_id === effectiveWsId) || (a.user_id && a.user_id === effectiveWsId);
-            const matchProjUser = proj?.user_id && proj.user_id === effectiveWsId;
+            const matchWs = (a.workspace_id && (a.workspace_id === effectiveWsId || a.workspace_id === currentUid)) || 
+                            (a.user_id && (a.user_id === effectiveWsId || a.user_id === currentUid));
+            const matchProjUser = proj?.user_id && (proj.user_id === effectiveWsId || proj.user_id === currentUid);
             return matchWs || matchProjUser;
           });
           const payouts = payoutRes.status === 'fulfilled' && payoutRes.value.data ? payoutRes.value.data : [];
@@ -225,19 +226,32 @@ export default function WorkspaceTeamPage() {
           combinedMembers = combinedMembers.map(m => {
             const mAssigns = assignsByMember[m.id] || [];
             const mPayouts = payoutsByMember[m.id] || [];
-            const activeList = mPayouts.length > 0 ? mPayouts : mAssigns;
+            const memberAssignments = mAssigns.length > 0 ? mAssigns : mPayouts;
 
-            const agreed = activeList.reduce((sum: number, item: any) => sum + (Number(item.agreed_amount) || 0), 0);
-            const paid = activeList.reduce((sum: number, item: any) => sum + (Number(item.paid_amount ?? item.advance_amount) || 0), 0);
-            const balance = Math.max(0, agreed - paid);
+            // Sum ONLY explicit event agreed amounts for per-shoot commercials:
+            const perShootAgreedTotal = (memberAssignments || []).reduce((sum: number, item: any) => {
+              return sum + (Number(item.agreed_amount) || 0);
+            }, 0);
+
+            const perShootPaidTotal = (memberAssignments || []).reduce((sum: number, item: any) => {
+              return sum + (Number(item.paid_amount ?? item.advance_amount) || 0);
+            }, 0);
+
+            const perShootBalanceTotal = Math.max(0, perShootAgreedTotal - perShootPaidTotal);
+
+            // Outer row display:
+            // If all events are set to ₹0, it MUST display ₹0. NEVER multiply 45 * 18,000!
+            const outerAgreed = perShootAgreedTotal;
+            const outerPaid = perShootPaidTotal;
+            const outerBalance = perShootBalanceTotal;
 
             return {
               ...m,
               assignments: mAssigns,
               payouts: mPayouts,
-              commercial_agreed: agreed,
-              commercial_paid: paid,
-              commercial_balance: balance
+              commercial_agreed: outerAgreed,
+              commercial_paid: outerPaid,
+              commercial_balance: outerBalance
             };
           });
         } catch (commErr) {

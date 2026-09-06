@@ -220,142 +220,114 @@ export default function TeamMemberFinanceDrawer({
   }, []);
 
   // Fast background data loader (0ms lag, parallelized via Promise.allSettled)
+  // Fast background data loader (0ms lag, strictly scoped to current studio owner)
   const loadData = useCallback(async () => {
     if (!member?.id || !workspaceId) return;
     setIsRefreshing(true);
     try {
-      const [payoutsResult, salariesResult, ordersResult, summaryResult] = await Promise.allSettled([
-        fetchMemberEventPayouts(workspaceId, member.id),
-        fetchMemberSalaryRecords(workspaceId, member.id),
-        isLab ? fetchPartnerAlbumOrders(workspaceId, member.id) : Promise.resolve([]),
-        fetchMemberFinancialSummary(workspaceId, member.id, memberType)
-      ]);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
-      let eventPayouts: TeamEventPayout[] = payoutsResult.status === 'fulfilled' ? (payoutsResult.value || []) : [];
-      let salaries: TeamSalaryRecord[] = salariesResult.status === 'fulfilled' ? (salariesResult.value || []) : [];
-      let orders: PartnerAlbumOrder[] = ordersResult.status === 'fulfilled' ? (ordersResult.value || []) : [];
-      let sum: TeamFinancialSummary = summaryResult.status === 'fulfilled' && summaryResult.value ? summaryResult.value : (initialSummary || {
-        member_id: member.id,
-        total_agreed: 0,
-        total_paid: 0,
-        total_balance: 0,
-        active_events_count: 0,
-        paid_events_count: 0,
-        pending_events_count: 0,
-        monthly_breakdown: []
+      // 1. Query ONLY assignments created within this studio's projects (STRICT SCOPE: Prevents 87 vs 50 discrepancy!)
+      const { data: assignments, error: assignErr } = await supabase
+        .from('fw_assignments')
+        .select(`
+          id,
+          project_id,
+          sub_event_id,
+          assigned_member_id,
+          required_role,
+          agreed_amount,
+          paid_amount,
+          advance_amount,
+          balance_amount,
+          status,
+          payment_status,
+          user_id,
+          created_at,
+          updated_at,
+          sub_event:fw_sub_events(id, event_title, event_date, start_time_12h, end_time_12h, venue_name),
+          project:fw_projects!inner(id, client_name, user_id, main_date, main_venue, status)
+        `)
+        .eq('assigned_member_id', member.id)
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (assignErr) {
+        console.warn('[TeamMemberFinanceDrawer] Strict assignments query error:', assignErr.message);
+      }
+
+      const eventPayouts: TeamEventPayout[] = (assignments || []).map((a: any) => {
+        const se = a.sub_event || a.fw_sub_events;
+        const proj = a.project || a.fw_projects;
+        const rawAgreed = a.agreed_amount !== undefined && a.agreed_amount !== null ? Number(a.agreed_amount) : 0;
+        const agreed = isNaN(rawAgreed) ? 0 : rawAgreed;
+        const paid = Number(a.paid_amount ?? a.advance_amount) || 0;
+        const bal = Math.max(0, agreed - paid);
+        const pStatus = (agreed > 0 && bal === 0) || a.payment_status === 'completed' || a.payment_status === 'PAID' || a.status === 'PAID' || a.status === 'completed'
+          ? 'PAID'
+          : paid > 0 || a.payment_status === 'partial' || a.payment_status === 'PARTIAL'
+          ? 'PARTIAL'
+          : 'PENDING';
+
+        const clientName = resolveClientName({
+          ...a,
+          client_name: a.client_name,
+          project: proj,
+          sub_event: se
+        });
+
+        return {
+          id: a.id,
+          workspace_id: a.user_id || workspaceId,
+          member_id: member.id,
+          member_name: member.name || '',
+          project_id: a.project_id || se?.project_id || '',
+          sub_event_id: a.sub_event_id || '',
+          client_name: clientName,
+          event_name: se?.event_title || se?.name || a.sub_event_name || 'Shoot Event',
+          event_date: se?.event_date || a.sub_event_date || new Date().toISOString().split('T')[0],
+          role: a.required_role || member.primary_role || 'Crew',
+          agreed_amount: agreed,
+          paid_amount: paid,
+          balance_amount: bal,
+          status: pStatus,
+          venue: se?.venue_name || proj?.main_venue || '',
+          start_time: se?.start_time_12h || se?.start_time || '',
+          end_time: se?.end_time_12h || se?.end_time || '',
+          project: proj,
+          sub_event: se,
+          created_at: a.created_at,
+          updated_at: a.updated_at
+        };
       });
 
-      // Direct Fallback query from fw_assignments if payouts empty
-      if (!eventPayouts || eventPayouts.length === 0) {
-        try {
-          const { data: assignmentsData } = await supabase
-            .from('fw_assignments')
-            .select(`
-              id,
-              required_role,
-              assigned_member_id,
-              agreed_amount,
-              advance_amount,
-              paid_amount,
-              balance_amount,
-              payment_status,
-              sub_event_id,
-              project_id,
-              workspace_id,
-              user_id,
-              client_name,
-              sub_event_name,
-              sub_event_date,
-              created_at,
-              updated_at,
-              project:fw_projects(id, client_name, main_date, main_venue, status, user_id),
-              sub_event:fw_sub_events(id, project_id, event_title, event_date, venue_name, start_time_12h, end_time_12h)
-            `)
-            .eq('assigned_member_id', member.id);
+      // 2. Fetch salaries and partner orders in parallel
+      const [salariesResult, ordersResult] = await Promise.allSettled([
+        fetchMemberSalaryRecords(workspaceId, member.id),
+        isLab ? fetchPartnerAlbumOrders(workspaceId, member.id) : Promise.resolve([])
+      ]);
 
-          if (assignmentsData && assignmentsData.length > 0) {
-            const rawData = assignmentsData.filter((a: any) => {
-              const proj = a.project || a.fw_projects;
-              const matchDirect = (a.workspace_id && a.workspace_id === workspaceId) || (a.user_id && a.user_id === workspaceId);
-              const matchProjUser = proj?.user_id && proj.user_id === workspaceId;
-              return matchDirect || matchProjUser;
-            });
-            eventPayouts = rawData.map((a: any) => {
-              const se = a.sub_event || a.fw_sub_events;
-              const proj = a.project || a.fw_projects;
-              const rawAgreed = a.agreed_amount !== undefined && a.agreed_amount !== null ? Number(a.agreed_amount) : 0;
-              const isSyntheticMultiplier = rawAgreed === 18000 || (member?.default_daily_rate && rawAgreed === Number(member.default_daily_rate));
-              const hasExplicitCustomPayout = Boolean(a.custom_payout || a.custom_rate || a.is_custom_payout);
-              const agreed = hasExplicitCustomPayout
-                ? (Number(a.custom_payout || a.custom_rate) || rawAgreed)
-                : (isSyntheticMultiplier ? 0 : (isNaN(rawAgreed) ? 0 : rawAgreed));
-              const paid = Number(a.advance_amount ?? a.paid_amount) || 0;
-              const bal = Math.max(0, agreed - paid);
-              const pStatus = (agreed > 0 && bal === 0) || a.payment_status === 'completed' || a.payment_status === 'PAID'
-                ? 'PAID'
-                : paid > 0 || a.payment_status === 'partial' || a.payment_status === 'PARTIAL'
-                ? 'PARTIAL'
-                : 'PENDING';
-
-              const clientName = resolveClientName({
-                ...a,
-                client_name: a.client_name,
-                project: proj,
-                sub_event: se
-              });
-
-              return {
-                id: a.id,
-                workspace_id: a.workspace_id || workspaceId,
-                member_id: member.id,
-                member_name: member.name || '',
-                project_id: a.project_id || se?.project_id || '',
-                sub_event_id: a.sub_event_id || '',
-                client_name: clientName,
-                event_name: se?.event_title || a.sub_event_name || 'Shoot Event',
-                event_date: se?.event_date || a.sub_event_date || new Date().toISOString().split('T')[0],
-                role: a.required_role || member.primary_role || 'Crew',
-                agreed_amount: agreed,
-                paid_amount: paid,
-                balance_amount: bal,
-                status: pStatus,
-                venue: se?.venue_name || proj?.main_venue || '',
-                start_time: se?.start_time_12h || '',
-                end_time: se?.end_time_12h || '',
-                project: proj,
-                sub_event: se,
-                created_at: a.created_at,
-                updated_at: a.updated_at
-              };
-            });
-          }
-        } catch (_) {}
-      }
+      let salaries: TeamSalaryRecord[] = salariesResult.status === 'fulfilled' ? (salariesResult.value || []) : [];
+      let orders: PartnerAlbumOrder[] = ordersResult.status === 'fulfilled' ? (ordersResult.value || []) : [];
 
       setPayouts(eventPayouts);
       setSalaryRecords(salaries);
       setAlbumOrders(orders);
 
-      const studioShootsList = eventPayouts.filter((item: any) => {
-        if (workspaceId && workspaceId !== 'all') {
-          if (item.workspace_id && item.workspace_id !== workspaceId) return false;
-          if (item.fw_sub_events?.workspace_id && item.fw_sub_events.workspace_id !== workspaceId) return false;
-        }
-        return true;
-      });
-
-      const eventAgreed = studioShootsList.reduce((a, b) => a + Number(b.agreed_amount || 0), 0);
-      const eventPaid = studioShootsList.reduce((a, b) => a + Number(b.paid_amount || 0), 0);
+      const eventAgreed = eventPayouts.reduce((a, b) => a + Number(b.agreed_amount || 0), 0);
+      const eventPaid = eventPayouts.reduce((a, b) => a + Number(b.paid_amount || 0), 0);
       const salaryPaidTotal = salaries.reduce((a, b) => a + Number(b.paid_amount || b.net_payable || 0), 0);
 
       const computedSummary: TeamFinancialSummary = {
-        ...sum,
+        member_id: member.id,
         total_agreed: eventAgreed,
         total_paid: eventPaid + salaryPaidTotal,
         total_balance: Math.max(0, eventAgreed - eventPaid),
-        active_events_count: studioShootsList.length,
-        paid_events_count: studioShootsList.filter(p => p.status === 'PAID' || p.status === 'completed').length,
-        pending_events_count: studioShootsList.filter(p => p.status !== 'PAID' && p.status !== 'completed').length
+        active_events_count: eventPayouts.length,
+        paid_events_count: eventPayouts.filter(p => p.status === 'PAID' || p.status === 'completed').length,
+        pending_events_count: eventPayouts.filter(p => p.status !== 'PAID' && p.status !== 'completed').length,
+        monthly_breakdown: []
       };
 
       setSummary(computedSummary);
@@ -365,7 +337,7 @@ export default function TeamMemberFinanceDrawer({
     } finally {
       setIsRefreshing(false);
     }
-  }, [workspaceId, member, memberType, isLab, initialSummary, onFinancialUpdate]);
+  }, [workspaceId, member, memberType, isLab, onFinancialUpdate]);
 
   // Instant open trigger & load in background
   useEffect(() => {
@@ -381,36 +353,32 @@ export default function TeamMemberFinanceDrawer({
     }
   }, [isOpen, member?.id, initialSummary, loadData]);
 
-  // Isolated Shoots for Bookings Tab
+  // Isolated Shoots for Bookings Tab (strictly equal to loaded payouts from studio assignments):
   const studioShoots = useMemo(() => {
-    return payouts.filter((item: any) => {
-      if (workspaceId && workspaceId !== 'all') {
-        if (item.workspace_id && item.workspace_id !== workspaceId) return false;
-        if (item.fw_sub_events?.workspace_id && item.fw_sub_events.workspace_id !== workspaceId) return false;
-      }
-      return true;
-    });
-  }, [payouts, workspaceId]);
+    return payouts;
+  }, [payouts]);
 
   // Ensure top banner cards strictly sum all rows currently listed in Bookings & Events:
   const fallbackEvents = useMemo(() => {
     if (!Array.isArray(member?.events)) return [];
-    if (!workspaceId || workspaceId === 'all') return member.events;
-    return member.events.filter((e: any) => {
-      const eWs = e.workspace_id || e.user_id;
-      return !eWs || eWs === workspaceId;
-    });
-  }, [member?.events, workspaceId]);
+    return member.events;
+  }, [member?.events]);
 
   const events = studioShoots.length > 0 ? studioShoots : fallbackEvents;
 
-  const totalAgreed = events.reduce((s: number, e: any) => s + (Number(e.agreed_amount) || 0), 0);
-  const totalPaid = events.reduce((s: number, e: any) => s + (Number(e.paid_amount ?? e.advance_amount) || 0), 0);
-  const totalBalance = Math.max(0, totalAgreed - totalPaid);
+  const computedAgreed = useMemo(() => {
+    return (events || []).reduce((acc, curr) => acc + (Number(curr.agreed_amount) || 0), 0);
+  }, [events]);
 
-  const displayAgreed = totalAgreed || Number(member?.commercial_agreed) || 0;
-  const displayPaid = totalPaid || Number(member?.commercial_paid) || 0;
-  const displayBalance = Math.max(0, displayAgreed - displayPaid);
+  const computedPaid = useMemo(() => {
+    return (events || []).reduce((acc, curr) => acc + (Number(curr.paid_amount || curr.advance_amount) || 0), 0);
+  }, [events]);
+
+  const computedBalance = Math.max(0, computedAgreed - computedPaid);
+
+  const displayAgreed = computedAgreed;
+  const displayPaid = computedPaid;
+  const displayBalance = computedBalance;
 
   // ── CREATE SALARY SLIP SUBMISSION HANDLER ──
   const handleCreateSalarySlip = async (e: React.FormEvent) => {
