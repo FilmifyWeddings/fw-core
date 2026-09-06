@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, Filter, RotateCcw, Calendar, 
@@ -79,9 +79,9 @@ export default function UnifiedTeamFilterModal({
   assignedPms = [],
   totalFilteredCount,
 }: UnifiedTeamFilterModalProps) {
-  const [draft, setDraft] = React.useState<UnifiedFilterState>(filters);
+  const [draft, setDraft] = useState<UnifiedFilterState>(filters);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (isOpen) setDraft(filters);
   }, [isOpen, filters]);
 

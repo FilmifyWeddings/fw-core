@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Settings, Plus, Trash2, Edit2, GripVertical, User, Check, Sparkles, Layers, Phone, Mail, UserPlus } from 'lucide-react';
 import { FWTeamMember } from '@/types';
