@@ -6,9 +6,9 @@ import {
   Shield, Users, HardDrive, Cpu, Terminal, ArrowRight, RotateCcw, 
   Send, RefreshCw, Layers, CheckCircle2, AlertTriangle, AlertCircle, Info, Sparkles, Clock, Calendar
 } from 'lucide-react';
-import { BhamstraProvider, useBhamstra } from '@/lib/context/BhamstraContext';
-import { isSuperAdmin } from '@/lib/auth/admin-guard';
-import { supabase } from '@/lib/supabase';
+import { BhamstraProvider, useBhamstra } from '../../../lib/context/BhamstraContext';
+import { isSuperAdmin } from '../../../lib/auth/admin-guard';
+import { supabase } from '../../../lib/supabase';
 
 interface UserTelemetryRow {
   id: string;

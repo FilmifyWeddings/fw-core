@@ -8,9 +8,9 @@ import {
   AlertTriangle, CheckCircle2, XCircle, Clock, Users,
   FileText, Wifi, WifiOff, Activity, BarChart3, ChevronDown, ChevronUp
 } from 'lucide-react';
-import { BhamstraProvider, useBhamstra } from '@/lib/context/BhamstraContext';
-import { isSuperAdmin } from '@/lib/auth/admin-guard';
-import { supabase } from '@/lib/supabase';
+import { BhamstraProvider, useBhamstra } from '../../../../../lib/context/BhamstraContext';
+import { isSuperAdmin } from '../../../../../lib/auth/admin-guard';
+import { supabase } from '../../../../../lib/supabase';
 
 // ── Provider metadata config ───────────────────────────────────────────────────
 const PROVIDER_META: Record<string, { name: string; logo: string; accent: string }> = {

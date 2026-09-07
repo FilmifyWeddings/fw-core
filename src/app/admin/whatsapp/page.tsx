@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
-import { isSuperAdmin } from '@/lib/auth/admin-guard';
+import { supabase } from '../../../lib/supabase';
+import { isSuperAdmin } from '../../../lib/auth/admin-guard';
 import { Wifi, WifiOff, RefreshCw, Smartphone, Clock, AlertTriangle, Loader2, Search, Filter } from 'lucide-react';
 
 function formatTime(ts: string | null) {

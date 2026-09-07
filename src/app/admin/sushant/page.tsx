@@ -4,7 +4,7 @@ import React from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { Shield, LayoutDashboard, Command, Sparkles } from 'lucide-react';
-import { BhamstraProvider } from '@/lib/context/BhamstraContext';
+import { BhamstraProvider } from '../../../lib/context/BhamstraContext';
 
 function SushantGatewayCore() {
   const router = useRouter();

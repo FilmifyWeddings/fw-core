@@ -4,8 +4,8 @@ import React from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Plug, ChevronRight, Shield, MessageSquare, Mail, Users, Calendar, Globe } from 'lucide-react';
-import { BhamstraProvider, useBhamstra } from '@/lib/context/BhamstraContext';
-import { isSuperAdmin } from '@/lib/auth/admin-guard';
+import { BhamstraProvider, useBhamstra } from '../../../../lib/context/BhamstraContext';
+import { isSuperAdmin } from '../../../../lib/auth/admin-guard';
 
 const INTEGRATIONS = [
   {

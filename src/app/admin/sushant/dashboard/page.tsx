@@ -10,9 +10,9 @@ import {
   Layers, HardDriveDownload
 } from 'lucide-react';
 import Link from 'next/link';
-import { BhamstraProvider, useBhamstra } from '@/lib/context/BhamstraContext';
-import { isSuperAdmin } from '@/lib/auth/admin-guard';
-import { supabase } from '@/lib/supabase';
+import { BhamstraProvider, useBhamstra } from '../../../../lib/context/BhamstraContext';
+import { isSuperAdmin } from '../../../../lib/auth/admin-guard';
+import { supabase } from '../../../../lib/supabase';
 
 interface UserTelemetryRow {
   id: string;
