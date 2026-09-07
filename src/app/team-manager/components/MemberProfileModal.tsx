@@ -452,7 +452,7 @@ export default function MemberProfileModal({
                   ? dateObj.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
                   : subEvent.event_date;
 
-                const locationDisplay = subEvent.venue_name || subEvent.location_address || 'Location TBD';
+                const locationDisplay = subEvent.venue_name || (subEvent as any).location_address || project.main_venue || 'Location TBD';
 
                 return (
                   <div

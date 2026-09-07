@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { FWProject, FWTeamMember, FWSubEvent, FWAssignment } from '@/types';
 import { 
   BarChart3, TrendingUp, Users, Calendar, Award, CheckCircle2, 
@@ -24,6 +24,16 @@ interface MemberShootItem {
   project: FWProject;
   dateObj: Date;
 }
+
+const parseSafeDate = (dateStr?: string | null): Date | null => {
+  if (!dateStr) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }
+  const parsed = new Date(dateStr);
+  return isNaN(parsed.getTime()) ? null : parsed;
+};
 
 export default function OperationsAnalyticsTab({
   projects,
@@ -53,44 +63,64 @@ export default function OperationsAnalyticsTab({
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const activeProjects = projects.filter((p) => !p.is_archived);
+  const activeProjects = useMemo(() => projects.filter((p) => !p.is_archived), [projects]);
+
+  // All sub-events & assignments across all active projects (unscoped, for deep member profile modal)
+  const allSubEventsAcrossProjects = useMemo(() => {
+    return activeProjects.flatMap((p) =>
+      (p.fw_sub_events || []).map((se) => ({ subEvent: se, project: p }))
+    );
+  }, [activeProjects]);
+
+  const allAssignmentsAcrossProjects = useMemo(() => {
+    return allSubEventsAcrossProjects.flatMap(({ subEvent, project }) =>
+      (subEvent.fw_assignments || []).map((a) => ({ assignment: a, subEvent, project }))
+    );
+  }, [allSubEventsAcrossProjects]);
 
   // Filter Sub-events according to scope
-  const filteredSubEvents = activeProjects.flatMap((p) =>
-    (p.fw_sub_events || [])
-      .filter((se) => {
-        const d = new Date(se.event_date);
-        if (isNaN(d.getTime())) return false;
+  const filteredSubEvents = useMemo(() => {
+    return activeProjects.flatMap((p) =>
+      (p.fw_sub_events || [])
+        .filter((se) => {
+          const firstAssign = (se.fw_assignments || [])[0];
+          const rawDate = se.event_date || (firstAssign as any)?.sub_event_date || p.main_date;
+          if (!rawDate) return false;
+          const d = parseSafeDate(rawDate);
+          if (!d) return false;
 
-        if (scopeMode === 'month') {
-          const matchYear = d.getFullYear() === selectedYear;
-          if (!matchYear) return false;
-          if (selectedMonth !== 'All') {
-            return d.getMonth() === parseInt(selectedMonth, 10);
+          if (scopeMode === 'month') {
+            const matchYear = d.getFullYear() === selectedYear;
+            if (!matchYear) return false;
+            if (selectedMonth !== 'All') {
+              return d.getMonth() === parseInt(selectedMonth, 10);
+            }
+            return true;
           }
+
+          if (scopeMode === 'year') {
+            return d.getFullYear() === selectedYear;
+          }
+
+          if (scopeMode === 'custom') {
+            if (!customStartDate && !customEndDate) return true;
+            const time = d.getTime();
+            const start = customStartDate ? new Date(customStartDate).getTime() : 0;
+            const end = customEndDate ? new Date(customEndDate).getTime() + 86400000 : Infinity;
+            return time >= start && time <= end;
+          }
+
           return true;
-        }
+        })
+        .map((se) => ({ subEvent: se, project: p }))
+    );
+  }, [activeProjects, scopeMode, selectedYear, selectedMonth, customStartDate, customEndDate]);
 
-        if (scopeMode === 'year') {
-          return d.getFullYear() === selectedYear;
-        }
-
-        if (scopeMode === 'custom') {
-          if (!customStartDate && !customEndDate) return true;
-          const time = d.getTime();
-          const start = customStartDate ? new Date(customStartDate).getTime() : 0;
-          const end = customEndDate ? new Date(customEndDate).getTime() + 86400000 : Infinity;
-          return time >= start && time <= end;
-        }
-
-        return true;
-      })
-      .map((se) => ({ subEvent: se, project: p }))
-  );
-
-  const allAssignmentsInScope = filteredSubEvents.flatMap(({ subEvent, project }) =>
-    (subEvent.fw_assignments || []).map((a) => ({ assignment: a, subEvent, project }))
-  );
+  const allAssignmentsInScope = useMemo(() => {
+    return filteredSubEvents.flatMap(({ subEvent, project }) =>
+      (subEvent.fw_assignments || []).map((a) => ({ assignment: a, subEvent, project }))
+    );
+  }, [filteredSubEvents]);
 
   // Categories Breakdown
   const categories = [
@@ -127,22 +157,28 @@ export default function OperationsAnalyticsTab({
     { label: 'Dec', val: '11' },
   ];
 
-  const monthlyShoots = monthsList.map((m) => {
-    const count = activeProjects.flatMap(p => p.fw_sub_events || []).filter((se) => {
-      const d = new Date(se.event_date);
-      return !isNaN(d.getTime()) && d.getFullYear() === selectedYear && d.getMonth() === parseInt(m.val, 10);
-    }).length;
-    return { month: m.label, val: m.val, count };
-  });
+  const monthlyShoots = useMemo(() => {
+    return monthsList.map((m) => {
+      const count = activeProjects.flatMap(p => (p.fw_sub_events || []).map(se => ({ se, p }))).filter(({ se, p }) => {
+        const firstAssign = (se.fw_assignments || [])[0];
+        const rawDate = se.event_date || (firstAssign as any)?.sub_event_date || p.main_date;
+        const d = parseSafeDate(rawDate);
+        return d && d.getFullYear() === selectedYear && d.getMonth() === parseInt(m.val, 10);
+      }).length;
+      return { month: m.label, val: m.val, count };
+    });
+  }, [activeProjects, selectedYear]);
   const maxMonthlyCount = Math.max(...monthlyShoots.map((m) => m.count), 1);
 
   // Completed vs Upcoming
   let completedShootsCount = 0;
   let upcomingShootsCount = 0;
 
-  filteredSubEvents.forEach(({ subEvent }) => {
-    const d = new Date(subEvent.event_date);
-    if (!isNaN(d.getTime()) && d < today) {
+  filteredSubEvents.forEach(({ subEvent, project }) => {
+    const firstAssign = (subEvent.fw_assignments || [])[0];
+    const rawDate = subEvent.event_date || (firstAssign as any)?.sub_event_date || project.main_date;
+    const d = parseSafeDate(rawDate);
+    if (d && d < today) {
       completedShootsCount++;
     } else {
       upcomingShootsCount++;
@@ -150,44 +186,68 @@ export default function OperationsAnalyticsTab({
   });
 
   // Team Member Performance & Role Distribution Analytics
-  const memberAnalyticsList = teamMembers.map((member) => {
-    const memberAssignments = allAssignmentsInScope.filter(({ assignment }) => assignment.assigned_member_id === member.id);
+  const memberAnalyticsList = useMemo(() => {
+    return teamMembers.map((member) => {
+      const memberAssignments = allAssignmentsInScope.filter(({ assignment }) => assignment.assigned_member_id === member.id);
 
-    const roleCounts: Record<string, number> = {};
-    let memberCompletedCount = 0;
-    let memberUpcomingCount = 0;
+      const roleCounts: Record<string, number> = {};
+      let memberCompletedCount = 0;
+      let memberUpcomingCount = 0;
 
-    const shoots: MemberShootItem[] = memberAssignments.map(({ assignment, subEvent, project }) => {
-      const d = new Date(subEvent.event_date);
-      const isValid = !isNaN(d.getTime());
-      if (isValid && d < today) {
-        memberCompletedCount++;
-      } else {
-        memberUpcomingCount++;
-      }
+      const shoots: MemberShootItem[] = memberAssignments.map(({ assignment, subEvent, project }) => {
+        const firstAssign = (subEvent.fw_assignments || [])[0];
+        const rawDate = subEvent.event_date || (assignment as any).sub_event_date || (firstAssign as any)?.sub_event_date || project.main_date;
+        const d = parseSafeDate(rawDate) || new Date();
+        const isValid = !isNaN(d.getTime());
+        if (isValid && d < today) {
+          memberCompletedCount++;
+        } else {
+          memberUpcomingCount++;
+        }
 
-      const role = assignment.required_role || 'Crew';
-      roleCounts[role] = (roleCounts[role] || 0) + 1;
+        const role = assignment.required_role || 'Crew';
+        roleCounts[role] = (roleCounts[role] || 0) + 1;
+
+        return {
+          assignment,
+          subEvent,
+          project,
+          dateObj: d,
+        };
+      });
+
+      shoots.sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime());
+
+      // Comprehensive Shoots across all active projects (unscoped) for full modal drilldown
+      const allMemberAssignments = allAssignmentsAcrossProjects.filter(
+        ({ assignment }) => assignment.assigned_member_id === member.id
+      );
+
+      const allShoots: MemberShootItem[] = allMemberAssignments.map(({ assignment, subEvent, project }) => {
+        const firstAssign = (subEvent.fw_assignments || [])[0];
+        const rawDate = subEvent.event_date || (assignment as any).sub_event_date || (firstAssign as any)?.sub_event_date || project.main_date;
+        const d = parseSafeDate(rawDate) || new Date();
+        return {
+          assignment,
+          subEvent,
+          project,
+          dateObj: d,
+        };
+      });
+
+      allShoots.sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime());
 
       return {
-        assignment,
-        subEvent,
-        project,
-        dateObj: isValid ? d : new Date(),
+        member,
+        totalShoots: shoots.length,
+        completedCount: memberCompletedCount,
+        upcomingCount: memberUpcomingCount,
+        roleCounts,
+        shoots,
+        allShoots,
       };
     });
-
-    shoots.sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime());
-
-    return {
-      member,
-      totalShoots: shoots.length,
-      completedCount: memberCompletedCount,
-      upcomingCount: memberUpcomingCount,
-      roleCounts,
-      shoots,
-    };
-  });
+  }, [teamMembers, allAssignmentsInScope, allAssignmentsAcrossProjects, today]);
 
   memberAnalyticsList.sort((a, b) => b.totalShoots - a.totalShoots);
 
@@ -479,7 +539,7 @@ export default function OperationsAnalyticsTab({
                   >
                     <div>
                       <span className="font-extrabold text-indigo-900 block">{project.client_name}</span>
-                      <span className="text-slate-700 text-[11px] block">{subEvent.event_title} ({subEvent.event_date})</span>
+                      <span className="text-slate-700 text-[11px] block">{subEvent.event_title} ({subEvent.event_date || 'Date TBD'})</span>
                     </div>
                     <span className="px-3 py-1 rounded-xl bg-rose-600 text-white font-black text-[10px]">
                       {unassignedCount} Unassigned Role{unassignedCount === 1 ? '' : 's'}
@@ -582,13 +642,13 @@ export default function OperationsAnalyticsTab({
               No team members match your search criteria.
             </div>
           ) : (
-            filteredMemberAnalytics.map(({ member, totalShoots, completedCount, upcomingCount, roleCounts, shoots }) => {
+            filteredMemberAnalytics.map(({ member, totalShoots, completedCount, upcomingCount, roleCounts, shoots, allShoots }) => {
               const cleanMName = member.name ? member.name.replace(/\.\.\./g, '').trim() : '';
 
               return (
                 <div
                   key={member.id}
-                  onClick={() => setSelectedMember({ member, shoots, roleCounts, completedCount, upcomingCount })}
+                  onClick={() => setSelectedMember({ member, shoots: allShoots, roleCounts, completedCount, upcomingCount })}
                   className="bg-slate-50/80 hover:bg-white border-2 border-slate-200/90 hover:border-indigo-400 rounded-2xl p-4 transition-all duration-200 shadow-2xs hover:shadow-md hover:-translate-y-0.5 cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-4 group select-none"
                 >
                   {/* MEMBER IDENTITY */}

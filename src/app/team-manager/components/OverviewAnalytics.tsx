@@ -46,6 +46,16 @@ const CustomTooltip = ({ active, payload }: any) => {
   return null;
 };
 
+const parseSafeDate = (dateStr?: string | null): Date | null => {
+  if (!dateStr) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }
+  const parsed = new Date(dateStr);
+  return isNaN(parsed.getTime()) ? null : parsed;
+};
+
 export default function OverviewAnalytics({
   projects,
   selectedYear,
@@ -58,9 +68,11 @@ export default function OverviewAnalytics({
   // Generate 12 months chart data
   const chartData = useMemo(() => {
     return MONTH_SHORTS.map((shortLabel, idx) => {
-      const monthSubEvents = activeProjects.flatMap(p => p.fw_sub_events || []).filter((se) => {
-        const d = new Date(se.event_date);
-        return !isNaN(d.getTime()) && d.getFullYear() === selectedYear && d.getMonth() === idx;
+      const monthSubEvents = activeProjects.flatMap(p => (p.fw_sub_events || []).map(se => ({ se, p }))).filter(({ se, p }) => {
+        const firstAssign = (se.fw_assignments || [])[0];
+        const rawDate = se.event_date || (firstAssign as any)?.sub_event_date || p.main_date;
+        const d = parseSafeDate(rawDate);
+        return d && d.getFullYear() === selectedYear && d.getMonth() === idx;
       });
 
       const count = monthSubEvents.length;
@@ -114,7 +126,7 @@ export default function OverviewAnalytics({
           <LineChart
             data={chartData}
             margin={{ top: 15, right: 15, left: -20, bottom: 0 }}
-            onClick={(state) => {
+            onClick={(state: any) => {
               if (state && state.activePayload && state.activePayload.length && onSelectMonth) {
                 const clickedVal = state.activePayload[0].payload.val;
                 onSelectMonth(clickedVal);
