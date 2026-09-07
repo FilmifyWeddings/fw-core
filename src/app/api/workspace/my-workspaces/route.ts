@@ -43,13 +43,14 @@ export async function GET(req: NextRequest) {
     const ownerWorkspace = {
       workspaceId: ownerWs?.id || uId,
       studioName: ownerStudioName,
+      studioSlug: profile?.studio_slug || ownerWs?.slug || uId.slice(0, 8),
       userRole: 'OWNER',
       isOwner: true,
       permissions: {
-        leads_access: 'FULL_EDIT',
+        leads_access: 'ALL_MANAGE',
         quotations_access: 'MANAGE',
-        team_manager_access: 'MANAGE_ALL',
-        post_production_access: 'FULL_ACCESS',
+        team_manager_access: 'ALL_MANAGE',
+        post_production_access: 'ALL_MANAGE',
         finance_access: 'MANAGE',
       },
       avatarUrl: profile?.avatar_url || profile?.logo_url || user.user_metadata?.avatar_url || '',
@@ -101,31 +102,46 @@ export async function GET(req: NextRequest) {
           .eq('id', mem.workspace_id)
           .maybeSingle();
 
+        let partnerStudioSlug = mem.workspace_id.slice(0, 8);
         if (wsData?.name) {
           partnerStudioName = wsData.name;
-        } else {
-          // Fallback to profile table
-          const { data: pData } = await supabaseAdmin
-            .from('profiles')
-            .select('workspace_name, full_name')
-            .eq('id', mem.workspace_id)
-            .maybeSingle();
-          if (pData?.workspace_name) partnerStudioName = pData.workspace_name;
+          if ((wsData as any).slug) partnerStudioSlug = (wsData as any).slug;
         }
+        
+        // Fetch studio_slug from profiles
+        const { data: pData } = await supabaseAdmin
+          .from('profiles')
+          .select('workspace_name, full_name, studio_slug')
+          .eq('id', mem.workspace_id)
+          .maybeSingle();
+        if (pData?.workspace_name && !wsData?.name) partnerStudioName = pData.workspace_name;
+        if (pData?.studio_slug) partnerStudioSlug = pData.studio_slug;
 
-        // Permissions
-        const perm = mem.member_permissions?.[0] || mem.member_permissions;
+        // Permissions from isolated studio_member_permissions table
+        let studioPerm: any = null;
+        try {
+          const { data: sp } = await supabaseAdmin
+            .from('studio_member_permissions')
+            .select('*')
+            .eq('owner_id', mem.workspace_id)
+            .eq('member_id', mem.id)
+            .maybeSingle();
+          if (sp) studioPerm = sp;
+        } catch (_) {}
+
+        const legacyPerm = mem.member_permissions?.[0] || mem.member_permissions;
         const memberPerms = {
-          leads_access: perm?.leads_access || 'NONE',
-          quotations_access: perm?.quotations_access || 'NONE',
-          team_manager_access: perm?.team_manager_access || 'ASSIGNED_ONLY_VIEW',
-          post_production_access: perm?.post_production_access || 'ASSIGNED_ONLY',
-          finance_access: perm?.finance_access || 'NONE',
+          leads_access: studioPerm?.leads_access || legacyPerm?.leads_access || 'NONE',
+          quotations_access: studioPerm?.quotations_access || legacyPerm?.quotations_access || 'NONE',
+          team_manager_access: studioPerm?.team_manager_access || legacyPerm?.team_manager_access || 'NONE',
+          post_production_access: studioPerm?.post_production_access || legacyPerm?.post_production_access || 'NONE',
+          finance_access: studioPerm?.finance_access || legacyPerm?.finance_access || 'NONE',
         };
 
         workspaceList.push({
           workspaceId: mem.workspace_id,
           studioName: partnerStudioName,
+          studioSlug: partnerStudioSlug,
           userRole: mem.primary_role || 'FREELANCER',
           isOwner: false,
           memberId: mem.id,

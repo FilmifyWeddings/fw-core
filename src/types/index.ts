@@ -289,6 +289,7 @@ export interface FWProject {
   is_archived?: boolean;
   created_at?: string;
   updated_at?: string;
+  studio_name?: string;
   fw_sub_events?: FWSubEvent[];
 }
 
@@ -300,6 +301,7 @@ export interface FWSubEvent {
   event_date: string;
   venue_name?: string;
   venue_map_link?: string;
+  location_city?: string;
   roll_call_time?: string;
   dismissal_estimate_time?: string;
   shift_hours_slot?: string;

@@ -7,17 +7,26 @@ import {
   Moon, CheckCircle2, User, Users, Sparkles, Search, Plus
 } from 'lucide-react';
 import RoleAssignDropdown from './RoleAssignDropdown';
+import { useWorkspace } from '@/lib/context/BhamstraContext';
+import { resolveEventCrewVisibility } from '@/lib/permissions/rbacRules';
 
 interface MonthListViewProps {
   projects: FWProject[];
   teamMembers: FWTeamMember[];
   searchQuery: string;
   selectedRoleFilter: string;
+  unifiedFilters?: any;
   format12HourTime: (time?: string) => string;
   getGradientByProjectId: (id: string) => string;
   onAssignMember: (assignmentId: string, memberId: string | null) => void;
   onAddNewMember: (info: { assignmentId: string; role: string; subEventId: string; projectId: string }) => void;
   onAddProject?: (initialDate?: string) => void;
+  isTmReadOnly?: boolean;
+  isSelfRoleOnly?: boolean;
+  currentMemberId?: string | null;
+  currentMemberEmail?: string | null;
+  studioPermissionsMap?: Map<string, any>;
+  activeStudioId?: string | null;
 }
 
 interface FlattenedSubEvent {
@@ -79,15 +88,30 @@ export default function MonthListView({
   teamMembers,
   searchQuery,
   selectedRoleFilter,
+  unifiedFilters,
   format12HourTime,
   getGradientByProjectId,
   onAssignMember,
   onAddNewMember,
   onAddProject,
+  isTmReadOnly = false,
+  isSelfRoleOnly = false,
+  currentMemberId = null,
+  currentMemberEmail = null,
+  studioPermissionsMap,
+  activeStudioId,
 }: MonthListViewProps) {
+  const { workspaceId } = useWorkspace();
   const [collapsedMonths, setCollapsedMonths] = useState<Record<string, boolean>>({});
   const [isPastSectionExpanded, setIsPastSectionExpanded] = useState<boolean>(false);
   const [isTbdSectionExpanded, setIsTbdSectionExpanded] = useState<boolean>(false);
+
+  const isMemberSlot = (assignment: FWAssignment) => {
+    return Boolean(
+      (currentMemberId && assignment.assigned_member_id === currentMemberId) ||
+      (currentMemberEmail && assignment.fw_team_members?.email?.toLowerCase() === currentMemberEmail.toLowerCase())
+    );
+  };
 
   const now = new Date();
   const currentMonthYearId = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -105,21 +129,46 @@ export default function MonthListView({
     projects.forEach((project) => {
       if (project.is_archived) return;
 
-      const matchClientName = !q || project.client_name.toLowerCase().includes(q);
+      const matchClientName = !q || project.client_name.toLowerCase().includes(q) || ((project as any).title || '').toLowerCase().includes(q);
 
       (project.fw_sub_events || []).forEach((se) => {
-        const matchSubTitle = !q || se.event_title.toLowerCase().includes(q);
+        const matchSubTitle = !q || se.event_title.toLowerCase().includes(q) || (se.venue_name || '').toLowerCase().includes(q);
         if (!matchClientName && !matchSubTitle) return;
+
+        // Unified Event Type filter
+        if (unifiedFilters?.eventTypes && unifiedFilters.eventTypes.length > 0) {
+          const eventTitle = (se.event_title || (se as any).name || (se as any).event_type || '').toLowerCase();
+          const matchType = unifiedFilters.eventTypes.some((t: string) => eventTitle.includes(t.toLowerCase()));
+          if (!matchType) return;
+        }
 
         const assignments = resolveSubEventAssignments(se, teamMembers);
 
-        // Role filter
+        // Role filter (top pill)
         if (selectedRoleFilter !== 'All') {
           const hasRole = assignments.some((a) => a.required_role === selectedRoleFilter);
           if (!hasRole) return;
         }
 
-        const isTbd = Boolean((se as any).is_date_tbd) || !se.event_date || se.event_date.toLowerCase() === 'tbd';
+        // Unified roles multiselect filter
+        if (unifiedFilters?.roles && unifiedFilters.roles.length > 0) {
+          const hasRole = assignments.some((a) => unifiedFilters.roles.includes(a.required_role));
+          if (!hasRole) return;
+        }
+
+        // Unified assignment status filter
+        if (unifiedFilters?.assignmentStatus === 'unassigned') {
+          const hasUnassigned = assignments.some((a) => !a.assigned_member_id);
+          if (!hasUnassigned) return;
+        } else if (unifiedFilters?.assignmentStatus === 'fully_assigned' || unifiedFilters?.assignmentStatus === 'assigned') {
+          const allAssigned = assignments.length > 0 && assignments.every((a) => Boolean(a.assigned_member_id));
+          if (!allAssigned) return;
+        } else if (unifiedFilters?.assignmentStatus === 'partially_assigned' || unifiedFilters?.assignmentStatus === 'partial') {
+          const assignedCount = assignments.filter((a) => Boolean(a.assigned_member_id)).length;
+          if (assignments.length === 0 || assignedCount === 0 || assignedCount >= assignments.length) return;
+        }
+
+        const isTbd = Boolean((se as any).is_date_tbd) || !se.event_date || se.event_date.toLowerCase() === 'tbd' || se.event_date.toLowerCase().includes('not fix');
         const d = se.event_date ? new Date(se.event_date) : null;
         const isValidDate = !isTbd && d && !isNaN(d.getTime());
 
@@ -192,7 +241,7 @@ export default function MonthListView({
       activeMonthOrder: sortedActiveOrder,
       pastMonthOrder: sortedPastOrder,
     };
-  }, [projects, teamMembers, searchQuery, selectedRoleFilter, currentMonthYearId]);
+  }, [projects, teamMembers, searchQuery, selectedRoleFilter, unifiedFilters, currentMonthYearId]);
 
   const totalEventsCount = useMemo(() => {
     let count = tbdEvents.length;
@@ -259,6 +308,14 @@ export default function MonthListView({
                   (subEvent.roll_call_time && subEvent.dismissal_estimate_time && subEvent.dismissal_estimate_time < subEvent.roll_call_time)
                 );
 
+                const eventVisibility = resolveEventCrewVisibility(
+                  { ...subEvent, project },
+                  currentMemberId,
+                  studioPermissionsMap || new Map(),
+                  activeStudioId,
+                  !isTmReadOnly
+                );
+
                 return (
                   <div
                     key={subEvent.id}
@@ -280,7 +337,7 @@ export default function MonthListView({
                         </span>
                       </div>
                       <div className="px-2.5 py-1 rounded-full bg-white/20 backdrop-blur-md text-[10px] font-black border border-white/20 mt-1">
-                        {assignedCount}/{totalSlots} Crew
+                        {eventVisibility === 'OWN_ROLE_ONLY' ? 'Assigned' : `${assignedCount}/${totalSlots} Crew`}
                       </div>
                     </div>
 
@@ -292,6 +349,12 @@ export default function MonthListView({
                           <span className="text-rose-950 font-black text-sm md:text-base tracking-tight">
                             {project.client_name}
                           </span>
+
+                          {(project.studio_name || workspaceId === 'all') && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                              🏢 {project.studio_name || 'Studio'}
+                            </span>
+                          )}
 
                           <span className="text-rose-300 text-sm font-light select-none">·</span>
 
@@ -343,18 +406,27 @@ export default function MonthListView({
                       <div>
                         <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">Crew</span>
                         <div className="flex items-center gap-4 flex-wrap pt-1">
-                          {assignments.map((assignment) => (
-                            <RoleAssignDropdown
-                              key={assignment.id}
-                              assignment={assignment}
-                              subEventId={subEvent.id}
-                              projectId={project.id}
-                              teamMembers={teamMembers}
-                              onAssignMember={onAssignMember}
-                              onAddNewMember={onAddNewMember}
-                              variant="avatar"
-                            />
-                          ))}
+                          {assignments.map((assignment) => {
+                            const isUserSlot = isMemberSlot(assignment);
+                            if (eventVisibility === 'OWN_ROLE_ONLY' && !isUserSlot) {
+                              return null;
+                            }
+                            const isReadOnly = isTmReadOnly || eventVisibility === 'FULL_CREW';
+                            return (
+                              <RoleAssignDropdown
+                                key={assignment.id}
+                                assignment={assignment}
+                                subEventId={subEvent.id}
+                                projectId={project.id}
+                                teamMembers={teamMembers}
+                                onAssignMember={onAssignMember}
+                                onAddNewMember={onAddNewMember}
+                                variant="avatar"
+                                readOnly={isReadOnly}
+                                isMasked={false}
+                              />
+                            );
+                          })}
                         </div>
                       </div>
                     </div>
@@ -441,6 +513,14 @@ export default function MonthListView({
                     const assignedCount = assignments.filter((a) => a.assigned_member_id).length;
                     const totalSlots = assignments.length;
 
+                    const eventVisibility = resolveEventCrewVisibility(
+                      { ...subEvent, project },
+                      currentMemberId,
+                      studioPermissionsMap || new Map(),
+                      activeStudioId,
+                      !isTmReadOnly
+                    );
+
                     return (
                       <div
                         key={subEvent.id}
@@ -462,7 +542,7 @@ export default function MonthListView({
                             </span>
                           </div>
                           <div className="px-2 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-[9px] font-bold border border-white/20 mt-0.5">
-                            {assignedCount}/{totalSlots} Crew
+                            {eventVisibility === 'OWN_ROLE_ONLY' ? 'Assigned' : `${assignedCount}/${totalSlots} Crew`}
                           </div>
                         </div>
 
@@ -474,6 +554,12 @@ export default function MonthListView({
                               <span className="text-amber-950 font-black text-xs sm:text-sm tracking-tight truncate">
                                 {project.client_name}
                               </span>
+
+                              {(project.studio_name || workspaceId === 'all') && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                                  🏢 {project.studio_name || 'Studio'}
+                                </span>
+                              )}
 
                               <span className="text-stone-300 text-xs font-light select-none">·</span>
 
@@ -520,18 +606,27 @@ export default function MonthListView({
                           <div>
                             <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">Crew</span>
                             <div className="flex items-center gap-4 flex-wrap pt-1">
-                              {assignments.map((assignment) => (
-                                <RoleAssignDropdown
-                                  key={assignment.id}
-                                  assignment={assignment}
-                                  subEventId={subEvent.id}
-                                  projectId={project.id}
-                                  teamMembers={teamMembers}
-                                  onAssignMember={onAssignMember}
-                                  onAddNewMember={onAddNewMember}
-                                  variant="avatar"
-                                />
-                              ))}
+                              {assignments.map((assignment) => {
+                                const isUserSlot = isMemberSlot(assignment);
+                                if (eventVisibility === 'OWN_ROLE_ONLY' && !isUserSlot) {
+                                  return null;
+                                }
+                                const isReadOnly = isTmReadOnly || eventVisibility === 'FULL_CREW';
+                                return (
+                                  <RoleAssignDropdown
+                                    key={assignment.id}
+                                    assignment={assignment}
+                                    subEventId={subEvent.id}
+                                    projectId={project.id}
+                                    teamMembers={teamMembers}
+                                    onAssignMember={onAssignMember}
+                                    onAddNewMember={onAddNewMember}
+                                    variant="avatar"
+                                    readOnly={isReadOnly}
+                                    isMasked={false}
+                                  />
+                                );
+                              })}
                             </div>
                           </div>
                         </div>
@@ -616,6 +711,14 @@ export default function MonthListView({
                           const assignedCount = assignments.filter((a) => a.assigned_member_id).length;
                           const totalSlots = assignments.length;
 
+                          const eventVisibility = resolveEventCrewVisibility(
+                            { ...subEvent, project },
+                            currentMemberId,
+                            studioPermissionsMap || new Map(),
+                            activeStudioId,
+                            !isTmReadOnly
+                          );
+
                           return (
                             <div
                               key={subEvent.id}
@@ -637,7 +740,7 @@ export default function MonthListView({
                                   </span>
                                 </div>
                                 <div className="px-2.5 py-1 rounded-full bg-white/20 backdrop-blur-md text-[10px] font-black border border-white/20 mt-1">
-                                  {assignedCount}/{totalSlots} Crew
+                                  {eventVisibility === 'OWN_ROLE_ONLY' ? 'Assigned' : `${assignedCount}/${totalSlots} Crew`}
                                 </div>
                               </div>
 
@@ -649,6 +752,12 @@ export default function MonthListView({
                                     <span className="text-slate-900 font-black text-sm md:text-base tracking-tight">
                                       {project.client_name}
                                     </span>
+
+                                    {(project.studio_name || workspaceId === 'all') && (
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                                        🏢 {project.studio_name || 'Studio'}
+                                      </span>
+                                    )}
 
                                     <span className="text-slate-300 text-sm font-light select-none">·</span>
 
@@ -700,18 +809,27 @@ export default function MonthListView({
                                 <div>
                                   <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">Crew</span>
                                   <div className="flex items-center gap-4 flex-wrap pt-1">
-                                    {assignments.map((assignment) => (
-                                      <RoleAssignDropdown
-                                        key={assignment.id}
-                                        assignment={assignment}
-                                        subEventId={subEvent.id}
-                                        projectId={project.id}
-                                        teamMembers={teamMembers}
-                                        onAssignMember={onAssignMember}
-                                        onAddNewMember={onAddNewMember}
-                                        variant="avatar"
-                                      />
-                                    ))}
+                                    {assignments.map((assignment) => {
+                                      const isUserSlot = isMemberSlot(assignment);
+                                      if (eventVisibility === 'OWN_ROLE_ONLY' && !isUserSlot) {
+                                        return null;
+                                      }
+                                      const isReadOnly = isTmReadOnly || eventVisibility === 'FULL_CREW';
+                                      return (
+                                        <RoleAssignDropdown
+                                          key={assignment.id}
+                                          assignment={assignment}
+                                          subEventId={subEvent.id}
+                                          projectId={project.id}
+                                          teamMembers={teamMembers}
+                                          onAssignMember={onAssignMember}
+                                          onAddNewMember={onAddNewMember}
+                                          variant="avatar"
+                                          readOnly={isReadOnly}
+                                          isMasked={false}
+                                        />
+                                      );
+                                    })}
                                   </div>
                                 </div>
                               </div>

@@ -33,9 +33,27 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { isOwner, userRole, permissions, availableWorkspaces } = useWorkspace();
+  const { isOwner, userRole, permissions, availableWorkspaces, activeWorkspace } = useWorkspace();
   const hasFetchedRef = useRef(false);
   const stageParam = searchParams?.get('stage') || searchParams?.get('filter') || searchParams?.get('view') || '';
+
+  const currentStudioCode = 
+    searchParams?.get('studio') || 
+    searchParams?.get('ws') || 
+    (activeWorkspace?.workspaceId === 'all' ? 'all' : (activeWorkspace?.studioSlug || activeWorkspace?.workspaceId)) || 
+    '';
+
+  const formatPathWithStudio = useCallback((path: string) => {
+    if (!currentStudioCode) return path;
+    try {
+      const [base, query] = path.split('?');
+      const params = new URLSearchParams(query || '');
+      params.set('studio', currentStudioCode);
+      return `${base}?${params.toString()}`;
+    } catch (_) {
+      return path.includes('?') ? `${path}&studio=${encodeURIComponent(currentStudioCode)}` : `${path}?studio=${encodeURIComponent(currentStudioCode)}`;
+    }
+  }, [currentStudioCode]);
 
   const checkIsSubActive = (subPath: string) => {
     if (subPath === '/leads') {
@@ -336,7 +354,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     // 1. Leads
     ...(permissions?.leads_access && permissions.leads_access !== 'NONE' ? [{
       id: 'leads',
-      name: (permissions.leads_access === 'ALL_VIEW' || permissions.leads_access === 'ALL_EDIT') ? 'Leads & CRM' : 'Assigned Leads',
+      name: (permissions.leads_access === 'ALL_VIEW' || permissions.leads_access === 'ALL_EDIT' || permissions.leads_access === 'ALL_MANAGE') ? 'Leads & CRM' : 'Assigned Leads',
       path: '/leads',
       icon: Target,
       iconBg: 'bg-[#E6F4EA] text-[#137333]',
@@ -345,7 +363,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     ...(permissions?.team_manager_access && permissions.team_manager_access !== 'NONE' ? [{
       id: 'bookings',
       name: (permissions.team_manager_access === 'ALL_VIEW' || permissions.team_manager_access === 'ALL_MANAGE') ? 'Bookings & Events' : 'Assigned Shoots',
-      path: '/team-manager',
+      path: (permissions.team_manager_access === 'ALL_VIEW' || permissions.team_manager_access === 'ALL_MANAGE') ? '/team-manager' : '/assigned-shoots',
       icon: Calendar,
       iconBg: 'bg-[#E0F2FE] text-[#0284C7]',
     }] : []),
@@ -438,9 +456,9 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
           {!collapsed ? (
             <>
               <Link
-                href="/workspace"
+                href={isOwner ? "/workspace" : formatPathWithStudio("/assigned-shoots")}
                 prefetch={true}
-                onMouseEnter={() => router.prefetch('/workspace')}
+                onMouseEnter={() => router.prefetch(isOwner ? '/workspace' : formatPathWithStudio('/assigned-shoots'))}
                 className="flex items-center gap-3 overflow-hidden group"
               >
                 <StudioCoreBrandIcon className="w-9 h-9" isCollapsed={false} />
@@ -493,14 +511,16 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
               ? pathname === '/workspace'
               : isLeads
                 ? pathname.startsWith('/leads')
-                : pathname === item.path || (item.path !== '/workspace' && pathname.startsWith(item.path));
+                : item.id === 'bookings'
+                  ? (pathname === '/team-manager' || pathname.startsWith('/team-manager') || pathname === '/assigned-shoots' || pathname.startsWith('/assigned-shoots'))
+                  : pathname === item.path || (item.path !== '/workspace' && pathname.startsWith(item.path));
 
             return (
               <div key={item.id} className="relative group">
                 <Link
-                  href={item.path}
+                  href={formatPathWithStudio(item.path)}
                   prefetch={true}
-                  onMouseEnter={() => router.prefetch(item.path)}
+                  onMouseEnter={() => router.prefetch(formatPathWithStudio(item.path))}
                   className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition-all duration-200 ${
                     isActive
                       ? 'bg-[#FDF6EC] text-[#92400E] border border-[#F5E6CC] shadow-2xs'
@@ -540,9 +560,9 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                       return (
                         <Link
                           key={sub.name}
-                          href={sub.path}
+                          href={formatPathWithStudio(sub.path)}
                           prefetch={true}
-                          onMouseEnter={() => router.prefetch(sub.path)}
+                          onMouseEnter={() => router.prefetch(formatPathWithStudio(sub.path))}
                           className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${
                             isSubActive
                               ? 'bg-amber-100/70 text-amber-900 font-bold'
@@ -717,14 +737,16 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
               <div className="flex-1 overflow-y-auto py-2 px-3 space-y-1">
                 {menuItems.map((item) => {
                   const Icon = item.icon;
-                  const isActive = pathname === item.path || (item.path !== '/workspace' && pathname.startsWith(item.path));
+                  const isActive = item.id === 'bookings'
+                    ? (pathname === '/team-manager' || pathname.startsWith('/team-manager') || pathname === '/assigned-shoots' || pathname.startsWith('/assigned-shoots'))
+                    : pathname === item.path || (item.path !== '/workspace' && pathname.startsWith(item.path));
 
                   return (
                     <div key={item.id}>
                       <Link
-                        href={item.path}
+                        href={formatPathWithStudio(item.path)}
                         prefetch={true}
-                        onMouseEnter={() => router.prefetch(item.path)}
+                        onMouseEnter={() => router.prefetch(formatPathWithStudio(item.path))}
                         onClick={() => setMobileDrawerOpen(false)}
                         className={`flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition ${
                           isActive

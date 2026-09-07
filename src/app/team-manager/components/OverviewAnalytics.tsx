@@ -10,7 +10,7 @@ import { TrendingUp } from 'lucide-react';
 interface OverviewAnalyticsProps {
   projects: FWProject[];
   selectedYear: number;
-  scopeMode?: 'month' | 'year' | 'custom';
+  scopeMode?: 'all' | 'month' | 'year' | 'custom';
   selectedMonth?: string;
   onSelectMonth?: (monthVal: string) => void;
 }

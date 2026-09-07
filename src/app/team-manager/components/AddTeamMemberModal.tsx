@@ -15,6 +15,7 @@ import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { useWorkspaceData } from '@/context/WorkspaceDataContext';
 import { saveWorkspaceMemberRate } from '@/lib/team-finance-sync';
 import { fetchWorkspaceCrewRoles, saveWorkspaceCrewRole } from '@/lib/workspace-settings';
+import { getMemberStudioPermissions, saveMemberStudioPermissions } from '@/lib/permissions/rbacRules';
 
 interface AddTeamMemberModalProps {
   memberToEdit?: any | null;
@@ -307,11 +308,24 @@ export default function AddTeamMemberModal({
 
       const perms = memberToEdit.permissions || memberToEdit.member_permissions?.[0] || memberToEdit.member_permissions || {};
       setLeadsAccess(perms.leads_access || 'NONE');
-      setTeamManagerAccess(perms.team_manager_access || 'ASSIGNED_ONLY_VIEW');
+      setTeamManagerAccess(perms.team_manager_access || 'NONE');
       setQuotationsAccess(perms.quotations_access || 'NONE');
-      setPostProductionAccess(perms.post_production_access || 'ASSIGNED_ONLY');
+      setPostProductionAccess(perms.post_production_access || 'NONE');
       setFinanceAccess(perms.finance_access || 'NONE');
       setIsRegisteredUser(true);
+
+      const ownerId = workspaceId || userId;
+      if (ownerId && memberToEdit.id) {
+        getMemberStudioPermissions(ownerId, memberToEdit.id).then((sp) => {
+          if (sp && sp.id) {
+            setLeadsAccess(sp.leads_access || 'NONE');
+            setTeamManagerAccess(sp.team_manager_access || 'NONE');
+            setQuotationsAccess(sp.quotations_access || 'NONE');
+            setPostProductionAccess(sp.post_production_access || 'NONE');
+            setFinanceAccess(sp.finance_access || 'NONE');
+          }
+        }).catch(() => {});
+      }
     } else if (isOpen) {
       setName('');
       setPrimaryRole(initialRole);
@@ -324,9 +338,9 @@ export default function AddTeamMemberModal({
       setDefaultDailyRate('');
       setPayoutFrequency('daily');
       setLeadsAccess('NONE');
-      setTeamManagerAccess('ASSIGNED_ONLY_VIEW');
+      setTeamManagerAccess('NONE');
       setQuotationsAccess('NONE');
-      setPostProductionAccess('ASSIGNED_ONLY');
+      setPostProductionAccess('NONE');
       setFinanceAccess('NONE');
       setIsRegisteredUser(false);
       setSearchResults([]);
@@ -549,11 +563,13 @@ export default function AddTeamMemberModal({
         permissions: permissionsObj,
       });
 
+      let resolvedMemberId = memberToEdit?.id;
+
       // 2. Persist to Multi-Tenant Database API
       if (email.trim() && workspaceId) {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.access_token) {
-          await fetch('/api/workspace/members', {
+          const res = await fetch('/api/workspace/members', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -578,12 +594,25 @@ export default function AddTeamMemberModal({
               payout_frequency: payoutFrequency,
               permissions: permissionsObj,
             }),
-          }).catch(() => {});
+          }).catch(() => null);
+
+          if (res?.ok) {
+            const resData = await res.json().catch(() => null);
+            if (resData?.member?.id) {
+              resolvedMemberId = resData.member.id;
+            }
+          }
         }
       }
 
-      if (workspaceId && memberToEdit?.id) {
-        await saveWorkspaceMemberRate(workspaceId, memberToEdit.id, cleanRate, 'INR', payoutFrequency).catch(() => {});
+      if (workspaceId && resolvedMemberId) {
+        await saveWorkspaceMemberRate(workspaceId, resolvedMemberId, cleanRate, 'INR', payoutFrequency).catch(() => {});
+      }
+
+      // 3. Direct persistence into studio_member_permissions table
+      const ownerId = workspaceId || userId;
+      if (ownerId && resolvedMemberId) {
+        await saveMemberStudioPermissions(ownerId, resolvedMemberId, permissionsObj).catch(() => {});
       }
 
       onClose();
@@ -1136,8 +1165,8 @@ export default function AddTeamMemberModal({
                         <option value="NONE">❌ No Access (CRM Hidden)</option>
                         <option value="ASSIGNED_VIEW">👁️ Assigned Leads Only (View Only)</option>
                         <option value="ASSIGNED_EDIT">✏️ Assigned Leads Only (Can Edit)</option>
-                        <option value="ALL_VIEW">🌐 All Studio Leads (View Only)</option>
-                        <option value="ALL_EDIT">⚡ All Studio Leads (Full Edit Access)</option>
+                        <option value="ALL_VIEW">🔍 All Studio Leads (View Only)</option>
+                        <option value="ALL_MANAGE">⚡ Full Studio Leads (Full Editable Access)</option>
                       </select>
                     </div>
 
@@ -1153,10 +1182,10 @@ export default function AddTeamMemberModal({
                         className="w-full text-xs font-semibold px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-800 focus:bg-white focus:border-amber-500 focus:outline-hidden"
                       >
                         <option value="NONE">❌ No Access (Hidden)</option>
-                        <option value="ASSIGNED_ONLY_VIEW">👤 Assigned Sub-Event Card Only (View Call Time &amp; Own Role)</option>
-                        <option value="ASSIGNED_FULL_TEAM_VIEW">👥 Assigned Sub-Event Card (View Full Team &amp; Crew Call Times)</option>
-                        <option value="ALL_VIEW">📅 All Bookings &amp; Events (View Only)</option>
-                        <option value="ALL_MANAGE">⚡ Full Manage Access (Add / Edit Shoots &amp; Assign Crew)</option>
+                        <option value="ASSIGNED_OWN_ROLE">👤 Assigned Sub-Events Only (View Call Time &amp; Own Role)</option>
+                        <option value="ASSIGNED_FULL_CREW">👥 Assigned Sub-Events Card (View Full Team &amp; Crew + Call Time)</option>
+                        <option value="ALL_VIEW">🌐 All Bookings &amp; Events (View Only)</option>
+                        <option value="ALL_MANAGE">⚡ Full Manage Access (Edit, Shoot &amp; Assign Roles)</option>
                       </select>
                     </div>
 
@@ -1171,8 +1200,8 @@ export default function AddTeamMemberModal({
                         onChange={(e) => setQuotationsAccess(e.target.value)}
                         className="w-full text-xs font-semibold px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-800 focus:bg-white focus:border-amber-500 focus:outline-hidden"
                       >
-                        <option value="NONE">❌ Hidden</option>
-                        <option value="VIEW_ONLY">👁️ View Only</option>
+                        <option value="NONE">❌ No Access (Hidden)</option>
+                        <option value="VIEW">👁️ View Only</option>
                         <option value="MANAGE">⚡ Full Manage</option>
                       </select>
                     </div>
@@ -1188,9 +1217,10 @@ export default function AddTeamMemberModal({
                         onChange={(e) => setPostProductionAccess(e.target.value)}
                         className="w-full text-xs font-semibold px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-800 focus:bg-white focus:border-amber-500 focus:outline-hidden"
                       >
-                        <option value="NONE">❌ Hidden</option>
-                        <option value="ASSIGNED_ONLY">🎬 Assigned Projects Only</option>
-                        <option value="FULL_ACCESS">⚡ Full Access</option>
+                        <option value="NONE">❌ No Access (Hidden)</option>
+                        <option value="ASSIGNED_VIEW">🎬 Assigned Projects Only (View &amp; Upload)</option>
+                        <option value="ALL_VIEW">🌐 All Projects (View Only)</option>
+                        <option value="ALL_MANAGE">⚡ Full Manage Access</option>
                       </select>
                     </div>
 
@@ -1205,9 +1235,9 @@ export default function AddTeamMemberModal({
                         onChange={(e) => setFinanceAccess(e.target.value)}
                         className="w-full text-xs font-semibold px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-800 focus:bg-white focus:border-amber-500 focus:outline-hidden"
                       >
-                        <option value="NONE">❌ Hidden</option>
-                        <option value="VIEW_ONLY">👁️ View Only</option>
-                        <option value="MANAGE">⚡ Full Access</option>
+                        <option value="NONE">❌ No Access (Hidden)</option>
+                        <option value="VIEW">👁️ View Only</option>
+                        <option value="MANAGE">⚡ Full Manage Access</option>
                       </select>
                     </div>
                   </motion.div>

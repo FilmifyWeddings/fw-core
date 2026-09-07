@@ -6,7 +6,7 @@ import {
   ChevronDown, Crown, Briefcase, Check, Building2, 
   Sparkles, Camera, Film, BookOpen, Layers, ShieldCheck 
 } from 'lucide-react';
-import { useWorkspace, WorkspaceOption } from '@/lib/context/BhamstraContext';
+import { useWorkspace, WorkspaceOption, ALL_STUDIOS_WORKSPACE } from '@/lib/context/BhamstraContext';
 import { useRouter, usePathname } from 'next/navigation';
 
 interface WorkspaceSwitcherProps {
@@ -74,18 +74,29 @@ export function WorkspaceSwitcher({ isCollapsed = false }: WorkspaceSwitcherProp
     setIsOpen(false);
     await switchWorkspace(ws.workspaceId);
 
-    // If switching to a partner workspace and currently on an owner-only page, route to partner portal
+    const targetWsParam = ws.studioSlug || ws.workspaceId;
+
+    // If switching to a partner workspace and currently on an owner-only page, route to assigned shoots
     if (!ws.isOwner) {
       if (
         pathname === '/workspace/settings' || 
         pathname === '/workspace/integrations' ||
         pathname === '/workspace/finance' ||
-        pathname === '/workspace'
+        pathname === '/workspace/team' ||
+        pathname === '/workspace/clients' ||
+        pathname === '/workspace' ||
+        pathname === '/workspace/'
       ) {
-        router.push('/workspace/partner-portal');
+        router.push(`/assigned-shoots?studio=${encodeURIComponent(targetWsParam)}`);
+      } else {
+        router.push(`${pathname}?studio=${encodeURIComponent(targetWsParam)}`);
       }
-    } else if (pathname === '/workspace/partner-portal') {
-      router.push('/workspace');
+    } else {
+      if (pathname === '/workspace/partner-portal' || pathname === '/assigned-shoots') {
+        router.push(`/team-manager?studio=${encodeURIComponent(targetWsParam)}`);
+      } else {
+        router.push(`${pathname}?studio=${encodeURIComponent(targetWsParam)}`);
+      }
     }
   };
 
@@ -178,6 +189,28 @@ export function WorkspaceSwitcher({ isCollapsed = false }: WorkspaceSwitcherProp
               <span>Partner Workspaces (Crew / Vendor)</span>
             </div>
             <div className="mt-1 space-y-1">
+              {/* MASTER ALL STUDIOS CONSOLIDATED VIEW */}
+              <button
+                key="all-studios-master"
+                onClick={() => handleSelect(ALL_STUDIOS_WORKSPACE)}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left transition cursor-pointer mb-1 ${
+                  workspaceId === 'all'
+                    ? 'bg-indigo-50 text-indigo-900 border border-indigo-300 font-bold'
+                    : 'hover:bg-zinc-100 text-zinc-700'
+                }`}
+              >
+                <div className="flex items-center gap-2.5 overflow-hidden">
+                  <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 text-white flex items-center justify-center font-black text-xs shrink-0 shadow-xs">
+                    <Layers className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="truncate">
+                    <p className="text-xs font-black leading-tight truncate text-indigo-950">All Studios (Consolidated)</p>
+                    <span className="text-[10px] font-bold text-indigo-600">Combined Partner View</span>
+                  </div>
+                </div>
+                {workspaceId === 'all' && <Check className="w-4 h-4 text-indigo-600 shrink-0" />}
+              </button>
+
               {partnerWorkspaces.map((ws) => {
                 const isSelected = ws.workspaceId === workspaceId;
                 return (

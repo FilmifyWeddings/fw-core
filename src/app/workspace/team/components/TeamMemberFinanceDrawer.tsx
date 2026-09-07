@@ -8,7 +8,8 @@ import {
   AlertCircle, ChevronRight, Edit3, Trash2, Sparkles, Building2, 
   User, Check, FileText, Send, Layers, Wallet, TrendingUp, History,
   Receipt, ArrowUpRight, ShieldCheck, CheckCheck, RefreshCw, SlidersHorizontal,
-  Phone, Mail, BarChart3, BookOpen, MapPin, Award, ChevronDown, CheckSquare, Square
+  Phone, Mail, BarChart3, BookOpen, MapPin, Award, ChevronDown, CheckSquare, Square,
+  Printer, Download
 } from 'lucide-react';
 import { 
   TeamEventPayout, 
@@ -24,6 +25,7 @@ import {
   recordAlbumOrderPayment, 
   fetchMemberSalaryRecords, 
   saveSalaryRecord, 
+  deleteSalaryRecord,
   recordSalaryPayment,
   updateCrewAssignmentPayment,
   fetchMemberFinancialSummary,
@@ -32,11 +34,16 @@ import {
 } from '@/lib/team-finance-sync';
 import { supabase } from '@/lib/supabase';
 import { fetchMemberPayouts, recordMemberPayment } from '@/lib/services/teamPayoutService';
+import RecordPaymentModal from './RecordPaymentModal';
+import SalarySlipModal, { SalarySlipData } from './SalarySlipModal';
+import DeleteSlipConfirmModal from './DeleteSlipConfirmModal';
+import SalarySlipPdfTemplate from './SalarySlipPdfTemplate';
 
 interface TeamMemberFinanceDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   workspaceId: string;
+  workspaceName?: string;
   member: {
     id: string;
     name: string;
@@ -108,6 +115,7 @@ export default function TeamMemberFinanceDrawer({
   isOpen,
   onClose,
   workspaceId,
+  workspaceName = 'Filmify Weddings',
   member,
   initialSummary,
   onFinancialUpdate,
@@ -168,6 +176,15 @@ export default function TeamMemberFinanceDrawer({
   const [newEventDate, setNewEventDate] = useState(new Date().toISOString().split('T')[0]);
   const [newEventRole, setNewEventRole] = useState(member?.primary_role || 'Photographer');
   const [newEventAgreedAmount, setNewEventAgreedAmount] = useState(member?.default_daily_rate ? String(member.default_daily_rate) : '');
+
+  // Salary Slip Controls Modals State
+  const [selectedSlipForEdit, setSelectedSlipForEdit] = useState<SalarySlipData | null>(null);
+  const [isEditSlipModalOpen, setIsEditSlipModalOpen] = useState(false);
+  const [slipToDelete, setSlipToDelete] = useState<TeamSalaryRecord | null>(null);
+  const [isDeleteSlipModalOpen, setIsDeleteSlipModalOpen] = useState(false);
+  const [isDeletingSlip, setIsDeletingSlip] = useState(false);
+  const [slipForPdf, setSlipForPdf] = useState<TeamSalaryRecord | null>(null);
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
 
   // ── MONTHLY PAYROLL & SALARY SLIP FORM STATES ──
   const now = new Date();
@@ -302,13 +319,102 @@ export default function TeamMemberFinanceDrawer({
         };
       });
 
-      // 2. Fetch salaries and partner orders in parallel
-      const [salariesResult, ordersResult] = await Promise.allSettled([
-        fetchMemberSalaryRecords(workspaceId, member.id),
+      // 2. Fetch salaries with multi-tenant resilience (team_salary_slips + team_salary_records + cache)
+      let salaries: TeamSalaryRecord[] = [];
+      try {
+        const { data: slips, error: slipsErr } = await supabase
+          .from('team_salary_slips')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('member_id', member.id)
+          .order('payout_date', { ascending: false });
+
+        if (!slipsErr && slips && slips.length > 0) {
+          salaries = slips.map((s: any) => ({
+            id: s.id,
+            workspace_id: s.user_id || workspaceId,
+            member_id: s.member_id,
+            member_name: member.name,
+            month_year: s.month_year,
+            base_salary: Number(s.base_salary) || 0,
+            incentive_amount: Number(s.incentive_amount) || 0,
+            deductions: Number(s.deduction_amount) || 0,
+            deduction_amount: Number(s.deduction_amount) || 0,
+            net_payable: Number(s.net_paid) || 0,
+            paid_amount: Number(s.net_paid) || 0,
+            net_paid: Number(s.net_paid) || 0,
+            payment_status: 'PAID' as const,
+            status: s.status || 'Paid',
+            paid_date: s.payout_date || '',
+            payout_date: s.payout_date || '',
+            payment_mode: s.payment_mode || 'UPI',
+            reference_no: s.reference_no || '',
+            notes: s.notes || '',
+            created_at: s.created_at,
+            updated_at: s.updated_at
+          }));
+        }
+      } catch (err) {
+        console.warn('[TeamMemberFinanceDrawer] DB team_salary_slips fetch note:', err);
+      }
+
+      // Merge records from team_salary_records so existing data is NEVER lost
+      try {
+        const { data: recs, error: recsErr } = await supabase
+          .from('team_salary_records')
+          .select('*')
+          .eq('member_id', member.id)
+          .order('month_year', { ascending: false });
+
+        if (!recsErr && recs && recs.length > 0) {
+          const existingIds = new Set(salaries.map(s => s.id));
+          const existingMonths = new Set(salaries.map(s => (s.month_year || '').toLowerCase().trim()));
+          for (const r of recs) {
+            const mKey = (r.month_year || '').toLowerCase().trim();
+            if (!existingIds.has(r.id) && !existingMonths.has(mKey)) {
+              salaries.push(r as TeamSalaryRecord);
+              existingIds.add(r.id);
+              if (mKey) existingMonths.add(mKey);
+            }
+          }
+        }
+      } catch (rErr) {
+        console.warn('[TeamMemberFinanceDrawer] DB team_salary_records fetch note:', rErr);
+      }
+
+      // Check fetchMemberSalaryRecords fallback
+      if (salaries.length === 0) {
+        const [salariesResult] = await Promise.allSettled([
+          fetchMemberSalaryRecords(workspaceId, member.id)
+        ]);
+        if (salariesResult.status === 'fulfilled' && salariesResult.value && salariesResult.value.length > 0) {
+          const existingIds = new Set(salaries.map(s => s.id));
+          for (const r of salariesResult.value) {
+            if (!existingIds.has(r.id)) {
+              salaries.push(r);
+              existingIds.add(r.id);
+            }
+          }
+        }
+      }
+
+      // Sync and retrieve from resilient local cache
+      if (typeof window !== 'undefined') {
+        const cacheKey = `fw_salary_slips_${member.id}`;
+        if (salaries.length > 0) {
+          try { localStorage.setItem(cacheKey, JSON.stringify(salaries)); } catch (_) {}
+        } else {
+          try {
+            const cached = localStorage.getItem(cacheKey);
+            if (cached) salaries = JSON.parse(cached);
+          } catch (_) {}
+        }
+      }
+
+      const [ordersResult] = await Promise.allSettled([
         isLab ? fetchPartnerAlbumOrders(workspaceId, member.id) : Promise.resolve([])
       ]);
 
-      let salaries: TeamSalaryRecord[] = salariesResult.status === 'fulfilled' ? (salariesResult.value || []) : [];
       let orders: PartnerAlbumOrder[] = ordersResult.status === 'fulfilled' ? (ordersResult.value || []) : [];
 
       setPayouts(eventPayouts);
@@ -410,103 +516,250 @@ export default function TeamMemberFinanceDrawer({
   const displayPaid = computedPaid;
   const displayBalance = computedBalance;
 
-  // ── CREATE SALARY SLIP SUBMISSION HANDLER ──
-  const handleCreateSalarySlip = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!member?.id || !workspaceId) return;
+  // ── SAVE / UPDATE SALARY SLIP (STRICT MULTI-TENANT ISOLATION) ──
+  const handleSaveSalarySlip = async (slipData: any, autoSyncExpense: boolean) => {
+    if (!member?.id) return;
 
-    const base = Number(salaryBaseAmount) || 0;
-    const incentive = Number(salaryIncentive) || 0;
-    const ded = Number(salaryDeductions) || 0;
+    const base = Number(slipData.base_salary) || 0;
+    const incentive = Number(slipData.incentive_amount) || 0;
+    const ded = Number(slipData.deduction_amount ?? slipData.deductions) || 0;
     const net = Math.max(0, base + incentive - ded);
-    
-    // Derive monthKey from selected payment date
-    const d = new Date(salaryDate || now);
-    const validDate = isNaN(d.getTime()) ? now : d;
-    const monthKey = `${validDate.getFullYear()}-${String(validDate.getMonth() + 1).padStart(2, '0')}`;
-    const monthTitle = formatSlipTitle(monthKey, salaryDate);
+    const pDate = slipData.payout_date || slipData.paid_date || new Date().toISOString().split('T')[0];
+
+    const isUuid = (id?: string) => Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
+    const slipId = isUuid(slipData.id) ? slipData.id : crypto.randomUUID();
+    const monthYearTitle = slipData.month_year || formatSlipTitle('', pDate);
 
     setIsSubmittingSalary(true);
     try {
-      const newSlip: TeamSalaryRecord = {
-        id: `sal_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-        workspace_id: workspaceId,
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        showToast('Please log in to save salary slip');
+        setIsSubmittingSalary(false);
+        return;
+      }
+      const effectiveUserId = user.id;
+
+      // 1. Save to dedicated team_salary_slips table with strict user_id isolation
+      try {
+        const { error: slipErr } = await supabase.from('team_salary_slips').upsert({
+          id: slipId,
+          user_id: user.id,
+          member_id: member.id,
+          month_year: monthYearTitle,
+          payout_date: pDate,
+          base_salary: base,
+          incentive_amount: incentive,
+          deduction_amount: ded,
+          net_paid: net,
+          payment_mode: slipData.payment_mode || 'UPI',
+          reference_no: slipData.reference_no || '',
+          notes: slipData.notes || '',
+          status: 'Paid',
+          updated_at: new Date().toISOString()
+        });
+        if (slipErr) {
+          console.warn('[TeamMemberFinanceDrawer] DB team_salary_slips upsert note:', slipErr.message);
+        }
+      } catch (dbErr) {
+        console.warn('[TeamMemberFinanceDrawer] DB team_salary_slips upsert note:', dbErr);
+      }
+
+      // 2. Also save to team_salary_records & localStorage for complete backwards-compatibility
+      const recordSlip: TeamSalaryRecord = {
+        id: slipId,
+        workspace_id: workspaceId || effectiveUserId,
         member_id: member.id,
         member_name: member.name,
-        month_year: monthKey,
+        month_year: monthYearTitle,
         base_salary: base,
         incentive_amount: incentive,
         deductions: ded,
+        deduction_amount: ded,
         net_payable: net,
         paid_amount: net,
+        net_paid: net,
         payment_status: 'PAID',
-        paid_date: salaryDate,
-        payment_mode: salaryPaymentMode,
-        reference_no: salaryRefNo,
-        notes: salaryNotes || `Salary for ${monthTitle}`,
+        paid_date: pDate,
+        payout_date: pDate,
+        payment_mode: slipData.payment_mode || 'UPI',
+        reference_no: slipData.reference_no || '',
+        notes: slipData.notes || `Salary for ${monthYearTitle}`,
         updated_at: new Date().toISOString()
       };
 
-      // 1. Save to database / local store
-      await saveSalaryRecord(workspaceId, newSlip);
+      await saveSalaryRecord(workspaceId || effectiveUserId, recordSlip);
 
-      // 2. Automatically sync to Studio Expenses & Ledger if enabled
-      if (salaryAutoSyncExpense) {
-        const safeSalaryAssignmentId = newSlip.id ? String(newSlip.id) : `sal_${Date.now()}`;
-        await syncTeamPaymentToExpensesAndAnalytics(workspaceId, {
-          paymentType: 'Salary',
-          memberName: member.name,
-          memberId: member.id,
-          memberType: 'team_member',
-          paidAmount: net,
-          paymentDate: salaryDate,
-          paymentMethod: salaryPaymentMode,
-          safeAssignmentId: safeSalaryAssignmentId,
-          notes: `Base: ₹${base.toLocaleString('en-IN')} | Incentive: ₹${incentive.toLocaleString('en-IN')} | Ded: ₹${ded.toLocaleString('en-IN')} | Ref: ${salaryRefNo || 'N/A'}`
-        });
+      // LocalStorage redundant cache
+      if (typeof window !== 'undefined') {
+        try {
+          const cacheKey = `fw_salary_slips_${member.id}`;
+          const existing = localStorage.getItem(cacheKey);
+          let list: any[] = existing ? JSON.parse(existing) : [];
+          const idx = list.findIndex(x => x.id === slipId);
+          if (idx >= 0) list[idx] = recordSlip;
+          else list.unshift(recordSlip);
+          localStorage.setItem(cacheKey, JSON.stringify(list));
+        } catch (_) {}
+      }
 
-        // Immediate cache revalidation & success toast
+      // 3. Automatically sync to Studio Expenses & Ledger if enabled
+      if (autoSyncExpense) {
+        try {
+          const safeSalaryAssignmentId = `sal_${slipId.slice(0, 8)}`;
+          await syncTeamPaymentToExpensesAndAnalytics(workspaceId || effectiveUserId, {
+            paymentType: 'Salary',
+            memberName: member.name,
+            memberId: member.id,
+            memberType: 'team_member',
+            paidAmount: net,
+            paymentDate: pDate,
+            paymentMethod: slipData.payment_mode || 'UPI',
+            safeAssignmentId: safeSalaryAssignmentId,
+            notes: `Base: ₹${base.toLocaleString('en-IN')} | Incentive: ₹${incentive.toLocaleString('en-IN')} | Ded: ₹${ded.toLocaleString('en-IN')} | Ref: ${slipData.reference_no || 'N/A'}`
+          });
+        } catch (syncErr) {
+          console.info('[TeamMemberFinanceDrawer] Expense auto-sync notice:', syncErr);
+        }
+
         try {
           if (typeof (window as any).mutate === 'function') {
             (window as any).mutate((key: any) => typeof key === 'string' && (key.includes('expenses') || key.includes('analytics') || key.includes('team') || key.includes('finance')), undefined, { revalidate: true });
           }
         } catch (_) {}
-        router.refresh();
-        showToast(`Payment of ₹${net.toLocaleString('en-IN')} logged & synced to Expenses & Analytics!`);
       }
 
-      // Optimistic UI update
-      setSalaryRecords(prev => [newSlip, ...prev.filter(s => s.id !== newSlip.id)]);
-      
-      const newTotalPaid = summary.total_paid + net;
-      const updatedMetrics = {
-        ...summary,
-        total_paid: newTotalPaid
-      };
-      setSummary(updatedMetrics);
-      onFinancialUpdate?.(member.id, updatedMetrics);
+      // 4. Optimistic UI update & immediate summary card refresh
+      const oldSlip = salaryRecords.find(s => s.id === slipId);
+      const oldAmount = oldSlip ? Number(oldSlip.paid_amount || oldSlip.net_payable || oldSlip.net_paid || 0) : 0;
+      const diff = net - oldAmount;
 
-      // Reset form fields and collapse
-      setSalaryIncentive('0');
-      setSalaryDeductions('0');
-      setSalaryRefNo('');
-      setSalaryNotes('');
+      setSalaryRecords(prev => {
+        const exists = prev.some(s => s.id === slipId);
+        if (exists) {
+          return prev.map(s => s.id === slipId ? recordSlip : s);
+        }
+        return [recordSlip, ...prev];
+      });
+
+      setSummary(prev => {
+        if (!prev) return prev;
+        const updated = {
+          ...prev,
+          total_paid: Math.max(0, prev.total_paid + diff)
+        };
+        onFinancialUpdate?.(member.id, updated);
+        return updated;
+      });
+
+      showToast(slipData.id ? 'Salary slip updated successfully!' : `Payment of ₹${net.toLocaleString('en-IN')} logged & synced to Expenses!`);
+      setIsEditSlipModalOpen(false);
+      setSelectedSlipForEdit(null);
       setShowAddSalary(false);
 
-      // Notify global app listeners
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('team_finance_updated', {
-          detail: { memberId: member.id, amount: net, summary: updatedMetrics }
+          detail: { memberId: member.id, amount: net }
         }));
       }
 
-      // Reload in background
       loadData();
     } catch (err) {
-      console.error('[TeamMemberFinanceDrawer] Failed to create salary slip:', err);
+      console.error('[TeamMemberFinanceDrawer] Failed to save salary slip:', err);
     } finally {
       setIsSubmittingSalary(false);
     }
+  };
+
+  // ── DELETE SALARY SLIP HANDLER (STRICT MULTI-TENANT USER_ID SCOPE) ──
+  const handleDeleteSlipConfirm = async () => {
+    if (!slipToDelete || !member?.id) return;
+    setIsDeletingSlip(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user?.id) {
+        try {
+          const { error: delErr } = await supabase
+            .from('team_salary_slips')
+            .delete()
+            .eq('id', slipToDelete.id)
+            .eq('user_id', user.id);
+
+          if (delErr) {
+            console.warn('[TeamMemberFinanceDrawer] Delete team_salary_slips warning:', delErr.message);
+          }
+        } catch (e) {
+          console.warn('[TeamMemberFinanceDrawer] Delete team_salary_slips note:', e);
+        }
+      }
+
+      await deleteSalaryRecord(workspaceId, slipToDelete.id, member.id);
+
+      if (typeof window !== 'undefined') {
+        try {
+          const cacheKey = `fw_salary_slips_${member.id}`;
+          const existing = localStorage.getItem(cacheKey);
+          if (existing) {
+            let list: any[] = JSON.parse(existing);
+            list = list.filter(x => x.id !== slipToDelete.id);
+            localStorage.setItem(cacheKey, JSON.stringify(list));
+          }
+        } catch (_) {}
+      }
+
+      const deletedAmount = Number(slipToDelete.paid_amount || slipToDelete.net_payable || slipToDelete.net_paid || 0);
+
+      setSalaryRecords(prev => prev.filter(s => s.id !== slipToDelete.id));
+      setSummary(prev => {
+        if (!prev) return prev;
+        const updated = {
+          ...prev,
+          total_paid: Math.max(0, prev.total_paid - deletedAmount)
+        };
+        onFinancialUpdate?.(member.id, updated);
+        return updated;
+      });
+
+      showToast(`Salary slip for ${slipToDelete.month_year} deleted`);
+      setIsDeleteSlipModalOpen(false);
+      setSlipToDelete(null);
+
+      loadData();
+    } catch (err) {
+      console.error('[TeamMemberFinanceDrawer] Failed to delete salary slip:', err);
+    } finally {
+      setIsDeletingSlip(false);
+    }
+  };
+
+  // ── CREATE SALARY SLIP SUBMISSION HANDLER (INLINE FORM) ──
+  const handleCreateSalarySlip = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!member?.id || !workspaceId) return;
+
+    const d = new Date(salaryDate || now);
+    const validDate = isNaN(d.getTime()) ? now : d;
+    const monthKey = `${validDate.getFullYear()}-${String(validDate.getMonth() + 1).padStart(2, '0')}`;
+    const monthTitle = formatSlipTitle(monthKey, salaryDate);
+
+    await handleSaveSalarySlip({
+      month_year: monthTitle,
+      payout_date: salaryDate,
+      paid_date: salaryDate,
+      base_salary: Number(salaryBaseAmount) || 0,
+      incentive_amount: Number(salaryIncentive) || 0,
+      deduction_amount: Number(salaryDeductions) || 0,
+      deductions: Number(salaryDeductions) || 0,
+      payment_mode: salaryPaymentMode,
+      reference_no: salaryRefNo,
+      notes: salaryNotes || `Salary for ${monthTitle}`
+    }, salaryAutoSyncExpense);
+
+    setSalaryIncentive('0');
+    setSalaryDeductions('0');
+    setSalaryRefNo('');
+    setSalaryNotes('');
+    setShowAddSalary(false);
   };
 
   // Filtered Salary Records
@@ -534,18 +787,39 @@ export default function TeamMemberFinanceDrawer({
   }, [salaryRecords]);
 
   // Payment Settlement Handler for Bookings
-  const handlePaymentSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!paymentTarget || !paymentAmount || isNaN(Number(paymentAmount)) || Number(paymentAmount) <= 0) return;
+  const handlePaymentSubmit = async (paramsOrEvent?: React.FormEvent | {
+    amount: number;
+    paymentDate: string;
+    paymentMode: string;
+    paymentRef: string;
+    paymentNotes: string;
+    autoSyncFinance: boolean;
+  }) => {
+    if (paramsOrEvent && 'preventDefault' in paramsOrEvent) {
+      paramsOrEvent.preventDefault();
+    }
+
+    const isParamObj = paramsOrEvent && !('preventDefault' in paramsOrEvent);
+    const amountVal = isParamObj ? paramsOrEvent.amount : Number(paymentAmount);
+    const pDate = isParamObj ? paramsOrEvent.paymentDate : paymentDate;
+    const pMode = (isParamObj ? paramsOrEvent.paymentMode : paymentMode) as any;
+    const pRef = isParamObj ? paramsOrEvent.paymentRef : paymentRef;
+    const pNotes = isParamObj ? paramsOrEvent.paymentNotes : paymentNotes;
+    const pAutoSync = isParamObj ? paramsOrEvent.autoSyncFinance : autoSyncFinance;
+
+    if (!paymentTarget || isNaN(amountVal) || amountVal < 0) return;
 
     setSubmittingPayment(true);
     try {
-      const amount = Number(paymentAmount);
+      const amount = amountVal;
+      const isZeroSettle = amount === 0;
       const safeAssignmentId = paymentTarget?.id ? String(paymentTarget.id) : `pay_${Date.now()}`;
       const memberId = member?.id;
       const memberName = member?.name || 'Team Member';
       const mType = member?.primary_type?.toLowerCase() || ((member as any)?.member_types?.includes('PARTNER') ? 'partner' : 'team_member');
       const paymentType = paymentTarget.type === 'EVENT' ? 'Shoot Fee' : paymentTarget.type === 'ALBUM' ? 'Album / Lab Fee' : 'Advance Payout';
+
+      const pStatus = (isZeroSettle || amount >= paymentTarget.balanceAmount) ? 'completed' : 'partial';
 
       if (paymentTarget.type === 'EVENT') {
         await recordMemberPayment(
@@ -555,16 +829,16 @@ export default function TeamMemberFinanceDrawer({
           {
             client_name: paymentTarget.clientName || 'Client Not Assigned',
             event_name: paymentTarget.title || 'Shoot Event',
-            event_date: paymentDate
+            event_date: pDate
           }
         );
 
         await updateCrewAssignmentPayment(workspaceId, safeAssignmentId, {
           advanceAmount: amount,
-          paymentStatus: amount >= paymentTarget.balanceAmount ? 'completed' : 'partial',
-          paymentMethod: paymentMode,
-          paymentDate,
-          notes: paymentNotes,
+          paymentStatus: pStatus,
+          paymentMethod: pMode,
+          paymentDate: pDate,
+          notes: pNotes,
           teamMemberId: memberId,
           teamMemberName: memberName,
           clientName: paymentTarget.clientName,
@@ -575,11 +849,11 @@ export default function TeamMemberFinanceDrawer({
 
         await recordPayoutTransaction(workspaceId, safeAssignmentId, member!.id, {
           amount,
-          payment_date: paymentDate,
-          payment_mode: paymentMode,
-          reference_no: paymentRef,
-          notes: paymentNotes,
-          autoCreateExpense: autoSyncFinance,
+          payment_date: pDate,
+          payment_mode: pMode,
+          reference_no: pRef,
+          notes: pNotes,
+          autoCreateExpense: pAutoSync,
           memberName: member?.name,
           clientName: paymentTarget.clientName,
           eventName: paymentTarget.title,
@@ -588,10 +862,10 @@ export default function TeamMemberFinanceDrawer({
       } else if (paymentTarget.type === 'ALBUM') {
         await recordAlbumOrderPayment(workspaceId, safeAssignmentId, member!.id, {
           amount,
-          payment_date: paymentDate,
-          payment_mode: paymentMode,
-          reference_no: paymentRef,
-          notes: paymentNotes,
+          payment_date: pDate,
+          payment_mode: pMode,
+          reference_no: pRef,
+          notes: pNotes,
           partnerName: member?.name,
           clientName: paymentTarget.clientName
         });
@@ -604,10 +878,10 @@ export default function TeamMemberFinanceDrawer({
         memberId,
         memberType: mType,
         paidAmount: amount,
-        paymentDate,
-        paymentMethod: paymentMode,
+        paymentDate: pDate,
+        paymentMethod: pMode,
         safeAssignmentId,
-        notes: paymentNotes || `${paymentType} for ${paymentTarget.title || 'Assignment'}`
+        notes: pNotes || `${paymentType} for ${paymentTarget.title || 'Assignment'}`
       });
 
       // Immediate Real-Time Cache Revalidation & Sync
@@ -619,10 +893,11 @@ export default function TeamMemberFinanceDrawer({
       router.refresh();
       showToast(`Payment of ₹${amount.toLocaleString('en-IN')} logged & synced to Expenses & Analytics!`);
 
+      const balanceDeduction = isZeroSettle ? paymentTarget.balanceAmount : amount;
       const updatedMetrics = {
         ...summary,
         total_paid: summary.total_paid + amount,
-        total_balance: Math.max(0, summary.total_balance - amount)
+        total_balance: Math.max(0, summary.total_balance - balanceDeduction)
       };
       setSummary(updatedMetrics);
       onFinancialUpdate?.(member!.id, updatedMetrics);
@@ -635,9 +910,10 @@ export default function TeamMemberFinanceDrawer({
 
       setIsPaymentModalOpen(false);
       setPaymentTarget(null);
-      await loadData();
+
+      loadData();
     } catch (err) {
-      console.error('[TeamMemberFinanceDrawer] Record payment failed:', err);
+      console.error('[TeamMemberFinanceDrawer] Failed to record payment:', err);
     } finally {
       setSubmittingPayment(false);
     }
@@ -1063,11 +1339,14 @@ export default function TeamMemberFinanceDrawer({
 
                   <button
                     type="button"
-                    onClick={() => setShowAddSalary(!showAddSalary)}
+                    onClick={() => {
+                      setSelectedSlipForEdit(null);
+                      setIsEditSlipModalOpen(true);
+                    }}
                     className="h-8 px-3 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white rounded-xl shadow-xs flex items-center gap-1.5 transition cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                    <span>{showAddSalary ? 'Hide Form' : '+ Add Salary Slip'}</span>
+                    <span>+ Add Salary Slip</span>
                   </button>
                 </div>
 
@@ -1301,7 +1580,18 @@ export default function TeamMemberFinanceDrawer({
                       <div className="p-8 text-center bg-white rounded-2xl border border-stone-200 text-stone-400 space-y-1">
                         <IndianRupee className="w-8 h-8 text-stone-300 mx-auto mb-2" />
                         <p className="text-xs font-bold text-stone-600">No Salary Slips Found</p>
-                        <p className="text-[11px] text-stone-400">Add the first salary slip using the "+ Add Salary Slip" button above.</p>
+                        <p className="text-[11px] text-stone-400">Add the first salary slip using the button below or above.</p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedSlipForEdit(null);
+                            setIsEditSlipModalOpen(true);
+                          }}
+                          className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-xs transition cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                          <span>+ Add First Salary Slip</span>
+                        </button>
                       </div>
                     ) : (
                       filteredSalaries.map((slip) => {
@@ -1323,9 +1613,57 @@ export default function TeamMemberFinanceDrawer({
                                 </span>
                               </div>
 
-                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-300 shadow-2xs flex items-center gap-1">
-                                ✓ Paid
-                              </span>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-300 shadow-2xs flex items-center gap-1">
+                                  ✓ Paid
+                                </span>
+
+                                {/* Download / Print Slip Voucher Button */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSlipForPdf(slip);
+                                    setIsPdfModalOpen(true);
+                                  }}
+                                  className="p-1.5 rounded-lg text-stone-500 hover:text-indigo-600 hover:bg-indigo-50 border border-stone-200/80 hover:border-indigo-300 transition cursor-pointer shadow-2xs"
+                                  title="Print / Download Salary Slip Voucher"
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                </button>
+
+                                {/* Edit Slip Button */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedSlipForEdit({
+                                      ...slip,
+                                      base_salary: Number(slip.base_salary) || 0,
+                                      incentive_amount: Number(slip.incentive_amount) || 0,
+                                      deduction_amount: Number(slip.deductions ?? (slip as any).deduction_amount) || 0,
+                                      deductions: Number(slip.deductions ?? (slip as any).deduction_amount) || 0,
+                                      payout_date: slip.paid_date || (slip as any).payout_date
+                                    });
+                                    setIsEditSlipModalOpen(true);
+                                  }}
+                                  className="p-1.5 rounded-lg text-stone-500 hover:text-amber-600 hover:bg-amber-50 border border-stone-200/80 hover:border-amber-300 transition cursor-pointer shadow-2xs"
+                                  title="Edit Salary Slip"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+
+                                {/* Delete Slip Button */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSlipToDelete(slip);
+                                    setIsDeleteSlipModalOpen(true);
+                                  }}
+                                  className="p-1.5 rounded-lg text-stone-500 hover:text-rose-600 hover:bg-rose-50 border border-stone-200/80 hover:border-rose-300 transition cursor-pointer shadow-2xs"
+                                  title="Delete Salary Slip"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             </div>
 
                             {/* Inset 3D Financial Breakdown Pill */}
@@ -1487,109 +1825,58 @@ export default function TeamMemberFinanceDrawer({
           </div>
         </motion.div>
 
-        {/* ── MODAL: RECORD PAYMENT FOR EVENT / ALBUM ── */}
-        <AnimatePresence>
-          {isPaymentModalOpen && paymentTarget && (
-            <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-white rounded-3xl max-w-md w-full p-5 border border-stone-200 shadow-2xl space-y-4 font-sans"
-              >
-                <div className="flex items-center justify-between border-b border-stone-100 pb-2">
-                  <div>
-                    <h3 className="text-sm font-black text-stone-900">Record Settlement Payment</h3>
-                    <p className="text-[10px] text-stone-400">{paymentTarget.title} • {paymentTarget.clientName}</p>
-                  </div>
-                  <button onClick={() => setIsPaymentModalOpen(false)} className="text-stone-400 hover:text-stone-700">
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
+        {/* ── MODAL: RECORD PAYMENT FOR EVENT / ALBUM (ZERO-AMOUNT SETTLEMENT FIX) ── */}
+        <RecordPaymentModal
+          isOpen={isPaymentModalOpen}
+          onClose={() => {
+            setIsPaymentModalOpen(false);
+            setPaymentTarget(null);
+          }}
+          paymentTarget={paymentTarget}
+          member={member}
+          workspaceId={workspaceId}
+          onSubmitPayment={handlePaymentSubmit}
+          isSubmitting={submittingPayment}
+        />
 
-                <form onSubmit={handlePaymentSubmit} className="space-y-3">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-black uppercase text-stone-500 block">Payment Amount (₹) *</label>
-                    <input
-                      type="number"
-                      min="1"
-                      required
-                      value={paymentAmount}
-                      onChange={(e) => setPaymentAmount(e.target.value)}
-                      className="w-full h-8 px-2.5 bg-stone-50 border border-stone-200 rounded-lg text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 font-mono"
-                    />
-                  </div>
+        {/* ── MODAL: EDIT / ADD SALARY SLIP (MULTI-TENANT USER_ID ISOLATION) ── */}
+        <SalarySlipModal
+          isOpen={isEditSlipModalOpen}
+          onClose={() => {
+            setIsEditSlipModalOpen(false);
+            setSelectedSlipForEdit(null);
+          }}
+          member={member}
+          workspaceId={workspaceId}
+          slipToEdit={selectedSlipForEdit}
+          onSave={handleSaveSalarySlip}
+          isSaving={isSubmittingSalary}
+        />
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black uppercase text-stone-500 block">Date *</label>
-                      <input
-                        type="date"
-                        required
-                        value={paymentDate}
-                        onChange={(e) => setPaymentDate(e.target.value)}
-                        className="w-full h-8 px-2 bg-stone-50 border border-stone-200 rounded-lg text-xs font-bold text-stone-900 focus:outline-none"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black uppercase text-stone-500 block">Mode *</label>
-                      <select
-                        value={paymentMode}
-                        onChange={(e) => setPaymentMode(e.target.value as any)}
-                        className="w-full h-8 px-2 bg-stone-50 border border-stone-200 rounded-lg text-xs font-bold text-stone-900 focus:outline-none cursor-pointer"
-                      >
-                        <option value="UPI">UPI</option>
-                        <option value="Bank Transfer">Bank Transfer</option>
-                        <option value="Cash">Cash</option>
-                        <option value="Cheque">Cheque</option>
-                      </select>
-                    </div>
-                  </div>
+        {/* ── MODAL: LUXURY DELETE SALARY SLIP CONFIRMATION ── */}
+        <DeleteSlipConfirmModal
+          isOpen={isDeleteSlipModalOpen}
+          onClose={() => {
+            setIsDeleteSlipModalOpen(false);
+            setSlipToDelete(null);
+          }}
+          onConfirm={handleDeleteSlipConfirm}
+          monthYear={slipToDelete?.month_year || 'this cycle'}
+          netPaid={Number(slipToDelete?.paid_amount || slipToDelete?.net_payable || 0)}
+          isDeleting={isDeletingSlip}
+        />
 
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-black uppercase text-stone-500 block">Ref / UTR No.</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. UPI849202"
-                      value={paymentRef}
-                      onChange={(e) => setPaymentRef(e.target.value)}
-                      className="w-full h-8 px-2.5 bg-stone-50 border border-stone-200 rounded-lg text-xs font-semibold text-stone-900 focus:outline-none"
-                    />
-                  </div>
-
-                  <label className="flex items-center gap-2 cursor-pointer select-none pt-1">
-                    <input
-                      type="checkbox"
-                      checked={autoSyncFinance}
-                      onChange={(e) => setAutoSyncFinance(e.target.checked)}
-                      className="rounded border-stone-300 text-amber-600 focus:ring-amber-500 w-3.5 h-3.5 cursor-pointer"
-                    />
-                    <span className="text-[11px] font-bold text-stone-700">
-                      Record in Studio Expenses
-                    </span>
-                  </label>
-
-                  <div className="flex items-center gap-2 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setIsPaymentModalOpen(false)}
-                      className="flex-1 py-1.5 rounded-lg border border-stone-200 text-stone-700 font-bold text-xs hover:bg-stone-50"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={submittingPayment}
-                      className="flex-1 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-xs"
-                    >
-                      {submittingPayment ? 'Saving...' : 'Confirm Payment'}
-                    </button>
-                  </div>
-                </form>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
+        {/* ── MODAL: PROFESSIONAL STUDIO SALARY SLIP VOUCHER (PRINTABLE A4 / PDF) ── */}
+        <SalarySlipPdfTemplate
+          isOpen={isPdfModalOpen}
+          onClose={() => {
+            setIsPdfModalOpen(false);
+            setSlipForPdf(null);
+          }}
+          slip={slipForPdf}
+          member={member}
+          studioName={workspaceName || 'Filmify Weddings'}
+        />
 
       </div>
     </AnimatePresence>

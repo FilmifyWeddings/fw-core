@@ -42,42 +42,58 @@ export default function WhatsAppAssignmentModal({
 
   // 1. Identify target assignment slot from in-memory subEvent synchronously
   const existingAssignment = useMemo(() => {
-    return (subEvent?.fw_assignments || []).find(
+    const list = subEvent?.fw_assignments || [];
+    // Prioritize exact match where member is already assigned to this role slot:
+    const exactMatch = list.find(
+      (a: any) => a.required_role?.toLowerCase() === role?.toLowerCase() && a.assigned_member_id === member?.id
+    );
+    if (exactMatch) return exactMatch;
+
+    // Next match an unassigned slot for this role:
+    const unassignedSlot = list.find(
+      (a: any) => a.required_role?.toLowerCase() === role?.toLowerCase() && !a.assigned_member_id
+    );
+    if (unassignedSlot) return unassignedSlot;
+
+    // Fallback: any slot for this role
+    return list.find(
       (a: any) => a.required_role?.toLowerCase() === role?.toLowerCase()
     );
-  }, [subEvent?.fw_assignments, role]);
+  }, [subEvent?.fw_assignments, role, member?.id]);
 
-  // 2. Synchronous initial value calculation based strictly on target slot:
-  const resolvedInitialRate = useMemo(() => {
-    // 1. If this exact assignment slot already has an explicit saved rate, use it (including ₹0):
-    if (existingAssignment?.agreed_amount !== undefined && existingAssignment.agreed_amount !== null && !isNaN(Number(existingAssignment.agreed_amount))) {
-      return Number(existingAssignment.agreed_amount);
-    }
-    // If member is In-House on monthly salary, default per-shoot rate strictly to 0
-    const isInHouse = 
-      (member as any)?.payout_frequency === 'monthly' ||
-      (member as any)?.primary_type === 'IN_HOUSE' ||
-      (member as any)?.member_types?.includes('IN_HOUSE') ||
-      (member as any)?.type === 'in_house';
-    if (isInHouse) {
-      return 0;
-    }
-    // 2. Otherwise use the member's configured default daily rate:
-    const memberDefault = Number(
-      (member as any)?.default_rate ?? 
-      member?.default_daily_rate ?? 
-      member?.daily_rate ?? 
-      (member as any)?.day_rate ?? 
-      (member as any)?.per_day_rate ?? 
-      (member as any)?.custom_rate ?? 
+  // Member's configured studio default daily rate:
+  const memberDefaultRate = useMemo(() => {
+    const rate = Number(
+      (member as any)?.default_daily_rate ??
+      (member as any)?.daily_rate ??
+      (member as any)?.default_rate ??
+      (member as any)?.day_rate ??
+      (member as any)?.per_day_rate ??
+      (member as any)?.custom_rate ??
       0
     );
-    return isNaN(memberDefault) ? 0 : memberDefault;
-  }, [existingAssignment?.id, existingAssignment?.agreed_amount, member]);
+    return isNaN(rate) ? 0 : rate;
+  }, [member]);
+
+  // 2. Synchronous initial value calculation based strictly on target slot:
+  // If this specific assignment was already saved previously with an explicit rate (> 0) FOR THIS MEMBER, keep it.
+  // If it is a fresh assignment slot OR the saved rate is 0/empty, PREFILL WITH DEFAULT RATE:
+  const resolvedInitialRate = useMemo(() => {
+    const isAssignedToThisMember = existingAssignment?.assigned_member_id === member?.id;
+    const existingAgreed = Number(existingAssignment?.agreed_amount);
+    if (isAssignedToThisMember && !isNaN(existingAgreed) && existingAgreed > 0) {
+      return existingAgreed;
+    }
+    return memberDefaultRate;
+  }, [existingAssignment?.id, existingAssignment?.assigned_member_id, existingAssignment?.agreed_amount, memberDefaultRate, member?.id]);
 
   const resolvedInitialAdvance = useMemo(() => {
-    return Number(existingAssignment?.paid_amount ?? existingAssignment?.advance_amount ?? 0);
-  }, [existingAssignment?.id, existingAssignment?.paid_amount, existingAssignment?.advance_amount]);
+    const isAssignedToThisMember = existingAssignment?.assigned_member_id === member?.id;
+    if (isAssignedToThisMember) {
+      return Number(existingAssignment?.paid_amount ?? existingAssignment?.advance_amount ?? 0);
+    }
+    return 0;
+  }, [existingAssignment?.id, existingAssignment?.assigned_member_id, existingAssignment?.paid_amount, existingAssignment?.advance_amount, member?.id]);
 
   // Commercials State initialized directly with resolved initial rate (NO 0 FLASH!)
   const [agreedAmount, setAgreedAmount] = useState<string>(() => String(resolvedInitialRate));
@@ -103,7 +119,7 @@ export default function WhatsAppAssignmentModal({
       setCommercialsSaved(false);
       setCopied(false);
     }
-  }, [isOpen, resolvedInitialRate, resolvedInitialAdvance, existingAssignment?.id]);
+  }, [isOpen, resolvedInitialRate, resolvedInitialAdvance, existingAssignment?.id, member?.id]);
 
   // Handle Advance change and auto update status
   const handleAdvanceChange = (val: string) => {
@@ -254,15 +270,7 @@ Please confirm your slot.
   };
 
   const currentTimeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-  const configuredDefaultRate = Number(
-    (member as any)?.default_rate ?? 
-    member?.default_daily_rate ?? 
-    member?.daily_rate ?? 
-    (member as any)?.day_rate ?? 
-    (member as any)?.per_day_rate ?? 
-    (member as any)?.custom_rate ?? 
-    0
-  );
+  const configuredDefaultRate = memberDefaultRate;
 
   return (
     <AnimatePresence>

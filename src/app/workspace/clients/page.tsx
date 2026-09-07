@@ -19,6 +19,7 @@ import { ExcelMigrationModal } from '@/components/finance/excel-migration-modal'
 import { fetchWorkspaceTeamMembers, type WorkspaceMemberOption } from '@/lib/team-helpers';
 import type { WorkspaceClient, Lead, ClientFinanceRecord, FinanceMilestoneItem } from '@/types';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
+import Searchable3DCreamSelect, { Searchable3DCreamSelectOption } from '@/components/ui/Searchable3DCreamSelect';
 
 const DEFAULT_EVENT_TYPES = [
   'Wedding Photography',
@@ -46,6 +47,14 @@ export default function ClientsPage() {
   const [eventTypeFilter, setEventTypeFilter] = useState<string>('all');
   const [pmFilter, setPmFilter] = useState<string>('all');
   const [quickAssignClient, setQuickAssignClient] = useState<WorkspaceClient | null>(null);
+
+  // Consolidated Filter Drawer & Date Scope State
+  const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState<boolean>(false);
+  const [dateScopeMode, setDateScopeMode] = useState<'all' | 'year' | 'month' | 'custom'>('all');
+  const [dateScopeYear, setDateScopeYear] = useState<number>(new Date().getFullYear());
+  const [dateScopeMonth, setDateScopeMonth] = useState<string>('All');
+  const [dateScopeStartDate, setDateScopeStartDate] = useState<string>('');
+  const [dateScopeEndDate, setDateScopeEndDate] = useState<string>('');
   
   // Event Types & Searchable Dropdown State
   const [eventTypes, setEventTypes] = useState<string[]>(DEFAULT_EVENT_TYPES);
@@ -495,7 +504,56 @@ export default function ClientsPage() {
     }
   };
 
-  // Filtered Clients List with PM Search & Status
+  // 3D Cream Filter Dropdown Options (Pruned to Active Assigned PMs only)
+  const pmFilterOptions: Searchable3DCreamSelectOption[] = useMemo(() => {
+    const pmMap = new Map<string, { id: string; name: string }>();
+    (clients || []).forEach((c: any) => {
+      const ext = parseClientExtended(c);
+      const pmId = c.project_manager_id || ext.project_manager_id;
+      const pmName = c.project_manager_name || ext.project_manager_name;
+      if (pmId && pmName) {
+        pmMap.set(pmId, { id: pmId, name: pmName });
+      } else if (pmName) {
+        pmMap.set(pmName, { id: pmName, name: pmName });
+      }
+    });
+
+    const activePMs = Array.from(pmMap.values());
+
+    return [
+      { value: 'all', label: 'All Managers' },
+      {
+        value: 'unassigned',
+        label: 'Unassigned (No PM)',
+        badge: 'None',
+        badgeClassName: 'bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800',
+      },
+      ...activePMs.map(pm => ({
+        value: pm.id || pm.name,
+        label: pm.name,
+        badge: 'Active PM',
+      })),
+    ];
+  }, [clients]);
+
+  const statusFilterOptions: Searchable3DCreamSelectOption[] = useMemo(() => [
+    { value: 'all', label: 'All Statuses' },
+    { value: 'active', label: 'Active', badge: 'Live' },
+    { value: 'completed', label: 'Completed', badge: 'Done' },
+    { value: 'archived', label: 'Archived' },
+  ], []);
+
+  const eventTypeFilterOptions: Searchable3DCreamSelectOption[] = useMemo(() => {
+    return [
+      { value: 'all', label: 'All Event Types' },
+      ...eventTypes.map(t => ({
+        value: t,
+        label: t,
+      })),
+    ];
+  }, [eventTypes]);
+
+  // Filtered Clients List with PM Search, Status, Event Type & Date Scope
   const filteredClients = useMemo(() => {
     return clients.filter(client => {
       const ext = parseClientExtended(client);
@@ -520,16 +578,59 @@ export default function ClientsPage() {
           ? !pmId && !pmName
           : pmId === pmFilter || pmName.toLowerCase() === pmFilter.toLowerCase();
 
-      return matchesSearch && matchesStatus && matchesEventType && matchesPm;
-    });
-  }, [clients, searchQuery, statusFilter, eventTypeFilter, pmFilter]);
+      // Date Scope filtering
+      let matchesDate = true;
+      if (dateScopeMode !== 'all') {
+        const rawDate = client.event_date || client.created_at;
+        if (!rawDate) {
+          matchesDate = false;
+        } else {
+          const d = new Date(rawDate);
+          if (isNaN(d.getTime())) {
+            matchesDate = false;
+          } else if (dateScopeMode === 'year') {
+            matchesDate = d.getFullYear() === dateScopeYear;
+          } else if (dateScopeMode === 'month') {
+            matchesDate = d.getFullYear() === dateScopeYear && (dateScopeMonth === 'All' || d.getMonth() === parseInt(dateScopeMonth, 10));
+          } else if (dateScopeMode === 'custom') {
+            const t = d.getTime();
+            const start = dateScopeStartDate ? new Date(dateScopeStartDate).getTime() : 0;
+            const end = dateScopeEndDate ? new Date(dateScopeEndDate).getTime() + 86400000 : Infinity;
+            matchesDate = t >= start && t <= end;
+          }
+        }
+      }
 
-  // Aggregate Metrics
-  const totalClientsCount = clients.length;
-  const activeClientsCount = clients.filter(c => c.status === 'active').length;
-  const totalReceivables = clients.reduce((sum, c) => sum + (c.total_package_amount || 0), 0);
-  const totalCollected = clients.reduce((sum, c) => sum + (c.paid_amount || 0), 0);
-  const pendingDues = Math.max(0, totalReceivables - totalCollected);
+      return matchesSearch && matchesStatus && matchesEventType && matchesPm && matchesDate;
+    });
+  }, [clients, searchQuery, statusFilter, eventTypeFilter, pmFilter, dateScopeMode, dateScopeYear, dateScopeMonth, dateScopeStartDate, dateScopeEndDate]);
+
+  // Active Filter Count & Reset
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (statusFilter !== 'all') count++;
+    if (pmFilter !== 'all') count++;
+    if (eventTypeFilter !== 'all') count++;
+    if (dateScopeMode !== 'all') count++;
+    return count;
+  }, [statusFilter, pmFilter, eventTypeFilter, dateScopeMode]);
+
+  const handleResetFilters = () => {
+    setStatusFilter('all');
+    setPmFilter('all');
+    setEventTypeFilter('all');
+    setDateScopeMode('all');
+    setDateScopeYear(new Date().getFullYear());
+    setDateScopeMonth('All');
+    setDateScopeStartDate('');
+    setDateScopeEndDate('');
+  };
+
+  // Dynamically recalculate top stats cards from filteredClients only
+  const totalClientsCount = filteredClients.length;
+  const totalInvoicesCount = filteredClients.reduce((sum, c) => sum + (c.total_package_amount || 0), 0);
+  const cashRevenueTotal = filteredClients.reduce((sum, c) => sum + (c.paid_amount || 0), 0);
+  const pendingBalanceTotal = Math.max(0, totalInvoicesCount - cashRevenueTotal);
 
   return (
     <div className="min-h-screen bg-[#FDFBF7] text-slate-900 pb-28 pt-4 px-4 sm:px-6 lg:px-8 font-sans selection:bg-amber-100 selection:text-amber-900">
@@ -597,7 +698,7 @@ export default function ClientsPage() {
                 Total Invoiced Value
               </span>
               <h3 className="text-2xl font-black text-slate-900 tracking-tight font-mono">
-                ₹{totalReceivables.toLocaleString('en-IN')}
+                ₹{totalInvoicesCount.toLocaleString('en-IN')}
               </h3>
             </div>
             <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center">
@@ -608,10 +709,10 @@ export default function ClientsPage() {
           <div className="bg-[#FFFDF9] p-4 sm:p-5 rounded-2xl border border-[#EAE5DA] shadow-xs flex items-center justify-between">
             <div className="space-y-1">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                Cash Collected
+                Cash Revenue
               </span>
               <h3 className="text-2xl font-black text-emerald-700 tracking-tight font-mono">
-                ₹{totalCollected.toLocaleString('en-IN')}
+                ₹{cashRevenueTotal.toLocaleString('en-IN')}
               </h3>
             </div>
             <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center">
@@ -625,7 +726,7 @@ export default function ClientsPage() {
                 Pending Balance
               </span>
               <h3 className="text-2xl font-black text-rose-700 tracking-tight font-mono">
-                ₹{pendingDues.toLocaleString('en-IN')}
+                ₹{pendingBalanceTotal.toLocaleString('en-IN')}
               </h3>
             </div>
             <div className="w-11 h-11 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 flex items-center justify-center">
@@ -635,7 +736,7 @@ export default function ClientsPage() {
         </div>
 
         {/* ─────────────────────────────────────────────────────────────
-            SEARCH & STATUS FILTER CONTROLS
+            SEARCH & UNIFIED FILTERS TRIGGER
         ───────────────────────────────────────────────────────────── */}
         <div className="bg-[#FFFDF9] p-4 rounded-2xl border border-[#EAE5DA] shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="relative w-full md:w-96">
@@ -649,40 +750,211 @@ export default function ClientsPage() {
             />
           </div>
 
-          <div className="flex items-center gap-3 w-full md:w-auto flex-wrap">
-            {/* Status Filter */}
-            <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-slate-400" />
-              <span className="text-xs font-bold text-slate-700">Status:</span>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as any)}
-                className="px-3 py-1.5 text-xs font-bold bg-white border border-[#EAE5DA] rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-800 cursor-pointer"
+          <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+            {activeFilterCount > 0 && (
+              <button
+                onClick={handleResetFilters}
+                className="text-xs font-bold text-slate-500 hover:text-rose-600 transition cursor-pointer flex items-center gap-1 py-1.5 px-2.5 rounded-lg hover:bg-rose-50"
               >
-                <option value="all">All Statuses</option>
-                <option value="active">Active</option>
-                <option value="completed">Completed</option>
-                <option value="archived">Archived</option>
-              </select>
-            </div>
+                <X className="w-3.5 h-3.5 text-rose-500" />
+                <span>Clear ({activeFilterCount})</span>
+              </button>
+            )}
 
-            {/* PM / Manager Filter */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-700">PM:</span>
-              <select
-                value={pmFilter}
-                onChange={(e) => setPmFilter(e.target.value)}
-                className="px-3 py-1.5 text-xs font-bold bg-white border border-[#EAE5DA] rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-800 cursor-pointer"
-              >
-                <option value="all">All Managers</option>
-                <option value="unassigned">Unassigned (No PM)</option>
-                {teamMembers.map(m => (
-                  <option key={m.id} value={m.name}>{m.name}</option>
-                ))}
-              </select>
-            </div>
+            <button
+              onClick={() => setIsFilterDrawerOpen(prev => !prev)}
+              className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 border transition cursor-pointer shadow-2xs ${
+                activeFilterCount > 0 || isFilterDrawerOpen
+                  ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
+                  : 'bg-white hover:bg-slate-50 text-slate-700 border-[#EAE5DA]'
+              }`}
+            >
+              <Filter className="w-4 h-4" />
+              <span>Filters</span>
+              {activeFilterCount > 0 && (
+                <span className="w-5 h-5 rounded-full bg-white text-amber-700 font-black text-[10px] flex items-center justify-center shadow-xs">
+                  {activeFilterCount}
+                </span>
+              )}
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isFilterDrawerOpen ? 'rotate-180' : ''}`} />
+            </button>
           </div>
         </div>
+
+        {/* ─────────────────────────────────────────────────────────────
+            UNIFIED FILTER DRAWER
+        ───────────────────────────────────────────────────────────── */}
+        <AnimatePresence>
+          {isFilterDrawerOpen && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.2 }}
+              className="relative z-30 overflow-visible rounded-2xl border border-[#EAE5DA] bg-[#FFFDF9] p-5 shadow-sm space-y-4"
+            >
+              <div className="flex items-center justify-between border-b border-[#EAE5DA] pb-3">
+                <div className="flex items-center gap-2">
+                  <Filter className="w-4 h-4 text-amber-600" />
+                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">
+                    Filter Clients Directory
+                  </h4>
+                </div>
+                <div className="flex items-center gap-3">
+                  {activeFilterCount > 0 && (
+                    <button
+                      onClick={handleResetFilters}
+                      className="text-xs font-bold text-rose-600 hover:text-rose-700 cursor-pointer flex items-center gap-1"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      <span>Reset Filters</span>
+                    </button>
+                  )}
+                  <span className="text-[11px] font-bold text-slate-500">
+                    {filteredClients.length} of {clients.length} Clients
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 relative z-20 overflow-visible">
+                {/* 1. PM FILTER */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block">
+                    Project Manager (PM)
+                  </label>
+                  <Searchable3DCreamSelect
+                    value={pmFilter}
+                    onChange={(val) => setPmFilter(val)}
+                    options={pmFilterOptions}
+                    searchable={true}
+                    searchPlaceholder="🔍 Search PM..."
+                    placeholder="All Managers"
+                  />
+                </div>
+
+                {/* 2. STATUS FILTER */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block">
+                    Client Status
+                  </label>
+                  <Searchable3DCreamSelect
+                    value={statusFilter}
+                    onChange={(val) => setStatusFilter(val as any)}
+                    options={statusFilterOptions}
+                    searchable={false}
+                    placeholder="All Statuses"
+                  />
+                </div>
+
+                {/* 3. EVENT TYPE FILTER */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block">
+                    Event Type
+                  </label>
+                  <Searchable3DCreamSelect
+                    value={eventTypeFilter}
+                    onChange={(val) => setEventTypeFilter(val)}
+                    options={eventTypeFilterOptions}
+                    searchable={true}
+                    searchPlaceholder="🔍 Search event type..."
+                    placeholder="All Event Types"
+                  />
+                </div>
+
+                {/* 4. DATE SCOPE PICKER */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block">
+                    Date Scope
+                  </label>
+                  <div className="grid grid-cols-4 gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 text-center">
+                    {(['all', 'year', 'month', 'custom'] as const).map(mode => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => setDateScopeMode(mode)}
+                        className={`py-1 text-[10px] font-black rounded-lg transition capitalize cursor-pointer ${
+                          dateScopeMode === mode
+                            ? 'bg-amber-500 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        {mode}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* DATE SCOPE SUB-CONTROLS */}
+              {dateScopeMode !== 'all' && (
+                <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200/80 flex flex-wrap items-center gap-4 text-xs">
+                  {(dateScopeMode === 'year' || dateScopeMode === 'month') && (
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-slate-700">Year:</span>
+                      <select
+                        value={dateScopeYear}
+                        onChange={(e) => setDateScopeYear(parseInt(e.target.value, 10))}
+                        className="px-2.5 py-1 text-xs font-bold bg-white border border-amber-300 rounded-lg text-slate-800 cursor-pointer"
+                      >
+                        <option value={2025}>2025</option>
+                        <option value={2026}>2026</option>
+                        <option value={2027}>2027</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {dateScopeMode === 'month' && (
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-slate-700">Month:</span>
+                      <select
+                        value={dateScopeMonth}
+                        onChange={(e) => setDateScopeMonth(e.target.value)}
+                        className="px-2.5 py-1 text-xs font-bold bg-white border border-amber-300 rounded-lg text-slate-800 cursor-pointer"
+                      >
+                        <option value="All">All Months</option>
+                        <option value="0">January</option>
+                        <option value="1">February</option>
+                        <option value="2">March</option>
+                        <option value="3">April</option>
+                        <option value="4">May</option>
+                        <option value="5">June</option>
+                        <option value="6">July</option>
+                        <option value="7">August</option>
+                        <option value="8">September</option>
+                        <option value="9">October</option>
+                        <option value="10">November</option>
+                        <option value="11">December</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {dateScopeMode === 'custom' && (
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-slate-700 text-xs">From:</span>
+                        <input
+                          type="date"
+                          value={dateScopeStartDate}
+                          onChange={(e) => setDateScopeStartDate(e.target.value)}
+                          className="px-2.5 py-1 text-xs font-bold bg-white border border-amber-300 rounded-lg text-slate-900"
+                        />
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-slate-700 text-xs">To:</span>
+                        <input
+                          type="date"
+                          value={dateScopeEndDate}
+                          onChange={(e) => setDateScopeEndDate(e.target.value)}
+                          className="px-2.5 py-1 text-xs font-bold bg-white border border-amber-300 rounded-lg text-slate-900"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* ─────────────────────────────────────────────────────────────
             CLIENT CARDS / TABLE LIST (CLICKABLE FOR 360 WORKSPACE)

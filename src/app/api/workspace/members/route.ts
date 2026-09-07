@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, members: [] });
     }
 
-    // 1. Fetch workspace members with joined permissions
+    let membersToReturn: any[] = [];
     try {
       const { data: members, error: memErr } = await supabaseAdmin
         .from('workspace_members')
@@ -35,18 +35,42 @@ export async function GET(req: NextRequest) {
         .order('created_at', { ascending: false });
 
       if (!memErr && members) {
-        return NextResponse.json({ success: true, members });
+        membersToReturn = members;
       }
     } catch (_) {}
 
-    // Fallback query if relation join is pending
-    const { data: fallbackMembers } = await supabaseAdmin
-      .from('workspace_members')
-      .select('*')
-      .eq('workspace_id', wsId)
-      .order('created_at', { ascending: false });
+    if (membersToReturn.length === 0) {
+      const { data: fallbackMembers } = await supabaseAdmin
+        .from('workspace_members')
+        .select('*')
+        .eq('workspace_id', wsId)
+        .order('created_at', { ascending: false });
+      membersToReturn = fallbackMembers || [];
+    }
 
-    return NextResponse.json({ success: true, members: fallbackMembers || [] });
+    try {
+      const { data: smpList } = await supabaseAdmin
+        .from('studio_member_permissions')
+        .select('*')
+        .eq('owner_id', user.id);
+
+      if (smpList && smpList.length > 0) {
+        const smpMap = new Map(smpList.map(p => [p.member_id, p]));
+        membersToReturn = membersToReturn.map(m => {
+          const sp = smpMap.get(m.id);
+          if (sp) {
+            return {
+              ...m,
+              permissions: sp,
+              studio_member_permissions: sp,
+            };
+          }
+          return m;
+        });
+      }
+    } catch (_) {}
+
+    return NextResponse.json({ success: true, members: membersToReturn });
   } catch (err: any) {
     return NextResponse.json({ success: true, members: [] });
   }
@@ -243,6 +267,24 @@ export async function POST(req: NextRequest) {
           await supabaseAdmin
             .from('member_permissions')
             .insert([permPayload]);
+        }
+
+        // 3.1 Upsert into dedicated studio_member_permissions table
+        try {
+          await supabaseAdmin
+            .from('studio_member_permissions')
+            .upsert({
+              owner_id: user.id,
+              member_id: targetMemberId,
+              leads_access: permissions.leads_access || 'NONE',
+              team_manager_access: permissions.team_manager_access || 'NONE',
+              quotations_access: permissions.quotations_access || 'NONE',
+              post_production_access: permissions.post_production_access || 'NONE',
+              finance_access: permissions.finance_access || 'NONE',
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'owner_id,member_id' });
+        } catch (smpErr) {
+          console.warn('[studio_member_permissions update notice]:', smpErr);
         }
       } catch (permErr) {
         console.warn('[member_permissions update notice]:', permErr);

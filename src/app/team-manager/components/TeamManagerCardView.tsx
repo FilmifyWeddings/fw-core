@@ -1,0 +1,349 @@
+'use client';
+
+import React from 'react';
+import { FWProject, FWSubEvent, FWTeamMember, FWAssignment } from '@/types';
+import { Calendar, Clock, MapPin, Plus, Pencil } from 'lucide-react';
+import { resolveEventCrewVisibility } from '@/lib/permissions/rbacRules';
+import { WorkspaceCrewRole, getRoleAbbr } from '@/lib/workspace-settings';
+
+export interface TeamManagerCardViewProps {
+  projects: FWProject[];
+  teamMembers: FWTeamMember[];
+  format12HourTime: (time?: string) => string;
+  getGradientByProjectId: (id: string) => string;
+  isTmReadOnly?: boolean;
+  isOwner?: boolean;
+  currentMemberId?: string | null;
+  currentMemberEmail?: string | null;
+  currentUserId?: string | null;
+  studioPermissionsMap?: Map<string, any>;
+  activeStudioId?: string | null;
+  customCrewRoles?: WorkspaceCrewRole[];
+  onAssignMember?: (assignmentId: string, memberId: string | null) => void;
+  onAddNewMember?: (info: { assignmentId: string; role: string; subEventId: string; projectId: string }) => void;
+  onEditProject?: (project: FWProject) => void;
+  onProjectPMChange?: (projectId: string, memberId: string | null, memberName: string | null) => void;
+}
+
+const getInitials = (name: string): string => {
+  if (!name) return 'TM';
+  const parts = name.trim().replace(/\.\.\./g, '').split(/\s+/);
+  if (parts.length >= 2 && parts[0] && parts[1]) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return parts[0].slice(0, 2).toUpperCase();
+};
+
+const resolveSubEventAssignments = (subEvent: FWSubEvent, teamMembers: FWTeamMember[]): FWAssignment[] => {
+  let rawRoles: string[] = [];
+  if (Array.isArray((subEvent as any).roles)) {
+    rawRoles = (subEvent as any).roles;
+  } else if (typeof (subEvent as any).roles === 'string') {
+    try { rawRoles = JSON.parse((subEvent as any).roles); } catch (e) {}
+  } else if (Array.isArray((subEvent as any).roles_assigned)) {
+    rawRoles = (subEvent as any).roles_assigned;
+  } else if (Array.isArray((subEvent as any).event_roles)) {
+    rawRoles = (subEvent as any).event_roles;
+  }
+
+  const existingAssignments = subEvent.fw_assignments || [];
+  const assignRoles = existingAssignments.map(a => a.required_role).filter(Boolean);
+  const allRoles = Array.from(new Set([...rawRoles, ...assignRoles]));
+
+  if (allRoles.length === 0) {
+    return existingAssignments;
+  }
+
+  return allRoles.map((role: string, idx: number) => {
+    const existing = existingAssignments.find(
+      a => a.required_role?.toLowerCase() === role.toLowerCase()
+    );
+    if (existing) {
+      const matched = existing.fw_team_members || (existing.assigned_member_id ? teamMembers.find(m => m.id === existing.assigned_member_id) : null);
+      return {
+        ...existing,
+        fw_team_members: matched || existing.fw_team_members || null
+      };
+    }
+    return {
+      id: `${subEvent.id}-role-${idx}`,
+      sub_event_id: subEvent.id,
+      project_id: subEvent.project_id,
+      required_role: role,
+      assigned_member_id: null,
+      fw_team_members: null,
+    };
+  });
+};
+
+export default function TeamManagerCardView({
+  projects,
+  teamMembers,
+  format12HourTime,
+  getGradientByProjectId,
+  isTmReadOnly = false,
+  isOwner = false,
+  currentMemberId = null,
+  currentMemberEmail = null,
+  currentUserId = null,
+  studioPermissionsMap = new Map(),
+  activeStudioId = null,
+  customCrewRoles = [],
+  onAssignMember,
+  onAddNewMember,
+  onEditProject,
+  onProjectPMChange,
+}: TeamManagerCardViewProps) {
+  return (
+    <div className="space-y-8">
+      {projects.map((project) => {
+        const projectGradient = getGradientByProjectId(project.id || project.client_name);
+
+        return (
+          <div
+            key={project.id}
+            className="bg-white border-2 border-slate-300/90 shadow-lg shadow-slate-200/50 rounded-3xl p-4 sm:p-6 space-y-4 mb-8"
+          >
+            {/* Master Client Header */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-3.5">
+              <div className="flex items-center gap-3 flex-wrap">
+                <h3 className="text-xl sm:text-2xl font-black tracking-tight" style={{ color: '#1E1B4B' }}>
+                  {project.client_name}
+                </h3>
+                {project.studio_name && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                    🏢 {project.studio_name}
+                  </span>
+                )}
+                <span className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-950 text-[11px] font-black tracking-wide border border-indigo-200/80 shadow-2xs">
+                  {project.fw_sub_events?.length || 0} Sub-Events
+                </span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                {/* PM Badge */}
+                <div className="px-3 py-1.5 rounded-2xl bg-amber-50/70 border border-amber-200/70 text-amber-950 text-xs font-bold flex items-center gap-2 select-none shadow-2xs">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-amber-800">PM:</span>
+                  {project.project_manager_name ? (
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-5 h-5 rounded-full bg-amber-600 text-white font-black text-[9px] flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
+                        {getInitials(project.project_manager_name)}
+                      </div>
+                      <span className="font-extrabold text-amber-950 max-w-[130px] truncate">{project.project_manager_name}</span>
+                    </div>
+                  ) : (
+                    <span className="text-amber-700/60 font-medium">Unassigned</span>
+                  )}
+                </div>
+
+                {!isTmReadOnly && onEditProject && (
+                  <button
+                    title="Edit Project"
+                    onClick={() => onEditProject(project)}
+                    className="w-9 h-9 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-indigo-600 transition shadow-xs shrink-0 cursor-pointer"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Sub-Events Stack */}
+            <div className="space-y-4">
+              {project.fw_sub_events?.map((subEvent) => {
+                const isTbd = Boolean((subEvent as any).is_date_tbd) || !subEvent.event_date || isNaN(new Date(subEvent.event_date).getTime());
+                const isOvernightShoot = Boolean((subEvent as any).is_overnight) && Boolean((subEvent as any).end_date) && !isNaN(new Date((subEvent as any).end_date).getTime());
+
+                const startDateObj = !isTbd ? new Date(subEvent.event_date) : null;
+                const endDateObj = isOvernightShoot ? new Date((subEvent as any).end_date) : null;
+
+                let dayNumber = 'TBD';
+                let dayName = 'DATE';
+                let monthAbbr = 'NOT';
+                let yearStr = 'FIXED';
+
+                if (!isTbd && startDateObj) {
+                  const sDay = startDateObj.getDate().toString().padStart(2, '0');
+                  const sDayName = startDateObj.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+                  monthAbbr = startDateObj.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+                  yearStr = startDateObj.getFullYear().toString();
+
+                  if (isOvernightShoot && endDateObj) {
+                    const eDay = endDateObj.getDate().toString().padStart(2, '0');
+                    const eDayName = endDateObj.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+                    dayNumber = `${sDay}-${eDay}`;
+                    dayName = `${sDayName}-${eDayName}`;
+                  } else {
+                    dayNumber = sDay;
+                    dayName = sDayName;
+                  }
+                }
+
+                const assignments = resolveSubEventAssignments(subEvent, teamMembers);
+                const assignedCount = assignments.filter((a: any) => a.assigned_member_id !== null).length;
+                const totalSlots = assignments.length;
+                const eventVisibility = resolveEventCrewVisibility(
+                  { ...subEvent, project },
+                  currentMemberId,
+                  studioPermissionsMap,
+                  activeStudioId,
+                  isOwner
+                );
+
+                return (
+                  <div
+                    key={subEvent.id}
+                    className="bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all flex flex-row items-stretch overflow-hidden"
+                  >
+                    {/* Left Date Block */}
+                    <div className={`${projectGradient} w-24 sm:w-28 shrink-0 flex flex-col items-center justify-between p-3 sm:p-3.5 text-center text-white select-none`}>
+                      <div>
+                        <span className="text-[10px] sm:text-xs font-bold text-white/80 uppercase tracking-wider block">
+                          {dayName}
+                        </span>
+                        <span className={`font-black text-white leading-none my-1 block ${isTbd ? 'text-base' : 'text-xl sm:text-2xl'}`}>
+                          {dayNumber}
+                        </span>
+                        <span className="text-[10px] sm:text-xs font-extrabold text-white/90 uppercase tracking-wider block">
+                          {monthAbbr}
+                        </span>
+                        <span className="text-[9px] font-semibold text-white/70 tracking-widest mt-0.5 block">
+                          {yearStr}
+                        </span>
+                      </div>
+
+                      <div className="w-7 h-7 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white shadow-inner mt-2 border border-white/20">
+                        <Calendar className="w-3.5 h-3.5" />
+                      </div>
+                    </div>
+
+                    {/* Right Body */}
+                    <div className="flex-1 p-4 flex flex-col justify-between space-y-3 min-w-0">
+                      <div>
+                        <div className="flex items-start justify-between gap-3 mb-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="font-black text-slate-900 text-base tracking-tight" style={{ color: '#1E1B4B' }}>
+                              {subEvent.event_title}
+                            </h4>
+                            {isTbd && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black">
+                                ⚠️ Date: TBD
+                              </span>
+                            )}
+                            {isOvernightShoot && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-900 border border-indigo-300 text-[10px] font-black">
+                                🌙 Overnight
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-bold border border-indigo-200">
+                            {eventVisibility === 'OWN_ROLE_ONLY' ? 'Assigned' : `${assignedCount}/${totalSlots} Roles`}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3 text-xs font-bold text-slate-500 flex-wrap">
+                          {subEvent.roll_call_time && (
+                            <div className="flex items-center gap-1.5 text-slate-700">
+                              <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              <span>
+                                {format12HourTime(subEvent.roll_call_time)}
+                                {subEvent.dismissal_estimate_time ? ` - ${format12HourTime(subEvent.dismissal_estimate_time)}` : ''}
+                              </span>
+                            </div>
+                          )}
+                          {subEvent.venue_name && (
+                            <div className="flex items-center gap-1.5 text-indigo-600 font-bold">
+                              <MapPin className="w-3.5 h-3.5 shrink-0 text-indigo-500" />
+                              <span className="truncate max-w-[220px]">{subEvent.venue_name}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="border-t border-slate-100 my-1.5" />
+
+                      {/* Crew Placement Grid */}
+                      <div>
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">Crew</span>
+                        <div className="flex items-start gap-4 flex-wrap">
+                          {assignments.map((assignment: any) => {
+                            const isAssigned = assignment.assigned_member_id !== null;
+                            const memberObj = assignment.fw_team_members || teamMembers.find(m => m.id === assignment.assigned_member_id);
+                            const cleanName = (memberObj?.name || '').replace(/\.\.\./g, '').trim();
+                            const role = assignment.required_role;
+                            const shortRole = getRoleAbbr(role, customCrewRoles);
+
+                            const isCurrentUserSlot = Boolean(
+                              (currentMemberId && assignment.assigned_member_id === currentMemberId) ||
+                              (currentMemberEmail && memberObj?.email && memberObj.email.toLowerCase() === currentMemberEmail.toLowerCase()) ||
+                              (currentUserId && memberObj?.user_id === currentUserId)
+                            );
+
+                            // Dynamic Per-Event RBAC Masking: omit non-self roles completely if OWN_ROLE_ONLY
+                            if (eventVisibility === 'OWN_ROLE_ONLY' && !isCurrentUserSlot) {
+                              return null;
+                            }
+
+                            return (
+                              <div key={assignment.id} className="relative flex flex-col items-center min-w-[68px]">
+                                <div
+                                  className={`flex flex-col items-center group min-w-[50px] max-w-[70px] text-center select-none ${
+                                    isTmReadOnly || eventVisibility === 'FULL_CREW' ? 'cursor-default' : 'cursor-pointer'
+                                  }`}
+                                  title={isAssigned ? `${cleanName} (${role})` : isTmReadOnly || eventVisibility === 'FULL_CREW' ? `Unassigned: ${role}` : `Unassigned: ${role}`}
+                                >
+                                  {isAssigned ? (
+                                    <div className="relative w-10 h-10 rounded-full border-2 border-emerald-500 p-0.5 mb-1.5 flex items-center justify-center shrink-0 bg-emerald-50 shadow-xs">
+                                      {memberObj?.avatar_url ? (
+                                        <img
+                                          src={memberObj.avatar_url}
+                                          alt={cleanName}
+                                          className="w-full h-full rounded-full object-cover shrink-0"
+                                        />
+                                      ) : (
+                                        <div className="w-full h-full rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 text-white font-black text-[10px] flex items-center justify-center shrink-0">
+                                          {getInitials(cleanName || role)}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ) : (isTmReadOnly || eventVisibility === 'FULL_CREW') ? (
+                                    <div className="w-10 h-10 rounded-full border border-dashed border-slate-300 bg-slate-100/70 text-slate-400 font-bold mb-1.5 flex items-center justify-center shadow-2xs shrink-0 cursor-default">
+                                      <span className="text-xs font-black">-</span>
+                                    </div>
+                                  ) : (
+                                    <div className="w-10 h-10 rounded-full border border-dashed border-red-500 bg-red-50/90 text-red-600 font-black mb-1.5 flex items-center justify-center shadow-2xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
+                                      <Plus className="w-4 h-4 text-red-600 stroke-[3]" />
+                                    </div>
+                                  )}
+
+                                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 leading-tight block text-center">
+                                    {shortRole}
+                                  </span>
+
+                                  {isAssigned ? (
+                                    <span className="text-[11px] font-extrabold text-emerald-600 dark:text-emerald-500 text-center leading-tight truncate max-w-[68px] block mt-0.5" title={cleanName}>
+                                      {cleanName}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] font-semibold text-slate-400 truncate max-w-[68px] text-center leading-none mt-0.5 block">
+                                      {isTmReadOnly || eventVisibility === 'FULL_CREW' ? 'Unassigned' : 'Assign'}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}

@@ -131,7 +131,7 @@ export default function LeadsPage() {
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const PAGE_SIZE = 50;
 
-  const leadsAccess = isOwner ? 'ALL_EDIT' : (permissions?.leads_access || 'NONE');
+  const leadsAccess = isOwner ? 'ALL_MANAGE' : (permissions?.leads_access || 'NONE');
   const isReadOnly = !isOwner && (leadsAccess === 'ASSIGNED_VIEW' || leadsAccess === 'ALL_VIEW');
   const isAssignedOnly = !isOwner && (leadsAccess === 'ASSIGNED_VIEW' || leadsAccess === 'ASSIGNED_EDIT');
   const [isDemoMode, setIsDemoMode] = useState(false);
@@ -432,12 +432,20 @@ export default function LeadsPage() {
       // Filter for Assigned Leads Only RBAC
       if (isAssignedOnly) {
         const { data: { session } } = await supabase.auth.getSession();
+        const uId = session?.user?.id;
         const uName = (session?.user?.user_metadata?.full_name || session?.user?.user_metadata?.name || '').trim().toLowerCase();
         const uEmail = (session?.user?.email || '').trim().toLowerCase();
         sanitizedLeads = sanitizedLeads.filter(l => {
           const owner = ((l as any).owner || (l as any).lead_owner || (l as any).assigned_to || '').trim().toLowerCase();
-          if (!owner) return false;
-          return owner.includes(uName) || (uName && uName.includes(owner)) || owner === uEmail;
+          const assignedId = (l as any).assigned_to_id || (l as any).assigned_member_id;
+          if (!owner && !assignedId) return false;
+          return (
+            (assignedId && uId && assignedId === uId) ||
+            (uId && owner === uId) ||
+            (uName && owner.includes(uName)) ||
+            (uName && uName.includes(owner)) ||
+            (uEmail && owner === uEmail)
+          );
         });
       }
 

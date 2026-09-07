@@ -1068,6 +1068,7 @@ export default function WorkspaceTeamPage() {
           loadMembers();
         }}
         workspaceId={workspaceId || ''}
+        workspaceName={workspaceName || 'Filmify Weddings'}
         member={selectedFinanceMember}
         initialSummary={selectedFinanceMember ? memberFinancials[selectedFinanceMember.id] : null}
       />

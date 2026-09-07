@@ -4,16 +4,17 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { supabase } from '@/lib/supabase';
 
 export interface MemberPermissions {
-  leads_access: 'NONE' | 'ASSIGNED_VIEW' | 'ASSIGNED_EDIT' | 'ALL_VIEW' | 'ALL_EDIT' | 'ASSIGNED_ONLY' | 'VIEW_ALL' | 'FULL_EDIT';
-  quotations_access: 'NONE' | 'VIEW_ONLY' | 'MANAGE';
-  team_manager_access: 'NONE' | 'ASSIGNED_ONLY_VIEW' | 'ASSIGNED_FULL_TEAM_VIEW' | 'ALL_VIEW' | 'ALL_MANAGE' | 'VIEW_ASSIGNED' | 'MANAGE_ALL';
-  post_production_access: 'NONE' | 'ASSIGNED_ONLY' | 'FULL_ACCESS';
-  finance_access: 'NONE' | 'VIEW_ONLY' | 'MANAGE';
+  leads_access: 'NONE' | 'ASSIGNED_VIEW' | 'ASSIGNED_EDIT' | 'ALL_VIEW' | 'ALL_MANAGE' | 'ALL_EDIT' | 'ASSIGNED_ONLY' | 'VIEW_ALL' | 'FULL_EDIT';
+  quotations_access: 'NONE' | 'VIEW' | 'VIEW_ONLY' | 'MANAGE';
+  team_manager_access: 'NONE' | 'ASSIGNED_OWN_ROLE' | 'ASSIGNED_FULL_CREW' | 'ASSIGNED_ONLY_VIEW' | 'ASSIGNED_FULL_TEAM_VIEW' | 'ALL_VIEW' | 'ALL_MANAGE' | 'VIEW_ASSIGNED' | 'MANAGE_ALL';
+  post_production_access: 'NONE' | 'ASSIGNED_VIEW' | 'ASSIGNED_ONLY' | 'ALL_VIEW' | 'ALL_MANAGE' | 'FULL_ACCESS';
+  finance_access: 'NONE' | 'VIEW' | 'VIEW_ONLY' | 'MANAGE';
 }
 
 export interface WorkspaceOption {
   workspaceId: string;
   studioName: string;
+  studioSlug?: string;
   userRole: 'OWNER' | 'MANAGER' | 'FREELANCER' | 'PHOTOGRAPHER' | 'CINEMATOGRAPHER' | 'EDITOR' | 'ALBUM_LAB' | string;
   isOwner: boolean;
   memberId?: string;
@@ -55,19 +56,34 @@ interface BhamstraContextType {
 }
 
 export const DEFAULT_OWNER_PERMISSIONS: MemberPermissions = {
-  leads_access: 'FULL_EDIT',
+  leads_access: 'ALL_MANAGE',
   quotations_access: 'MANAGE',
-  team_manager_access: 'MANAGE_ALL',
-  post_production_access: 'FULL_ACCESS',
+  team_manager_access: 'ALL_MANAGE',
+  post_production_access: 'ALL_MANAGE',
   finance_access: 'MANAGE',
 };
 
 export const DEFAULT_MEMBER_PERMISSIONS: MemberPermissions = {
-  leads_access: 'ASSIGNED_VIEW',
-  quotations_access: 'VIEW_ONLY',
-  team_manager_access: 'VIEW_ASSIGNED',
-  post_production_access: 'ASSIGNED_ONLY',
+  leads_access: 'NONE',
+  quotations_access: 'NONE',
+  team_manager_access: 'NONE',
+  post_production_access: 'NONE',
   finance_access: 'NONE',
+};
+
+export const ALL_STUDIOS_WORKSPACE: WorkspaceOption = {
+  workspaceId: 'all',
+  studioName: 'All Studios (Consolidated)',
+  studioSlug: 'all',
+  userRole: 'CREW',
+  isOwner: false,
+  permissions: {
+    leads_access: 'NONE',
+    quotations_access: 'NONE',
+    team_manager_access: 'ASSIGNED_OWN_ROLE',
+    post_production_access: 'ASSIGNED_VIEW',
+    finance_access: 'NONE',
+  },
 };
 
 const DEFAULT_FALLBACK_CONTEXT: BhamstraContextType = {
@@ -186,13 +202,21 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
 
       setAvailableWorkspaces(workspaceList);
 
-      // 3. Determine Active Workspace from localStorage or cookies
+      // 3. Determine Active Workspace from URL param, localStorage or cookies
       let savedWsId: string | null = null;
       if (typeof window !== 'undefined') {
-        savedWsId = localStorage.getItem('sc_active_workspace_id');
+        const urlParams = new URLSearchParams(window.location.search);
+        const wsFromUrl = urlParams.get('studio') || urlParams.get('ws') || urlParams.get('workspace_id');
+        savedWsId = wsFromUrl || localStorage.getItem('sc_active_workspace_id');
       }
 
-      const active = workspaceList.find(w => w.workspaceId === savedWsId) || ownerOption;
+      let active: WorkspaceOption;
+      if (savedWsId === 'all') {
+        active = ALL_STUDIOS_WORKSPACE;
+      } else {
+        active = workspaceList.find(w => w.workspaceId === savedWsId || (w as any).studioSlug === savedWsId) || ownerOption;
+      }
+
       setActiveWorkspace(active);
       setWorkspaceId(active.workspaceId);
       setWorkspaceName(active.studioName);
@@ -220,7 +244,12 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
 
   // Workspace Switcher Action
   const switchWorkspace = async (targetWsId: string) => {
-    const target = availableWorkspaces.find(w => w.workspaceId === targetWsId);
+    let target: WorkspaceOption | undefined;
+    if (targetWsId === 'all') {
+      target = ALL_STUDIOS_WORKSPACE;
+    } else {
+      target = availableWorkspaces.find(w => w.workspaceId === targetWsId || (w as any).studioSlug === targetWsId);
+    }
     if (!target) return;
 
     setActiveWorkspace(target);
@@ -233,6 +262,15 @@ export function BhamstraProvider({ children }: { children: React.ReactNode }) {
     if (typeof window !== 'undefined') {
       localStorage.setItem('sc_active_workspace_id', target.workspaceId);
       document.cookie = `sc_active_workspace_id=${target.workspaceId}; path=/; max-age=31536000; SameSite=Lax`;
+      
+      try {
+        const url = new URL(window.location.href);
+        const slugOrId = target.studioSlug || target.workspaceId;
+        url.searchParams.set('studio', slugOrId);
+        url.searchParams.set('ws', slugOrId);
+        window.history.replaceState({}, '', url.toString());
+      } catch (_) {}
+
       window.dispatchEvent(new CustomEvent('sc_workspace_switched', { detail: target }));
     }
   };

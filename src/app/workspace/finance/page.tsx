@@ -2679,9 +2679,9 @@ export default function FinancePage() {
             clients={clients}
             workspaceId={currentWorkspaceId}
             todayStr={todayStr}
-            onOpenCompletePaymentModal={handleOpenCompletePaymentModal}
-            onOpenRecordPayment={(rec) => setShowRecordPaymentModal({ open: true, client: rec.client || undefined, financeRecord: rec })}
-            onOpenInvoice={(rec) => setShowInvoiceModal({ open: true, client: rec.client || undefined, financeRecord: rec })}
+            onOpenCompletePaymentModal={handleOpenCompletePaymentModal as any}
+            onOpenRecordPayment={(rec: any) => setShowRecordPaymentModal({ open: true, client: rec.client || undefined, financeRecord: rec })}
+            onOpenInvoice={(rec: any) => setShowInvoiceModal({ open: true, client: rec.client || undefined, financeRecord: rec })}
           />
         )}
 

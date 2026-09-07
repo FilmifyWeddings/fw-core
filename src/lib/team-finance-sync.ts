@@ -77,10 +77,14 @@ export interface TeamSalaryRecord {
   base_salary: number;
   incentive_amount: number;
   deductions: number;
+  deduction_amount?: number;
   net_payable: number;
+  net_paid?: number;
   paid_amount: number;
   payment_status: 'PENDING' | 'PAID';
+  status?: string;
   paid_date?: string;
+  payout_date?: string;
   payment_mode?: string;
   reference_no?: string;
   notes?: string;
@@ -706,8 +710,8 @@ export async function updateCrewAssignmentPayment(
     const paymentMethod = params.paymentMethod || params.paymentMode || 'UPI / Bank Transfer';
     const paymentDate = params.paymentDate || new Date().toISOString().split('T')[0];
     const agreedAmount = Number(params.agreedAmount) || 0;
-    const balanceAmount = Math.max(0, agreedAmount - advanceAmount);
     const paymentStatus = params.paymentStatus || (advanceAmount >= agreedAmount && agreedAmount > 0 ? 'completed' : advanceAmount > 0 ? 'partial' : 'pending');
+    const balanceAmount = paymentStatus === 'completed' ? 0 : Math.max(0, agreedAmount - advanceAmount);
     const amountToLog = paymentStatus === 'completed' ? (agreedAmount > 0 ? agreedAmount : advanceAmount) : advanceAmount;
 
     // 1. Try Supabase RPC first
@@ -829,13 +833,18 @@ export async function syncTeamPaymentToExpensesAndAnalytics(
 
   const paymentDateFormatted = paymentDate || new Date().toISOString().split('T')[0];
 
+  let authUid: string | null = null;
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user?.id) authUid = user.id;
+  } catch (_) {}
+
   // 1. Insert sync record into expenses table (matches text ID & dual date schema)
   const expensePayload: any = {
     title: `${paymentType || 'Payout'} - ${memberName}`,
     category: memberType === 'partner' || (memberType || '').toLowerCase().includes('partner') || (memberType || '').toLowerCase().includes('lab') ? 'Lab & Printing Partner' : 'Crew & Team',
     amount: Number(paidAmount),
     expense_date: paymentDateFormatted,
-    date: paymentDateFormatted, // fallback for legacy schema
     payment_method: paymentMethod || 'UPI / Bank Transfer',
     payment_status: 'PAID',
     recipient_type: memberType || 'team_member',
@@ -843,7 +852,8 @@ export async function syncTeamPaymentToExpensesAndAnalytics(
     team_member_name: memberName || '',
     reference_assignment_id: safeAssignmentId ? String(safeAssignmentId) : `pay_${Date.now()}`,
     notes: notes ? `Payment for ${memberName}: ${notes}` : `Disbursement to ${memberName}`,
-    ...(workspaceId ? { workspace_id: workspaceId, user_id: workspaceId } : {})
+    ...(workspaceId ? { workspace_id: workspaceId } : {}),
+    ...(authUid ? { user_id: authUid } : (workspaceId ? { user_id: workspaceId } : {}))
   };
 
   const { error: expError } = await supabase
@@ -851,14 +861,11 @@ export async function syncTeamPaymentToExpensesAndAnalytics(
     .insert([expensePayload]);
 
   if (expError) {
-    console.error('Auto-sync to expenses warning:', expError.message);
-    // If tenant columns caused an issue, retry without workspace_id / user_id
+    // Graceful fallback for legacy table RLS or schema variations
+    console.info('[team-finance-sync] Legacy expenses table notice:', expError.message);
     if (expError.message?.includes('workspace_id') || expError.message?.includes('user_id')) {
       const { workspace_id, user_id, ...purePayload } = expensePayload;
-      const { error: retryError } = await supabase.from('expenses').insert([purePayload]);
-      if (retryError) {
-        console.error('Auto-sync to expenses retry warning:', retryError.message);
-      }
+      await supabase.from('expenses').insert([purePayload]);
     }
   }
 
@@ -1775,6 +1782,45 @@ export async function recordSalaryPayment(
     console.error('[team-finance-sync] recordSalaryPayment error:', err);
     return { success: false };
   }
+}
+
+export async function deleteSalaryRecord(workspaceId: string, salaryId: string, memberId: string): Promise<boolean> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      try {
+        await supabase
+          .from('team_salary_slips')
+          .delete()
+          .eq('id', salaryId)
+          .eq('user_id', user.id);
+      } catch (_) {}
+    }
+
+    try {
+      await supabase
+        .from('team_salary_records')
+        .delete()
+        .eq('id', salaryId);
+    } catch (_) {}
+  } catch (err) {
+    console.warn('[team-finance-sync] deleteSalaryRecord error:', err);
+  }
+
+  if (typeof window !== 'undefined') {
+    const key = `${LS_SALARIES_KEY}${workspaceId}_${memberId}`;
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      try {
+        const list: TeamSalaryRecord[] = JSON.parse(raw);
+        const filtered = list.filter(s => s.id !== salaryId);
+        localStorage.setItem(key, JSON.stringify(filtered));
+      } catch (_) {}
+    }
+    window.dispatchEvent(new CustomEvent('team_finance_updated', { detail: { memberId } }));
+  }
+
+  return true;
 }
 
 // ── 4. DIRECT EXPENSES & FINANCE TRANSACTIONS SYNC ───────────────────────────

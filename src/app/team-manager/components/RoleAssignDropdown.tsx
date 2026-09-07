@@ -16,6 +16,8 @@ interface RoleAssignDropdownProps {
   onAssignMember: (assignmentId: string, memberId: string | null) => void;
   onAddNewMember: (info: { assignmentId: string; role: string; subEventId: string; projectId: string }) => void;
   variant?: 'chip' | 'avatar';
+  readOnly?: boolean;
+  isMasked?: boolean;
 }
 
 export default function RoleAssignDropdown({
@@ -26,6 +28,8 @@ export default function RoleAssignDropdown({
   onAssignMember,
   onAddNewMember,
   variant = 'avatar',
+  readOnly = false,
+  isMasked = false,
 }: RoleAssignDropdownProps) {
   const { crewRoles } = useWorkspaceData();
   const [isOpen, setIsOpen] = useState(false);
@@ -39,7 +43,12 @@ export default function RoleAssignDropdown({
   const cleanName = rawName.replace(/\.\.\./g, '').trim();
   const role = assignment.required_role;
 
+  if (isMasked) {
+    return null;
+  }
+
   const handleOpenPopover = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (readOnly) return;
     e.stopPropagation();
     const rect = e.currentTarget.getBoundingClientRect();
     const top = rect.bottom + 6;
@@ -90,30 +99,36 @@ export default function RoleAssignDropdown({
       {variant === 'chip' ? (
         <div
           onClick={handleOpenPopover}
-          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold transition cursor-pointer select-none shadow-2xs hover:shadow-xs active:scale-95 ${
+          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold transition select-none shadow-2xs ${
+            readOnly ? 'cursor-default' : 'cursor-pointer hover:shadow-xs active:scale-95'
+          } ${
             isAssigned
               ? 'bg-emerald-50 hover:bg-emerald-100/90 text-emerald-950 border-emerald-300'
-              : 'bg-rose-50 hover:bg-rose-100/90 text-rose-800 border-rose-300'
+              : readOnly
+                ? 'bg-neutral-100 text-neutral-400 border-neutral-200'
+                : 'bg-rose-50 hover:bg-rose-100/90 text-rose-800 border-rose-300'
           }`}
-          title={`Click to assign or change team member for ${role}`}
+          title={isAssigned ? `${cleanName} (${role})` : `Unassigned: ${role}`}
         >
           <div
             className={`w-5 h-5 rounded-lg flex items-center justify-center text-[10px] font-black text-white shrink-0 ${
-              isAssigned ? 'bg-emerald-600' : 'bg-rose-500'
+              isAssigned ? 'bg-emerald-600' : readOnly ? 'bg-neutral-400' : 'bg-rose-500'
             }`}
           >
             {getRoleAbbr(role, crewRoles)}
           </div>
           <span className="font-extrabold">{role}:</span>
-          <span className={isAssigned ? 'font-black text-emerald-900' : 'font-extrabold italic text-rose-600'}>
-            {cleanName || 'Unassigned (+ Assign)'}
+          <span className={isAssigned ? 'font-black text-emerald-900' : readOnly ? 'text-neutral-400 font-medium' : 'font-extrabold italic text-rose-600'}>
+            {cleanName || (readOnly ? 'Unassigned' : 'Unassigned (+ Assign)')}
           </span>
         </div>
       ) : (
         /* STRICT SHORT-FORM ROLE AVATAR (NO OVERFLOW) */
         <div
           onClick={handleOpenPopover}
-          className="flex flex-col items-center group cursor-pointer min-w-[50px] max-w-[70px] text-center select-none"
+          className={`flex flex-col items-center min-w-[50px] max-w-[70px] text-center select-none ${
+            readOnly ? 'cursor-default' : 'group cursor-pointer'
+          }`}
           title={isAssigned ? `${cleanName} (${role})` : `Unassigned: ${role}`}
         >
           {/* Avatar */}
@@ -135,6 +150,10 @@ export default function RoleAssignDropdown({
                 </div>
               )}
             </div>
+          ) : readOnly ? (
+            <div className="w-10 h-10 rounded-full border border-neutral-200 bg-neutral-100 text-neutral-400 font-bold mb-1.5 flex items-center justify-center shadow-2xs shrink-0">
+              <span className="text-[10px] font-black">{getRoleAbbr(role, crewRoles)}</span>
+            </div>
           ) : (
             <div className="w-10 h-10 rounded-full border border-dashed border-red-500 bg-red-50/90 text-red-600 font-black mb-1.5 flex items-center justify-center shadow-2xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
               <Plus className="w-4 h-4 text-red-600 stroke-[3]" />
@@ -153,7 +172,7 @@ export default function RoleAssignDropdown({
             </span>
           ) : (
             <span className="text-[10px] font-semibold text-slate-400 truncate max-w-[68px] text-center leading-none mt-0.5 block">
-              Assign
+              {readOnly ? 'Unassigned' : 'Assign'}
             </span>
           )}
         </div>

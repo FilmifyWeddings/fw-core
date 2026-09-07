@@ -27,12 +27,17 @@ export async function insertExpenseSync(payload: {
 }) {
   const paymentDateFormatted = payload.paymentDate || new Date().toISOString().split('T')[0];
 
+  let authUid: string | null = null;
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user?.id) authUid = user.id;
+  } catch (_) {}
+
   const expensePayload = {
     title: `${payload.paymentType || 'Payout'} - ${payload.memberName}`,
     category: payload.memberType === 'partner' ? 'Lab & Printing Partner' : 'Crew & Team',
     amount: Number(payload.paidAmount),
     expense_date: paymentDateFormatted,
-    date: paymentDateFormatted, // fallback for legacy schema
     payment_method: payload.paymentMethod || 'UPI / Bank Transfer',
     payment_status: 'PAID',
     recipient_type: payload.memberType || 'team_member',
@@ -40,7 +45,8 @@ export async function insertExpenseSync(payload: {
     team_member_name: payload.memberName || '',
     reference_assignment_id: payload.safeAssignmentId,
     notes: payload.notes ? `Payment for ${payload.memberName}: ${payload.notes}` : `Disbursement to ${payload.memberName}`,
-    ...(payload.workspaceId ? { workspace_id: payload.workspaceId } : {})
+    ...(payload.workspaceId ? { workspace_id: payload.workspaceId } : {}),
+    ...(authUid ? { user_id: authUid } : (payload.workspaceId ? { user_id: payload.workspaceId } : {}))
   };
 
   const { error: expError } = await supabase
@@ -48,7 +54,7 @@ export async function insertExpenseSync(payload: {
     .insert([expensePayload]);
 
   if (expError) {
-    console.error('Auto-sync to expenses warning:', expError.message);
+    console.info('[teamService] Legacy expenses table notice:', expError.message);
   }
 
   return { error: expError };

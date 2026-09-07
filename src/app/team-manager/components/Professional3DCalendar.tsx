@@ -9,6 +9,8 @@ import {
   Pencil, Calendar, Zap, FileText, Check, Moon
 } from 'lucide-react';
 import RoleAssignDropdown from './RoleAssignDropdown';
+import { useWorkspace } from '@/lib/context/BhamstraContext';
+import { resolveEventCrewVisibility } from '@/lib/permissions/rbacRules';
 
 interface Professional3DCalendarProps {
   projects: FWProject[];
@@ -21,6 +23,12 @@ interface Professional3DCalendarProps {
   onAddNewMember: (info: { assignmentId: string; role: string; subEventId: string; projectId: string }) => void;
   onAddProject?: (initialDate?: string) => void;
   onEditProject?: (project: FWProject) => void;
+  isTmReadOnly?: boolean;
+  isSelfRoleOnly?: boolean;
+  currentMemberId?: string | null;
+  currentMemberEmail?: string | null;
+  studioPermissionsMap?: Map<string, any>;
+  activeStudioId?: string | null;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -152,7 +160,21 @@ export default function Professional3DCalendar({
   onAddNewMember,
   onAddProject,
   onEditProject,
+  isTmReadOnly = false,
+  isSelfRoleOnly = false,
+  currentMemberId = null,
+  currentMemberEmail = null,
+  studioPermissionsMap,
+  activeStudioId,
 }: Professional3DCalendarProps) {
+  const { workspaceId } = useWorkspace();
+  const isMemberSlot = (assignment: any) => {
+    return Boolean(
+      (currentMemberId && assignment.assigned_member_id === currentMemberId) ||
+      (currentMemberEmail && (assignment.fw_team_members?.email?.toLowerCase() === currentMemberEmail.toLowerCase() || (assignment.assigned_member_id && teamMembers.find((m: any) => m.id === assignment.assigned_member_id)?.email?.toLowerCase() === currentMemberEmail.toLowerCase())))
+    );
+  };
+
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [internalSearch, setInternalSearch] = useState<string>('');
@@ -540,6 +562,11 @@ export default function Professional3DCalendar({
                         <h3 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900">
                           {project.client_name}
                         </h3>
+                        {(project.studio_name || workspaceId === 'all') && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                            🏢 {project.studio_name || 'Studio'}
+                          </span>
+                        )}
                         <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-950 text-[11px] font-black tracking-wide border border-indigo-200/80 shadow-2xs">
                           {subEvents.length} Sub-Event{subEvents.length === 1 ? '' : 's'} Today
                         </span>
@@ -556,7 +583,7 @@ export default function Professional3DCalendar({
                           <span className="text-xs italic text-slate-400 font-medium">PM Not Assigned</span>
                         )}
 
-                        {onEditProject && (
+                        {!isTmReadOnly && onEditProject && (
                           <button 
                             type="button"
                             title="Edit Project"
@@ -694,25 +721,43 @@ export default function Professional3DCalendar({
                               <div>
                                 <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">Crew</span>
                                 <div className="flex items-start gap-4 flex-wrap">
-                                  {assignments.map((assignment: any) => (
-                                    <RoleAssignDropdown
-                                      key={assignment.id}
-                                      assignment={assignment}
-                                      subEventId={subEvent.id}
-                                      projectId={project.id}
-                                      teamMembers={teamMembers}
-                                      onAssignMember={onAssignMember}
-                                      onAddNewMember={(info) => {
-                                        onAddNewMember({
-                                          assignmentId: info.assignmentId,
-                                          role: info.role,
-                                          subEventId: info.subEventId,
-                                          projectId: info.projectId,
-                                        });
-                                      }}
-                                      variant="avatar"
-                                    />
-                                  ))}
+                                  {(() => {
+                                    const eventVisibility = resolveEventCrewVisibility(
+                                      { ...subEvent, project },
+                                      currentMemberId,
+                                      studioPermissionsMap || new Map(),
+                                      activeStudioId,
+                                      !isTmReadOnly
+                                    );
+                                    return assignments.map((assignment: any) => {
+                                      const isUserSlot = isMemberSlot(assignment);
+                                      if (eventVisibility === 'OWN_ROLE_ONLY' && !isUserSlot) {
+                                        return null;
+                                      }
+                                      const isReadOnly = isTmReadOnly || eventVisibility === 'FULL_CREW';
+                                      return (
+                                        <RoleAssignDropdown
+                                          key={assignment.id}
+                                          assignment={assignment}
+                                          subEventId={subEvent.id}
+                                          projectId={project.id}
+                                          teamMembers={teamMembers}
+                                          onAssignMember={onAssignMember}
+                                          onAddNewMember={(info) => {
+                                            onAddNewMember({
+                                              assignmentId: info.assignmentId,
+                                              role: info.role,
+                                              subEventId: info.subEventId,
+                                              projectId: info.projectId,
+                                            });
+                                          }}
+                                          variant="avatar"
+                                          readOnly={isReadOnly}
+                                          isMasked={false}
+                                        />
+                                      );
+                                    });
+                                  })()}
                                 </div>
                               </div>
                             </div>
@@ -871,7 +916,14 @@ export default function Professional3DCalendar({
                   className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3 shadow-xs"
                 >
                   <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                    <h4 className="text-base font-black text-slate-900">{project.client_name}</h4>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="text-base font-black text-slate-900">{project.client_name}</h4>
+                      {(project.studio_name || workspaceId === 'all') && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                          🏢 {project.studio_name || 'Studio'}
+                        </span>
+                      )}
+                    </div>
                     {project.project_manager_name && (
                       <span className="text-[10px] font-bold text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
                         PM: {project.project_manager_name}
@@ -897,9 +949,20 @@ export default function Professional3DCalendar({
                               </span>
                             </div>
 
-                            <div className="px-2 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-[9px] font-bold border border-white/20">
-                              {assignments.filter((a: any) => a.assigned_member_id).length}/{assignments.length} Roles
-                            </div>
+                            {(() => {
+                              const eventVisibility = resolveEventCrewVisibility(
+                                { ...subEvent, project },
+                                currentMemberId,
+                                studioPermissionsMap || new Map(),
+                                activeStudioId,
+                                !isTmReadOnly
+                              );
+                              return (
+                                <div className="px-2 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-[9px] font-bold border border-white/20">
+                                  {eventVisibility === 'OWN_ROLE_ONLY' ? 'Assigned' : `${assignments.filter((a: any) => a.assigned_member_id).length}/${assignments.length} Roles`}
+                                </div>
+                              );
+                            })()}
                           </div>
 
                           <div className="p-2.5 space-y-2">
@@ -925,25 +988,43 @@ export default function Professional3DCalendar({
                                 Crew Placements
                               </span>
                               <div className="flex items-start gap-2.5 flex-wrap">
-                                {assignments.map((assignment: any) => (
-                                  <RoleAssignDropdown
-                                    key={assignment.id}
-                                    assignment={assignment}
-                                    subEventId={subEvent.id}
-                                    projectId={project.id}
-                                    teamMembers={teamMembers}
-                                    onAssignMember={onAssignMember}
-                                    onAddNewMember={(info) => {
-                                      onAddNewMember({
-                                        assignmentId: info.assignmentId,
-                                        role: info.role,
-                                        subEventId: info.subEventId,
-                                        projectId: info.projectId
-                                      });
-                                    }}
-                                    variant="avatar"
-                                  />
-                                ))}
+                                {(() => {
+                                  const eventVisibility = resolveEventCrewVisibility(
+                                    { ...subEvent, project },
+                                    currentMemberId,
+                                    studioPermissionsMap || new Map(),
+                                    activeStudioId,
+                                    !isTmReadOnly
+                                  );
+                                  return assignments.map((assignment: any) => {
+                                    const isUserSlot = isMemberSlot(assignment);
+                                    if (eventVisibility === 'OWN_ROLE_ONLY' && !isUserSlot) {
+                                      return null;
+                                    }
+                                    const isReadOnly = isTmReadOnly || eventVisibility === 'FULL_CREW';
+                                    return (
+                                      <RoleAssignDropdown
+                                        key={assignment.id}
+                                        assignment={assignment}
+                                        subEventId={subEvent.id}
+                                        projectId={project.id}
+                                        teamMembers={teamMembers}
+                                        onAssignMember={onAssignMember}
+                                        onAddNewMember={(info) => {
+                                          onAddNewMember({
+                                            assignmentId: info.assignmentId,
+                                            role: info.role,
+                                            subEventId: info.subEventId,
+                                            projectId: info.projectId
+                                          });
+                                        }}
+                                        variant="avatar"
+                                        readOnly={isReadOnly}
+                                        isMasked={false}
+                                      />
+                                    );
+                                  });
+                                })()}
                               </div>
                             </div>
                           </div>

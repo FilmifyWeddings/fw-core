@@ -1,6 +1,7 @@
 'use client';
 import OperationsAnalyticsTab from './components/OperationsAnalyticsTab';
-import UnifiedTeamFilterModal, { UnifiedFilterState } from './components/UnifiedTeamFilterModal';
+import TeamManagerFilterDrawer, { UnifiedFilterState } from './components/TeamManagerFilterDrawer';
+import { resolveEventCrewVisibility } from '@/lib/permissions/rbacRules';
 
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
@@ -126,7 +127,7 @@ const resolveSubEventAssignments = (subEvent: FWSubEvent, teamMembers: FWTeamMem
 };
 
 export default function TeamManagerPage() {
-  const { workspaceId, workspaceName, isOwner, userRole, permissions } = useWorkspace();
+  const { workspaceId, workspaceName, isOwner, userRole, permissions, activeWorkspace, availableWorkspaces, userId, userEmail } = useWorkspace();
   const { crewRoles: globalCrewRoles, eventTypesList: globalEventTypesList } = useWorkspaceData();
   const [activeTab, setActiveTab] = useState<'overview' | 'projects' | 'list' | 'calendar' | 'trash'>('projects');
   const [isMounted, setIsMounted] = useState(false);
@@ -134,6 +135,21 @@ export default function TeamManagerPage() {
   useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  // Studio-Scoped URL Synchronization
+  useEffect(() => {
+    if (typeof window === 'undefined' || !activeWorkspace) return;
+    try {
+      const url = new URL(window.location.href);
+      const targetCode = activeWorkspace.workspaceId === 'all' 
+        ? 'all' 
+        : (activeWorkspace.studioSlug || activeWorkspace.workspaceId);
+      if (url.searchParams.get('studio') !== targetCode) {
+        url.searchParams.set('studio', targetCode);
+        window.history.replaceState({}, '', url.toString());
+      }
+    } catch (_) {}
+  }, [activeWorkspace]);
   
   // Dynamic Time-Based Greeting & Studio Profile Name
   const greetingInfo = useMemo(() => {
@@ -152,15 +168,38 @@ export default function TeamManagerPage() {
     return 'Studio Admin';
   }, [workspaceName]);
   
-  const tmAccess = isOwner ? 'ALL_MANAGE' : (permissions?.team_manager_access || 'ASSIGNED_ONLY_VIEW');
+  const tmAccess = isOwner ? 'ALL_MANAGE' : (permissions?.team_manager_access || 'NONE');
   const isTmReadOnly = !isOwner && tmAccess !== 'ALL_MANAGE' && tmAccess !== 'MANAGE_ALL';
-  const isAssignedCardOnly = !isOwner && (tmAccess === 'ASSIGNED_ONLY_VIEW' || tmAccess === 'ASSIGNED_FULL_TEAM_VIEW');
-  const isSelfRoleOnly = !isOwner && tmAccess === 'ASSIGNED_ONLY_VIEW';
+  const canManageTeam = !isTmReadOnly;
+  const isAssignedCardOnly = !isOwner && (
+    tmAccess === 'ASSIGNED_OWN_ROLE' ||
+    tmAccess === 'ASSIGNED_FULL_CREW' ||
+    tmAccess === 'ASSIGNED_ONLY_VIEW' ||
+    tmAccess === 'ASSIGNED_FULL_TEAM_VIEW'
+  );
+  const isSelfRoleOnly = !isOwner && (
+    tmAccess === 'ASSIGNED_OWN_ROLE' ||
+    tmAccess === 'ASSIGNED_ONLY_VIEW'
+  );
+
+  useEffect(() => {
+    if (activeTab === 'trash' && !canManageTeam) {
+      setActiveTab('projects');
+    }
+  }, [activeTab, canManageTeam]);
   
   // Real Data State & Current User Workspace ID
   const [currentUserId, setCurrentUserId] = useState<string>('');
   const [projects, setProjects] = useState<FWProject[]>([]);
   const [teamMembers, setTeamMembers] = useState<FWTeamMember[]>([]);
+
+  const currentMember = useMemo(() => {
+    return teamMembers.find(m =>
+      (activeWorkspace?.memberId && m.id === activeWorkspace.memberId) ||
+      (userEmail && m.email?.toLowerCase() === userEmail.toLowerCase()) ||
+      (userId && m.user_id === userId)
+    );
+  }, [teamMembers, activeWorkspace, userEmail, userId]);
   
   // Team & Partner Financial Engine States
   const [selectedFinanceMember, setSelectedFinanceMember] = useState<any>(null);
@@ -232,6 +271,7 @@ export default function TeamManagerPage() {
   const [instantAlerts, setInstantAlerts] = useState<boolean>(true);
   const [isUnifiedFilterOpen, setIsUnifiedFilterOpen] = useState<boolean>(false);
   const [isCardViewTbdExpanded, setIsCardViewTbdExpanded] = useState<boolean>(false);
+  const [studioPermissionsMap, setStudioPermissionsMap] = useState<Map<string, any>>(new Map());
   const [unifiedFilters, setUnifiedFilters] = useState<UnifiedFilterState>({
     monthYear: 'all',
     startDate: '',
@@ -240,7 +280,16 @@ export default function TeamManagerPage() {
     roles: [],
     assignmentStatus: 'all',
     pmId: 'all',
+    studioId: 'all',
   });
+  const studioFilterOptions = useMemo(() => {
+    return availableWorkspaces
+      .filter(w => w.workspaceId && w.workspaceId !== 'all')
+      .map(w => ({
+        id: w.workspaceId,
+        name: w.studioName || 'Partner Studio',
+      }));
+  }, [availableWorkspaces]);
   const [memberToDelete, setMemberToDelete] = useState<FWTeamMember | null>(null);
   const [isDeletingMember, setIsDeletingMember] = useState<boolean>(false);
 
@@ -346,46 +395,105 @@ export default function TeamManagerPage() {
     setError(null);
     const uid = targetUid !== undefined ? targetUid : (workspaceId || currentUserId);
 
+    const isAllStudios = uid === 'all' || workspaceId === 'all';
+    const partnerWorkspaces = availableWorkspaces.filter(w => !w.isOwner && w.workspaceId !== 'all');
+    const partnerOwnerIds = partnerWorkspaces.map(w => w.workspaceId).filter(Boolean);
+    const targetOwnerIds = isAllStudios
+      ? (partnerOwnerIds.length > 0 ? partnerOwnerIds : availableWorkspaces.filter(w => w.workspaceId !== 'all').map(w => w.workspaceId))
+      : (uid && uid !== 'all' ? [uid] : []);
+
+    const studioNameMap = new Map<string, string>();
+    availableWorkspaces.forEach(w => {
+      if (w.workspaceId && w.workspaceId !== 'all') {
+        studioNameMap.set(w.workspaceId, w.studioName);
+      }
+    });
+
+    // Hydrate per-studio permission matrix map for dynamic RBAC evaluation
+    const permMap = new Map<string, any>();
+    availableWorkspaces.forEach(w => {
+      if (w.workspaceId && w.workspaceId !== 'all') {
+        if (w.isOwner) {
+          permMap.set(w.workspaceId, {
+            owner_id: w.workspaceId,
+            team_manager_access: 'ALL_MANAGE',
+          });
+        } else if (w.permissions) {
+          permMap.set(w.workspaceId, {
+            owner_id: w.workspaceId,
+            member_id: w.memberId,
+            ...w.permissions,
+          });
+        }
+      }
+    });
+
+    try {
+      const memberIds = availableWorkspaces.map(w => w.memberId).filter(Boolean);
+      if (memberIds.length > 0) {
+        const { data: memberPermissions } = await supabase
+          .from('studio_member_permissions')
+          .select('*')
+          .in('member_id', memberIds);
+
+        if (memberPermissions && memberPermissions.length > 0) {
+          memberPermissions.forEach((p: any) => {
+            permMap.set(p.owner_id, p);
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('[TeamManager] studio_member_permissions fetch warning:', e);
+    }
+
+    setStudioPermissionsMap(permMap);
+
     try {
       // 1. Fetch Team Members for active workspace from both workspace_members and fw_team_members
       const combinedMembers: FWTeamMember[] = [];
       const wsRatesMap = await fetchWorkspaceMemberRatesMap(uid).catch(() => ({}));
 
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
-        const res = await fetch(`/api/workspace/members?workspace_id=${uid}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        const json = await res.json();
-        if (json.success && Array.isArray(json.members)) {
-          json.members.forEach((m: any) => {
-            const calculatedRate = (wsRatesMap && (wsRatesMap as any)[m.id] != null) 
-              ? (wsRatesMap as any)[m.id] 
-              : (Number(m.default_daily_rate) || Number(m.daily_rate) || 0);
-
-            combinedMembers.push({
-              id: m.id,
-              user_id: uid,
-              name: m.name || 'Team Member',
-              primary_role: m.primary_role || 'Crew',
-              phone_number: m.phone || '',
-              email: m.email || '',
-              avatar_url: m.avatar_url || '',
-              default_daily_rate: calculatedRate,
-              default_currency: m.default_currency || 'INR',
-              is_active: m.status === 'ACTIVE'
-            });
+      if (!isAllStudios && uid && uid !== 'all') {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const token = session?.access_token;
+          const res = await fetch(`/api/workspace/members?workspace_id=${uid}`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
           });
-        }
-      } catch (_) {}
+          const json = await res.json();
+          if (json.success && Array.isArray(json.members)) {
+            json.members.forEach((m: any) => {
+              const calculatedRate = (wsRatesMap && (wsRatesMap as any)[m.id] != null) 
+                ? (wsRatesMap as any)[m.id] 
+                : (Number(m.default_daily_rate) || Number(m.daily_rate) || 0);
+
+              combinedMembers.push({
+                id: m.id,
+                user_id: uid,
+                name: m.name || 'Team Member',
+                primary_role: m.primary_role || 'Crew',
+                phone_number: m.phone || '',
+                email: m.email || '',
+                avatar_url: m.avatar_url || '',
+                default_daily_rate: calculatedRate,
+                default_currency: m.default_currency || 'INR',
+                is_active: m.status === 'ACTIVE'
+              });
+            });
+          }
+        } catch (_) {}
+      }
 
       let membersQuery = supabase
         .from('fw_team_members')
         .select('*')
         .order('name', { ascending: true });
 
-      if (uid) {
+      if (isAllStudios) {
+        if (targetOwnerIds.length > 0) {
+          membersQuery = membersQuery.in('user_id', targetOwnerIds);
+        }
+      } else if (uid && uid !== 'all') {
         membersQuery = membersQuery.eq('user_id', uid);
       }
 
@@ -418,7 +526,7 @@ export default function TeamManagerPage() {
       setTeamMembers(combinedMembers);
       loadFinancialSummaries(combinedMembers);
 
-      // 2. Fetch Projects for active workspace
+      // 2. Fetch Projects for active workspace or consolidated studios
       let projectsQuery = supabase
         .from('fw_projects')
         .select(`
@@ -433,7 +541,11 @@ export default function TeamManagerPage() {
         `)
         .order('created_at', { ascending: false });
 
-      if (uid) {
+      if (isAllStudios) {
+        if (targetOwnerIds.length > 0) {
+          projectsQuery = projectsQuery.in('user_id', targetOwnerIds);
+        }
+      } else if (uid && uid !== 'all') {
         projectsQuery = projectsQuery.eq('user_id', uid);
       }
 
@@ -442,6 +554,7 @@ export default function TeamManagerPage() {
 
       let projectsDataToSet: any[] = (projectsData || []).map((proj: any) => ({
         ...proj,
+        studio_name: studioNameMap.get(proj.user_id) || proj.studio_name || '',
         fw_sub_events: (proj.fw_sub_events || []).map((se: any) => ({
           ...se,
           fw_assignments: (se.fw_assignments || []).map((a: any) => {
@@ -458,35 +571,43 @@ export default function TeamManagerPage() {
         const { data: { session } } = await supabase.auth.getSession();
         const uEmail = (session?.user?.email || '').trim().toLowerCase();
         const uName = (session?.user?.user_metadata?.full_name || session?.user?.user_metadata?.name || '').trim().toLowerCase();
+        const uId = session?.user?.id;
+        const currentMemberId = activeWorkspace?.memberId;
+
+        const allKnownMemberIds = new Set(
+          availableWorkspaces.map(w => w.memberId).filter(Boolean)
+        );
+        if (currentMemberId) allKnownMemberIds.add(currentMemberId);
+
+        const isMemberMatch = (a: any) => {
+          if (a.assigned_member_id && allKnownMemberIds.has(a.assigned_member_id)) {
+            return true;
+          }
+          if (a.member_id && allKnownMemberIds.has(a.member_id)) {
+            return true;
+          }
+          const mem = a.fw_team_members;
+          if (!mem) return false;
+          const mEmail = (mem.email || '').trim().toLowerCase();
+          const mName = (mem.name || '').trim().toLowerCase();
+          return (
+            (uEmail && mEmail === uEmail) ||
+            (uName && mName === uName) ||
+            mem.id === uId ||
+            mem.user_id === uId ||
+            mem.auth_user_id === uId ||
+            allKnownMemberIds.has(mem.id)
+          );
+        };
 
         projectsDataToSet = projectsDataToSet
           .map((proj: any) => {
             const filteredSubEvents = (proj.fw_sub_events || []).filter((se: any) => {
               const assignments = se.fw_assignments || [];
-              return assignments.some((a: any) => {
-                const mem = a.fw_team_members;
-                if (!mem) return false;
-                const mEmail = (mem.email || '').trim().toLowerCase();
-                const mName = (mem.name || '').trim().toLowerCase();
-                return (uEmail && mEmail === uEmail) || (uName && mName === uName) || mem.id === session?.user?.id;
-              });
+              return assignments.some((a: any) => isMemberMatch(a));
             });
 
             if (filteredSubEvents.length === 0) return null;
-
-            if (isSelfRoleOnly) {
-              const processedSubEvents = filteredSubEvents.map((se: any) => {
-                const selfAssignments = (se.fw_assignments || []).filter((a: any) => {
-                  const mem = a.fw_team_members;
-                  if (!mem) return false;
-                  const mEmail = (mem.email || '').trim().toLowerCase();
-                  const mName = (mem.name || '').trim().toLowerCase();
-                  return (uEmail && mEmail === uEmail) || (uName && mName === uName) || mem.id === session?.user?.id;
-                });
-                return { ...se, fw_assignments: selfAssignments };
-              });
-              return { ...proj, fw_sub_events: processedSubEvents };
-            }
 
             return { ...proj, fw_sub_events: filteredSubEvents };
           })
@@ -1118,7 +1239,7 @@ export default function TeamManagerPage() {
         );
         if (!hasUnassigned) return false;
       } else if (unifiedFilters?.assignmentStatus === 'fully_assigned' || unifiedFilters?.assignmentStatus === 'assigned') {
-        const allAssigned = (p.fw_sub_events?.length ?? 0) > 0 && p.fw_sub_events.every(se =>
+        const allAssigned = (p.fw_sub_events?.length ?? 0) > 0 && (p.fw_sub_events ?? []).every(se =>
           se.fw_assignments && se.fw_assignments.length > 0 && se.fw_assignments.every(a => Boolean(a.assigned_member_id))
         );
         if (!allAssigned) return false;
@@ -1149,25 +1270,94 @@ export default function TeamManagerPage() {
         if (pmId !== targetPm && pmName !== targetPm) return false;
       }
 
+      // 9. Unified Studio Filter (Consolidated Multi-Studio View)
+      if (unifiedFilters?.studioId && unifiedFilters.studioId !== 'all') {
+        if (p.user_id !== unifiedFilters.studioId) return false;
+      }
+
       return true;
     });
   }, [projects, activeTab, searchQuery, selectedRoleFilter, unifiedFilters]);
 
-  // Flatten TBD / Date Not Fixed shoots for Card View & Month View consistency
+  // Flatten TBD / Date Not Fixed shoots for Card View & Month View consistency with ALL active filters applied
   const tbdProjectsShoots = useMemo(() => {
     const list: { project: FWProject; subEvent: FWSubEvent }[] = [];
     projects.forEach((p) => {
       if (p.is_archived) return;
+
+      // 1. Project Manager (PM) Filter
+      if (unifiedFilters?.pmId && unifiedFilters.pmId !== 'all') {
+        const targetPm = unifiedFilters.pmId.toLowerCase();
+        const pObj: any = p;
+        const pmId = String(pObj.project_manager_id || pObj.project_manager?.id || '').toLowerCase();
+        const pmName = String(
+          pObj.project_manager_name ||
+          pObj.project_manager?.name ||
+          (typeof pObj.project_manager === 'string' ? pObj.project_manager : '') ||
+          pObj.lead_assigned_to ||
+          ''
+        ).toLowerCase();
+        if (pmId !== targetPm && pmName !== targetPm) return;
+      }
+
+      // Studio Filter
+      if (unifiedFilters?.studioId && unifiedFilters.studioId !== 'all') {
+        if (p.user_id !== unifiedFilters.studioId) return;
+      }
+
       (p.fw_sub_events || []).forEach((se) => {
-        const isTbd = Boolean((se as any).is_date_tbd) || !se.event_date || se.event_date.toLowerCase() === 'tbd';
+        const isTbd = Boolean((se as any).is_date_tbd) || !se.event_date || se.event_date.toLowerCase() === 'tbd' || se.event_date.toLowerCase().includes('not fix');
         const d = se.event_date ? new Date(se.event_date) : null;
-        if (isTbd || !d || isNaN(d.getTime())) {
-          list.push({ project: p, subEvent: se });
+        if (!isTbd && d && !isNaN(d.getTime())) return;
+
+        // 2. Search Term Filter (Client name, Project title, Sub-event title, Venue)
+        if (searchQuery && searchQuery.trim() !== '') {
+          const q = searchQuery.toLowerCase().trim();
+          const matchClient = (p.client_name || '').toLowerCase().includes(q);
+          const matchProject = ((p as any).title || (p as any).project_name || '').toLowerCase().includes(q);
+          const matchEvent = (se.event_title || (se as any).name || (se as any).event_type || '').toLowerCase().includes(q);
+          const matchVenue = (se.venue_name || p.main_venue || '').toLowerCase().includes(q);
+          if (!matchClient && !matchProject && !matchEvent && !matchVenue) return;
         }
+
+        // 3. Event Type Filter (e.g., 'Pre Wedding', 'Wedding', 'Haldi')
+        if (unifiedFilters?.eventTypes && unifiedFilters.eventTypes.length > 0) {
+          const eventTitle = (se.event_title || (se as any).name || (se as any).event_type || '').toLowerCase();
+          const matchType = unifiedFilters.eventTypes.some(t => eventTitle.includes(t.toLowerCase()));
+          if (!matchType) return;
+        }
+
+        // 4. Role Filter (Top toolbar role pill)
+        if (selectedRoleFilter && selectedRoleFilter !== 'All') {
+          const hasRole = (se.fw_assignments || []).some(a => a.required_role === selectedRoleFilter);
+          if (!hasRole) return;
+        }
+
+        // 5. Unified Roles Multi-select Filter
+        if (unifiedFilters?.roles && unifiedFilters.roles.length > 0) {
+          const hasRole = (se.fw_assignments || []).some(a => unifiedFilters.roles.includes(a.required_role));
+          if (!hasRole) return;
+        }
+
+        // 6. Assignment Status Filter
+        if (unifiedFilters?.assignmentStatus === 'unassigned') {
+          const hasUnassigned = (se.fw_assignments || []).some(a => !a.assigned_member_id);
+          if (!hasUnassigned) return;
+        } else if (unifiedFilters?.assignmentStatus === 'fully_assigned' || unifiedFilters?.assignmentStatus === 'assigned') {
+          const assignments = se.fw_assignments || [];
+          const allAssigned = assignments.length > 0 && assignments.every(a => Boolean(a.assigned_member_id));
+          if (!allAssigned) return;
+        } else if (unifiedFilters?.assignmentStatus === 'partially_assigned' || unifiedFilters?.assignmentStatus === 'partial') {
+          const assignments = se.fw_assignments || [];
+          const assignedCount = assignments.filter(a => Boolean(a.assigned_member_id)).length;
+          if (assignments.length === 0 || assignedCount === 0 || assignedCount >= assignments.length) return;
+        }
+
+        list.push({ project: p, subEvent: se });
       });
     });
     return list;
-  }, [projects]);
+  }, [projects, searchQuery, selectedRoleFilter, unifiedFilters]);
 
   if (loading) {
     return <StudioCoreLiquidLoader label="Loading Bookings & Operations..." />;
@@ -1238,41 +1428,39 @@ export default function TeamManagerPage() {
               </div>
 
               {!isTmReadOnly && (
-                <>
-                  {/* + Member - desktop only */}
-                  <button
-                    onClick={() => {
-                      setActiveAssignmentForMember(null);
-                      setIsAddMemberOpen(true);
-                    }}
-                    className="hidden sm:flex bg-white border border-[#6C5CE7]/30 text-[#6C5CE7] text-xs font-extrabold h-7.5 px-3 rounded-xl items-center justify-center gap-1 shadow-2xs shrink-0 cursor-pointer transition hover:border-[#6C5CE7]"
-                  >
-                    <UserPlus className="w-3.5 h-3.5" />
-                    <span>+ Member</span>
-                  </button>
+                <button
+                  onClick={() => {
+                    setActiveAssignmentForMember(null);
+                    setIsAddMemberOpen(true);
+                  }}
+                  className="hidden sm:flex bg-white border border-[#6C5CE7]/30 text-[#6C5CE7] text-xs font-extrabold h-7.5 px-3 rounded-xl items-center justify-center gap-1 shadow-2xs shrink-0 cursor-pointer transition hover:border-[#6C5CE7]"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>+ Member</span>
+                </button>
+              )}
 
-                  {/* Unified Filter Button */}
-                  <button
-                    type="button"
-                    onClick={() => setIsUnifiedFilterOpen(true)}
-                    className="hidden sm:flex bg-white border border-slate-200 hover:border-slate-300 text-slate-700 text-xs font-semibold h-7.5 px-3 rounded-xl items-center justify-center gap-1 shadow-2xs shrink-0 cursor-pointer transition-all"
-                  >
-                    <Filter className="w-3 h-3 text-slate-600" />
-                    <span>Filter</span>
-                    {(unifiedFilters?.monthYear !== 'all' || Boolean(unifiedFilters?.startDate) || (unifiedFilters?.eventTypes?.length ?? 0) > 0 || (unifiedFilters?.roles?.length ?? 0) > 0 || (unifiedFilters?.assignmentStatus && unifiedFilters.assignmentStatus !== 'all') || (unifiedFilters?.pmId && unifiedFilters.pmId !== 'all')) && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-pulse" />
-                    )}
-                  </button>
+              {/* Unified Filter Button */}
+              <button
+                type="button"
+                onClick={() => setIsUnifiedFilterOpen(true)}
+                className="hidden sm:flex bg-white border border-slate-200 hover:border-slate-300 text-slate-700 text-xs font-semibold h-7.5 px-3 rounded-xl items-center justify-center gap-1 shadow-2xs shrink-0 cursor-pointer transition-all"
+              >
+                <Filter className="w-3 h-3 text-slate-600" />
+                <span>Filter</span>
+                {(unifiedFilters?.monthYear !== 'all' || Boolean(unifiedFilters?.startDate) || (unifiedFilters?.eventTypes?.length ?? 0) > 0 || (unifiedFilters?.roles?.length ?? 0) > 0 || (unifiedFilters?.assignmentStatus && unifiedFilters.assignmentStatus !== 'all') || (unifiedFilters?.pmId && unifiedFilters.pmId !== 'all')) && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-pulse" />
+                )}
+              </button>
 
-                  {/* + Project - desktop only */}
-                  <button
-                    onClick={() => { setEditingProject(null); setIsAddProjectOpen(true); }}
-                    className="hidden sm:flex bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-black h-7.5 px-3.5 rounded-xl transition items-center justify-center gap-1 shadow-md shadow-[#6C5CE7]/20 shrink-0 cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>+ Project</span>
-                  </button>
-                </>
+              {!isTmReadOnly && (
+                <button
+                  onClick={() => { setEditingProject(null); setIsAddProjectOpen(true); }}
+                  className="hidden sm:flex bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white text-xs font-black h-7.5 px-3.5 rounded-xl transition items-center justify-center gap-1 shadow-md shadow-[#6C5CE7]/20 shrink-0 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>+ Project</span>
+                </button>
               )}
             </div>
           </div>
@@ -1354,17 +1542,19 @@ export default function TeamManagerPage() {
                 Overview
               </button>
 
-              <button
-                onClick={() => setActiveTab('trash')}
-                className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer select-none shrink-0 ${
-                  activeTab === 'trash'
-                    ? 'bg-rose-600 text-white shadow-md shadow-rose-500/30'
-                    : 'text-slate-600 hover:text-rose-600 hover:bg-rose-50 bg-transparent border border-transparent'
-                }`}
-              >
-                <Trash2 className="w-4 h-4" />
-                Trash Buffer ({projects.filter(p => p.is_archived).length})
-              </button>
+              {canManageTeam && (
+                <button
+                  onClick={() => setActiveTab('trash')}
+                  className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer select-none shrink-0 ${
+                    activeTab === 'trash'
+                      ? 'bg-rose-600 text-white shadow-md shadow-rose-500/30'
+                      : 'text-slate-600 hover:text-rose-600 hover:bg-rose-50 bg-transparent border border-transparent'
+                  }`}
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Trash Buffer ({projects.filter(p => p.is_archived).length})
+                </button>
+              )}
             </div>
           </div>
 
@@ -1382,12 +1572,14 @@ export default function TeamManagerPage() {
                   <h3 className="text-base font-black text-[#0B111E]">No Active Client Projects Found</h3>
                   <p className="text-xs text-[#4F5E74] font-semibold mt-1">Get started by creating a new wedding project.</p>
                 </div>
-                <button
-                  onClick={() => { setEditingProject(null); setIsAddProjectOpen(true); }}
-                  className="bg-[#6C5CE7] text-white text-xs font-bold px-5 py-2.5 rounded-2xl inline-flex items-center gap-2 shadow-md shadow-[#6C5CE7]/20 hover:bg-[#5b4cd1] transition cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" /> Add First Wedding Project
-                </button>
+                {!isTmReadOnly && (
+                  <button
+                    onClick={() => { setEditingProject(null); setIsAddProjectOpen(true); }}
+                    className="bg-[#6C5CE7] text-white text-xs font-bold px-5 py-2.5 rounded-2xl inline-flex items-center gap-2 shadow-md shadow-[#6C5CE7]/20 hover:bg-[#5b4cd1] transition cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" /> Add First Wedding Project
+                  </button>
+                )}
               </div>
             ) : (
               <>
@@ -1439,6 +1631,13 @@ export default function TeamManagerPage() {
                           }));
                           const assignedCount = assignments.filter((a) => a.assigned_member_id).length;
                           const totalSlots = assignments.length;
+                          const eventVisibility = resolveEventCrewVisibility(
+                            { ...subEvent, project },
+                            currentMember?.id || activeWorkspace?.memberId || null,
+                            studioPermissionsMap,
+                            activeWorkspace?.workspaceId,
+                            isOwner
+                          );
 
                           return (
                             <div
@@ -1461,7 +1660,7 @@ export default function TeamManagerPage() {
                                   </span>
                                 </div>
                                 <div className="px-2.5 py-1 rounded-full bg-white/20 backdrop-blur-md text-[10px] font-black border border-white/20 mt-1">
-                                  {assignedCount}/{totalSlots} Crew
+                                  {eventVisibility === 'OWN_ROLE_ONLY' ? 'Assigned' : `${assignedCount}/${totalSlots} Crew`}
                                 </div>
                               </div>
 
@@ -1472,6 +1671,12 @@ export default function TeamManagerPage() {
                                     <span className="text-rose-950 font-black text-sm md:text-base tracking-tight">
                                       {project.client_name}
                                     </span>
+
+                                    {(project.studio_name || workspaceId === 'all') && (
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                                        🏢 {project.studio_name || 'Studio'}
+                                      </span>
+                                    )}
 
                                     <span className="text-rose-300 text-sm font-light select-none">·</span>
 
@@ -1486,17 +1691,19 @@ export default function TeamManagerPage() {
                                   </div>
 
                                   <div className="flex items-center gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setEditingProject(project);
-                                        setIsAddProjectOpen(true);
-                                      }}
-                                      className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black transition shadow-xs cursor-pointer flex items-center gap-1.5"
-                                    >
-                                      <Calendar className="w-3.5 h-3.5" />
-                                      <span>Fix Shoot Date</span>
-                                    </button>
+                                    {!isTmReadOnly && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingProject(project);
+                                          setIsAddProjectOpen(true);
+                                        }}
+                                        className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black transition shadow-xs cursor-pointer flex items-center gap-1.5"
+                                      >
+                                        <Calendar className="w-3.5 h-3.5" />
+                                        <span>Fix Shoot Date</span>
+                                      </button>
+                                    )}
                                   </div>
                                 </div>
 
@@ -1504,27 +1711,43 @@ export default function TeamManagerPage() {
                                 <div>
                                   <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">Crew</span>
                                   <div className="flex items-center gap-4 flex-wrap pt-1">
-                                    {assignments.map((assignment) => (
-                                      <RoleAssignDropdown
-                                        key={assignment.id}
-                                        assignment={assignment}
-                                        subEventId={subEvent.id}
-                                        projectId={project.id}
-                                        teamMembers={teamMembers}
-                                        onAssignMember={handleAssignMember}
-                                        onAddNewMember={(info) => {
-                                          setSelectedRoleForNewMember(info.role);
-                                          setPendingAssignmentInfo({
-                                            assignmentId: info.assignmentId,
-                                            subEventId: info.subEventId,
-                                            projectId: info.projectId,
-                                            role: info.role,
-                                          });
-                                          setIsAddMemberOpen(true);
-                                        }}
-                                        variant="avatar"
-                                      />
-                                    ))}
+                                    {assignments.map((assignment) => {
+                                      const memberObj = assignment.fw_team_members || teamMembers.find(m => m.id === assignment.assigned_member_id);
+                                      const isCurrentUserSlot = Boolean(
+                                        (currentMember?.id && assignment.assigned_member_id === currentMember.id) ||
+                                        (activeWorkspace?.memberId && assignment.assigned_member_id === activeWorkspace.memberId) ||
+                                        availableWorkspaces.some(w => w.memberId && assignment.assigned_member_id === w.memberId) ||
+                                        (userEmail && memberObj?.email && memberObj.email.toLowerCase() === userEmail.toLowerCase()) ||
+                                        (userId && memberObj?.user_id === userId)
+                                      );
+
+                                      if (eventVisibility === 'OWN_ROLE_ONLY' && !isCurrentUserSlot) {
+                                        return null;
+                                      }
+
+                                      return (
+                                        <RoleAssignDropdown
+                                          key={assignment.id}
+                                          assignment={assignment}
+                                          subEventId={subEvent.id}
+                                          projectId={project.id}
+                                          teamMembers={teamMembers}
+                                          onAssignMember={handleAssignMember}
+                                          onAddNewMember={(info) => {
+                                            setActiveAssignmentForMember({
+                                              assignmentId: info.assignmentId,
+                                              subEventId: info.subEventId,
+                                              projectId: info.projectId,
+                                              role: info.role,
+                                            });
+                                            setIsAddMemberOpen(true);
+                                          }}
+                                          variant="avatar"
+                                          readOnly={isTmReadOnly || eventVisibility === 'FULL_CREW'}
+                                          isMasked={false}
+                                        />
+                                      );
+                                    })}
                                   </div>
                                 </div>
                               </div>
@@ -1552,6 +1775,11 @@ export default function TeamManagerPage() {
                             <h3 className="text-2xl font-black tracking-tight" style={{ color: '#1E1B4B' }}>
                               {project.client_name}
                             </h3>
+                            {(project.studio_name || workspaceId === 'all') && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                                🏢 {project.studio_name || 'Studio'}
+                              </span>
+                            )}
                             <span className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-950 text-[11px] font-black tracking-wide border border-indigo-200/80 shadow-2xs">
                               {project.fw_sub_events?.length || 0} Sub-Events
                             </span>
@@ -1559,12 +1787,8 @@ export default function TeamManagerPage() {
 
                           <div className="flex items-center gap-3">
                             {/* PROJECT MANAGER (PM) DROPDOWN WITH AVATARS */}
-                            <div className="relative" onClick={(e) => e.stopPropagation()}>
-                              <button
-                                type="button"
-                                onClick={() => setActivePmDropdownProjectId(activePmDropdownProjectId === project.id ? null : project.id)}
-                                className="px-3 py-1.5 rounded-2xl bg-amber-50 hover:bg-amber-100/80 border border-amber-200 text-amber-950 text-xs font-bold flex items-center gap-2 transition shadow-xs cursor-pointer group"
-                              >
+                            {isTmReadOnly ? (
+                              <div className="px-3 py-1.5 rounded-2xl bg-amber-50/70 border border-amber-200/70 text-amber-950 text-xs font-bold flex items-center gap-2 select-none shadow-2xs">
                                 <span className="text-[10px] font-black uppercase tracking-wider text-amber-800">PM:</span>
                                 {project.project_manager_name ? (
                                   <div className="flex items-center gap-1.5">
@@ -1580,94 +1804,120 @@ export default function TeamManagerPage() {
                                     <span className="font-extrabold text-amber-950 max-w-[130px] truncate">{project.project_manager_name}</span>
                                   </div>
                                 ) : (
-                                  <span className="text-amber-700/80 italic font-semibold">Assign PM</span>
+                                  <span className="text-amber-700/60 font-medium">Unassigned</span>
                                 )}
-                                <ChevronDown className="w-3 h-3 text-amber-700 group-hover:translate-y-0.5 transition-transform" />
-                              </button>
-
-                              {/* Popover Dropdown */}
-                              {activePmDropdownProjectId === project.id && (
-                                <div 
-                                  className="absolute right-0 mt-2 z-[9999] w-64 max-h-80 overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl p-2 space-y-1.5 text-slate-800"
+                              </div>
+                            ) : (
+                              <div className="relative" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  type="button"
+                                  onClick={() => setActivePmDropdownProjectId(activePmDropdownProjectId === project.id ? null : project.id)}
+                                  className="px-3 py-1.5 rounded-2xl bg-amber-50 hover:bg-amber-100/80 border border-amber-200 text-amber-950 text-xs font-bold flex items-center gap-2 transition shadow-xs cursor-pointer group"
                                 >
-                                  <div className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 flex items-center justify-between">
-                                    <span>Assign Project Manager</span>
-                                    {project.project_manager_name && (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          handleProjectPMChange(project.id, null, null);
-                                          setActivePmDropdownProjectId(null);
-                                          setPmSearchQuery('');
-                                        }}
-                                        className="text-rose-500 hover:underline cursor-pointer font-bold"
-                                      >
-                                        Clear PM
-                                      </button>
-                                    )}
-                                  </div>
-
-                                  {/* Search Input for PMs */}
-                                  <div className="relative px-1 pt-1 pb-0.5">
-                                    <input
-                                      type="text"
-                                      placeholder="Search team member..."
-                                      value={pmSearchQuery}
-                                      onChange={e => setPmSearchQuery(e.target.value)}
-                                      onClick={e => e.stopPropagation()}
-                                      className="w-full pl-7 pr-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-amber-500 focus:bg-white"
-                                      autoFocus
-                                    />
-                                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
-                                  </div>
-
-                                  {teamMembers.length === 0 ? (
-                                    <div className="p-3 text-center text-xs text-slate-400 font-medium">
-                                      No team members found in Directory.
+                                  <span className="text-[10px] font-black uppercase tracking-wider text-amber-800">PM:</span>
+                                  {project.project_manager_name ? (
+                                    <div className="flex items-center gap-1.5">
+                                      <div className="w-5 h-5 rounded-full bg-amber-600 text-white font-black text-[9px] flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
+                                        {(() => {
+                                          const assignedMem = teamMembers.find(m => m.id === project.project_manager_id || m.name === project.project_manager_name);
+                                          if (assignedMem?.avatar_url) {
+                                            return <img src={assignedMem.avatar_url} alt="" className="w-full h-full object-cover" />;
+                                          }
+                                          return getInitials(project.project_manager_name);
+                                        })()}
+                                      </div>
+                                      <span className="font-extrabold text-amber-950 max-w-[130px] truncate">{project.project_manager_name}</span>
                                     </div>
                                   ) : (
-                                    teamMembers
-                                      .filter(m => 
-                                        !pmSearchQuery.trim() || 
-                                        m.name.toLowerCase().includes(pmSearchQuery.toLowerCase()) || 
-                                        (m.primary_role || '').toLowerCase().includes(pmSearchQuery.toLowerCase())
-                                      )
-                                      .map(m => {
-                                        const isSelected = project.project_manager_id === m.id || project.project_manager_name === m.name;
-                                        return (
-                                          <button
-                                            key={m.id}
-                                            type="button"
-                                            onClick={() => {
-                                              handleProjectPMChange(project.id, m.id, m.name);
-                                              setActivePmDropdownProjectId(null);
-                                              setPmSearchQuery('');
-                                            }}
-                                            className={`w-full flex items-center justify-between gap-2.5 p-2 rounded-xl text-left transition cursor-pointer ${
-                                              isSelected ? 'bg-amber-50 text-amber-950 font-bold border border-amber-200' : 'hover:bg-slate-50 text-slate-700'
-                                            }`}
-                                          >
-                                            <div className="flex items-center gap-2 min-w-0">
-                                              <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-amber-500 to-amber-600 text-white font-black text-[10px] flex items-center justify-center shrink-0 overflow-hidden shadow-xs">
-                                                {m.avatar_url ? (
-                                                  <img src={m.avatar_url} alt="" className="w-full h-full object-cover" />
-                                                ) : (
-                                                  getInitials(m.name)
-                                                )}
-                                              </div>
-                                              <div className="min-w-0">
-                                                <p className="text-xs font-black truncate">{m.name}</p>
-                                                <p className="text-[10px] text-slate-400 font-semibold truncate">{m.primary_role || 'Team Member'}</p>
-                                              </div>
-                                            </div>
-                                            {isSelected && <Check className="w-4 h-4 text-amber-600 shrink-0" />}
-                                          </button>
-                                        );
-                                      })
+                                    <span className="text-amber-700/80 italic font-semibold">Assign PM</span>
                                   )}
-                                </div>
-                              )}
-                            </div>
+                                  <ChevronDown className="w-3 h-3 text-amber-700 group-hover:translate-y-0.5 transition-transform" />
+                                </button>
+
+                                {/* Popover Dropdown */}
+                                {activePmDropdownProjectId === project.id && (
+                                  <div 
+                                    className="absolute right-0 mt-2 z-[9999] w-64 max-h-80 overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl p-2 space-y-1.5 text-slate-800"
+                                  >
+                                    <div className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 flex items-center justify-between">
+                                      <span>Assign Project Manager</span>
+                                      {project.project_manager_name && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            handleProjectPMChange(project.id, null, null);
+                                            setActivePmDropdownProjectId(null);
+                                            setPmSearchQuery('');
+                                          }}
+                                          className="text-rose-500 hover:underline cursor-pointer font-bold"
+                                        >
+                                          Clear PM
+                                        </button>
+                                      )}
+                                    </div>
+
+                                    {/* Search Input for PMs */}
+                                    <div className="relative px-1 pt-1 pb-0.5">
+                                      <input
+                                        type="text"
+                                        placeholder="Search team member..."
+                                        value={pmSearchQuery}
+                                        onChange={e => setPmSearchQuery(e.target.value)}
+                                        onClick={e => e.stopPropagation()}
+                                        className="w-full pl-7 pr-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-amber-500 focus:bg-white"
+                                        autoFocus
+                                      />
+                                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
+                                    </div>
+
+                                    {teamMembers.length === 0 ? (
+                                      <div className="p-3 text-center text-xs text-slate-400 font-medium">
+                                        No team members found in Directory.
+                                      </div>
+                                    ) : (
+                                      teamMembers
+                                        .filter(m => 
+                                          !pmSearchQuery.trim() || 
+                                          m.name.toLowerCase().includes(pmSearchQuery.toLowerCase()) || 
+                                          (m.primary_role || '').toLowerCase().includes(pmSearchQuery.toLowerCase())
+                                        )
+                                        .map(m => {
+                                          const isSelected = project.project_manager_id === m.id || project.project_manager_name === m.name;
+                                          return (
+                                            <button
+                                              key={m.id}
+                                              type="button"
+                                              onClick={() => {
+                                                handleProjectPMChange(project.id, m.id, m.name);
+                                                setActivePmDropdownProjectId(null);
+                                                setPmSearchQuery('');
+                                              }}
+                                              className={`w-full flex items-center justify-between gap-2.5 p-2 rounded-xl text-left transition cursor-pointer ${
+                                                isSelected ? 'bg-amber-50 text-amber-950 font-bold border border-amber-200' : 'hover:bg-slate-50 text-slate-700'
+                                              }`}
+                                            >
+                                              <div className="flex items-center gap-2 min-w-0">
+                                                <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-amber-500 to-amber-600 text-white font-black text-[10px] flex items-center justify-center shrink-0 overflow-hidden shadow-xs">
+                                                  {m.avatar_url ? (
+                                                    <img src={m.avatar_url} alt="" className="w-full h-full object-cover" />
+                                                  ) : (
+                                                    getInitials(m.name)
+                                                  )}
+                                                </div>
+                                                <div className="min-w-0">
+                                                  <p className="text-xs font-black truncate">{m.name}</p>
+                                                  <p className="text-[10px] text-slate-400 font-semibold truncate">{m.primary_role || 'Team Member'}</p>
+                                                </div>
+                                              </div>
+                                              {isSelected && <Check className="w-4 h-4 text-amber-600 shrink-0" />}
+                                            </button>
+                                          );
+                                        })
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )}
 
                             {!isTmReadOnly && (
                               <button 
@@ -1719,6 +1969,13 @@ export default function TeamManagerPage() {
                             const assignments = resolveSubEventAssignments(subEvent, teamMembers);
                             const assignedCount = assignments.filter((a: any) => a.assigned_member_id !== null).length;
                             const totalSlots = assignments.length;
+                            const eventVisibility = resolveEventCrewVisibility(
+                              { ...subEvent, project },
+                              currentMember?.id || activeWorkspace?.memberId || null,
+                              studioPermissionsMap,
+                              activeWorkspace?.workspaceId,
+                              isOwner
+                            );
 
                             return (
                               <div 
@@ -1768,7 +2025,7 @@ export default function TeamManagerPage() {
                                       </div>
 
                                       <div className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-bold border border-indigo-200">
-                                        {assignedCount}/{totalSlots} Roles
+                                        {eventVisibility === 'OWN_ROLE_ONLY' ? 'Assigned' : `${assignedCount}/${totalSlots} Roles`}
                                       </div>
                                     </div>
 
@@ -1831,12 +2088,25 @@ export default function TeamManagerPage() {
                                         const dropdownKey = assignment.id;
                                         const shortRole = getRoleAbbr(role, customCrewRoles);
 
+                                        const isCurrentUserSlot = Boolean(
+                                          (currentMember?.id && assignment.assigned_member_id === currentMember.id) ||
+                                          (activeWorkspace?.memberId && assignment.assigned_member_id === activeWorkspace.memberId) ||
+                                              availableWorkspaces.some(w => w.memberId && assignment.assigned_member_id === w.memberId) ||
+                                          (userEmail && memberObj?.email && memberObj.email.toLowerCase() === userEmail.toLowerCase()) ||
+                                          (userId && memberObj?.user_id === userId)
+                                        );
+
+                                        // Dynamic Per-Event RBAC Masking: omit non-self roles completely if OWN_ROLE_ONLY
+                                        if (eventVisibility === 'OWN_ROLE_ONLY' && !isCurrentUserSlot) {
+                                          return null;
+                                        }
+
                                         return (
                                           <div key={assignment.id} className="relative flex flex-col items-center min-w-[68px]">
                                             <div
                                               data-assignment-id={assignment.id}
                                               onClick={(e) => {
-                                                if (isTmReadOnly) return;
+                                                if (isTmReadOnly || eventVisibility === 'FULL_CREW') return;
                                                 const rect = e.currentTarget.getBoundingClientRect();
                                                 if (activeDropdownId === dropdownKey) {
                                                   setActiveDropdownId(null);
@@ -1845,13 +2115,15 @@ export default function TeamManagerPage() {
                                                   setActiveDropdownId(dropdownKey);
                                                   setMemberSearchQuery('');
                                                   setDropdownPos({
-                                                  top: Math.min(rect.bottom + 6, window.innerHeight - 280),
+                                                    top: Math.min(rect.bottom + 6, window.innerHeight - 280),
                                                     left: Math.max(10, Math.min(rect.left - 100, window.innerWidth - 270)),
                                                   });
                                                 }
                                               }}
-                                              className="flex flex-col items-center group cursor-pointer min-w-[50px] max-w-[70px] text-center select-none"
-                                              title={isAssigned ? `${cleanName} (${role})` : `Unassigned: ${role}`}
+                                              className={`flex flex-col items-center group min-w-[50px] max-w-[70px] text-center select-none ${
+                                                isTmReadOnly || eventVisibility === 'FULL_CREW' ? 'cursor-default' : 'cursor-pointer'
+                                              }`}
+                                              title={isAssigned ? `${cleanName} (${role})` : isTmReadOnly || eventVisibility === 'FULL_CREW' ? `Unassigned: ${role}` : `Unassigned: ${role}`}
                                             >
                                               {isAssigned ? (
                                                 <div className="relative w-10 h-10 rounded-full border-2 border-emerald-500 p-0.5 mb-1.5 flex items-center justify-center shrink-0 bg-emerald-50 shadow-xs">
@@ -1866,6 +2138,10 @@ export default function TeamManagerPage() {
                                                       {getInitials(cleanName || role)}
                                                     </div>
                                                   )}
+                                                </div>
+                                              ) : (isTmReadOnly || eventVisibility === 'FULL_CREW') ? (
+                                                <div className="w-10 h-10 rounded-full border border-dashed border-slate-300 bg-slate-100/70 text-slate-400 font-bold mb-1.5 flex items-center justify-center shadow-2xs shrink-0 cursor-default">
+                                                  <span className="text-xs font-black">-</span>
                                                 </div>
                                               ) : (
                                                 <div className="w-10 h-10 rounded-full border border-dashed border-red-500 bg-red-50/90 text-red-600 font-black mb-1.5 flex items-center justify-center shadow-2xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
@@ -1885,7 +2161,7 @@ export default function TeamManagerPage() {
                                                 </span>
                                               ) : (
                                                 <span className="text-[10px] font-semibold text-slate-400 truncate max-w-[68px] text-center leading-none mt-0.5 block">
-                                                  Assign
+                                                  {isTmReadOnly || eventVisibility === 'FULL_CREW' ? 'Unassigned' : 'Assign'}
                                                 </span>
                                               )}
                                             </div>
@@ -1923,9 +2199,16 @@ export default function TeamManagerPage() {
                                 {getInitials(project.client_name)}
                               </div>
                               <div className="min-w-0">
-                                <h3 className="text-xs sm:text-sm font-black text-white tracking-tight truncate leading-tight">
-                                  {project.client_name}
-                                </h3>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <h3 className="text-xs sm:text-sm font-black text-white tracking-tight truncate leading-tight">
+                                    {project.client_name}
+                                  </h3>
+                                  {(project.studio_name || workspaceId === 'all') && (
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-500/20 text-rose-300 border border-rose-400/30">
+                                      🏢 {project.studio_name || 'Studio'}
+                                    </span>
+                                  )}
+                                </div>
                                 <span className="text-[9px] font-bold text-slate-300 block leading-tight">
                                   {subEvents.length} Sub-Event{subEvents.length === 1 ? '' : 's'} Configured
                                 </span>
@@ -1950,106 +2233,129 @@ export default function TeamManagerPage() {
                           <div className="pt-1.5 border-t border-white/10 flex items-center justify-between relative" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center gap-1.5">
                               <span className="text-[9px] font-black uppercase tracking-wider text-amber-300">PM:</span>
-                              <button
-                                type="button"
-                                onClick={() => setActivePmDropdownProjectId(activePmDropdownProjectId === `m_${project.id}` ? null : `m_${project.id}`)}
-                                className="px-2 py-0.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold flex items-center gap-1 transition cursor-pointer border border-white/15"
-                              >
-                                {project.project_manager_name ? (
-                                  <>
-                                    <div className="w-3.5 h-3.5 rounded-full bg-amber-500 text-slate-950 font-black text-[7px] flex items-center justify-center overflow-hidden shrink-0">
-                                      {(() => {
-                                        const assignedMem = teamMembers.find(m => m.id === project.project_manager_id || m.name === project.project_manager_name);
-                                        if (assignedMem?.avatar_url) {
-                                          return <img src={assignedMem.avatar_url} alt="" className="w-full h-full object-cover" />;
-                                        }
-                                        return getInitials(project.project_manager_name);
-                                      })()}
-                                    </div>
-                                    <span className="truncate max-w-[120px]">{project.project_manager_name}</span>
-                                  </>
-                                ) : (
-                                  <span className="text-amber-200/80 italic text-[9px]">Assign PM</span>
-                                )}
-                                <ChevronDown className="w-2.5 h-2.5 text-amber-300" />
-                              </button>
-                            </div>
-
-                            {/* Mobile PM Dropdown Modal/Popover */}
-                            {activePmDropdownProjectId === `m_${project.id}` && (
-                              <div 
-                                className="absolute left-0 right-0 top-full mt-2 z-[9999] max-h-64 overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl p-2 space-y-1.5 text-slate-800"
-                              >
-                                <div className="px-2 py-1 text-[9px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 flex items-center justify-between">
-                                  <span>Select Project Manager</span>
-                                  {project.project_manager_name && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        handleProjectPMChange(project.id, null, null);
-                                        setActivePmDropdownProjectId(null);
-                                        setPmSearchQuery('');
-                                      }}
-                                      className="text-rose-500 hover:underline text-[9px] font-bold cursor-pointer"
-                                    >
-                                      Clear PM
-                                    </button>
+                              {isTmReadOnly ? (
+                                <div className="px-2 py-0.5 rounded-lg bg-white/10 text-white text-[10px] font-bold flex items-center gap-1 border border-white/15 select-none">
+                                  {project.project_manager_name ? (
+                                    <>
+                                      <div className="w-3.5 h-3.5 rounded-full bg-amber-500 text-slate-950 font-black text-[7px] flex items-center justify-center overflow-hidden shrink-0">
+                                        {(() => {
+                                          const assignedMem = teamMembers.find(m => m.id === project.project_manager_id || m.name === project.project_manager_name);
+                                          if (assignedMem?.avatar_url) {
+                                            return <img src={assignedMem.avatar_url} alt="" className="w-full h-full object-cover" />;
+                                          }
+                                          return getInitials(project.project_manager_name);
+                                        })()}
+                                      </div>
+                                      <span className="truncate max-w-[120px]">{project.project_manager_name}</span>
+                                    </>
+                                  ) : (
+                                    <span className="text-amber-200/60 font-medium text-[9px]">Unassigned</span>
                                   )}
                                 </div>
-
-                                <div className="relative px-1 pt-0.5">
-                                  <input
-                                    type="text"
-                                    placeholder="Search team member..."
-                                    value={pmSearchQuery}
-                                    onChange={e => setPmSearchQuery(e.target.value)}
-                                    onClick={e => e.stopPropagation()}
-                                    className="w-full pl-7 pr-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-amber-500"
-                                    autoFocus
-                                  />
-                                  <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-2" />
-                                </div>
-
-                                {teamMembers
-                                  .filter(m => 
-                                    !pmSearchQuery.trim() || 
-                                    m.name.toLowerCase().includes(pmSearchQuery.toLowerCase()) || 
-                                    (m.primary_role || '').toLowerCase().includes(pmSearchQuery.toLowerCase())
-                                  )
-                                  .map(m => {
-                                    const isSelected = project.project_manager_id === m.id || project.project_manager_name === m.name;
-                                    return (
-                                      <button
-                                        key={m.id}
-                                        type="button"
-                                        onClick={() => {
-                                          handleProjectPMChange(project.id, m.id, m.name);
-                                          setActivePmDropdownProjectId(null);
-                                          setPmSearchQuery('');
-                                        }}
-                                        className={`w-full flex items-center justify-between gap-2 p-1.5 rounded-lg text-left transition ${
-                                          isSelected ? 'bg-amber-50 text-amber-950 font-bold border border-amber-200' : 'hover:bg-slate-50 text-slate-700'
-                                        }`}
-                                      >
-                                        <div className="flex items-center gap-1.5 min-w-0">
-                                          <div className="w-5 h-5 rounded-full bg-amber-500 text-white font-black text-[8px] flex items-center justify-center shrink-0 overflow-hidden">
-                                            {m.avatar_url ? (
-                                              <img src={m.avatar_url} alt="" className="w-full h-full object-cover" />
-                                            ) : (
-                                              getInitials(m.name)
-                                            )}
-                                          </div>
-                                          <div className="min-w-0">
-                                            <p className="text-xs font-black truncate text-slate-900 leading-none">{m.name}</p>
-                                            <p className="text-[8px] text-slate-400 font-semibold truncate leading-none mt-0.5">{m.primary_role || 'Crew'}</p>
-                                          </div>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => setActivePmDropdownProjectId(activePmDropdownProjectId === `m_${project.id}` ? null : `m_${project.id}`)}
+                                    className="px-2 py-0.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold flex items-center gap-1 transition cursor-pointer border border-white/15"
+                                  >
+                                    {project.project_manager_name ? (
+                                      <>
+                                        <div className="w-3.5 h-3.5 rounded-full bg-amber-500 text-slate-950 font-black text-[7px] flex items-center justify-center overflow-hidden shrink-0">
+                                          {(() => {
+                                            const assignedMem = teamMembers.find(m => m.id === project.project_manager_id || m.name === project.project_manager_name);
+                                            if (assignedMem?.avatar_url) {
+                                              return <img src={assignedMem.avatar_url} alt="" className="w-full h-full object-cover" />;
+                                            }
+                                            return getInitials(project.project_manager_name);
+                                          })()}
                                         </div>
-                                        {isSelected && <Check className="w-3 h-3 text-amber-600 shrink-0" />}
-                                      </button>
-                                    );
-                                  })}
-                              </div>
-                            )}
+                                        <span className="truncate max-w-[120px]">{project.project_manager_name}</span>
+                                      </>
+                                    ) : (
+                                      <span className="text-amber-200/80 italic text-[9px]">Assign PM</span>
+                                    )}
+                                    <ChevronDown className="w-2.5 h-2.5 text-amber-300" />
+                                  </button>
+
+                                  {/* Mobile PM Dropdown Modal/Popover */}
+                                  {activePmDropdownProjectId === `m_${project.id}` && (
+                                    <div 
+                                      className="absolute left-0 right-0 top-full mt-2 z-[9999] max-h-64 overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl p-2 space-y-1.5 text-slate-800"
+                                    >
+                                      <div className="px-2 py-1 text-[9px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 flex items-center justify-between">
+                                        <span>Select Project Manager</span>
+                                        {project.project_manager_name && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              handleProjectPMChange(project.id, null, null);
+                                              setActivePmDropdownProjectId(null);
+                                              setPmSearchQuery('');
+                                            }}
+                                            className="text-rose-500 hover:underline text-[9px] font-bold cursor-pointer"
+                                          >
+                                            Clear PM
+                                          </button>
+                                        )}
+                                      </div>
+
+                                      <div className="relative px-1 pt-0.5">
+                                        <input
+                                          type="text"
+                                          placeholder="Search team member..."
+                                          value={pmSearchQuery}
+                                          onChange={e => setPmSearchQuery(e.target.value)}
+                                          onClick={e => e.stopPropagation()}
+                                          className="w-full pl-7 pr-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-amber-500"
+                                          autoFocus
+                                        />
+                                        <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-2" />
+                                      </div>
+
+                                      {teamMembers
+                                        .filter(m => 
+                                          !pmSearchQuery.trim() || 
+                                          m.name.toLowerCase().includes(pmSearchQuery.toLowerCase()) || 
+                                          (m.primary_role || '').toLowerCase().includes(pmSearchQuery.toLowerCase())
+                                        )
+                                        .map(m => {
+                                          const isSelected = project.project_manager_id === m.id || project.project_manager_name === m.name;
+                                          return (
+                                            <button
+                                              key={m.id}
+                                              type="button"
+                                              onClick={() => {
+                                                handleProjectPMChange(project.id, m.id, m.name);
+                                                setActivePmDropdownProjectId(null);
+                                                setPmSearchQuery('');
+                                              }}
+                                              className={`w-full flex items-center justify-between gap-2 p-1.5 rounded-lg text-left transition ${
+                                                isSelected ? 'bg-amber-50 text-amber-950 font-bold border border-amber-200' : 'hover:bg-slate-50 text-slate-700'
+                                              }`}
+                                            >
+                                              <div className="flex items-center gap-1.5 min-w-0">
+                                                <div className="w-5 h-5 rounded-full bg-amber-500 text-white font-black text-[8px] flex items-center justify-center shrink-0 overflow-hidden">
+                                                  {m.avatar_url ? (
+                                                    <img src={m.avatar_url} alt="" className="w-full h-full object-cover" />
+                                                  ) : (
+                                                    getInitials(m.name)
+                                                  )}
+                                                </div>
+                                                <div className="min-w-0">
+                                                  <p className="text-xs font-black truncate text-slate-900 leading-none">{m.name}</p>
+                                                  <p className="text-[8px] text-slate-400 font-semibold truncate leading-none mt-0.5">{m.primary_role || 'Crew'}</p>
+                                                </div>
+                                              </div>
+                                              {isSelected && <Check className="w-3 h-3 text-amber-600 shrink-0" />}
+                                            </button>
+                                          );
+                                        })}
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </div>
                           </div>
                         </div>
 
@@ -2094,6 +2400,13 @@ export default function TeamManagerPage() {
                               const assignments = resolveSubEventAssignments(subEvent, teamMembers);
                               const assignedCount = assignments.filter((a: any) => a.assigned_member_id !== null).length;
                               const totalSlots = assignments.length;
+                              const eventVisibility = resolveEventCrewVisibility(
+                                { ...subEvent, project },
+                                currentMember?.id || activeWorkspace?.memberId || null,
+                                studioPermissionsMap,
+                                activeWorkspace?.workspaceId,
+                                isOwner
+                              );
 
                               return (
                                 <div
@@ -2119,7 +2432,7 @@ export default function TeamManagerPage() {
                                     </div>
 
                                     <div className="px-2 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-[9px] font-bold border border-white/20">
-                                      {assignedCount}/{totalSlots} Roles
+                                      {eventVisibility === 'OWN_ROLE_ONLY' ? 'Assigned' : `${assignedCount}/${totalSlots} Roles`}
                                     </div>
                                   </div>
 
@@ -2187,12 +2500,25 @@ export default function TeamManagerPage() {
                                           const role = assignment.required_role;
                                           const shortRole = getRoleAbbr(role, customCrewRoles);
 
+                                          const isCurrentUserSlot = Boolean(
+                                            (currentMember?.id && assignment.assigned_member_id === currentMember.id) ||
+                                            (activeWorkspace?.memberId && assignment.assigned_member_id === activeWorkspace.memberId) ||
+                                            availableWorkspaces.some(w => w.memberId && assignment.assigned_member_id === w.memberId) ||
+                                            (userEmail && memberObj?.email && memberObj.email.toLowerCase() === userEmail.toLowerCase()) ||
+                                            (userId && memberObj?.user_id === userId)
+                                          );
+
+                                          // Dynamic Per-Event RBAC Masking: omit non-self roles completely if OWN_ROLE_ONLY
+                                          if (eventVisibility === 'OWN_ROLE_ONLY' && !isCurrentUserSlot) {
+                                            return null;
+                                          }
+
                                           return (
                                             <div
                                               key={assignment.id}
                                               data-assignment-id={assignment.id}
                                               onClick={(e) => {
-                                                if (isTmReadOnly) return;
+                                                if (isTmReadOnly || eventVisibility === 'FULL_CREW') return;
                                                 const rect = e.currentTarget.getBoundingClientRect();
                                                 setDropdownPos({
                                                   top: Math.min(rect.bottom + 6, window.innerHeight - 280),
@@ -2200,48 +2526,55 @@ export default function TeamManagerPage() {
                                                 });
                                                 setActiveDropdownId(activeDropdownId === assignment.id ? null : assignment.id);
                                               }}
-                                                className="flex flex-col items-center group cursor-pointer select-none relative min-w-[50px] max-w-[70px] text-center"
-                                              >
-                                                {/* CIRCLE AVATAR */}
-                                                {isAssigned ? (
-                                                  <div className="relative w-10 h-10 rounded-full border-2 border-emerald-500 p-0.5 mb-1.5 flex items-center justify-center shrink-0 bg-emerald-50 shadow-xs">
-                                                    {memberObj?.avatar_url ? (
-                                                      <img
-                                                        src={memberObj.avatar_url}
-                                                        alt={cleanName}
-                                                        className="w-full h-full rounded-full object-cover shrink-0"
-                                                        onError={(e) => {
-                                                          (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName)}`;
-                                                        }}
-                                                      />
-                                                    ) : (
-                                                      <div className="w-full h-full rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 text-white font-black text-[10px] flex items-center justify-center shrink-0">
-                                                        {getInitials(cleanName || role)}
-                                                      </div>
-                                                    )}
-                                                  </div>
-                                                ) : (
-                                                  <div className="w-10 h-10 rounded-full border border-dashed border-red-500 bg-red-50/90 text-red-600 font-black mb-1.5 flex items-center justify-center shadow-2xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
-                                                    <Plus className="w-4 h-4 text-red-600 stroke-[3]" />
-                                                  </div>
-                                                )}
+                                              className={`flex flex-col items-center group select-none relative min-w-[50px] max-w-[70px] text-center ${
+                                                isTmReadOnly || eventVisibility === 'FULL_CREW' ? 'cursor-default' : 'cursor-pointer'
+                                              }`}
+                                              title={isAssigned ? `${cleanName} (${role})` : isTmReadOnly || eventVisibility === 'FULL_CREW' ? `Unassigned: ${role}` : `Unassigned: ${role}`}
+                                            >
+                                              {/* CIRCLE AVATAR */}
+                                              {isAssigned ? (
+                                                <div className="relative w-10 h-10 rounded-full border-2 border-emerald-500 p-0.5 mb-1.5 flex items-center justify-center shrink-0 bg-emerald-50 shadow-xs">
+                                                  {memberObj?.avatar_url ? (
+                                                    <img
+                                                      src={memberObj.avatar_url}
+                                                      alt={cleanName}
+                                                      className="w-full h-full rounded-full object-cover shrink-0"
+                                                      onError={(e) => {
+                                                        (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName)}`;
+                                                      }}
+                                                    />
+                                                  ) : (
+                                                    <div className="w-full h-full rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 text-white font-black text-[10px] flex items-center justify-center shrink-0">
+                                                      {getInitials(cleanName || role)}
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              ) : (isTmReadOnly || eventVisibility === 'FULL_CREW') ? (
+                                                <div className="w-10 h-10 rounded-full border border-dashed border-slate-300 bg-slate-100/70 text-slate-400 font-bold mb-1.5 flex items-center justify-center shadow-2xs shrink-0 cursor-default">
+                                                  <span className="text-xs font-black">-</span>
+                                                </div>
+                                              ) : (
+                                                <div className="w-10 h-10 rounded-full border border-dashed border-red-500 bg-red-50/90 text-red-600 font-black mb-1.5 flex items-center justify-center shadow-2xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
+                                                  <Plus className="w-4 h-4 text-red-600 stroke-[3]" />
+                                                </div>
+                                              )}
 
-                                                {/* Role Pill - STRICT SHORT FORM ONLY */}
-                                                <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 leading-tight block text-center">
-                                                  {shortRole}
+                                              {/* Role Pill - STRICT SHORT FORM ONLY */}
+                                              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 leading-tight block text-center">
+                                                {shortRole}
+                                              </span>
+
+                                              {/* Member Full Name */}
+                                              {isAssigned ? (
+                                                <span className="text-[11px] font-extrabold text-emerald-600 dark:text-emerald-500 text-center leading-tight truncate max-w-[68px] block mt-0.5" title={cleanName}>
+                                                  {cleanName}
                                                 </span>
-
-                                                {/* Member Full Name */}
-                                                {isAssigned ? (
-                                                  <span className="text-[11px] font-extrabold text-emerald-600 dark:text-emerald-500 text-center leading-tight truncate max-w-[68px] block mt-0.5" title={cleanName}>
-                                                    {cleanName}
-                                                  </span>
-                                                ) : (
-                                                  <span className="text-[10px] font-semibold text-slate-400 truncate max-w-[68px] text-center leading-none mt-0.5 block">
-                                                    Assign
-                                                  </span>
-                                                )}
-                                              </div>
+                                              ) : (
+                                                <span className="text-[10px] font-semibold text-slate-400 truncate max-w-[68px] text-center leading-none mt-0.5 block">
+                                                  {isTmReadOnly || eventVisibility === 'FULL_CREW' ? 'Unassigned' : 'Assign'}
+                                                </span>
+                                              )}
+                                            </div>
                                           );
                                         })}
                                       </div>
@@ -2268,12 +2601,43 @@ export default function TeamManagerPage() {
             teamMembers={teamMembers}
             format12HourTime={format12HourTime}
             getGradientByProjectId={getGradientByProjectId}
+            activeStudioId={activeWorkspace?.workspaceId || null}
+            isAllStudios={activeWorkspace?.workspaceId === 'all' || workspaceId === 'all'}
           />
         )}
 
         {/* ─── TAB VIEW: LIST REGISTER (MONTH-WISE) ─── */}
         {activeTab === 'list' && (
           <MonthListView
+            projects={filteredProjects}
+            teamMembers={teamMembers}
+            searchQuery={searchQuery}
+            selectedRoleFilter={selectedRoleFilter}
+            unifiedFilters={unifiedFilters}
+            format12HourTime={format12HourTime}
+            getGradientByProjectId={getGradientByProjectId}
+            onAssignMember={handleAssignMember}
+            onAddNewMember={(info) => {
+              setActiveAssignmentForMember(info);
+              setIsAddMemberOpen(true);
+            }}
+            onAddProject={isTmReadOnly ? undefined : (initialDate) => {
+              setEditingProject(null);
+              setInitialDateForModal(initialDate || '');
+              setIsAddProjectOpen(true);
+            }}
+            isTmReadOnly={isTmReadOnly}
+            isSelfRoleOnly={isSelfRoleOnly}
+            currentMemberId={currentMember?.id || activeWorkspace?.memberId || null}
+            currentMemberEmail={userEmail || null}
+            studioPermissionsMap={studioPermissionsMap}
+            activeStudioId={activeWorkspace?.workspaceId || null}
+          />
+        )}
+
+        {/* ─── TAB VIEW: 3D PROFESSIONAL CALENDAR ─── */}
+        {activeTab === 'calendar' && (
+          <Professional3DCalendar
             projects={filteredProjects}
             teamMembers={teamMembers}
             searchQuery={searchQuery}
@@ -2285,37 +2649,21 @@ export default function TeamManagerPage() {
               setActiveAssignmentForMember(info);
               setIsAddMemberOpen(true);
             }}
-            onAddProject={(initialDate) => {
+            onAddProject={isTmReadOnly ? undefined : (initialDate) => {
               setEditingProject(null);
               setInitialDateForModal(initialDate || '');
               setIsAddProjectOpen(true);
             }}
-          />
-        )}
-
-        {/* ─── TAB VIEW: 3D PROFESSIONAL CALENDAR ─── */}
-        {activeTab === 'calendar' && (
-          <Professional3DCalendar
-            projects={projects}
-            teamMembers={teamMembers}
-            searchQuery={searchQuery}
-            selectedRoleFilter={selectedRoleFilter}
-            format12HourTime={format12HourTime}
-            getGradientByProjectId={getGradientByProjectId}
-            onAssignMember={handleAssignMember}
-            onAddNewMember={(info) => {
-              setActiveAssignmentForMember(info);
-              setIsAddMemberOpen(true);
-            }}
-            onAddProject={(initialDate) => {
-              setEditingProject(null);
-              setInitialDateForModal(initialDate || '');
-              setIsAddProjectOpen(true);
-            }}
-            onEditProject={(proj) => {
+            onEditProject={isTmReadOnly ? undefined : (proj) => {
               setEditingProject(proj);
               setIsAddProjectOpen(true);
             }}
+            isTmReadOnly={isTmReadOnly}
+            isSelfRoleOnly={isSelfRoleOnly}
+            currentMemberId={currentMember?.id || activeWorkspace?.memberId || null}
+            currentMemberEmail={userEmail || null}
+            studioPermissionsMap={studioPermissionsMap}
+            activeStudioId={activeWorkspace?.workspaceId || null}
           />
         )}
 
@@ -2405,16 +2753,18 @@ export default function TeamManagerPage() {
           </button>
 
           {/* CENTER FLOATING + CREATE PROJECT BUTTON */}
-          <div className="relative -mt-6 mx-0.5">
-            <button
-              type="button"
-              onClick={() => { setEditingProject(null); setIsAddProjectOpen(true); }}
-              className="w-12 h-12 rounded-full bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white flex items-center justify-center shadow-xl shadow-[#6C5CE7]/40 border-3 border-white transition-all active:scale-95 cursor-pointer"
-              title="Create New Project"
-            >
-              <Plus className="w-5 h-5" />
-            </button>
-          </div>
+          {canManageTeam && (
+            <div className="relative -mt-6 mx-0.5">
+              <button
+                type="button"
+                onClick={() => { setEditingProject(null); setIsAddProjectOpen(true); }}
+                className="w-12 h-12 rounded-full bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white flex items-center justify-center shadow-xl shadow-[#6C5CE7]/40 border-3 border-white transition-all active:scale-95 cursor-pointer"
+                title="Create New Project"
+              >
+                <Plus className="w-5 h-5" />
+              </button>
+            </div>
+          )}
 
           {/* TAB 3: Calendar */}
           <button
@@ -2789,8 +3139,8 @@ export default function TeamManagerPage() {
         initialSummary={selectedFinanceMember ? memberFinancials[selectedFinanceMember.id] : null}
       />
 
-      {/* 6. Unified Filter Modal */}
-      <UnifiedTeamFilterModal
+      {/* 6. Unified Filter Drawer */}
+      <TeamManagerFilterDrawer
         isOpen={isUnifiedFilterOpen}
         onClose={() => setIsUnifiedFilterOpen(false)}
         filters={unifiedFilters}
@@ -2807,6 +3157,7 @@ export default function TeamManagerPage() {
             roles: [],
             assignmentStatus: 'all',
             pmId: 'all',
+            studioId: 'all',
           });
         }}
         availableEventTypes={eventTypesList}
@@ -2816,6 +3167,10 @@ export default function TeamManagerPage() {
           ...customCrewRoles.map(r => r.name)
         ]))}
         assignedPms={assignedPms}
+        studios={studioFilterOptions}
+        isAllStudios={activeWorkspace?.workspaceId === 'all' || workspaceId === 'all'}
+        isPartnerPortal={!isOwner}
+        isOwner={isOwner}
         totalFilteredCount={filteredProjects.length}
       />
 
