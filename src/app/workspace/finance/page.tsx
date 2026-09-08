@@ -21,7 +21,7 @@ import MilestoneStepDropdown from '@/components/finance/MilestoneStepDropdown';
 import { FinancePinVerificationCard } from '@/components/finance/FinancePinVerificationCard';
 import { FinanceAnalyticsView } from '@/app/workspace/finance/components/FinanceAnalyticsView';
 import { FinanceFiltersModal } from '@/app/workspace/finance/components/FinanceFiltersModal';
-import { ClientFinanceCard } from '@/app/workspace/finance/components/ClientFinanceCard';
+import { ClientFinanceCard, isAdvanceMilestone } from '@/app/workspace/finance/components/ClientFinanceCard';
 import RecordExpenseModal, { ExpenseFormData } from '@/app/workspace/finance/components/RecordExpenseModal';
 import { exportCurrentFinanceToExcel } from '@/lib/excel-finance-migration';
 import type { 
@@ -102,6 +102,7 @@ export default function FinancePage() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'received' | 'pending' | 'partially_paid' | 'paid' | 'overdue_only'>('all');
   const [locationFilter, setLocationFilter] = useState('all');
   const [paymentModeFilter, setPaymentModeFilter] = useState('all');
+  const [revenueTypeFilter, setRevenueTypeFilter] = useState<'ALL' | 'NEW_BOOKING' | 'DUE_BALANCE'>('ALL');
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
   const filterDropdownRef = useRef<HTMLDivElement | null>(null);
 
@@ -1784,9 +1785,10 @@ export default function FinancePage() {
     if (locationFilter !== 'all') count++;
     if (paymentModeFilter !== 'all') count++;
     if (teamMemberFilter !== 'all') count++;
+    if (revenueTypeFilter !== 'ALL') count++;
     if (dateRangePreset !== 'all' || (startDate && endDate)) count++;
     return count;
-  }, [categoryFilter, statusFilter, locationFilter, paymentModeFilter, teamMemberFilter, dateRangePreset, startDate, endDate]);
+  }, [categoryFilter, statusFilter, locationFilter, paymentModeFilter, teamMemberFilter, revenueTypeFilter, dateRangePreset, startDate, endDate]);
 
   const resetAllFilters = () => {
     setCategoryFilter('all');
@@ -1794,6 +1796,7 @@ export default function FinancePage() {
     setLocationFilter('all');
     setPaymentModeFilter('all');
     setTeamMemberFilter('all');
+    setRevenueTypeFilter('ALL');
     setDateRangePreset('all');
     setStartDate('');
     setEndDate('');
@@ -1832,6 +1835,19 @@ export default function FinancePage() {
         matchesStatus = Number(rec.received_amount) > 0 || (rec.milestones || []).some(m => m.status === 'completed' || m.status === 'paid' || (m as any).paidDate || (m as any).paid_date);
       }
 
+      // Revenue Type Filter (New Booking / Advance vs Due Balance / Milestone Clearances)
+      let matchesRevenueType = true;
+      if (revenueTypeFilter !== 'ALL') {
+        const hasMatchingMilestone = (rec.milestones || []).some((m, idx) => {
+          const isPaid = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed' || (m as any).paidDate || (m as any).paid_date;
+          if (!isPaid) return false;
+          if (revenueTypeFilter === 'NEW_BOOKING') return isAdvanceMilestone(m, idx);
+          if (revenueTypeFilter === 'DUE_BALANCE') return !isAdvanceMilestone(m, idx);
+          return true;
+        });
+        matchesRevenueType = hasMatchingMilestone;
+      }
+
       // Location
       const matchesLocation = locationFilter === 'all' || 
         ((client as any)?.city && (client as any).city.toLowerCase() === locationFilter.toLowerCase()) || 
@@ -1857,19 +1873,21 @@ export default function FinancePage() {
       }
 
       // 📅 Unified Single Master Date Range Match:
-      // If Payment Status is "Payment Received" -> filter by Payment Received Date (milestone receipt date)
+      // If Payment Status is "Payment Received" OR Revenue Type is filtered -> filter by Payment Received Date (milestone receipt date)
       // Otherwise -> filter by Project / Event Creation / Shoot Date
       let matchesDate = true;
       const isDateActive = Boolean(dateRangePreset !== 'all' || startDate || endDate);
       if (isDateActive) {
-        if (statusFilter === 'received') {
-          const matchingPaidMilestones = (rec.milestones || []).filter(m => {
+        if (statusFilter === 'received' || revenueTypeFilter !== 'ALL') {
+          const matchingPaidMilestones = (rec.milestones || []).filter((m, idx) => {
             const isPaid = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed' || (m as any).paidDate || (m as any).paid_date;
             if (!isPaid) return false;
             const pDate = m.paid_date || (m as any).paidDate || (m as any).payment_date || m.due_date;
             if (!pDate) return false;
             if (startDate && pDate < startDate) return false;
             if (endDate && pDate > endDate) return false;
+            if (revenueTypeFilter === 'NEW_BOOKING' && !isAdvanceMilestone(m, idx)) return false;
+            if (revenueTypeFilter === 'DUE_BALANCE' && isAdvanceMilestone(m, idx)) return false;
             return true;
           });
           matchesDate = matchingPaidMilestones.length > 0;
@@ -1882,9 +1900,9 @@ export default function FinancePage() {
         }
       }
 
-      return matchesSearch && matchesCategory && matchesStatus && matchesLocation && matchesMode && matchesTeam && matchesDate;
+      return matchesSearch && matchesCategory && matchesStatus && matchesLocation && matchesMode && matchesTeam && matchesRevenueType && matchesDate;
     });
-  }, [financeRecords, searchQuery, categoryFilter, statusFilter, locationFilter, paymentModeFilter, teamMemberFilter, dateRangePreset, startDate, endDate, todayStr]);
+  }, [financeRecords, searchQuery, categoryFilter, statusFilter, locationFilter, paymentModeFilter, teamMemberFilter, revenueTypeFilter, dateRangePreset, startDate, endDate, todayStr]);
 
   const filteredExpenses = useMemo(() => {
     return expenses.filter(exp => {
@@ -1913,28 +1931,43 @@ export default function FinancePage() {
   }, [filteredRecords]);
 
   const totalReceived = useMemo(() => {
-    if (statusFilter === 'received' && isDateActive && (startDate || endDate)) {
-      // Sum of only the payments received within the designated date range
+    const isPaymentScope = statusFilter === 'received' || revenueTypeFilter !== 'ALL' || (isDateActive && (startDate || endDate));
+
+    if (isPaymentScope && isDateActive && (startDate || endDate)) {
+      // Sum of only the payments actually collected within the designated date range and matching revenue type
       return Math.round(filteredRecords.reduce((acc, r) => {
-        const scopeMilestonesReceived = (r.milestones || []).reduce((mAcc, m) => {
+        const matchingMilestones = (r.milestones || []).filter((m, idx) => {
           const isPaid = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed' || (m as any).paidDate || (m as any).paid_date;
-          if (!isPaid) return mAcc;
+          if (!isPaid) return false;
           const pDate = m.paid_date || (m as any).paidDate || (m as any).payment_date || m.due_date;
-          if (!pDate) return mAcc;
-          if (startDate && pDate < startDate) return mAcc;
-          if (endDate && pDate > endDate) return mAcc;
-          return mAcc + (Number(m.amount) || 0);
-        }, 0);
-        return acc + scopeMilestonesReceived;
+          if (!pDate) return false;
+          if (startDate && pDate < startDate) return false;
+          if (endDate && pDate > endDate) return false;
+          if (revenueTypeFilter === 'NEW_BOOKING' && !isAdvanceMilestone(m, idx)) return false;
+          if (revenueTypeFilter === 'DUE_BALANCE' && isAdvanceMilestone(m, idx)) return false;
+          return true;
+        });
+        return acc + matchingMilestones.reduce((mSum, m) => mSum + (Number(m.amount) || 0), 0);
+      }, 0));
+    } else if (revenueTypeFilter !== 'ALL') {
+      return Math.round(filteredRecords.reduce((acc, r) => {
+        const matchingMilestones = (r.milestones || []).filter((m, idx) => {
+          const isPaid = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed' || (m as any).paidDate || (m as any).paid_date;
+          if (!isPaid) return false;
+          if (revenueTypeFilter === 'NEW_BOOKING' && !isAdvanceMilestone(m, idx)) return false;
+          if (revenueTypeFilter === 'DUE_BALANCE' && isAdvanceMilestone(m, idx)) return false;
+          return true;
+        });
+        return acc + matchingMilestones.reduce((mSum, m) => mSum + (Number(m.amount) || 0), 0);
       }, 0));
     }
     return Math.round(filteredRecords.reduce((acc, r) => acc + (Number(r.received_amount) || 0), 0));
-  }, [filteredRecords, statusFilter, isDateActive, startDate, endDate]);
+  }, [filteredRecords, statusFilter, revenueTypeFilter, isDateActive, startDate, endDate]);
 
   const totalPending = useMemo(() => {
-    // Every rupee matches the sum of pending dues of the filtered cards below
-    return Math.round(filteredRecords.reduce((acc, r) => acc + (Number(r.pending_amount) || Math.max(0, (Number(r.final_total_amount) || 0) - (Number(r.received_amount) || 0))), 0));
-  }, [filteredRecords]);
+    // Explicitly reconcile: Gross Invoiced - Cash Received for the filtered contracts
+    return Math.max(0, Math.round(totalInvoiced - totalReceived));
+  }, [totalInvoiced, totalReceived]);
 
   const totalExpensesAmount = useMemo(() => {
     return Math.round(filteredExpenses.reduce((acc, e) => acc + (Number(e.amount) || 0), 0));
@@ -2476,6 +2509,8 @@ export default function FinancePage() {
                 uniqueLocations={uniqueLocations}
                 paymentModeFilter={paymentModeFilter}
                 setPaymentModeFilter={setPaymentModeFilter}
+                revenueTypeFilter={revenueTypeFilter}
+                setRevenueTypeFilter={setRevenueTypeFilter}
               />
             </div>
 
@@ -2585,9 +2620,9 @@ export default function FinancePage() {
 
           </div>
 
-          {/* Active Payment Received Filter Pill on Top */}
-          {statusFilter === 'received' && (
-            <div className="flex flex-wrap items-center gap-2 pt-1 pb-0.5">
+          {/* Active Payment Received & Revenue Type Filter Pills on Top */}
+          <div className="flex flex-wrap items-center gap-2 pt-1 pb-0.5">
+            {statusFilter === 'received' && (
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-950 text-xs font-bold shadow-xs">
                 <span className="flex h-2 w-2 relative">
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
@@ -2613,8 +2648,30 @@ export default function FinancePage() {
                   <X className="w-3 h-3" />
                 </button>
               </div>
-            </div>
-          )}
+            )}
+
+            {revenueTypeFilter !== 'ALL' && (
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 text-xs font-bold shadow-xs">
+                <span className="flex h-2 w-2 relative">
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                </span>
+                <span>
+                  Revenue Type:{' '}
+                  <span className="font-extrabold text-amber-900">
+                    {revenueTypeFilter === 'NEW_BOOKING' ? '✨ New Booking / Advance' : '⚖️ Due Balance / Milestone Clearances'}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setRevenueTypeFilter('ALL')}
+                  className="ml-1.5 px-2 py-0.5 rounded-lg bg-amber-200/80 hover:bg-amber-300 text-amber-900 text-[10px] font-black uppercase transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                >
+                  <span>Clear</span>
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+          </div>
 
         </div>
 
@@ -2662,6 +2719,11 @@ export default function FinancePage() {
                   onMilestoneChange={handleMilestoneStepChange}
                   onAddMilestoneStep={(recordId) => setShowAddStepModal({ open: true, recordId })}
                   onSaveNewTemplate={handleSaveNewMilestoneTemplate}
+                  statusFilter={statusFilter}
+                  startDate={startDate}
+                  endDate={endDate}
+                  revenueTypeFilter={revenueTypeFilter}
+                  isDateActive={isDateActive}
                 />
               ))
             )}

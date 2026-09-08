@@ -28,6 +28,8 @@ export interface FinanceFiltersModalProps {
   uniqueLocations: string[];
   paymentModeFilter: string;
   setPaymentModeFilter: (val: string) => void;
+  revenueTypeFilter?: 'ALL' | 'NEW_BOOKING' | 'DUE_BALANCE';
+  setRevenueTypeFilter?: (val: 'ALL' | 'NEW_BOOKING' | 'DUE_BALANCE') => void;
 }
 
 export function FinanceFiltersModal({
@@ -54,6 +56,8 @@ export function FinanceFiltersModal({
   uniqueLocations,
   paymentModeFilter,
   setPaymentModeFilter,
+  revenueTypeFilter = 'ALL',
+  setRevenueTypeFilter,
 }: FinanceFiltersModalProps) {
   return (
     <AnimatePresence>
@@ -219,6 +223,34 @@ export function FinanceFiltersModal({
                 <option value="pending">⏳ Pending Due</option>
                 <option value="overdue_only">⚠️ Overdue Dues Only</option>
               </select>
+            </div>
+
+            {/* Revenue Type / Payment Nature Filter */}
+            <div>
+              <label className="text-[11px] font-bold text-slate-700 block mb-1 flex items-center justify-between">
+                <span>Revenue Type / Payment Nature</span>
+                {revenueTypeFilter && revenueTypeFilter !== 'ALL' && (
+                  <span className="text-[9px] font-black text-amber-800 bg-amber-100 px-1.5 py-0.2 rounded-md border border-amber-300">
+                    Active
+                  </span>
+                )}
+              </label>
+              <select
+                value={revenueTypeFilter || 'ALL'}
+                onChange={(e) => setRevenueTypeFilter && setRevenueTypeFilter(e.target.value as any)}
+                className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
+              >
+                <option value="ALL">💰 All Payments (Default)</option>
+                <option value="NEW_BOOKING">✨ New Booking / Advance</option>
+                <option value="DUE_BALANCE">⚖️ Due Balance / Milestone Clearances</option>
+              </select>
+              {revenueTypeFilter !== 'ALL' && (
+                <p className="text-[10px] text-amber-800 font-medium mt-1 leading-tight">
+                  {revenueTypeFilter === 'NEW_BOOKING'
+                    ? '⚡ Showing only initial booking advance / token payments.'
+                    : '⚡ Showing only subsequent installments & final balance clearances.'}
+                </p>
+              )}
             </div>
 
             {/* Event Category */}

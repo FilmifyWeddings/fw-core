@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Users,
@@ -36,6 +36,50 @@ interface ClientFinanceCardProps {
   onMilestoneChange: (recordId: string, milestoneId: string, field: string, value: any) => void;
   onAddMilestoneStep: (recordId: string) => void;
   onSaveNewTemplate?: (name: string) => void;
+  statusFilter?: string;
+  startDate?: string;
+  endDate?: string;
+  revenueTypeFilter?: 'ALL' | 'NEW_BOOKING' | 'DUE_BALANCE';
+  isDateActive?: boolean;
+}
+
+export function formatDateDDMMYYYY(dateStr?: string | null): string {
+  if (!dateStr) return '';
+  const clean = dateStr.split('T')[0];
+  const parts = clean.split('-');
+  if (parts.length === 3 && parts[0].length === 4) {
+    return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  }
+  try {
+    const d = new Date(dateStr);
+    if (!isNaN(d.getTime())) {
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      return `${day}-${month}-${year}`;
+    }
+  } catch (_) {}
+  return dateStr;
+}
+
+export function isAdvanceMilestone(milestone: FinanceMilestoneItem, index: number): boolean {
+  if (index === 0) return true;
+  const name = (milestone.step_name || milestone.title || '').toLowerCase();
+  const type = ((milestone as any).milestone_type || '').toLowerCase();
+  if (type === 'advance' || type === 'token' || type === 'booking') return true;
+  if (name.includes('token') || name.includes('booking') || name.includes('advance')) {
+    return true;
+  }
+  return false;
+}
+
+export interface MatchedPaymentHighlight {
+  id?: string;
+  step_name: string;
+  amount: number;
+  paid_date: string;
+  payment_mode?: string;
+  milestone_type?: 'advance' | 'due_clearance';
 }
 
 export function ClientFinanceCard({
@@ -56,6 +100,11 @@ export function ClientFinanceCard({
   onMilestoneChange,
   onAddMilestoneStep,
   onSaveNewTemplate,
+  statusFilter,
+  startDate,
+  endDate,
+  revenueTypeFilter = 'ALL',
+  isDateActive,
 }: ClientFinanceCardProps) {
   const [openMenu, setOpenMenu] = useState(false);
   const [addingMember, setAddingMember] = useState(false);
@@ -88,6 +137,69 @@ export function ClientFinanceCard({
   const pendAmt = Number(record.pending_amount) || Math.max(0, finalTotal - recAmt);
 
   const handledBy = (client as any)?.assigned_team_member || (client as any)?.handled_by || 'Unassigned';
+
+  // 🔍 Calculate matching payment milestone for highlighted badge & accurate dates
+  const matchedPayment = useMemo<MatchedPaymentHighlight | null>(() => {
+    if (!milestones || milestones.length === 0) return null;
+
+    // Filter paid milestones that match current filter scope
+    const paidMilestones = milestones.filter((m, idx) => {
+      const isPaid = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed' || (m as any).paidDate || (m as any).paid_date;
+      if (!isPaid) return false;
+
+      const pDate = m.paid_date || (m as any).paidDate || (m as any).payment_date || m.due_date;
+      if (startDate && pDate && pDate < startDate) return false;
+      if (endDate && pDate && pDate > endDate) return false;
+
+      if (revenueTypeFilter === 'NEW_BOOKING' && !isAdvanceMilestone(m, idx)) return false;
+      if (revenueTypeFilter === 'DUE_BALANCE' && isAdvanceMilestone(m, idx)) return false;
+
+      return true;
+    });
+
+    if (paidMilestones.length === 0) {
+      // Fallback: if statusFilter is 'received' but no date was bounded, show latest paid milestone
+      if (statusFilter === 'received') {
+        const anyPaid = milestones.filter(m => m.status === 'completed' || m.status === 'paid' || (m as any).paidDate || (m as any).paid_date);
+        if (anyPaid.length > 0) {
+          const sorted = [...anyPaid].sort((a, b) => {
+            const dateA = a.paid_date || (a as any).paidDate || a.due_date || '';
+            const dateB = b.paid_date || (b as any).paidDate || b.due_date || '';
+            return dateB.localeCompare(dateA);
+          });
+          const best = sorted[0];
+          const bestIdx = milestones.indexOf(best);
+          return {
+            id: best.id,
+            step_name: best.step_name || best.title || (bestIdx === 0 ? 'Booking Advance' : 'Milestone Payment'),
+            amount: Number(best.amount) || 0,
+            paid_date: best.paid_date || (best as any).paidDate || best.due_date || '',
+            payment_mode: best.payment_mode,
+            milestone_type: isAdvanceMilestone(best, bestIdx) ? 'advance' : 'due_clearance'
+          };
+        }
+      }
+      return null;
+    }
+
+    // Sort descending by paid_date so most recent matching transaction is featured
+    const sorted = [...paidMilestones].sort((a, b) => {
+      const dateA = a.paid_date || (a as any).paidDate || a.due_date || '';
+      const dateB = b.paid_date || (b as any).paidDate || b.due_date || '';
+      return dateB.localeCompare(dateA);
+    });
+
+    const target = sorted[0];
+    const targetIdx = milestones.indexOf(target);
+    return {
+      id: target.id,
+      step_name: target.step_name || target.title || (targetIdx === 0 ? 'Booking Advance' : 'Milestone Payment'),
+      amount: Number(target.amount) || 0,
+      paid_date: target.paid_date || (target as any).paidDate || target.due_date || '',
+      payment_mode: target.payment_mode,
+      milestone_type: isAdvanceMilestone(target, targetIdx) ? 'advance' : 'due_clearance'
+    };
+  }, [milestones, startDate, endDate, revenueTypeFilter, statusFilter]);
 
   const handleSaveMember = () => {
     if (newMemberName.trim()) {
@@ -134,6 +246,23 @@ export function ClientFinanceCard({
               }`}>
                 {record.payment_status === 'paid' || (finalTotal > 0 && pendAmt === 0) ? 'Paid Full' : recAmt > 0 ? 'Partially Paid' : 'Pending'}
               </span>
+
+              {/* 🌟 Milestone Payment Highlight Badge (Yellow #FEF08A) */}
+              {matchedPayment && (
+                <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#FEF08A] text-amber-950 border border-amber-300 font-bold text-[10px] shadow-2xs">
+                  <span className="font-black text-amber-900 truncate max-w-[120px] sm:max-w-[180px]">
+                    💰 {matchedPayment.step_name}
+                  </span>
+                  <span className="text-amber-500 font-black">•</span>
+                  <span className="font-mono text-emerald-800 font-black shrink-0">
+                    +₹{matchedPayment.amount.toLocaleString('en-IN')}
+                  </span>
+                  <span className="text-amber-500 font-black">•</span>
+                  <span className="font-mono text-slate-800 font-bold shrink-0">
+                    {formatDateDDMMYYYY(matchedPayment.paid_date)}
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mt-0.5 truncate font-medium">
@@ -141,10 +270,21 @@ export function ClientFinanceCard({
                 {client?.event_type || 'Wedding Photography'}
               </span>
               <span>•</span>
-              <span className="shrink-0">
-                {client?.event_date 
-                  ? new Date(client.event_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-                  : 'Date TBD'}
+              <span className="shrink-0 font-medium">
+                {matchedPayment?.paid_date ? (
+                  <span className="text-emerald-700 font-bold flex items-center gap-1">
+                    <span>Paid: {formatDateDDMMYYYY(matchedPayment.paid_date)}</span>
+                    {client?.event_date && (
+                      <span className="text-slate-400 font-normal">
+                        • Event: {new Date(client.event_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                      </span>
+                    )}
+                  </span>
+                ) : client?.event_date ? (
+                  new Date(client.event_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                ) : (
+                  'Date TBD'
+                )}
               </span>
               {(client as any)?.city && (
                 <>
