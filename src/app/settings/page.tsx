@@ -55,6 +55,7 @@ import {
   DEFAULT_QUOTATION_PAYMENT_STEPS,
   getRoleShortCode 
 } from '@/lib/workspace-settings';
+import CrewRolesSettings from '@/app/workspace/settings/components/CrewRolesSettings';
 
 
 type SettingsTab = 'leads' | 'functions' | 'crew_roles' | 'quotations' | 'finance' | 'attendance' | 'integrations' | 'team';
@@ -930,7 +931,7 @@ export default function SettingsPage() {
                   </div>
                   <div>
                     <h2 className="text-lg font-extrabold text-amber-950">Leads Page Settings (`/leads`)</h2>
-                    <p className="text-xs font-medium text-zinc-500">Manage Lead Owners, Lead Sources, Pipeline Stages, and Action Buttons</p>
+                    <p className="text-xs font-medium text-zinc-500">Manage Lead Sources, Pipeline Stages, and Action Buttons</p>
                   </div>
                 </div>
 
@@ -981,14 +982,6 @@ export default function SettingsPage() {
                       </label>
                     ))}
                   </div>
-                </div>
-
-                {/* Lead Owners Google Sheets Style Dropdown Builder */}
-                <div className="pt-4 border-t border-amber-100 space-y-2">
-                  <label className="text-xs font-extrabold text-zinc-600 uppercase tracking-wider block mb-1">
-                    Manage Lead Owners (Dropdown Options in Leads Page)
-                  </label>
-                  {renderGoogleOptionList(leadOwners, setLeadOwners, 'owner', 'Add another item')}
                 </div>
 
                 {/* Lead Sources Google Sheets Style Dropdown Builder */}
@@ -1196,216 +1189,16 @@ export default function SettingsPage() {
 
             {/* 1.6 CREW ROLES & SHORT CODES SETTINGS */}
             {activeTab === 'crew_roles' && (
-              <div className="bg-white border border-amber-200/90 rounded-2xl p-6 shadow-xs space-y-6">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-amber-100 pb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
-                      <Users className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h2 className="text-lg font-extrabold text-amber-950">Crew Roles & Short Codes Settings</h2>
-                      <p className="text-xs font-medium text-zinc-500">
-                        Configure crew roles with short codes (TP, CP, CV, DP) for compact roster cards in Team Manager.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="relative min-w-[220px]">
-                    <input
-                      type="text"
-                      placeholder="Search roles or codes..."
-                      value={roleSearch}
-                      onChange={e => setRoleSearch(e.target.value)}
-                      className="w-full pl-8 pr-3 py-1.5 bg-[#FEFDF8] border border-amber-200/90 rounded-xl text-xs font-medium focus:outline-none focus:border-[#0F9D58]"
-                    />
-                    <Users className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
-                  </div>
-                </div>
-
-                {/* Add New Crew Role Form */}
-                <div className="p-4 bg-[#FEFDF8] border border-amber-200/90 rounded-xl space-y-3">
-                  <h4 className="text-xs font-extrabold text-zinc-700 uppercase tracking-wider">
-                    + Add New Crew Role & Short Code
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                    <input
-                      type="text"
-                      placeholder="Full Role Name (e.g. Candid Photographer)..."
-                      value={newRoleName}
-                      onChange={e => {
-                        setNewRoleName(e.target.value);
-                        if (!newRoleCode) setNewRoleCode(getRoleShortCode(e.target.value));
-                      }}
-                      className="sm:col-span-2 px-4 py-2 bg-white border border-amber-200/90 rounded-xl text-xs font-bold text-amber-950 focus:outline-none focus:border-[#0F9D58] shadow-xs"
-                    />
-                    <div className="relative">
-                      <input
-                        type="text"
-                        placeholder="Short Code (e.g. CP)..."
-                        value={newRoleCode}
-                        onChange={e => setNewRoleCode(e.target.value.toUpperCase())}
-                        className="w-full px-4 py-2 bg-white border border-amber-200/90 rounded-xl text-xs font-black text-indigo-600 uppercase focus:outline-none focus:border-[#0F9D58] shadow-xs"
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (!newRoleName.trim()) return;
-                        const cleanName = newRoleName.trim();
-                        const cleanCode = newRoleCode.trim().toUpperCase() || getRoleShortCode(cleanName);
-                        if (crewRoles.some(r => r.name.toLowerCase() === cleanName.toLowerCase())) {
-                          setSaveToast(`Crew Role "${cleanName}" already exists!`);
-                          setTimeout(() => setSaveToast(null), 3000);
-                          return;
-                        }
-                        const created = await saveWorkspaceCrewRole(workspaceId, cleanName, cleanCode, 'Photography');
-                        if (created) {
-                          setCrewRoles(prev => [...prev.filter(r => r.name.toLowerCase() !== cleanName.toLowerCase()), created]);
-                          setNewRoleName('');
-                          setNewRoleCode('');
-                          setSaveToast(`Crew Role "${cleanName} (${cleanCode})" added & synced!`);
-                          setTimeout(() => setSaveToast(null), 3000);
-                        }
-                      }}
-                      className="w-full px-5 py-2 bg-[#0F9D58] hover:bg-[#0B8043] text-white font-extrabold text-xs rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <Plus className="w-4 h-4" />
-                      <span>Add Role</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Crew Roles List */}
-                {loadingCrewRoles && crewRoles.length === 0 ? (
-                  <div className="flex items-center justify-center py-12 text-slate-400 gap-2">
-                    <Loader2 className="w-5 h-5 animate-spin text-indigo-600" />
-                    <span className="text-xs font-bold">Loading crew roles from database...</span>
-                  </div>
-                ) : crewRoles.length === 0 ? (
-                  <div className="text-center py-8 text-xs font-bold text-slate-400 bg-amber-50/50 rounded-xl border border-dashed border-amber-200">
-                    No crew roles found. Click &quot;+ Add Role&quot; above to create your first crew role.
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 pt-2">
-                    {Array.from(new Map(crewRoles.map(r => [r.name.toLowerCase().trim(), r])).values())
-                      .filter(r => r.name.toLowerCase().includes(roleSearch.toLowerCase()) || r.short_code.toLowerCase().includes(roleSearch.toLowerCase()))
-                      .map((item) => (
-                        <div
-                          key={item.id}
-                          className="flex items-center justify-between p-3.5 bg-white border border-amber-200/90 rounded-xl shadow-2xs hover:border-slate-300 transition group"
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 font-black text-xs flex items-center justify-center shrink-0">
-                              {item.short_code}
-                            </div>
-                            <div className="min-w-0">
-                              <span className="text-xs font-black text-amber-950 block truncate">{item.name}</span>
-                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{item.category || 'Crew'}</span>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-1 shrink-0">
-                            {item.is_default && (
-                              <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 bg-amber-50 text-zinc-500 rounded-md">
-                                Def
-                              </span>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingCrewRole(item);
-                                setEditRoleName(item.name);
-                                setEditRoleCode(item.short_code);
-                              }}
-                              className="p-1.5 text-slate-400 hover:text-indigo-600 transition rounded-lg hover:bg-indigo-50 cursor-pointer"
-                              title="Edit Role & Code"
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                if (!confirm(`Delete crew role "${item.name}"?`)) return;
-                                await deleteWorkspaceCrewRole(item.id, workspaceId);
-                                setCrewRoles(prev => prev.filter(r => r.id !== item.id));
-                                setSaveToast(`Crew role "${item.name}" removed`);
-                                setTimeout(() => setSaveToast(null), 3000);
-                              }}
-                              className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition rounded-lg cursor-pointer opacity-100 border border-rose-200/60 shadow-2xs"
-                              title={`Delete ${item.name}`}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                )}
-
-                {/* Edit Crew Role Modal */}
-                {editingCrewRole && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
-                    <div className="bg-white rounded-2xl p-5 max-w-sm w-full border border-amber-200/90 shadow-2xl space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-sm font-extrabold text-amber-950">Edit Crew Role</h3>
-                        <button
-                          onClick={() => setEditingCrewRole(null)}
-                          className="p-1 text-slate-400 hover:text-zinc-600 rounded-lg"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                      <div className="space-y-3">
-                        <div>
-                          <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1">Full Role Name</label>
-                          <input
-                            type="text"
-                            value={editRoleName}
-                            onChange={e => setEditRoleName(e.target.value)}
-                            placeholder="Role Name..."
-                            className="w-full px-3 py-2 border border-amber-200/90 rounded-xl text-xs font-bold text-amber-950 focus:outline-none focus:border-[#0F9D58]"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1">Short Code (Any Length)</label>
-                          <input
-                            type="text"
-                            value={editRoleCode}
-                            onChange={e => setEditRoleCode(e.target.value.toUpperCase())}
-                            placeholder="Short Code (e.g. CP, CINE, DRONE)..."
-                            className="w-full px-3 py-2 border border-amber-200/90 rounded-xl text-xs font-black text-indigo-600 uppercase focus:outline-none focus:border-[#0F9D58]"
-                          />
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-end gap-2 pt-2">
-                        <button
-                          onClick={() => setEditingCrewRole(null)}
-                          className="px-3 py-1.5 text-xs font-bold text-zinc-500 hover:bg-amber-50 rounded-xl"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={async () => {
-                            if (!editRoleName.trim()) return;
-                            const cleanName = editRoleName.trim();
-                            const cleanCode = editRoleCode.trim().toUpperCase() || getRoleShortCode(cleanName);
-                            const updated = await updateWorkspaceCrewRole(editingCrewRole.id, cleanName, cleanCode, editingCrewRole.category, workspaceId);
-                            if (updated) {
-                              setCrewRoles(prev => prev.map(r => r.id === editingCrewRole.id ? { ...r, name: cleanName, short_code: cleanCode } : r));
-                              setSaveToast(`Crew role updated to "${cleanName} (${cleanCode})"!`);
-                              setTimeout(() => setSaveToast(null), 3000);
-                            }
-                            setEditingCrewRole(null);
-                          }}
-                          className="px-4 py-1.5 bg-[#0F9D58] hover:bg-[#0B8043] text-white text-xs font-extrabold rounded-xl shadow-xs"
-                        >
-                          Save Changes
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
+              <CrewRolesSettings
+                workspaceId={workspaceId}
+                crewRoles={crewRoles}
+                loading={loadingCrewRoles}
+                onRolesChange={setCrewRoles}
+                onShowToast={(msg) => {
+                  setSaveToast(msg);
+                  setTimeout(() => setSaveToast(null), 3000);
+                }}
+              />
             )}
 
             {/* 2. QUOTATIONS PAGE SETTINGS */}

@@ -17,6 +17,7 @@ import { LeadInsiderDrawer } from './lead-insider-drawer';
 import { TeamTasksManager } from './team-tasks-manager';
 import { CRMDropdown, getDynamicBadgeStyle } from './crm-dropdown';
 import { LeadQuotationModal } from './lead-quotation-modal';
+import LeadOwnerSelect from '@/app/workspace/leads/components/LeadOwnerSelect';
 
 const MotionDiv = motionImport.div;
 const MotionTr = motionImport.tr;
@@ -724,7 +725,7 @@ export function LeadTable({
   const [manualLeadEmail, setManualLeadEmail] = useState('');
   const [manualLeadSource, setManualLeadSource] = useState('Manual');
   const [manualLeadStatus, setManualLeadStatus] = useState<LeadStatus>('new');
-  const [manualLeadOwner, setManualLeadOwner] = useState('Chad Thunderclock');
+  const [manualLeadOwner, setManualLeadOwner] = useState('Unassigned');
   const [manualEventType, setManualEventType] = useState('Wedding Photography');
   const [manualEventDate, setManualEventDate] = useState('');
   const [manualLocation, setManualLocation] = useState('');
@@ -757,25 +758,19 @@ export function LeadTable({
           }
         } catch (_) {}
       }
-      // Fallback to fetch from settings API
+      // Fetch active team members directly from fw_team_members
       (async () => {
         try {
           const { data: { session } } = await supabase.auth.getSession();
-          const token = session?.access_token;
           const uid = session?.user?.id;
-          const url = uid ? `/api/settings?workspace_id=${uid}` : '/api/settings';
-          const res = await fetch(url, {
-            headers: token ? { Authorization: `Bearer ${token}` } : {}
-          });
-          if (res.status === 401) return;
-          if (res.ok) {
-            const data = await res.json();
-            if (data.success && Array.isArray(data.settings?.lead_owners)) {
-              const mapped = data.settings.lead_owners.map((o: any, idx: number) => {
-                if (typeof o === 'string') return { id: String(idx + 1), name: o, color: '#10b981' };
-                return o;
-              });
-              setTeamMembers(mapped);
+          if (uid) {
+            const { data: fwCrew } = await supabase
+              .from('fw_team_members')
+              .select('id, user_id, name, roles, role_code, is_sales_person, avatar_url, phone_number')
+              .eq('user_id', uid);
+            if (fwCrew && fwCrew.length > 0) {
+              setTeamMembers(fwCrew);
+              return;
             }
           }
         } catch (_) {}
@@ -1490,10 +1485,19 @@ export function LeadTable({
     );
   };
 
-  // Filter lists configuration
+  // Filter lists configuration (Strictly Sales Persons)
   const uniqueOwners = Array.from(new Set([
     'Unassigned',
-    ...teamMembers.map(m => m.name as string),
+    ...teamMembers.filter((m: any) => {
+      const roles: string[] = Array.isArray(m.roles) ? [...m.roles] : (m.role ? [m.role] : []);
+      if (m.primary_role) roles.push(m.primary_role);
+      const codes: string[] = Array.isArray(m.role_codes) ? [...m.role_codes] : (m.role_code ? [m.role_code] : []);
+      return (
+        m.is_sales_person ||
+        roles.some((r: string) => (r || '').toLowerCase().includes('sales') || (r || '').toUpperCase() === 'SP') ||
+        codes.some((c: string) => (c || '').toUpperCase() === 'SP')
+      );
+    }).map(m => m.name as string),
     ...leads.map(l => (l.raw_payload?.lead_owner) as string).filter(Boolean)
   ]));
 
@@ -2986,26 +2990,11 @@ export function LeadTable({
                               case 'lead_owner':
                                 const currentAssignedOwner = lead.raw_payload?.lead_owner || 'Unassigned';
                                 return (
-                                  <MotionTd key={col.id} className="py-2.5 px-3.5 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
-                                    <CRMDropdown
+                                  <MotionTd key={col.id} className="py-2 px-3 whitespace-nowrap text-left" onClick={(e) => e.stopPropagation()}>
+                                    <LeadOwnerSelect
                                       value={currentAssignedOwner}
-                                      placeholder="Select owner"
-                                      allowCustomAdd={true}
-                                      customAddTitle="Add Custom Lead Owner"
-                                      options={[
-                                        { value: 'Unassigned', label: '👤 Unassigned', color: '#94a3b8' },
-                                        ...teamMembers.filter(m => m.name !== 'Unassigned').map(m => ({
-                                          value: m.name,
-                                          label: `👤 ${m.name}`,
-                                          color: m.color || '#10b981'
-                                        }))
-                                      ]}
-                                      onAddCustomOption={(name) => {
-                                        if (!name.trim()) return;
-                                        const newTeam = [...teamMembers, { id: 't_' + Date.now(), name: name.trim(), email: '', role: 'Lead Owner' }];
-                                        setTeamMembers(newTeam);
-                                        handleInlineRawPayloadEdit('lead_owner', name.trim(), lead.id);
-                                      }}
+                                      leadId={lead.id}
+                                      teamMembers={teamMembers}
                                       onChange={(val) => {
                                         handleInlineRawPayloadEdit('lead_owner', val, lead.id);
                                       }}
@@ -4003,23 +3992,12 @@ export function LeadTable({
                     {/* Assign Lead */}
                     <div className="space-y-1">
                       <label className="text-[11px] text-slate-600 dark:text-zinc-300 font-bold block">
-                        Assign Lead
+                        Assign Lead Owner (Sales Person)
                       </label>
-                      <div className="relative flex items-center">
-                        <select
-                          value={manualLeadOwner}
-                          onChange={(e) => setManualLeadOwner(e.target.value)}
-                          className="w-full appearance-none bg-white dark:bg-[#121110] border border-[#E8E5DF] dark:border-[#2C2926] px-3.5 py-2.5 pr-8 rounded-xl text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:border-[#D4AF37] shadow-xs cursor-pointer"
-                        >
-                          {teamMembers.map(m => {
-                            const name = typeof m === 'object' && m !== null ? (m.name || m.value) : String(m);
-                            return (
-                              <option key={name} value={name} className="bg-white dark:bg-[#1C1A18] text-slate-900 dark:text-white">👤 {name}</option>
-                            );
-                          })}
-                        </select>
-                        <ChevronDown className="w-3.5 h-3.5 text-slate-400 pointer-events-none absolute right-3" />
-                      </div>
+                      <LeadOwnerSelect
+                        value={manualLeadOwner}
+                        onChange={(val) => setManualLeadOwner(val)}
+                      />
                     </div>
                   </div>
                 </div>

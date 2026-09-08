@@ -17,6 +17,7 @@ export interface UnifiedFilterState {
   assignmentStatus: 'all' | 'assigned' | 'fully_assigned' | 'unassigned' | 'partial' | 'partially_assigned';
   pmId?: string;
   studioId?: string; // Studio Owner ID for All-Studios consolidated view
+  memberId?: string; // Filter & spotlight specific crew member
 }
 
 export interface TeamManagerFilterDrawerProps {
@@ -29,6 +30,7 @@ export interface TeamManagerFilterDrawerProps {
   availableRoles?: string[];
   assignedPms?: { id: string; name: string }[];
   studios?: { id: string; name: string }[];
+  teamMembers?: { id: string; name: string; avatar_url?: string; role?: string }[];
   isAllStudios?: boolean;
   isPartnerPortal?: boolean;
   isOwner?: boolean;
@@ -84,6 +86,7 @@ export default function TeamManagerFilterDrawer({
   availableRoles = [],
   assignedPms = [],
   studios = [],
+  teamMembers = [],
   isAllStudios = false,
   isPartnerPortal = false,
   isOwner = true,
@@ -92,6 +95,7 @@ export default function TeamManagerFilterDrawer({
   const [draft, setDraft] = useState<UnifiedFilterState>({
     ...filters,
     studioId: filters.studioId || 'all',
+    memberId: filters.memberId || 'all',
   });
 
   useEffect(() => {
@@ -99,9 +103,20 @@ export default function TeamManagerFilterDrawer({
       setDraft({
         ...filters,
         studioId: filters.studioId || 'all',
+        memberId: filters.memberId || 'all',
       });
     }
   }, [isOpen, filters]);
+
+  // Helper for member initials
+  const getInitials = (name: string): string => {
+    if (!name) return 'TM';
+    const parts = name.trim().replace(/\.\.\./g, '').split(/\s+/);
+    if (parts.length >= 2 && parts[0] && parts[1]) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return parts[0].slice(0, 2).toUpperCase();
+  };
 
   // Merge defaults with available props
   const allEventTypes = useMemo(() => {
@@ -122,6 +137,24 @@ export default function TeamManagerFilterDrawer({
       })),
     ];
   }, [studios]);
+
+  const memberOptions: Searchable3DCreamSelectOption[] = useMemo(() => {
+    return [
+      { value: 'all', label: 'All Team Members' },
+      ...teamMembers.map(m => ({
+        value: m.id,
+        label: m.name,
+        badge: 'Crew',
+        icon: m.avatar_url ? (
+          <img src={m.avatar_url} alt="" className="w-5 h-5 rounded-full object-cover shrink-0" />
+        ) : (
+          <div className="w-5 h-5 rounded-full bg-emerald-600 text-white font-black text-[9px] flex items-center justify-center shrink-0">
+            {getInitials(m.name)}
+          </div>
+        )
+      }))
+    ];
+  }, [teamMembers]);
 
   const eventTypeOptions: Searchable3DCreamSelectOption[] = useMemo(() => {
     return [
@@ -285,6 +318,22 @@ export default function TeamManagerFilterDrawer({
                 searchable={true}
                 searchPlaceholder="🔍 Search event type..."
                 placeholder="All Event Types"
+              />
+            </div>
+
+            {/* 5. Filter by Team Member (Spotlight Filter) */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700 dark:text-stone-300 uppercase tracking-wider flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span>Filter by Team Member</span>
+              </label>
+              <Searchable3DCreamSelect
+                value={draft.memberId || 'all'}
+                onChange={(val) => setDraft(prev => ({ ...prev, memberId: val }))}
+                options={memberOptions}
+                searchable={true}
+                searchPlaceholder="🔍 Search team member..."
+                placeholder="All Team Members"
               />
             </div>
 

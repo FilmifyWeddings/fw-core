@@ -6,7 +6,9 @@ import {
   CheckCircle2,
   Trash2,
   Pencil,
-  MoreVertical
+  MoreVertical,
+  MessageSquare,
+  X
 } from 'lucide-react';
 import MilestoneStepDropdown from '@/components/finance/MilestoneStepDropdown';
 import type { ClientFinanceRecord, FinanceMilestoneItem } from '@/types';
@@ -35,6 +37,8 @@ export function MilestoneSchedule({
   onSaveNewTemplate,
 }: MilestoneScheduleProps) {
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
+  const [editingRemarkMilestoneId, setEditingRemarkMilestoneId] = useState<string | null>(null);
+  const [remarkDraft, setRemarkDraft] = useState<string>('');
   const milestoneMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -129,7 +133,7 @@ export function MilestoneSchedule({
                       value={ms.step_name || ms.title || ''}
                       onChange={(newVal) => onMilestoneChange(record.id, ms.id, 'step_name', newVal)}
                       templates={paymentMilestoneTemplates}
-                      onAddTemplate={onSaveNewTemplate}
+                      onAddTemplate={onSaveNewTemplate || (() => {})}
                       placeholder="Select Milestone"
                     />
                   </div>
@@ -145,12 +149,12 @@ export function MilestoneSchedule({
                     />
                   </div>
 
-                  {/* Status Button */}
-                  <div className="w-24 sm:w-28 shrink-0 flex items-center justify-center gap-1">
+                  {/* Status Button & Quick Note Trigger */}
+                  <div className="w-28 sm:w-32 shrink-0 flex items-center justify-center gap-1">
                     <button
                       type="button"
                       onClick={() => onOpenCompletePaymentModal(record, ms)}
-                      className={`w-full h-7 sm:h-7.5 px-2 text-[10px] font-extrabold uppercase rounded-md border transition cursor-pointer flex items-center justify-center truncate ${
+                      className={`flex-1 h-7 sm:h-7.5 px-2 text-[10px] font-extrabold uppercase rounded-md border transition cursor-pointer flex items-center justify-center truncate ${
                         isPaid
                           ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
                           : isOverdue
@@ -159,6 +163,26 @@ export function MilestoneSchedule({
                       }`}
                     >
                       {isPaid ? '✓ Paid' : isOverdue ? `${overdueDays}d Late` : 'Pending'}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (editingRemarkMilestoneId === ms.id) {
+                          setEditingRemarkMilestoneId(null);
+                        } else {
+                          setEditingRemarkMilestoneId(ms.id);
+                          setRemarkDraft(ms.remarks || ms.notes || '');
+                        }
+                      }}
+                      className={`w-7 h-7 sm:h-7.5 flex items-center justify-center rounded-md border transition cursor-pointer shrink-0 ${
+                        ms.remarks || ms.notes
+                          ? 'bg-amber-100/80 text-amber-700 border-amber-200 hover:bg-amber-200/80'
+                          : 'text-slate-400 hover:text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                      title={ms.remarks || ms.notes ? `Note: ${ms.remarks || ms.notes}` : 'Add Remark / Note'}
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
                     </button>
                   </div>
 
@@ -173,7 +197,7 @@ export function MilestoneSchedule({
                     </button>
 
                     {openActionMenuId === ms.id && (
-                      <div className="absolute right-0 top-7 bg-white rounded-xl border border-slate-200 shadow-xl py-1.5 w-40 z-30 space-y-0.5 text-xs">
+                      <div className="absolute right-0 top-7 bg-white rounded-xl border border-slate-200 shadow-xl py-1.5 w-44 z-30 space-y-0.5 text-xs">
                         <button
                           type="button"
                           onClick={() => {
@@ -183,6 +207,17 @@ export function MilestoneSchedule({
                           className="w-full text-left px-3 py-1.5 hover:bg-slate-50 font-bold text-emerald-700 flex items-center gap-2"
                         >
                           <CheckCircle2 className="w-3.5 h-3.5" /> Complete Payment
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOpenActionMenuId(null);
+                            setEditingRemarkMilestoneId(ms.id);
+                            setRemarkDraft(ms.remarks || ms.notes || '');
+                          }}
+                          className="w-full text-left px-3 py-1.5 hover:bg-amber-50 font-bold text-amber-700 flex items-center gap-2"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" /> {ms.remarks || ms.notes ? 'Edit Remark/Note' : 'Add Note'}
                         </button>
                         <button
                           type="button"
@@ -209,27 +244,108 @@ export function MilestoneSchedule({
                   </div>
                 </div>
 
+                {/* Inline Remark Display / Editable Field (Desktop) */}
+                {editingRemarkMilestoneId === ms.id ? (
+                  <div className="hidden sm:flex mt-1 items-center gap-1.5 px-2.5 py-1 bg-amber-50/80 border border-amber-200/80 rounded-lg text-xs animate-in fade-in duration-150">
+                    <span className="text-xs">💬</span>
+                    <input
+                      type="text"
+                      autoFocus
+                      value={remarkDraft}
+                      placeholder="Add note (e.g. Received via GPay on sangeet night)..."
+                      onChange={(e) => setRemarkDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          onMilestoneChange(record.id, ms.id, 'remarks', remarkDraft.trim());
+                          setEditingRemarkMilestoneId(null);
+                        } else if (e.key === 'Escape') {
+                          setEditingRemarkMilestoneId(null);
+                        }
+                      }}
+                      onBlur={() => {
+                        onMilestoneChange(record.id, ms.id, 'remarks', remarkDraft.trim());
+                        setEditingRemarkMilestoneId(null);
+                      }}
+                      className="flex-1 bg-transparent text-xs text-slate-800 placeholder:text-slate-400 font-medium focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        onMilestoneChange(record.id, ms.id, 'remarks', remarkDraft.trim());
+                        setEditingRemarkMilestoneId(null);
+                      }}
+                      className="px-2 py-0.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] rounded cursor-pointer transition"
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingRemarkMilestoneId(null)}
+                      className="p-0.5 text-slate-400 hover:text-slate-600 rounded cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  (ms.remarks || ms.notes) && (
+                    <div
+                      onClick={() => {
+                        setEditingRemarkMilestoneId(ms.id);
+                        setRemarkDraft(ms.remarks || ms.notes || '');
+                      }}
+                      className="hidden sm:flex text-[11px] text-neutral-500 dark:text-neutral-400 italic pl-1 items-center gap-1.5 mt-0.5 cursor-pointer hover:text-neutral-700 dark:hover:text-neutral-200 group/remark transition-colors"
+                      title="Click to edit remark"
+                    >
+                      <span>💬</span>
+                      <span className="font-medium">{ms.remarks || ms.notes}</span>
+                      <Pencil className="w-2.5 h-2.5 opacity-0 group-hover/remark:opacity-100 transition-opacity ml-1 text-slate-400" />
+                    </div>
+                  )
+                )}
+
                 {/* 📱 Mobile Sleek 2-Line Milestone Card (< sm) */}
                 <div className="block sm:hidden p-2 mb-1.5 bg-white border border-slate-200/80 rounded-xl shadow-xs space-y-1.5">
-                  {/* Row 1: Step Dropdown & Delete Action */}
+                  {/* Row 1: Step Dropdown & Actions */}
                   <div className="flex items-center justify-between gap-1">
                     <div className="flex-1 min-w-0">
                       <MilestoneStepDropdown
                         value={ms.step_name || ms.title || ''}
                         onChange={(newVal) => onMilestoneChange(record.id, ms.id, 'step_name', newVal)}
                         templates={paymentMilestoneTemplates}
-                        onAddTemplate={onSaveNewTemplate}
+                        onAddTemplate={onSaveNewTemplate || (() => {})}
                         placeholder="Select Milestone"
                       />
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => onDeleteMilestone(record.id, ms.id)}
-                      className="text-slate-300 hover:text-rose-500 p-1 shrink-0 transition cursor-pointer"
-                      title="Delete Milestone"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (editingRemarkMilestoneId === ms.id) {
+                            setEditingRemarkMilestoneId(null);
+                          } else {
+                            setEditingRemarkMilestoneId(ms.id);
+                            setRemarkDraft(ms.remarks || ms.notes || '');
+                          }
+                        }}
+                        className={`p-1 rounded-md border transition cursor-pointer ${
+                          ms.remarks || ms.notes
+                            ? 'bg-amber-100/80 text-amber-700 border-amber-200'
+                            : 'text-slate-400 hover:text-slate-600 border-slate-200'
+                        }`}
+                        title="Add / Edit Note"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteMilestone(record.id, ms.id)}
+                        className="text-slate-300 hover:text-rose-500 p-1 shrink-0 transition cursor-pointer"
+                        title="Delete Milestone"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
 
                   {/* Row 2: Date, Amount, Status (Compact & Balanced 12-col Grid) */}
@@ -272,6 +388,66 @@ export function MilestoneSchedule({
                       </button>
                     </div>
                   </div>
+
+                  {/* Mobile Inline Remark Display / Editable Field */}
+                  {editingRemarkMilestoneId === ms.id ? (
+                    <div className="pt-1 flex items-center gap-1.5 px-2 py-1 bg-amber-50/80 border border-amber-200/80 rounded-lg text-xs animate-in fade-in duration-150">
+                      <span className="text-xs">💬</span>
+                      <input
+                        type="text"
+                        autoFocus
+                        value={remarkDraft}
+                        placeholder="Add note..."
+                        onChange={(e) => setRemarkDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            onMilestoneChange(record.id, ms.id, 'remarks', remarkDraft.trim());
+                            setEditingRemarkMilestoneId(null);
+                          } else if (e.key === 'Escape') {
+                            setEditingRemarkMilestoneId(null);
+                          }
+                        }}
+                        onBlur={() => {
+                          onMilestoneChange(record.id, ms.id, 'remarks', remarkDraft.trim());
+                          setEditingRemarkMilestoneId(null);
+                        }}
+                        className="flex-1 bg-transparent text-xs text-slate-800 placeholder:text-slate-400 font-medium focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          onMilestoneChange(record.id, ms.id, 'remarks', remarkDraft.trim());
+                          setEditingRemarkMilestoneId(null);
+                        }}
+                        className="px-2 py-0.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] rounded cursor-pointer transition"
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingRemarkMilestoneId(null)}
+                        className="p-0.5 text-slate-400 hover:text-slate-600 rounded cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    (ms.remarks || ms.notes) && (
+                      <div
+                        onClick={() => {
+                          setEditingRemarkMilestoneId(ms.id);
+                          setRemarkDraft(ms.remarks || ms.notes || '');
+                        }}
+                        className="text-[10px] text-neutral-500 dark:text-neutral-400 italic pl-1 flex items-center gap-1 mt-0.5 cursor-pointer hover:text-neutral-700 dark:hover:text-neutral-200 group/remark transition-colors"
+                        title="Click to edit remark"
+                      >
+                        <span>💬</span>
+                        <span className="font-medium truncate">{ms.remarks || ms.notes}</span>
+                        <Pencil className="w-2.5 h-2.5 opacity-0 group-hover/remark:opacity-100 transition-opacity ml-1 text-slate-400" />
+                      </div>
+                    )
+                  )}
                 </div>
               </div>
             );

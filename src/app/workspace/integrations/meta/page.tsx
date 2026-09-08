@@ -45,6 +45,7 @@ import {
   User,
   Key
 } from 'lucide-react';
+import MetaAdsLeadDistributionModal from '../components/MetaAdsLeadDistributionModal';
 
 // ─── Type Definitions ─────────────────────────────────────────────────────────
 
@@ -387,6 +388,9 @@ export default function MetaIntegrationPage() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [activeTab, setActiveTab] = useState<'forms' | 'pages' | 'logs'>('forms');
 
+  // Workspace ID
+  const [workspaceId, setWorkspaceId] = useState('');
+
   // Account Information
   const [connectedAccountName, setConnectedAccountName] = useState('Meta User');
   const [connectedUserEmail, setConnectedUserEmail] = useState('');
@@ -599,6 +603,9 @@ export default function MetaIntegrationPage() {
   }, [getAuthHeaders]);
 
   useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.id) setWorkspaceId(session.user.id);
+    });
     fetchMetaSyncData();
     loadDistributionData();
   }, [fetchMetaSyncData, loadDistributionData]);
@@ -1624,172 +1631,18 @@ export default function MetaIntegrationPage() {
 
       {/* ─── LEAD AUTO-DISTRIBUTION SETTINGS MODAL FOR FORM ───────────────────── */}
       {selectedFormForDistribution && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-fadeIn">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
-            
-            {/* Modal Header */}
-            <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white p-5 flex items-start justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-400 flex items-center justify-center font-bold">
-                  <Users className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-extrabold flex items-center gap-2">
-                    Lead Auto-Distribution Settings
-                  </h3>
-                  <p className="text-xs text-slate-300 font-medium truncate max-w-[280px]">
-                    {selectedFormForDistribution.form_name || selectedFormForDistribution.name || 'Instant Lead Form'}
-                  </p>
-                  <p className="text-[10px] text-slate-400 font-mono">ID: {selectedFormForDistribution.form_id}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setSelectedFormForDistribution(null)}
-                className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-all cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-5 space-y-4 overflow-y-auto flex-1 text-slate-800">
-              
-              {/* Subtitle Info Box */}
-              <div className="bg-emerald-50/80 border border-emerald-200 rounded-2xl p-3.5 flex items-start gap-3 text-xs text-emerald-900">
-                <Sparkles className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-bold">Automatic Round-Robin Lead Rotation</p>
-                  <p className="text-[11px] text-emerald-700 mt-0.5">
-                    Select which team lead owners will automatically receive incoming Meta leads for this form. Leads will rotate equally among checked owners!
-                  </p>
-                </div>
-              </div>
-
-              {/* Master Distribution Switch */}
-              <div className="flex items-center justify-between p-3.5 bg-slate-50 border border-slate-200 rounded-2xl">
-                <div>
-                  <label className="text-xs font-extrabold text-slate-900 block">
-                    Form Lead Auto-Distribution Engine
-                  </label>
-                  <span className="text-[11px] text-slate-500 font-medium">
-                    {distEnabled ? 'Active — Automatically assigning leads' : 'Paused — Leads remain unassigned'}
-                  </span>
-                </div>
-                <FacebookToggleSwitch
-                  enabled={distEnabled}
-                  loading={false}
-                  onChange={() => setDistEnabled(!distEnabled)}
-                />
-              </div>
-
-              {/* Lead Owners Selection Section */}
-              <div className="space-y-2 pt-1">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-extrabold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
-                    <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
-                    Check Lead Owners for this Form ({selectedOwners.length}/{teamOwners.length})
-                  </label>
-                  
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedOwners(teamOwners.map(o => o.name))}
-                      className="text-[11px] font-bold text-emerald-600 hover:text-emerald-700 hover:underline cursor-pointer"
-                    >
-                      Select All
-                    </button>
-                    <span className="text-slate-300">|</span>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedOwners([])}
-                      className="text-[11px] font-bold text-slate-500 hover:text-slate-700 hover:underline cursor-pointer"
-                    >
-                      Deselect All
-                    </button>
-                  </div>
-                </div>
-
-                {/* Checkboxes List */}
-                <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
-                  {teamOwners.map(owner => {
-                    const isChecked = selectedOwners.includes(owner.name);
-                    return (
-                      <label
-                        key={owner.id || owner.name}
-                        onClick={() => {
-                          if (isChecked) {
-                            setSelectedOwners(selectedOwners.filter(n => n !== owner.name));
-                          } else {
-                            setSelectedOwners([...selectedOwners, owner.name]);
-                          }
-                        }}
-                        className={`flex items-center justify-between p-3 rounded-2xl border transition-all cursor-pointer select-none ${
-                          isChecked
-                            ? 'bg-emerald-50/80 border-emerald-300 text-slate-900 shadow-2xs'
-                            : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => {}} // handled by label onClick
-                            className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer"
-                          />
-                          <span
-                            className="w-3 h-3 rounded-full shrink-0"
-                            style={{ backgroundColor: owner.color || '#3b82f6' }}
-                          />
-                          <div>
-                            <p className="text-xs font-bold text-slate-900">{owner.name}</p>
-                            <p className="text-[10px] text-slate-400 font-medium">Team Lead Owner</p>
-                          </div>
-                        </div>
-
-                        {isChecked && (
-                          <span className="text-[10px] font-extrabold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full border border-emerald-300">
-                            ✓ Active
-                          </span>
-                        )}
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-
-            </div>
-
-            {/* Modal Footer */}
-            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3">
-              <button
-                type="button"
-                onClick={() => setSelectedFormForDistribution(null)}
-                className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all cursor-pointer"
-              >
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                onClick={handleSaveFormDistribution}
-                disabled={distSaving}
-                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-md shadow-emerald-600/20 flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
-              >
-                {distSaving ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Saving...</span>
-                  </>
-                ) : (
-                  <>
-                    <Check className="w-3.5 h-3.5" />
-                    <span>Save Lead Distribution</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
+        <MetaAdsLeadDistributionModal
+          isOpen={Boolean(selectedFormForDistribution)}
+          onClose={() => setSelectedFormForDistribution(null)}
+          workspaceId={workspaceId}
+          form={selectedFormForDistribution}
+          initialConfig={formDistributions.get(selectedFormForDistribution.form_id)}
+          onSaveSuccess={(formId, enabled, owners) => {
+            setFormDistributions(prev => new Map(prev).set(formId, { enabled, owners }));
+            showToast(`🎯 Lead Auto-Distribution saved for "${selectedFormForDistribution.form_name || selectedFormForDistribution.name || 'Form'}"!`, 'success');
+            setSelectedFormForDistribution(null);
+          }}
+        />
       )}
 
     </div>

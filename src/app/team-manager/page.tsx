@@ -281,6 +281,7 @@ export default function TeamManagerPage() {
     assignmentStatus: 'all',
     pmId: 'all',
     studioId: 'all',
+    memberId: 'all',
   });
   const studioFilterOptions = useMemo(() => {
     return availableWorkspaces
@@ -1275,6 +1276,19 @@ export default function TeamManagerPage() {
         if (p.user_id !== unifiedFilters.studioId) return false;
       }
 
+      // 10. Unified Team Member Spotlight Filter
+      if (unifiedFilters?.memberId && unifiedFilters.memberId !== 'all') {
+        const targetMember = unifiedFilters.memberId.toLowerCase();
+        const hasMember = p.fw_sub_events?.some(se =>
+          se.fw_assignments?.some(a => {
+            const mId = (a.assigned_member_id || (a as any).team_member_id || (a.fw_team_members as any)?.id || '').toLowerCase();
+            const mName = ((a.fw_team_members as any)?.name || (a as any).clean_name || '').toLowerCase();
+            return mId === targetMember || mName === targetMember;
+          })
+        );
+        if (!hasMember) return false;
+      }
+
       return true;
     });
   }, [projects, activeTab, searchQuery, selectedRoleFilter, unifiedFilters]);
@@ -1351,6 +1365,17 @@ export default function TeamManagerPage() {
           const assignments = se.fw_assignments || [];
           const assignedCount = assignments.filter(a => Boolean(a.assigned_member_id)).length;
           if (assignments.length === 0 || assignedCount === 0 || assignedCount >= assignments.length) return;
+        }
+
+        // 7. Unified Team Member Spotlight Filter
+        if (unifiedFilters?.memberId && unifiedFilters.memberId !== 'all') {
+          const targetMember = unifiedFilters.memberId.toLowerCase();
+          const hasMember = (se.fw_assignments || []).some(a => {
+            const mId = (a.assigned_member_id || (a as any).team_member_id || (a.fw_team_members as any)?.id || '').toLowerCase();
+            const mName = ((a.fw_team_members as any)?.name || (a as any).clean_name || '').toLowerCase();
+            return mId === targetMember || mName === targetMember;
+          });
+          if (!hasMember) return;
         }
 
         list.push({ project: p, subEvent: se });
@@ -1557,6 +1582,34 @@ export default function TeamManagerPage() {
               )}
             </div>
           </div>
+
+        {/* ACTIVE MEMBER SPOTLIGHT BANNER / BADGE */}
+        {unifiedFilters?.memberId && unifiedFilters.memberId !== 'all' && (
+          <div className="flex flex-wrap items-center gap-2 px-1">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-50/90 border border-amber-300/90 text-amber-950 text-xs font-bold shadow-xs">
+              <span className="flex h-2.5 w-2.5 relative">
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500 animate-pulse"></span>
+              </span>
+              <span>
+                Spotlight Active:{' '}
+                <span className="text-amber-900 font-extrabold">
+                  {teamMembers.find(m => m.id === unifiedFilters.memberId)?.name || unifiedFilters.memberId}
+                </span>{' '}
+                <span className="text-amber-700 font-medium">
+                  ({filteredProjects.length} matching {filteredProjects.length === 1 ? 'project' : 'projects'})
+                </span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setUnifiedFilters(prev => ({ ...prev, memberId: 'all' }))}
+                className="ml-2 px-2 py-0.5 rounded-lg bg-amber-200/80 hover:bg-amber-300 text-amber-950 text-[10px] font-black uppercase transition cursor-pointer flex items-center gap-1 shadow-2xs"
+              >
+                <span>Clear Spotlight</span>
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* ─── TAB VIEW: CARDS VIEW (SMART DUAL RESPONSIVE LAYOUT: PC DESKTOP + MOBILE APP CARDS) ─── */}
         {activeTab === 'projects' && (
@@ -2096,6 +2149,19 @@ export default function TeamManagerPage() {
                                           (userId && memberObj?.user_id === userId)
                                         );
 
+                                        const isUserAdmin = !isTmReadOnly;
+                                        const isSelectedSpotlight = Boolean(
+                                          isUserAdmin &&
+                                          isAssigned &&
+                                          unifiedFilters?.memberId &&
+                                          unifiedFilters.memberId !== 'all' &&
+                                          (
+                                            assignment.assigned_member_id === unifiedFilters.memberId ||
+                                            memberObj?.id === unifiedFilters.memberId ||
+                                            cleanName.toLowerCase() === unifiedFilters.memberId.toLowerCase()
+                                          )
+                                        );
+
                                         // Dynamic Per-Event RBAC Masking: omit non-self roles completely if OWN_ROLE_ONLY
                                         if (eventVisibility === 'OWN_ROLE_ONLY' && !isCurrentUserSlot) {
                                           return null;
@@ -2104,66 +2170,100 @@ export default function TeamManagerPage() {
                                         return (
                                           <div key={assignment.id} className="relative flex flex-col items-center min-w-[68px]">
                                             <div
-                                              data-assignment-id={assignment.id}
-                                              onClick={(e) => {
-                                                if (isTmReadOnly || eventVisibility === 'FULL_CREW') return;
-                                                const rect = e.currentTarget.getBoundingClientRect();
-                                                if (activeDropdownId === dropdownKey) {
-                                                  setActiveDropdownId(null);
-                                                  setDropdownPos(null);
-                                                } else {
-                                                  setActiveDropdownId(dropdownKey);
-                                                  setMemberSearchQuery('');
-                                                  setDropdownPos({
-                                                    top: Math.min(rect.bottom + 6, window.innerHeight - 280),
-                                                    left: Math.max(10, Math.min(rect.left - 100, window.innerWidth - 270)),
-                                                  });
-                                                }
-                                              }}
-                                              className={`flex flex-col items-center group min-w-[50px] max-w-[70px] text-center select-none ${
-                                                isTmReadOnly || eventVisibility === 'FULL_CREW' ? 'cursor-default' : 'cursor-pointer'
+                                              className={`relative flex flex-col items-center transition-all duration-300 ${
+                                                isSelectedSpotlight
+                                                  ? 'rounded-lg ring-2 ring-amber-400/80 bg-amber-50/70 dark:bg-amber-950/30 p-1 shadow-sm shadow-amber-300/40 animate-pulse'
+                                                  : ''
                                               }`}
-                                              title={isAssigned ? `${cleanName} (${role})` : isTmReadOnly || eventVisibility === 'FULL_CREW' ? `Unassigned: ${role}` : `Unassigned: ${role}`}
                                             >
-                                              {isAssigned ? (
-                                                <div className="relative w-10 h-10 rounded-full border-2 border-emerald-500 p-0.5 mb-1.5 flex items-center justify-center shrink-0 bg-emerald-50 shadow-xs">
-                                                  {memberObj?.avatar_url ? (
-                                                    <img 
-                                                      src={memberObj.avatar_url} 
-                                                      alt={cleanName} 
-                                                      className="w-full h-full rounded-full object-cover shrink-0" 
-                                                    />
-                                                  ) : (
-                                                    <div className="w-full h-full rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 text-white font-black text-[10px] flex items-center justify-center shrink-0">
-                                                      {getInitials(cleanName || role)}
+                                              <div
+                                                data-assignment-id={assignment.id}
+                                                onClick={(e) => {
+                                                  if (isTmReadOnly || eventVisibility === 'FULL_CREW') return;
+                                                  const rect = e.currentTarget.getBoundingClientRect();
+                                                  if (activeDropdownId === dropdownKey) {
+                                                    setActiveDropdownId(null);
+                                                    setDropdownPos(null);
+                                                  } else {
+                                                    setActiveDropdownId(dropdownKey);
+                                                    setMemberSearchQuery('');
+                                                    setDropdownPos({
+                                                      top: Math.min(rect.bottom + 6, window.innerHeight - 280),
+                                                      left: Math.max(10, Math.min(rect.left - 100, window.innerWidth - 270)),
+                                                    });
+                                                  }
+                                                }}
+                                                className={`flex flex-col items-center group min-w-[50px] max-w-[76px] text-center select-none ${
+                                                  isTmReadOnly || eventVisibility === 'FULL_CREW' ? 'cursor-default' : 'cursor-pointer'
+                                                }`}
+                                                title={isAssigned ? `${cleanName} (${role})` : isTmReadOnly || eventVisibility === 'FULL_CREW' ? `Unassigned: ${role}` : `Unassigned: ${role}`}
+                                              >
+                                                {isAssigned ? (
+                                                  <div className="relative mb-1 flex items-center justify-center">
+                                                    <div className={`relative w-10 h-10 rounded-full border-2 p-0.5 flex items-center justify-center shrink-0 transition-all ${
+                                                      isSelectedSpotlight
+                                                        ? 'border-amber-400 bg-amber-100/80 shadow-xs'
+                                                        : 'border-emerald-500 bg-emerald-50 shadow-xs'
+                                                    }`}>
+                                                      {memberObj?.avatar_url ? (
+                                                        <img 
+                                                          src={memberObj.avatar_url} 
+                                                          alt={cleanName} 
+                                                          className="w-full h-full rounded-full object-cover shrink-0" 
+                                                        />
+                                                      ) : (
+                                                        <div className={`w-full h-full rounded-full font-black text-[10px] flex items-center justify-center shrink-0 text-white ${
+                                                          isSelectedSpotlight
+                                                            ? 'bg-gradient-to-br from-amber-500 to-amber-600'
+                                                            : 'bg-gradient-to-br from-emerald-500 to-teal-600'
+                                                        }`}>
+                                                          {getInitials(cleanName || role)}
+                                                        </div>
+                                                      )}
                                                     </div>
-                                                  )}
-                                                </div>
-                                              ) : (isTmReadOnly || eventVisibility === 'FULL_CREW') ? (
-                                                <div className="w-10 h-10 rounded-full border border-dashed border-slate-300 bg-slate-100/70 text-slate-400 font-bold mb-1.5 flex items-center justify-center shadow-2xs shrink-0 cursor-default">
-                                                  <span className="text-xs font-black">-</span>
-                                                </div>
-                                              ) : (
-                                                <div className="w-10 h-10 rounded-full border border-dashed border-red-500 bg-red-50/90 text-red-600 font-black mb-1.5 flex items-center justify-center shadow-2xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
-                                                  <Plus className="w-4 h-4 text-red-600 stroke-[3]" />
-                                                </div>
-                                              )}
+                                                  </div>
+                                                ) : (isTmReadOnly || eventVisibility === 'FULL_CREW') ? (
+                                                  <div className="w-10 h-10 rounded-full border border-dashed border-slate-300 bg-slate-100/70 text-slate-400 font-bold mb-1 flex items-center justify-center shadow-2xs shrink-0 cursor-default">
+                                                    <span className="text-xs font-black">-</span>
+                                                  </div>
+                                                ) : (
+                                                  <div className="w-10 h-10 rounded-full border border-dashed border-red-500 bg-red-50/90 text-red-600 font-black mb-1 flex items-center justify-center shadow-2xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
+                                                    <Plus className="w-4 h-4 text-red-600 stroke-[3]" />
+                                                  </div>
+                                                )}
 
-                                              {/* STRICT SHORT ROLE CODE BADGE */}
-                                              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 leading-tight block text-center">
-                                                {shortRole}
-                                              </span>
+                                                {/* STRICT SHORT ROLE CODE BADGE */}
+                                                <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 leading-tight block text-center">
+                                                  {shortRole}
+                                                </span>
 
-                                              {/* MEMBER FULL CLEAN NAME (NOT CUT OFF) */}
-                                              {isAssigned ? (
-                                                <span className="text-[11px] font-extrabold text-emerald-600 dark:text-emerald-500 text-center leading-tight truncate max-w-[68px] block mt-0.5" title={cleanName}>
-                                                  {cleanName}
-                                                </span>
-                                              ) : (
-                                                <span className="text-[10px] font-semibold text-slate-400 truncate max-w-[68px] text-center leading-none mt-0.5 block">
-                                                  {isTmReadOnly || eventVisibility === 'FULL_CREW' ? 'Unassigned' : 'Assign'}
-                                                </span>
-                                              )}
+                                                {/* 2-LINE CENTERED CREW MEMBER NAME */}
+                                                {isAssigned ? (
+                                                  (() => {
+                                                    const fullName = cleanName || memberObj?.name?.trim() || '';
+                                                    const firstSpaceIndex = fullName.indexOf(' ');
+                                                    const firstName = firstSpaceIndex !== -1 ? fullName.substring(0, firstSpaceIndex) : fullName;
+                                                    const remainingName = firstSpaceIndex !== -1 ? fullName.substring(firstSpaceIndex + 1) : '';
+
+                                                    return (
+                                                      <div className="flex flex-col items-center justify-center leading-tight text-center max-w-[76px] px-0.5 mt-0.5">
+                                                        <span className="text-xs font-semibold text-neutral-800 dark:text-neutral-200">
+                                                          {firstName}
+                                                        </span>
+                                                        {remainingName && (
+                                                          <span className="text-[10px] font-medium text-neutral-600 dark:text-neutral-400 tracking-tight line-clamp-1">
+                                                            {remainingName}
+                                                          </span>
+                                                        )}
+                                                      </div>
+                                                    );
+                                                  })()
+                                                ) : (
+                                                  <span className="text-[10px] font-semibold text-slate-400 truncate max-w-[68px] text-center leading-none mt-0.5 block">
+                                                    {isTmReadOnly || eventVisibility === 'FULL_CREW' ? 'Unassigned' : 'Assign'}
+                                                  </span>
+                                                )}
+                                              </div>
                                             </div>
                                           </div>
                                         );
@@ -2508,6 +2608,19 @@ export default function TeamManagerPage() {
                                             (userId && memberObj?.user_id === userId)
                                           );
 
+                                          const isUserAdmin = !isTmReadOnly;
+                                          const isSelectedSpotlight = Boolean(
+                                            isUserAdmin &&
+                                            isAssigned &&
+                                            unifiedFilters?.memberId &&
+                                            unifiedFilters.memberId !== 'all' &&
+                                            (
+                                              assignment.assigned_member_id === unifiedFilters.memberId ||
+                                              memberObj?.id === unifiedFilters.memberId ||
+                                              cleanName.toLowerCase() === unifiedFilters.memberId.toLowerCase()
+                                            )
+                                          );
+
                                           // Dynamic Per-Event RBAC Masking: omit non-self roles completely if OWN_ROLE_ONLY
                                           if (eventVisibility === 'OWN_ROLE_ONLY' && !isCurrentUserSlot) {
                                             return null;
@@ -2516,64 +2629,98 @@ export default function TeamManagerPage() {
                                           return (
                                             <div
                                               key={assignment.id}
-                                              data-assignment-id={assignment.id}
-                                              onClick={(e) => {
-                                                if (isTmReadOnly || eventVisibility === 'FULL_CREW') return;
-                                                const rect = e.currentTarget.getBoundingClientRect();
-                                                setDropdownPos({
-                                                  top: Math.min(rect.bottom + 6, window.innerHeight - 280),
-                                                  left: Math.max(10, Math.min(rect.left - 40, window.innerWidth - 270)),
-                                                });
-                                                setActiveDropdownId(activeDropdownId === assignment.id ? null : assignment.id);
-                                              }}
-                                              className={`flex flex-col items-center group select-none relative min-w-[50px] max-w-[70px] text-center ${
-                                                isTmReadOnly || eventVisibility === 'FULL_CREW' ? 'cursor-default' : 'cursor-pointer'
+                                              className={`relative flex flex-col items-center transition-all duration-300 ${
+                                                isSelectedSpotlight
+                                                  ? 'rounded-lg ring-2 ring-amber-400/80 bg-amber-50/70 dark:bg-amber-950/30 p-1 shadow-sm shadow-amber-300/40 animate-pulse'
+                                                  : ''
                                               }`}
-                                              title={isAssigned ? `${cleanName} (${role})` : isTmReadOnly || eventVisibility === 'FULL_CREW' ? `Unassigned: ${role}` : `Unassigned: ${role}`}
                                             >
-                                              {/* CIRCLE AVATAR */}
-                                              {isAssigned ? (
-                                                <div className="relative w-10 h-10 rounded-full border-2 border-emerald-500 p-0.5 mb-1.5 flex items-center justify-center shrink-0 bg-emerald-50 shadow-xs">
-                                                  {memberObj?.avatar_url ? (
-                                                    <img
-                                                      src={memberObj.avatar_url}
-                                                      alt={cleanName}
-                                                      className="w-full h-full rounded-full object-cover shrink-0"
-                                                      onError={(e) => {
-                                                        (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName)}`;
-                                                      }}
-                                                    />
-                                                  ) : (
-                                                    <div className="w-full h-full rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 text-white font-black text-[10px] flex items-center justify-center shrink-0">
-                                                      {getInitials(cleanName || role)}
+                                              <div
+                                                data-assignment-id={assignment.id}
+                                                onClick={(e) => {
+                                                  if (isTmReadOnly || eventVisibility === 'FULL_CREW') return;
+                                                  const rect = e.currentTarget.getBoundingClientRect();
+                                                  setDropdownPos({
+                                                    top: Math.min(rect.bottom + 6, window.innerHeight - 280),
+                                                    left: Math.max(10, Math.min(rect.left - 40, window.innerWidth - 270)),
+                                                  });
+                                                  setActiveDropdownId(activeDropdownId === assignment.id ? null : assignment.id);
+                                                }}
+                                                className={`flex flex-col items-center group select-none relative min-w-[50px] max-w-[76px] text-center ${
+                                                  isTmReadOnly || eventVisibility === 'FULL_CREW' ? 'cursor-default' : 'cursor-pointer'
+                                                }`}
+                                                title={isAssigned ? `${cleanName} (${role})` : isTmReadOnly || eventVisibility === 'FULL_CREW' ? `Unassigned: ${role}` : `Unassigned: ${role}`}
+                                              >
+                                                {/* CIRCLE AVATAR */}
+                                                {isAssigned ? (
+                                                  <div className="relative mb-1 flex items-center justify-center">
+                                                    <div className={`relative w-10 h-10 rounded-full border-2 p-0.5 flex items-center justify-center shrink-0 transition-all ${
+                                                      isSelectedSpotlight
+                                                        ? 'border-amber-400 bg-amber-100/80 shadow-xs'
+                                                        : 'border-emerald-500 bg-emerald-50 shadow-xs'
+                                                    }`}>
+                                                      {memberObj?.avatar_url ? (
+                                                        <img
+                                                          src={memberObj.avatar_url}
+                                                          alt={cleanName}
+                                                          className="w-full h-full rounded-full object-cover shrink-0"
+                                                          onError={(e) => {
+                                                            (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName)}`;
+                                                          }}
+                                                        />
+                                                      ) : (
+                                                        <div className={`w-full h-full rounded-full font-black text-[10px] flex items-center justify-center shrink-0 text-white ${
+                                                          isSelectedSpotlight
+                                                            ? 'bg-gradient-to-br from-amber-500 to-amber-600'
+                                                            : 'bg-gradient-to-br from-emerald-500 to-teal-600'
+                                                        }`}>
+                                                          {getInitials(cleanName || role)}
+                                                        </div>
+                                                      )}
                                                     </div>
-                                                  )}
-                                                </div>
-                                              ) : (isTmReadOnly || eventVisibility === 'FULL_CREW') ? (
-                                                <div className="w-10 h-10 rounded-full border border-dashed border-slate-300 bg-slate-100/70 text-slate-400 font-bold mb-1.5 flex items-center justify-center shadow-2xs shrink-0 cursor-default">
-                                                  <span className="text-xs font-black">-</span>
-                                                </div>
-                                              ) : (
-                                                <div className="w-10 h-10 rounded-full border border-dashed border-red-500 bg-red-50/90 text-red-600 font-black mb-1.5 flex items-center justify-center shadow-2xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
-                                                  <Plus className="w-4 h-4 text-red-600 stroke-[3]" />
-                                                </div>
-                                              )}
+                                                  </div>
+                                                ) : (isTmReadOnly || eventVisibility === 'FULL_CREW') ? (
+                                                  <div className="w-10 h-10 rounded-full border border-dashed border-slate-300 bg-slate-100/70 text-slate-400 font-bold mb-1 flex items-center justify-center shadow-2xs shrink-0 cursor-default">
+                                                    <span className="text-xs font-black">-</span>
+                                                  </div>
+                                                ) : (
+                                                  <div className="w-10 h-10 rounded-full border border-dashed border-red-500 bg-red-50/90 text-red-600 font-black mb-1 flex items-center justify-center shadow-2xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
+                                                    <Plus className="w-4 h-4 text-red-600 stroke-[3]" />
+                                                  </div>
+                                                )}
 
-                                              {/* Role Pill - STRICT SHORT FORM ONLY */}
-                                              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 leading-tight block text-center">
-                                                {shortRole}
-                                              </span>
+                                                {/* Role Pill - STRICT SHORT FORM ONLY */}
+                                                <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 leading-tight block text-center">
+                                                  {shortRole}
+                                                </span>
 
-                                              {/* Member Full Name */}
-                                              {isAssigned ? (
-                                                <span className="text-[11px] font-extrabold text-emerald-600 dark:text-emerald-500 text-center leading-tight truncate max-w-[68px] block mt-0.5" title={cleanName}>
-                                                  {cleanName}
-                                                </span>
-                                              ) : (
-                                                <span className="text-[10px] font-semibold text-slate-400 truncate max-w-[68px] text-center leading-none mt-0.5 block">
-                                                  {isTmReadOnly || eventVisibility === 'FULL_CREW' ? 'Unassigned' : 'Assign'}
-                                                </span>
-                                              )}
+                                                {/* 2-LINE CENTERED CREW MEMBER NAME */}
+                                                {isAssigned ? (
+                                                  (() => {
+                                                    const fullName = cleanName || memberObj?.name?.trim() || '';
+                                                    const firstSpaceIndex = fullName.indexOf(' ');
+                                                    const firstName = firstSpaceIndex !== -1 ? fullName.substring(0, firstSpaceIndex) : fullName;
+                                                    const remainingName = firstSpaceIndex !== -1 ? fullName.substring(firstSpaceIndex + 1) : '';
+
+                                                    return (
+                                                      <div className="flex flex-col items-center justify-center leading-tight text-center max-w-[76px] px-0.5 mt-0.5">
+                                                        <span className="text-xs font-semibold text-neutral-800 dark:text-neutral-200">
+                                                          {firstName}
+                                                        </span>
+                                                        {remainingName && (
+                                                          <span className="text-[10px] font-medium text-neutral-600 dark:text-neutral-400 tracking-tight line-clamp-1">
+                                                            {remainingName}
+                                                          </span>
+                                                        )}
+                                                      </div>
+                                                    );
+                                                  })()
+                                                ) : (
+                                                  <span className="text-[10px] font-semibold text-slate-400 truncate max-w-[68px] text-center leading-none mt-0.5 block">
+                                                    {isTmReadOnly || eventVisibility === 'FULL_CREW' ? 'Unassigned' : 'Assign'}
+                                                  </span>
+                                                )}
+                                              </div>
                                             </div>
                                           );
                                         })}
@@ -3158,6 +3305,7 @@ export default function TeamManagerPage() {
             assignmentStatus: 'all',
             pmId: 'all',
             studioId: 'all',
+            memberId: 'all',
           });
         }}
         availableEventTypes={eventTypesList}
@@ -3168,6 +3316,7 @@ export default function TeamManagerPage() {
         ]))}
         assignedPms={assignedPms}
         studios={studioFilterOptions}
+        teamMembers={teamMembers}
         isAllStudios={activeWorkspace?.workspaceId === 'all' || workspaceId === 'all'}
         isPartnerPortal={!isOwner}
         isOwner={isOwner}

@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { syncAssignmentAdvancePayout } from './payoutExpensesSyncService';
 
 export interface SaveCrewAssignmentCommercialsParams {
   workspaceId: string;
@@ -21,6 +22,7 @@ export interface SaveCrewAssignmentCommercialsParams {
   paymentStatus?: 'pending' | 'partial' | 'completed';
   paymentDate?: string;
   paymentMethod?: string;
+  referenceNo?: string;
   notes?: string;
   clientName?: string;
   eventName?: string;
@@ -179,7 +181,35 @@ export async function saveCrewAssignmentCommercials(params: SaveCrewAssignmentCo
     console.warn('[crewAssignmentService] team_event_payouts sync note:', payoutErr);
   }
 
-  // 4. Dispatch browser real-time event for zero-latency reactive UI
+  // 4. Instant Studio Expenses & Tranches Sync for Advance Paid
+  const finalAssignmentId = updatedAssignId || savedRow?.id;
+  if (advance > 0 && finalAssignmentId) {
+    try {
+      await syncAssignmentAdvancePayout({
+        workspaceId: params.workspaceId || currentUid,
+        assignmentId: finalAssignmentId,
+        projectId: params.projectId,
+        subEventId: params.subEventId,
+        member: {
+          id: String(params.member.id),
+          name: params.member.name,
+          phone: params.member.phone_number || params.member.phone
+        },
+        clientName: params.clientName,
+        eventName: params.eventName,
+        agreedAmount: agreed,
+        advancePaid: advance,
+        paymentDate: pDate,
+        paymentMethod: pMethod,
+        referenceNo: params.referenceNo,
+        notes: params.notes
+      });
+    } catch (advSyncErr) {
+      console.warn('[crewAssignmentService] syncAssignmentAdvancePayout notice:', advSyncErr);
+    }
+  }
+
+  // 5. Dispatch browser real-time event for zero-latency reactive UI
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('team_finance_updated', {
       detail: {

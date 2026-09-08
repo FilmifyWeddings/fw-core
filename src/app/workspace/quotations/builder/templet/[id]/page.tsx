@@ -3498,7 +3498,8 @@ function StudioCoreAiryBuilderContent() {
                       setCustomEventTypes(prev => [...prev, trimmed]);
                     }
                     handleEventTypeChange(trimmed);
-                    const effectiveUid = userId || (user as any)?.id;
+                    const { data: authData } = await supabase.auth.getUser();
+                    const effectiveUid = authData?.user?.id;
                     await saveWorkspaceEventType(effectiveUid || undefined, trimmed, 'Quotation Custom');
                   }
                 }}

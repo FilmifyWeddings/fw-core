@@ -7,7 +7,7 @@ import {
   Layers, Palette, Tag, Briefcase, FileSpreadsheet, AlertCircle, 
   Database, RefreshCw, BarChart2, FileText, Calendar, Lock,
   Coins, FileCheck, ClipboardList, ShieldAlert, ArrowRight, User,
-  Users, Sparkles
+  Users, Sparkles, Edit2
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { 

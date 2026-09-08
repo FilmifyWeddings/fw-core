@@ -424,6 +424,8 @@ export default function MonthListView({
                                 variant="avatar"
                                 readOnly={isReadOnly}
                                 isMasked={false}
+                                    isAdmin={!isTmReadOnly}
+                                    selectedFilterMemberId={unifiedFilters?.memberId || null}
                               />
                             );
                           })}
@@ -624,6 +626,8 @@ export default function MonthListView({
                                     variant="avatar"
                                     readOnly={isReadOnly}
                                     isMasked={false}
+                                    isAdmin={!isTmReadOnly}
+                                    selectedFilterMemberId={unifiedFilters?.memberId || null}
                                   />
                                 );
                               })}
@@ -827,6 +831,8 @@ export default function MonthListView({
                                           variant="avatar"
                                           readOnly={isReadOnly}
                                           isMasked={false}
+                                          isAdmin={!isTmReadOnly}
+                                          selectedFilterMemberId={unifiedFilters?.memberId || null}
                                         />
                                       );
                                     })}

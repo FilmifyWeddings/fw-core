@@ -90,11 +90,15 @@ export function FinanceFiltersModal({
                 <label className="text-[11px] font-black text-amber-950 uppercase tracking-wider flex items-center gap-1.5">
                   <Calendar className="w-3.5 h-3.5 text-amber-700" /> Date Range
                 </label>
-                {dateRangePreset !== 'all' && (
+                {statusFilter === 'received' ? (
+                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
+                    Payment Date Mode
+                  </span>
+                ) : dateRangePreset !== 'all' ? (
                   <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
                     Active
                   </span>
-                )}
+                ) : null}
               </div>
 
               <div className="grid grid-cols-3 gap-1 text-[10px] font-extrabold">
@@ -174,6 +178,12 @@ export function FinanceFiltersModal({
                   />
                 </div>
               </div>
+
+              {statusFilter === 'received' && (
+                <p className="text-[10px] text-emerald-800 font-semibold leading-tight pt-0.5">
+                  ⚡ Single unified date range matches milestone payment received dates for &quot;Payment Received&quot; status.
+                </p>
+              )}
             </div>
 
             {/* 👥 TEAM MEMBER */}
@@ -200,13 +210,14 @@ export function FinanceFiltersModal({
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value as any)}
-                className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none"
+                className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
               >
                 <option value="all">⚡ All Statuses</option>
-                <option value="overdue_only">⚠️ Overdue Dues Only</option>
-                <option value="pending">⏳ Pending Balance</option>
+                <option value="received">💰 Payment Received</option>
                 <option value="partially_paid">🌓 Partially Paid</option>
-                <option value="paid">✅ 100% Paid Full</option>
+                <option value="paid">✅ Fully Paid</option>
+                <option value="pending">⏳ Pending Due</option>
+                <option value="overdue_only">⚠️ Overdue Dues Only</option>
               </select>
             </div>
 

@@ -169,6 +169,7 @@ export async function POST(request: NextRequest) {
     const currentMs = now.getTime();
     const grossMinutes = Math.max(0, Math.round((currentMs - checkInMs) / 60000));
     const breakMinutes = (record.break_duration_minutes || 0);
+    const pausedMinutes = breakMinutes;
     const netActiveMinutes = Math.max(0, grossMinutes - breakMinutes);
 
     const updatedDeviceInfo = {

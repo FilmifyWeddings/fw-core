@@ -20,7 +20,7 @@ function getEmailFromRecoveryToken(tokenStr: string): string | null {
   }
 }
 
-export const OfficialStudioCoreLogo = () => (
+const OfficialStudioCoreLogo = () => (
   <div className="flex items-center gap-2.5 sm:gap-3 select-none">
     <div className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-br from-[#D9822B] via-[#C8751F] to-[#A05A12] text-white flex items-center justify-center font-black tracking-wider shadow-md border border-[#F5C78E]/50 shrink-0">
       <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/30 to-transparent opacity-90 pointer-events-none rounded-2xl" />

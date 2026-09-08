@@ -13,6 +13,7 @@ import { supabase } from '@/lib/supabase';
 import { QuotationBuilder } from './quotation-builder';
 import { TeamTasksManager } from './team-tasks-manager';
 import { CRMDropdown } from './crm-dropdown';
+import LeadOwnerSelect from '@/app/workspace/leads/components/LeadOwnerSelect';
 import AiMicButton from '@/components/AiMicButton';
 
 interface LeadInsiderDrawerProps {
@@ -1263,15 +1264,28 @@ export function LeadInsiderDrawer({
 
                         {/* Last Contact / Lead Owner Row */}
                         <div className="bg-white dark:bg-[#141312] border border-slate-200/80 dark:border-zinc-800/80 rounded-2xl p-3 flex items-center justify-between gap-3 shadow-xs">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 flex items-center justify-center shrink-0">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-200/60 dark:border-amber-800/60">
                               <User className="w-4 h-4" />
                             </div>
-                            <div className="min-w-0">
-                              <span className="block text-xs font-bold text-slate-900 dark:text-white truncate">
-                                {lead.raw_payload?.lead_owner || 'Sushant Nawale (Admin)'}
-                              </span>
-                              <span className="block text-[10px] text-slate-400 dark:text-zinc-500 font-medium">Lead Owner</span>
+                            <div className="min-w-0 flex-1">
+                              <span className="block text-[10px] text-slate-400 dark:text-zinc-500 font-medium uppercase tracking-wider">Lead Owner</span>
+                              <div className="mt-0.5">
+                                <LeadOwnerSelect
+                                  value={lead.raw_payload?.lead_owner || 'Unassigned'}
+                                  leadId={lead.id}
+                                  onChange={(val) => {
+                                    if (onLeadUpdate) {
+                                      onLeadUpdate(lead.id, {
+                                        raw_payload: {
+                                          ...(lead.raw_payload || {}),
+                                          lead_owner: val,
+                                        }
+                                      });
+                                    }
+                                  }}
+                                />
+                              </div>
                             </div>
                           </div>
                         </div>

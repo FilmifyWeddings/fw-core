@@ -34,6 +34,7 @@ import {
 } from '@/lib/team-finance-sync';
 import { supabase } from '@/lib/supabase';
 import { fetchMemberPayouts, recordMemberPayment } from '@/lib/services/teamPayoutService';
+import { recordCrewPayoutTranche } from '@/lib/services/payoutExpensesSyncService';
 import RecordPaymentModal from './RecordPaymentModal';
 import SalarySlipModal, { SalarySlipData } from './SalarySlipModal';
 import DeleteSlipConfirmModal from './DeleteSlipConfirmModal';
@@ -157,8 +158,12 @@ export default function TeamMemberFinanceDrawer({
     title: string;
     clientName?: string;
     totalAmount: number;
+    paidAmount?: number;
     balanceAmount: number;
     role?: string;
+    projectId?: string;
+    subEventId?: string;
+    assignmentId?: string;
   } | null>(null);
 
   const [paymentAmount, setPaymentAmount] = useState<string>('');
@@ -822,43 +827,36 @@ export default function TeamMemberFinanceDrawer({
       const pStatus = (isZeroSettle || amount >= paymentTarget.balanceAmount) ? 'completed' : 'partial';
 
       if (paymentTarget.type === 'EVENT') {
-        await recordMemberPayment(
-          paymentTarget.id,
-          amount,
-          { id: memberId!, name: memberName },
-          {
-            client_name: paymentTarget.clientName || 'Client Not Assigned',
-            event_name: paymentTarget.title || 'Shoot Event',
-            event_date: pDate
-          }
-        );
-
-        await updateCrewAssignmentPayment(workspaceId, safeAssignmentId, {
-          advanceAmount: amount,
-          paymentStatus: pStatus,
-          paymentMethod: pMode,
+        const trancheResult = await recordCrewPayoutTranche({
+          workspaceId,
+          assignmentId: safeAssignmentId,
+          memberId: memberId!,
+          memberName: memberName,
+          projectId: paymentTarget.projectId,
+          subEventId: paymentTarget.subEventId,
+          clientName: paymentTarget.clientName,
+          eventName: paymentTarget.title,
+          installmentAmount: amount,
           paymentDate: pDate,
+          paymentMode: pMode,
+          referenceNo: pRef,
           notes: pNotes,
-          teamMemberId: memberId,
-          teamMemberName: memberName,
-          clientName: paymentTarget.clientName,
-          eventName: paymentTarget.title,
-          roleName: paymentTarget.role,
-          agreedAmount: paymentTarget.totalAmount
+          currentAgreedAmount: paymentTarget.totalAmount,
+          currentPaidAmount: paymentTarget.paidAmount
         });
 
-        await recordPayoutTransaction(workspaceId, safeAssignmentId, member!.id, {
-          amount,
-          payment_date: pDate,
-          payment_mode: pMode,
-          reference_no: pRef,
-          notes: pNotes,
-          autoCreateExpense: pAutoSync,
-          memberName: member?.name,
-          clientName: paymentTarget.clientName,
-          eventName: paymentTarget.title,
-          role: paymentTarget.role
-        });
+        // Immediately update this event payout in local state for 0ms visual feedback
+        setPayouts(prev => prev.map(p => {
+          if (p.id === paymentTarget.id) {
+            return {
+              ...p,
+              paid_amount: trancheResult.newPaid,
+              balance_amount: trancheResult.newBalance,
+              status: trancheResult.newStatus as any
+            };
+          }
+          return p;
+        }));
       } else if (paymentTarget.type === 'ALBUM') {
         await recordAlbumOrderPayment(workspaceId, safeAssignmentId, member!.id, {
           amount,
@@ -869,20 +867,19 @@ export default function TeamMemberFinanceDrawer({
           partnerName: member?.name,
           clientName: paymentTarget.clientName
         });
-      }
 
-      // Auto-Record Payment into expenses Table (Deep Detailed Sync)
-      await syncTeamPaymentToExpensesAndAnalytics(workspaceId, {
-        paymentType,
-        memberName,
-        memberId,
-        memberType: mType,
-        paidAmount: amount,
-        paymentDate: pDate,
-        paymentMethod: pMode,
-        safeAssignmentId,
-        notes: pNotes || `${paymentType} for ${paymentTarget.title || 'Assignment'}`
-      });
+        await syncTeamPaymentToExpensesAndAnalytics(workspaceId, {
+          paymentType,
+          memberName,
+          memberId,
+          memberType: mType,
+          paidAmount: amount,
+          paymentDate: pDate,
+          paymentMethod: pMode,
+          safeAssignmentId,
+          notes: pNotes || `${paymentType} for ${paymentTarget.title || 'Assignment'}`
+        });
+      }
 
       // Immediate Real-Time Cache Revalidation & Sync
       try {
@@ -1300,8 +1297,12 @@ export default function TeamMemberFinanceDrawer({
                                   title: displayEvent,
                                   clientName: displayClient,
                                   totalAmount: cardAgreed,
+                                  paidAmount: cardPaid,
                                   balanceAmount: cardDue,
-                                  role: payout.role
+                                  role: payout.role,
+                                  projectId: payout.project_id || (payout as any).project?.id,
+                                  subEventId: payout.sub_event_id || (payout as any).sub_event?.id,
+                                  assignmentId: payout.id
                                 });
                                 setPaymentAmount(String(cardDue > 0 ? cardDue : (cardAgreed > 0 ? cardAgreed : '')));
                                 setIsPaymentModalOpen(true);

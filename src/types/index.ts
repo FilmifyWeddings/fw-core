@@ -353,6 +353,25 @@ export interface FWTeamMember {
   member_types?: string[] | null;
   agreed?: number | null;
   custom_data?: Record<string, any> | null;
+  roles?: string[];          // Postgres text[]
+  role_code?: string;
+  role_codes?: string[];
+  is_sales_person?: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface TeamMember {
+  id: string;
+  user_id: string;
+  name: string;
+  roles?: string[];          // Postgres text[]
+  role_code?: string;
+  role_codes?: string[];
+  is_sales_person?: boolean;
+  avatar_url?: string;
+  phone?: string;
+  primary_role?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -761,6 +780,7 @@ export interface FinanceMilestoneItem {
   payment_mode?: 'UPI' | 'Bank Transfer' | 'Cash' | 'Card' | 'Cheque' | string;
   reference_id?: string | null;
   notes?: string | null;
+  remarks?: string | null;
 }
 
 export interface FinanceAuditLog {

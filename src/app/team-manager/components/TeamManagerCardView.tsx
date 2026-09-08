@@ -13,12 +13,15 @@ export interface TeamManagerCardViewProps {
   getGradientByProjectId: (id: string) => string;
   isTmReadOnly?: boolean;
   isOwner?: boolean;
+  isAdmin?: boolean;
   currentMemberId?: string | null;
   currentMemberEmail?: string | null;
   currentUserId?: string | null;
   studioPermissionsMap?: Map<string, any>;
   activeStudioId?: string | null;
   customCrewRoles?: WorkspaceCrewRole[];
+  highlightMemberId?: string | null;
+  selectedFilterMemberId?: string | null;
   onAssignMember?: (assignmentId: string, memberId: string | null) => void;
   onAddNewMember?: (info: { assignmentId: string; role: string; subEventId: string; projectId: string }) => void;
   onEditProject?: (project: FWProject) => void;
@@ -83,12 +86,15 @@ export default function TeamManagerCardView({
   getGradientByProjectId,
   isTmReadOnly = false,
   isOwner = false,
+  isAdmin,
   currentMemberId = null,
   currentMemberEmail = null,
   currentUserId = null,
   studioPermissionsMap = new Map(),
   activeStudioId = null,
   customCrewRoles = [],
+  highlightMemberId = null,
+  selectedFilterMemberId = null,
   onAssignMember,
   onAddNewMember,
   onEditProject,
@@ -285,51 +291,105 @@ export default function TeamManagerCardView({
                               return null;
                             }
 
+                            const activeFilterId = selectedFilterMemberId || highlightMemberId;
+                            const isUserAdmin = isAdmin ?? (!isTmReadOnly || isOwner);
+
+                            const isSelectedSpotlight = Boolean(
+                              isUserAdmin &&
+                              isAssigned &&
+                              activeFilterId &&
+                              activeFilterId !== 'all' &&
+                              (
+                                assignment.assigned_member_id === activeFilterId ||
+                                memberObj?.id === activeFilterId ||
+                                cleanName.toLowerCase() === activeFilterId.toLowerCase()
+                              )
+                            );
+
                             return (
                               <div key={assignment.id} className="relative flex flex-col items-center min-w-[68px]">
                                 <div
-                                  className={`flex flex-col items-center group min-w-[50px] max-w-[70px] text-center select-none ${
-                                    isTmReadOnly || eventVisibility === 'FULL_CREW' ? 'cursor-default' : 'cursor-pointer'
+                                  className={`relative flex flex-col items-center transition-all duration-300 ${
+                                    isSelectedSpotlight
+                                      ? 'rounded-lg ring-2 ring-amber-400/80 bg-amber-50/70 dark:bg-amber-950/30 p-1 shadow-sm shadow-amber-300/40 animate-pulse'
+                                      : ''
                                   }`}
-                                  title={isAssigned ? `${cleanName} (${role})` : isTmReadOnly || eventVisibility === 'FULL_CREW' ? `Unassigned: ${role}` : `Unassigned: ${role}`}
                                 >
-                                  {isAssigned ? (
-                                    <div className="relative w-10 h-10 rounded-full border-2 border-emerald-500 p-0.5 mb-1.5 flex items-center justify-center shrink-0 bg-emerald-50 shadow-xs">
-                                      {memberObj?.avatar_url ? (
-                                        <img
-                                          src={memberObj.avatar_url}
-                                          alt={cleanName}
-                                          className="w-full h-full rounded-full object-cover shrink-0"
-                                        />
-                                      ) : (
-                                        <div className="w-full h-full rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 text-white font-black text-[10px] flex items-center justify-center shrink-0">
-                                          {getInitials(cleanName || role)}
+                                  <div
+                                    className={`flex flex-col items-center group min-w-[50px] max-w-[76px] text-center select-none ${
+                                      isTmReadOnly || eventVisibility === 'FULL_CREW' ? 'cursor-default' : 'cursor-pointer'
+                                    }`}
+                                    title={isAssigned ? `${cleanName} (${role})` : isTmReadOnly || eventVisibility === 'FULL_CREW' ? `Unassigned: ${role}` : `Unassigned: ${role}`}
+                                  >
+                                    {isAssigned ? (
+                                      <div className="relative mb-1 flex items-center justify-center">
+                                        <div className={`relative w-10 h-10 rounded-full border-2 p-0.5 flex items-center justify-center shrink-0 transition-all ${
+                                          isSelectedSpotlight
+                                            ? 'border-amber-400 bg-amber-100/80 shadow-xs'
+                                            : 'border-emerald-500 bg-emerald-50 shadow-xs'
+                                        }`}>
+                                          {memberObj?.avatar_url ? (
+                                            <img
+                                              src={memberObj.avatar_url}
+                                              alt={cleanName}
+                                              className="w-full h-full rounded-full object-cover shrink-0"
+                                              onError={(e) => {
+                                                (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName)}`;
+                                              }}
+                                            />
+                                          ) : (
+                                            <div className={`w-full h-full rounded-full font-black text-[10px] flex items-center justify-center shrink-0 text-white ${
+                                              isSelectedSpotlight
+                                                ? 'bg-gradient-to-br from-amber-500 to-amber-600'
+                                                : 'bg-gradient-to-br from-emerald-500 to-teal-600'
+                                            }`}>
+                                              {getInitials(cleanName || role)}
+                                            </div>
+                                          )}
                                         </div>
-                                      )}
-                                    </div>
-                                  ) : (isTmReadOnly || eventVisibility === 'FULL_CREW') ? (
-                                    <div className="w-10 h-10 rounded-full border border-dashed border-slate-300 bg-slate-100/70 text-slate-400 font-bold mb-1.5 flex items-center justify-center shadow-2xs shrink-0 cursor-default">
-                                      <span className="text-xs font-black">-</span>
-                                    </div>
-                                  ) : (
-                                    <div className="w-10 h-10 rounded-full border border-dashed border-red-500 bg-red-50/90 text-red-600 font-black mb-1.5 flex items-center justify-center shadow-2xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
-                                      <Plus className="w-4 h-4 text-red-600 stroke-[3]" />
-                                    </div>
-                                  )}
+                                      </div>
+                                    ) : (isTmReadOnly || eventVisibility === 'FULL_CREW') ? (
+                                      <div className="w-10 h-10 rounded-full border border-dashed border-slate-300 bg-slate-100/70 text-slate-400 font-bold mb-1 flex items-center justify-center shadow-2xs shrink-0 cursor-default">
+                                        <span className="text-xs font-black">-</span>
+                                      </div>
+                                    ) : (
+                                      <div className="w-10 h-10 rounded-full border border-dashed border-red-500 bg-red-50/90 text-red-600 font-black mb-1 flex items-center justify-center shadow-2xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
+                                        <Plus className="w-4 h-4 text-red-600 stroke-[3]" />
+                                      </div>
+                                    )}
 
-                                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 leading-tight block text-center">
-                                    {shortRole}
-                                  </span>
+                                    {/* Role Pill */}
+                                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 leading-tight block text-center">
+                                      {shortRole}
+                                    </span>
 
-                                  {isAssigned ? (
-                                    <span className="text-[11px] font-extrabold text-emerald-600 dark:text-emerald-500 text-center leading-tight truncate max-w-[68px] block mt-0.5" title={cleanName}>
-                                      {cleanName}
-                                    </span>
-                                  ) : (
-                                    <span className="text-[10px] font-semibold text-slate-400 truncate max-w-[68px] text-center leading-none mt-0.5 block">
-                                      {isTmReadOnly || eventVisibility === 'FULL_CREW' ? 'Unassigned' : 'Assign'}
-                                    </span>
-                                  )}
+                                    {/* 2-Line Centered Name or Unassigned Label */}
+                                    {isAssigned ? (
+                                      (() => {
+                                        const fullName = cleanName || memberObj?.name?.trim() || '';
+                                        const firstSpaceIndex = fullName.indexOf(' ');
+                                        const firstName = firstSpaceIndex !== -1 ? fullName.substring(0, firstSpaceIndex) : fullName;
+                                        const remainingName = firstSpaceIndex !== -1 ? fullName.substring(firstSpaceIndex + 1) : '';
+
+                                        return (
+                                          <div className="flex flex-col items-center justify-center leading-tight text-center max-w-[76px] px-0.5 mt-0.5">
+                                            <span className="text-xs font-semibold text-neutral-800 dark:text-neutral-200">
+                                              {firstName}
+                                            </span>
+                                            {remainingName && (
+                                              <span className="text-[10px] font-medium text-neutral-600 dark:text-neutral-400 tracking-tight line-clamp-1">
+                                                {remainingName}
+                                              </span>
+                                            )}
+                                          </div>
+                                        );
+                                      })()
+                                    ) : (
+                                      <span className="text-[10px] font-semibold text-slate-400 truncate max-w-[68px] text-center leading-none mt-0.5 block">
+                                        {isTmReadOnly || eventVisibility === 'FULL_CREW' ? 'Unassigned' : 'Assign'}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             );

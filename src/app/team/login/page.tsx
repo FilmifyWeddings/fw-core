@@ -23,7 +23,7 @@ import {
   Phone,
 } from 'lucide-react';
 
-export const StudioCoreBrandIcon = ({ className = "w-8 h-8" }: { className?: string }) => (
+const StudioCoreBrandIcon = ({ className = "w-8 h-8" }: { className?: string }) => (
   <div className={`${className} rounded-xl bg-gradient-to-br from-[#D9822B] via-[#C8751F] to-[#A05A12] text-white flex items-center justify-center font-black tracking-wider shadow-sm border border-[#F5C78E]/40 shrink-0 select-none relative overflow-hidden group`}>
     <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/25 to-transparent opacity-80 pointer-events-none" />
     <span className="relative z-10 text-[13px] font-black tracking-tight drop-shadow-xs">SC</span>

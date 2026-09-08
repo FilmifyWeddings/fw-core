@@ -101,6 +101,7 @@ export default function WhatsAppAssignmentModal({
   const [paymentStatus, setPaymentStatus] = useState<'pending' | 'partial' | 'completed'>('pending');
   const [paymentDate, setPaymentDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [paymentMethod, setPaymentMethod] = useState<'UPI/Bank Transfer' | 'Cash' | 'Cheque'>('UPI/Bank Transfer');
+  const [refNo, setRefNo] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
   const [isSavingCommercials, setIsSavingCommercials] = useState(false);
   const [commercialsSaved, setCommercialsSaved] = useState(false);
@@ -115,6 +116,7 @@ export default function WhatsAppAssignmentModal({
       setPaymentStatus(agr > 0 && adv >= agr ? 'completed' : adv > 0 ? 'partial' : 'pending');
       setPaymentDate(existingAssignment?.payment_date || new Date().toISOString().split('T')[0]);
       setPaymentMethod((existingAssignment?.payment_method as any) || 'UPI/Bank Transfer');
+      setRefNo('');
       setNotes(existingAssignment?.notes || '');
       setCommercialsSaved(false);
       setCopied(false);
@@ -258,6 +260,7 @@ Please confirm your slot.
       paymentStatus: paymentStatus,
       paymentDate: paymentDate,
       paymentMethod: paymentMethod,
+      referenceNo: refNo || undefined,
       notes: notes || `Assigned via Team Manager for ${clientName} (${eventTitle})`,
       clientName: clientName,
       eventName: eventTitle,
@@ -447,6 +450,23 @@ Please confirm your slot.
                     <option value="Cheque">Cheque</option>
                   </select>
                 </div>
+
+                {/* Ref / UTR No (Only when advance paid > 0) */}
+                {Number(advancePaid) > 0 && (
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-700 flex items-center justify-between">
+                      <span>Ref / UTR No. (Optional)</span>
+                      <span className="text-[10px] text-emerald-600 font-bold">Studio Expense Sync</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. UPI948202 or IMPS823102"
+                      value={refNo}
+                      onChange={e => setRefNo(e.target.value)}
+                      className="w-full p-2 bg-white border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:border-amber-500 focus:outline-hidden"
+                    />
+                  </div>
+                )}
 
                 {/* Notes */}
                 <div className="space-y-1">

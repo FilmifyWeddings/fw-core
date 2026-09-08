@@ -19,10 +19,10 @@ import { InvoiceModalDialog } from '@/components/finance/invoice-modal-dialog';
 import { ExcelMigrationModal } from '@/components/finance/excel-migration-modal';
 import MilestoneStepDropdown from '@/components/finance/MilestoneStepDropdown';
 import { FinancePinVerificationCard } from '@/components/finance/FinancePinVerificationCard';
-import { FinanceAnalyticsDashboard } from '@/components/finance/FinanceAnalyticsDashboard';
 import { FinanceAnalyticsView } from '@/app/workspace/finance/components/FinanceAnalyticsView';
 import { FinanceFiltersModal } from '@/app/workspace/finance/components/FinanceFiltersModal';
 import { ClientFinanceCard } from '@/app/workspace/finance/components/ClientFinanceCard';
+import RecordExpenseModal, { ExpenseFormData } from '@/app/workspace/finance/components/RecordExpenseModal';
 import { exportCurrentFinanceToExcel } from '@/lib/excel-finance-migration';
 import type { 
   WorkspaceClient, ClientFinanceRecord, FinanceMilestoneItem, FinanceExpenseItem, 
@@ -99,7 +99,7 @@ export default function FinancePage() {
   // ─────────────────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'partially_paid' | 'paid' | 'overdue_only'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'received' | 'pending' | 'partially_paid' | 'paid' | 'overdue_only'>('all');
   const [locationFilter, setLocationFilter] = useState('all');
   const [paymentModeFilter, setPaymentModeFilter] = useState('all');
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
@@ -111,6 +111,8 @@ export default function FinancePage() {
   const [dateRangePreset, setDateRangePreset] = useState<'all' | 'today' | 'yesterday' | 'this_week' | 'this_month' | 'last_30_days' | 'this_quarter' | 'custom'>('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+
+
 
   // Expanded client cards set
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
@@ -824,19 +826,84 @@ export default function FinancePage() {
         setExpandedCards(new Set([finalRecords[0].id]));
       }
 
-      // 6. Fetch Expenses (Initial 50 records limit for sub-300ms transition)
-      let expenseQuery = supabase
-        .from('finance_expenses')
-        .select('*')
-        .order('payment_date', { ascending: false })
-        .range(0, 49);
+      // 6. Fetch Studio Expenses & Crew Payouts (Strict Studio Owner Isolation)
+      let studioExpenseList: FinanceExpenseItem[] = [];
+      try {
+        let studioExpQuery = supabase
+          .from('studio_expenses')
+          .select(`
+            *,
+            project:fw_projects(id, client_name, title),
+            member:fw_team_members(id, name, primary_role)
+          `)
+          .order('expense_date', { ascending: false });
 
-      if (workspaceId && workspaceId !== 'ws_demo') {
-        expenseQuery = expenseQuery.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
+        if (workspaceId && workspaceId !== 'ws_demo') {
+          studioExpQuery = studioExpQuery.eq('user_id', workspaceId);
+        }
+
+        const { data: studioExpData, error: studioExpErr } = await studioExpQuery;
+        if (!studioExpErr && studioExpData) {
+          studioExpenseList = studioExpData.map((se: any) => {
+            const clientName = se.project?.client_name || se.project?.title || '';
+            const memberName = se.member?.name || (se.title ? se.title.split(' - ')[0] : 'Crew Member');
+            const notesStr = se.notes
+              ? `${se.notes}${se.reference_no ? ` • UTR: ${se.reference_no}` : ''}`
+              : (se.reference_no ? `UTR: ${se.reference_no}` : null);
+
+            return {
+              id: se.id,
+              user_id: se.user_id,
+              workspace_id: se.user_id,
+              client_id: se.project_id || null,
+              expense_type: 'team_payout' as const,
+              category: se.category || 'Crew Payout',
+              title: se.title,
+              amount: Number(se.amount) || 0,
+              payment_date: se.expense_date || se.created_at?.split('T')[0] || '',
+              paid_to: memberName,
+              payment_mode: se.payment_mode || 'UPI',
+              status: 'paid' as const,
+              receipt_url: null,
+              notes: notesStr,
+              created_at: se.created_at,
+              updated_at: se.updated_at,
+              client: clientName ? ({ name: clientName } as any) : null
+            };
+          });
+        }
+      } catch (sExpErr) {
+        console.warn('[Finance] studio_expenses query notice:', sExpErr);
       }
 
-      const { data: expenseData } = await expenseQuery;
-      setExpenses(expenseData || []);
+      // Also query general finance_expenses for other studio expenses
+      let legacyExpenseList: FinanceExpenseItem[] = [];
+      try {
+        let expenseQuery = supabase
+          .from('finance_expenses')
+          .select('*')
+          .order('payment_date', { ascending: false })
+          .range(0, 49);
+
+        if (workspaceId && workspaceId !== 'ws_demo') {
+          expenseQuery = expenseQuery.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
+        }
+
+        const { data: expenseData } = await expenseQuery;
+        if (expenseData) {
+          legacyExpenseList = expenseData;
+        }
+      } catch (legErr) {
+        console.warn('[Finance] finance_expenses query notice:', legErr);
+      }
+
+      // Combine studio_expenses and general expenses
+      const studioIds = new Set(studioExpenseList.map(s => s.id));
+      const combinedExpenses = [
+        ...studioExpenseList,
+        ...legacyExpenseList.filter(e => !studioIds.has(e.id))
+      ];
+      setExpenses(combinedExpenses);
 
       // 7. Fetch Audit Logs
       try {
@@ -1254,7 +1321,7 @@ export default function FinancePage() {
   };
 
   // Handle Milestone Inline Editing
-  const handleMilestoneStepChange = (recordId: string, milestoneId: string, field: keyof FinanceMilestoneItem, val: any) => {
+  const handleMilestoneStepChange = (recordId: string, milestoneId: string, field: string, val: any) => {
     setFinanceRecords(prev => prev.map(rec => {
       if (rec.id === recordId) {
         const updatedMilestones = (rec.milestones || []).map(m => {
@@ -1629,6 +1696,19 @@ export default function FinancePage() {
           .from('finance_expenses')
           .update(updatedExp)
           .eq('id', updatedExp.id);
+
+        await supabase
+          .from('studio_expenses')
+          .update({
+            title: updatedExp.title,
+            amount: updatedExp.amount,
+            category: updatedExp.category,
+            expense_date: updatedExp.payment_date,
+            payment_mode: updatedExp.payment_mode,
+            notes: updatedExp.notes,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', updatedExp.id);
       }
 
       logAudit(
@@ -1658,6 +1738,7 @@ export default function FinancePage() {
 
       if (workspaceId !== 'ws_demo') {
         await supabase.from('finance_expenses').delete().eq('id', id);
+        await supabase.from('studio_expenses').delete().eq('id', id);
       }
 
       logAudit(
@@ -1735,7 +1816,7 @@ export default function FinancePage() {
       // Category
       const matchesCategory = categoryFilter === 'all' || eventType === categoryFilter;
 
-      // Status
+      // Status Filter
       let matchesStatus = true;
       if (statusFilter === 'overdue_only') {
         const hasOverdue = (rec.milestones || []).some(m => m.due_date && m.due_date < todayStr && m.status !== 'completed' && m.status !== 'paid');
@@ -1746,6 +1827,9 @@ export default function FinancePage() {
         matchesStatus = rec.payment_status === 'paid' || (Number(rec.final_total_amount) > 0 && Number(rec.pending_amount) === 0);
       } else if (statusFilter === 'partially_paid') {
         matchesStatus = rec.payment_status === 'partially_paid' || (Number(rec.received_amount) > 0 && Number(rec.pending_amount) > 0);
+      } else if (statusFilter === 'received') {
+        // Payment Received: any client who has recorded payments
+        matchesStatus = Number(rec.received_amount) > 0 || (rec.milestones || []).some(m => m.status === 'completed' || m.status === 'paid' || (m as any).paidDate || (m as any).paid_date);
       }
 
       // Location
@@ -1772,24 +1856,29 @@ export default function FinancePage() {
         }
       }
 
-      // 📅 Date Range Match: First Completed Milestone Payment Date (Fallback to Event Date or Created At)
+      // 📅 Unified Single Master Date Range Match:
+      // If Payment Status is "Payment Received" -> filter by Payment Received Date (milestone receipt date)
+      // Otherwise -> filter by Project / Event Creation / Shoot Date
       let matchesDate = true;
-      if (dateRangePreset !== 'all' || startDate || endDate) {
-        const completedMilestones = (rec.milestones || []).filter(m => m.status === 'completed' || m.status === 'paid');
-        let firstPaymentDate: string | undefined;
-        if (completedMilestones.length > 0) {
-          const dates = completedMilestones
-            .map(m => m.due_date || (m as any).payment_date)
-            .filter(Boolean)
-            .sort();
-          if (dates.length > 0) {
-            firstPaymentDate = dates[0];
+      const isDateActive = Boolean(dateRangePreset !== 'all' || startDate || endDate);
+      if (isDateActive) {
+        if (statusFilter === 'received') {
+          const matchingPaidMilestones = (rec.milestones || []).filter(m => {
+            const isPaid = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed' || (m as any).paidDate || (m as any).paid_date;
+            if (!isPaid) return false;
+            const pDate = m.paid_date || (m as any).paidDate || (m as any).payment_date || m.due_date;
+            if (!pDate) return false;
+            if (startDate && pDate < startDate) return false;
+            if (endDate && pDate > endDate) return false;
+            return true;
+          });
+          matchesDate = matchingPaidMilestones.length > 0;
+        } else {
+          const effectiveDate = client?.event_date || rec.created_at?.split('T')[0];
+          if (effectiveDate) {
+            if (startDate && effectiveDate < startDate) matchesDate = false;
+            if (endDate && effectiveDate > endDate) matchesDate = false;
           }
-        }
-        const effectiveDate = firstPaymentDate || client?.event_date || rec.created_at?.split('T')[0];
-        if (effectiveDate) {
-          if (startDate && effectiveDate < startDate) matchesDate = false;
-          if (endDate && effectiveDate > endDate) matchesDate = false;
         }
       }
 
@@ -1816,18 +1905,36 @@ export default function FinancePage() {
     });
   }, [expenses, searchQuery, categoryFilter, paymentModeFilter, startDate, endDate]);
 
-  // 5 Top Metric Cards calculations (Dynamically calculated based on active date range, team member & filters)
+  // 5 Top KPI Metric Cards calculations (Dynamically synchronized directly with filtered cards below)
+  const isDateActive = Boolean(dateRangePreset !== 'all' || startDate || endDate);
+
   const totalInvoiced = useMemo(() => {
     return Math.round(filteredRecords.reduce((acc, r) => acc + (Number(r.final_total_amount) || 0), 0));
   }, [filteredRecords]);
 
   const totalReceived = useMemo(() => {
+    if (statusFilter === 'received' && isDateActive && (startDate || endDate)) {
+      // Sum of only the payments received within the designated date range
+      return Math.round(filteredRecords.reduce((acc, r) => {
+        const scopeMilestonesReceived = (r.milestones || []).reduce((mAcc, m) => {
+          const isPaid = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed' || (m as any).paidDate || (m as any).paid_date;
+          if (!isPaid) return mAcc;
+          const pDate = m.paid_date || (m as any).paidDate || (m as any).payment_date || m.due_date;
+          if (!pDate) return mAcc;
+          if (startDate && pDate < startDate) return mAcc;
+          if (endDate && pDate > endDate) return mAcc;
+          return mAcc + (Number(m.amount) || 0);
+        }, 0);
+        return acc + scopeMilestonesReceived;
+      }, 0));
+    }
     return Math.round(filteredRecords.reduce((acc, r) => acc + (Number(r.received_amount) || 0), 0));
-  }, [filteredRecords]);
+  }, [filteredRecords, statusFilter, isDateActive, startDate, endDate]);
 
   const totalPending = useMemo(() => {
-    return Math.max(0, totalInvoiced - totalReceived);
-  }, [totalInvoiced, totalReceived]);
+    // Every rupee matches the sum of pending dues of the filtered cards below
+    return Math.round(filteredRecords.reduce((acc, r) => acc + (Number(r.pending_amount) || Math.max(0, (Number(r.final_total_amount) || 0) - (Number(r.received_amount) || 0))), 0));
+  }, [filteredRecords]);
 
   const totalExpensesAmount = useMemo(() => {
     return Math.round(filteredExpenses.reduce((acc, e) => acc + (Number(e.amount) || 0), 0));
@@ -2478,6 +2585,37 @@ export default function FinancePage() {
 
           </div>
 
+          {/* Active Payment Received Filter Pill on Top */}
+          {statusFilter === 'received' && (
+            <div className="flex flex-wrap items-center gap-2 pt-1 pb-0.5">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-950 text-xs font-bold shadow-xs">
+                <span className="flex h-2 w-2 relative">
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span>
+                  Status:{' '}
+                  <span className="font-extrabold text-emerald-900">
+                    Payment Received
+                  </span>
+                  {(startDate || endDate) && (
+                    <>
+                      {' '}(<span className="font-mono text-emerald-800 font-bold">{startDate || 'Start'} ➔ {endDate || 'End'}</span>)
+                    </>
+                  )}
+                  {' '}— <span className="text-emerald-700 font-black">₹{totalReceived.toLocaleString('en-IN')}</span> ({filteredRecords.length} {filteredRecords.length === 1 ? 'client' : 'clients'})
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('all')}
+                  className="ml-1.5 px-2 py-0.5 rounded-lg bg-emerald-200/80 hover:bg-emerald-300 text-emerald-900 text-[10px] font-black uppercase transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                >
+                  <span>Clear Filter</span>
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+          )}
+
         </div>
 
         {/* ─────────────────────────────────────────────────────────────
@@ -2578,7 +2716,12 @@ export default function FinancePage() {
                                 {exp.category}
                               </span>
                             </td>
-                            <td className="py-3 px-2 font-bold text-slate-900">{exp.title}</td>
+                            <td className="py-3 px-2">
+                              <div className="font-bold text-slate-900">{exp.title}</div>
+                              {exp.notes && (
+                                <div className="text-[10px] text-slate-400 font-medium line-clamp-1">{exp.notes}</div>
+                              )}
+                            </td>
                             <td className="py-3 px-2 text-slate-600 font-medium">{exp.paid_to || '—'}</td>
                             <td className="py-3 px-2 text-slate-500 font-mono">
                               {exp.payment_date ? new Date(exp.payment_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
@@ -2632,6 +2775,9 @@ export default function FinancePage() {
                           <span className="font-bold text-slate-900 truncate">{exp.title}</span>
                           <span className="text-[11px] text-slate-500 font-medium shrink-0">Paid to: {exp.paid_to || '—'}</span>
                         </div>
+                        {exp.notes && (
+                          <div className="text-[10px] text-slate-400 font-medium line-clamp-1">{exp.notes}</div>
+                        )}
 
                         <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-slate-200/60 text-[11px] text-slate-500">
                           <div className="flex items-center gap-2">
@@ -3415,398 +3561,37 @@ export default function FinancePage() {
       </AnimatePresence>
 
       {/* ─────────────────────────────────────────────────────────────
-          MODAL: ADD NEW EXPENSE
+          MODAL: ADD NEW EXPENSE (3D LUXURY CREAM MODAL)
       ───────────────────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {showAddExpenseModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl p-6 sm:p-7 max-w-md w-full border border-slate-100 shadow-2xl space-y-4 font-sans"
-            >
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <h3 className="text-base font-black text-slate-900">Record Team Payout / Expense</h3>
-                <button onClick={() => setShowAddExpenseModal(false)} className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="space-y-3 text-xs">
-                {/* 1. Select Client */}
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">1. Select Client (Optional)</label>
-                  <select
-                    value={expenseFormData.client_id}
-                    onChange={(e) => setExpenseFormData(prev => ({ ...prev, client_id: e.target.value }))}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold"
-                  >
-                    <option value="">None / General Studio Expense</option>
-                    {clients.map(c => (
-                      <option key={c.id} value={c.id}>{c.name} — {c.event_type || 'Event'}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* 2. Team Member Dropdown */}
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">2. Team Member / Crew</label>
-                  <select
-                    value={expenseFormData.paid_to}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setExpenseFormData(prev => ({
-                        ...prev,
-                        paid_to: val,
-                        team_member_id: val
-                      }));
-                    }}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold"
-                  >
-                    <option value="">Select Crew / Staff Member...</option>
-                    {teamMembersList.map(m => (
-                      <option key={m} value={m}>{m}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* 3. Category (with + Add Category option) */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="font-bold text-slate-700 block">3. Expense Category</label>
-                    <button
-                      type="button"
-                      onClick={() => setShowAddCategoryModal(true)}
-                      className="text-[10px] font-black text-amber-700 hover:text-amber-900 hover:underline cursor-pointer"
-                    >
-                      + Add New Category
-                    </button>
-                  </div>
-                  <select
-                    value={expenseFormData.category}
-                    onChange={(e) => {
-                      if (e.target.value === '__add_new__') {
-                        setShowAddCategoryModal(true);
-                      } else {
-                        setExpenseFormData(prev => ({ ...prev, category: e.target.value }));
-                      }
-                    }}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold"
-                  >
-                    {expenseCategories.map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                    <option value="__add_new__">✨ + Add Custom Category...</option>
-                  </select>
-                </div>
-
-                {/* 4. Title / Description */}
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">4. Title / Description</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Lead Photographer Advance / Hotel Stay"
-                    value={expenseFormData.title}
-                    onChange={(e) => setExpenseFormData(prev => ({ ...prev, title: e.target.value }))}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-semibold"
-                  />
-                </div>
-
-                {/* 5. Amount & Paid To Custom Name */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Amount (₹)</label>
-                    <input
-                      type="number"
-                      placeholder="25000"
-                      value={expenseFormData.amount}
-                      onChange={(e) => setExpenseFormData(prev => ({ ...prev, amount: e.target.value }))}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-mono font-bold"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Paid To / Payee</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Amit Sharma / Vendor"
-                      value={expenseFormData.paid_to}
-                      onChange={(e) => setExpenseFormData(prev => ({ ...prev, paid_to: e.target.value }))}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-semibold"
-                    />
-                  </div>
-                </div>
-
-                {/* 6. Payment Mode & Date */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Payment Mode</label>
-                    <select
-                      value={expenseFormData.payment_mode}
-                      onChange={(e) => setExpenseFormData(prev => ({ ...prev, payment_mode: e.target.value }))}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold"
-                    >
-                      <option value="UPI">UPI</option>
-                      <option value="Bank Transfer">Bank Transfer</option>
-                      <option value="Cash">Cash</option>
-                      <option value="Card">Card</option>
-                      <option value="Cheque">Cheque</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Date</label>
-                    <input
-                      type="date"
-                      value={expenseFormData.payment_date}
-                      onChange={(e) => setExpenseFormData(prev => ({ ...prev, payment_date: e.target.value }))}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-semibold"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                  <button
-                    onClick={() => setShowAddExpenseModal(false)}
-                    className="px-4 py-2 bg-slate-100 text-slate-600 font-bold rounded-xl cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleSaveExpense}
-                    className="px-4 py-2 bg-orange-500 hover:bg-orange-600 font-black text-white rounded-xl shadow-xs cursor-pointer"
-                  >
-                    Save Expense
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      <RecordExpenseModal
+        isOpen={showAddExpenseModal}
+        mode="add"
+        clients={clients}
+        teamMembers={workspaceMembers}
+        teamMembersList={teamMembersList}
+        currentWorkspaceId={currentWorkspaceId}
+        categories={expenseCategories}
+        onCategoryCreated={(newCat) => setExpenseCategories(prev => Array.from(new Set([...prev, newCat])))}
+        onClose={() => setShowAddExpenseModal(false)}
+        onSave={handleSaveExpense}
+      />
 
       {/* ─────────────────────────────────────────────────────────────
-          MODAL: EDIT LOGGED EXPENSE
+          MODAL: EDIT LOGGED EXPENSE (3D LUXURY CREAM MODAL)
       ───────────────────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {showEditExpenseModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl p-6 sm:p-7 max-w-md w-full border border-slate-100 shadow-2xl space-y-4 font-sans"
-            >
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <h3 className="text-base font-black text-slate-900">Edit Logged Expense</h3>
-                <button onClick={() => setShowEditExpenseModal(false)} className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="space-y-3 text-xs">
-                {/* 1. Client */}
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">1. Select Client (Optional)</label>
-                  <select
-                    value={expenseEditFormData.client_id}
-                    onChange={(e) => setExpenseEditFormData(prev => ({ ...prev, client_id: e.target.value }))}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold"
-                  >
-                    <option value="">None / General Studio Expense</option>
-                    {clients.map(c => (
-                      <option key={c.id} value={c.id}>{c.name} — {c.event_type || 'Event'}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* 2. Team Member Dropdown */}
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">2. Team Member / Crew</label>
-                  <select
-                    value={expenseEditFormData.paid_to}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setExpenseEditFormData(prev => ({
-                        ...prev,
-                        paid_to: val,
-                        team_member_id: val
-                      }));
-                    }}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold"
-                  >
-                    <option value="">Select Crew / Staff Member...</option>
-                    {teamMembersList.map(m => (
-                      <option key={m} value={m}>{m}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* 3. Category */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="font-bold text-slate-700 block">3. Expense Category</label>
-                    <button
-                      type="button"
-                      onClick={() => setShowAddCategoryModal(true)}
-                      className="text-[10px] font-black text-amber-700 hover:text-amber-900 hover:underline cursor-pointer"
-                    >
-                      + Add New Category
-                    </button>
-                  </div>
-                  <select
-                    value={expenseEditFormData.category}
-                    onChange={(e) => {
-                      if (e.target.value === '__add_new__') {
-                        setShowAddCategoryModal(true);
-                      } else {
-                        setExpenseEditFormData(prev => ({ ...prev, category: e.target.value }));
-                      }
-                    }}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold"
-                  >
-                    {expenseCategories.map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                    <option value="__add_new__">✨ + Add Custom Category...</option>
-                  </select>
-                </div>
-
-                {/* 4. Title / Description */}
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">4. Title / Description</label>
-                  <input
-                    type="text"
-                    value={expenseEditFormData.title}
-                    onChange={(e) => setExpenseEditFormData(prev => ({ ...prev, title: e.target.value }))}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-semibold"
-                  />
-                </div>
-
-                {/* 5. Amount & Paid To */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Amount (₹)</label>
-                    <input
-                      type="number"
-                      value={expenseEditFormData.amount}
-                      onChange={(e) => setExpenseEditFormData(prev => ({ ...prev, amount: e.target.value }))}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-mono font-bold"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Paid To / Payee</label>
-                    <input
-                      type="text"
-                      value={expenseEditFormData.paid_to}
-                      onChange={(e) => setExpenseEditFormData(prev => ({ ...prev, paid_to: e.target.value }))}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-semibold"
-                    />
-                  </div>
-                </div>
-
-                {/* 6. Payment Mode & Date */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Payment Mode</label>
-                    <select
-                      value={expenseEditFormData.payment_mode}
-                      onChange={(e) => setExpenseEditFormData(prev => ({ ...prev, payment_mode: e.target.value }))}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold"
-                    >
-                      <option value="UPI">UPI</option>
-                      <option value="Bank Transfer">Bank Transfer</option>
-                      <option value="Cash">Cash</option>
-                      <option value="Card">Card</option>
-                      <option value="Cheque">Cheque</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Date</label>
-                    <input
-                      type="date"
-                      value={expenseEditFormData.payment_date}
-                      onChange={(e) => setExpenseEditFormData(prev => ({ ...prev, payment_date: e.target.value }))}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-semibold"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                  <button
-                    onClick={() => setShowEditExpenseModal(false)}
-                    className="px-4 py-2 bg-slate-100 text-slate-600 font-bold rounded-xl cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleSaveEditedExpense}
-                    className="px-4 py-2 bg-orange-500 hover:bg-orange-600 font-black text-white rounded-xl shadow-xs cursor-pointer"
-                  >
-                    Save Changes
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* ─────────────────────────────────────────────────────────────
-          MODAL: ADD CUSTOM EXPENSE CATEGORY (SUPABASE SYNC)
-      ───────────────────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {showAddCategoryModal && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl p-6 max-w-sm w-full border border-slate-100 shadow-2xl space-y-4 font-sans"
-            >
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <h3 className="text-sm font-black text-slate-900">Add Custom Expense Category</h3>
-                <button onClick={() => setShowAddCategoryModal(false)} className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="space-y-3 text-xs">
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Category Name</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Drone License / Background Score"
-                    value={newCategoryName}
-                    onChange={(e) => setNewCategoryName(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleCreateCustomCategory()}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:outline-none focus:border-amber-500"
-                    autoFocus
-                  />
-                </div>
-
-                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                  <button
-                    onClick={() => setShowAddCategoryModal(false)}
-                    className="px-3.5 py-1.5 bg-slate-100 text-slate-600 font-bold rounded-xl cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleCreateCustomCategory}
-                    className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 font-black text-white rounded-xl shadow-xs cursor-pointer"
-                  >
-                    Save Category
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      <RecordExpenseModal
+        isOpen={showEditExpenseModal}
+        mode="edit"
+        initialData={expenseEditFormData}
+        clients={clients}
+        teamMembers={workspaceMembers}
+        teamMembersList={teamMembersList}
+        currentWorkspaceId={currentWorkspaceId}
+        categories={expenseCategories}
+        onCategoryCreated={(newCat) => setExpenseCategories(prev => Array.from(new Set([...prev, newCat])))}
+        onClose={() => setShowEditExpenseModal(false)}
+        onSave={handleSaveEditedExpense}
+      />
 
       {/* ─────────────────────────────────────────────────────────────
           MODAL: DELETE EXPENSE CONFIRMATION

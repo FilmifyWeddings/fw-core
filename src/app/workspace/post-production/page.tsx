@@ -5,19 +5,23 @@ import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Film, Filter, Search, RefreshCw, User, Layers, CheckCircle2, 
-  Clock, AlertTriangle, MessageSquare, Send, Bell, Link2, ExternalLink, X, Plus
+  Clock, AlertTriangle
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import AiMicButton from '@/components/AiMicButton';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import PostProductionCard, { PostProductionProjectData } from './components/PostProductionCard';
 import PostProductionFilterModal, { PostProductionFilters } from './components/PostProductionFilterModal';
+import DeliverableCommentDrawer from './components/DeliverableCommentDrawer';
+import { PostProductionDeliverable } from './components/DeliverableCategorySection';
+import { autoSyncClientDeliverables, persistDeliverablesDecoupled } from '@/lib/services/postProductionSyncService';
 import { Searchable3DCreamSelectOption } from '@/components/ui/Searchable3DCreamSelect';
+import { fetchWorkspaceEventTypes } from '@/lib/workspace-settings';
 
 export default function PostProductionPage() {
   const [projects, setProjects] = useState<PostProductionProjectData[]>([]);
   const [quotations, setQuotations] = useState<any[]>([]);
   const [teamMembers, setTeamMembers] = useState<{ id: string; name: string; role?: string }[]>([]);
+  const [eventTypes, setEventTypes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -36,23 +40,8 @@ export default function PostProductionPage() {
     dateScopeEndDate: '',
   });
 
-  // Comment Modal state
-  const [activeCommentModal, setActiveCommentModal] = useState<{
-    open: boolean;
-    itemId: string;
-    itemTitle: string;
-  } | null>(null);
-  const [commentText, setCommentText] = useState('');
-  const [commentAlertFlag, setCommentAlertFlag] = useState(false);
-  const [commentFollowupDate, setCommentFollowupDate] = useState('');
-
-  // Drive Link Modal state
-  const [activeDriveModal, setActiveDriveModal] = useState<{
-    open: boolean;
-    itemId: string;
-    currentLink: string;
-  } | null>(null);
-  const [driveInputLink, setDriveInputLink] = useState('');
+  // Active Comment / Activity Drawer state
+  const [activeDrawerDeliverable, setActiveDrawerDeliverable] = useState<PostProductionDeliverable | null>(null);
 
   useEffect(() => {
     fetchPostProductionData();
@@ -101,13 +90,25 @@ export default function PostProductionPage() {
       }
       setTeamMembers(members);
 
+      // 1.5 Fetch Studio Event Types (for custom segments sync)
+      try {
+        const evTypes = await fetchWorkspaceEventTypes(workspaceId);
+        if (evTypes && evTypes.length > 0) {
+          setEventTypes(evTypes);
+        }
+      } catch (evErr) {
+        console.warn('Error fetching workspace event types:', evErr);
+      }
+
       // 2. Fetch Quotations
+      let qList: any[] = [];
       try {
         const { data: qData } = await supabase
           .from('quotations')
           .select('*')
           .order('created_at', { ascending: false });
-        setQuotations(qData || []);
+        qList = qData || [];
+        setQuotations(qList);
       } catch (qErr) {
         console.warn('Error fetching quotations:', qErr);
       }
@@ -139,6 +140,17 @@ export default function PostProductionPage() {
       const { data: ppDeliverables } = await supabase
         .from('post_production_deliverables')
         .select('*');
+
+      // Fetch dynamic segments/categories configuration
+      const configByProjectId = new Map<string, any>();
+      try {
+        const { data: configData } = await supabase
+          .from('post_production_project_config')
+          .select('*');
+        if (configData) {
+          configData.forEach(c => configByProjectId.set(c.project_id, c));
+        }
+      } catch (_) {}
 
       // Map deliverables by project_id
       const delivsByProjectId = new Map<string, any[]>();
@@ -175,6 +187,47 @@ export default function PostProductionPage() {
         const effectivePM = client.project_manager_name || matchedFwProject?.project_manager_name || ppp?.project_manager_name || null;
         const effectivePMId = client.project_manager_id || matchedFwProject?.project_manager_id || ppp?.project_manager_id || null;
 
+        let quotationId = ppp?.notes?.includes('quotation_id:') ? ppp.notes.split('quotation_id:')[1]?.split(';')[0] : null;
+        let quotationTitle = ppp?.notes?.includes('quotation_title:') ? ppp.notes.split('quotation_title:')[1]?.split(';')[0] : null;
+
+        // Auto-sync deliverables from client's approved / final quotation if none exist
+        if (projectDeliverables.length === 0) {
+          const syncResult = autoSyncClientDeliverables(client, qList, []);
+          if (syncResult.wasSynced && syncResult.deliverables.length > 0) {
+            projectDeliverables = syncResult.deliverables;
+            quotationId = syncResult.quotationId || null;
+            quotationTitle = syncResult.quotationTitle || null;
+
+            // Persist decoupled auto-sync in background
+            persistDeliverablesDecoupled({
+              workspaceId,
+              clientId: client.id,
+              projectId: matchedFwProject?.id,
+              deliverables: projectDeliverables,
+              projectManagerId: effectivePMId,
+              projectManagerName: effectivePM,
+              overallStatus: ppp?.overall_status || 'active',
+              notes: `quotation_id:${quotationId || ''};quotation_title:${quotationTitle || ''};`,
+            });
+          }
+        }
+
+        // Section & Segment Configuration
+        const projConfig = matchedFwProject ? configByProjectId.get(matchedFwProject.id) : null;
+        let enabledSegments: string[] | undefined = projConfig?.enabled_segments;
+        let disabledCategories: Record<string, string[]> | undefined = projConfig?.disabled_categories;
+
+        if (!enabledSegments && ppp?.notes?.includes('pp_config:')) {
+          try {
+            const raw = ppp.notes.split('pp_config:')[1]?.split(';')[0];
+            if (raw) {
+              const parsed = JSON.parse(decodeURIComponent(raw));
+              enabledSegments = parsed.enabled_segments;
+              disabledCategories = parsed.disabled_categories;
+            }
+          } catch (_) {}
+        }
+
         cards.push({
           id: ppp?.id || `proj_${client.id}`,
           project_id: matchedFwProject?.id || client.id,
@@ -188,8 +241,10 @@ export default function PostProductionPage() {
           project_manager_name: effectivePM,
           overall_status: ppp?.overall_status || (client.status === 'completed' ? 'completed' : 'active'),
           deliverables: projectDeliverables,
-          quotation_id: ppp?.notes?.includes('quotation_id:') ? ppp.notes.split('quotation_id:')[1]?.split(';')[0] : null,
-          quotation_title: ppp?.notes?.includes('quotation_title:') ? ppp.notes.split('quotation_title:')[1]?.split(';')[0] : null,
+          quotation_id: quotationId,
+          quotation_title: quotationTitle,
+          enabled_segments: enabledSegments,
+          disabled_categories: disabledCategories,
         });
       }
 
@@ -226,13 +281,18 @@ export default function PostProductionPage() {
             const { data: { session } } = await supabase.auth.getSession();
             const workspaceId = session?.user?.id || 'ws_demo';
 
+            const configEncoded = encodeURIComponent(JSON.stringify({
+              enabled_segments: merged.enabled_segments,
+              disabled_categories: merged.disabled_categories,
+            }));
+
             const payload: any = {
               client_id: merged.client_id,
               project_manager_id: merged.project_manager_id,
               project_manager_name: merged.project_manager_name,
               overall_status: merged.overall_status,
               deliverables: merged.deliverables,
-              notes: `quotation_id:${merged.quotation_id || ''};quotation_title:${merged.quotation_title || ''};`,
+              notes: `quotation_id:${merged.quotation_id || ''};quotation_title:${merged.quotation_title || ''};pp_config:${configEncoded};`,
               updated_at: new Date().toISOString(),
             };
 
@@ -251,6 +311,20 @@ export default function PostProductionPage() {
               }]);
             }
 
+            // Synchronize with post_production_project_config table
+            if (merged.project_id && (updated.enabled_segments !== undefined || updated.disabled_categories !== undefined)) {
+              try {
+                await supabase
+                  .from('post_production_project_config')
+                  .upsert({
+                    project_id: merged.project_id,
+                    enabled_segments: merged.enabled_segments || ['Wedding'],
+                    disabled_categories: merged.disabled_categories || {},
+                    updated_at: new Date().toISOString(),
+                  }, { onConflict: 'project_id' });
+              } catch (_) {}
+            }
+
             // Also synchronize with post_production_deliverables table if project_id exists
             if (merged.project_id && Array.isArray(merged.deliverables)) {
               for (const deliv of merged.deliverables) {
@@ -262,11 +336,14 @@ export default function PostProductionPage() {
                       project_id: merged.project_id,
                       segment: deliv.segment || 'Wedding',
                       category: deliv.category || 'Photos',
+                      custom_category_name: deliv.custom_category_name || null,
                       title: deliv.title,
+                      specs: deliv.specs || deliv.count || null,
                       status: deliv.status || 'Upcoming',
                       assigned_member_id: deliv.assigned_member_id || null,
                       due_date: deliv.due_date || deliv.deadline || null,
                       notes: deliv.notes || null,
+                      is_hidden: deliv.is_hidden || false,
                       updated_at: new Date().toISOString(),
                     }, { onConflict: 'id' });
                 }
@@ -401,49 +478,36 @@ export default function PostProductionPage() {
     ];
   }, [projects]);
 
-  // Comments & Drive Link Handlers
-  const handleSaveComment = () => {
-    if (!activeCommentModal || !commentText.trim()) return;
-
-    const newComment = {
-      id: `comm_${Date.now()}`,
-      text: commentText.trim(),
-      authorName: 'Production Lead',
-      createdAt: new Date().toISOString(),
-      alert_flag: commentAlertFlag,
-      followup_at: commentFollowupDate || null,
-    };
-
-    setProjects(prev => prev.map(p => {
-      const hasItem = (p.deliverables || []).some(d => d.id === activeCommentModal.itemId);
-      if (hasItem) {
-        const updated = p.deliverables.map(d => {
-          if (d.id === activeCommentModal.itemId) {
-            return { ...d, comments: [newComment, ...(d.comments || [])] };
-          }
-          return d;
-        });
-        handleUpdateProject(p.id, { deliverables: updated });
-        return { ...p, deliverables: updated };
+  // Open comment / activity drawer
+  const handleOpenComments = (itemId: string, title: string) => {
+    for (const p of projects) {
+      const d = (p.deliverables || []).find(item => item.id === itemId);
+      if (d) {
+        setActiveDrawerDeliverable(d);
+        break;
       }
-      return p;
-    }));
-
-    setCommentText('');
-    setCommentAlertFlag(false);
-    setCommentFollowupDate('');
-    setActiveCommentModal(null);
+    }
   };
 
-  const handleSaveDriveLink = () => {
-    if (!activeDriveModal) return;
+  // Open drive link in comment drawer
+  const handleOpenDrive = (itemId: string, currentLink: string) => {
+    for (const p of projects) {
+      const d = (p.deliverables || []).find(item => item.id === itemId);
+      if (d) {
+        setActiveDrawerDeliverable(d);
+        break;
+      }
+    }
+  };
 
+  // Update drive link from drawer
+  const handleUpdateDriveLink = (deliverableId: string, driveLink: string) => {
     setProjects(prev => prev.map(p => {
-      const hasItem = (p.deliverables || []).some(d => d.id === activeDriveModal.itemId);
+      const hasItem = (p.deliverables || []).some(d => d.id === deliverableId);
       if (hasItem) {
         const updated = p.deliverables.map(d => {
-          if (d.id === activeDriveModal.itemId) {
-            return { ...d, drive_link: driveInputLink.trim() };
+          if (d.id === deliverableId) {
+            return { ...d, drive_link: driveLink };
           }
           return d;
         });
@@ -453,12 +517,36 @@ export default function PostProductionPage() {
       return p;
     }));
 
-    setActiveDriveModal(null);
+    if (activeDrawerDeliverable && activeDrawerDeliverable.id === deliverableId) {
+      setActiveDrawerDeliverable(prev => prev ? { ...prev, drive_link: driveLink } : null);
+    }
+  };
+
+  // Update comment count from drawer
+  const handleCommentCountChange = (deliverableId: string, count: number) => {
+    setProjects(prev => prev.map(p => {
+      const hasItem = (p.deliverables || []).some(d => d.id === deliverableId);
+      if (hasItem) {
+        const updated = p.deliverables.map(d => {
+          if (d.id === deliverableId) {
+            return { ...d, comments_count: count };
+          }
+          return d;
+        });
+        handleUpdateProject(p.id, { deliverables: updated });
+        return { ...p, deliverables: updated };
+      }
+      return p;
+    }));
+
+    if (activeDrawerDeliverable && activeDrawerDeliverable.id === deliverableId) {
+      setActiveDrawerDeliverable(prev => prev ? { ...prev, comments_count: count } : null);
+    }
   };
 
   return (
-    <div className="min-h-screen bg-[#FAF9F5] dark:bg-[#121110] text-slate-900 dark:text-stone-100 pb-20 pt-2 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className="min-h-screen bg-[#FAF9F5] dark:bg-[#121110] text-slate-900 dark:text-stone-100 pb-20 pt-2 px-2 sm:px-4 py-3">
+      <div className="w-full max-w-[1600px] mx-auto space-y-6">
 
         {/* ─────────────────────────────────────────────────────────────
             HEADER & TOP CONTROLS (3D CREAM STUDIO SUITE)
@@ -646,14 +734,12 @@ export default function PostProductionPage() {
                 project={project}
                 teamMembers={teamMembers}
                 quotations={quotations}
+                eventTypes={eventTypes}
                 isExpanded={expandedCards.has(project.id)}
                 onToggleExpand={() => toggleCardExpansion(project.id)}
                 onUpdateProject={handleUpdateProject}
-                onOpenComments={(itemId, title) => setActiveCommentModal({ open: true, itemId, itemTitle: title })}
-                onOpenDrive={(itemId, link) => {
-                  setDriveInputLink(link);
-                  setActiveDriveModal({ open: true, itemId, currentLink: link });
-                }}
+                onOpenComments={handleOpenComments}
+                onOpenDrive={handleOpenDrive}
               />
             ))}
           </div>
@@ -673,155 +759,15 @@ export default function PostProductionPage() {
         />
 
         {/* ─────────────────────────────────────────────────────────────
-            GLOBAL COMMENT / ACTIVITY MODAL
+            DELIVERABLE ACTIVITY & COMMENT SLIDEOUT DRAWER
         ───────────────────────────────────────────────────────────── */}
-        <AnimatePresence>
-          {activeCommentModal?.open && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
-              <motion.div
-                initial={{ scale: 0.95, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.95, opacity: 0 }}
-                className="bg-[#FFFDF9] dark:bg-[#1C1A17] rounded-2xl p-6 max-w-lg w-full border border-[#EAE5DA] dark:border-stone-800 shadow-2xl space-y-4 text-slate-900 dark:text-stone-100"
-              >
-                <div className="flex items-center justify-between border-b border-[#EAE5DA] dark:border-stone-800 pb-3">
-                  <div className="flex items-center gap-2">
-                    <MessageSquare className="w-4 h-4 text-amber-600" />
-                    <h3 className="text-sm font-black uppercase tracking-wide">
-                      Notes &amp; Revision Log: {activeCommentModal.itemTitle}
-                    </h3>
-                  </div>
-                  <button 
-                    onClick={() => setActiveCommentModal(null)}
-                    className="p-1 rounded-lg text-slate-400 hover:text-slate-700"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <div className="relative">
-                  <textarea
-                    rows={4}
-                    placeholder="Enter editor feedback, revision instructions, or client notes..."
-                    value={commentText}
-                    onChange={(e) => setCommentText(e.target.value)}
-                    className="w-full p-3 text-xs bg-white dark:bg-stone-900 border border-[#EAE5DA] dark:border-stone-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-900 dark:text-stone-100"
-                  />
-                  <div className="absolute right-2 bottom-2">
-                    <AiMicButton
-                      size="sm"
-                      buttonText="Voice AI"
-                      onInsertComment={(cleanedText) => {
-                        setCommentText(prev => (prev ? `${prev} ${cleanedText}` : cleanedText));
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700 dark:text-stone-300">
-                    <input
-                      type="checkbox"
-                      checked={commentAlertFlag}
-                      onChange={(e) => setCommentAlertFlag(e.target.checked)}
-                      className="rounded text-amber-600 focus:ring-amber-500 cursor-pointer"
-                    />
-                    <Bell className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Follow-up Alert</span>
-                  </label>
-
-                  {commentAlertFlag && (
-                    <input
-                      type="datetime-local"
-                      value={commentFollowupDate}
-                      onChange={(e) => setCommentFollowupDate(e.target.value)}
-                      className="px-2.5 py-1 text-xs bg-white dark:bg-stone-800 border border-[#EAE5DA] rounded-lg text-slate-800 dark:text-stone-100"
-                    />
-                  )}
-
-                  <button
-                    onClick={handleSaveComment}
-                    disabled={!commentText.trim()}
-                    className="px-4 py-1.5 text-xs font-black text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer ml-auto"
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                    <span>Save Note</span>
-                  </button>
-                </div>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
-
-        {/* ─────────────────────────────────────────────────────────────
-            GLOBAL DRIVE LINK MODAL
-        ───────────────────────────────────────────────────────────── */}
-        <AnimatePresence>
-          {activeDriveModal?.open && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
-              <motion.div
-                initial={{ scale: 0.95, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.95, opacity: 0 }}
-                className="bg-[#FFFDF9] dark:bg-[#1C1A17] rounded-2xl p-6 max-w-md w-full border border-[#EAE5DA] dark:border-stone-800 shadow-2xl space-y-4 text-slate-900 dark:text-stone-100"
-              >
-                <div className="flex items-center justify-between border-b border-[#EAE5DA] dark:border-stone-800 pb-3">
-                  <div className="flex items-center gap-2">
-                    <Link2 className="w-4 h-4 text-blue-600" />
-                    <h3 className="text-sm font-black uppercase tracking-wide">
-                      Google Drive Delivery Link
-                    </h3>
-                  </div>
-                  <button 
-                    onClick={() => setActiveDriveModal(null)}
-                    className="p-1 rounded-lg text-slate-400 hover:text-slate-700"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 dark:text-stone-300">Drive Folder URL</label>
-                  <input
-                    type="url"
-                    placeholder="https://drive.google.com/drive/folders/..."
-                    value={driveInputLink}
-                    onChange={(e) => setDriveInputLink(e.target.value)}
-                    className="w-full px-3.5 py-2 text-xs bg-white dark:bg-stone-900 border border-[#EAE5DA] dark:border-stone-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-900 dark:text-stone-100 font-mono"
-                  />
-                </div>
-
-                <div className="flex justify-between items-center pt-2 border-t border-[#EAE5DA] dark:border-stone-800">
-                  {driveInputLink.trim() && (
-                    <a
-                      href={driveInputLink.trim()}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1"
-                    >
-                      <span>Open Link</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
-                  )}
-                  <div className="flex gap-2 ml-auto">
-                    <button
-                      onClick={() => setActiveDriveModal(null)}
-                      className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-stone-300 hover:text-slate-900 cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleSaveDriveLink}
-                      className="px-4 py-2 text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-xl shadow-xs transition cursor-pointer"
-                    >
-                      Save Link
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
+        <DeliverableCommentDrawer
+          isOpen={Boolean(activeDrawerDeliverable)}
+          onClose={() => setActiveDrawerDeliverable(null)}
+          deliverable={activeDrawerDeliverable}
+          onUpdateDriveLink={handleUpdateDriveLink}
+          onCommentCountChange={handleCommentCountChange}
+        />
 
       </div>
     </div>

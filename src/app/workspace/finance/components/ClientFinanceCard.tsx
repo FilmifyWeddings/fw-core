@@ -87,7 +87,7 @@ export function ClientFinanceCard({
   const recAmt = Number(record.received_amount) || 0;
   const pendAmt = Number(record.pending_amount) || Math.max(0, finalTotal - recAmt);
 
-  const handledBy = (client as any)?.assigned_team_member || client?.handled_by || 'Unassigned';
+  const handledBy = (client as any)?.assigned_team_member || (client as any)?.handled_by || 'Unassigned';
 
   const handleSaveMember = () => {
     if (newMemberName.trim()) {
@@ -146,10 +146,10 @@ export function ClientFinanceCard({
                   ? new Date(client.event_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
                   : 'Date TBD'}
               </span>
-              {client?.city && (
+              {(client as any)?.city && (
                 <>
                   <span className="hidden sm:inline">•</span>
-                  <span className="hidden sm:inline text-slate-400 truncate">{client.city}</span>
+                  <span className="hidden sm:inline text-slate-400 truncate">{(client as any).city}</span>
                 </>
               )}
             </div>

@@ -17,6 +17,8 @@ import {
 } from '@/components/clients/client-insider-modal';
 import { ExcelMigrationModal } from '@/components/finance/excel-migration-modal';
 import { fetchWorkspaceTeamMembers, type WorkspaceMemberOption } from '@/lib/team-helpers';
+import { fetchWorkspaceEventTypes } from '@/lib/workspace-settings';
+import AddClientModal, { AddClientFormData } from './components/AddClientModal';
 import type { WorkspaceClient, Lead, ClientFinanceRecord, FinanceMilestoneItem } from '@/types';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import Searchable3DCreamSelect, { Searchable3DCreamSelectOption } from '@/components/ui/Searchable3DCreamSelect';
@@ -347,9 +349,11 @@ export default function ClientsPage() {
   };
 
   // Create Client Form Submit
-  const handleCreateClient = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.name.trim() || !formData.phone.trim()) {
+  const handleCreateClient = async (submittedData?: AddClientFormData, leadId?: string) => {
+    const dataToUse: AddClientFormData = submittedData || formData;
+    const leadIdToUse = leadId !== undefined ? leadId : selectedLeadId;
+
+    if (!dataToUse.name.trim() || !dataToUse.phone.trim()) {
       alert('Please provide Client Name and Mobile Number.');
       return;
     }
@@ -359,13 +363,13 @@ export default function ClientsPage() {
       const { data: { session } } = await supabase.auth.getSession();
       const workspaceId = session?.user?.id || 'ws_demo';
 
-      const totalPackage = parseFloat(formData.total_package_amount) || 0;
-      const advanceAmt = parseFloat(formData.advance_amount) || 0;
+      const totalPackage = parseFloat(dataToUse.total_package_amount) || 0;
+      const advanceAmt = parseFloat(dataToUse.advance_amount) || 0;
 
       let finalPaidAmount = 0;
-      if (formData.is_full_payment_received) {
+      if (dataToUse.is_full_payment_received) {
         finalPaidAmount = totalPackage;
-      } else if (formData.is_advance_received && advanceAmt > 0) {
+      } else if (dataToUse.is_advance_received && advanceAmt > 0) {
         finalPaidAmount = advanceAmt;
       }
 
@@ -374,13 +378,13 @@ export default function ClientsPage() {
       const portalPin = '123456';
 
       // Find assigned PM from team members
-      const assignedPm = teamMembers.find(m => m.id === formData.project_manager_id);
+      const assignedPm = teamMembers.find(m => m.id === dataToUse.project_manager_id);
 
       // ─── STRICT ZERO DUMMY DATA ENFORCEMENT ───
       let initialMilestones: FinanceMilestoneItem[] = [];
-      const paymentDate = formData.payment_date || new Date().toISOString().split('T')[0];
+      const paymentDate = dataToUse.payment_date || new Date().toISOString().split('T')[0];
 
-      if (formData.is_full_payment_received && totalPackage > 0) {
+      if (dataToUse.is_full_payment_received && totalPackage > 0) {
         initialMilestones = [
           {
             id: `ms_${Date.now()}_1`,
@@ -390,7 +394,7 @@ export default function ClientsPage() {
             paid_date: paymentDate,
             amount: totalPackage,
             status: 'completed',
-            payment_mode: formData.payment_mode || 'UPI'
+            payment_mode: dataToUse.payment_mode || 'UPI'
           }
         ];
       } else if (advanceAmt > 0) {
@@ -400,10 +404,10 @@ export default function ClientsPage() {
             step_name: 'Token Booking Amount',
             title: 'Token Booking Amount',
             due_date: paymentDate,
-            paid_date: formData.is_advance_received ? paymentDate : null,
+            paid_date: dataToUse.is_advance_received ? paymentDate : null,
             amount: advanceAmt,
-            status: formData.is_advance_received ? 'completed' : 'pending',
-            payment_mode: formData.payment_mode || 'UPI'
+            status: dataToUse.is_advance_received ? 'completed' : 'pending',
+            payment_mode: dataToUse.payment_mode || 'UPI'
           }
         ];
       } else {
@@ -412,10 +416,10 @@ export default function ClientsPage() {
 
       const serializedNotes = serializeClientExtended({
         client_code: clientCode,
-        whatsapp_group_link: formData.whatsapp_group_link,
+        whatsapp_group_link: dataToUse.whatsapp_group_link,
         portal_token: portalToken,
         portal_pin: portalPin,
-        plain_notes: formData.notes,
+        plain_notes: dataToUse.notes,
         project_manager_id: assignedPm ? assignedPm.id : undefined,
         project_manager_name: assignedPm ? assignedPm.name : undefined,
         project_manager_email: assignedPm ? assignedPm.email : undefined,
@@ -423,8 +427,8 @@ export default function ClientsPage() {
         events: [
           {
             id: `ev_${Date.now()}`,
-            name: formData.event_type,
-            date: formData.event_date || new Date().toISOString().split('T')[0],
+            name: dataToUse.event_type,
+            date: dataToUse.event_date || new Date().toISOString().split('T')[0],
             time_start: '05:00 PM',
             time_end: '11:00 PM',
             venue: 'Main Venue',
@@ -437,12 +441,12 @@ export default function ClientsPage() {
       const clientPayload: any = {
         user_id: workspaceId,
         workspace_id: workspaceId,
-        lead_id: selectedLeadId || null,
-        name: formData.name,
-        phone: formData.phone,
-        email: formData.email.trim() || null,
-        event_type: formData.event_type,
-        event_date: formData.event_date || null,
+        lead_id: leadIdToUse || null,
+        name: dataToUse.name,
+        phone: dataToUse.phone,
+        email: dataToUse.email.trim() || null,
+        event_type: dataToUse.event_type,
+        event_date: dataToUse.event_date || null,
         total_package_amount: totalPackage,
         paid_amount: finalPaidAmount,
         status: finalPaidAmount >= totalPackage && totalPackage > 0 ? 'completed' : 'active',
@@ -1154,234 +1158,17 @@ export default function ClientsPage() {
         }}
       />
 
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
-          <motion.div
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.95, opacity: 0 }}
-            className="bg-[#FFFDF9] rounded-3xl p-6 sm:p-7 max-w-lg w-full border border-[#EAE5DA] shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto font-sans"
-          >
-            <div className="flex items-center justify-between border-b border-[#EAE5DA] pb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-800 flex items-center justify-center font-bold">
-                  <UserPlus className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-base font-black text-slate-900">Add New Client Account</h3>
-                  <p className="text-xs text-slate-500 font-medium">Create client workspace & sync billing</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowAddModal(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateClient} className="space-y-4 text-xs">
-              {/* Optional CRM Lead Link */}
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">
-                  Convert Existing CRM Lead (Optional)
-                </label>
-                <select
-                  value={selectedLeadId}
-                  onChange={(e) => handleLeadSelect(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-[#EAE5DA] rounded-xl text-slate-800 font-semibold focus:outline-none focus:border-amber-500"
-                >
-                  <option value="">-- Select a Lead from CRM to Auto-Fill --</option>
-                  {leads.map(lead => (
-                    <option key={lead.id} value={lead.id}>
-                      {lead.name} • {lead.phone} • {lead.event_type || 'Event'}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Client / Couple Name *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Rahul & Sneha"
-                    value={formData.name}
-                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                    className="w-full px-3 py-2 bg-white border border-[#EAE5DA] rounded-xl text-slate-900 font-bold focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Mobile Phone *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. +91 98765 43210"
-                    value={formData.phone}
-                    onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
-                    className="w-full px-3 py-2 bg-white border border-[#EAE5DA] rounded-xl text-slate-900 font-mono font-medium focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Email Address</label>
-                  <input
-                    type="email"
-                    placeholder="client@gmail.com"
-                    value={formData.email}
-                    onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                    className="w-full px-3 py-2 bg-white border border-[#EAE5DA] rounded-xl text-slate-900 focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Event Date</label>
-                  <input
-                    type="date"
-                    value={formData.event_date}
-                    onChange={(e) => setFormData(prev => ({ ...prev, event_date: e.target.value }))}
-                    className="w-full px-3 py-2 bg-white border border-[#EAE5DA] rounded-xl text-slate-900 focus:outline-none focus:border-amber-500 font-medium"
-                  />
-                </div>
-              </div>
-
-              {/* Event Type Searchable Dropdown */}
-              <div className="relative" ref={eventTypeDropdownRef}>
-                <label className="font-bold text-slate-700 block mb-1">Event Category / Type</label>
-                <div
-                  onClick={() => setIsEventTypeDropdownOpen(prev => !prev)}
-                  className="w-full px-3 py-2 bg-white border border-[#EAE5DA] rounded-xl text-slate-900 font-bold flex items-center justify-between cursor-pointer"
-                >
-                  <span>{formData.event_type}</span>
-                  <ChevronDown className="w-4 h-4 text-slate-400" />
-                </div>
-
-                {isEventTypeDropdownOpen && (
-                  <div className="absolute left-0 right-0 mt-1 bg-white border border-[#EAE5DA] rounded-2xl shadow-xl z-20 p-2 space-y-2">
-                    <input
-                      type="text"
-                      placeholder="Search event type..."
-                      value={eventTypeSearch}
-                      onChange={(e) => setEventTypeSearch(e.target.value)}
-                      className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
-                      autoFocus
-                    />
-                    <div className="max-h-40 overflow-y-auto space-y-1">
-                      {filteredEventTypes.map(type => (
-                        <button
-                          key={type}
-                          type="button"
-                          onClick={() => {
-                            setFormData(prev => ({ ...prev, event_type: type }));
-                            setIsEventTypeDropdownOpen(false);
-                          }}
-                          className="w-full text-left px-3 py-1.5 text-xs font-bold text-slate-800 hover:bg-amber-50 hover:text-amber-900 rounded-lg flex items-center justify-between"
-                        >
-                          <span>{type}</span>
-                          {formData.event_type === type && <Check className="w-3.5 h-3.5 text-amber-700" />}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Assign Project Manager (PM) */}
-              <div>
-                <label className="font-bold text-slate-700 block mb-1 flex items-center gap-1.5">
-                  <UserPlus className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>Assign Project Manager (PM)</span>
-                </label>
-                <select
-                  value={formData.project_manager_id}
-                  onChange={(e) => setFormData(prev => ({ ...prev, project_manager_id: e.target.value }))}
-                  className="w-full px-3 py-2 bg-white border border-[#EAE5DA] rounded-xl text-slate-900 font-bold focus:outline-none focus:border-amber-500 cursor-pointer"
-                >
-                  <option value="">-- No PM Assigned (Unassigned) --</option>
-                  {teamMembers.map(member => (
-                    <option key={member.id} value={member.id}>
-                      👤 {member.name} ({member.role || 'Project Manager'}) {member.email ? `• ${member.email}` : ''}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-[10px] text-slate-500 mt-1">
-                  Assign a team member responsible for this wedding project management.
-                </p>
-              </div>
-
-              {/* Pricing & Advance Details */}
-              <div className="p-3.5 bg-amber-50/50 rounded-2xl border border-amber-200/70 space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Total Package (₹)</label>
-                    <input
-                      type="number"
-                      placeholder="150000"
-                      value={formData.total_package_amount}
-                      onChange={(e) => setFormData(prev => ({ ...prev, total_package_amount: e.target.value }))}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-mono font-bold text-slate-900"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Advance Token (₹)</label>
-                    <input
-                      type="number"
-                      placeholder="25000"
-                      value={formData.advance_amount}
-                      onChange={(e) => setFormData(prev => ({ ...prev, advance_amount: e.target.value, is_advance_received: true }))}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-mono font-bold text-slate-900"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-4 text-xs font-bold">
-                  <label className="flex items-center gap-1.5 cursor-pointer text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={formData.is_advance_received}
-                      onChange={(e) => setFormData(prev => ({ ...prev, is_advance_received: e.target.checked }))}
-                      className="rounded text-amber-600"
-                    />
-                    <span>Advance Token Received</span>
-                  </label>
-
-                  <label className="flex items-center gap-1.5 cursor-pointer text-emerald-800">
-                    <input
-                      type="checkbox"
-                      checked={formData.is_full_payment_received}
-                      onChange={(e) => setFormData(prev => ({ ...prev, is_full_payment_received: e.target.checked }))}
-                      className="rounded text-emerald-600"
-                    />
-                    <span>100% Full Payment Paid</span>
-                  </label>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-[#EAE5DA]">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-5 py-2 bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-600 text-white font-black rounded-xl shadow-xs hover:brightness-105 cursor-pointer"
-                >
-                  {isSubmitting ? 'Creating...' : 'Create Client Workspace'}
-                </button>
-              </div>
-            </form>
-          </motion.div>
-        </div>
-      )}
+      {/* ── ADD NEW CLIENT MODAL (3D LUXURY CREAM MODAL) ── */}
+      <AddClientModal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        leads={leads}
+        teamMembers={teamMembers}
+        eventTypes={eventTypes}
+        onAddCustomEventType={handleAddCustomEventType}
+        onSubmit={handleCreateClient}
+        isSubmitting={isSubmitting}
+      />
 
       {/* ── QUICK ASSIGN PROJECT MANAGER (PM) MODAL ── */}
       <AnimatePresence>

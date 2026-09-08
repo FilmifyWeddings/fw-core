@@ -48,6 +48,7 @@ const MEMBER_TYPE_OPTIONS = [
 ];
 
 const MULTI_ROLES_OPTIONS = [
+  { id: 'Sales Person', label: '💼 Sales Person' },
   { id: 'Photographer', label: '📸 Photographer' },
   { id: 'Cinematographer', label: '🎥 Cinematographer' },
   { id: 'Drone Pilot', label: '🚁 Drone Pilot' },

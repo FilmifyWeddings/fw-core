@@ -93,15 +93,16 @@ export const DEFAULT_EVENT_TYPES: WorkspaceEventType[] = [
 ];
 
 export const DEFAULT_CREW_ROLES: WorkspaceCrewRole[] = [
-  { id: 'def_role_1', name: 'Team Manager', short_code: 'TM', category: 'Management', is_default: true, display_order: 1 },
-  { id: 'def_role_2', name: 'Traditional Photographer', short_code: 'TP', category: 'Photography', is_default: true, display_order: 2 },
-  { id: 'def_role_3', name: 'Traditional Videographer', short_code: 'TV', category: 'Cinematography', is_default: true, display_order: 3 },
-  { id: 'def_role_4', name: 'Candid Photographer', short_code: 'CP', category: 'Photography', is_default: true, display_order: 4 },
-  { id: 'def_role_5', name: 'Cinematographer', short_code: 'CV', category: 'Cinematography', is_default: true, display_order: 5 },
-  { id: 'def_role_6', name: 'Assistant', short_code: 'AS', category: 'Assistance', is_default: true, display_order: 6 },
-  { id: 'def_role_7', name: 'Drone Pilot', short_code: 'DP', category: 'Drone', is_default: true, display_order: 7 },
-  { id: 'def_role_8', name: 'Family Photographer', short_code: 'FP', category: 'Photography', is_default: true, display_order: 8 },
-  { id: 'def_role_9', name: 'Reels Creator', short_code: 'RC', category: 'Social Media', is_default: true, display_order: 9 },
+  { id: 'def_role_sp', name: 'Sales Person', short_code: 'SP', category: 'Sales', is_default: true, display_order: 1 },
+  { id: 'def_role_1', name: 'Team Manager', short_code: 'TM', category: 'Management', is_default: true, display_order: 2 },
+  { id: 'def_role_2', name: 'Traditional Photographer', short_code: 'TP', category: 'Photography', is_default: true, display_order: 3 },
+  { id: 'def_role_3', name: 'Traditional Videographer', short_code: 'TV', category: 'Cinematography', is_default: true, display_order: 4 },
+  { id: 'def_role_4', name: 'Candid Photographer', short_code: 'CP', category: 'Photography', is_default: true, display_order: 5 },
+  { id: 'def_role_5', name: 'Cinematographer', short_code: 'CV', category: 'Cinematography', is_default: true, display_order: 6 },
+  { id: 'def_role_6', name: 'Assistant', short_code: 'AS', category: 'Assistance', is_default: true, display_order: 7 },
+  { id: 'def_role_7', name: 'Drone Pilot', short_code: 'DP', category: 'Drone', is_default: true, display_order: 8 },
+  { id: 'def_role_8', name: 'Family Photographer', short_code: 'FP', category: 'Photography', is_default: true, display_order: 9 },
+  { id: 'def_role_9', name: 'Reels Creator', short_code: 'RC', category: 'Social Media', is_default: true, display_order: 10 },
 ];
 
 export const DEFAULT_QUOTATION_DELIVERABLES: WorkspaceQuotationDeliverable[] = [
@@ -263,6 +264,7 @@ export function getRoleShortCode(roleName?: string | null, customRoles?: Workspa
 
   // 3. Fallback heuristic mappings
   const lower = clean.toLowerCase();
+  if (lower.includes('sales') || lower.includes('sp')) return 'SP';
   if (lower.includes('project') || lower.includes('pm')) return 'PM';
   if (lower.includes('team') || lower.includes('tm')) return 'TM';
   if (lower.includes('lead')) return 'LP';
@@ -693,8 +695,9 @@ export async function fetchWorkspaceCrewRoles(workspaceId?: string, userId?: str
         return deduplicateCrewRoles(data);
       }
 
-      // 3. If brand new workspace with 0 roles in DB, seed the 8 default roles directly with harmonized codes
+      // 3. If brand new workspace with 0 roles in DB, seed the default roles directly with harmonized codes
       const defaultSeed = [
+        { name: 'Sales Person', short_code: 'SP', category: 'Sales' },
         { name: 'Team Manager', short_code: 'TM', category: 'Management' },
         { name: 'Candid Photographer', short_code: 'CP', category: 'Photography' },
         { name: 'Cinematographer', short_code: 'CV', category: 'Cinematography' },
@@ -742,16 +745,31 @@ function deduplicateCrewRoles(roles: any[]): WorkspaceCrewRole[] {
     const key = (d.name || '').trim().toLowerCase();
     if (!key || seen.has(key)) continue;
     seen.add(key);
+    const isSalesPerson = key === 'sales person';
     unique.push({
       id: d.id,
       workspace_id: d.workspace_id,
       name: d.name,
       short_code: (d.short_code || getRoleShortCode(d.name)).toUpperCase(),
-      category: d.category || 'Photography',
-      is_default: !d.is_customized,
+      category: d.category || (isSalesPerson ? 'Sales' : 'Photography'),
+      is_default: Boolean(isSalesPerson || d.is_default || !d.is_customized),
       display_order: d.display_order || unique.length + 1
     });
   }
+
+  // Ensure 'Sales Person' is always present in workspace crew roles list
+  if (!unique.some(r => r.name.toLowerCase() === 'sales person')) {
+    unique.unshift({
+      id: 'def_role_sp',
+      workspace_id: roles[0]?.workspace_id,
+      name: 'Sales Person',
+      short_code: 'SP',
+      category: 'Sales',
+      is_default: true,
+      display_order: 1,
+    });
+  }
+
   return unique;
 }
 

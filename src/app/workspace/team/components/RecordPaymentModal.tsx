@@ -8,10 +8,14 @@ export interface PaymentTarget {
   id: string | number;
   title?: string;
   clientName?: string;
-  type: 'EVENT' | 'ALBUM' | string;
+  type: 'EVENT' | 'ALBUM' | 'SALARY' | string;
   balanceAmount: number;
   totalAmount?: number;
+  paidAmount?: number;
   role?: string;
+  projectId?: string;
+  subEventId?: string;
+  assignmentId?: string;
 }
 
 export interface RecordPaymentModalProps {
@@ -81,6 +85,17 @@ export default function RecordPaymentModal({
   };
 
   const isZeroSettle = Number(paymentAmount) === 0;
+  const agreedTotal = Number(paymentTarget?.totalAmount || 0);
+  const balanceDue = Number(paymentTarget?.balanceAmount || 0);
+  const alreadyPaid = Number(
+    paymentTarget?.paidAmount !== undefined 
+      ? paymentTarget.paidAmount 
+      : Math.max(0, agreedTotal - balanceDue)
+  );
+
+  const numericInput = Number(paymentAmount) || 0;
+  const projectedPaid = alreadyPaid + numericInput;
+  const projectedBalance = Math.max(0, agreedTotal - projectedPaid);
 
   return (
     <AnimatePresence>
@@ -118,6 +133,28 @@ export default function RecordPaymentModal({
             </button>
           </div>
 
+          {/* Live Context Commercials Banner */}
+          <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200/80 grid grid-cols-3 gap-2 text-center">
+            <div className="p-2 bg-white rounded-xl border border-stone-200/60 shadow-2xs">
+              <span className="text-[9px] font-black uppercase text-stone-400 block tracking-wider">Agreed</span>
+              <span className="text-xs font-black text-stone-800 font-mono">
+                ₹{agreedTotal.toLocaleString('en-IN')}
+              </span>
+            </div>
+            <div className="p-2 bg-white rounded-xl border border-stone-200/60 shadow-2xs">
+              <span className="text-[9px] font-black uppercase text-emerald-600 block tracking-wider">Already Paid</span>
+              <span className="text-xs font-black text-emerald-700 font-mono">
+                ₹{alreadyPaid.toLocaleString('en-IN')}
+              </span>
+            </div>
+            <div className="p-2 bg-white rounded-xl border border-stone-200/60 shadow-2xs">
+              <span className="text-[9px] font-black uppercase text-rose-500 block tracking-wider">Remaining Due</span>
+              <span className="text-xs font-black text-rose-600 font-mono">
+                ₹{balanceDue.toLocaleString('en-IN')}
+              </span>
+            </div>
+          </div>
+
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-3">
             {/* Amount Field */}
@@ -126,13 +163,13 @@ export default function RecordPaymentModal({
                 <label className="text-[10px] font-black uppercase text-stone-500 tracking-wider">
                   Payment Amount (₹) *
                 </label>
-                {paymentTarget.balanceAmount > 0 && (
+                {balanceDue > 0 && (
                   <button
                     type="button"
-                    onClick={() => setPaymentAmount(String(paymentTarget.balanceAmount))}
+                    onClick={() => setPaymentAmount(String(balanceDue))}
                     className="text-[10px] font-bold text-amber-600 hover:text-amber-700 underline cursor-pointer"
                   >
-                    Set Full Balance (₹{paymentTarget.balanceAmount.toLocaleString('en-IN')})
+                    Set Full Balance (₹{balanceDue.toLocaleString('en-IN')})
                   </button>
                 )}
               </div>
@@ -146,12 +183,22 @@ export default function RecordPaymentModal({
                 placeholder="0"
                 className="w-full h-9 px-3 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 font-mono transition"
               />
-              {isZeroSettle && (
+              {isZeroSettle ? (
                 <p className="text-[10px] font-semibold text-emerald-600 flex items-center gap-1 mt-0.5">
                   <ShieldCheck className="w-3 h-3 text-emerald-500" />
                   ₹0 settlement will mark this assignment as completed without outstanding balance.
                 </p>
-              )}
+              ) : numericInput > 0 ? (
+                <div className="flex items-center justify-between text-[10px] font-bold px-2.5 py-1 bg-amber-50/80 border border-amber-200/70 rounded-lg text-amber-900 mt-1">
+                  <span>After this payment:</span>
+                  <span>
+                    Paid: <strong className="text-emerald-700 font-mono font-black">₹{projectedPaid.toLocaleString('en-IN')}</strong> | Balance:{' '}
+                    <strong className={`font-mono font-black ${projectedBalance === 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
+                      ₹{projectedBalance.toLocaleString('en-IN')} {projectedBalance === 0 ? '(SETTLED)' : ''}
+                    </strong>
+                  </span>
+                </div>
+              ) : null}
             </div>
 
             {/* Date & Payment Mode */}
