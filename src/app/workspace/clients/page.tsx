@@ -19,6 +19,7 @@ import { ExcelMigrationModal } from '@/components/finance/excel-migration-modal'
 import { fetchWorkspaceTeamMembers, type WorkspaceMemberOption } from '@/lib/team-helpers';
 import { fetchWorkspaceEventTypes } from '@/lib/workspace-settings';
 import AddClientModal, { AddClientFormData } from './components/AddClientModal';
+import { handleAssignClientPM } from './components/ClientRow';
 import type { WorkspaceClient, Lead, ClientFinanceRecord, FinanceMilestoneItem } from '@/types';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import Searchable3DCreamSelect, { Searchable3DCreamSelectOption } from '@/components/ui/Searchable3DCreamSelect';
@@ -236,7 +237,7 @@ export default function ClientsPage() {
     }
   };
 
-  // Quick Assign Project Manager (PM) to a client
+  // Quick Assign Project Manager (PM) to a client with Bidirectional Dual-Sync
   const handleAssignProjectManager = async (targetClient: WorkspaceClient, member: WorkspaceMemberOption | null) => {
     try {
       const ext = parseClientExtended(targetClient);
@@ -258,23 +259,14 @@ export default function ClientsPage() {
         updated_at: new Date().toISOString(),
       };
 
-      const { error } = await supabase
-        .from('workspace_clients')
-        .update(updatedFields)
-        .eq('id', targetClient.id);
-
-      if (error) {
-        // Fallback update with notes only if columns are not yet in DB schema
-        await supabase
-          .from('workspace_clients')
-          .update({ notes: serializedNotes, updated_at: new Date().toISOString() })
-          .eq('id', targetClient.id);
-      }
-
+      // Optimistically update UI
       setClients((prev) =>
         prev.map((c) => (c.id === targetClient.id ? { ...c, ...updatedFields } : c))
       );
       setQuickAssignClient(null);
+
+      // Concurrently execute dual-sync to workspace_clients and fw_projects
+      await handleAssignClientPM(targetClient.id, targetClient.name, member);
     } catch (err: any) {
       console.error('Error assigning PM:', err);
       alert(`Failed to assign Project Manager: ${err.message || 'Database error'}`);
@@ -480,6 +472,9 @@ export default function ClientsPage() {
         }
       } else if (newClient) {
         setClients(prev => [newClient, ...prev]);
+        if (assignedPm) {
+          handleAssignClientPM(newClient.id, newClient.name, assignedPm).catch(() => {});
+        }
       }
 
       setShowAddModal(false);

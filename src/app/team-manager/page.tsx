@@ -18,6 +18,8 @@ import { createPortal } from 'react-dom';
 import { supabase } from '@/lib/supabase';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { FWProject, FWSubEvent, FWTeamMember, FWAssignment } from '@/types';
+import { handleUpdateBookingPM } from '../workspace/bookings/components/ProjectBookingCard';
+import { parseClientExtended } from '@/components/clients/client-insider-modal';
 import AddProjectModal from './components/AddProjectModal';
 import AddTeamMemberModal from './components/AddTeamMemberModal';
 import TeamSettingsModal from './components/TeamSettingsModal';
@@ -328,8 +330,13 @@ export default function TeamManagerPage() {
     return () => window.removeEventListener('click', handleGlobalClick);
   }, [activePmDropdownProjectId]);
 
-  // Handle PM Assignment Update
+  // Handle PM Assignment Update with Bidirectional Dual-Sync
   const handleProjectPMChange = async (projectId: string, memberId: string | null, memberName: string | null) => {
+    const targetProject = projects.find(p => p.id === projectId);
+    const clientId = targetProject?.client_id || null;
+    const clientName = targetProject?.client_name || '';
+
+    // Optimistic UI update
     setProjects(prev => prev.map(p => {
       if (p.id === projectId) {
         return { ...p, project_manager_id: memberId, project_manager_name: memberName };
@@ -338,20 +345,14 @@ export default function TeamManagerPage() {
     }));
 
     try {
-      const { error } = await supabase
-        .from('fw_projects')
-        .update({
-          project_manager_id: memberId,
-          project_manager_name: memberName,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', projectId);
-
-      if (error) {
-        console.error('[TeamManager] Error updating PM in Supabase:', error);
-      }
+      await handleUpdateBookingPM(
+        projectId,
+        clientId,
+        clientName,
+        memberId ? { id: memberId, name: memberName } : null
+      );
     } catch (err) {
-      console.error('[TeamManager] Error updating PM:', err);
+      console.error('[TeamManager] Error updating PM in Supabase:', err);
     }
   };
 
@@ -553,20 +554,71 @@ export default function TeamManagerPage() {
       const { data: projectsData, error: projectsErr } = await projectsQuery;
       if (projectsErr) console.warn('[TeamManager] fw_projects error:', projectsErr.message);
 
-      let projectsDataToSet: any[] = (projectsData || []).map((proj: any) => ({
-        ...proj,
-        studio_name: studioNameMap.get(proj.user_id) || proj.studio_name || '',
-        fw_sub_events: (proj.fw_sub_events || []).map((se: any) => ({
-          ...se,
-          fw_assignments: (se.fw_assignments || []).map((a: any) => {
-            const matched = a.fw_team_members || (a.assigned_member_id ? combinedMembers.find(m => m.id === a.assigned_member_id) : null);
-            return {
-              ...a,
-              fw_team_members: matched || a.fw_team_members || null
-            };
-          })
-        }))
-      }));
+      // 2b. Hydration Fallback: Fetch workspace_clients to populate PM if project.project_manager_id is null
+      let clientsForHydration: any[] = [];
+      try {
+        let clientsQuery = supabase
+          .from('workspace_clients')
+          .select('id, name, project_manager_id, project_manager_name, notes');
+        if (isAllStudios) {
+          if (targetOwnerIds.length > 0) {
+            clientsQuery = clientsQuery.in('user_id', targetOwnerIds);
+          }
+        } else if (uid && uid !== 'all') {
+          clientsQuery = clientsQuery.eq('user_id', uid);
+        }
+        const { data: cData } = await clientsQuery;
+        if (cData) clientsForHydration = cData;
+      } catch (cErr) {
+        console.warn('[TeamManager] workspace_clients fetch warning for PM hydration:', cErr);
+      }
+
+      let projectsDataToSet: any[] = (projectsData || []).map((proj: any) => {
+        let pmId = proj.project_manager_id || null;
+        let pmName = proj.project_manager_name || null;
+        let matchedClientId = proj.client_id || null;
+
+        // Query Hydration Fallback: If project_manager_id is null, look up workspace_clients
+        if (!pmId || !pmName) {
+          const matchedClient = clientsForHydration.find(c =>
+            (proj.client_id && c.id === proj.client_id) ||
+            (proj.client_name && c.name && c.name.trim().toLowerCase() === proj.client_name.trim().toLowerCase())
+          );
+
+          if (matchedClient) {
+            if (!matchedClientId) matchedClientId = matchedClient.id;
+            let clientPmId = matchedClient.project_manager_id || null;
+            let clientPmName = matchedClient.project_manager_name || null;
+            if (!clientPmId && matchedClient.notes) {
+              try {
+                const ext = parseClientExtended(matchedClient);
+                clientPmId = ext.project_manager_id || null;
+                clientPmName = ext.project_manager_name || null;
+              } catch (e) {}
+            }
+            if (clientPmId && !pmId) pmId = clientPmId;
+            if (clientPmName && !pmName) pmName = clientPmName;
+          }
+        }
+
+        return {
+          ...proj,
+          client_id: matchedClientId,
+          project_manager_id: pmId,
+          project_manager_name: pmName,
+          studio_name: studioNameMap.get(proj.user_id) || proj.studio_name || '',
+          fw_sub_events: (proj.fw_sub_events || []).map((se: any) => ({
+            ...se,
+            fw_assignments: (se.fw_assignments || []).map((a: any) => {
+              const matched = a.fw_team_members || (a.assigned_member_id ? combinedMembers.find(m => m.id === a.assigned_member_id) : null);
+              return {
+                ...a,
+                fw_team_members: matched || a.fw_team_members || null
+              };
+            })
+          }))
+        };
+      });
 
       if (!isOwner && isAssignedCardOnly) {
         const { data: { session } } = await supabase.auth.getSession();

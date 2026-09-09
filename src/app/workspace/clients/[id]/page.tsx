@@ -761,6 +761,38 @@ export default function ClientWorkspaceDetailPage() {
           .eq('id', client.id);
       }
 
+      // Direct dual-sync to fw_projects
+      try {
+        const { error: projErr } = await supabase
+          .from('fw_projects')
+          .update({
+            project_manager_id: projectManagerId || null,
+            project_manager_name: updatedPmName || null,
+            updated_at: new Date().toISOString(),
+          })
+          .or(`client_id.eq.${client.id},client_name.ilike.${name.trim()}`);
+
+        if (projErr) {
+          await supabase
+            .from('fw_projects')
+            .update({
+              project_manager_id: projectManagerId || null,
+              project_manager_name: updatedPmName || null,
+              updated_at: new Date().toISOString(),
+            })
+            .ilike('client_name', name.trim());
+        }
+      } catch {
+        await supabase
+          .from('fw_projects')
+          .update({
+            project_manager_id: projectManagerId || null,
+            project_manager_name: updatedPmName || null,
+            updated_at: new Date().toISOString(),
+          })
+          .ilike('client_name', name.trim());
+      }
+
       setExtended(updatedExtended);
       setClient(prev => prev ? ({ ...prev, ...updatedFields, project_manager_name: updatedPmName }) : null);
       setProjectManagerName(updatedPmName);
