@@ -7,6 +7,8 @@ import { FWAssignment, FWTeamMember } from '@/types';
 import { Search, Plus, Check } from 'lucide-react';
 import { getRoleShortCode, getRoleAbbr } from '@/lib/workspace-settings';
 import { useWorkspaceData } from '@/context/WorkspaceDataContext';
+import { checkRoleSlotMatch } from '../hooks/useTeamManagerFilter';
+import { UnifiedFilterState } from './ShootFilterModal';
 
 interface RoleAssignDropdownProps {
   assignment: FWAssignment;
@@ -20,6 +22,7 @@ interface RoleAssignDropdownProps {
   isMasked?: boolean;
   isAdmin?: boolean;
   selectedFilterMemberId?: string | null;
+  unifiedFilters?: UnifiedFilterState | null;
 }
 
 export default function RoleAssignDropdown({
@@ -34,6 +37,7 @@ export default function RoleAssignDropdown({
   isMasked = false,
   isAdmin = false,
   selectedFilterMemberId = null,
+  unifiedFilters = null,
 }: RoleAssignDropdownProps) {
   const { crewRoles } = useWorkspaceData();
   const [isOpen, setIsOpen] = useState(false);
@@ -97,6 +101,22 @@ export default function RoleAssignDropdown({
     });
   }, [teamMembers, searchQuery, assignment.assigned_member_id, role]);
 
+  const slotMatch = checkRoleSlotMatch(assignment, unifiedFilters);
+  const isSelectedSpotlight = Boolean(
+    (
+      isAdmin &&
+      isAssigned &&
+      selectedFilterMemberId &&
+      selectedFilterMemberId !== 'all' &&
+      (
+        assignment.assigned_member_id === selectedFilterMemberId ||
+        memberObj?.id === selectedFilterMemberId ||
+        cleanName.toLowerCase() === selectedFilterMemberId.toLowerCase()
+      )
+    ) ||
+    slotMatch.isTargetedSlot
+  );
+
   return (
     <div className="relative inline-block" ref={triggerRef}>
       {/* TRIGGER UI */}
@@ -106,99 +126,98 @@ export default function RoleAssignDropdown({
           className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold transition select-none shadow-2xs ${
             readOnly ? 'cursor-default' : 'cursor-pointer hover:shadow-xs active:scale-95'
           } ${
-            isAssigned
-              ? 'bg-emerald-50 hover:bg-emerald-100/90 text-emerald-950 border-emerald-300'
-              : readOnly
-                ? 'bg-neutral-100 text-neutral-400 border-neutral-200'
-                : 'bg-rose-50 hover:bg-rose-100/90 text-rose-800 border-rose-300'
+            isSelectedSpotlight
+              ? 'ring-2 ring-amber-400/80 bg-amber-50/90 text-amber-950 border-amber-400 animate-pulse shadow-sm shadow-amber-300/40'
+              : isAssigned
+                ? 'bg-emerald-50 hover:bg-emerald-100/90 text-emerald-950 border-emerald-300'
+                : readOnly
+                  ? 'bg-neutral-100 text-neutral-400 border-neutral-200'
+                  : 'bg-rose-50 hover:bg-rose-100/90 text-rose-800 border-rose-300'
           }`}
           title={isAssigned ? `${cleanName} (${role})` : `Unassigned: ${role}`}
         >
           <div
             className={`w-5 h-5 rounded-lg flex items-center justify-center text-[10px] font-black text-white shrink-0 ${
-              isAssigned ? 'bg-emerald-600' : readOnly ? 'bg-neutral-400' : 'bg-rose-500'
+              isSelectedSpotlight ? 'bg-amber-600' : isAssigned ? 'bg-emerald-600' : readOnly ? 'bg-neutral-400' : 'bg-rose-500'
             }`}
           >
             {getRoleAbbr(role, crewRoles)}
           </div>
           <span className="font-extrabold">{role}:</span>
-          <span className={isAssigned ? 'font-black text-emerald-900' : readOnly ? 'text-neutral-400 font-medium' : 'font-extrabold italic text-rose-600'}>
+          <span className={isAssigned ? (isSelectedSpotlight ? 'font-black text-amber-950' : 'font-black text-emerald-900') : readOnly ? 'text-neutral-400 font-medium' : 'font-extrabold italic text-rose-600'}>
             {cleanName || (readOnly ? 'Unassigned' : 'Unassigned (+ Assign)')}
           </span>
         </div>
       ) : (
         /* STRICT SHORT-FORM ROLE AVATAR (NO OVERFLOW) */
-        (() => {
-          const isSelectedSpotlight = Boolean(
-            isAdmin &&
-            isAssigned &&
-            selectedFilterMemberId &&
-            selectedFilterMemberId !== 'all' &&
-            (
-              assignment.assigned_member_id === selectedFilterMemberId ||
-              memberObj?.id === selectedFilterMemberId ||
-              cleanName.toLowerCase() === selectedFilterMemberId.toLowerCase()
-            )
-          );
-
-          return (
+        (
+          <div
+            className={`relative flex flex-col items-center transition-all duration-300 ${
+              isSelectedSpotlight
+                ? 'rounded-lg ring-2 ring-amber-400/80 bg-amber-50/70 dark:bg-amber-950/30 p-1 shadow-sm shadow-amber-300/40 animate-pulse'
+                : ''
+            }`}
+          >
             <div
-              className={`relative flex flex-col items-center transition-all duration-300 ${
-                isSelectedSpotlight
-                  ? 'rounded-lg ring-2 ring-amber-400/80 bg-amber-50/70 dark:bg-amber-950/30 p-1 shadow-sm shadow-amber-300/40 animate-pulse'
-                  : ''
+              onClick={handleOpenPopover}
+              className={`flex flex-col items-center min-w-[50px] max-w-[76px] text-center select-none ${
+                readOnly ? 'cursor-default' : 'group cursor-pointer'
               }`}
+              title={isAssigned ? `${cleanName} (${role})` : `Unassigned: ${role}`}
             >
-              <div
-                onClick={handleOpenPopover}
-                className={`flex flex-col items-center min-w-[50px] max-w-[76px] text-center select-none ${
-                  readOnly ? 'cursor-default' : 'group cursor-pointer'
-                }`}
-                title={isAssigned ? `${cleanName} (${role})` : `Unassigned: ${role}`}
-              >
-                {/* Avatar */}
-                {isAssigned ? (
-                  <div className="relative mb-1 flex items-center justify-center">
-                    <div className={`relative w-10 h-10 rounded-full border-2 p-0.5 flex items-center justify-center shrink-0 transition-all ${
-                      isSelectedSpotlight
-                        ? 'border-amber-400 bg-amber-100/80 shadow-xs'
-                        : 'border-emerald-500 bg-emerald-50 shadow-xs'
-                    }`}>
-                      {memberObj?.avatar_url ? (
-                        // eslint-disable-next-next/no-img-element
-                        <img
-                          src={memberObj.avatar_url}
-                          alt={cleanName}
-                          className="w-full h-full rounded-full object-cover shrink-0"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName)}`;
-                          }}
-                        />
-                      ) : (
-                        <div className={`w-full h-full rounded-full font-black text-[10px] flex items-center justify-center shrink-0 text-white ${
-                          isSelectedSpotlight
-                            ? 'bg-gradient-to-br from-amber-500 to-amber-600'
-                            : 'bg-gradient-to-br from-emerald-500 to-teal-600'
-                        }`}>
-                          {cleanName.slice(0, 2).toUpperCase() || getRoleAbbr(role, crewRoles)}
-                        </div>
-                      )}
-                    </div>
+              {/* Avatar */}
+              {isAssigned ? (
+                <div className="relative mb-1 flex items-center justify-center">
+                  <div className={`relative w-10 h-10 rounded-full border-2 p-0.5 flex items-center justify-center shrink-0 transition-all ${
+                    isSelectedSpotlight
+                      ? 'border-amber-400 bg-amber-100/80 shadow-xs'
+                      : 'border-emerald-500 bg-emerald-50 shadow-xs'
+                  }`}>
+                    {memberObj?.avatar_url ? (
+                      // eslint-disable-next-next/no-img-element
+                      <img
+                        src={memberObj.avatar_url}
+                        alt={cleanName}
+                        className="w-full h-full rounded-full object-cover shrink-0"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName)}`;
+                        }}
+                      />
+                    ) : (
+                      <div className={`w-full h-full rounded-full font-black text-[10px] flex items-center justify-center shrink-0 text-white ${
+                        isSelectedSpotlight
+                          ? 'bg-gradient-to-br from-amber-500 to-amber-600'
+                          : 'bg-gradient-to-br from-emerald-500 to-teal-600'
+                      }`}>
+                        {cleanName.slice(0, 2).toUpperCase() || getRoleAbbr(role, crewRoles)}
+                      </div>
+                    )}
                   </div>
-                ) : readOnly ? (
-                  <div className="w-10 h-10 rounded-full border border-neutral-200 bg-neutral-100 text-neutral-400 font-bold mb-1 flex items-center justify-center shadow-2xs shrink-0">
-                    <span className="text-[10px] font-black">{getRoleAbbr(role, crewRoles)}</span>
-                  </div>
-                ) : (
-                  <div className="w-10 h-10 rounded-full border border-dashed border-red-500 bg-red-50/90 text-red-600 font-black mb-1 flex items-center justify-center shadow-2xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
-                    <Plus className="w-4 h-4 text-red-600 stroke-[3]" />
-                  </div>
-                )}
+                </div>
+              ) : readOnly ? (
+                <div className={`w-10 h-10 rounded-full border font-bold mb-1 flex items-center justify-center shadow-2xs shrink-0 ${
+                  isSelectedSpotlight
+                    ? 'border-amber-400 bg-amber-100/80 text-amber-900'
+                    : 'border-neutral-200 bg-neutral-100 text-neutral-400'
+                }`}>
+                  <span className="text-[10px] font-black">{getRoleAbbr(role, crewRoles)}</span>
+                </div>
+              ) : (
+                <div className={`w-10 h-10 rounded-full border border-dashed font-black mb-1 flex items-center justify-center shadow-2xs transition-colors cursor-pointer shrink-0 ${
+                  isSelectedSpotlight
+                    ? 'border-amber-500 bg-amber-100/90 text-amber-700 group-hover:bg-amber-200/90'
+                    : 'border-red-500 bg-red-50/90 text-red-600 group-hover:bg-red-100'
+                }`}>
+                  <Plus className={`w-4 h-4 stroke-[3] ${isSelectedSpotlight ? 'text-amber-700' : 'text-red-600'}`} />
+                </div>
+              )}
 
-                {/* Role Label */}
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 leading-tight block text-center">
-                  {getRoleAbbr(role, crewRoles)}
-                </span>
+              {/* Role Label */}
+              <span className={`text-[10px] font-black uppercase tracking-wider leading-tight block text-center ${
+                isSelectedSpotlight ? 'text-amber-800 dark:text-amber-400 font-extrabold' : 'text-slate-500'
+              }`}>
+                {getRoleAbbr(role, crewRoles)}
+              </span>
 
                 {/* Member Full Clean Name */}
                 {isAssigned ? (
@@ -226,10 +245,9 @@ export default function RoleAssignDropdown({
                     {readOnly ? 'Unassigned' : 'Assign'}
                   </span>
                 )}
-              </div>
             </div>
-          );
-        })()
+          </div>
+        )
       )}
 
       {/* PORTAL DROPDOWN POPOVER */}

@@ -4,7 +4,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Copy, Trash2, MapPin, Link as LinkIcon, MessageSquare, Clock, 
-  Calendar, Users, Layers, Sparkles, Zap, ChevronDown, Check, Moon, AlertCircle
+  Calendar, Users, Layers, Sparkles, Zap, ChevronDown, Check, Moon, AlertCircle, X
 } from 'lucide-react';
 import ProgramTypeSelect from './ProgramTypeSelect';
 import CalendarPicker from './CalendarPicker';
@@ -103,18 +103,39 @@ export default function EventBlock({
     >
       {/* HEADER ROW WITH BLOCK INDEX & ACTIONS */}
       <div className="flex items-center justify-between border-b border-amber-200/70 pb-2">
-        <div className="flex items-center gap-2">
-          <div className="w-5 h-5 rounded-md bg-amber-100 text-amber-900 font-black text-[10px] flex items-center justify-center border border-amber-300">
+        <div className="flex items-center gap-2 flex-wrap min-w-0">
+          <div className="w-5 h-5 rounded-md bg-amber-100 text-amber-900 font-black text-[10px] flex items-center justify-center border border-amber-300 shrink-0">
             {index + 1}
           </div>
-          <h4 className="text-xs font-black text-amber-950 uppercase tracking-wider flex items-center gap-1.5">
-            <span>Sub-Event #{index + 1}</span>
-            {block.subEventNames.length > 0 && (
-              <span className="text-amber-700 font-extrabold normal-case">
-                ({block.subEventNames.join(' + ')})
-              </span>
-            )}
+          <h4 className="text-xs font-black text-amber-950 uppercase tracking-wider shrink-0">
+            Sub-Event #{index + 1}
           </h4>
+
+          {/* Individual Program Chips with Cross (X) icon to delete */}
+          {block.subEventNames.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {block.subEventNames.map((name) => (
+                <span
+                  key={name}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-amber-100/90 hover:bg-amber-100 text-amber-950 border border-amber-300 text-[11px] font-extrabold shadow-2xs transition-colors"
+                >
+                  <span className="truncate max-w-[140px]">{name}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const updated = block.subEventNames.filter(n => n !== name);
+                      onUpdate(block.id, { subEventNames: updated });
+                    }}
+                    className="w-3.5 h-3.5 rounded-full hover:bg-rose-500 hover:text-white text-amber-800 flex items-center justify-center transition cursor-pointer p-0 shrink-0"
+                    title={`Remove ${name}`}
+                  >
+                    <X className="w-2.5 h-2.5 stroke-[3]" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-1">

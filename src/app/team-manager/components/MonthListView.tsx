@@ -9,6 +9,7 @@ import {
 import RoleAssignDropdown from './RoleAssignDropdown';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { resolveEventCrewVisibility } from '@/lib/permissions/rbacRules';
+import { isSubEventMatch } from '../hooks/useTeamManagerFilter';
 
 interface MonthListViewProps {
   projects: FWProject[];
@@ -135,38 +136,15 @@ export default function MonthListView({
         const matchSubTitle = !q || se.event_title.toLowerCase().includes(q) || (se.venue_name || '').toLowerCase().includes(q);
         if (!matchClientName && !matchSubTitle) return;
 
-        // Unified Event Type filter
-        if (unifiedFilters?.eventTypes && unifiedFilters.eventTypes.length > 0) {
-          const eventTitle = (se.event_title || (se as any).name || (se as any).event_type || '').toLowerCase();
-          const matchType = unifiedFilters.eventTypes.some((t: string) => eventTitle.includes(t.toLowerCase()));
-          if (!matchType) return;
-        }
-
-        const assignments = resolveSubEventAssignments(se, teamMembers);
-
-        // Role filter (top pill)
+        // Legacy single role filter (top pill)
         if (selectedRoleFilter !== 'All') {
+          const assignments = resolveSubEventAssignments(se, teamMembers);
           const hasRole = assignments.some((a) => a.required_role === selectedRoleFilter);
           if (!hasRole) return;
         }
 
-        // Unified roles multiselect filter
-        if (unifiedFilters?.roles && unifiedFilters.roles.length > 0) {
-          const hasRole = assignments.some((a) => unifiedFilters.roles.includes(a.required_role));
-          if (!hasRole) return;
-        }
-
-        // Unified assignment status filter
-        if (unifiedFilters?.assignmentStatus === 'unassigned') {
-          const hasUnassigned = assignments.some((a) => !a.assigned_member_id);
-          if (!hasUnassigned) return;
-        } else if (unifiedFilters?.assignmentStatus === 'fully_assigned' || unifiedFilters?.assignmentStatus === 'assigned') {
-          const allAssigned = assignments.length > 0 && assignments.every((a) => Boolean(a.assigned_member_id));
-          if (!allAssigned) return;
-        } else if (unifiedFilters?.assignmentStatus === 'partially_assigned' || unifiedFilters?.assignmentStatus === 'partial') {
-          const assignedCount = assignments.filter((a) => Boolean(a.assigned_member_id)).length;
-          if (assignments.length === 0 || assignedCount === 0 || assignedCount >= assignments.length) return;
-        }
+        // Strict unified filter matching (strict co-filtering of role + status, dates, PM, member, event types)
+        if (!isSubEventMatch(se, project, unifiedFilters)) return;
 
         const isTbd = Boolean((se as any).is_date_tbd) || !se.event_date || se.event_date.toLowerCase() === 'tbd' || se.event_date.toLowerCase().includes('not fix');
         const d = se.event_date ? new Date(se.event_date) : null;
@@ -426,6 +404,7 @@ export default function MonthListView({
                                 isMasked={false}
                                     isAdmin={!isTmReadOnly}
                                     selectedFilterMemberId={unifiedFilters?.memberId || null}
+                                    unifiedFilters={unifiedFilters}
                               />
                             );
                           })}
@@ -628,6 +607,7 @@ export default function MonthListView({
                                     isMasked={false}
                                     isAdmin={!isTmReadOnly}
                                     selectedFilterMemberId={unifiedFilters?.memberId || null}
+                                    unifiedFilters={unifiedFilters}
                                   />
                                 );
                               })}
@@ -833,6 +813,7 @@ export default function MonthListView({
                                           isMasked={false}
                                           isAdmin={!isTmReadOnly}
                                           selectedFilterMemberId={unifiedFilters?.memberId || null}
+                                          unifiedFilters={unifiedFilters}
                                         />
                                       );
                                     })}

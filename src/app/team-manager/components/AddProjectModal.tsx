@@ -45,6 +45,15 @@ interface AddProjectModalProps {
 
 const DRAFT_KEY_PREFIX = 'fw_event_form_draft_';
 
+// Split combined event titles (e.g. 'Wedding + Haldi', 'Sangeet / Cocktails') into individual clean strings
+export const splitEventTitle = (title?: string | null): string[] => {
+  if (!title) return [];
+  return title
+    .split(/\s+(?:\+|\/|&)\s+|\s*,\s*/)
+    .map(s => s.trim())
+    .filter(Boolean);
+};
+
 export default function AddProjectModal({
   isOpen,
   onClose,
@@ -91,23 +100,27 @@ export default function AddProjectModal({
     if (projectToEdit && isOpen) {
       setCouplingName(projectToEdit.client_name || '');
       if (projectToEdit.fw_sub_events && projectToEdit.fw_sub_events.length > 0) {
-        const blocks: EventBlockData[] = projectToEdit.fw_sub_events.map(se => ({
-          id: se.id || generateUniqueId(),
-          subEventNames: se.event_title ? [se.event_title] : [],
-          subEventDate: se.event_date || '',
-          isDateTbd: Boolean((se as any).is_date_tbd),
-          isOvernight: Boolean((se as any).is_overnight),
-          endDate: (se as any).end_date || '',
-          venueLocation: se.venue_name || '',
-          mapLink: se.venue_map_link || '',
-          startTime: (se as any).start_time_12h || se.roll_call_time || '10:00 AM',
-          endTime: (se as any).end_time_12h || se.dismissal_estimate_time || '06:00 PM',
-          shiftSlot: (se as any).shift_hours_slot || '',
-          roles: se.fw_assignments && se.fw_assignments.length > 0
-            ? se.fw_assignments.map(a => a.required_role)
-            : ((se as any).roles || (se as any).event_roles || []),
-          notes: se.operational_notes || '',
-        }));
+        const blocks: EventBlockData[] = projectToEdit.fw_sub_events.map(se => {
+          const parsedNames = splitEventTitle(se.event_title);
+          const assignedRoles = (se.fw_assignments || []).map(a => a.required_role).filter(Boolean);
+          const dbRoles = Array.isArray((se as any).roles) ? (se as any).roles : [];
+
+          return {
+            id: se.id || generateUniqueId(),
+            subEventNames: parsedNames.length > 0 ? parsedNames : (se.event_title ? [se.event_title] : []),
+            subEventDate: se.event_date || '',
+            isDateTbd: Boolean((se as any).is_date_tbd),
+            isOvernight: Boolean((se as any).is_overnight),
+            endDate: (se as any).end_date || '',
+            venueLocation: se.venue_name || '',
+            mapLink: se.venue_map_link || '',
+            startTime: (se as any).start_time_12h || se.roll_call_time || '10:00 AM',
+            endTime: (se as any).end_time_12h || se.dismissal_estimate_time || '06:00 PM',
+            shiftSlot: (se as any).shift_hours_slot || '',
+            roles: assignedRoles.length > 0 ? assignedRoles : dbRoles,
+            notes: se.operational_notes || '',
+          };
+        });
         setEventBlocks(blocks);
       } else {
         setEventBlocks([{ ...DEFAULT_BLOCK, id: generateUniqueId(), roles: [] }]);

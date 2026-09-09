@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -11,6 +11,7 @@ import {
 import { FWTeamMember, FWProject, FWSubEvent } from '@/types';
 import { assignCrewMemberWithCommercials, fetchWorkspaceMemberRate } from '@/lib/team-finance-sync';
 import { saveCrewAssignmentCommercials } from '@/lib/services/crewAssignmentService';
+import { logCrewAssignmentChange } from '@/lib/services/projectAuditService';
 
 export interface WhatsAppAssignmentModalProps {
   isOpen: boolean;
@@ -22,6 +23,8 @@ export interface WhatsAppAssignmentModalProps {
   workspaceId?: string;
   studioName?: string;
   projectManagerName?: string;
+  previousMemberName?: string;
+  previousRate?: number | string;
   onCommercialsSaved?: (savedData?: any) => void;
 }
 
@@ -35,10 +38,19 @@ export default function WhatsAppAssignmentModal({
   workspaceId = '',
   studioName = 'Filmify Weddings',
   projectManagerName = 'Studio Manager',
+  previousMemberName,
+  previousRate,
   onCommercialsSaved,
 }: WhatsAppAssignmentModalProps) {
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<'commercials' | 'whatsapp'>('commercials');
+  const hasLoggedAssignmentRef = useRef(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      hasLoggedAssignmentRef.current = false;
+    }
+  }, [isOpen]);
 
   // 1. Identify target assignment slot from in-memory subEvent synchronously
   const existingAssignment = useMemo(() => {
@@ -232,6 +244,24 @@ Please confirm your slot.
     setTimeout(() => setCopied(false), 2500);
   };
 
+  // Handle modal dismissal without saving commercials
+  const handleModalClose = () => {
+    if (project?.id && !hasLoggedAssignmentRef.current) {
+      hasLoggedAssignmentRef.current = true;
+      logCrewAssignmentChange({
+        projectId: project.id,
+        subEventId: subEvent?.id,
+        eventTitle: eventTitle,
+        previousMemberName: previousMemberName,
+        newMemberName: cleanMemberName,
+        roleName: role,
+        previousRate: previousRate || memberDefaultRate,
+        newRate: numericAgreed > 0 ? numericAgreed : undefined,
+      }).catch(() => {});
+    }
+    onClose();
+  };
+
   // Save Commercials to Database & Finance Sync
   const handleSaveCommercials = () => {
     // 1. INSTANT OPTIMISTIC CLOSE (0ms delay)
@@ -267,6 +297,19 @@ Please confirm your slot.
       eventDate: subEvent?.event_date
     }).then((res) => {
       if (onCommercialsSaved) onCommercialsSaved(res);
+      if (project?.id && !hasLoggedAssignmentRef.current) {
+        hasLoggedAssignmentRef.current = true;
+        logCrewAssignmentChange({
+          projectId: project.id,
+          subEventId: subEvent?.id,
+          eventTitle: eventTitle,
+          previousMemberName: previousMemberName,
+          newMemberName: cleanMemberName,
+          roleName: role,
+          previousRate: previousRate || memberDefaultRate,
+          newRate: numericAgreed,
+        }).catch(() => {});
+      }
     }).catch(err => {
       console.error('[WhatsAppAssignmentModal] Background save error:', err);
     });
@@ -323,7 +366,7 @@ Please confirm your slot.
 
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleModalClose}
               className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer shrink-0"
               aria-label="Close"
             >
@@ -485,7 +528,7 @@ Please confirm your slot.
               <div className="pt-2 flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={onClose}
+                  onClick={handleModalClose}
                   className="px-4 py-2.5 rounded-xl border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-bold transition cursor-pointer"
                 >
                   Cancel
@@ -613,6 +656,7 @@ Please confirm your slot.
                   href={waUrl}
                   target="_blank"
                   rel="noopener noreferrer"
+                  onClick={handleSaveCommercials}
                   className="flex-1 py-2.5 px-4 rounded-xl bg-[#25D366] hover:bg-[#20bd5a] text-white font-black text-xs flex items-center justify-center gap-2 shadow-md shadow-emerald-500/20 transition cursor-pointer w-full"
                 >
                   <Send className="w-4 h-4" />

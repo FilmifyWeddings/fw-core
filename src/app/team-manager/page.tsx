@@ -10,7 +10,7 @@ import {
   Send, AlertCircle, Search, Filter, Loader2, Sparkles, MapPin, 
   Clock, CheckCircle, Info, Trash, ChevronDown, Edit2, TrendingUp, Award, Grid, Menu,
   Database, FileText, Layers, ArrowLeft, SlidersHorizontal, CheckSquare, Folder, Edit3, Pencil, Settings,
-  HardDrive, UserPlus, AlertTriangle, Zap, Lock, IndianRupee, Users2, Moon
+  HardDrive, UserPlus, AlertTriangle, Zap, Lock, IndianRupee, Users2, Moon, History
 } from 'lucide-react';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -20,6 +20,10 @@ import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { FWProject, FWSubEvent, FWTeamMember, FWAssignment } from '@/types';
 import { handleUpdateBookingPM } from '../workspace/bookings/components/ProjectBookingCard';
 import { parseClientExtended } from '@/components/clients/client-insider-modal';
+import { logProjectActivity, logCrewAssignmentChange } from '@/lib/services/projectAuditService';
+import ProjectHistoryModal from './components/ProjectHistoryModal';
+import { checkProjectUnassignedWarning } from './components/TeamManagerProjectCard';
+import { isProjectMatch, isSubEventMatch, isPmMatch, checkRoleSlotMatch, getCardHighlightClass, isCardFilterActive as checkIsFilterActive } from './hooks/useTeamManagerFilter';
 import AddProjectModal from './components/AddProjectModal';
 import AddTeamMemberModal from './components/AddTeamMemberModal';
 import TeamSettingsModal from './components/TeamSettingsModal';
@@ -243,6 +247,9 @@ export default function TeamManagerPage() {
     projectId?: string;
   } | null>(null);
 
+  // Luxury 3D History Modal Target State
+  const [selectedProjectForHistory, setSelectedProjectForHistory] = useState<FWProject | null>(null);
+
   // Permanent Delete Confirmation Modal Target State
   const [permanentDeleteTarget, setPermanentDeleteTarget] = useState<FWProject | null>(null);
 
@@ -259,6 +266,8 @@ export default function TeamManagerPage() {
     role: string;
     project: FWProject | null;
     subEvent: FWSubEvent | null;
+    previousMemberName?: string;
+    previousRate?: number | string;
   }>({
     isOpen: false,
     member: null,
@@ -281,9 +290,12 @@ export default function TeamManagerPage() {
     eventTypes: [],
     roles: [],
     assignmentStatus: 'all',
+    assignmentStatuses: [],
     pmId: 'all',
+    pmIds: [],
     studioId: 'all',
     memberId: 'all',
+    memberIds: [],
   });
   const studioFilterOptions = useMemo(() => {
     return availableWorkspaces
@@ -351,6 +363,23 @@ export default function TeamManagerPage() {
         clientName,
         memberId ? { id: memberId, name: memberName } : null
       );
+
+      const targetProject = projects.find(p => p.id === projectId);
+      const prevPmName = targetProject?.project_manager_name || 'Unassigned';
+      const actorName = currentMember?.name || workspaceName || activeWorkspace?.studioName || 'Admin';
+      const actorRole = isOwner ? 'Studio Owner' : (currentMember?.is_sales_person ? 'Sales Person' : 'Project Manager');
+
+      logProjectActivity({
+        projectId,
+        actorId: currentUserId || undefined,
+        actorName,
+        actorRole,
+        actionType: 'PM_CHANGED',
+        description: memberName ? `Reassigned Project Manager to ${memberName}` : 'Cleared Project Manager assignment',
+        previousValue: prevPmName,
+        newValue: memberName || 'Unassigned',
+        metadata: { pmId: memberId, pmName: memberName }
+      }).catch(() => {});
     } catch (err) {
       console.error('[TeamManager] Error updating PM in Supabase:', err);
     }
@@ -799,6 +828,23 @@ export default function TeamManagerPage() {
 
         // 2. UNASSIGNMENT CLEANUP (IF MEMBER ID IS NULL)
         if (!memberId) {
+          const subEventObj = projects
+            .flatMap(p => p.fw_sub_events || [])
+            .find(se => se.id === activeAssign.sub_event_id);
+          const prevMem = teamMembers.find(m => m.id === activeAssign.assigned_member_id);
+          const prevName = prevMem?.name || 'Crew Member';
+          const actorName = currentMember?.name || workspaceName || activeWorkspace?.studioName || 'Admin';
+          const actorRole = isOwner ? 'Studio Owner' : (currentMember?.is_sales_person ? 'Sales Person' : 'Project Manager');
+
+          logCrewAssignmentChange({
+            projectId: activeAssign.project_id,
+            subEventId: activeAssign.sub_event_id || undefined,
+            eventTitle: subEventObj?.event_title || 'event',
+            previousMemberName: prevName,
+            roleName: activeAssign.required_role || 'Crew',
+            isRemoval: true
+          }).catch(() => {});
+
           (async () => {
             await unassignCrewSlot({
               workspaceId: workspaceId || currentUserId || '',
@@ -820,12 +866,17 @@ export default function TeamManagerPage() {
             .flatMap(p => p.fw_sub_events || [])
             .find(se => se.id === activeAssign.sub_event_id);
 
+          const prevMemberId = activeAssign.assigned_member_id;
+          const prevMem = prevMemberId ? teamMembers.find(m => m.id === prevMemberId) : null;
+
           setWhatsappModalData({
             isOpen: true,
             member: matchedMemberObj,
             role: activeAssign.required_role || 'Crew',
             project: projectObj || null,
             subEvent: subEventObj || null,
+            previousMemberName: prevMem?.name,
+            previousRate: (activeAssign as any).agreed_amount,
           });
         }
 
@@ -973,67 +1024,239 @@ export default function TeamManagerPage() {
           .eq('id', projectId);
         if (projErr) throw projErr;
 
-        // EDIT MODE: Preserve assignments! Fetch existing sub-events WITH their assignments
+        // EDIT MODE: Non-destructive update! Preserve ALL assignments and team members!
         const { data: existingSubEvents } = await supabase
           .from('fw_sub_events')
-          .select('id, event_title, roles')
+          .select('*')
           .eq('project_id', projectId);
 
-        // Fetch existing ASSIGNED members so we can preserve them
-        const existingAssignedMap: Record<string, string | null> = {};
-        if (existingSubEvents && existingSubEvents.length > 0) {
-          const subEventIds = existingSubEvents
-            .map(se => se.id)
-            .filter(id => Boolean(id) && typeof id === 'string' && id.length === 36);
+        const subEventIds = (existingSubEvents || []).map(se => se.id).filter(Boolean);
+        const { data: allExistingAssignments } = subEventIds.length > 0
+          ? await supabase.from('fw_assignments').select('*').in('sub_event_id', subEventIds)
+          : { data: [] };
 
-          if (subEventIds.length > 0) {
-            const { data: existingAssignments } = await supabase
-              .from('fw_assignments')
-              .select('sub_event_id, required_role, assigned_member_id')
-              .in('sub_event_id', subEventIds)
-              .not('assigned_member_id', 'is', null);
+        const existingSubEventsList = (existingSubEvents || []).map(se => ({
+          ...se,
+          fw_assignments: (allExistingAssignments || []).filter(a => a.sub_event_id === se.id)
+        }));
 
-            // Build a map: "subEventTitle|role" -> assigned_member_id
-            if (existingAssignments) {
-              existingAssignments.forEach(a => {
-                const se = existingSubEvents.find(e => e.id === a.sub_event_id);
-                if (se) {
-                  const key = `${se.event_title}|${a.required_role}`;
-                  existingAssignedMap[key] = a.assigned_member_id;
-                }
-              });
-            }
+        // Audit log project-level edits
+        const targetProj = projects.find(p => p.id === projectId);
+        const actorName = currentMember?.name || workspaceName || activeWorkspace?.studioName || 'Admin';
+        const actorRole = isOwner ? 'Studio Owner' : (currentMember?.is_sales_person ? 'Sales Person' : 'Project Manager');
 
-            // Now delete old assignments and sub_events to re-insert updated ones
-            await supabase.from('fw_assignments').delete().in('sub_event_id', subEventIds);
-          }
-          await supabase.from('fw_sub_events').delete().eq('project_id', projectId);
+        if (targetProj?.client_name && targetProj.client_name !== couplingName) {
+          logProjectActivity({
+            projectId,
+            actorId: currentUserId || undefined,
+            actorName,
+            actorRole,
+            actionType: 'CLIENT_NAME_CHANGED',
+            description: `Updated client name from "${targetProj.client_name}" to "${couplingName}"`,
+            previousValue: targetProj.client_name,
+            newValue: couplingName,
+          }).catch(() => {});
         }
 
-        // Re-insert sub-events and restore assigned members where they were set
-        if (blocks.length > 0) {
-          for (const block of blocks) {
-            const title = block.subEventNames.join(' + ') || 'Wedding Ceremony';
-            const rolesToSave = block.roles || [];
+        const incomingBlockIds = new Set(blocks.map(b => b.id));
 
-            const subEventPayload: any = {
-              project_id: targetProjectId,
-              event_title: title,
-              event_date: block.isDateTbd ? null : (block.subEventDate || null),
-              is_date_tbd: Boolean(block.isDateTbd),
-              is_overnight: Boolean(block.isOvernight),
-              end_date: block.endDate || null,
-              start_time_12h: block.startTime || '10:00 AM',
-              end_time_12h: block.endTime || '06:00 PM',
-              venue_name: block.venueLocation || null,
-              venue_map_link: block.mapLink || null,
-              roll_call_time: block.startTime || '10:00 AM',
-              dismissal_estimate_time: block.endTime || '06:00 PM',
-              operational_notes: block.notes || null,
-              shift_hours_slot: block.shiftSlot || null,
-              roles: rolesToSave,
-            };
+        // 1. Clean up removed sub-events (user explicitly deleted a sub-event block in the modal)
+        for (const oldSe of existingSubEventsList) {
+          if (!incomingBlockIds.has(oldSe.id)) {
+            await supabase.from('fw_assignments').delete().eq('sub_event_id', oldSe.id);
+            await supabase.from('fw_sub_events').delete().eq('id', oldSe.id);
 
+            logProjectActivity({
+              projectId,
+              actorId: currentUserId || undefined,
+              actorName,
+              actorRole,
+              actionType: 'SUB_EVENT_DELETED',
+              eventTitle: oldSe.event_title,
+              description: `Deleted sub-event "${oldSe.event_title}"`,
+            }).catch(() => {});
+          }
+        }
+
+        // 2. Iterate through incoming blocks: Update existing in-place or insert brand new
+        for (let i = 0; i < blocks.length; i++) {
+          const block = blocks[i];
+          const title = block.subEventNames.join(' + ') || 'Wedding Ceremony';
+          const rolesToSave = block.roles || [];
+          const existing = existingSubEventsList.find(se => se.id === block.id);
+
+          const subEventPayload: any = {
+            project_id: projectId,
+            event_title: title,
+            event_date: block.isDateTbd ? null : (block.subEventDate || null),
+            is_date_tbd: Boolean(block.isDateTbd),
+            is_overnight: Boolean(block.isOvernight),
+            end_date: block.endDate || null,
+            start_time_12h: block.startTime || '10:00 AM',
+            end_time_12h: block.endTime || '06:00 PM',
+            venue_name: block.venueLocation || null,
+            venue_map_link: block.mapLink || null,
+            roll_call_time: block.startTime || '10:00 AM',
+            dismissal_estimate_time: block.endTime || '06:00 PM',
+            operational_notes: block.notes || null,
+            shift_hours_slot: block.shiftSlot || null,
+            roles: rolesToSave,
+            display_order: i,
+            updated_at: new Date().toISOString()
+          };
+
+          if (existing) {
+            // 2A. UPDATE EXISTING SUB-EVENT IN PLACE
+            await supabase
+              .from('fw_sub_events')
+              .update(subEventPayload)
+              .eq('id', existing.id);
+
+            // Audit log schedule shift, date not fixed, venue or instructions changes
+            const oldDate = existing.event_date || null;
+            const newDate = block.isDateTbd ? null : (block.subEventDate || null);
+            const oldTime = existing.start_time_12h || existing.roll_call_time || '';
+            const newTime = block.startTime || '';
+            const oldDateTimeStr = [oldDate || 'TBD', oldTime].filter(Boolean).join(' ');
+            const newDateTimeStr = [block.isDateTbd ? 'TBD' : (newDate || 'TBD'), newTime].filter(Boolean).join(' ');
+
+            if (block.isDateTbd !== Boolean(existing.is_date_tbd) && block.isDateTbd) {
+              logProjectActivity({
+                projectId,
+                subEventId: existing.id,
+                actorId: currentUserId || undefined,
+                actorName,
+                actorRole,
+                actionType: 'DATE_TBD_TOGGLED',
+                eventTitle: title,
+                description: `Marked ${title} date as Not Fixed`,
+                previousValue: oldDate || 'Fixed',
+                newValue: 'Not Fixed',
+              }).catch(() => {});
+            } else if (oldDate !== newDate || (oldTime && newTime && oldTime !== newTime)) {
+              logProjectActivity({
+                projectId,
+                subEventId: existing.id,
+                actorId: currentUserId || undefined,
+                actorName,
+                actorRole,
+                actionType: 'SCHEDULE_SHIFTED',
+                eventTitle: title,
+                description: `Shifted schedule for ${title} from ${oldDateTimeStr || 'TBD'} to ${newDateTimeStr || 'TBD'}`,
+                previousValue: oldDateTimeStr || 'TBD',
+                newValue: newDateTimeStr || 'TBD',
+              }).catch(() => {});
+            }
+
+            const oldLoc = existing.venue_name || '';
+            const newLoc = block.venueLocation || '';
+            if (oldLoc.trim() !== newLoc.trim() && (oldLoc.trim() || newLoc.trim())) {
+              logProjectActivity({
+                projectId,
+                subEventId: existing.id,
+                actorId: currentUserId || undefined,
+                actorName,
+                actorRole,
+                actionType: 'VENUE_UPDATED',
+                eventTitle: title,
+                description: `Updated venue for ${title} to "${newLoc || 'TBD'}"`,
+                previousValue: oldLoc || 'TBD',
+                newValue: newLoc || 'TBD',
+              }).catch(() => {});
+            }
+
+            const oldNotes = existing.operational_notes || '';
+            const newNotes = block.notes || '';
+            if (oldNotes.trim() !== newNotes.trim() && (oldNotes.trim() || newNotes.trim())) {
+              logProjectActivity({
+                projectId,
+                subEventId: existing.id,
+                actorId: currentUserId || undefined,
+                actorName,
+                actorRole,
+                actionType: 'NOTES_UPDATED',
+                eventTitle: title,
+                description: `Updated shoot notes/instructions for ${title}`,
+              }).catch(() => {});
+            }
+
+            // 2B. PRESERVE & RECONCILE ASSIGNMENTS FOR THIS SUB-EVENT (TEAM PRESERVATION!)
+            const currentAssignments = existing.fw_assignments || [];
+
+            // Update sub_event_name and date on ALL existing assignments without touching assigned_member_id!
+            if (currentAssignments.length > 0) {
+              await supabase
+                .from('fw_assignments')
+                .update({
+                  sub_event_name: title,
+                  sub_event_date: block.subEventDate || new Date().toISOString().split('T')[0],
+                  start_time: block.startTime || '10:00',
+                  end_time: block.endTime || '18:00',
+                  updated_at: new Date().toISOString()
+                })
+                .eq('sub_event_id', existing.id);
+            }
+
+            // Reconcile role slots: match existing slots with desired roles
+            const matchedAssignmentIds = new Set<string>();
+            const rolesNeeded: string[] = [];
+
+            for (const desiredRole of rolesToSave) {
+              // Prefer preserving an already assigned team member slot!
+              const assignedMatch = currentAssignments.find((a: any) => 
+                !matchedAssignmentIds.has(a.id) && 
+                a.required_role === desiredRole && 
+                Boolean(a.assigned_member_id)
+              );
+
+              if (assignedMatch) {
+                matchedAssignmentIds.add(assignedMatch.id);
+              } else {
+                // Match with an unassigned slot
+                const unassignedMatch = currentAssignments.find((a: any) => 
+                  !matchedAssignmentIds.has(a.id) && 
+                  a.required_role === desiredRole
+                );
+                if (unassignedMatch) {
+                  matchedAssignmentIds.add(unassignedMatch.id);
+                } else {
+                  // Need to insert a new slot for this role
+                  rolesNeeded.push(desiredRole);
+                }
+              }
+            }
+
+            // Only delete unassigned slots that were removed from the roles list
+            const excessUnassignedSlots = currentAssignments.filter((a: any) => 
+              !matchedAssignmentIds.has(a.id) && !a.assigned_member_id
+            );
+            if (excessUnassignedSlots.length > 0) {
+              await supabase
+                .from('fw_assignments')
+                .delete()
+                .in('id', excessUnassignedSlots.map((a: any) => a.id));
+            }
+
+            // Insert new unassigned slots for new roles
+            if (rolesNeeded.length > 0) {
+              const newAssignmentsPayload = rolesNeeded.map(role => ({
+                project_id: projectId,
+                sub_event_id: existing.id,
+                sub_event_name: title,
+                sub_event_date: block.subEventDate || new Date().toISOString().split('T')[0],
+                start_time: block.startTime || '10:00',
+                end_time: block.endTime || '18:00',
+                required_role: role,
+                assigned_member_id: null,
+                status: 'pending',
+                ...(currentUserId ? { user_id: currentUserId } : {})
+              }));
+
+              await supabase.from('fw_assignments').insert(newAssignmentsPayload);
+            }
+
+          } else {
+            // 2C. INSERT BRAND NEW SUB-EVENT ADDED DURING EDIT
             const { data: insertedSubEvent, error: seErr } = await supabase
               .from('fw_sub_events')
               .insert([subEventPayload])
@@ -1042,30 +1265,31 @@ export default function TeamManagerPage() {
 
             if (seErr) throw seErr;
 
+            logProjectActivity({
+              projectId,
+              actorId: currentUserId || undefined,
+              actorName,
+              actorRole,
+              actionType: 'SUB_EVENT_ADDED',
+              eventTitle: title,
+              description: `Added new sub-event "${title}" on ${block.subEventDate || 'TBD'}`,
+            }).catch(() => {});
+
             if (insertedSubEvent && rolesToSave.length > 0) {
-              const assignmentsPayload = rolesToSave.map(role => {
-                // Restore the previously assigned member if one existed for this role
-                const preservedMember = existingAssignedMap[`${title}|${role}`] || null;
-                return {
-                  project_id: targetProjectId,
-                  sub_event_id: insertedSubEvent.id,
-                  sub_event_name: title,
-                  sub_event_date: block.subEventDate || new Date().toISOString().split('T')[0],
-                  start_time: block.startTime || '10:00',
-                  end_time: block.endTime || '18:00',
-                  required_role: role,
-                  assigned_member_id: preservedMember, // PRESERVE EXISTING ASSIGNMENT!
-                  status: preservedMember ? 'assigned' : 'pending',
-                };
-              });
+              const newAssignmentsPayload = rolesToSave.map(role => ({
+                project_id: projectId,
+                sub_event_id: insertedSubEvent.id,
+                sub_event_name: title,
+                sub_event_date: block.subEventDate || new Date().toISOString().split('T')[0],
+                start_time: block.startTime || '10:00',
+                end_time: block.endTime || '18:00',
+                required_role: role,
+                assigned_member_id: null,
+                status: 'pending',
+                ...(currentUserId ? { user_id: currentUserId } : {})
+              }));
 
-              const { error: assignErr } = await supabase
-                .from('fw_assignments')
-                .insert(assignmentsPayload);
-
-              if (assignErr) {
-                console.error('[TeamManager] Insert fw_assignments error (edit):', assignErr.message);
-              }
+              await supabase.from('fw_assignments').insert(newAssignmentsPayload);
             }
           }
         }
@@ -1253,95 +1477,8 @@ export default function TeamManagerPage() {
         if (!hasRole) return false;
       }
 
-      // 3. Unified Month Filter
-      if (unifiedFilters?.monthYear && unifiedFilters.monthYear !== 'all') {
-        const hasMonth = p.fw_sub_events?.some(se => (se.event_date || '').startsWith(unifiedFilters.monthYear));
-        if (!hasMonth) return false;
-      }
-
-      // 4. Unified Date Range
-      if (unifiedFilters?.startDate) {
-        const afterStart = p.fw_sub_events?.some(se => (se.event_date || '') >= unifiedFilters.startDate);
-        if (!afterStart) return false;
-      }
-      if (unifiedFilters?.endDate) {
-        const beforeEnd = p.fw_sub_events?.some(se => (se.event_date || '') <= unifiedFilters.endDate);
-        if (!beforeEnd) return false;
-      }
-
-      // 5. Unified Event Types
-      if (unifiedFilters?.eventTypes && unifiedFilters.eventTypes.length > 0) {
-        const hasType = p.fw_sub_events?.some(se =>
-          unifiedFilters.eventTypes.some(t => se.event_title?.toLowerCase().includes(t.toLowerCase()))
-        );
-        if (!hasType) return false;
-      }
-
-      // 6. Unified Roles Multiselect
-      if (unifiedFilters?.roles && unifiedFilters.roles.length > 0) {
-        const hasAnyRole = p.fw_sub_events?.some(se =>
-          se.fw_assignments?.some(a => unifiedFilters.roles.includes(a.required_role))
-        );
-        if (!hasAnyRole) return false;
-      }
-
-      // 7. Unified Assignment Status
-      if (unifiedFilters?.assignmentStatus === 'unassigned') {
-        const hasUnassigned = p.fw_sub_events?.some(se =>
-          se.fw_assignments?.some(a => !a.assigned_member_id)
-        );
-        if (!hasUnassigned) return false;
-      } else if (unifiedFilters?.assignmentStatus === 'fully_assigned' || unifiedFilters?.assignmentStatus === 'assigned') {
-        const allAssigned = (p.fw_sub_events?.length ?? 0) > 0 && (p.fw_sub_events ?? []).every(se =>
-          se.fw_assignments && se.fw_assignments.length > 0 && se.fw_assignments.every(a => Boolean(a.assigned_member_id))
-        );
-        if (!allAssigned) return false;
-      } else if (unifiedFilters?.assignmentStatus === 'partially_assigned' || unifiedFilters?.assignmentStatus === 'partial') {
-        let totalSlots = 0;
-        let assignedSlots = 0;
-        p.fw_sub_events?.forEach(se => {
-          se.fw_assignments?.forEach(a => {
-            totalSlots++;
-            if (a.assigned_member_id) assignedSlots++;
-          });
-        });
-        if (totalSlots === 0 || assignedSlots === 0 || assignedSlots >= totalSlots) return false;
-      }
-
-      // 8. Unified Project Manager (PM) Filter
-      if (unifiedFilters?.pmId && unifiedFilters.pmId !== 'all') {
-        const targetPm = unifiedFilters.pmId.toLowerCase();
-        const pObj: any = p;
-        const pmId = String(pObj.project_manager_id || pObj.project_manager?.id || '').toLowerCase();
-        const pmName = String(
-          pObj.project_manager_name ||
-          pObj.project_manager?.name ||
-          (typeof pObj.project_manager === 'string' ? pObj.project_manager : '') ||
-          pObj.lead_assigned_to ||
-          ''
-        ).toLowerCase();
-        if (pmId !== targetPm && pmName !== targetPm) return false;
-      }
-
-      // 9. Unified Studio Filter (Consolidated Multi-Studio View)
-      if (unifiedFilters?.studioId && unifiedFilters.studioId !== 'all') {
-        if (p.user_id !== unifiedFilters.studioId) return false;
-      }
-
-      // 10. Unified Team Member Spotlight Filter
-      if (unifiedFilters?.memberId && unifiedFilters.memberId !== 'all') {
-        const targetMember = unifiedFilters.memberId.toLowerCase();
-        const hasMember = p.fw_sub_events?.some(se =>
-          se.fw_assignments?.some(a => {
-            const mId = (a.assigned_member_id || (a as any).team_member_id || (a.fw_team_members as any)?.id || '').toLowerCase();
-            const mName = ((a.fw_team_members as any)?.name || (a as any).clean_name || '').toLowerCase();
-            return mId === targetMember || mName === targetMember;
-          })
-        );
-        if (!hasMember) return false;
-      }
-
-      return true;
+      // 3. Strict Interconnected Match (Studio, Month, Dates, Event Types, PMs, Members, Co-filtered Roles + Statuses)
+      return isProjectMatch(p, unifiedFilters);
     });
   }, [projects, activeTab, searchQuery, selectedRoleFilter, unifiedFilters]);
 
@@ -1351,9 +1488,12 @@ export default function TeamManagerPage() {
     projects.forEach((p) => {
       if (p.is_archived) return;
 
-      // 1. Project Manager (PM) Filter
-      if (unifiedFilters?.pmId && unifiedFilters.pmId !== 'all') {
-        const targetPm = unifiedFilters.pmId.toLowerCase();
+      // 1. Project Manager (PM) Filter (Multi-select array or single PM)
+      const activePmIds = (unifiedFilters?.pmIds && unifiedFilters.pmIds.length > 0)
+        ? unifiedFilters.pmIds
+        : (unifiedFilters?.pmId && unifiedFilters.pmId !== 'all' ? [unifiedFilters.pmId] : []);
+
+      if (activePmIds.length > 0) {
         const pObj: any = p;
         const pmId = String(pObj.project_manager_id || pObj.project_manager?.id || '').toLowerCase();
         const pmName = String(
@@ -1363,7 +1503,11 @@ export default function TeamManagerPage() {
           pObj.lead_assigned_to ||
           ''
         ).toLowerCase();
-        if (pmId !== targetPm && pmName !== targetPm) return;
+        const matchPm = activePmIds.some(target => {
+          const t = target.toLowerCase();
+          return pmId === t || pmName === t;
+        });
+        if (!matchPm) return;
       }
 
       // Studio Filter
@@ -1399,33 +1543,54 @@ export default function TeamManagerPage() {
           if (!hasRole) return;
         }
 
-        // 5. Unified Roles Multi-select Filter
-        if (unifiedFilters?.roles && unifiedFilters.roles.length > 0) {
-          const hasRole = (se.fw_assignments || []).some(a => unifiedFilters.roles.includes(a.required_role));
-          if (!hasRole) return;
+        // 5. Strict Co-Filtering: Crew Role + Assignment Status on sub-event slots
+        const hasRoleFilter = Boolean(unifiedFilters?.roles && unifiedFilters.roles.length > 0);
+        const activeStatuses = (unifiedFilters?.assignmentStatuses && unifiedFilters.assignmentStatuses.length > 0)
+          ? unifiedFilters.assignmentStatuses
+          : (unifiedFilters?.assignmentStatus && unifiedFilters.assignmentStatus !== 'all' ? [unifiedFilters.assignmentStatus] : []);
+        const hasStatusFilter = activeStatuses.length > 0;
+
+        if (hasRoleFilter || hasStatusFilter) {
+          const slots = se.fw_assignments || [];
+          if (slots.length === 0) return;
+
+          const slotMatches = slots.some((roleSlot: any) => {
+            const slotRoleName = roleSlot.required_role || roleSlot.role_name || roleSlot.role || '';
+            const slotRoleCode = roleSlot.role_short_code || roleSlot.role_code || roleSlot.code || '';
+
+            const matchesRole = !hasRoleFilter || (unifiedFilters?.roles || []).some((r: string) =>
+              r.toLowerCase() === slotRoleName.toLowerCase() ||
+              (slotRoleCode && r.toUpperCase() === slotRoleCode.toUpperCase())
+            );
+            if (!matchesRole) return false;
+
+            const isAssigned = Boolean(roleSlot.assigned_member_id);
+            if (hasStatusFilter) {
+              const wantsAssigned = activeStatuses.some(s => s.toLowerCase() === 'assigned' || s.toLowerCase() === 'fully_assigned');
+              const wantsUnassigned = activeStatuses.some(s => s.toLowerCase() === 'unassigned');
+              if (wantsAssigned && wantsUnassigned) return true;
+              if (wantsAssigned && !isAssigned) return false;
+              if (wantsUnassigned && isAssigned) return false;
+            }
+            return true;
+          });
+
+          if (!slotMatches) return;
         }
 
-        // 6. Assignment Status Filter
-        if (unifiedFilters?.assignmentStatus === 'unassigned') {
-          const hasUnassigned = (se.fw_assignments || []).some(a => !a.assigned_member_id);
-          if (!hasUnassigned) return;
-        } else if (unifiedFilters?.assignmentStatus === 'fully_assigned' || unifiedFilters?.assignmentStatus === 'assigned') {
-          const assignments = se.fw_assignments || [];
-          const allAssigned = assignments.length > 0 && assignments.every(a => Boolean(a.assigned_member_id));
-          if (!allAssigned) return;
-        } else if (unifiedFilters?.assignmentStatus === 'partially_assigned' || unifiedFilters?.assignmentStatus === 'partial') {
-          const assignments = se.fw_assignments || [];
-          const assignedCount = assignments.filter(a => Boolean(a.assigned_member_id)).length;
-          if (assignments.length === 0 || assignedCount === 0 || assignedCount >= assignments.length) return;
-        }
+        // 7. Unified Team Member Spotlight Filter (Multi-select array or single member)
+        const activeMemberIds = (unifiedFilters?.memberIds && unifiedFilters.memberIds.length > 0)
+          ? unifiedFilters.memberIds
+          : (unifiedFilters?.memberId && unifiedFilters.memberId !== 'all' ? [unifiedFilters.memberId] : []);
 
-        // 7. Unified Team Member Spotlight Filter
-        if (unifiedFilters?.memberId && unifiedFilters.memberId !== 'all') {
-          const targetMember = unifiedFilters.memberId.toLowerCase();
+        if (activeMemberIds.length > 0) {
           const hasMember = (se.fw_assignments || []).some(a => {
             const mId = (a.assigned_member_id || (a as any).team_member_id || (a.fw_team_members as any)?.id || '').toLowerCase();
             const mName = ((a.fw_team_members as any)?.name || (a as any).clean_name || '').toLowerCase();
-            return mId === targetMember || mName === targetMember;
+            return activeMemberIds.some(target => {
+              const t = target.toLowerCase();
+              return mId === t || mName === t;
+            });
           });
           if (!hasMember) return;
         }
@@ -1525,7 +1690,20 @@ export default function TeamManagerPage() {
               >
                 <Filter className="w-3 h-3 text-slate-600" />
                 <span>Filter</span>
-                {(unifiedFilters?.monthYear !== 'all' || Boolean(unifiedFilters?.startDate) || (unifiedFilters?.eventTypes?.length ?? 0) > 0 || (unifiedFilters?.roles?.length ?? 0) > 0 || (unifiedFilters?.assignmentStatus && unifiedFilters.assignmentStatus !== 'all') || (unifiedFilters?.pmId && unifiedFilters.pmId !== 'all')) && (
+                {(
+                  (unifiedFilters?.monthYear && unifiedFilters.monthYear !== 'all') ||
+                  Boolean(unifiedFilters?.startDate) ||
+                  Boolean(unifiedFilters?.endDate) ||
+                  (unifiedFilters?.eventTypes?.length ?? 0) > 0 ||
+                  (unifiedFilters?.roles?.length ?? 0) > 0 ||
+                  (unifiedFilters?.assignmentStatuses?.length ?? 0) > 0 ||
+                  (unifiedFilters?.assignmentStatus && unifiedFilters.assignmentStatus !== 'all') ||
+                  (unifiedFilters?.pmIds?.length ?? 0) > 0 ||
+                  (unifiedFilters?.pmId && unifiedFilters.pmId !== 'all') ||
+                  (unifiedFilters?.memberIds?.length ?? 0) > 0 ||
+                  (unifiedFilters?.memberId && unifiedFilters.memberId !== 'all') ||
+                  (unifiedFilters?.studioId && unifiedFilters.studioId !== 'all')
+                ) && (
                   <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-pulse" />
                 )}
               </button>
@@ -1561,7 +1739,20 @@ export default function TeamManagerPage() {
             >
               <Filter className="w-3.5 h-3.5 text-slate-500"/>
               <span className="hidden sm:inline">Filter</span>
-              {(unifiedFilters?.monthYear !== 'all' || Boolean(unifiedFilters?.startDate) || (unifiedFilters?.eventTypes?.length ?? 0) > 0 || (unifiedFilters?.roles?.length ?? 0) > 0 || (unifiedFilters?.assignmentStatus && unifiedFilters.assignmentStatus !== 'all') || (unifiedFilters?.pmId && unifiedFilters.pmId !== 'all')) && (
+              {(
+                (unifiedFilters?.monthYear && unifiedFilters.monthYear !== 'all') ||
+                Boolean(unifiedFilters?.startDate) ||
+                Boolean(unifiedFilters?.endDate) ||
+                (unifiedFilters?.eventTypes?.length ?? 0) > 0 ||
+                (unifiedFilters?.roles?.length ?? 0) > 0 ||
+                (unifiedFilters?.assignmentStatuses?.length ?? 0) > 0 ||
+                (unifiedFilters?.assignmentStatus && unifiedFilters.assignmentStatus !== 'all') ||
+                (unifiedFilters?.pmIds?.length ?? 0) > 0 ||
+                (unifiedFilters?.pmId && unifiedFilters.pmId !== 'all') ||
+                (unifiedFilters?.memberIds?.length ?? 0) > 0 ||
+                (unifiedFilters?.memberId && unifiedFilters.memberId !== 'all') ||
+                (unifiedFilters?.studioId && unifiedFilters.studioId !== 'all')
+              ) && (
                 <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-pulse" />
               )}
             </button>
@@ -1636,7 +1827,7 @@ export default function TeamManagerPage() {
           </div>
 
         {/* ACTIVE MEMBER SPOTLIGHT BANNER / BADGE */}
-        {unifiedFilters?.memberId && unifiedFilters.memberId !== 'all' && (
+        {((unifiedFilters?.memberIds && unifiedFilters.memberIds.length > 0) || (unifiedFilters?.memberId && unifiedFilters.memberId !== 'all')) && (
           <div className="flex flex-wrap items-center gap-2 px-1">
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-50/90 border border-amber-300/90 text-amber-950 text-xs font-bold shadow-xs">
               <span className="flex h-2.5 w-2.5 relative">
@@ -1645,7 +1836,12 @@ export default function TeamManagerPage() {
               <span>
                 Spotlight Active:{' '}
                 <span className="text-amber-900 font-extrabold">
-                  {teamMembers.find(m => m.id === unifiedFilters.memberId)?.name || unifiedFilters.memberId}
+                  {(() => {
+                    const ids = (unifiedFilters?.memberIds && unifiedFilters.memberIds.length > 0)
+                      ? unifiedFilters.memberIds
+                      : [unifiedFilters.memberId!];
+                    return ids.map(id => teamMembers.find(m => m.id === id)?.name || id).join(', ');
+                  })()}
                 </span>{' '}
                 <span className="text-amber-700 font-medium">
                   ({filteredProjects.length} matching {filteredProjects.length === 1 ? 'project' : 'projects'})
@@ -1653,7 +1849,7 @@ export default function TeamManagerPage() {
               </span>
               <button
                 type="button"
-                onClick={() => setUnifiedFilters(prev => ({ ...prev, memberId: 'all' }))}
+                onClick={() => setUnifiedFilters(prev => ({ ...prev, memberId: 'all', memberIds: [] }))}
                 className="ml-2 px-2 py-0.5 rounded-lg bg-amber-200/80 hover:bg-amber-300 text-amber-950 text-[10px] font-black uppercase transition cursor-pointer flex items-center gap-1 shadow-2xs"
               >
                 <span>Clear Spotlight</span>
@@ -1796,6 +1992,20 @@ export default function TeamManagerPage() {
                                   </div>
 
                                   <div className="flex items-center gap-2">
+                                    {/* Standalone History Icon Button */}
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                        setSelectedProjectForHistory(project);
+                                      }}
+                                      className="p-1.5 rounded-lg bg-neutral-100/90 hover:bg-amber-100/80 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-600 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-700 transition-all cursor-pointer shadow-sm"
+                                      title="View Project Change History"
+                                    >
+                                      <History className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                                    </button>
+
                                     {!isTmReadOnly && (
                                       <button
                                         type="button"
@@ -1850,6 +2060,9 @@ export default function TeamManagerPage() {
                                           variant="avatar"
                                           readOnly={isTmReadOnly || eventVisibility === 'FULL_CREW'}
                                           isMasked={false}
+                                          isAdmin={!isTmReadOnly}
+                                          selectedFilterMemberId={unifiedFilters?.memberId || null}
+                                          unifiedFilters={unifiedFilters}
                                         />
                                       );
                                     })}
@@ -1869,10 +2082,13 @@ export default function TeamManagerPage() {
                   {filteredProjects.map((project) => {
                     const projectGradient = getGradientByProjectId(project.id || project.client_name);
 
+                    const isCardFilterActive = checkIsFilterActive(unifiedFilters);
+                    const cardHighlightClass = getCardHighlightClass(isCardFilterActive, true);
+
                     return (
                       <div 
                         key={project.id}
-                        className="bg-white border-2 border-slate-300/90 shadow-lg shadow-slate-200/50 rounded-3xl p-6 space-y-4 mb-8"
+                        className={`bg-white border-2 border-slate-300/90 shadow-lg shadow-slate-200/50 rounded-3xl p-6 space-y-4 mb-8 transition-all duration-300 ${cardHighlightClass}`}
                       >
                         {/* MASTER CLIENT CARD HEADER */}
                         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-3.5">
@@ -1892,33 +2108,14 @@ export default function TeamManagerPage() {
 
                           <div className="flex items-center gap-3">
                             {/* PROJECT MANAGER (PM) DROPDOWN WITH AVATARS */}
-                            {isTmReadOnly ? (
-                              <div className="px-3 py-1.5 rounded-2xl bg-amber-50/70 border border-amber-200/70 text-amber-950 text-xs font-bold flex items-center gap-2 select-none shadow-2xs">
-                                <span className="text-[10px] font-black uppercase tracking-wider text-amber-800">PM:</span>
-                                {project.project_manager_name ? (
-                                  <div className="flex items-center gap-1.5">
-                                    <div className="w-5 h-5 rounded-full bg-amber-600 text-white font-black text-[9px] flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
-                                      {(() => {
-                                        const assignedMem = teamMembers.find(m => m.id === project.project_manager_id || m.name === project.project_manager_name);
-                                        if (assignedMem?.avatar_url) {
-                                          return <img src={assignedMem.avatar_url} alt="" className="w-full h-full object-cover" />;
-                                        }
-                                        return getInitials(project.project_manager_name);
-                                      })()}
-                                    </div>
-                                    <span className="font-extrabold text-amber-950 max-w-[130px] truncate">{project.project_manager_name}</span>
-                                  </div>
-                                ) : (
-                                  <span className="text-amber-700/60 font-medium">Unassigned</span>
-                                )}
-                              </div>
-                            ) : (
-                              <div className="relative" onClick={(e) => e.stopPropagation()}>
-                                <button
-                                  type="button"
-                                  onClick={() => setActivePmDropdownProjectId(activePmDropdownProjectId === project.id ? null : project.id)}
-                                  className="px-3 py-1.5 rounded-2xl bg-amber-50 hover:bg-amber-100/80 border border-amber-200 text-amber-950 text-xs font-bold flex items-center gap-2 transition shadow-xs cursor-pointer group"
-                                >
+                            {(() => {
+                              const isProjectPmMatched = isPmMatch(project, unifiedFilters);
+                              return isTmReadOnly ? (
+                                <div className={`px-3 py-1.5 rounded-2xl border text-amber-950 text-xs font-bold flex items-center gap-2 select-none shadow-2xs transition-all ${
+                                  isProjectPmMatched
+                                    ? 'ring-2 ring-amber-400/80 bg-amber-100/90 border-amber-400 animate-pulse shadow-sm shadow-amber-300/40'
+                                    : 'bg-amber-50/70 border-amber-200/70'
+                                }`}>
                                   <span className="text-[10px] font-black uppercase tracking-wider text-amber-800">PM:</span>
                                   {project.project_manager_name ? (
                                     <div className="flex items-center gap-1.5">
@@ -1934,10 +2131,39 @@ export default function TeamManagerPage() {
                                       <span className="font-extrabold text-amber-950 max-w-[130px] truncate">{project.project_manager_name}</span>
                                     </div>
                                   ) : (
-                                    <span className="text-amber-700/80 italic font-semibold">Assign PM</span>
+                                    <span className="text-amber-700/60 font-medium">Unassigned</span>
                                   )}
-                                  <ChevronDown className="w-3 h-3 text-amber-700 group-hover:translate-y-0.5 transition-transform" />
-                                </button>
+                                </div>
+                              ) : (
+                                <div className="relative" onClick={(e) => e.stopPropagation()}>
+                                  <button
+                                    type="button"
+                                    onClick={() => setActivePmDropdownProjectId(activePmDropdownProjectId === project.id ? null : project.id)}
+                                    className={`px-3 py-1.5 rounded-2xl border text-amber-950 text-xs font-bold flex items-center gap-2 transition shadow-xs cursor-pointer group ${
+                                      isProjectPmMatched
+                                        ? 'ring-2 ring-amber-400/80 bg-amber-100/90 border-amber-400 animate-pulse shadow-sm shadow-amber-300/40'
+                                        : 'bg-amber-50 hover:bg-amber-100/80 border-amber-200'
+                                    }`}
+                                  >
+                                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-800">PM:</span>
+                                    {project.project_manager_name ? (
+                                      <div className="flex items-center gap-1.5">
+                                        <div className="w-5 h-5 rounded-full bg-amber-600 text-white font-black text-[9px] flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
+                                          {(() => {
+                                            const assignedMem = teamMembers.find(m => m.id === project.project_manager_id || m.name === project.project_manager_name);
+                                            if (assignedMem?.avatar_url) {
+                                              return <img src={assignedMem.avatar_url} alt="" className="w-full h-full object-cover" />;
+                                            }
+                                            return getInitials(project.project_manager_name);
+                                          })()}
+                                        </div>
+                                        <span className="font-extrabold text-amber-950 max-w-[130px] truncate">{project.project_manager_name}</span>
+                                      </div>
+                                    ) : (
+                                      <span className="text-amber-700/80 italic font-semibold">Assign PM</span>
+                                    )}
+                                    <ChevronDown className="w-3 h-3 text-amber-700 group-hover:translate-y-0.5 transition-transform" />
+                                  </button>
 
                                 {/* Popover Dropdown */}
                                 {activePmDropdownProjectId === project.id && (
@@ -2022,7 +2248,22 @@ export default function TeamManagerPage() {
                                   </div>
                                 )}
                               </div>
-                            )}
+                            );
+                          })()}
+
+                            {/* Standalone History Icon Button */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                setSelectedProjectForHistory(project);
+                              }}
+                              className="p-1.5 rounded-lg bg-neutral-100/90 hover:bg-amber-100/80 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-600 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-700 transition-all cursor-pointer shadow-sm"
+                              title="View Project Change History"
+                            >
+                              <History className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                            </button>
 
                             {!isTmReadOnly && (
                               <button 
@@ -2041,7 +2282,10 @@ export default function TeamManagerPage() {
 
                         {/* HORIZONTAL MODERN GRADIENT SUB-EVENT CARDS STACK */}
                         <div className="space-y-4">
-                          {project.fw_sub_events?.map((subEvent) => {
+                          {(isCardFilterActive
+                            ? (project.fw_sub_events || []).filter(se => isSubEventMatch(se, project, unifiedFilters))
+                            : (project.fw_sub_events || [])
+                          ).map((subEvent) => {
                             const isTbd = Boolean((subEvent as any).is_date_tbd) || !subEvent.event_date || isNaN(new Date(subEvent.event_date).getTime());
                             const isOvernightShoot = Boolean((subEvent as any).is_overnight) && Boolean((subEvent as any).end_date) && !isNaN(new Date((subEvent as any).end_date).getTime());
 
@@ -2111,62 +2355,62 @@ export default function TeamManagerPage() {
 
                                 {/* MAIN RIGHT CONTENT BODY */}
                                 <div className="flex-1 p-4 flex flex-col justify-between space-y-3 min-w-0">
-                                  <div>
-                                    <div className="flex items-start justify-between gap-3 mb-1">
-                                      <div className="flex items-center gap-2 flex-wrap">
-                                        <h4 className="font-black text-slate-900 text-base tracking-tight" style={{ color: '#1E1B4B' }}>
-                                          {subEvent.event_title}
-                                        </h4>
-                                        {isTbd && (
-                                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black">
-                                            ⚠️ Date: TBD
-                                          </span>
-                                        )}
-                                        {isOvernightShoot && (
-                                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-900 border border-indigo-300 text-[10px] font-black">
-                                            🌙 Overnight
-                                          </span>
-                                        )}
-                                      </div>
+                                  {/* EVENT TOP DETAILS ROW */}
+                                  <div className="flex flex-wrap items-center justify-between gap-3">
+                                    <div className="flex items-center gap-2 flex-wrap min-w-0">
+                                      <h4 className="text-sm sm:text-base font-black text-slate-900 tracking-tight truncate">
+                                        {subEvent.event_title}
+                                      </h4>
 
-                                      <div className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-bold border border-indigo-200">
-                                        {eventVisibility === 'OWN_ROLE_ONLY' ? 'Assigned' : `${assignedCount}/${totalSlots} Roles`}
-                                      </div>
+                                      {isTbd && (
+                                        <span className="px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 font-extrabold text-[10px] border border-rose-200 uppercase tracking-wider">
+                                          Date Not Fixed
+                                        </span>
+                                      )}
+
+                                      {isOvernightShoot && (
+                                        <span className="px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 font-black text-[10px] flex items-center gap-1 uppercase tracking-wider">
+                                          <Moon className="w-3 h-3 text-indigo-600" /> Overnight
+                                        </span>
+                                      )}
+
+                                      <span className="text-slate-300 select-none">·</span>
+
+                                      {/* CREW ALLOCATION STATS PILL */}
+                                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
+                                        assignedCount === totalSlots && totalSlots > 0
+                                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                          : assignedCount === 0
+                                          ? 'bg-rose-50 text-rose-800 border-rose-200'
+                                          : 'bg-amber-50 text-amber-800 border-amber-200'
+                                      }`}>
+                                        {assignedCount}/{totalSlots} Roles Assigned
+                                      </span>
                                     </div>
 
-                                    <div className="flex items-center gap-3 text-xs font-bold text-slate-500 flex-wrap">
+                                    {/* TIME & LOCATION */}
+                                    <div className="flex items-center gap-2 text-xs font-bold text-slate-500 flex-wrap">
                                       {subEvent.roll_call_time && (
-                                        <div className="flex items-center gap-1.5 text-slate-700">
-                                          <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                        <div className="flex items-center gap-1.5 bg-slate-100/80 px-2.5 py-1 rounded-lg border border-slate-200/80 shadow-2xs">
+                                          <Clock className="w-3.5 h-3.5 text-slate-600" />
                                           <span>
                                             {format12HourTime(subEvent.roll_call_time)}
-                                            {subEvent.dismissal_estimate_time ? ` - ${format12HourTime(subEvent.dismissal_estimate_time)}` : ''}
+                                            {subEvent.dismissal_estimate_time ? ` → ${format12HourTime(subEvent.dismissal_estimate_time)}` : ''}
                                           </span>
-                                          {(subEvent as any).shift_hours_slot && (
-                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 text-[10px] font-extrabold border border-amber-200/90 ml-1">
-                                              <Zap className="w-3 h-3 text-amber-500 fill-amber-400" />
-                                              {(subEvent as any).shift_hours_slot}
-                                            </span>
-                                          )}
                                         </div>
-                                      )}
-                                      
-                                      {subEvent.roll_call_time && subEvent.venue_name && (
-                                        <span className="text-slate-300 font-normal">|</span>
                                       )}
 
                                       {subEvent.venue_name && (
-                                        <div className="relative group/venue">
-                                          <a
-                                            href={subEvent.venue_map_link || `https://maps.google.com/?q=${encodeURIComponent(subEvent.venue_name)}`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="flex items-center gap-1.5 text-indigo-600 hover:text-indigo-800 font-bold transition-colors cursor-pointer"
-                                          >
-                                            <MapPin className="w-3.5 h-3.5 shrink-0 text-indigo-500" />
-                                            <span className="truncate max-w-[220px]">{subEvent.venue_name}</span>
-                                          </a>
-                                        </div>
+                                        <a
+                                          href={subEvent.venue_map_link || `https://maps.google.com/?q=${encodeURIComponent(subEvent.venue_name)}`}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="flex items-center gap-1.5 bg-slate-100/80 hover:bg-slate-200/80 px-2.5 py-1 rounded-lg border border-slate-200/80 shadow-2xs transition text-slate-600 hover:text-indigo-600 cursor-pointer"
+                                          title={subEvent.venue_name}
+                                        >
+                                          <MapPin className="w-3.5 h-3.5 text-slate-500" />
+                                          <span className="max-w-[140px] truncate">{subEvent.venue_name}</span>
+                                        </a>
                                       )}
                                     </div>
                                   </div>
@@ -2182,35 +2426,39 @@ export default function TeamManagerPage() {
 
                                   {/* CREW PLACEMENT ROLE BADGES GRID */}
                                   <div>
-                                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">Crew</span>
+                                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">
+                                      Crew Allocations ({assignedCount}/{totalSlots})
+                                    </span>
                                     <div className="flex items-start gap-4 flex-wrap">
                                       {assignments.map((assignment: any) => {
                                         const isAssigned = assignment.assigned_member_id !== null;
                                         const memberObj = assignment.fw_team_members || teamMembers.find(m => m.id === assignment.assigned_member_id);
-                                        const rawName = memberObj?.name || '';
-                                        const cleanName = rawName.replace(/\.\.\./g, '').trim();
+                                        const cleanName = (memberObj?.name || '').replace(/\.\.\./g, '').trim();
                                         const role = assignment.required_role;
-                                        const dropdownKey = assignment.id;
                                         const shortRole = getRoleAbbr(role, customCrewRoles);
 
                                         const isCurrentUserSlot = Boolean(
                                           (currentMember?.id && assignment.assigned_member_id === currentMember.id) ||
                                           (activeWorkspace?.memberId && assignment.assigned_member_id === activeWorkspace.memberId) ||
-                                              availableWorkspaces.some(w => w.memberId && assignment.assigned_member_id === w.memberId) ||
+                                          availableWorkspaces.some(w => w.memberId && assignment.assigned_member_id === w.memberId) ||
                                           (userEmail && memberObj?.email && memberObj.email.toLowerCase() === userEmail.toLowerCase()) ||
                                           (userId && memberObj?.user_id === userId)
                                         );
 
-                                        const isUserAdmin = !isTmReadOnly;
                                         const isSelectedSpotlight = Boolean(
-                                          isUserAdmin &&
+                                          !isTmReadOnly &&
                                           isAssigned &&
-                                          unifiedFilters?.memberId &&
-                                          unifiedFilters.memberId !== 'all' &&
                                           (
-                                            assignment.assigned_member_id === unifiedFilters.memberId ||
-                                            memberObj?.id === unifiedFilters.memberId ||
-                                            cleanName.toLowerCase() === unifiedFilters.memberId.toLowerCase()
+                                            (unifiedFilters?.memberIds && unifiedFilters.memberIds.length > 0 && (
+                                              (assignment.assigned_member_id && unifiedFilters.memberIds.includes(assignment.assigned_member_id)) ||
+                                              (memberObj?.id && unifiedFilters.memberIds.includes(memberObj.id)) ||
+                                              unifiedFilters.memberIds.some(id => id.toLowerCase() === cleanName.toLowerCase())
+                                            )) ||
+                                            (unifiedFilters?.memberId && unifiedFilters.memberId !== 'all' && (
+                                              assignment.assigned_member_id === unifiedFilters.memberId ||
+                                              memberObj?.id === unifiedFilters.memberId ||
+                                              cleanName.toLowerCase() === unifiedFilters.memberId.toLowerCase()
+                                            ))
                                           )
                                         );
 
@@ -2219,11 +2467,14 @@ export default function TeamManagerPage() {
                                           return null;
                                         }
 
+                                        const slotMatch = checkRoleSlotMatch(assignment, unifiedFilters);
+                                        const isTargeted = isSelectedSpotlight || slotMatch.isTargetedSlot;
+
                                         return (
                                           <div key={assignment.id} className="relative flex flex-col items-center min-w-[68px]">
                                             <div
                                               className={`relative flex flex-col items-center transition-all duration-300 ${
-                                                isSelectedSpotlight
+                                                isTargeted
                                                   ? 'rounded-lg ring-2 ring-amber-400/80 bg-amber-50/70 dark:bg-amber-950/30 p-1 shadow-sm shadow-amber-300/40 animate-pulse'
                                                   : ''
                                               }`}
@@ -2233,11 +2484,11 @@ export default function TeamManagerPage() {
                                                 onClick={(e) => {
                                                   if (isTmReadOnly || eventVisibility === 'FULL_CREW') return;
                                                   const rect = e.currentTarget.getBoundingClientRect();
-                                                  if (activeDropdownId === dropdownKey) {
+                                                  if (activeDropdownId === assignment.id) {
                                                     setActiveDropdownId(null);
                                                     setDropdownPos(null);
                                                   } else {
-                                                    setActiveDropdownId(dropdownKey);
+                                                    setActiveDropdownId(assignment.id);
                                                     setMemberSearchQuery('');
                                                     setDropdownPos({
                                                       top: Math.min(rect.bottom + 6, window.innerHeight - 280),
@@ -2253,7 +2504,7 @@ export default function TeamManagerPage() {
                                                 {isAssigned ? (
                                                   <div className="relative mb-1 flex items-center justify-center">
                                                     <div className={`relative w-10 h-10 rounded-full border-2 p-0.5 flex items-center justify-center shrink-0 transition-all ${
-                                                      isSelectedSpotlight
+                                                      isTargeted
                                                         ? 'border-amber-400 bg-amber-100/80 shadow-xs'
                                                         : 'border-emerald-500 bg-emerald-50 shadow-xs'
                                                     }`}>
@@ -2265,7 +2516,7 @@ export default function TeamManagerPage() {
                                                         />
                                                       ) : (
                                                         <div className={`w-full h-full rounded-full font-black text-[10px] flex items-center justify-center shrink-0 text-white ${
-                                                          isSelectedSpotlight
+                                                          isTargeted
                                                             ? 'bg-gradient-to-br from-amber-500 to-amber-600'
                                                             : 'bg-gradient-to-br from-emerald-500 to-teal-600'
                                                         }`}>
@@ -2275,17 +2526,27 @@ export default function TeamManagerPage() {
                                                     </div>
                                                   </div>
                                                 ) : (isTmReadOnly || eventVisibility === 'FULL_CREW') ? (
-                                                  <div className="w-10 h-10 rounded-full border border-dashed border-slate-300 bg-slate-100/70 text-slate-400 font-bold mb-1 flex items-center justify-center shadow-2xs shrink-0 cursor-default">
+                                                  <div className={`w-10 h-10 rounded-full border font-bold mb-1 flex items-center justify-center shadow-2xs shrink-0 cursor-default ${
+                                                    isTargeted
+                                                      ? 'border-amber-400 bg-amber-100 text-amber-900'
+                                                      : 'border-dashed border-slate-300 bg-slate-100/70 text-slate-400'
+                                                  }`}>
                                                     <span className="text-xs font-black">-</span>
                                                   </div>
                                                 ) : (
-                                                  <div className="w-10 h-10 rounded-full border border-dashed border-red-500 bg-red-50/90 text-red-600 font-black mb-1 flex items-center justify-center shadow-2xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
-                                                    <Plus className="w-4 h-4 text-red-600 stroke-[3]" />
+                                                  <div className={`w-10 h-10 rounded-full border border-dashed font-black mb-1 flex items-center justify-center shadow-2xs transition-colors cursor-pointer shrink-0 ${
+                                                    isTargeted
+                                                      ? 'border-amber-500 bg-amber-100/90 text-amber-700 group-hover:bg-amber-200/90'
+                                                      : 'border-red-500 bg-red-50/90 text-red-600 group-hover:bg-red-100'
+                                                  }`}>
+                                                    <Plus className={`w-4 h-4 stroke-[3] ${isTargeted ? 'text-amber-700' : 'text-red-600'}`} />
                                                   </div>
                                                 )}
 
                                                 {/* STRICT SHORT ROLE CODE BADGE */}
-                                                <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 leading-tight block text-center">
+                                                <span className={`text-[10px] font-black uppercase tracking-wider leading-tight block text-center ${
+                                                  isTargeted ? 'text-amber-800 dark:text-amber-400 font-extrabold' : 'text-slate-500'
+                                                }`}>
                                                   {shortRole}
                                                 </span>
 
@@ -2335,13 +2596,18 @@ export default function TeamManagerPage() {
                 {/* 2. MOBILE / TABLET CARDS VIEW (COMPACT STACKED CLIENT CARDS LAYOUT WITH COMMENTS VISIBLE) */}
                 <div className="block lg:hidden grid grid-cols-1 md:grid-cols-2 gap-4">
                   {filteredProjects.map((project) => {
-                    const subEvents = project.fw_sub_events || [];
+                    const isCardFilterActive = checkIsFilterActive(unifiedFilters);
+                    const isProjectPmMatched = isPmMatch(project, unifiedFilters);
+                    const subEvents = isCardFilterActive
+                      ? (project.fw_sub_events || []).filter(se => isSubEventMatch(se, project, unifiedFilters))
+                      : (project.fw_sub_events || []);
                     const projectGradient = getGradientByProjectId(project.id || project.client_name);
+                    const cardHighlightClass = getCardHighlightClass(isCardFilterActive, true);
 
                     return (
                       <div
                         key={project.id}
-                        className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden flex flex-col hover:border-indigo-300 transition duration-200"
+                        className={`bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden flex flex-col hover:border-indigo-300 transition duration-200 ${cardHighlightClass}`}
                       >
                         {/* CLIENT CARD HEADER BAR - COMPACT */}
                         <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-3 flex flex-col gap-2">
@@ -2386,7 +2652,11 @@ export default function TeamManagerPage() {
                             <div className="flex items-center gap-1.5">
                               <span className="text-[9px] font-black uppercase tracking-wider text-amber-300">PM:</span>
                               {isTmReadOnly ? (
-                                <div className="px-2 py-0.5 rounded-lg bg-white/10 text-white text-[10px] font-bold flex items-center gap-1 border border-white/15 select-none">
+                                <div className={`px-2 py-0.5 rounded-lg text-white text-[10px] font-bold flex items-center gap-1 border select-none transition-all ${
+                                  isProjectPmMatched
+                                    ? 'ring-2 ring-amber-400/80 bg-amber-400/30 border-amber-400 animate-pulse shadow-sm shadow-amber-300/40'
+                                    : 'bg-white/10 border-white/15'
+                                }`}>
                                   {project.project_manager_name ? (
                                     <>
                                       <div className="w-3.5 h-3.5 rounded-full bg-amber-500 text-slate-950 font-black text-[7px] flex items-center justify-center overflow-hidden shrink-0">
@@ -2409,7 +2679,11 @@ export default function TeamManagerPage() {
                                   <button
                                     type="button"
                                     onClick={() => setActivePmDropdownProjectId(activePmDropdownProjectId === `m_${project.id}` ? null : `m_${project.id}`)}
-                                    className="px-2 py-0.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold flex items-center gap-1 transition cursor-pointer border border-white/15"
+                                    className={`px-2 py-0.5 rounded-lg text-white text-[10px] font-bold flex items-center gap-1 transition cursor-pointer border ${
+                                      isProjectPmMatched
+                                        ? 'ring-2 ring-amber-400/80 bg-amber-400/30 border-amber-400 animate-pulse shadow-sm shadow-amber-300/40'
+                                        : 'bg-white/10 hover:bg-white/20 border-white/15'
+                                    }`}
                                   >
                                     {project.project_manager_name ? (
                                       <>
@@ -2664,12 +2938,17 @@ export default function TeamManagerPage() {
                                           const isSelectedSpotlight = Boolean(
                                             isUserAdmin &&
                                             isAssigned &&
-                                            unifiedFilters?.memberId &&
-                                            unifiedFilters.memberId !== 'all' &&
                                             (
-                                              assignment.assigned_member_id === unifiedFilters.memberId ||
-                                              memberObj?.id === unifiedFilters.memberId ||
-                                              cleanName.toLowerCase() === unifiedFilters.memberId.toLowerCase()
+                                              (unifiedFilters?.memberIds && unifiedFilters.memberIds.length > 0 && (
+                                                (assignment.assigned_member_id && unifiedFilters.memberIds.includes(assignment.assigned_member_id)) ||
+                                                (memberObj?.id && unifiedFilters.memberIds.includes(memberObj.id)) ||
+                                                unifiedFilters.memberIds.some(id => id.toLowerCase() === cleanName.toLowerCase())
+                                              )) ||
+                                              (unifiedFilters?.memberId && unifiedFilters.memberId !== 'all' && (
+                                                assignment.assigned_member_id === unifiedFilters.memberId ||
+                                                memberObj?.id === unifiedFilters.memberId ||
+                                                cleanName.toLowerCase() === unifiedFilters.memberId.toLowerCase()
+                                              ))
                                             )
                                           );
 
@@ -2678,11 +2957,14 @@ export default function TeamManagerPage() {
                                             return null;
                                           }
 
+                                          const slotMatch = checkRoleSlotMatch(assignment, unifiedFilters);
+                                          const isTargeted = isSelectedSpotlight || slotMatch.isTargetedSlot;
+
                                           return (
                                             <div
                                               key={assignment.id}
                                               className={`relative flex flex-col items-center transition-all duration-300 ${
-                                                isSelectedSpotlight
+                                                isTargeted
                                                   ? 'rounded-lg ring-2 ring-amber-400/80 bg-amber-50/70 dark:bg-amber-950/30 p-1 shadow-sm shadow-amber-300/40 animate-pulse'
                                                   : ''
                                               }`}
@@ -2707,7 +2989,7 @@ export default function TeamManagerPage() {
                                                 {isAssigned ? (
                                                   <div className="relative mb-1 flex items-center justify-center">
                                                     <div className={`relative w-10 h-10 rounded-full border-2 p-0.5 flex items-center justify-center shrink-0 transition-all ${
-                                                      isSelectedSpotlight
+                                                      isTargeted
                                                         ? 'border-amber-400 bg-amber-100/80 shadow-xs'
                                                         : 'border-emerald-500 bg-emerald-50 shadow-xs'
                                                     }`}>
@@ -2722,7 +3004,7 @@ export default function TeamManagerPage() {
                                                         />
                                                       ) : (
                                                         <div className={`w-full h-full rounded-full font-black text-[10px] flex items-center justify-center shrink-0 text-white ${
-                                                          isSelectedSpotlight
+                                                          isTargeted
                                                             ? 'bg-gradient-to-br from-amber-500 to-amber-600'
                                                             : 'bg-gradient-to-br from-emerald-500 to-teal-600'
                                                         }`}>
@@ -2732,17 +3014,27 @@ export default function TeamManagerPage() {
                                                     </div>
                                                   </div>
                                                 ) : (isTmReadOnly || eventVisibility === 'FULL_CREW') ? (
-                                                  <div className="w-10 h-10 rounded-full border border-dashed border-slate-300 bg-slate-100/70 text-slate-400 font-bold mb-1 flex items-center justify-center shadow-2xs shrink-0 cursor-default">
+                                                  <div className={`w-10 h-10 rounded-full border font-bold mb-1 flex items-center justify-center shadow-2xs shrink-0 cursor-default ${
+                                                    isTargeted
+                                                      ? 'border-amber-400 bg-amber-100 text-amber-900'
+                                                      : 'border-dashed border-slate-300 bg-slate-100/70 text-slate-400'
+                                                  }`}>
                                                     <span className="text-xs font-black">-</span>
                                                   </div>
                                                 ) : (
-                                                  <div className="w-10 h-10 rounded-full border border-dashed border-red-500 bg-red-50/90 text-red-600 font-black mb-1 flex items-center justify-center shadow-2xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
-                                                    <Plus className="w-4 h-4 text-red-600 stroke-[3]" />
+                                                  <div className={`w-10 h-10 rounded-full border border-dashed font-black mb-1 flex items-center justify-center shadow-2xs transition-colors cursor-pointer shrink-0 ${
+                                                    isTargeted
+                                                      ? 'border-amber-500 bg-amber-100/90 text-amber-700 group-hover:bg-amber-200/90'
+                                                      : 'border-red-500 bg-red-50/90 text-red-600 group-hover:bg-red-100'
+                                                  }`}>
+                                                    <Plus className={`w-4 h-4 stroke-[3] ${isTargeted ? 'text-amber-700' : 'text-red-600'}`} />
                                                   </div>
                                                 )}
 
                                                 {/* Role Pill - STRICT SHORT FORM ONLY */}
-                                                <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 leading-tight block text-center">
+                                                <span className={`text-[10px] font-black uppercase tracking-wider leading-tight block text-center ${
+                                                  isTargeted ? 'text-amber-800 dark:text-amber-400 font-extrabold' : 'text-slate-500'
+                                                }`}>
                                                   {shortRole}
                                                 </span>
 
@@ -3282,6 +3574,8 @@ export default function TeamManagerPage() {
         workspaceId={workspaceId || currentUserId}
         studioName={studioName || 'Filmify Weddings'}
         projectManagerName={(whatsappModalData.project as any)?.project_manager_name || 'Studio Manager'}
+        previousMemberName={whatsappModalData.previousMemberName}
+        previousRate={whatsappModalData.previousRate}
         onCommercialsSaved={(savedData) => {
           if (savedData) {
             setProjects(prevProjects =>
@@ -3355,9 +3649,12 @@ export default function TeamManagerPage() {
             eventTypes: [],
             roles: [],
             assignmentStatus: 'all',
+            assignmentStatuses: [],
             pmId: 'all',
+            pmIds: [],
             studioId: 'all',
             memberId: 'all',
+            memberIds: [],
           });
         }}
         availableEventTypes={eventTypesList}
@@ -3369,6 +3666,7 @@ export default function TeamManagerPage() {
         assignedPms={assignedPms}
         studios={studioFilterOptions}
         teamMembers={teamMembers}
+        projects={projects}
         isAllStudios={activeWorkspace?.workspaceId === 'all' || workspaceId === 'all'}
         isPartnerPortal={!isOwner}
         isOwner={isOwner}
@@ -3414,6 +3712,15 @@ export default function TeamManagerPage() {
         } : null}
         isDeleting={isDeletingMember}
       />
+
+      {/* 8. Luxury 3D Project History Drawer Modal */}
+      {selectedProjectForHistory && (
+        <ProjectHistoryModal
+          isOpen={Boolean(selectedProjectForHistory)}
+          onClose={() => setSelectedProjectForHistory(null)}
+          project={selectedProjectForHistory}
+        />
+      )}
     </div>
   );
 }

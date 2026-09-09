@@ -2,8 +2,10 @@
 
 import React from 'react';
 import { FWProject, FWSubEvent, FWTeamMember, FWAssignment } from '@/types';
-import { Calendar, Clock, MapPin, Plus, Pencil } from 'lucide-react';
+import { Calendar, Clock, MapPin, Plus, Pencil, History } from 'lucide-react';
 import { resolveEventCrewVisibility } from '@/lib/permissions/rbacRules';
+import { checkProjectUnassignedWarning } from './TeamManagerProjectCard';
+import { isCardFilterActive as checkIsFilterActive, checkRoleSlotMatch, getCardHighlightClass, isPmMatch, isSubEventMatch } from '../hooks/useTeamManagerFilter';
 import { WorkspaceCrewRole, getRoleAbbr } from '@/lib/workspace-settings';
 
 export interface TeamManagerCardViewProps {
@@ -22,9 +24,11 @@ export interface TeamManagerCardViewProps {
   customCrewRoles?: WorkspaceCrewRole[];
   highlightMemberId?: string | null;
   selectedFilterMemberId?: string | null;
+  unifiedFilters?: any;
   onAssignMember?: (assignmentId: string, memberId: string | null) => void;
   onAddNewMember?: (info: { assignmentId: string; role: string; subEventId: string; projectId: string }) => void;
   onEditProject?: (project: FWProject) => void;
+  onOpenHistory?: (project: FWProject) => void;
   onProjectPMChange?: (projectId: string, memberId: string | null, memberName: string | null) => void;
 }
 
@@ -95,20 +99,25 @@ export default function TeamManagerCardView({
   customCrewRoles = [],
   highlightMemberId = null,
   selectedFilterMemberId = null,
+  unifiedFilters = null,
   onAssignMember,
   onAddNewMember,
   onEditProject,
   onProjectPMChange,
+  onOpenHistory,
 }: TeamManagerCardViewProps) {
   return (
     <div className="space-y-8">
       {projects.map((project) => {
         const projectGradient = getGradientByProjectId(project.id || project.client_name);
 
+        const isCardFilterActive = checkIsFilterActive(unifiedFilters);
+        const cardHighlightClass = getCardHighlightClass(isCardFilterActive, true);
+
         return (
           <div
             key={project.id}
-            className="bg-white border-2 border-slate-300/90 shadow-lg shadow-slate-200/50 rounded-3xl p-4 sm:p-6 space-y-4 mb-8"
+            className={`bg-white border-2 border-slate-300/90 shadow-lg shadow-slate-200/50 rounded-3xl p-4 sm:p-6 space-y-4 mb-8 transition-all duration-300 ${cardHighlightClass}`}
           >
             {/* Master Client Header */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-3.5">
@@ -128,19 +137,42 @@ export default function TeamManagerCardView({
 
               <div className="flex items-center gap-3">
                 {/* PM Badge */}
-                <div className="px-3 py-1.5 rounded-2xl bg-amber-50/70 border border-amber-200/70 text-amber-950 text-xs font-bold flex items-center gap-2 select-none shadow-2xs">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-amber-800">PM:</span>
-                  {project.project_manager_name ? (
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-5 h-5 rounded-full bg-amber-600 text-white font-black text-[9px] flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
-                        {getInitials(project.project_manager_name)}
-                      </div>
-                      <span className="font-extrabold text-amber-950 max-w-[130px] truncate">{project.project_manager_name}</span>
+                {(() => {
+                  const isProjectPmMatched = isPmMatch(project, unifiedFilters);
+                  return (
+                    <div className={`px-3 py-1.5 rounded-2xl border text-amber-950 text-xs font-bold flex items-center gap-2 select-none shadow-2xs transition-all ${
+                      isProjectPmMatched
+                        ? 'ring-2 ring-amber-400/80 bg-amber-100/90 border-amber-400 animate-pulse shadow-sm shadow-amber-300/40'
+                        : 'bg-amber-50/70 border-amber-200/70'
+                    }`}>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-amber-800">PM:</span>
+                      {project.project_manager_name ? (
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-5 h-5 rounded-full bg-amber-600 text-white font-black text-[9px] flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
+                            {getInitials(project.project_manager_name)}
+                          </div>
+                          <span className="font-extrabold text-amber-950 max-w-[130px] truncate">{project.project_manager_name}</span>
+                        </div>
+                      ) : (
+                        <span className="text-amber-700/60 font-medium">Unassigned</span>
+                      )}
                     </div>
-                  ) : (
-                    <span className="text-amber-700/60 font-medium">Unassigned</span>
-                  )}
-                </div>
+                  );
+                })()}
+
+                {/* Standalone History Icon Button */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    onOpenHistory?.(project);
+                  }}
+                  className="p-1.5 rounded-lg bg-neutral-100/90 hover:bg-amber-100/80 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-600 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-700 transition-all cursor-pointer shadow-sm"
+                  title="View Project Change History"
+                >
+                  <History className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                </button>
 
                 {!isTmReadOnly && onEditProject && (
                   <button
@@ -156,7 +188,10 @@ export default function TeamManagerCardView({
 
             {/* Sub-Events Stack */}
             <div className="space-y-4">
-              {project.fw_sub_events?.map((subEvent) => {
+              {(isCardFilterActive
+                ? (project.fw_sub_events || []).filter(se => isSubEventMatch(se, project, unifiedFilters))
+                : (project.fw_sub_events || [])
+              ).map((subEvent) => {
                 const isTbd = Boolean((subEvent as any).is_date_tbd) || !subEvent.event_date || isNaN(new Date(subEvent.event_date).getTime());
                 const isOvernightShoot = Boolean((subEvent as any).is_overnight) && Boolean((subEvent as any).end_date) && !isNaN(new Date((subEvent as any).end_date).getTime());
 
@@ -306,11 +341,14 @@ export default function TeamManagerCardView({
                               )
                             );
 
+                            const slotMatch = checkRoleSlotMatch(assignment, unifiedFilters);
+                            const isTargeted = isSelectedSpotlight || slotMatch.isTargetedSlot;
+
                             return (
                               <div key={assignment.id} className="relative flex flex-col items-center min-w-[68px]">
                                 <div
                                   className={`relative flex flex-col items-center transition-all duration-300 ${
-                                    isSelectedSpotlight
+                                    isTargeted
                                       ? 'rounded-lg ring-2 ring-amber-400/80 bg-amber-50/70 dark:bg-amber-950/30 p-1 shadow-sm shadow-amber-300/40 animate-pulse'
                                       : ''
                                   }`}
@@ -324,7 +362,7 @@ export default function TeamManagerCardView({
                                     {isAssigned ? (
                                       <div className="relative mb-1 flex items-center justify-center">
                                         <div className={`relative w-10 h-10 rounded-full border-2 p-0.5 flex items-center justify-center shrink-0 transition-all ${
-                                          isSelectedSpotlight
+                                          isTargeted
                                             ? 'border-amber-400 bg-amber-100/80 shadow-xs'
                                             : 'border-emerald-500 bg-emerald-50 shadow-xs'
                                         }`}>
@@ -339,7 +377,7 @@ export default function TeamManagerCardView({
                                             />
                                           ) : (
                                             <div className={`w-full h-full rounded-full font-black text-[10px] flex items-center justify-center shrink-0 text-white ${
-                                              isSelectedSpotlight
+                                              isTargeted
                                                 ? 'bg-gradient-to-br from-amber-500 to-amber-600'
                                                 : 'bg-gradient-to-br from-emerald-500 to-teal-600'
                                             }`}>
@@ -349,17 +387,27 @@ export default function TeamManagerCardView({
                                         </div>
                                       </div>
                                     ) : (isTmReadOnly || eventVisibility === 'FULL_CREW') ? (
-                                      <div className="w-10 h-10 rounded-full border border-dashed border-slate-300 bg-slate-100/70 text-slate-400 font-bold mb-1 flex items-center justify-center shadow-2xs shrink-0 cursor-default">
+                                      <div className={`w-10 h-10 rounded-full border font-bold mb-1 flex items-center justify-center shadow-2xs shrink-0 cursor-default ${
+                                        isTargeted
+                                          ? 'border-amber-400 bg-amber-100 text-amber-900'
+                                          : 'border-dashed border-slate-300 bg-slate-100/70 text-slate-400'
+                                      }`}>
                                         <span className="text-xs font-black">-</span>
                                       </div>
                                     ) : (
-                                      <div className="w-10 h-10 rounded-full border border-dashed border-red-500 bg-red-50/90 text-red-600 font-black mb-1 flex items-center justify-center shadow-2xs group-hover:bg-red-100 transition-colors cursor-pointer shrink-0">
-                                        <Plus className="w-4 h-4 text-red-600 stroke-[3]" />
+                                      <div className={`w-10 h-10 rounded-full border border-dashed font-black mb-1 flex items-center justify-center shadow-2xs transition-colors cursor-pointer shrink-0 ${
+                                        isTargeted
+                                          ? 'border-amber-500 bg-amber-100/90 text-amber-700 group-hover:bg-amber-200/90'
+                                          : 'border-red-500 bg-red-50/90 text-red-600 group-hover:bg-red-100'
+                                      }`}>
+                                        <Plus className={`w-4 h-4 stroke-[3] ${isTargeted ? 'text-amber-700' : 'text-red-600'}`} />
                                       </div>
                                     )}
 
                                     {/* Role Pill */}
-                                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 leading-tight block text-center">
+                                    <span className={`text-[10px] font-black uppercase tracking-wider leading-tight block text-center ${
+                                      isTargeted ? 'text-amber-800 dark:text-amber-400 font-extrabold' : 'text-slate-500'
+                                    }`}>
                                       {shortRole}
                                     </span>
 
