@@ -11,8 +11,8 @@ const nextConfig: NextConfig = {
 
   // 3. Static Page Generation Fast karne ke liye (Static bailout / skip heavy prerender)
   experimental: {
-    // Multi-core CPU ka full use karega
-    cpus: 4, 
+    // Prevent memory exhaustion on VPS
+    cpus: 1, 
   },
 
   // 4. Images build-time render skip

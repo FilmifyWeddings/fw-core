@@ -13,9 +13,10 @@ echo "Purging old Next.js build cache and lingering processes..."
 pkill -9 -f 'next build' 2>/dev/null || true
 pkill -9 -f 'processChild.js' 2>/dev/null || true
 rm -rf .next
+rm -rf /var/www/fw-core/node_modules/.es-abstract*
 
 echo "Building application..."
-npm run build
+NODE_OPTIONS="--max-old-space-size=3072" npm run build
 
 echo "Building WhatsApp Persistent Worker..."
 cd /var/www/fw-core/baileys-worker || exit 1
