@@ -14,71 +14,77 @@ export default function SignUpPage() {
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
-  // STEP 1: Initiate Signup & Trigger OTP Email
+  // STEP 1: Request OTP via server-side API (NO Supabase user created yet)
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setErrorMessage('');
+    setSuccessMessage('');
 
     try {
-      // Use signUp with user metadata (Supabase sends the Confirm Signup OTP)
-      const { data, error } = await supabase.auth.signUp({
-        email: email.trim(),
-        password: password,
-        options: {
-          data: {
-            full_name: fullName.trim(),
-          },
-        },
+      const res = await fetch('/api/auth/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: fullName.trim(),
+          email: email.trim().toLowerCase(),
+          password,
+        }),
       });
 
-      if (error) {
-        setErrorMessage(error.message);
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setErrorMessage(data.error || 'Failed to send verification code.');
         setLoading(false);
         return;
       }
 
-      // If Supabase created user but email is unconfirmed, show OTP screen
       setStep('OTP_VERIFICATION');
     } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to send OTP.');
+      setErrorMessage(err.message || 'Network error sending verification code.');
     } finally {
       setLoading(false);
     }
   };
 
-  // STEP 2: Verify the 6-digit OTP Token
+  // STEP 2: Verify OTP via server-side API & Sign In
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setErrorMessage('');
 
     try {
-      const { data, error } = await supabase.auth.verifyOtp({
-        email: email.trim(),
-        token: otp.trim(),
-        type: 'signup', // 'signup' handles confirm signup token
+      const res = await fetch('/api/auth/verify-signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          otp: otp.trim(),
+        }),
       });
 
-      if (error) {
-        setErrorMessage(error.message);
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setErrorMessage(data.error || 'Invalid or expired OTP code.');
         setLoading(false);
         return;
       }
 
-      if (data.session || data.user) {
-        // Create / Update public profile row for the verified user
-        await supabase.from('profiles').upsert({
-          id: data.user?.id,
-          full_name: fullName.trim(),
-          role: 'owner',
-          updated_at: new Date().toISOString(),
-        });
+      // Automatically sign in the user now that auth.users row is created & confirmed
+      const { error: signInErr } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password,
+      });
 
-        // Redirect directly to the dashboard
-        router.push('/workspace');
+      if (signInErr) {
+        console.warn('Auto sign-in notice:', signInErr.message);
+        router.push('/login');
+        return;
       }
+
+      router.push('/workspace');
     } catch (err: any) {
       setErrorMessage(err.message || 'Invalid or expired OTP code.');
     } finally {
@@ -88,13 +94,31 @@ export default function SignUpPage() {
 
   const handleResendOtp = async () => {
     setLoading(true);
-    const { error } = await supabase.auth.resend({
-      type: 'signup',
-      email: email.trim(),
-    });
-    setLoading(false);
-    if (error) setErrorMessage(error.message);
-    else alert('A new OTP has been sent to your email.');
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    try {
+      const res = await fetch('/api/auth/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: fullName.trim(),
+          email: email.trim().toLowerCase(),
+          password,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setErrorMessage(data.error || 'Failed to resend OTP.');
+      } else {
+        setSuccessMessage('A new verification code has been sent to your email.');
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to resend OTP.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -174,6 +198,12 @@ export default function SignUpPage() {
               </div>
             )}
 
+            {successMessage && (
+              <div className="p-3 text-xs rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">
+                {successMessage}
+              </div>
+            )}
+
             <div>
               <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Enter 6-Digit Code</label>
               <input
@@ -198,7 +228,11 @@ export default function SignUpPage() {
             <div className="flex items-center justify-between text-xs pt-2">
               <button
                 type="button"
-                onClick={() => setStep('DETAILS')}
+                onClick={() => {
+                  setStep('DETAILS');
+                  setErrorMessage('');
+                  setSuccessMessage('');
+                }}
                 className="text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-300 underline cursor-pointer"
               >
                 Change Email
