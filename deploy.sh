@@ -9,7 +9,9 @@ git reset --hard origin/main
 echo "Installing dependencies..."
 npm install
 
-echo "Purging old Next.js build cache..."
+echo "Purging old Next.js build cache and lingering processes..."
+pkill -9 -f 'next build' 2>/dev/null || true
+pkill -9 -f 'processChild.js' 2>/dev/null || true
 rm -rf .next
 
 echo "Building application..."
@@ -17,7 +19,7 @@ npm run build
 
 echo "Building WhatsApp Persistent Worker..."
 cd /var/www/fw-core/baileys-worker || exit 1
-npm install
+npm install --include=dev
 npx tsc
 
 echo "Restarting PM2 apps via ecosystem.config.js..."
