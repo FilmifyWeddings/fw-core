@@ -19,15 +19,38 @@ export interface ExtractedQuotationFinancials {
 }
 
 /**
- * Normalizes any free-text date (e.g. "10 FEB 26", "10 Feb 2026", "10/02/2026", "2026-02-10")
+ * Normalizes any free-text date (e.g. "10 FEB 26", "10 Feb 2026", "10/02/2026", "2026-02-10", "Booking Date", "Event Day")
  * into standard HTML-compatible ISO format "YYYY-MM-DD".
  */
 export function normalizeToIsoDate(rawDate?: any, fallbackDate?: string | null): string {
-  const fallback = fallbackDate && fallbackDate.includes('-') ? fallbackDate.split('T')[0] : new Date().toISOString().split('T')[0];
+  const fallback = fallbackDate && fallbackDate.includes('-')
+    ? fallbackDate.split('T')[0]
+    : new Date().toISOString().split('T')[0];
+
   if (!rawDate) return fallback;
 
   const dateStr = String(rawDate).trim();
-  if (!dateStr || dateStr.toLowerCase() === 'dd-mm-yyyy' || dateStr.toLowerCase() === 'undefined' || dateStr.toLowerCase() === 'null') {
+  if (!dateStr || dateStr.toLowerCase() === 'undefined' || dateStr.toLowerCase() === 'null' || dateStr.toLowerCase() === 'dd-mm-yyyy') {
+    return fallback;
+  }
+
+  const lower = dateStr.toLowerCase();
+
+  // Relative quotation payment step descriptors
+  if (lower.includes('booking') || lower.includes('token') || lower.includes('advance') || lower.includes('signing')) {
+    return fallbackDate ? fallbackDate.split('T')[0] : new Date().toISOString().split('T')[0];
+  }
+  if (lower.includes('wedding') || lower.includes('event') || lower.includes('stage') || lower.includes('shoot')) {
+    return fallback;
+  }
+  if (lower.includes('delivery') || lower.includes('handover') || lower.includes('settlement') || lower.includes('final')) {
+    try {
+      const base = new Date(fallback);
+      if (!isNaN(base.getTime())) {
+        base.setDate(base.getDate() + 30);
+        return base.toISOString().split('T')[0];
+      }
+    } catch (_) {}
     return fallback;
   }
 
@@ -41,20 +64,43 @@ export function normalizeToIsoDate(rawDate?: any, fallbackDate?: string | null):
     return dateStr.split('T')[0];
   }
 
+  const MONTHS: Record<string, string> = {
+    jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+    jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12'
+  };
+
   try {
     const parts = dateStr.split(/[\s\-\/\.]+/);
     if (parts.length === 3) {
-      // Case "10 FEB 26" -> parts: ["10", "FEB", "26"]
-      if (parts[2].length === 2) {
-        const fullYear = `20${parts[2]}`;
-        const parsed = new Date(`${parts[0]} ${parts[1]} ${fullYear}`);
-        if (!isNaN(parsed.getTime())) {
-          return parsed.toISOString().split('T')[0];
-        }
+      const p0 = parts[0];
+      const p1 = parts[1].toLowerCase().slice(0, 3);
+      const p2 = parts[2];
+
+      // Case: "10 FEB 26" or "10-Feb-2026" or "10/Feb/2026"
+      if (MONTHS[p1]) {
+        const day = p0.padStart(2, '0');
+        const month = MONTHS[p1];
+        const year = p2.length === 2 ? `20${p2}` : p2;
+        return `${year}-${month}-${day}`;
       }
-      // Case DD/MM/YYYY
-      if (parts[2].length === 4 && !isNaN(Number(parts[0])) && !isNaN(Number(parts[1]))) {
-        return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+
+      // Case: "FEB 10 2026"
+      const p0m = p0.toLowerCase().slice(0, 3);
+      if (MONTHS[p0m]) {
+        const month = MONTHS[p0m];
+        const day = p1.padStart(2, '0');
+        const year = p2.length === 2 ? `20${p2}` : p2;
+        return `${year}-${month}-${day}`;
+      }
+
+      // Case: DD/MM/YYYY or DD-MM-YYYY
+      if (p2.length === 4 && !isNaN(Number(p0)) && !isNaN(Number(parts[1]))) {
+        return `${p2}-${parts[1].padStart(2, '0')}-${p0.padStart(2, '0')}`;
+      }
+
+      // Case: DD/MM/YY
+      if (p2.length === 2 && !isNaN(Number(p0)) && !isNaN(Number(parts[1]))) {
+        return `20${p2}-${parts[1].padStart(2, '0')}-${p0.padStart(2, '0')}`;
       }
     }
 
@@ -401,6 +447,7 @@ export async function syncLeadQuotationToFinance(
 export interface ExtractedSubEvent {
   event_title: string;
   event_date: string;
+  is_date_tbd?: boolean;
   venue_name?: string | null;
   venue_map_link?: string | null;
   roll_call_time?: string | null;
@@ -411,8 +458,143 @@ export interface ExtractedSubEvent {
 }
 
 /**
+ * Normalizes a role string into a standard Crew Role title (e.g. "Cinematic" -> "Cinematographer").
+ */
+export function normalizeRoleName(rawRole: string): string {
+  const trimmed = String(rawRole || '').trim();
+  if (!trimmed) return 'Crew';
+
+  const lower = trimmed.toLowerCase();
+
+  // Cinematography / Cinematic
+  if (lower.includes('cinemat') || lower.includes('cinematic')) {
+    return 'Cinematographer';
+  }
+  // Candid Photography
+  if (lower.includes('candid')) {
+    return 'Candid Photographer';
+  }
+  // Traditional Photography
+  if (lower.includes('traditional') && (lower.includes('photo') || !lower.includes('video'))) {
+    return 'Traditional Photographer';
+  }
+  // Traditional Video
+  if (lower.includes('traditional') && (lower.includes('video') || lower.includes('movie'))) {
+    return 'Traditional Videographer';
+  }
+  // Drone
+  if (lower.includes('drone')) {
+    return 'Drone Pilot';
+  }
+  // Assistant
+  if (lower.includes('assistant') || lower.includes('helper') || lower.includes('light')) {
+    return 'Assistant';
+  }
+  // Reels
+  if (lower.includes('reel')) {
+    return 'Reels Creator';
+  }
+  // Family
+  if (lower.includes('family')) {
+    return 'Family Photographer';
+  }
+
+  // Strip trailing plural 's' if not ending in 'ss'
+  let clean = trimmed;
+  if (clean.length > 3 && clean.endsWith('s') && !clean.endsWith('ss')) {
+    clean = clean.slice(0, -1);
+  }
+
+  return clean;
+}
+
+function parseStringCrewRequirement(str: string): { role: string; count: number }[] {
+  const trimmed = str.trim();
+  if (!trimmed) return [];
+
+  // Split multiple lines or comma-separated roles if any
+  if (trimmed.includes('\n') || (trimmed.includes(',') && !trimmed.includes('('))) {
+    const parts = trimmed.split(/[\n,]+/).map(p => p.trim()).filter(Boolean);
+    const result: { role: string; count: number }[] = [];
+    for (const p of parts) {
+      result.push(...parseStringCrewRequirement(p));
+    }
+    return result;
+  }
+
+  // 1. Prefix count: e.g. "2 Cinematographers", "2x Drone Pilot", "2 - Assistant", "2: Cinematic"
+  const prefixMatch = trimmed.match(/^(\d+)\s*(?:x|\*|:|-)?\s+(.+)$/i);
+  if (prefixMatch) {
+    const count = Math.max(1, parseInt(prefixMatch[1], 10) || 1);
+    const role = normalizeRoleName(prefixMatch[2]);
+    return [{ role, count }];
+  }
+
+  // 2. Suffix count with separator: e.g. "Cinematographer x 2", "Cinematic (2)", "Assistant: 2", "Cinematic - 2"
+  const suffixMatch = trimmed.match(/^(.+?)\s*(?:x|\*|:|-|\()\s*(\d+)\s*\)?$/i);
+  if (suffixMatch) {
+    const role = normalizeRoleName(suffixMatch[1]);
+    const count = Math.max(1, parseInt(suffixMatch[2], 10) || 1);
+    return [{ role, count }];
+  }
+
+  // 3. Trailing space + number: e.g. "Cinematographer 2", "Assistant 1"
+  const trailingMatch = trimmed.match(/^(.+?)\s+(\d+)$/);
+  if (trailingMatch) {
+    const role = normalizeRoleName(trailingMatch[1]);
+    const count = Math.max(1, parseInt(trailingMatch[2], 10) || 1);
+    return [{ role, count }];
+  }
+
+  // Default: count 1
+  return [{ role: normalizeRoleName(trimmed), count: 1 }];
+}
+
+/**
+ * Parses any requirement representation (object, string with prefix/suffix count, etc.)
+ * and returns the normalized role name along with the exact count.
+ * Examples:
+ * - { name: 'Cinematographer', qty: 2 } -> { role: 'Cinematographer', count: 2 }
+ * - "2 Cinematographers" -> { role: 'Cinematographer', count: 2 }
+ * - "Cinematic x 2" -> { role: 'Cinematographer', count: 2 }
+ * - "Cinematic (2)" -> { role: 'Cinematographer', count: 2 }
+ * - "Cinematic: 2" -> { role: 'Cinematographer', count: 2 }
+ * - "Cinematic - 2" -> { role: 'Cinematographer', count: 2 }
+ * - "Cinematic 2" -> { role: 'Cinematographer', count: 2 }
+ * - "Assistant" -> { role: 'Assistant', count: 1 }
+ */
+export function parseCrewRequirement(req: any): { role: string; count: number }[] {
+  if (!req) return [];
+
+  // If object with name and qty / count
+  if (typeof req === 'object' && req !== null) {
+    const rawName = String(req.name || req.role || req.title || '').trim();
+    let count = Math.max(1, parseInt(String(req.qty ?? req.count ?? req.quantity ?? 1), 10) || 1);
+
+    // If count is 1, check if the string inside name has an embedded count (e.g. name: "2 Cinematographers")
+    if (count === 1 && rawName) {
+      const parsedFromName = parseStringCrewRequirement(rawName);
+      if (parsedFromName.length > 0) {
+        return parsedFromName;
+      }
+    }
+
+    const role = normalizeRoleName(rawName || 'Crew');
+    return [{ role, count }];
+  }
+
+  // If string
+  if (typeof req === 'string') {
+    return parseStringCrewRequirement(req);
+  }
+
+  return [];
+}
+
+/**
  * Extracts structured sub-events, dates, timings, venues, slots, notes, and crew
  * from any quotation content_json payload (Airy proposal, classic, or custom).
+ * Respects crew count multipliers (e.g. Cinematic: 2 -> 2 slots).
  */
 export function extractSubEventsFromQuotation(
   contentJson: any,
@@ -430,6 +612,7 @@ export function extractSubEventsFromQuotation(
   if (funcItems.length > 0) {
     for (const item of funcItems) {
       const title = String(item.name || item.title || item.event_title || 'Wedding Event').trim();
+      const isDateTbd = Boolean(item.dateNotFixed || !item.date || String(item.date).toLowerCase().includes('tbd'));
       const date = item.date ? normalizeToIsoDate(item.date, fallbackEventDate) : (fallbackEventDate || new Date().toISOString().split('T')[0]);
       const venue = String(item.location || item.venue || fallbackVenue || '').trim();
       const startTime = String(item.startTime || item.start_time || item.time || '10:00 AM').trim();
@@ -437,29 +620,27 @@ export function extractSubEventsFromQuotation(
       const slot = String(item.durationSlot || item.slot || item.shift || 'Full Day').trim();
       const notes = String(item.notes || item.description || '').trim();
 
-      // Extract required crew roles
+      // Extract required crew roles with multiplier expansion
       const roles: string[] = [];
-      if (Array.isArray(item.requirements)) {
-        item.requirements.forEach((req: any) => {
-          if (typeof req === 'string') {
-            roles.push(req);
-          } else if (typeof req === 'object' && req !== null) {
-            const roleName = String(req.name || req.role || req.title || 'Crew').trim();
-            const qty = Math.max(1, parseInt(String(req.qty || req.count || 1), 10) || 1);
-            for (let i = 0; i < qty; i++) {
-              roles.push(roleName);
+      const rawRequirements = Array.isArray(item.requirements)
+        ? item.requirements
+        : (Array.isArray(item.crew) ? item.crew : (Array.isArray(item.roles) ? item.roles : []));
+
+      if (rawRequirements.length > 0) {
+        for (const req of rawRequirements) {
+          const parsedList = parseCrewRequirement(req);
+          for (const p of parsedList) {
+            for (let c = 0; c < p.count; c++) {
+              roles.push(p.role);
             }
           }
-        });
-      } else if (Array.isArray(item.crew)) {
-        roles.push(...item.crew);
-      } else if (Array.isArray(item.roles)) {
-        roles.push(...item.roles);
+        }
       }
 
       subEvents.push({
         event_title: title,
         event_date: date,
+        is_date_tbd: isDateTbd,
         venue_name: venue || null,
         roll_call_time: startTime,
         dismissal_estimate_time: endTime,
@@ -482,15 +663,24 @@ export function extractSubEventsFromQuotation(
       const shootRoles: string[] = [];
       if (shoot.crewText) {
         const lines = String(shoot.crewText).split('\n').map(l => l.trim()).filter(Boolean);
-        shootRoles.push(...lines);
+        for (const line of lines) {
+          const parsedList = parseCrewRequirement(line);
+          for (const p of parsedList) {
+            for (let c = 0; c < p.count; c++) {
+              shootRoles.push(p.role);
+            }
+          }
+        }
       }
 
       const rawShootDate = shoot.date || shoot.eventDate || shoot.shootDate || null;
+      const isDateTbd = !rawShootDate || String(rawShootDate).toLowerCase().includes('tbd');
       const shootDate = rawShootDate ? normalizeToIsoDate(rawShootDate, fallbackEventDate) : 'Date Not Fixed';
 
       subEvents.push({
         event_title: shootTitle,
         event_date: shootDate,
+        is_date_tbd: isDateTbd,
         venue_name: shoot.location || shoot.venue || fallbackVenue || null,
         roll_call_time: '09:00 AM',
         dismissal_estimate_time: '06:00 PM',
@@ -513,7 +703,19 @@ export function extractSubEventsFromQuotation(
         const endTime = String(ev.end_time || '06:00 PM').trim();
         const slot = String(ev.slot || ev.shift || 'Full Day').trim();
         const notes = String(ev.notes || ev.description || '').trim();
-        const roles = Array.isArray(ev.crew) ? ev.crew : (Array.isArray(ev.roles) ? ev.roles : ['Traditional Photographer', 'Cinematographer']);
+
+        const roles: string[] = [];
+        const rawCrew = Array.isArray(ev.crew) ? ev.crew : (Array.isArray(ev.roles) ? ev.roles : []);
+        if (rawCrew.length > 0) {
+          for (const req of rawCrew) {
+            const parsedList = parseCrewRequirement(req);
+            for (const p of parsedList) {
+              for (let c = 0; c < p.count; c++) {
+                roles.push(p.role);
+              }
+            }
+          }
+        }
 
         subEvents.push({
           event_title: title,
@@ -523,7 +725,7 @@ export function extractSubEventsFromQuotation(
           dismissal_estimate_time: endTime,
           shift_hours_slot: slot,
           operational_notes: notes || null,
-          roles: roles
+          roles: roles.length > 0 ? roles : ['Traditional Photographer', 'Cinematographer']
         });
       }
     }
@@ -535,6 +737,7 @@ export function extractSubEventsFromQuotation(
 /**
  * Synchronizes quotation sub-events (dates, timings, venue, slots, notes, crew)
  * into Team Manager / Bookings & Events (fw_projects + fw_sub_events + fw_assignments).
+ * Non-destructively preserves already assigned crew members slot-by-slot.
  */
 export async function syncQuotationToTeamManagerEvents(
   supabaseClient: any,
@@ -543,7 +746,8 @@ export async function syncQuotationToTeamManagerEvents(
   clientName: string,
   workspaceId: string,
   fallbackEventDate?: string | null,
-  fallbackVenue?: string | null
+  fallbackVenue?: string | null,
+  clientId?: string | null
 ) {
   if (!clientName || !contentJson) return null;
 
@@ -551,23 +755,32 @@ export async function syncQuotationToTeamManagerEvents(
     const extractedEvents = extractSubEventsFromQuotation(contentJson, fallbackEventDate, fallbackVenue);
     if (extractedEvents.length === 0) return null;
 
-    // 1. Find or create master project in fw_projects
+    // 1. Find or create master project in fw_projects scoped by user_id / workspaceId
     let targetProjectId: string | null = null;
 
-    const { data: existingProjects } = await supabaseClient
+    let projQuery = supabaseClient
       .from('fw_projects')
-      .select('id, client_name, project_manager_name, project_manager_id')
-      .ilike('client_name', `%${clientName}%`);
+      .select('id, client_name, project_manager_name, project_manager_id, client_id')
+      .eq('user_id', workspaceId);
+
+    if (clientId) {
+      projQuery = projQuery.or(`client_id.eq.${clientId},client_name.ilike.%${clientName.trim()}%`);
+    } else {
+      projQuery = projQuery.ilike('client_name', `%${clientName.trim()}%`);
+    }
+
+    const { data: existingProjects } = await projQuery;
 
     const firstSubEventDate = extractedEvents[0]?.event_date || fallbackEventDate || new Date().toISOString().split('T')[0];
     const firstSubEventVenue = extractedEvents[0]?.venue_name || fallbackVenue || null;
 
     if (existingProjects && existingProjects.length > 0) {
       targetProjectId = existingProjects[0].id;
-      // Update main date & venue if updated
+      // Update main date & venue and link client_id if missing
       await supabaseClient
         .from('fw_projects')
         .update({
+          client_id: clientId || existingProjects[0].client_id || null,
           main_date: firstSubEventDate,
           main_venue: firstSubEventVenue,
           updated_at: new Date().toISOString()
@@ -577,7 +790,8 @@ export async function syncQuotationToTeamManagerEvents(
       const { data: newProj, error: projErr } = await supabaseClient
         .from('fw_projects')
         .insert([{
-          client_name: clientName,
+          client_name: clientName.trim(),
+          client_id: clientId || null,
           main_date: firstSubEventDate,
           main_venue: firstSubEventVenue,
           user_id: workspaceId,
@@ -592,28 +806,36 @@ export async function syncQuotationToTeamManagerEvents(
 
     if (!targetProjectId) return null;
 
-    // 2. Fetch existing sub-events & assignments to preserve existing crew assignments if any
+    // 2. Fetch existing sub-events & assignments to preserve existing crew assignments slot-by-slot
     const { data: existingSubEvents } = await supabaseClient
       .from('fw_sub_events')
       .select('id, event_title')
       .eq('project_id', targetProjectId);
 
-    const existingAssignedMap: Record<string, string> = {};
+    // Multi-member preservation queue: Map of `event_title|role` -> Array<{ memberId, agreedAmount, notes }>
+    const existingAssignedMap = new Map<string, Array<{ memberId: string; agreedAmount?: number | null; notes?: string | null }>>();
 
     if (existingSubEvents && existingSubEvents.length > 0) {
       const subEventIds = existingSubEvents.map((e: any) => e.id);
       const { data: existingAssignments } = await supabaseClient
         .from('fw_assignments')
-        .select('sub_event_id, required_role, assigned_member_id')
+        .select('sub_event_id, required_role, assigned_member_id, agreed_amount, notes')
         .in('sub_event_id', subEventIds)
         .not('assigned_member_id', 'is', null);
 
       if (existingAssignments) {
         existingAssignments.forEach((a: any) => {
           const se = existingSubEvents.find((e: any) => e.id === a.sub_event_id);
-          if (se && a.assigned_member_id) {
-            const key = `${se.event_title}|${a.required_role}`;
-            existingAssignedMap[key] = a.assigned_member_id;
+          if (se && a.assigned_member_id && a.required_role) {
+            const key = `${se.event_title.trim().toLowerCase()}|${a.required_role.trim().toLowerCase()}`;
+            if (!existingAssignedMap.has(key)) {
+              existingAssignedMap.set(key, []);
+            }
+            existingAssignedMap.get(key)!.push({
+              memberId: a.assigned_member_id,
+              agreedAmount: a.agreed_amount,
+              notes: a.notes
+            });
           }
         });
       }
@@ -623,12 +845,14 @@ export async function syncQuotationToTeamManagerEvents(
       await supabaseClient.from('fw_sub_events').delete().eq('project_id', targetProjectId);
     }
 
-    // 3. Insert fresh sub-events and restore assignments where applicable
+    // 3. Insert fresh sub-events and restore assignments slot-by-slot
     for (const ev of extractedEvents) {
+      const isDateTbd = Boolean(ev.is_date_tbd || !ev.event_date || ev.event_date === 'Date Not Fixed' || ev.event_date.toLowerCase().includes('tbd'));
       const subEventPayload = {
         project_id: targetProjectId,
         event_title: ev.event_title,
-        event_date: ev.event_date,
+        event_date: isDateTbd ? null : ev.event_date,
+        is_date_tbd: isDateTbd,
         venue_name: ev.venue_name || null,
         venue_map_link: ev.venue_map_link || null,
         roll_call_time: ev.roll_call_time || '10:00 AM',
@@ -646,18 +870,26 @@ export async function syncQuotationToTeamManagerEvents(
         .single();
 
       if (!seErr && insertedSubEvent && ev.roles.length > 0) {
-        const assignmentsPayload = ev.roles.map(role => {
-          const preservedMember = existingAssignedMap[`${ev.event_title}|${role}`] || null;
+        const assignmentsPayload = ev.roles.map((role) => {
+          const key = `${ev.event_title.trim().toLowerCase()}|${role.trim().toLowerCase()}`;
+          const memberQueue = existingAssignedMap.get(key) || [];
+          const preserved = memberQueue.shift() || null;
+
           return {
             project_id: targetProjectId,
             sub_event_id: insertedSubEvent.id,
             sub_event_name: ev.event_title,
-            sub_event_date: ev.event_date,
+            sub_event_date: isDateTbd ? (fallbackEventDate || new Date().toISOString().split('T')[0]) : ev.event_date,
             start_time: ev.roll_call_time || '10:00 AM',
             end_time: ev.dismissal_estimate_time || '06:00 PM',
             required_role: role,
-            assigned_member_id: preservedMember,
-            status: preservedMember ? 'assigned' : 'pending'
+            assigned_member_id: preserved?.memberId || null,
+            agreed_amount: preserved?.agreedAmount || null,
+            notes: preserved?.notes || null,
+            status: preserved?.memberId ? 'assigned' : 'pending',
+            user_id: workspaceId,
+            workspace_id: workspaceId,
+            client_name: clientName.trim()
           };
         });
 

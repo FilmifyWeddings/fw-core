@@ -1,0 +1,97 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400;1,600&family=Inconsolata:wght@300;400;500;600&family=Pinyon+Script&display=swap');
+
+@font-face {
+  font-family: 'Heading Font';
+  src: url('https://static.showit.co/file/O9x7Yp8zLiIGCax30G7XVQ/298575/krew-regular-webfont.woff') format('woff');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Script Font';
+  src: url('https://static.showit.co/file/k5xjyQMfICFWk6RFnAAm9A/298575/ed_fayetteville_script-webfont.woff') format('woff');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --sjs-bg: #EFECE3;
+  --sjs-bg-alt: #E8E4DA;
+  --sjs-text: #292421;
+  --sjs-text-muted: #5C5752;
+  --sjs-border: rgba(41, 36, 33, 0.15);
+  --sjs-accent: #C6B495;
+  --sjs-olive: #5B5835;
+  --sjs-slate: #7B91A2;
+  
+  --font-sjs-heading: 'Heading Font', 'Cormorant Garamond', Georgia, serif;
+  --font-sjs-body: 'Inconsolata', monospace;
+  --font-sjs-script: 'Script Font', 'Pinyon Script', cursive;
+}
+
+.sjs-container {
+  background-color: var(--sjs-bg);
+  color: var(--sjs-text);
+  font-family: var(--font-sjs-body);
+}
+
+.font-sjs-heading {
+  font-family: var(--font-sjs-heading);
+  letter-spacing: 0.02em;
+}
+
+.font-sjs-body {
+  font-family: var(--font-sjs-body);
+}
+
+.font-sjs-script {
+  font-family: var(--font-sjs-script);
+}
+
+/* Custom transitions and polaroid effects */
+.polaroid-card {
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.polaroid-card:hover {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 20px 30px -10px rgba(0, 0, 0, 0.22), 0 10px 15px -5px rgba(0, 0, 0, 0.15);
+}
+
+/* Smooth fade animation for hero carousel */
+@keyframes sjsFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(1.03);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.sjs-slide-active {
+  animation: sjsFadeIn 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Custom scrollbar for filmstrip and drawers */
+.sjs-scrollbar::-webkit-scrollbar {
+  height: 4px;
+  width: 4px;
+}
+
+.sjs-scrollbar::-webkit-scrollbar-track {
+  background: rgba(41, 36, 33, 0.05);
+}
+
+.sjs-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(41, 36, 33, 0.2);
+  border-radius: 9999px;
+}
+
+.sjs-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(41, 36, 33, 0.4);
+}

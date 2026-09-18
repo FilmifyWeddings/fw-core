@@ -41,48 +41,7 @@ interface FlattenedSubEvent {
   sortTimestamp: number;
 }
 
-// Robust assignment resolver ensuring ALL configured roles remain visible (assigned or unassigned)
-const resolveSubEventAssignments = (subEvent: FWSubEvent, teamMembers: FWTeamMember[]): FWAssignment[] => {
-  let rawRoles: string[] = [];
-  if (Array.isArray((subEvent as any).roles)) {
-    rawRoles = (subEvent as any).roles;
-  } else if (typeof (subEvent as any).roles === 'string') {
-    try { rawRoles = JSON.parse((subEvent as any).roles); } catch (e) {}
-  } else if (Array.isArray((subEvent as any).roles_assigned)) {
-    rawRoles = (subEvent as any).roles_assigned;
-  } else if (Array.isArray((subEvent as any).event_roles)) {
-    rawRoles = (subEvent as any).event_roles;
-  }
-
-  const existingAssignments = subEvent.fw_assignments || [];
-  const assignRoles = existingAssignments.map(a => a.required_role).filter(Boolean);
-  const allRoles = Array.from(new Set([...rawRoles, ...assignRoles]));
-
-  if (allRoles.length === 0) {
-    return existingAssignments;
-  }
-
-  return allRoles.map((role: string, idx: number) => {
-    const existing = existingAssignments.find(
-      a => a.required_role?.toLowerCase() === role.toLowerCase()
-    );
-    if (existing) {
-      const matched = existing.fw_team_members || (existing.assigned_member_id ? teamMembers.find(m => m.id === existing.assigned_member_id) : null);
-      return {
-        ...existing,
-        fw_team_members: matched || existing.fw_team_members || null
-      };
-    }
-    return {
-      id: `${subEvent.id}-role-${idx}`,
-      sub_event_id: subEvent.id,
-      project_id: subEvent.project_id,
-      required_role: role,
-      assigned_member_id: null,
-      fw_team_members: null,
-    };
-  });
-};
+import { resolveSubEventAssignments } from '@/lib/team-helpers';
 
 export default function MonthListView({
   projects,

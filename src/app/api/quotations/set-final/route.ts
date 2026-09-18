@@ -127,52 +127,87 @@ export async function POST(req: NextRequest) {
       // Extract exact totals and milestones
       const financials = extractFinancialsFromQuotation(finalDoc.content_json, eventDate);
 
-      // Create or update workspace client
+      let workspaceClientId: string | null = null;
+
+      // Create or update workspace_clients and client_finance_records
       try {
-        let clientId: string | null = null;
         if (workspaceId) {
-          const { data: existingClient } = await supabaseAdmin
-            .from('clients')
-            .select('id')
-            .eq('workspace_id', workspaceId)
-            .ilike('name', clientName.trim())
+          const { data: existingWorkspaceClient } = await supabaseAdmin
+            .from('workspace_clients')
+            .select('id, total_package_amount, paid_amount')
+            .or(`lead_id.eq.${leadId},id.eq.${leadId}`)
             .maybeSingle();
 
-          if (existingClient?.id) {
-            clientId = existingClient.id;
-          } else {
-            const { data: newClient } = await supabaseAdmin
-              .from('clients')
-              .insert({
-                workspace_id: workspaceId,
+          if (existingWorkspaceClient?.id) {
+            workspaceClientId = existingWorkspaceClient.id;
+            await supabaseAdmin
+              .from('workspace_clients')
+              .update({
                 name: clientName.trim(),
-                phone: leadData?.phone || null,
-                email: leadData?.email || null,
-                created_at: now,
+                phone: leadData?.phone || undefined,
+                email: leadData?.email || undefined,
+                event_date: eventDate || undefined,
+                event_type: financials.event_type || undefined,
+                total_package_amount: financials.final_total_amount,
+                paid_amount: financials.received_amount,
+                lead_id: leadId,
                 updated_at: now
               })
+              .eq('id', workspaceClientId);
+          } else {
+            // Also check by workspace_id + name
+            const { data: clientByName } = await supabaseAdmin
+              .from('workspace_clients')
               .select('id')
-              .single();
-            clientId = newClient?.id || null;
+              .eq('workspace_id', workspaceId)
+              .ilike('name', clientName.trim())
+              .maybeSingle();
+
+            if (clientByName?.id) {
+              workspaceClientId = clientByName.id;
+              await supabaseAdmin
+                .from('workspace_clients')
+                .update({
+                  lead_id: leadId,
+                  event_date: eventDate || undefined,
+                  event_type: financials.event_type || undefined,
+                  total_package_amount: financials.final_total_amount,
+                  paid_amount: financials.received_amount,
+                  updated_at: now
+                })
+                .eq('id', workspaceClientId);
+            } else {
+              const { data: newWsClient } = await supabaseAdmin
+                .from('workspace_clients')
+                .insert({
+                  user_id: workspaceId,
+                  workspace_id: workspaceId,
+                  lead_id: leadId,
+                  name: clientName.trim(),
+                  phone: leadData?.phone || null,
+                  email: leadData?.email || null,
+                  event_type: financials.event_type || 'Wedding Photography',
+                  event_date: eventDate || null,
+                  total_package_amount: financials.final_total_amount,
+                  paid_amount: financials.received_amount,
+                  status: 'active',
+                  notes: `Auto-created from Final Quotation V${finalDoc.version || finalDoc.lead_version || '1'}.`,
+                  created_at: now,
+                  updated_at: now
+                })
+                .select('id')
+                .single();
+              workspaceClientId = newWsClient?.id || null;
+            }
           }
         }
 
-        // Upsert finance record
-        if (workspaceId) {
-          const { data: existingFinance } = await supabaseAdmin
-            .from('finance_records')
-            .select('id')
-            .eq('workspace_id', workspaceId)
-            .or(`client_name.ilike.${clientName.trim()},lead_id.eq.${leadId}`)
-            .maybeSingle();
-
-          const financePayload = {
+        // Upsert client_finance_records (Direct source of truth for Finance page)
+        if (workspaceId && workspaceClientId) {
+          const clientFinPayload = {
+            user_id: workspaceId,
             workspace_id: workspaceId,
-            client_id: clientId,
-            lead_id: leadId,
-            client_name: clientName.trim(),
-            event_name: finalDoc.content_json?.meta?.project_name || 'Wedding Photography',
-            event_date: eventDate,
+            client_id: workspaceClientId,
             base_package_price: financials.base_package_price || financials.subtotal_amount,
             discount_amount: financials.discount_amount || 0,
             accommodation_charges: financials.accommodation_charges || 0,
@@ -185,24 +220,101 @@ export async function POST(req: NextRequest) {
             received_amount: financials.received_amount,
             pending_amount: financials.pending_amount,
             payment_status: financials.payment_status,
-            payment_type: 'custom',
+            milestones: financials.milestones,
             notes: `Auto-generated from Final Quotation V${finalDoc.version || finalDoc.lead_version || '1'}.`,
             updated_at: now
           };
 
-          if (existingFinance?.id) {
+          const { data: existingClientFin } = await supabaseAdmin
+            .from('client_finance_records')
+            .select('id')
+            .eq('client_id', workspaceClientId)
+            .maybeSingle();
+
+          if (existingClientFin?.id) {
             await supabaseAdmin
-              .from('finance_records')
-              .update(financePayload)
-              .eq('id', existingFinance.id);
+              .from('client_finance_records')
+              .update(clientFinPayload)
+              .eq('id', existingClientFin.id);
           } else {
             await supabaseAdmin
-              .from('finance_records')
+              .from('client_finance_records')
               .insert({
-                ...financePayload,
+                ...clientFinPayload,
                 created_at: now
               });
           }
+        }
+
+        // Legacy fallback: clients & finance_records for backwards compatibility
+        if (workspaceId) {
+          try {
+            const { data: existingClient } = await supabaseAdmin
+              .from('clients')
+              .select('id')
+              .eq('workspace_id', workspaceId)
+              .ilike('name', clientName.trim())
+              .maybeSingle();
+
+            let legacyClientId = existingClient?.id;
+            if (!legacyClientId) {
+              const { data: newClient } = await supabaseAdmin
+                .from('clients')
+                .insert({
+                  workspace_id: workspaceId,
+                  name: clientName.trim(),
+                  phone: leadData?.phone || null,
+                  email: leadData?.email || null,
+                  created_at: now,
+                  updated_at: now
+                })
+                .select('id')
+                .single();
+              legacyClientId = newClient?.id;
+            }
+
+            const { data: existingFinance } = await supabaseAdmin
+              .from('finance_records')
+              .select('id')
+              .eq('workspace_id', workspaceId)
+              .or(`client_name.ilike.${clientName.trim()},lead_id.eq.${leadId}`)
+              .maybeSingle();
+
+            const legacyFinancePayload = {
+              workspace_id: workspaceId,
+              client_id: legacyClientId || workspaceClientId,
+              lead_id: leadId,
+              client_name: clientName.trim(),
+              event_name: finalDoc.content_json?.meta?.project_name || 'Wedding Photography',
+              event_date: eventDate,
+              base_package_price: financials.base_package_price || financials.subtotal_amount,
+              discount_amount: financials.discount_amount || 0,
+              accommodation_charges: financials.accommodation_charges || 0,
+              travel_charges: financials.travel_charges || 0,
+              additional_charges: financials.additional_charges || 0,
+              subtotal_amount: financials.subtotal_amount,
+              gst_rate: financials.gst_rate || 0,
+              gst_amount: financials.gst_amount || 0,
+              final_total_amount: financials.final_total_amount,
+              received_amount: financials.received_amount,
+              pending_amount: financials.pending_amount,
+              payment_status: financials.payment_status,
+              payment_type: 'custom',
+              notes: `Auto-generated from Final Quotation V${finalDoc.version || finalDoc.lead_version || '1'}.`,
+              updated_at: now
+            };
+
+            if (existingFinance?.id) {
+              await supabaseAdmin
+                .from('finance_records')
+                .update(legacyFinancePayload)
+                .eq('id', existingFinance.id);
+            } else {
+              await supabaseAdmin
+                .from('finance_records')
+                .insert({ ...legacyFinancePayload, created_at: now });
+            }
+          } catch (_) {}
         }
       } catch (finErr) {
         console.error('[Set-Final] Error syncing finance record:', finErr);
@@ -217,7 +329,9 @@ export async function POST(req: NextRequest) {
             finalDoc.content_json,
             clientName,
             workspaceId,
-            eventDate
+            eventDate,
+            finalDoc.content_json?.meta?.venue || finalDoc.content_json?.cover?.venue || null,
+            workspaceClientId
           );
         }
       } catch (tmErr) {

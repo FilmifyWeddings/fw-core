@@ -434,7 +434,10 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     pathname.startsWith('/g/') ||
     pathname.startsWith('/attendance/') ||
     pathname.startsWith('/workspace/quotations/builder') ||
-    pathname.startsWith('/admin/workspace/quotations/builder');
+    pathname.startsWith('/admin/workspace/quotations/builder') ||
+    pathname.startsWith('/bee-queen-curtail') ||
+    pathname === '/sarajosmith' ||
+    pathname.startsWith('/sarajosmith');
 
   if (isStandalonePage) {
     return <div className="min-h-screen w-full bg-[#FFFDF8] text-zinc-900">{children}</div>;

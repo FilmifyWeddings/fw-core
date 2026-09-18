@@ -170,7 +170,7 @@ export function FinanceAnalyticsView({
     };
 
     const recs = records.filter(r => {
-      const matchDate = r.created_at || r.client?.event_date;
+      const matchDate = r.milestones?.[0]?.paid_date || (r.milestones?.[0] as any)?.payment_date || r.milestones?.[0]?.due_date || r.created_at;
       return isDateInFilter(matchDate);
     });
 
@@ -213,7 +213,7 @@ export function FinanceAnalyticsView({
       const monthLabel = `${months[mIdx]} '${yr.toString().slice(-2)}`;
 
       const monthRecs = records.filter(r => {
-        const dStr = r.created_at || r.client?.event_date;
+        const dStr = r.milestones?.[0]?.paid_date || (r.milestones?.[0] as any)?.payment_date || r.milestones?.[0]?.due_date || r.created_at;
         if (!dStr) return false;
         const d = new Date(dStr);
         return d.getMonth() === mIdx && d.getFullYear() === yr;

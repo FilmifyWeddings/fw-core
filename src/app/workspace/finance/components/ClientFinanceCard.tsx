@@ -16,6 +16,7 @@ import {
   CreditCard
 } from 'lucide-react';
 import { MilestoneSchedule } from './MilestoneSchedule';
+import { HandledByMultiSelect, FinanceTeamMember, isPlaceholderName } from './HandledByMultiSelect';
 import type { ClientFinanceRecord, FinanceMilestoneItem } from '@/types';
 
 interface ClientFinanceCardProps {
@@ -24,6 +25,7 @@ interface ClientFinanceCardProps {
   onToggle: () => void;
   todayStr: string;
   teamMembersList: string[];
+  financeTeamMembers?: FinanceTeamMember[];
   paymentMilestoneTemplates: string[];
   onAssignTeamMember: (clientId: string, memberName: string) => void;
   onAddNewTeamMember: (clientId: string, memberName: string) => void;
@@ -88,6 +90,7 @@ export function ClientFinanceCard({
   onToggle,
   todayStr,
   teamMembersList,
+  financeTeamMembers,
   paymentMilestoneTemplates,
   onAssignTeamMember,
   onAddNewTeamMember,
@@ -136,7 +139,8 @@ export function ClientFinanceCard({
   const recAmt = Number(record.received_amount) || 0;
   const pendAmt = Number(record.pending_amount) || Math.max(0, finalTotal - recAmt);
 
-  const handledBy = (client as any)?.assigned_team_member || (client as any)?.handled_by || 'Unassigned';
+  const rawHandled = (client as any)?.assigned_team_member || (client as any)?.handled_by || 'Unassigned';
+  const handledBy = isPlaceholderName(rawHandled) ? 'Unassigned' : rawHandled;
 
   // 🔍 Calculate matching payment milestone for highlighted badge & accurate dates
   const matchedPayment = useMemo<MatchedPaymentHighlight | null>(() => {
@@ -201,6 +205,28 @@ export function ClientFinanceCard({
     };
   }, [milestones, startDate, endDate, revenueTypeFilter, statusFilter]);
 
+  // 🔍 Calculate matching due milestone for pending/overdue filters
+  const matchedDueMilestone = useMemo(() => {
+    if (!milestones || milestones.length === 0) return null;
+    const pendingMilestones = milestones.filter(m => {
+      const isPaid = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed' || (m as any).paidDate || (m as any).paid_date;
+      if (isPaid) return false;
+      if (!m.due_date) return false;
+      if (startDate && m.due_date < startDate) return false;
+      if (endDate && m.due_date > endDate) return false;
+      return true;
+    });
+    if (pendingMilestones.length > 0) return pendingMilestones[0];
+    if (statusFilter === 'pending' || statusFilter === 'overdue_only') {
+      const anyDue = milestones.filter(m => m.status !== 'completed' && m.status !== 'paid' && m.due_date);
+      return anyDue[0] || null;
+    }
+    return null;
+  }, [milestones, startDate, endDate, statusFilter]);
+
+  const step1 = milestones?.[0] || null;
+  const step1Date = step1?.paid_date || (step1 as any)?.paidDate || (step1 as any)?.payment_date || step1?.due_date || (record as any).created_at?.split('T')[0];
+
   const handleSaveMember = () => {
     if (newMemberName.trim()) {
       onAddNewTeamMember(record.client_id, newMemberName.trim());
@@ -247,49 +273,16 @@ export function ClientFinanceCard({
                 {record.payment_status === 'paid' || (finalTotal > 0 && pendAmt === 0) ? 'Paid Full' : recAmt > 0 ? 'Partially Paid' : 'Pending'}
               </span>
 
-              {/* 🌟 Milestone Payment Highlight Badge (Yellow #FEF08A) */}
-              {matchedPayment && (
-                <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#FEF08A] text-amber-950 border border-amber-300 font-bold text-[10px] shadow-2xs">
-                  <span className="font-black text-amber-900 truncate max-w-[120px] sm:max-w-[180px]">
-                    💰 {matchedPayment.step_name}
-                  </span>
-                  <span className="text-amber-500 font-black">•</span>
-                  <span className="font-mono text-emerald-800 font-black shrink-0">
-                    +₹{matchedPayment.amount.toLocaleString('en-IN')}
-                  </span>
-                  <span className="text-amber-500 font-black">•</span>
-                  <span className="font-mono text-slate-800 font-bold shrink-0">
-                    {formatDateDDMMYYYY(matchedPayment.paid_date)}
-                  </span>
-                </div>
-              )}
             </div>
 
             <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mt-0.5 truncate font-medium">
               <span className="truncate">
                 {client?.event_type || 'Wedding Photography'}
               </span>
-              <span>•</span>
-              <span className="shrink-0 font-medium">
-                {matchedPayment?.paid_date ? (
-                  <span className="text-emerald-700 font-bold flex items-center gap-1">
-                    <span>Paid: {formatDateDDMMYYYY(matchedPayment.paid_date)}</span>
-                    {client?.event_date && (
-                      <span className="text-slate-400 font-normal">
-                        • Event: {new Date(client.event_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
-                      </span>
-                    )}
-                  </span>
-                ) : client?.event_date ? (
-                  new Date(client.event_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-                ) : (
-                  'Date TBD'
-                )}
-              </span>
               {(client as any)?.city && (
                 <>
-                  <span className="hidden sm:inline">•</span>
-                  <span className="hidden sm:inline text-slate-400 truncate">{(client as any).city}</span>
+                  <span className="text-slate-300">•</span>
+                  <span className="text-slate-400 truncate">{(client as any).city}</span>
                 </>
               )}
             </div>
@@ -444,49 +437,12 @@ export function ClientFinanceCard({
                     <h4 className="text-[11px] font-black tracking-wider uppercase text-slate-700">
                       Pricing Breakdown
                     </h4>
-                    <div className="flex items-center gap-1.5 py-0.5 max-w-full overflow-hidden">
-                      <UserCheck className="w-3 h-3 text-purple-600 shrink-0" />
-                      <span className="text-[11px] font-semibold text-slate-500 shrink-0">Handled by:</span>
-                      {addingMember ? (
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="text"
-                            placeholder="Name..."
-                            value={newMemberName}
-                            onChange={(e) => setNewMemberName(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && handleSaveMember()}
-                            className="px-1.5 py-0.5 text-[11px] font-bold text-purple-700 border border-slate-300 rounded bg-white w-24 focus:outline-none"
-                            autoFocus
-                          />
-                          <button type="button" onClick={handleSaveMember} className="p-0.5 bg-amber-600 text-white rounded hover:bg-amber-700 cursor-pointer">
-                            <Check className="w-2.5 h-2.5" />
-                          </button>
-                          <button type="button" onClick={() => setAddingMember(false)} className="p-0.5 text-slate-400 hover:text-slate-600 cursor-pointer">
-                            <X className="w-2.5 h-2.5" />
-                          </button>
-                        </div>
-                      ) : (
-                        <select
-                          value={handledBy}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            if (val === '__add_new__') {
-                              setAddingMember(true);
-                              setNewMemberName('');
-                            } else {
-                              onAssignTeamMember(record.client_id, val);
-                            }
-                          }}
-                          className="!text-[11px] leading-tight font-bold text-purple-700 truncate max-w-[180px] sm:max-w-[260px] bg-transparent border-none p-0 focus:ring-0 cursor-pointer outline-none [font-size:11px!important]"
-                          style={{ fontSize: '11px' }}
-                        >
-                          <option value="__add_new__">✨ + Add Member</option>
-                          <option value="Unassigned">Unassigned</option>
-                          {teamMembersList.map(m => (
-                            <option key={m} value={m}>{m}</option>
-                          ))}
-                        </select>
-                      )}
+                    <div className="py-0.5">
+                      <HandledByMultiSelect
+                        value={handledBy}
+                        onChange={(newVal) => onAssignTeamMember(record.client_id, newVal)}
+                        financeMembers={financeTeamMembers || []}
+                      />
                     </div>
                   </div>
 

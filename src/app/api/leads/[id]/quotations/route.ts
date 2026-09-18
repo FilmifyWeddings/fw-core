@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { resolveUserDefaultQuotationTemplate } from '@/lib/quotation-template-resolver';
-import { extractFinancialsFromQuotation } from '@/lib/quotation-finance-sync';
+import { extractFinancialsFromQuotation, syncQuotationToTeamManagerEvents } from '@/lib/quotation-finance-sync';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -622,6 +622,21 @@ export async function POST(
             await supabaseAdmin
               .from('client_finance_records')
               .insert([{ ...finPayload, created_at: now }]);
+          }
+
+          try {
+            await syncQuotationToTeamManagerEvents(
+              supabaseAdmin,
+              leadId,
+              newQuotationJson,
+              leadName,
+              currentUserId,
+              calcFin.event_date || null,
+              newQuotationJson?.cover?.venue || null,
+              lc.id
+            );
+          } catch (tmErr) {
+            console.error('[leads/[id]/quotations] Error syncing team manager events:', tmErr);
           }
         }
       }

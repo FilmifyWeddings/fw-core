@@ -4,6 +4,13 @@ import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Filter, Calendar, Users } from 'lucide-react';
 
+export const formatLocalDate = (d: Date): string => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export interface FinanceFiltersModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -122,27 +129,34 @@ export function FinanceFiltersModal({
                       setDateRangePreset(val);
                       const now = new Date();
                       if (val === 'today') {
-                        const str = now.toISOString().split('T')[0];
+                        const str = formatLocalDate(now);
                         setStartDate(str);
                         setEndDate(str);
                       } else if (val === 'yesterday') {
-                        const y = new Date(now.getTime() - 86400000).toISOString().split('T')[0];
+                        const yest = new Date(now);
+                        yest.setDate(now.getDate() - 1);
+                        const y = formatLocalDate(yest);
                         setStartDate(y);
                         setEndDate(y);
                       } else if (val === 'this_week') {
-                        const firstDay = new Date(now.setDate(now.getDate() - now.getDay())).toISOString().split('T')[0];
-                        const lastDay = new Date(now.setDate(now.getDate() - now.getDay() + 6)).toISOString().split('T')[0];
-                        setStartDate(firstDay);
-                        setEndDate(lastDay);
+                        const day = now.getDay();
+                        const diffToMonday = (day === 0 ? -6 : 1) - day;
+                        const monday = new Date(now);
+                        monday.setDate(now.getDate() + diffToMonday);
+                        const sunday = new Date(monday);
+                        sunday.setDate(monday.getDate() + 6);
+                        setStartDate(formatLocalDate(monday));
+                        setEndDate(formatLocalDate(sunday));
                       } else if (val === 'this_month') {
-                        const first = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-                        const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
-                        setStartDate(first);
-                        setEndDate(last);
+                        const first = new Date(now.getFullYear(), now.getMonth(), 1);
+                        const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+                        setStartDate(formatLocalDate(first));
+                        setEndDate(formatLocalDate(last));
                       } else if (val === 'last_30_days') {
-                        const past = new Date(now.getTime() - 30 * 86400000).toISOString().split('T')[0];
-                        setStartDate(past);
-                        setEndDate(now.toISOString().split('T')[0]);
+                        const past = new Date(now);
+                        past.setDate(now.getDate() - 29);
+                        setStartDate(formatLocalDate(past));
+                        setEndDate(formatLocalDate(now));
                       } else if (val === 'all') {
                         setStartDate('');
                         setEndDate('');
@@ -183,9 +197,21 @@ export function FinanceFiltersModal({
                 </div>
               </div>
 
-              {statusFilter === 'received' && (
+              {statusFilter === 'received' ? (
                 <p className="text-[10px] text-emerald-800 font-semibold leading-tight pt-0.5">
                   ⚡ Single unified date range matches milestone payment received dates for &quot;Payment Received&quot; status.
+                </p>
+              ) : statusFilter === 'pending' || statusFilter === 'overdue_only' ? (
+                <p className="text-[10px] text-amber-800 font-semibold leading-tight pt-0.5">
+                  ⚡ Matches milestone pending due dates for &quot;Pending / Overdue&quot; status.
+                </p>
+              ) : statusFilter === 'partially_paid' ? (
+                <p className="text-[10px] text-orange-800 font-semibold leading-tight pt-0.5">
+                  ⚡ Matches milestone payment / due dates for &quot;Partially Paid&quot; status.
+                </p>
+              ) : (
+                <p className="text-[10px] text-amber-900 font-semibold leading-tight pt-0.5">
+                  ⚡ Matches contract first payment step (Token / Advance booking date).
                 </p>
               )}
             </div>

@@ -2,22 +2,62 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Users, UserPlus, Layers, Plus, X, Check } from 'lucide-react';
-import { WorkspaceCrewRole, saveWorkspaceCrewRole, getRoleShortCode } from '@/lib/workspace-settings';
+import { Users, UserPlus, Plus, Minus, Trash2, Sparkles, Check } from 'lucide-react';
+import { WorkspaceCrewRole, saveWorkspaceCrewRole, getRoleShortCode, DEFAULT_CREW_ROLES } from '@/lib/workspace-settings';
 import { useWorkspaceData } from '@/context/WorkspaceDataContext';
 
 interface RoleGridProps {
   selectedRoles: string[];
-  onToggle: (role: string) => void;
+  onToggle?: (role: string) => void;
+  onIncrement?: (role: string) => void;
+  onDecrement?: (role: string) => void;
+  onRemoveAll?: (role: string) => void;
   onAddCustom: (role: string) => void;
 }
 
-export default function RoleGrid({ selectedRoles, onToggle, onAddCustom }: RoleGridProps) {
+// Maps short codes or raw names to clean, readable full names
+const getReadableRoleName = (rawName: string, code: string): string => {
+  const clean = (rawName || '').trim();
+  const upper = clean.toUpperCase();
+  const upperCode = (code || '').toUpperCase();
+
+  if (upper === 'CV' || upperCode === 'CV' || clean.toLowerCase() === 'cinematic') return 'Cinematographer';
+  if (upper === 'CP' || upperCode === 'CP') return 'Candid Photographer';
+  if (upper === 'TP' || upperCode === 'TP') return 'Traditional Photographer';
+  if (upper === 'TV' || upperCode === 'TV') return 'Traditional Videographer';
+  if (upper === 'DP' || upperCode === 'DP') return 'Drone Pilot';
+  if (upper === 'AS' || upperCode === 'AS' || upper === 'AST') return 'Assistant';
+  if (upper === 'RC' || upperCode === 'RC') return 'Reels Creator';
+  if (upper === 'TM' || upperCode === 'TM') return 'Team Manager';
+  if (upper === 'SP' || upperCode === 'SP') return 'Sales Person';
+  if (upper === 'P' || upper === 'PH' || upperCode === 'P' || upperCode === 'PH') return 'Photographer';
+  if (upper === 'PM' || upperCode === 'PM') return 'Project Manager';
+  if (upper === 'FP' || upperCode === 'FP') return 'Family Photographer';
+  if (upper === 'LS' || upperCode === 'LS') return 'Live Streaming';
+  if (upper === 'CRW') return 'Crew Member';
+
+  if (clean.length > 2) {
+    return clean;
+  }
+  return clean || code;
+};
+
+export default function RoleGrid({
+  selectedRoles,
+  onToggle,
+  onIncrement,
+  onDecrement,
+  onRemoveAll,
+  onAddCustom
+}: RoleGridProps) {
   const { crewRoles } = useWorkspaceData();
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [customRole, setCustomRole] = useState('');
   const [customRoleCode, setCustomRoleCode] = useState('');
-  const [dbRoles, setDbRoles] = useState<WorkspaceCrewRole[]>(crewRoles || []);
+  const [dbRoles, setDbRoles] = useState<WorkspaceCrewRole[]>(() => {
+    if (crewRoles && crewRoles.length > 0) return crewRoles;
+    return DEFAULT_CREW_ROLES;
+  });
 
   useEffect(() => {
     if (crewRoles && crewRoles.length > 0) {
@@ -25,12 +65,40 @@ export default function RoleGrid({ selectedRoles, onToggle, onAddCustom }: RoleG
     }
   }, [crewRoles]);
 
+  const handleIncrement = (roleName: string) => {
+    if (onIncrement) {
+      onIncrement(roleName);
+    } else if (onToggle) {
+      onToggle(roleName);
+    }
+  };
+
+  const handleDecrement = (roleName: string) => {
+    if (onDecrement) {
+      onDecrement(roleName);
+    } else if (onToggle) {
+      onToggle(roleName);
+    }
+  };
+
+  const handleRemoveAll = (roleName: string) => {
+    if (onRemoveAll) {
+      onRemoveAll(roleName);
+    } else {
+      const count = getItemCount({ name: roleName, code: getRoleShortCode(roleName, dbRoles) });
+      for (let i = 0; i < count; i++) {
+        handleDecrement(roleName);
+      }
+    }
+  };
+
   const handleAddRole = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (customRole.trim()) {
       const newRole = customRole.trim();
       const code = (customRoleCode.trim() || getRoleShortCode(newRole, dbRoles)).toUpperCase();
       onAddCustom(newRole);
+      handleIncrement(newRole);
       const saved = await saveWorkspaceCrewRole('', newRole, code);
       if (saved) {
         setDbRoles(prev => [...prev.filter(r => r.name.toLowerCase() !== newRole.toLowerCase()), saved]);
@@ -41,48 +109,91 @@ export default function RoleGrid({ selectedRoles, onToggle, onAddCustom }: RoleG
     }
   };
 
-  // Build authoritative list of roles from Settings + any already selected custom role (deduplicated)
-  const seenNames = new Set<string>();
+  // Build authoritative list of roles (deduplicated by both canonical name and short code)
+  const seenKeys = new Set<string>();
   const displayItems: Array<{ name: string; code: string }> = [];
-  dbRoles.forEach(r => {
-    const key = (r.name || '').trim().toLowerCase();
-    if (!key || seenNames.has(key)) return;
-    seenNames.add(key);
+
+  const addDisplayItem = (name: string, rawCode?: string) => {
+    const cleanName = (name || '').trim();
+    if (!cleanName) return;
+    const cleanCode = (rawCode || getRoleShortCode(cleanName, dbRoles)).trim().toUpperCase();
+
+    const nameKey = cleanName.toLowerCase();
+    const codeKey = cleanCode.toLowerCase();
+
+    // Prevent duplicate pills (e.g. if both 'CV' and 'Cinematographer' exist)
+    if (seenKeys.has(nameKey) || seenKeys.has(codeKey)) {
+      return;
+    }
+
+    seenKeys.add(nameKey);
+    seenKeys.add(codeKey);
     displayItems.push({
-      name: r.name,
-      code: r.short_code || getRoleShortCode(r.name, dbRoles)
+      name: cleanName,
+      code: cleanCode
     });
+  };
+
+  dbRoles.forEach(r => {
+    addDisplayItem(r.name, r.short_code);
   });
 
-  // Ensure any selected roles not in dbRoles are also displayed
+  // Ensure any selected roles not in dbRoles are also included
   selectedRoles.forEach(sel => {
-    const exists = displayItems.some(d => d.name.toLowerCase() === sel.toLowerCase() || d.code.toLowerCase() === sel.toLowerCase());
-    if (!exists) {
-      displayItems.push({
-        name: sel,
-        code: getRoleShortCode(sel, dbRoles)
-      });
+    addDisplayItem(sel);
+  });
+
+  // Count instances for an item (matching name or short code)
+  const getItemCount = (item: { name: string; code: string }): number => {
+    const targetName = item.name.trim().toLowerCase();
+    const targetCode = item.code.trim().toLowerCase();
+    return selectedRoles.filter(r => {
+      const rClean = (r || '').trim().toLowerCase();
+      if (!rClean) return false;
+      if (rClean === targetName || rClean === targetCode) return true;
+      const rCode = getRoleShortCode(rClean, dbRoles).toLowerCase();
+      return rCode === targetCode;
+    }).length;
+  };
+
+  // Partition into Active (Allocated) and Available to add
+  const activeItems: Array<{ name: string; code: string; readableName: string; count: number }> = [];
+  const availableItems: Array<{ name: string; code: string; readableName: string }> = [];
+
+  displayItems.forEach(item => {
+    const count = getItemCount(item);
+    const readableName = getReadableRoleName(item.name, item.code);
+    if (count > 0) {
+      activeItems.push({ ...item, readableName, count });
+    } else {
+      availableItems.push({ ...item, readableName });
     }
   });
 
   return (
-    <div className="space-y-2 pt-2">
+    <div className="space-y-2.5 pt-2">
+      {/* Header bar with total slot count */}
       <div className="flex items-center justify-between gap-2 flex-wrap border-b border-slate-100 pb-2">
-        <div className="flex items-center gap-1.5 text-slate-900 font-extrabold text-xs">
-          <Users className="w-4 h-4 text-[#6C5CE7]" />
-          <span className="text-[11px] font-bold text-[#0B111E] uppercase tracking-wider">
-            Crew Role Placements ({selectedRoles.length} Selected)
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded-lg bg-[#6C5CE7]/10 flex items-center justify-center text-[#6C5CE7]">
+            <Users className="w-3.5 h-3.5" />
+          </div>
+          <span className="text-[11px] font-black text-[#0B111E] uppercase tracking-wider">
+            Crew Role Placements
+          </span>
+          <span className="text-[11px] font-black px-2.5 py-0.5 rounded-full bg-[#6C5CE7] text-white shadow-2xs">
+            {selectedRoles.length} {selectedRoles.length === 1 ? 'Slot' : 'Slots'} Selected
           </span>
         </div>
 
-        {/* Add Role Button */}
+        {/* Add Custom Role Button */}
         <button
           type="button"
           onClick={() => setShowCustomInput(!showCustomInput)}
           className="text-xs font-extrabold text-[#6C5CE7] hover:text-[#5b4cd1] transition flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100/80 border border-indigo-200 px-3 py-1 rounded-xl cursor-pointer shadow-2xs active:scale-95"
         >
           <UserPlus className="w-3.5 h-3.5" />
-          <span>+ Add Role</span>
+          <span>+ Custom Role</span>
         </button>
       </div>
 
@@ -122,39 +233,106 @@ export default function RoleGrid({ selectedRoles, onToggle, onAddCustom }: RoleG
                 className="bg-[#6C5CE7] text-white text-xs font-black px-4 py-2 rounded-xl hover:bg-[#5b4cd1] transition shadow-md shadow-[#6C5CE7]/20 flex items-center justify-center gap-1 cursor-pointer shrink-0"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Save Role</span>
+                <span>Save & Add</span>
               </button>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Role buttons grid showing Short Form with Full Name in Tooltip */}
-      <div className="flex flex-wrap gap-1.5 pt-1">
-        {displayItems.map((item) => {
-          const isSelected = selectedRoles.some(r => r.toLowerCase() === item.name.toLowerCase() || r.toLowerCase() === item.code.toLowerCase());
-          return (
-            <button
+      {/* SECTION 1: ALLOCATED CREW CARDS (Active Requirements) */}
+      {activeItems.length > 0 ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 pt-0.5">
+          {activeItems.map((item) => (
+            <div
               key={`${item.name}-${item.code}`}
-              type="button"
-              title={`${item.name} (${item.code})`}
-              onClick={() => onToggle(item.name)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all inline-flex items-center gap-1.5 cursor-pointer select-none border group/pill ${
-                isSelected
-                  ? 'bg-[#6C5CE7] text-white shadow-xs border-[#6C5CE7] scale-[1.02]'
-                  : 'bg-white text-slate-700 hover:bg-indigo-50 hover:text-indigo-900 border-slate-200 shadow-2xs'
-              }`}
+              className="flex items-center justify-between bg-white border border-indigo-200/90 hover:border-[#6C5CE7] rounded-xl px-3 py-2 shadow-2xs transition-all group"
             >
-              <span className={`font-black text-xs ${isSelected ? 'text-white' : 'text-indigo-600'}`}>{item.code}</span>
-              {isSelected ? (
-                <Check className="w-3 h-3 text-white stroke-[3] shrink-0" />
-              ) : (
-                <Plus className="w-3 h-3 text-slate-400 group-hover/pill:text-indigo-600 shrink-0" />
-              )}
-            </button>
-          );
-        })}
-      </div>
+              {/* Left: Role Name & Code badge */}
+              <div className="flex items-center gap-2 min-w-0 pr-2">
+                <span className="font-mono font-black text-[10px] bg-indigo-50 text-[#6C5CE7] border border-indigo-200/80 px-1.5 py-0.5 rounded-md uppercase shrink-0">
+                  {item.code}
+                </span>
+                <span className="font-extrabold text-xs text-slate-900 truncate leading-tight" title={item.readableName}>
+                  {item.readableName}
+                </span>
+              </div>
+
+              {/* Right: Stepper [-] count [+] and Trash */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center bg-slate-100/90 border border-slate-200 rounded-lg p-0.5 shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => handleDecrement(item.name)}
+                    title={`Remove 1 ${item.readableName}`}
+                    aria-label={`Decrease ${item.readableName}`}
+                    className="w-5.5 h-5.5 flex items-center justify-center rounded-md bg-white hover:bg-rose-50 text-slate-700 hover:text-rose-600 border border-slate-200/60 shadow-2xs transition active:scale-90 cursor-pointer"
+                  >
+                    <Minus className="w-3 h-3 stroke-[2.5]" />
+                  </button>
+
+                  <span className="w-6 text-center font-black text-xs text-indigo-950 select-none">
+                    {item.count}
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => handleIncrement(item.name)}
+                    title={`Add another ${item.readableName}`}
+                    aria-label={`Increase ${item.readableName}`}
+                    className="w-5.5 h-5.5 flex items-center justify-center rounded-md bg-[#6C5CE7] hover:bg-[#5b4cd1] text-white shadow-2xs transition active:scale-90 cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3 stroke-[2.5]" />
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleRemoveAll(item.name)}
+                  title={`Remove all ${item.readableName} slots`}
+                  aria-label={`Delete ${item.readableName}`}
+                  className="w-6 h-6 flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition active:scale-90 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="py-2.5 px-3 rounded-xl border border-dashed border-amber-300 bg-amber-50/50 text-center">
+          <p className="text-xs font-semibold text-amber-900">
+            No crew roles allocated yet. Click any role below to add to this event.
+          </p>
+        </div>
+      )}
+
+      {/* SECTION 2: AVAILABLE ROLES TO ADD */}
+      {availableItems.length > 0 && (
+        <div className="pt-1">
+          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+            <Sparkles className="w-3 h-3 text-amber-500" />
+            <span>Available Roles to Add:</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {availableItems.map((item) => (
+              <button
+                key={`${item.name}-${item.code}`}
+                type="button"
+                onClick={() => handleIncrement(item.name)}
+                title={`Add ${item.readableName}`}
+                className="px-2.5 py-1 rounded-xl text-xs font-bold border border-dashed border-slate-300 bg-white hover:bg-indigo-50/80 hover:border-indigo-400 hover:text-indigo-950 text-slate-700 transition flex items-center gap-1.5 cursor-pointer shadow-2xs group active:scale-95"
+              >
+                <Plus className="w-3 h-3 text-indigo-500 group-hover:scale-125 transition-transform" />
+                <span>{item.readableName}</span>
+                <span className="text-[10px] font-black text-slate-400 group-hover:text-indigo-600 font-mono">
+                  {item.code}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

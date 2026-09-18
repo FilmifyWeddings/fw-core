@@ -29,6 +29,8 @@ import type {
   FinanceAuditLog, FinanceSecuritySettings, Lead, LeadStatus, LeadScore 
 } from '@/types';
 import { useWorkspaceData } from '@/context/WorkspaceDataContext';
+import { useWorkspace } from '@/lib/context/BhamstraContext';
+import { extractFinanceMembers, isPlaceholderName, FinanceTeamMember } from '@/app/workspace/finance/components/HandledByMultiSelect';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 
 // Default expense categories
@@ -61,8 +63,21 @@ const DEFAULT_TEAM_MEMBERS = [
 
 export default function FinancePage() {
   const { workspaceMembers } = useWorkspaceData();
-  const [activeTab, setActiveTab] = useState<'clients' | 'expenses' | 'analytics'>('clients');
+  const { userName, isOwner, userEmail, workspaceId } = useWorkspace();
+
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string>('');
+  const activeWsId = currentWorkspaceId || workspaceId;
+
+  // 👥 Filter ONLY Studio Owner + team members who have Finance Access strictly for the active studio
+  const financeTeamMembers = useMemo(() => {
+    return extractFinanceMembers(workspaceMembers, userName, userEmail, isOwner, activeWsId);
+  }, [workspaceMembers, userName, userEmail, isOwner, activeWsId]);
+
+  const financeMemberNames = useMemo(() => {
+    return financeTeamMembers.map(m => m.name);
+  }, [financeTeamMembers]);
+
+  const [activeTab, setActiveTab] = useState<'clients' | 'expenses' | 'analytics'>('clients');
   const [clients, setClients] = useState<WorkspaceClient[]>([]);
   const [financeRecords, setFinanceRecords] = useState<ClientFinanceRecord[]>([]);
   const [expenses, setExpenses] = useState<FinanceExpenseItem[]>([]);
@@ -72,7 +87,13 @@ export default function FinancePage() {
   // ─────────────────────────────────────────────────────────────
   // 👥 TEAM MEMBERS LIST & HANDLED BY ATTRIBUTION
   // ─────────────────────────────────────────────────────────────
-  const [teamMembersList, setTeamMembersList] = useState<string[]>(DEFAULT_TEAM_MEMBERS);
+  const [teamMembersList, setTeamMembersList] = useState<string[]>([]);
+
+  const effectiveTeamMembers = useMemo(() => {
+    if (financeMemberNames.length > 0) return financeMemberNames;
+    return [userName && !isPlaceholderName(userName) ? userName : 'Studio Owner'];
+  }, [financeMemberNames, userName]);
+
   const [teamMemberFilter, setTeamMemberFilter] = useState('all');
   const [addingMemberForClientId, setAddingMemberForClientId] = useState<string | null>(null);
   const [newMemberInputName, setNewMemberInputName] = useState('');
@@ -525,22 +546,17 @@ export default function FinancePage() {
 
       // 3. Fetch Team Members & Finance Milestone Settings
       try {
-        const memberSet = new Set<string>(DEFAULT_TEAM_MEMBERS);
-        if (workspaceMembers && workspaceMembers.length > 0) {
-          workspaceMembers.forEach(m => {
-            if (m.name && m.name.trim()) memberSet.add(m.name.trim());
-          });
+        const memberSet = new Set<string>();
+        if (userName && !isPlaceholderName(userName)) {
+          memberSet.add(userName.trim());
         }
+        financeTeamMembers.forEach(m => {
+          if (m.name && !isPlaceholderName(m.name)) {
+            memberSet.add(m.name.trim());
+          }
+        });
 
-        // B. Fetch from profiles
-        const { data: profiles } = await supabase.from('profiles').select('id, workspace_name');
-        if (profiles) {
-          profiles.forEach(p => {
-            if (p.workspace_name && p.workspace_name.trim()) memberSet.add(p.workspace_name.trim());
-          });
-        }
-
-        // C. Fetch Handled By from clientList and financeData
+        // Add any non-placeholder handled_by already assigned to clients
         clientList.forEach(c => {
           let handled = (c as any).handled_by || (c as any).assigned_team_member_name;
           if (!handled && (c as any).custom_data?.handled_by) handled = (c as any).custom_data.handled_by;
@@ -548,15 +564,10 @@ export default function FinancePage() {
             const match = c.notes.match(/handled_by:\s*([^\n\r,]+)/i);
             if (match && match[1]) handled = match[1].trim();
           }
-          if (handled && typeof handled === 'string' && handled.trim()) memberSet.add(handled.trim());
+          if (handled && typeof handled === 'string' && handled.trim() && !isPlaceholderName(handled)) {
+            memberSet.add(handled.trim());
+          }
         });
-
-        if (financeData) {
-          financeData.forEach(f => {
-            const h = (f as any).handled_by;
-            if (h && typeof h === 'string' && h.trim()) memberSet.add(h.trim());
-          });
-        }
 
         setTeamMembersList(Array.from(memberSet));
 
@@ -606,25 +617,27 @@ export default function FinancePage() {
       }
 
       // 4. Fetch Quotation Documents
-      const leadIds = clientList.map(c => c.lead_id).filter(Boolean);
+      const targetLeadIds = clientList.map(c => c.lead_id).filter(Boolean) as string[];
+      const targetClientIds = clientList.map(c => c.id).filter(Boolean) as string[];
+      const allLookupIds = Array.from(new Set([...targetLeadIds, ...targetClientIds])).filter(id => id && typeof id === 'string' && id.trim().length >= 6);
+
       const quoteDocMap = new Map<string, any>();
       const allLeadQuotesMap = new Map<string, any[]>();
       const leadMap = new Map<string, any>();
 
-      const validLeadIds = leadIds.filter(id => id && typeof id === 'string' && id.trim().length > 0 && id.length >= 8);
-      if (validLeadIds.length > 0) {
+      if (allLookupIds.length > 0) {
         try {
-          const leadShortFilters = validLeadIds.map(id => `template_id.ilike.%${id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8)}%`);
+          const shortFilters = allLookupIds.slice(0, 20).map(id => `template_id.ilike.%${id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8)}%`);
           const [docsRes, leadsRes] = await Promise.all([
             supabase
               .from('quotation_documents')
               .select('id, template_id, lead_id, version, lead_version, content_json, created_at, updated_at')
-              .or(`lead_id.in.(${validLeadIds.join(',')}),${leadShortFilters.join(',')}`)
+              .or(`lead_id.in.(${allLookupIds.join(',')}),${shortFilters.join(',')}`)
               .order('created_at', { ascending: false }),
             supabase
               .from('leads')
               .select('id, name, final_quotation_id, quotation_id')
-              .in('id', validLeadIds)
+              .in('id', targetLeadIds.filter(id => id.length >= 8))
           ]);
 
           if (leadsRes.data) {
@@ -635,23 +648,23 @@ export default function FinancePage() {
           if (quoteDocs && quoteDocs.length > 0) {
             const leadGroups = new Map<string, any[]>();
             for (const doc of quoteDocs) {
-              const matchedLeadId = doc.lead_id || leadIds.find(lid => doc.template_id?.includes(lid.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8)));
-              if (matchedLeadId) {
-                if (!leadGroups.has(matchedLeadId)) leadGroups.set(matchedLeadId, []);
-                leadGroups.get(matchedLeadId)!.push(doc);
+              const matchedId = doc.lead_id || allLookupIds.find(lid => doc.template_id?.includes(lid.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8)));
+              if (matchedId) {
+                if (!leadGroups.has(matchedId)) leadGroups.set(matchedId, []);
+                leadGroups.get(matchedId)!.push(doc);
               }
             }
 
-            leadGroups.forEach((docs, leadId) => {
-              allLeadQuotesMap.set(leadId, docs);
-              const leadObj = leadMap.get(leadId);
+            leadGroups.forEach((docs, lookupId) => {
+              allLeadQuotesMap.set(lookupId, docs);
+              const leadObj = leadMap.get(lookupId);
               const finalDoc = docs.find(d => 
                 d.content_json?.is_final === true || 
                 d.is_final === true || 
                 (leadObj?.final_quotation_id && (d.template_id === leadObj.final_quotation_id || d.id === leadObj.final_quotation_id))
               );
               if (finalDoc) {
-                quoteDocMap.set(leadId, finalDoc);
+                quoteDocMap.set(lookupId, finalDoc);
               }
             });
           }
@@ -666,7 +679,7 @@ export default function FinancePage() {
       for (const c of clientList) {
         const existing = financeMap.get(c.id);
         const leadObj = c.lead_id ? leadMap.get(c.lead_id) : null;
-        const leadDocs = c.lead_id ? (allLeadQuotesMap.get(c.lead_id) || []) : [];
+        const leadDocs = (c.lead_id ? allLeadQuotesMap.get(c.lead_id) : null) || allLeadQuotesMap.get(c.id) || [];
         const availableQuotes = leadDocs.map(d => {
           const v = Number(d.lead_version || d.version || 1);
           const f = d.content_json ? extractFinancialsFromQuotation(d.content_json, c.event_date) : null;
@@ -684,7 +697,7 @@ export default function FinancePage() {
           };
         });
 
-        let linkedFinalQuote = c.lead_id ? quoteDocMap.get(c.lead_id) : null;
+        let linkedFinalQuote = (c.lead_id ? quoteDocMap.get(c.lead_id) : null) || quoteDocMap.get(c.id);
         if (!linkedFinalQuote && leadDocs.length > 0) {
           linkedFinalQuote = leadDocs.find(d => 
             d.content_json?.is_final === true || 
@@ -707,13 +720,23 @@ export default function FinancePage() {
           : null;
 
         // Extract handled by attribution
-        const handledBy = (c as any).handled_by || (c as any).assigned_team_member_name || (existing as any)?.handled_by || 'Unassigned';
+        const rawHandled = (c as any).handled_by || (c as any).assigned_team_member_name || (existing as any)?.handled_by || 'Unassigned';
+        const handledBy = isPlaceholderName(rawHandled) ? 'Unassigned' : rawHandled;
+
+        const hasDummyMilestones = Array.isArray(existing?.milestones) && existing.milestones.some((m: any) => 
+          String(m.step_name || m.title || '').includes('(15%)') || 
+          String(m.step_name || m.title || '').includes('(35%)') ||
+          String(m.id || '').startsWith('m_1_')
+        );
 
         if (hasFinalQuotation && qFinancials && qFinancials.final_total_amount > 0) {
           const isDbCorruptOrMissing = !existing || 
             Number(existing.final_total_amount) <= 0 || 
             Number(existing.base_package_price) <= 10 || 
-            existing.final_total_amount !== qFinancials.final_total_amount;
+            existing.final_total_amount !== qFinancials.final_total_amount ||
+            hasDummyMilestones ||
+            !existing.milestones ||
+            existing.milestones.length === 0;
 
           const recordData: ClientFinanceRecord = {
             id: existing?.id || `fin_${c.id}`,
@@ -741,12 +764,37 @@ export default function FinancePage() {
             payment_status: (existing?.payment_status && existing.payment_status !== 'pending')
               ? existing.payment_status
               : qFinancials.payment_status,
-            milestones: Array.isArray(existing?.milestones) && existing.milestones.length > 0 && !isDbCorruptOrMissing
+            milestones: Array.isArray(existing?.milestones) && existing.milestones.length > 0 && !hasDummyMilestones && !isDbCorruptOrMissing
               ? existing.milestones
-              : qFinancials.milestones,
+              : (qFinancials.milestones.length > 0 ? qFinancials.milestones : (existing?.milestones || [])),
             created_at: existing?.created_at || c.created_at || new Date().toISOString(),
             updated_at: new Date().toISOString()
           };
+
+          if (isDbCorruptOrMissing && workspaceId !== 'ws_demo') {
+            supabase
+              .from('client_finance_records')
+              .upsert([{
+                user_id: workspaceId,
+                workspace_id: workspaceId,
+                client_id: c.id,
+                base_package_price: qFinancials.base_package_price,
+                discount_amount: qFinancials.discount_amount,
+                accommodation_charges: qFinancials.accommodation_charges,
+                travel_charges: qFinancials.travel_charges,
+                additional_charges: qFinancials.additional_charges,
+                subtotal_amount: qFinancials.subtotal_amount,
+                gst_rate: qFinancials.gst_rate,
+                gst_amount: qFinancials.gst_amount,
+                final_total_amount: qFinancials.final_total_amount,
+                received_amount: recordData.received_amount,
+                pending_amount: recordData.pending_amount,
+                payment_status: recordData.payment_status,
+                milestones: recordData.milestones,
+                updated_at: new Date().toISOString()
+              }], { onConflict: 'client_id' })
+              .then(() => {});
+          }
 
           finalRecords.push(recordData);
         } else if (existing) {
@@ -1872,31 +1920,76 @@ export default function FinancePage() {
         }
       }
 
-      // 📅 Unified Single Master Date Range Match:
-      // If Payment Status is "Payment Received" OR Revenue Type is filtered -> filter by Payment Received Date (milestone receipt date)
-      // Otherwise -> filter by Project / Event Creation / Shoot Date
+      // 📅 Unified Milestone-Based Date Range Match:
+      // NEVER filter by client?.event_date or wedding_date!
+      // Filter dates are strictly derived from milestone payment steps:
       let matchesDate = true;
       const isDateActive = Boolean(dateRangePreset !== 'all' || startDate || endDate);
       if (isDateActive) {
+        const isInRange = (dStr?: string | null): boolean => {
+          if (!dStr) return false;
+          const d = dStr.split('T')[0];
+          if (startDate && d < startDate) return false;
+          if (endDate && d > endDate) return false;
+          return true;
+        };
+
+        const milestones = rec.milestones || [];
+        const firstStep = milestones[0];
+        const firstStepDate = firstStep?.paid_date || (firstStep as any)?.paidDate || (firstStep as any)?.payment_date || firstStep?.due_date || rec.created_at?.split('T')[0];
+
         if (statusFilter === 'received' || revenueTypeFilter !== 'ALL') {
-          const matchingPaidMilestones = (rec.milestones || []).filter((m, idx) => {
+          // Payments received: matches if any completed/paid milestone falls in date range
+          const matchingPaidMilestones = milestones.filter((m, idx) => {
             const isPaid = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed' || (m as any).paidDate || (m as any).paid_date;
             if (!isPaid) return false;
             const pDate = m.paid_date || (m as any).paidDate || (m as any).payment_date || m.due_date;
-            if (!pDate) return false;
-            if (startDate && pDate < startDate) return false;
-            if (endDate && pDate > endDate) return false;
+            if (!isInRange(pDate)) return false;
             if (revenueTypeFilter === 'NEW_BOOKING' && !isAdvanceMilestone(m, idx)) return false;
             if (revenueTypeFilter === 'DUE_BALANCE' && isAdvanceMilestone(m, idx)) return false;
             return true;
           });
           matchesDate = matchingPaidMilestones.length > 0;
+        } else if (statusFilter === 'pending') {
+          // Pending dues: matches if any pending/unpaid milestone has due_date in date range
+          const matchingPendingMilestones = milestones.filter(m => {
+            const isCompleted = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed';
+            if (isCompleted) return false;
+            return isInRange(m.due_date);
+          });
+          const hasAnyDueDate = milestones.some(m => m.due_date);
+          matchesDate = hasAnyDueDate ? matchingPendingMilestones.length > 0 : isInRange(firstStepDate);
+        } else if (statusFilter === 'overdue_only') {
+          // Overdue dues only: pending, overdue (< todayStr), and due_date in date range
+          const matchingOverdueMilestones = milestones.filter(m => {
+            const isCompleted = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed';
+            if (isCompleted) return false;
+            return m.due_date && m.due_date < todayStr && isInRange(m.due_date);
+          });
+          matchesDate = matchingOverdueMilestones.length > 0;
+        } else if (statusFilter === 'partially_paid') {
+          // Partially paid: matches if first payment step in range OR any milestone paid in range OR any milestone due in range
+          const hasPaidInRange = milestones.some(m => {
+            const isPaid = m.status === 'completed' || m.status === 'paid' || (m as any).paidDate || (m as any).paid_date;
+            const pDate = m.paid_date || (m as any).paidDate || (m as any).payment_date || m.due_date;
+            return isPaid && isInRange(pDate);
+          });
+          const hasDueInRange = milestones.some(m => {
+            const isCompleted = m.status === 'completed' || m.status === 'paid' || (m.status as string) === 'Completed';
+            return !isCompleted && isInRange(m.due_date);
+          });
+          matchesDate = isInRange(firstStepDate) || hasPaidInRange || hasDueInRange;
+        } else if (statusFilter === 'paid') {
+          // Fully paid: matches if first payment step in range OR any completed milestone payment date in range
+          const hasPaidInRange = milestones.some(m => {
+            const isPaid = m.status === 'completed' || m.status === 'paid' || (m as any).paidDate || (m as any).paid_date;
+            const pDate = m.paid_date || (m as any).paidDate || (m as any).payment_date || m.due_date;
+            return isPaid && isInRange(pDate);
+          });
+          matchesDate = isInRange(firstStepDate) || hasPaidInRange;
         } else {
-          const effectiveDate = client?.event_date || rec.created_at?.split('T')[0];
-          if (effectiveDate) {
-            if (startDate && effectiveDate < startDate) matchesDate = false;
-            if (endDate && effectiveDate > endDate) matchesDate = false;
-          }
+          // All Statuses (default): strictly filter by the contract's first payment step (advance token booking date)
+          matchesDate = isInRange(firstStepDate);
         }
       }
 
@@ -2498,7 +2591,7 @@ export default function FinancePage() {
                 setEndDate={setEndDate}
                 teamMemberFilter={teamMemberFilter}
                 setTeamMemberFilter={setTeamMemberFilter}
-                teamMembersList={teamMembersList}
+                teamMembersList={effectiveTeamMembers}
                 statusFilter={statusFilter}
                 setStatusFilter={setStatusFilter}
                 categoryFilter={categoryFilter}
@@ -2706,7 +2799,8 @@ export default function FinancePage() {
                   isExpanded={expandedCards.has(record.id)}
                   onToggle={() => toggleCard(record.id)}
                   todayStr={todayStr}
-                  teamMembersList={teamMembersList}
+                  teamMembersList={effectiveTeamMembers}
+                  financeTeamMembers={financeTeamMembers}
                   paymentMilestoneTemplates={paymentMilestoneTemplates}
                   onAssignTeamMember={handleAssignTeamMember}
                   onAddNewTeamMember={handleAddNewTeamMember}
@@ -3630,7 +3724,7 @@ export default function FinancePage() {
         mode="add"
         clients={clients}
         teamMembers={workspaceMembers}
-        teamMembersList={teamMembersList}
+        teamMembersList={effectiveTeamMembers}
         currentWorkspaceId={currentWorkspaceId}
         categories={expenseCategories}
         onCategoryCreated={(newCat) => setExpenseCategories(prev => Array.from(new Set([...prev, newCat])))}
@@ -3647,7 +3741,7 @@ export default function FinancePage() {
         initialData={expenseEditFormData}
         clients={clients}
         teamMembers={workspaceMembers}
-        teamMembersList={teamMembersList}
+        teamMembersList={effectiveTeamMembers}
         currentWorkspaceId={currentWorkspaceId}
         categories={expenseCategories}
         onCategoryCreated={(newCat) => setExpenseCategories(prev => Array.from(new Set([...prev, newCat])))}

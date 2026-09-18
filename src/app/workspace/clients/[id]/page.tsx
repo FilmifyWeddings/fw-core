@@ -21,6 +21,7 @@ import {
   parseClientExtended, serializeClientExtended, type ClientEventItem, type ClientExtendedData 
 } from '@/components/clients/client-insider-modal';
 import { fetchWorkspaceTeamMembers, type WorkspaceMemberOption } from '@/lib/team-helpers';
+import { extractFinancialsFromQuotation } from '@/lib/quotation-finance-sync';
 import type { 
   WorkspaceClient, PostProductionProject, DeliverableItem, ClientFinanceRecord, DeliverableStatus, DeliverableComment
 } from '@/types';
@@ -481,90 +482,153 @@ export default function ClientWorkspaceDetailPage() {
       const totalPkg = Number(c.total_package_amount) || 150000;
       const totalPaid = Number(c.paid_amount) || 0;
 
-      // If no finance record exists or milestones empty, generate synced default milestones
+      // If no finance record exists or milestones empty, check quotation documents first!
       if (!finRow || !finRow.milestones || finRow.milestones.length === 0) {
-        const tokenAmt = Math.round(totalPkg * 0.15);
-        const advAmt = Math.round(totalPkg * 0.35);
-        const eventAmt = Math.round(totalPkg * 0.35);
-        const finalAmt = Math.max(0, totalPkg - (tokenAmt + advAmt + eventAmt));
+        const targetLeadId = c.lead_id || c.id;
+        const leadShort = targetLeadId ? targetLeadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8) : '';
 
-        const baseDate = c.event_date ? new Date(c.event_date) : new Date();
-        const tokenDate = new Date().toISOString().split('T')[0];
-        const preEventDate = new Date(baseDate.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-        const weddingDate = baseDate.toISOString().split('T')[0];
-        const deliveryDate = new Date(baseDate.getTime() + 45 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        let docsQuery = supabase
+          .from('quotation_documents')
+          .select('*')
+          .order('created_at', { ascending: false });
 
-        // Cumulative milestone calculation
-        const milestones = [
-          {
-            id: `m_1_${c.id.slice(0, 6)}`,
-            step_name: 'Token Booking Amount (15%)',
-            amount: tokenAmt,
-            due_date: tokenDate,
-            status: totalPaid >= tokenAmt ? 'completed' : 'pending',
-            payment_mode: 'UPI',
-            paid_date: totalPaid >= tokenAmt ? tokenDate : null
-          },
-          {
-            id: `m_2_${c.id.slice(0, 6)}`,
-            step_name: 'Advance Amount - Pre-Event (35%)',
-            amount: advAmt,
-            due_date: preEventDate,
-            status: totalPaid >= (tokenAmt + advAmt) ? 'completed' : 'pending',
-            payment_mode: 'Bank Transfer',
-            paid_date: totalPaid >= (tokenAmt + advAmt) ? preEventDate : null
-          },
-          {
-            id: `m_3_${c.id.slice(0, 6)}`,
-            step_name: 'On Wedding Day (35%)',
-            amount: eventAmt,
-            due_date: weddingDate,
-            status: totalPaid >= (tokenAmt + advAmt + eventAmt) ? 'completed' : 'pending',
-            payment_mode: 'UPI',
-            paid_date: totalPaid >= (tokenAmt + advAmt + eventAmt) ? weddingDate : null
-          },
-          {
-            id: `m_4_${c.id.slice(0, 6)}`,
-            step_name: 'Final Delivery & Album Handover (15%)',
-            amount: finalAmt,
-            due_date: deliveryDate,
-            status: totalPaid >= totalPkg && totalPkg > 0 ? 'completed' : 'pending',
-            payment_mode: 'Bank Transfer',
-            paid_date: totalPaid >= totalPkg && totalPkg > 0 ? deliveryDate : null
-          }
-        ];
-
-        const newRec = {
-          user_id: workspaceId,
-          workspace_id: workspaceId,
-          client_id: c.id,
-          base_package_price: totalPkg,
-          discount_amount: 0,
-          accommodation_charges: 0,
-          travel_charges: 0,
-          additional_charges: 0,
-          subtotal_amount: totalPkg,
-          gst_rate: 0,
-          gst_amount: 0,
-          final_total_amount: totalPkg,
-          received_amount: totalPaid,
-          pending_amount: Math.max(0, totalPkg - totalPaid),
-          payment_status: totalPaid >= totalPkg && totalPkg > 0 ? 'paid' : totalPaid > 0 ? 'partially_paid' : 'unpaid',
-          milestones: milestones,
-          updated_at: new Date().toISOString()
-        };
-
-        if (workspaceId !== 'ws_demo') {
-          const { data: savedRec } = await supabase
-            .from('client_finance_records')
-            .upsert([newRec], { onConflict: 'client_id' })
-            .select('*')
-            .maybeSingle();
-
-          if (savedRec) finRow = savedRec;
-          else finRow = newRec as any;
+        if (targetLeadId) {
+          docsQuery = docsQuery.or(`lead_id.eq.${targetLeadId},client_id.eq.${c.id},template_id.ilike.%${leadShort}%`);
         } else {
-          finRow = newRec as any;
+          docsQuery = docsQuery.eq('client_id', c.id);
+        }
+
+        const { data: quoteDocs } = await docsQuery;
+        const selectedQuoteDoc = quoteDocs?.find((d: any) => d.is_final === true || d.content_json?.is_final === true) || quoteDocs?.[0];
+
+        if (selectedQuoteDoc?.content_json) {
+          const financials = extractFinancialsFromQuotation(selectedQuoteDoc.content_json, c.event_date);
+          const newRec = {
+            user_id: workspaceId,
+            workspace_id: workspaceId,
+            client_id: c.id,
+            base_package_price: financials.base_package_price,
+            discount_amount: financials.discount_amount,
+            accommodation_charges: financials.accommodation_charges,
+            travel_charges: financials.travel_charges,
+            additional_charges: financials.additional_charges,
+            subtotal_amount: financials.subtotal_amount,
+            gst_rate: financials.gst_rate,
+            gst_amount: financials.gst_amount,
+            final_total_amount: financials.final_total_amount,
+            received_amount: financials.received_amount || totalPaid,
+            pending_amount: Math.max(0, financials.final_total_amount - (financials.received_amount || totalPaid)),
+            payment_status: financials.payment_status,
+            milestones: financials.milestones,
+            updated_at: new Date().toISOString()
+          };
+
+          if (workspaceId !== 'ws_demo') {
+            const { data: savedRec } = await supabase
+              .from('client_finance_records')
+              .upsert([newRec], { onConflict: 'client_id' })
+              .select('*')
+              .maybeSingle();
+
+            if (savedRec) finRow = savedRec;
+            else finRow = newRec as any;
+
+            await supabase
+              .from('workspace_clients')
+              .update({
+                total_package_amount: financials.final_total_amount,
+                paid_amount: financials.received_amount || totalPaid,
+                event_type: financials.event_type || c.event_type || undefined,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', c.id);
+          } else {
+            finRow = newRec as any;
+          }
+        } else {
+          const tokenAmt = Math.round(totalPkg * 0.15);
+          const advAmt = Math.round(totalPkg * 0.35);
+          const eventAmt = Math.round(totalPkg * 0.35);
+          const finalAmt = Math.max(0, totalPkg - (tokenAmt + advAmt + eventAmt));
+
+          const baseDate = c.event_date ? new Date(c.event_date) : new Date();
+          const tokenDate = new Date().toISOString().split('T')[0];
+          const preEventDate = new Date(baseDate.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+          const weddingDate = baseDate.toISOString().split('T')[0];
+          const deliveryDate = new Date(baseDate.getTime() + 45 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+          // Cumulative milestone calculation
+          const milestones = [
+            {
+              id: `m_1_${c.id.slice(0, 6)}`,
+              step_name: 'Token Booking Amount (15%)',
+              amount: tokenAmt,
+              due_date: tokenDate,
+              status: totalPaid >= tokenAmt ? 'completed' : 'pending',
+              payment_mode: 'UPI',
+              paid_date: totalPaid >= tokenAmt ? tokenDate : null
+            },
+            {
+              id: `m_2_${c.id.slice(0, 6)}`,
+              step_name: 'Advance Amount - Pre-Event (35%)',
+              amount: advAmt,
+              due_date: preEventDate,
+              status: totalPaid >= (tokenAmt + advAmt) ? 'completed' : 'pending',
+              payment_mode: 'Bank Transfer',
+              paid_date: totalPaid >= (tokenAmt + advAmt) ? preEventDate : null
+            },
+            {
+              id: `m_3_${c.id.slice(0, 6)}`,
+              step_name: 'On Wedding Day (35%)',
+              amount: eventAmt,
+              due_date: weddingDate,
+              status: totalPaid >= (tokenAmt + advAmt + eventAmt) ? 'completed' : 'pending',
+              payment_mode: 'UPI',
+              paid_date: totalPaid >= (tokenAmt + advAmt + eventAmt) ? weddingDate : null
+            },
+            {
+              id: `m_4_${c.id.slice(0, 6)}`,
+              step_name: 'Final Delivery & Album Handover (15%)',
+              amount: finalAmt,
+              due_date: deliveryDate,
+              status: totalPaid >= totalPkg && totalPkg > 0 ? 'completed' : 'pending',
+              payment_mode: 'Bank Transfer',
+              paid_date: totalPaid >= totalPkg && totalPkg > 0 ? deliveryDate : null
+            }
+          ];
+
+          const newRec = {
+            user_id: workspaceId,
+            workspace_id: workspaceId,
+            client_id: c.id,
+            base_package_price: totalPkg,
+            discount_amount: 0,
+            accommodation_charges: 0,
+            travel_charges: 0,
+            additional_charges: 0,
+            subtotal_amount: totalPkg,
+            gst_rate: 0,
+            gst_amount: 0,
+            final_total_amount: totalPkg,
+            received_amount: totalPaid,
+            pending_amount: Math.max(0, totalPkg - totalPaid),
+            payment_status: totalPaid >= totalPkg && totalPkg > 0 ? 'paid' : totalPaid > 0 ? 'partially_paid' : 'unpaid',
+            milestones: milestones,
+            updated_at: new Date().toISOString()
+          };
+
+          if (workspaceId !== 'ws_demo') {
+            const { data: savedRec } = await supabase
+              .from('client_finance_records')
+              .upsert([newRec], { onConflict: 'client_id' })
+              .select('*')
+              .maybeSingle();
+
+            if (savedRec) finRow = savedRec;
+            else finRow = newRec as any;
+          } else {
+            finRow = newRec as any;
+          }
         }
       }
 

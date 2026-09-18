@@ -48,7 +48,10 @@ interface EventBlockProps {
   onDuplicate: (block: EventBlockData) => void;
   onAddCustomProgram: (name: string) => void;
   onAddCustomRole: (role: string) => void;
-  onToggleRole: (blockId: string, role: string) => void;
+  onToggleRole?: (blockId: string, role: string) => void;
+  onIncrementRole?: (blockId: string, role: string) => void;
+  onDecrementRole?: (blockId: string, role: string) => void;
+  onRemoveAllRole?: (blockId: string, role: string) => void;
   hasProgramTypeError?: boolean;
   hasDateError?: boolean;
 }
@@ -63,6 +66,9 @@ export default function EventBlock({
   onAddCustomProgram,
   onAddCustomRole,
   onToggleRole,
+  onIncrementRole,
+  onDecrementRole,
+  onRemoveAllRole,
   hasProgramTypeError,
   hasDateError,
 }: EventBlockProps) {
@@ -369,7 +375,16 @@ export default function EventBlock({
       {/* 5. Roles Required Grid */}
       <RoleGrid
         selectedRoles={block.roles}
-        onToggle={(role: string) => onToggleRole(block.id, role)}
+        onToggle={(role: string) => onToggleRole?.(block.id, role)}
+        onIncrement={(role: string) => {
+          if (onIncrementRole) onIncrementRole(block.id, role);
+          else onToggleRole?.(block.id, role);
+        }}
+        onDecrement={(role: string) => {
+          if (onDecrementRole) onDecrementRole(block.id, role);
+          else onToggleRole?.(block.id, role);
+        }}
+        onRemoveAll={(role: string) => onRemoveAllRole?.(block.id, role)}
         onAddCustom={onAddCustomRole}
       />
 

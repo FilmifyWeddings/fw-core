@@ -89,48 +89,7 @@ const format12HourTime = (timeStr?: string): string => {
   return `${formattedHours}:${minutes} ${ampm}`;
 };
 
-// Robust assignment resolver ensuring ALL configured roles remain visible (assigned or unassigned)
-const resolveSubEventAssignments = (subEvent: FWSubEvent, teamMembers: FWTeamMember[]): FWAssignment[] => {
-  let rawRoles: string[] = [];
-  if (Array.isArray((subEvent as any).roles)) {
-    rawRoles = (subEvent as any).roles;
-  } else if (typeof (subEvent as any).roles === 'string') {
-    try { rawRoles = JSON.parse((subEvent as any).roles); } catch (e) {}
-  } else if (Array.isArray((subEvent as any).roles_assigned)) {
-    rawRoles = (subEvent as any).roles_assigned;
-  } else if (Array.isArray((subEvent as any).event_roles)) {
-    rawRoles = (subEvent as any).event_roles;
-  }
-
-  const existingAssignments = subEvent.fw_assignments || [];
-  const assignRoles = existingAssignments.map(a => a.required_role).filter(Boolean);
-  const allRoles = Array.from(new Set([...rawRoles, ...assignRoles]));
-
-  if (allRoles.length === 0) {
-    return existingAssignments;
-  }
-
-  return allRoles.map((role: string, idx: number) => {
-    const existing = existingAssignments.find(
-      a => a.required_role?.toLowerCase() === role.toLowerCase()
-    );
-    if (existing) {
-      const matched = existing.fw_team_members || (existing.assigned_member_id ? teamMembers.find(m => m.id === existing.assigned_member_id) : null);
-      return {
-        ...existing,
-        fw_team_members: matched || existing.fw_team_members || null
-      };
-    }
-    return {
-      id: `${subEvent.id}-role-${idx}`,
-      sub_event_id: subEvent.id,
-      project_id: subEvent.project_id,
-      required_role: role,
-      assigned_member_id: null,
-      fw_team_members: null,
-    };
-  });
-};
+import { resolveSubEventAssignments } from '@/lib/team-helpers';
 
 export default function TeamManagerPage() {
   const { workspaceId, workspaceName, isOwner, userRole, permissions, activeWorkspace, availableWorkspaces, userId, userEmail } = useWorkspace();
@@ -801,12 +760,10 @@ export default function TeamManagerPage() {
             fw_sub_events: proj.fw_sub_events?.map(se => {
               if (se.id !== activeAssign.sub_event_id) return se;
               const existingAssignments = se.fw_assignments || [];
-              const exists = existingAssignments.some(
-                a => a.id === assignmentId || a.required_role === activeAssign.required_role
-              );
+              const exists = existingAssignments.some(a => a.id === assignmentId);
               const updatedAssignments = exists
                 ? existingAssignments.map(a =>
-                    (a.id === assignmentId || a.required_role === activeAssign.required_role)
+                    a.id === assignmentId
                       ? { ...a, assigned_member_id: memberId, fw_team_members: matchedMemberObj }
                       : a
                   )
@@ -938,31 +895,14 @@ export default function TeamManagerPage() {
                 agreed_amount: defaultAmount
               });
             }
-            // 2. Check if assignment record already exists in DB for this sub_event & role
-            const { data: existingRow } = await supabase
-              .from('fw_assignments')
-              .select('id')
-              .eq('sub_event_id', activeAssign.sub_event_id)
-              .eq('required_role', activeAssign.required_role)
-              .maybeSingle();
-
-            if (existingRow?.id) {
+            // 2. Persist assignment to DB
+            if (assignmentId && !String(assignmentId || '').includes('-role-')) {
+              // Exact primary key update!
               const { error: assignErr } = await supabase
                 .from('fw_assignments')
                 .update({ 
                   assigned_member_id: memberId,
-                  ...(currentUserId ? { user_id: currentUserId, workspace_id: currentUserId } : {})
-                })
-                .eq('id', existingRow.id);
-
-              if (assignErr) {
-                console.error('[TeamManager] Assignment update error:', assignErr.message);
-              }
-            } else if (!String(assignmentId || '').includes('-role-')) {
-              const { error: assignErr } = await supabase
-                .from('fw_assignments')
-                .update({ 
-                  assigned_member_id: memberId,
+                  status: memberId ? 'assigned' : 'pending',
                   ...(currentUserId ? { user_id: currentUserId, workspace_id: currentUserId } : {})
                 })
                 .eq('id', String(assignmentId));
@@ -971,7 +911,8 @@ export default function TeamManagerPage() {
                 console.error('[TeamManager] Assignment update error:', assignErr.message);
               }
             } else {
-              const { error: insertErr } = await supabase
+              // Synthetic placeholder slot clicked: Insert new row into fw_assignments
+              const { data: inserted, error: insertErr } = await supabase
                 .from('fw_assignments')
                 .insert([{
                   project_id: activeAssign.project_id,
@@ -982,9 +923,29 @@ export default function TeamManagerPage() {
                   sub_event_date: subEventObj?.event_date || new Date().toISOString().split('T')[0],
                   start_time: subEventObj?.roll_call_time || '10:00',
                   end_time: subEventObj?.dismissal_estimate_time || '18:00',
-                  status: 'pending',
+                  status: memberId ? 'assigned' : 'pending',
                   ...(currentUserId ? { user_id: currentUserId, workspace_id: currentUserId } : {})
-                }]);
+                }])
+                .select('id')
+                .single();
+
+              if (inserted?.id) {
+                // Update local state with the returned DB ID so subsequent operations work directly on DB ID
+                setProjects(prevProjects =>
+                  prevProjects.map(proj => ({
+                    ...proj,
+                    fw_sub_events: proj.fw_sub_events?.map(se => {
+                      if (se.id !== activeAssign.sub_event_id) return se;
+                      return {
+                        ...se,
+                        fw_assignments: se.fw_assignments?.map(a =>
+                          a.id === assignmentId ? { ...a, id: inserted.id } : a
+                        )
+                      };
+                    })
+                  }))
+                );
+              }
 
               if (insertErr) {
                 console.error('[TeamManager] Insert assignment error:', insertErr.message);
@@ -1201,11 +1162,22 @@ export default function TeamManagerPage() {
             const matchedAssignmentIds = new Set<string>();
             const rolesNeeded: string[] = [];
 
+            const isRoleMatch = (roleA: string, roleB: string) => {
+              const a = (roleA || '').trim().toLowerCase();
+              const b = (roleB || '').trim().toLowerCase();
+              if (!a || !b) return false;
+              if (a === b) return true;
+              const codeA = getRoleShortCode(a);
+              const codeB = getRoleShortCode(b);
+              if (codeA && codeB && codeA.toLowerCase() === codeB.toLowerCase()) return true;
+              return false;
+            };
+
             for (const desiredRole of rolesToSave) {
               // Prefer preserving an already assigned team member slot!
               const assignedMatch = currentAssignments.find((a: any) => 
                 !matchedAssignmentIds.has(a.id) && 
-                a.required_role === desiredRole && 
+                isRoleMatch(a.required_role, desiredRole) && 
                 Boolean(a.assigned_member_id)
               );
 
@@ -1215,7 +1187,7 @@ export default function TeamManagerPage() {
                 // Match with an unassigned slot
                 const unassignedMatch = currentAssignments.find((a: any) => 
                   !matchedAssignmentIds.has(a.id) && 
-                  a.required_role === desiredRole
+                  isRoleMatch(a.required_role, desiredRole)
                 );
                 if (unassignedMatch) {
                   matchedAssignmentIds.add(unassignedMatch.id);

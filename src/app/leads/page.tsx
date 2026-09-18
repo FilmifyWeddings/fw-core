@@ -833,7 +833,8 @@ export default function LeadsPage() {
             clientName,
             currentWorkspaceId,
             parsedEventDate,
-            mainVenue
+            mainVenue,
+            targetClientId
           );
         } else {
           // Create an EMPTY master project in Team Manager (0 sub-events) so user can add manually or wait for final quotation

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabase, supabaseAdmin } from '@/lib/supabase';
 import { GLOBAL_SYSTEM_TEMPLATE_ID } from '@/lib/quotation-template-resolver';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
+import { extractFinancialsFromQuotation, syncQuotationToTeamManagerEvents } from '@/lib/quotation-finance-sync';
 
 /**
  * Authoritative Single Template & Lead Quotation Document Route (GET, PUT, PATCH, DELETE)
@@ -294,6 +295,100 @@ async function handleUpdate(
           updated_at: new Date().toISOString()
         })
         .or(`id.eq.${id},quotation_number.eq.${id}`);
+
+      // 4. Auto-sync with Finance & Team Manager if this quotation is final
+      try {
+        const { data: currentDoc } = await supabaseAdmin
+          .from('quotation_documents')
+          .select('id, lead_id, client_id, is_final, content_json')
+          .eq('template_id', id)
+          .maybeSingle();
+
+        const isFinal = Boolean(
+          document?.is_final === true ||
+          document?.content_json?.is_final === true ||
+          currentDoc?.is_final === true ||
+          currentDoc?.content_json?.is_final === true
+        );
+
+        const targetLeadOrClientId = currentDoc?.lead_id || currentDoc?.client_id || (document?.meta?.lead_id) || (document?.lead_id);
+
+        let isLeadFinal = isFinal;
+        if (!isLeadFinal && targetLeadOrClientId) {
+          const { data: leadCheck } = await supabaseAdmin
+            .from('leads')
+            .select('id, final_quotation_id')
+            .eq('id', targetLeadOrClientId)
+            .maybeSingle();
+          if (leadCheck?.final_quotation_id === id) {
+            isLeadFinal = true;
+          }
+        }
+
+        if (isLeadFinal && targetLeadOrClientId) {
+          const financials = extractFinancialsFromQuotation(document);
+          const clientName = document?.cover?.coupleName || document?.meta?.client_name || 'Valued Client';
+          const eventDate = financials.event_date || document?.meta?.event_date || null;
+          const venue = document?.meta?.venue || document?.cover?.venue || null;
+
+          const { data: linkedClients } = await supabaseAdmin
+            .from('workspace_clients')
+            .select('id')
+            .or(`lead_id.eq.${targetLeadOrClientId},id.eq.${targetLeadOrClientId}`);
+
+          const wsClientId = linkedClients?.[0]?.id;
+
+          if (linkedClients && linkedClients.length > 0) {
+            for (const lc of linkedClients) {
+              await supabaseAdmin
+                .from('workspace_clients')
+                .update({
+                  total_package_amount: financials.final_total_amount,
+                  paid_amount: financials.received_amount,
+                  event_type: financials.event_type || undefined,
+                  event_date: eventDate || undefined,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', lc.id);
+
+              await supabaseAdmin
+                .from('client_finance_records')
+                .upsert({
+                  user_id: workspaceId || userId,
+                  workspace_id: workspaceId || userId,
+                  client_id: lc.id,
+                  base_package_price: financials.base_package_price,
+                  discount_amount: financials.discount_amount,
+                  accommodation_charges: financials.accommodation_charges,
+                  travel_charges: financials.travel_charges,
+                  additional_charges: financials.additional_charges,
+                  subtotal_amount: financials.subtotal_amount,
+                  gst_rate: financials.gst_rate,
+                  gst_amount: financials.gst_amount,
+                  final_total_amount: financials.final_total_amount,
+                  received_amount: financials.received_amount,
+                  pending_amount: financials.pending_amount,
+                  payment_status: financials.payment_status,
+                  milestones: financials.milestones,
+                  updated_at: new Date().toISOString()
+                }, { onConflict: 'client_id' });
+            }
+          }
+
+          await syncQuotationToTeamManagerEvents(
+            supabaseAdmin,
+            targetLeadOrClientId,
+            document,
+            clientName,
+            workspaceId || userId,
+            eventDate,
+            venue,
+            wsClientId
+          );
+        }
+      } catch (syncErr) {
+        console.error('[API templates/[id]] Error syncing to finance/team manager:', syncErr);
+      }
     }
 
     return NextResponse.json({
