@@ -3,7 +3,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Search, X, Check } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? React.useLayoutEffect : React.useEffect;
 
@@ -16,6 +15,7 @@ export interface Searchable3DCreamSelectOption {
   subLabel?: string;
   initials?: string;
   roleTag?: string;
+  color?: string;
 }
 
 export interface Searchable3DCreamSelectProps {
@@ -54,7 +54,7 @@ export default function Searchable3DCreamSelect({
   className = '',
   disabled = false,
   label,
-  usePortal = false,
+  usePortal = true,
   headerAction,
   inlineAdd,
 }: Searchable3DCreamSelectProps) {
@@ -74,14 +74,17 @@ export default function Searchable3DCreamSelect({
   const updateCoords = () => {
     if (containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
-      const dropdownEstimatedHeight = 280;
-      const fitsBelow = rect.bottom + dropdownEstimatedHeight <= window.innerHeight;
+      const actualHeight = portalMenuRef.current?.offsetHeight;
+      const dropdownEstimatedHeight = actualHeight && actualHeight > 50
+        ? actualHeight
+        : Math.min(Math.max((options?.length || 1) * 44 + (searchable ? 52 : 16), 110), 280);
+      const fitsBelow = rect.bottom + dropdownEstimatedHeight <= window.innerHeight - 10;
       const topPos = fitsBelow ? rect.bottom + 6 : Math.max(10, rect.top - dropdownEstimatedHeight - 6);
 
       setCoords({
         top: Math.round(topPos),
-        left: Math.round(Math.max(10, Math.min(rect.left, window.innerWidth - Math.max(rect.width, 260) - 10))),
-        width: Math.round(Math.max(rect.width, 260)),
+        left: Math.round(Math.max(10, Math.min(rect.left, window.innerWidth - Math.max(rect.width, 240) - 10))),
+        width: Math.round(Math.max(rect.width, 240)),
       });
     }
   };
@@ -90,7 +93,32 @@ export default function Searchable3DCreamSelect({
   useIsomorphicLayoutEffect(() => {
     if (isOpen) {
       updateCoords();
+      const raf = requestAnimationFrame(() => {
+        updateCoords();
+      });
+      return () => cancelAnimationFrame(raf);
     }
+  }, [isOpen]);
+
+  // Handle outside click to close dropdown cleanly without transparent overlays
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (
+        containerRef.current && !containerRef.current.contains(target) &&
+        portalMenuRef.current && !portalMenuRef.current.contains(target)
+      ) {
+        setIsOpen(false);
+      }
+    };
+    const timer = setTimeout(() => {
+      document.addEventListener('mousedown', handleClickOutside);
+    }, 10);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
   }, [isOpen]);
 
   // Handle scroll and resize
@@ -304,7 +332,10 @@ export default function Searchable3DCreamSelect({
                   ) : null}
 
                   <div className="flex flex-col min-w-0 text-left">
-                    <span className={`truncate font-bold ${!isSelected && isUnassignedOpt ? 'text-rose-600 dark:text-rose-400' : ''}`}>
+                    <span 
+                      className={`truncate font-bold ${!isSelected && isUnassignedOpt ? 'text-rose-600 dark:text-rose-400' : ''}`}
+                      style={!isSelected && option.color ? { color: option.color } : undefined}
+                    >
                       {option.label}
                     </span>
                     {option.subLabel && (
@@ -402,7 +433,10 @@ export default function Searchable3DCreamSelect({
               {selectedOption.icon}
             </span>
           ) : null}
-          <span className={`truncate ${isCurrentUnassigned ? 'text-rose-700 dark:text-rose-400 font-bold' : ''}`}>
+          <span 
+            className={`truncate ${isCurrentUnassigned ? 'text-rose-700 dark:text-rose-400 font-bold' : ''}`}
+            style={selectedOption?.color ? { color: selectedOption.color } : undefined}
+          >
             {selectedOption ? selectedOption.label : placeholder}
           </span>
           {selectedOption?.roleTag && (
@@ -436,58 +470,37 @@ export default function Searchable3DCreamSelect({
         />
       </button>
 
-      {/* Dropdown Menu (Inline or Portaled with top-tier stacking & backdrop) */}
-      <AnimatePresence>
-        {isOpen && isMounted && usePortal && (
-          createPortal(
-            <div
-              className="custom-dropdown-portal fixed inset-0 z-[9998] pointer-events-auto bg-transparent"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setIsOpen(false);
-              }}
-            >
-              <div
-                ref={portalMenuRef}
-                onClick={(e) => e.stopPropagation()}
-                style={{
-                  position: 'fixed',
-                  top: `${coords.top}px`,
-                  left: `${coords.left}px`,
-                  width: `${coords.width}px`,
-                  zIndex: 9999,
-                  pointerEvents: 'auto',
-                }}
-                className="rounded-xl bg-[#FDFBF7] dark:bg-[#1C1917] border border-amber-900/15 dark:border-stone-800 shadow-2xl max-h-56 overflow-y-auto"
-              >
-                {menuContentBody}
-              </div>
-            </div>,
-            document.body
-          )
-        )}
-        {isOpen && (!usePortal || !isMounted) && (
-          <>
-            <div
-              className="custom-dropdown-portal fixed inset-0 z-[9998] pointer-events-auto bg-transparent"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setIsOpen(false);
-              }}
-            />
-            <div
-              ref={portalMenuRef}
-              onClick={(e) => e.stopPropagation()}
-              className="absolute left-0 right-0 top-full mt-1.5 z-[9999] min-w-full rounded-xl bg-[#FDFBF7] dark:bg-[#1C1917] border border-amber-900/15 dark:border-stone-800 shadow-2xl max-h-56 overflow-y-auto"
-              style={{ pointerEvents: 'auto' }}
-            >
-              {menuContentBody}
-            </div>
-          </>
-        )}
-      </AnimatePresence>
+      {/* Dropdown Menu (Inline or Portaled with top-tier stacking) */}
+      {isOpen && isMounted && usePortal && typeof document !== 'undefined' && (
+        createPortal(
+          <div
+            ref={portalMenuRef}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: 'fixed',
+              top: `${coords.top}px`,
+              left: `${coords.left}px`,
+              width: `${coords.width}px`,
+              zIndex: 999999,
+              pointerEvents: 'auto',
+            }}
+            className="rounded-xl bg-[#FDFBF7] dark:bg-[#1C1917] border border-amber-900/15 dark:border-stone-800 shadow-2xl max-h-60 overflow-y-auto"
+          >
+            {menuContentBody}
+          </div>,
+          document.body
+        )
+      )}
+      {isOpen && (!usePortal || !isMounted) && (
+        <div
+          ref={portalMenuRef}
+          onClick={(e) => e.stopPropagation()}
+          className="absolute left-0 right-0 top-full mt-1.5 z-[100] min-w-full rounded-xl bg-[#FDFBF7] dark:bg-[#1C1917] border border-amber-900/15 dark:border-stone-800 shadow-2xl max-h-60 overflow-y-auto"
+          style={{ pointerEvents: 'auto' }}
+        >
+          {menuContentBody}
+        </div>
+      )}
     </div>
   );
 }

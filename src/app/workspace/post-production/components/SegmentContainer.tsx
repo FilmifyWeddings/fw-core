@@ -1,11 +1,22 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Plus, X, ChevronDown, Sparkles, FolderPlus, Layers
 } from 'lucide-react';
 import DeliverableCategorySection, { PostProductionDeliverable } from './DeliverableCategorySection';
 import PostProductionConfirmModal from './PostProductionConfirmModal';
+import { fetchPostProductionSettings } from '@/lib/post-production-settings';
+
+export function normalizeCategoryName(cat: string): string {
+  if (!cat) return 'Photos';
+  const c = cat.trim().toLowerCase();
+  if (c === 'photos' || c === 'photo' || c === 'stills') return 'Photos';
+  if (c === 'videos' || c === 'video' || c === 'films') return 'Videos';
+  if (c === 'albums' || c === 'album' || c === 'photobooks') return 'Albums';
+  return cat.trim().charAt(0).toUpperCase() + cat.trim().slice(1);
+}
 
 interface SegmentContainerProps {
   segmentName: string;
@@ -13,8 +24,9 @@ interface SegmentContainerProps {
   teamMembers: { id: string; name: string; role?: string }[];
   disabledCategories?: string[];
   onUpdateItem: (itemId: string, field: keyof PostProductionDeliverable, value: any) => void;
+  onUpdateItemFields?: (itemId: string, fields: Partial<PostProductionDeliverable>) => void;
   onDeleteItem: (itemId: string) => void;
-  onAddItem: (segment: string, category: string, title: string) => void;
+  onAddItem: (segment: string, category: string, title: string, specs?: string) => void;
   onRemoveCategory: (segment: string, category: string) => void;
   onAddCategory: (segment: string, category: string) => void;
   onRemoveSegment?: (segmentName: string) => void;
@@ -30,6 +42,7 @@ export default function SegmentContainer({
   teamMembers,
   disabledCategories = [],
   onUpdateItem,
+  onUpdateItemFields,
   onDeleteItem,
   onAddItem,
   onRemoveCategory,
@@ -38,66 +51,140 @@ export default function SegmentContainer({
   onOpenComments,
   onOpenDrive,
 }: SegmentContainerProps) {
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const [showAddCatPopover, setShowAddCatPopover] = useState(false);
   const [customCatInput, setCustomCatInput] = useState('');
   const [isAddingCustomCat, setIsAddingCustomCat] = useState(false);
   const [showDeleteSegConfirm, setShowDeleteSegConfirm] = useState(false);
+  const [studioCategories, setStudioCategories] = useState<string[]>(DEFAULT_CATEGORIES);
 
-  // Segment styling & emoji
+  useEffect(() => {
+    const loadCategories = () => {
+      fetchPostProductionSettings().then(settings => {
+        if (settings && settings.categories && settings.categories.length > 0) {
+          const names = settings.categories.map(c => c.name);
+          setStudioCategories(names);
+        }
+      }).catch(() => {});
+    };
+
+    loadCategories();
+    window.addEventListener('post_production_settings_updated', loadCategories);
+    return () => window.removeEventListener('post_production_settings_updated', loadCategories);
+  }, []);
+
+  // Segment styling & emoji with distinct minimal pastel backgrounds
   const segmentConfig = useMemo(() => {
     const s = segmentName.toLowerCase();
     if (s.includes('pre-wedding') || s.includes('prewedding')) {
       return {
         emoji: '💍',
         title: `${segmentName} Segment`,
-        containerBorder: 'border-amber-200/80 dark:border-amber-900/40',
-        headerText: 'text-amber-900 dark:text-amber-200',
-        badgeBg: 'bg-amber-100/70 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+        containerBg: 'bg-[#F2F8FA] dark:bg-[#141A1C]',
+        containerBorder: 'border-[#D1E8EE] dark:border-cyan-900/50',
+        headerText: 'text-[#164E63] dark:text-cyan-200',
+        badgeBg: 'bg-[#E0F2F7] text-[#164E63] border-[#C3E4ED] dark:bg-cyan-950/60 dark:text-cyan-300 dark:border-cyan-800',
       };
     }
     if (s.includes('wedding')) {
       return {
         emoji: '💒',
         title: `${segmentName} Segment`,
-        containerBorder: 'border-indigo-200/80 dark:border-indigo-900/40',
-        headerText: 'text-indigo-900 dark:text-indigo-200',
-        badgeBg: 'bg-indigo-100/70 text-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
+        containerBg: 'bg-[#FAF7F2] dark:bg-[#1C1814]',
+        containerBorder: 'border-[#EEDFC6] dark:border-amber-900/50',
+        headerText: 'text-[#6A4B23] dark:text-amber-200',
+        badgeBg: 'bg-[#F4E9D5] text-[#6A4B23] border-[#E3D1B4] dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800',
+      };
+    }
+    if (s.includes('reception')) {
+      return {
+        emoji: '🥂',
+        title: `${segmentName} Segment`,
+        containerBg: 'bg-[#F6F4FA] dark:bg-[#18151D]',
+        containerBorder: 'border-[#DFDAEE] dark:border-indigo-900/50',
+        headerText: 'text-[#3730A3] dark:text-indigo-200',
+        badgeBg: 'bg-[#EDE9FE] text-[#3730A3] border-[#DDD6FE] dark:bg-indigo-950/60 dark:text-indigo-300 dark:border-indigo-800',
+      };
+    }
+    if (s.includes('haldi')) {
+      return {
+        emoji: '🌼',
+        title: `${segmentName} Segment`,
+        containerBg: 'bg-[#FEFAF0] dark:bg-[#1D1B12]',
+        containerBorder: 'border-[#F8E7BE] dark:border-yellow-900/50',
+        headerText: 'text-[#78350F] dark:text-yellow-200',
+        badgeBg: 'bg-[#FEF3C7] text-[#78350F] border-[#FDE68A] dark:bg-yellow-950/60 dark:text-yellow-300 dark:border-yellow-800',
+      };
+    }
+    if (s.includes('sangeet')) {
+      return {
+        emoji: '💃',
+        title: `${segmentName} Segment`,
+        containerBg: 'bg-[#FAF3F6] dark:bg-[#1D1418]',
+        containerBorder: 'border-[#EED3DE] dark:border-rose-900/50',
+        headerText: 'text-[#831843] dark:text-rose-200',
+        badgeBg: 'bg-[#FCE7F3] text-[#831843] border-[#FBCFE8] dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800',
+      };
+    }
+    if (s.includes('mehendi') || s.includes('mehndi')) {
+      return {
+        emoji: '🌿',
+        title: `${segmentName} Segment`,
+        containerBg: 'bg-[#F2F8F4] dark:bg-[#131B15]',
+        containerBorder: 'border-[#CCE5D4] dark:border-emerald-900/50',
+        headerText: 'text-[#065F46] dark:text-emerald-200',
+        badgeBg: 'bg-[#D1FAE5] text-[#065F46] border-[#A7F3D0] dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800',
+      };
+    }
+    if (s.includes('engagement') || s.includes('roka')) {
+      return {
+        emoji: '💍',
+        title: `${segmentName} Segment`,
+        containerBg: 'bg-[#FAF6F0] dark:bg-[#1C1713]',
+        containerBorder: 'border-[#EEDDC8] dark:border-amber-900/50',
+        headerText: 'text-[#713F12] dark:text-amber-200',
+        badgeBg: 'bg-[#FEF3C7] text-[#713F12] border-[#FDE68A] dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800',
       };
     }
     return {
       emoji: '✨',
       title: `${segmentName} Segment`,
-      containerBorder: 'border-purple-200/80 dark:border-purple-900/40',
-      headerText: 'text-purple-900 dark:text-purple-200',
-      badgeBg: 'bg-purple-100/70 text-purple-800 dark:bg-purple-950/50 dark:text-purple-300 border-purple-200 dark:border-purple-800',
+      containerBg: 'bg-[#FAF8F5] dark:bg-[#181614]',
+      containerBorder: 'border-[#EAE5DA] dark:border-stone-800',
+      headerText: 'text-[#292524] dark:text-stone-200',
+      badgeBg: 'bg-stone-100 text-stone-700 border-stone-200 dark:bg-stone-800 dark:text-stone-300 dark:border-stone-700',
     };
   }, [segmentName]);
 
-  // Compute active categories for this segment
+  // Compute active categories for this segment (Canonical, Case-Insensitive, No Duplication)
   const activeCategories = useMemo(() => {
-    const catSet = new Set<string>();
+    const disabledLower = new Set(disabledCategories.map(c => c.toLowerCase()));
+    const discovered = new Set<string>();
 
-    // Add default categories unless disabled
-    DEFAULT_CATEGORIES.forEach(cat => {
-      if (!disabledCategories.includes(cat)) {
-        catSet.add(cat);
+    DEFAULT_CATEGORIES.forEach(c => {
+      if (!disabledLower.has(c.toLowerCase())) {
+        discovered.add(c);
       }
     });
 
-    // Add any category from existing deliverables in this segment (unless explicitly disabled)
     deliverables.forEach(d => {
-      if (d.category && !disabledCategories.includes(d.category)) {
-        catSet.add(d.category);
+      if (d.category) {
+        const norm = normalizeCategoryName(d.category);
+        if (!disabledLower.has(norm.toLowerCase()) && !disabledLower.has(d.category.toLowerCase())) {
+          discovered.add(norm);
+        }
       }
     });
 
-    return Array.from(catSet);
+    return Array.from(discovered);
   }, [deliverables, disabledCategories]);
 
-  // Missing standard categories that can be re-added
+  // Categories configured in settings that are not yet active in this segment
   const availableToAdd = useMemo(() => {
-    return DEFAULT_CATEGORIES.filter(c => !activeCategories.includes(c));
-  }, [activeCategories]);
+    const activeLower = new Set(activeCategories.map(c => c.toLowerCase()));
+    const allKnown = Array.from(new Set([...DEFAULT_CATEGORIES, ...studioCategories]));
+    return allKnown.filter(c => !activeLower.has(c.toLowerCase()));
+  }, [activeCategories, studioCategories]);
 
   const handleAddCustomCategory = (e: React.FormEvent) => {
     e.preventDefault();
@@ -110,9 +197,13 @@ export default function SegmentContainer({
   };
 
   return (
-    <div className={`space-y-4 bg-[#FFFDF9] dark:bg-[#1A1816] p-4 sm:p-5 rounded-2xl border ${segmentConfig.containerBorder} shadow-xs`}>
-      {/* ── SEGMENT HEADER ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#EAE5DA] dark:border-stone-800">
+    <div className={`space-y-4 ${segmentConfig.containerBg} p-4 sm:p-5 rounded-2xl border ${segmentConfig.containerBorder} shadow-xs`}>
+      {/* ── SEGMENT HEADER (CLICKABLE ACCORDION TRIGGER) ── */}
+      <div 
+        onClick={() => setIsCollapsed(prev => !prev)}
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#EAE5DA] dark:border-stone-800 cursor-pointer select-none group/header hover:bg-amber-50/20 -mx-1 px-1 rounded-xl transition"
+        title={isCollapsed ? `Click to expand ${segmentName}` : `Click to collapse ${segmentName}`}
+      >
         <div className="flex items-center gap-3">
           <span className="text-xl p-1.5 rounded-xl bg-[#F8F6F0] dark:bg-stone-800 border border-[#EAE5DA] dark:border-stone-700 shadow-2xs">
             {segmentConfig.emoji}
@@ -132,9 +223,12 @@ export default function SegmentContainer({
           </div>
         </div>
 
-        {/* Right Segment Controls: Remove Segment */}
-        {onRemoveSegment && (
-          <div className="flex items-center gap-2 self-end sm:self-auto">
+        {/* Right Segment Controls: Remove Segment & Accordion Arrow */}
+        <div 
+          onClick={(e) => e.stopPropagation()}
+          className="flex items-center gap-2 self-end sm:self-auto"
+        >
+          {onRemoveSegment && (
             <button
               type="button"
               onClick={() => setShowDeleteSegConfirm(true)}
@@ -144,11 +238,33 @@ export default function SegmentContainer({
               <X className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Remove Segment</span>
             </button>
-          </div>
-        )}
+          )}
+
+          {/* Accordion Toggle Arrow */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsCollapsed(prev => !prev);
+            }}
+            className="p-2 rounded-xl bg-white dark:bg-stone-800 border border-[#EAE5DA] dark:border-stone-700 text-slate-500 hover:text-amber-600 dark:text-stone-400 hover:border-amber-300 transition cursor-pointer shadow-2xs"
+            title={isCollapsed ? `Expand ${segmentName}` : `Collapse ${segmentName}`}
+          >
+            <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isCollapsed ? '-rotate-90 text-stone-400' : 'rotate-0 text-amber-600 dark:text-amber-400'}`} />
+          </button>
+        </div>
       </div>
 
-      {/* ── STACKED FULL-WIDTH CATEGORY SECTIONS ── */}
+      {/* ── STACKED FULL-WIDTH CATEGORY SECTIONS (ACCORDION COLLAPSIBLE) ── */}
+      <AnimatePresence initial={false}>
+        {!isCollapsed && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2 }}
+            className="space-y-4 pt-1"
+          >
       {activeCategories.length === 0 ? (
         <div className="p-8 rounded-2xl border border-dashed border-[#EAE5DA] dark:border-stone-800 text-center bg-white/40 dark:bg-stone-900/30 space-y-3">
           <Layers className="w-8 h-8 text-stone-300 dark:text-stone-600 mx-auto" />
@@ -176,7 +292,7 @@ export default function SegmentContainer({
       ) : (
         <div className="space-y-4">
           {activeCategories.map(cat => {
-            const catDeliverables = deliverables.filter(d => d.category === cat);
+            const catDeliverables = deliverables.filter(d => normalizeCategoryName(d.category) === cat);
             return (
               <DeliverableCategorySection
                 key={`${segmentName}_${cat}`}
@@ -185,6 +301,7 @@ export default function SegmentContainer({
                 items={catDeliverables}
                 teamMembers={teamMembers}
                 onUpdateItem={onUpdateItem}
+                onUpdateItemFields={onUpdateItemFields}
                 onDeleteItem={onDeleteItem}
                 onAddItem={onAddItem}
                 onRemoveCategory={onRemoveCategory}
@@ -219,7 +336,7 @@ export default function SegmentContainer({
                 {availableToAdd.length > 0 && (
                   <div className="space-y-1.5">
                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-stone-400">
-                      Standard Categories
+                      Configured Categories
                     </span>
                     <div className="flex flex-wrap gap-2">
                       {availableToAdd.map(cat => (
@@ -277,6 +394,9 @@ export default function SegmentContainer({
           </div>
         </div>
       )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Segment Deletion 3D Confirmation Modal */}
       {onRemoveSegment && (

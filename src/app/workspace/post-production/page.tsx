@@ -12,21 +12,35 @@ import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import PostProductionCard, { PostProductionProjectData } from './components/PostProductionCard';
 import PostProductionFilterModal, { PostProductionFilters } from './components/PostProductionFilterModal';
 import DeliverableCommentDrawer from './components/DeliverableCommentDrawer';
+import PostProductionOverdueModal, { OverdueDeliverableItem } from './components/PostProductionOverdueModal';
 import { PostProductionDeliverable } from './components/DeliverableCategorySection';
-import { autoSyncClientDeliverables, persistDeliverablesDecoupled } from '@/lib/services/postProductionSyncService';
+import { autoSyncClientDeliverables, persistDeliverablesDecoupled, isDemoDeliverables } from '@/lib/services/postProductionSyncService';
 import { Searchable3DCreamSelectOption } from '@/components/ui/Searchable3DCreamSelect';
 import { fetchWorkspaceEventTypes } from '@/lib/workspace-settings';
 
+export interface PostProductionTeamMember {
+  id: string;
+  name: string;
+  role?: string;
+  isInHouse?: boolean;
+  hasPMAccess?: boolean;
+}
+
 export default function PostProductionPage() {
   const [projects, setProjects] = useState<PostProductionProjectData[]>([]);
+  const [clients, setClients] = useState<any[]>([]);
   const [quotations, setQuotations] = useState<any[]>([]);
-  const [teamMembers, setTeamMembers] = useState<{ id: string; name: string; role?: string }[]>([]);
+  const [teamMembers, setTeamMembers] = useState<PostProductionTeamMember[]>([]);
   const [eventTypes, setEventTypes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Expanded cards set
+  // Expanded & highlighted cards
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
+  const [highlightedCardId, setHighlightedCardId] = useState<string | null>(null);
+
+  // Overdue Center Modal State
+  const [isOverdueModalOpen, setIsOverdueModalOpen] = useState(false);
 
   // Filter Drawer / Modal State
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
@@ -40,11 +54,21 @@ export default function PostProductionPage() {
     dateScopeEndDate: '',
   });
 
+
   // Active Comment / Activity Drawer state
   const [activeDrawerDeliverable, setActiveDrawerDeliverable] = useState<PostProductionDeliverable | null>(null);
+  const [drawerInitialTab, setDrawerInitialTab] = useState<'comments' | 'links'>('comments');
 
   useEffect(() => {
     fetchPostProductionData();
+
+    const handleSettingsUpdated = () => {
+      fetchPostProductionData();
+    };
+    window.addEventListener('post_production_settings_updated', handleSettingsUpdated);
+    return () => {
+      window.removeEventListener('post_production_settings_updated', handleSettingsUpdated);
+    };
   }, []);
 
   const fetchPostProductionData = async () => {
@@ -53,17 +77,35 @@ export default function PostProductionPage() {
       const { data: { session } } = await supabase.auth.getSession();
       const workspaceId = session?.user?.id || 'ws_demo';
 
-      // 1. Fetch Team Members
-      const members: { id: string; name: string; role?: string }[] = [];
+      // 1. Fetch Team Members with In-House and PM Access tags
+      const members: PostProductionTeamMember[] = [];
       try {
         const { data: fwData } = await supabase
           .from('fw_team_members')
-          .select('id, name, primary_role, phone')
-          .eq('user_id', workspaceId);
+          .select('id, name, primary_role, primary_type, member_types, phone, user_id');
 
         if (fwData && fwData.length > 0) {
           fwData.forEach((f: any) => {
-            if (f.name) members.push({ id: f.id, name: f.name.trim(), role: f.primary_role });
+            const cleanName = f.name?.trim();
+            if (cleanName && !members.some(existing => existing.name.toLowerCase() === cleanName.toLowerCase())) {
+              const isInHouse = (
+                f.primary_type?.toLowerCase() === 'in-house' || 
+                f.primary_type?.toLowerCase() === 'in_house' || 
+                (Array.isArray(f.member_types) && f.member_types.some((t: any) => String(t).toUpperCase() === 'IN_HOUSE'))
+              );
+              const roleStr = f.primary_role || '';
+              const hasPMAccess = (
+                isInHouse ||
+                /manager|lead|head|director|owner|producer|supervisor/i.test(roleStr)
+              );
+              members.push({
+                id: f.id,
+                name: cleanName,
+                role: f.primary_role,
+                isInHouse,
+                hasPMAccess,
+              });
+            }
           });
         }
       } catch (_) {}
@@ -78,7 +120,14 @@ export default function PostProductionPage() {
           json.members.forEach((m: any) => {
             const cleanName = m.name?.trim();
             if (cleanName && !members.some(existing => existing.name.toLowerCase() === cleanName.toLowerCase())) {
-              members.push({ id: m.id || m.user_id, name: cleanName, role: m.role });
+              const isLead = /owner|admin|manager|lead/i.test(m.role || '');
+              members.push({
+                id: m.id || m.user_id,
+                name: cleanName,
+                role: m.role || (isLead ? 'Studio Manager' : 'Member'),
+                isInHouse: true,
+                hasPMAccess: true,
+              });
             }
           });
         }
@@ -86,7 +135,13 @@ export default function PostProductionPage() {
 
       const ownerName = session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'Studio Owner';
       if (!members.some(m => m.name.toLowerCase() === ownerName.toLowerCase())) {
-        members.unshift({ id: workspaceId, name: ownerName, role: 'Owner / Lead' });
+        members.unshift({
+          id: workspaceId,
+          name: ownerName,
+          role: 'Owner / Lead',
+          isInHouse: true,
+          hasPMAccess: true,
+        });
       }
       setTeamMembers(members);
 
@@ -100,13 +155,19 @@ export default function PostProductionPage() {
         console.warn('Error fetching workspace event types:', evErr);
       }
 
-      // 2. Fetch Quotations
+      // 2. Fetch Quotations with strict workspace isolation
       let qList: any[] = [];
       try {
-        const { data: qData } = await supabase
+        let qQuery = supabase
           .from('quotations')
           .select('*')
           .order('created_at', { ascending: false });
+
+        if (workspaceId && workspaceId !== 'ws_demo') {
+          qQuery = qQuery.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
+        }
+
+        const { data: qData } = await qQuery;
         qList = qData || [];
         setQuotations(qList);
       } catch (qErr) {
@@ -125,6 +186,7 @@ export default function PostProductionPage() {
 
       const { data: clientData } = await clientQuery;
       const clientList = clientData || [];
+      setClients(clientList);
 
       // 4. Fetch FW Projects (master booking projects)
       const { data: fwProjects } = await supabase
@@ -184,33 +246,78 @@ export default function PostProductionPage() {
           projectDeliverables = ppp.deliverables;
         }
 
-        const effectivePM = client.project_manager_name || matchedFwProject?.project_manager_name || ppp?.project_manager_name || null;
-        const effectivePMId = client.project_manager_id || matchedFwProject?.project_manager_id || ppp?.project_manager_id || null;
+        // Gracefully normalize legacy deliverables (TitleCase categories, default segments, specs sync)
+        projectDeliverables = projectDeliverables.map(d => {
+          const rawCat = (d.category || 'Photos').trim().toLowerCase();
+          const normCat = (rawCat === 'photos' || rawCat === 'photo' || rawCat === 'stills') ? 'Photos'
+            : (rawCat === 'videos' || rawCat === 'video' || rawCat === 'films') ? 'Videos'
+            : (rawCat === 'albums' || rawCat === 'album' || rawCat === 'photobooks') ? 'Albums'
+            : (d.category ? (d.category.charAt(0).toUpperCase() + d.category.slice(1)) : 'Photos');
+
+          const normSeg = d.segment ? d.segment.trim() : 'Wedding';
+          const cleanSpecs = d.specs || d.count || null;
+
+          return {
+            ...d,
+            category: normCat,
+            segment: normSeg,
+            specs: cleanSpecs,
+            count: cleanSpecs,
+          };
+        });
+
+        // Extract project manager from client notes JSON, client columns, or handled_by
+        let extractedPMName: string | null = null;
+        let extractedPMId: string | null = null;
+
+        if (client.notes) {
+          try {
+            const rawNotes = client.notes;
+            if (typeof rawNotes === 'string' && rawNotes.trim().startsWith('{')) {
+              const parsed = JSON.parse(rawNotes);
+              if (parsed.project_manager_name) {
+                extractedPMName = String(parsed.project_manager_name).trim();
+              }
+              if (parsed.project_manager_id) {
+                extractedPMId = String(parsed.project_manager_id).trim();
+              }
+              if (!extractedPMName && parsed.notes && typeof parsed.notes === 'string') {
+                const hbMatch = parsed.notes.match(/handled_by:\s*([^;,\n]+)/i);
+                if (hbMatch) extractedPMName = hbMatch[1].trim();
+              }
+            } else if (typeof rawNotes === 'string') {
+              const hbMatch = rawNotes.match(/handled_by:\s*([^;,\n]+)/i);
+              if (hbMatch) extractedPMName = hbMatch[1].trim();
+            }
+          } catch (_) {}
+        }
+
+        if (!extractedPMName && client.handled_by) {
+          extractedPMName = client.handled_by.trim();
+        }
+
+        // Match against team members by id or name
+        let matchedPMName = extractedPMName;
+        let matchedPMId: string | null = extractedPMId;
+
+        if (extractedPMId) {
+          const m = members.find(tm => tm.id === extractedPMId);
+          if (m) {
+            matchedPMName = m.name;
+          }
+        } else if (extractedPMName) {
+          const m = members.find(tm => tm.name.toLowerCase() === extractedPMName?.toLowerCase());
+          if (m) {
+            matchedPMName = m.name;
+            matchedPMId = m.id;
+          }
+        }
+
+        const effectivePM = ppp?.project_manager_name || matchedFwProject?.project_manager_name || client.project_manager_name || matchedPMName || null;
+        const effectivePMId = ppp?.project_manager_id || matchedFwProject?.project_manager_id || client.project_manager_id || matchedPMId || null;
 
         let quotationId = ppp?.notes?.includes('quotation_id:') ? ppp.notes.split('quotation_id:')[1]?.split(';')[0] : null;
         let quotationTitle = ppp?.notes?.includes('quotation_title:') ? ppp.notes.split('quotation_title:')[1]?.split(';')[0] : null;
-
-        // Auto-sync deliverables from client's approved / final quotation if none exist
-        if (projectDeliverables.length === 0) {
-          const syncResult = autoSyncClientDeliverables(client, qList, []);
-          if (syncResult.wasSynced && syncResult.deliverables.length > 0) {
-            projectDeliverables = syncResult.deliverables;
-            quotationId = syncResult.quotationId || null;
-            quotationTitle = syncResult.quotationTitle || null;
-
-            // Persist decoupled auto-sync in background
-            persistDeliverablesDecoupled({
-              workspaceId,
-              clientId: client.id,
-              projectId: matchedFwProject?.id,
-              deliverables: projectDeliverables,
-              projectManagerId: effectivePMId,
-              projectManagerName: effectivePM,
-              overallStatus: ppp?.overall_status || 'active',
-              notes: `quotation_id:${quotationId || ''};quotation_title:${quotationTitle || ''};`,
-            });
-          }
-        }
 
         // Section & Segment Configuration
         const projConfig = matchedFwProject ? configByProjectId.get(matchedFwProject.id) : null;
@@ -228,13 +335,57 @@ export default function PostProductionPage() {
           } catch (_) {}
         }
 
+        // Auto-sync deliverables from client's approved / final quotation if none exist or if existing are demo seeds
+        const hasDemo = isDemoDeliverables(projectDeliverables);
+        const shouldSync = projectDeliverables.length === 0 || hasDemo;
+
+        if (shouldSync) {
+          const syncResult = autoSyncClientDeliverables(client, qList, projectDeliverables);
+          if (syncResult.wasSynced && syncResult.deliverables.length > 0) {
+            projectDeliverables = syncResult.deliverables;
+            quotationId = syncResult.quotationId || null;
+            quotationTitle = syncResult.quotationTitle || null;
+
+            if (syncResult.enabledSegments && syncResult.enabledSegments.length > 0) {
+              enabledSegments = syncResult.enabledSegments;
+            }
+
+            const ppNotes = `quotation_id:${quotationId || ''};quotation_title:${quotationTitle || ''};pp_config:${encodeURIComponent(JSON.stringify({ enabled_segments: enabledSegments }))};`;
+
+            // Persist decoupled auto-sync in background to permanently clean up database
+            persistDeliverablesDecoupled({
+              workspaceId,
+              clientId: client.id,
+              projectId: matchedFwProject?.id,
+              deliverables: projectDeliverables,
+              projectManagerId: effectivePMId,
+              projectManagerName: effectivePM,
+              overallStatus: ppp?.overall_status || 'active',
+              notes: ppNotes,
+            });
+
+            if (matchedFwProject?.id && enabledSegments) {
+              try {
+                supabase
+                  .from('post_production_project_config')
+                  .upsert({
+                    project_id: matchedFwProject.id,
+                    enabled_segments: enabledSegments,
+                    updated_at: new Date().toISOString()
+                  }, { onConflict: 'project_id' });
+              } catch (_) {}
+            }
+          }
+        }
+
+
         cards.push({
           id: ppp?.id || `proj_${client.id}`,
           project_id: matchedFwProject?.id || client.id,
           workspace_id: workspaceId,
           client_id: client.id,
           client_name: client.name,
-          couple_names: client.notes || null,
+          couple_names: null,
           event_date: client.event_date || matchedFwProject?.main_date || client.created_at,
           event_type: client.event_type || 'Wedding',
           project_manager_id: effectivePMId,
@@ -426,10 +577,82 @@ export default function PostProductionPage() {
     });
   }, [projects, searchQuery, filters]);
 
+  // Overdue Deliverables & Delayed Calculation
+  const isDeliverableOverdue = (dueDateStr: string | null | undefined, status?: string): boolean => {
+    if (!dueDateStr) return false;
+    const s = (status || '').toLowerCase();
+    if (s.includes('done') || s.includes('complete')) return false;
+
+    const due = new Date(dueDateStr);
+    if (isNaN(due.getTime())) return false;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    due.setHours(0, 0, 0, 0);
+
+    return due < today;
+  };
+
+  const getDaysOverdue = (dueDateStr: string): number => {
+    const due = new Date(dueDateStr);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    due.setHours(0, 0, 0, 0);
+
+    const diffMs = today.getTime() - due.getTime();
+    return Math.max(1, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+  };
+
+  const overdueDeliverablesList = useMemo<OverdueDeliverableItem[]>(() => {
+    const list: OverdueDeliverableItem[] = [];
+
+    filteredProjects.forEach(p => {
+      (p.deliverables || []).forEach(d => {
+        if (isDeliverableOverdue(d.due_date, d.status)) {
+          list.push({
+            projectId: p.id,
+            clientName: p.client_name,
+            deliverableId: d.id,
+            title: d.title,
+            segment: d.segment || 'Wedding',
+            category: d.category || 'General',
+            specs: d.specs ? String(d.specs) : (d.count ? String(d.count) : null),
+            dueDate: d.due_date!,
+            daysOverdue: getDaysOverdue(d.due_date!),
+            assignedTo: d.assigned_to || 'Unassigned',
+            pmName: p.project_manager_name || 'No PM',
+          });
+        }
+      });
+    });
+
+    return list.sort((a, b) => b.daysOverdue - a.daysOverdue);
+  }, [filteredProjects]);
+
+  // Delayed projects count: either overall_status is delayed or has at least one overdue deliverable
+  const delayedProjectsCount = useMemo(() => {
+    return filteredProjects.filter(p => {
+      if (p.overall_status === 'delayed') return true;
+      return (p.deliverables || []).some(d => isDeliverableOverdue(d.due_date, d.status));
+    }).length;
+  }, [filteredProjects]);
+
+  // Active pipeline: projects that are not completed
+  const activePipeline = useMemo(() => {
+    return filteredProjects.filter(p => {
+      if (p.overall_status === 'completed') return false;
+      const total = (p.deliverables || []).length;
+      if (total === 0) return true;
+      const done = (p.deliverables || []).filter(d => {
+        const s = (d.status || '').toLowerCase();
+        return s.includes('done') || s.includes('complete');
+      }).length;
+      return done < total;
+    }).length;
+  }, [filteredProjects]);
+
   // Dynamic KPI Metrics (Recalculated on Active Filter Results)
   const totalStudioProjects = filteredProjects.length;
-  const activePipeline = filteredProjects.filter(p => p.overall_status === 'active').length;
-  const delayedProjects = filteredProjects.filter(p => p.overall_status === 'delayed').length;
 
   const allFilteredDeliverables = useMemo(() => filteredProjects.flatMap(p => p.deliverables || []), [filteredProjects]);
   const totalDeliverablesCount = allFilteredDeliverables.length;
@@ -478,25 +701,135 @@ export default function PostProductionPage() {
     ];
   }, [projects]);
 
-  // Open comment / activity drawer
+  // Jump to project card from Overdue Modal
+  const handleSelectOverdueItem = (projectId: string) => {
+    setIsOverdueModalOpen(false);
+    // Expand target project card
+    setExpandedCards(prev => new Set([...Array.from(prev), projectId]));
+    // Set highlight indicator
+    setHighlightedCardId(projectId);
+
+    // Smooth scroll to card
+    setTimeout(() => {
+      const el = document.getElementById(`project-card-${projectId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 150);
+
+    // Clear highlight after 3.5s
+    setTimeout(() => {
+      setHighlightedCardId(null);
+    }, 3500);
+  };
+
+  // Re-sync deliverables from Quotation
+  const handleResyncQuotation = (projectId: string, clientId: string) => {
+    const proj = projects.find(p => p.id === projectId);
+    if (!proj) return;
+
+    const client = clients.find(c => c.id === clientId) || { id: clientId, name: proj.client_name, lead_id: (proj as any).lead_id };
+    const syncResult = autoSyncClientDeliverables(client, quotations, []);
+
+    if (syncResult.wasSynced && syncResult.deliverables.length > 0) {
+      const isDemo = isDemoDeliverables(proj.deliverables || []);
+      // Preserve existing deliverables progress (status, assigned member, notes, drive links) only if not demo
+      const existingMap = new Map<string, PostProductionDeliverable>();
+      if (!isDemo) {
+        (proj.deliverables || []).forEach(d => {
+          const key = `${(d.segment || '').toLowerCase()}_${(d.title || '').toLowerCase()}`;
+          existingMap.set(key, d);
+        });
+      }
+
+      const mergedDeliverables = syncResult.deliverables.map(newD => {
+        const key = `${(newD.segment || '').toLowerCase()}_${(newD.title || '').toLowerCase()}`;
+        const existing = existingMap.get(key);
+        if (existing) {
+          return {
+            ...newD,
+            status: existing.status,
+            assigned_member_id: existing.assigned_member_id,
+            assigned_to: existing.assigned_to,
+            due_date: existing.due_date,
+            notes: existing.notes,
+            comments_count: existing.comments_count,
+            drive_link: (existing as any).drive_link,
+          };
+        }
+        return newD;
+      });
+
+      // Retain custom deliverables created manually by user
+      if (!isDemo) {
+        (proj.deliverables || []).forEach(d => {
+          if (d.is_custom) {
+            mergedDeliverables.push(d);
+          }
+        });
+      }
+
+      const updatedSegments = syncResult.enabledSegments && syncResult.enabledSegments.length > 0
+        ? syncResult.enabledSegments
+        : proj.enabled_segments;
+
+
+      handleUpdateProject(projectId, {
+        deliverables: mergedDeliverables,
+        quotation_id: syncResult.quotationId || proj.quotation_id,
+        quotation_title: syncResult.quotationTitle || proj.quotation_title,
+        enabled_segments: updatedSegments,
+      });
+
+      alert('Quotation deliverables successfully re-synced!');
+    } else {
+      alert('No approved or final quotation with deliverables found for this client.');
+    }
+  };
+
+  // Open comment / activity drawer strictly on Revision Notes tab
   const handleOpenComments = (itemId: string, title: string) => {
     for (const p of projects) {
       const d = (p.deliverables || []).find(item => item.id === itemId);
       if (d) {
+        setDrawerInitialTab('comments');
         setActiveDrawerDeliverable(d);
         break;
       }
     }
   };
 
-  // Open drive link in comment drawer
+  // Open drive link strictly on Resource Links tab
   const handleOpenDrive = (itemId: string, currentLink: string) => {
     for (const p of projects) {
       const d = (p.deliverables || []).find(item => item.id === itemId);
       if (d) {
+        setDrawerInitialTab('links');
         setActiveDrawerDeliverable(d);
         break;
       }
+    }
+  };
+
+  // Comprehensive deliverable update handler (links, comments, specs, etc.)
+  const handleUpdateDeliverable = (deliverableId: string, updates: Partial<PostProductionDeliverable>) => {
+    setProjects(prev => prev.map(p => {
+      const hasItem = (p.deliverables || []).some(d => d.id === deliverableId);
+      if (hasItem) {
+        const updated = p.deliverables.map(d => {
+          if (d.id === deliverableId) {
+            return { ...d, ...updates };
+          }
+          return d;
+        });
+        handleUpdateProject(p.id, { deliverables: updated });
+        return { ...p, deliverables: updated };
+      }
+      return p;
+    }));
+
+    if (activeDrawerDeliverable && activeDrawerDeliverable.id === deliverableId) {
+      setActiveDrawerDeliverable(prev => prev ? { ...prev, ...updates } : null);
     }
   };
 
@@ -639,16 +972,30 @@ export default function PostProductionPage() {
             </div>
           </div>
 
-          <div className="bg-[#FFFDF9] dark:bg-[#181614] p-5 rounded-2xl border border-[#EAE5DA] dark:border-stone-800 shadow-xs flex items-center justify-between hover:border-rose-300/80 transition-all">
+          <div 
+            onClick={() => setIsOverdueModalOpen(true)}
+            className="bg-[#FFFDF9] dark:bg-[#181614] p-5 rounded-2xl border border-[#EAE5DA] dark:border-stone-800 shadow-xs flex items-center justify-between hover:border-rose-400 dark:hover:border-rose-700 hover:shadow-md transition-all cursor-pointer group select-none"
+            title="Click to view all overdue deliverables"
+          >
             <div>
-              <p className="text-[11px] font-extrabold text-slate-500 dark:text-stone-400 uppercase tracking-wider">
-                Delayed / Overdue
-              </p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-[11px] font-extrabold text-slate-500 dark:text-stone-400 uppercase tracking-wider">
+                  Delayed / Overdue
+                </p>
+                {overdueDeliverablesList.length > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400 border border-rose-200 dark:border-rose-900 animate-pulse">
+                    View
+                  </span>
+                )}
+              </div>
               <h3 className="text-2xl font-black text-rose-600 dark:text-rose-400 mt-1">
-                {delayedProjects} <span className="text-xs font-bold text-slate-500 dark:text-stone-400">Delayed</span>
+                {delayedProjectsCount}{' '}
+                <span className="text-xs font-bold text-slate-500 dark:text-stone-400">
+                  Projects ({overdueDeliverablesList.length} items)
+                </span>
               </h3>
             </div>
-            <div className="w-11 h-11 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 flex items-center justify-center">
+            <div className="w-11 h-11 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 flex items-center justify-center group-hover:scale-110 transition-transform shadow-2xs">
               <AlertTriangle className="w-5 h-5" />
             </div>
           </div>
@@ -736,10 +1083,12 @@ export default function PostProductionPage() {
                 quotations={quotations}
                 eventTypes={eventTypes}
                 isExpanded={expandedCards.has(project.id)}
+                isHighlighted={highlightedCardId === project.id}
                 onToggleExpand={() => toggleCardExpansion(project.id)}
                 onUpdateProject={handleUpdateProject}
                 onOpenComments={handleOpenComments}
                 onOpenDrive={handleOpenDrive}
+                onResyncQuotation={() => handleResyncQuotation(project.id, project.client_id)}
               />
             ))}
           </div>
@@ -759,14 +1108,26 @@ export default function PostProductionPage() {
         />
 
         {/* ─────────────────────────────────────────────────────────────
+            OVERDUE & DELAYED DELIVERABLES CENTER MODAL
+        ───────────────────────────────────────────────────────────── */}
+        <PostProductionOverdueModal
+          isOpen={isOverdueModalOpen}
+          onClose={() => setIsOverdueModalOpen(false)}
+          overdueItems={overdueDeliverablesList}
+          onSelectProject={handleSelectOverdueItem}
+        />
+
+        {/* ─────────────────────────────────────────────────────────────
             DELIVERABLE ACTIVITY & COMMENT SLIDEOUT DRAWER
         ───────────────────────────────────────────────────────────── */}
         <DeliverableCommentDrawer
           isOpen={Boolean(activeDrawerDeliverable)}
           onClose={() => setActiveDrawerDeliverable(null)}
           deliverable={activeDrawerDeliverable}
+          initialTab={drawerInitialTab}
           onUpdateDriveLink={handleUpdateDriveLink}
           onCommentCountChange={handleCommentCountChange}
+          onUpdateDeliverable={handleUpdateDeliverable}
         />
 
       </div>

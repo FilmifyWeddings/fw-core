@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
 import { extractFinancialsFromQuotation, syncQuotationToTeamManagerEvents } from '@/lib/quotation-finance-sync';
+import { parseQuotationDeliverables } from '@/lib/services/postProductionSyncService';
 
 export const runtime = 'nodejs';
 
@@ -337,7 +338,66 @@ export async function POST(req: NextRequest) {
       } catch (tmErr) {
         console.error('[Set-Final] Error syncing team manager events:', tmErr);
       }
+
+      // Sync Quotation Deliverables & Segments (Pre-Wedding & Wedding) to Post-Production
+      try {
+        if (workspaceId && finalDoc.content_json) {
+          const parsed = parseQuotationDeliverables(finalDoc);
+          if (parsed.deliverables && parsed.deliverables.length > 0) {
+            const clientTargets = [workspaceClientId, leadId].filter(Boolean) as string[];
+            const ppNotes = `quotation_id:${finalDoc.template_id || quotationId};quotation_title:${finalDoc.content_json?.meta?.project_name || 'Final Quotation'};pp_config:${encodeURIComponent(JSON.stringify({ enabled_segments: parsed.enabledSegments }))};`;
+
+            for (const cId of clientTargets) {
+              const { data: existingPPP } = await supabaseAdmin
+                .from('post_production_projects')
+                .select('id, client_id')
+                .eq('client_id', cId)
+                .maybeSingle();
+
+              if (existingPPP) {
+                await supabaseAdmin
+                  .from('post_production_projects')
+                  .update({
+                    deliverables: parsed.deliverables,
+                    notes: ppNotes,
+                    overall_status: 'active',
+                    updated_at: now
+                  })
+                  .eq('id', existingPPP.id);
+              } else {
+                await supabaseAdmin
+                  .from('post_production_projects')
+                  .insert({
+                    user_id: workspaceId,
+                    workspace_id: workspaceId,
+                    client_id: cId,
+                    deliverables: parsed.deliverables,
+                    notes: ppNotes,
+                    overall_status: 'active',
+                    created_at: now,
+                    updated_at: now
+                  });
+              }
+            }
+
+            if (workspaceClientId) {
+              try {
+                await supabaseAdmin
+                  .from('post_production_project_config')
+                  .upsert({
+                    project_id: workspaceClientId,
+                    enabled_segments: parsed.enabledSegments || ['Wedding'],
+                    updated_at: now
+                  }, { onConflict: 'project_id' });
+              } catch (_) {}
+            }
+          }
+        }
+      } catch (ppErr) {
+        console.error('[Set-Final] Error syncing post-production project deliverables:', ppErr);
+      }
     }
+
 
     return NextResponse.json({
       success: true,

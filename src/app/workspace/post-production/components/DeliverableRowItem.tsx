@@ -1,18 +1,20 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Camera, Video, BookOpen, Calendar, Trash2, Edit3, 
-  MessageSquare, Link2, Check, Sparkles
+  MessageSquare, Link2, Check, Sparkles, Plus
 } from 'lucide-react';
 import { PostProductionDeliverable } from './DeliverableCategorySection';
 import Searchable3DCreamSelect, { Searchable3DCreamSelectOption } from '@/components/ui/Searchable3DCreamSelect';
 import PostProductionConfirmModal from './PostProductionConfirmModal';
+import { fetchPostProductionSettings, DEFAULT_POST_PRODUCTION_STATUSES } from '@/lib/post-production-settings';
 
 interface DeliverableRowItemProps {
   item: PostProductionDeliverable;
   teamMembers: { id: string; name: string; role?: string }[];
   onUpdateItem: (itemId: string, field: keyof PostProductionDeliverable, value: any) => void;
+  onUpdateItemFields?: (itemId: string, fields: Partial<PostProductionDeliverable>) => void;
   onDeleteItem: (itemId: string) => void;
   onOpenComments: (itemId: string, title: string) => void;
   onOpenDrive?: (itemId: string, currentLink: string) => void;
@@ -35,37 +37,11 @@ const getRoleShortCode = (role?: string) => {
   return role.slice(0, 2).toUpperCase();
 };
 
-const STATUS_OPTIONS: Searchable3DCreamSelectOption[] = [
-  {
-    value: 'Upcoming',
-    label: '🟡 Upcoming',
-    badge: 'Pending',
-    badgeClassName: 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800',
-  },
-  {
-    value: 'In Progress',
-    label: '🔵 In Progress',
-    badge: 'Active',
-    badgeClassName: 'bg-sky-100 dark:bg-sky-900/40 text-sky-800 dark:text-sky-300 border border-sky-200 dark:border-sky-800',
-  },
-  {
-    value: 'Under Review',
-    label: '🟣 Under Review',
-    badge: 'Review',
-    badgeClassName: 'bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800',
-  },
-  {
-    value: 'Done',
-    label: '🟢 Done',
-    badge: 'Done',
-    badgeClassName: 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800',
-  },
-];
-
 export default function DeliverableRowItem({
   item,
   teamMembers,
   onUpdateItem,
+  onUpdateItemFields,
   onDeleteItem,
   onOpenComments,
   onOpenDrive,
@@ -77,31 +53,66 @@ export default function DeliverableRowItem({
   const [specInput, setSpecInput] = useState(String(item.specs ?? item.count ?? ''));
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const datePickerRef = useRef<HTMLInputElement | null>(null);
 
-  // Synchronize specInput when item changes
-  React.useEffect(() => {
+  // Dynamic workflow statuses loaded from settings
+  const [statusOptions, setStatusOptions] = useState<Searchable3DCreamSelectOption[]>([
+    { value: 'Upcoming', label: 'Upcoming', color: '#d97706' },
+    { value: 'In Progress', label: 'In Progress', color: '#0284c7' },
+    { value: 'Under Review', label: 'Under Review', color: '#9333ea' },
+    { value: 'Done', label: 'Done', color: '#059669' },
+  ]);
+
+  const loadStatusSettings = () => {
+    fetchPostProductionSettings().then(settings => {
+      if (settings && settings.statuses && settings.statuses.length > 0) {
+        const loaded: Searchable3DCreamSelectOption[] = settings.statuses.map(s => ({
+          value: s.name,
+          label: s.name,
+          color: s.color,
+        }));
+        if (item.status && !loaded.some(o => o.value.toLowerCase() === item.status.toLowerCase())) {
+          loaded.push({
+            value: item.status,
+            label: item.status,
+            color: '#64748b',
+          });
+        }
+        setStatusOptions(loaded);
+      }
+    }).catch(() => {});
+  };
+
+  useEffect(() => {
+    loadStatusSettings();
+    const handleSettingsUpdated = () => {
+      loadStatusSettings();
+    };
+    window.addEventListener('post_production_settings_updated', handleSettingsUpdated);
+    return () => {
+      window.removeEventListener('post_production_settings_updated', handleSettingsUpdated);
+    };
+  }, []);
+
+  useEffect(() => {
+    setTitleInput(item.title);
+  }, [item.title]);
+
+  useEffect(() => {
     setSpecInput(String(item.specs ?? item.count ?? ''));
   }, [item.specs, item.count]);
 
-  // Normalize status
-  const currentStatus = (() => {
-    const s = (item.status || '').toLowerCase();
-    if (s.includes('done') || s.includes('complete')) return 'Done';
-    if (s.includes('review')) return 'Under Review';
-    if (s.includes('progress')) return 'In Progress';
-    return 'Upcoming';
-  })();
+  // Current status normalized or matched
+  const currentStatus = item.status || 'Upcoming';
 
-  // Current Assignee
+  // Current Assignee resolution
   const currentAssignee = item.assigned_member_id || item.assigned_to || 'unassigned';
 
-  // Team Member Options with Searchable 3D cream specs
-  const teamMemberOptions: Searchable3DCreamSelectOption[] = [
+  // Team Member Options: Clean luxury display with Profile Avatar and Full Name ONLY
+  const teamMemberOptions: Searchable3DCreamSelectOption[] = useMemo(() => [
     {
       value: 'unassigned',
       label: 'Unassigned',
-      badge: 'None',
-      badgeClassName: 'bg-stone-200 dark:bg-stone-700 text-stone-600 dark:text-stone-300',
     },
     ...teamMembers.map(m => {
       const initials = m.name
@@ -114,10 +125,9 @@ export default function DeliverableRowItem({
         value: m.id || m.name,
         label: m.name,
         initials,
-        roleTag: `[${getRoleShortCode(m.role)}]`,
       };
     }),
-  ];
+  ], [teamMembers]);
 
   // Deadline calculation
   const dueDateStr = item.due_date || item.deadline || '';
@@ -131,7 +141,7 @@ export default function DeliverableRowItem({
     due.setHours(0, 0, 0, 0);
 
     const diffDays = Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    const isDone = currentStatus === 'Done';
+    const isDone = (currentStatus || '').toLowerCase().includes('done');
 
     if (isDone) {
       return {
@@ -168,15 +178,23 @@ export default function DeliverableRowItem({
 
   const handleSaveTitle = () => {
     if (titleInput.trim() && titleInput.trim() !== item.title) {
-      onUpdateItem(item.id, 'title', titleInput.trim());
+      if (onUpdateItemFields) {
+        onUpdateItemFields(item.id, { title: titleInput.trim() });
+      } else {
+        onUpdateItem(item.id, 'title', titleInput.trim());
+      }
     }
     setIsEditingTitle(false);
   };
 
   const handleSaveSpec = () => {
     const clean = specInput.trim();
-    onUpdateItem(item.id, 'specs', clean || null);
-    onUpdateItem(item.id, 'count', clean || null);
+    if (onUpdateItemFields) {
+      onUpdateItemFields(item.id, { specs: clean || null, count: clean || null });
+    } else {
+      onUpdateItem(item.id, 'specs', clean || null);
+      onUpdateItem(item.id, 'count', clean || null);
+    }
     setIsEditingSpec(false);
   };
 
@@ -190,15 +208,15 @@ export default function DeliverableRowItem({
       case 'Albums':
         return <BookOpen className="w-4 h-4 text-amber-600 dark:text-amber-400" />;
       default:
-        return <Sparkles className="w-4 h-4 text-purple-600 dark:text-purple-400" />;
+        return <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />;
     }
   };
 
   return (
-    <div className="bg-[#FFFDF9] dark:bg-[#1A1816] border border-[#EAE5DA] dark:border-stone-800/90 rounded-xl p-3 hover:shadow-md hover:border-amber-400/60 transition-all flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-      {/* ── 1. TITLE & SPECS (INLINE EDITABLE) ── */}
+    <div className="p-3 bg-white dark:bg-stone-900 rounded-xl border border-[#EAE5DA] dark:border-stone-800/80 shadow-2xs hover:shadow-xs transition flex flex-col xl:flex-row xl:items-center justify-between gap-3 group">
+      {/* ── 1. DELIVERABLE NAME & SPECS BADGE (LEFT COLUMN) ── */}
       <div className="flex items-center gap-2.5 min-w-0 flex-1">
-        <div className="p-1.5 rounded-lg bg-stone-100 dark:bg-stone-800 shrink-0 shadow-2xs">
+        <div className="p-1.5 rounded-lg bg-[#FAF8F5] dark:bg-stone-800 border border-[#EAE5DA] dark:border-stone-700 shrink-0">
           {getCategoryIcon()}
         </div>
 
@@ -275,11 +293,11 @@ export default function DeliverableRowItem({
                         setSpecInput(String(item.specs ?? item.count ?? ''));
                         setIsEditingSpec(true);
                       }}
-                      className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/50 text-amber-900 dark:text-amber-200 border border-amber-300/80 dark:border-amber-700/60 shadow-2xs hover:bg-amber-100 hover:border-amber-400 transition cursor-pointer shrink-0 flex items-center gap-1 group/spec"
+                      className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-amber-100/70 dark:bg-amber-950/60 text-amber-950 dark:text-amber-200 border border-amber-300 dark:border-amber-700/80 shadow-2xs hover:bg-amber-200/80 hover:border-amber-400 transition cursor-pointer shrink-0 flex items-center gap-1 group/spec"
                       title="Click to edit specs / count (e.g. 25 Mins, 500 Photos, 40 Pages)"
                     >
                       <span>{item.specs || item.count}</span>
-                      <Edit3 className="w-2.5 h-2.5 opacity-40 group-hover/spec:opacity-100 transition" />
+                      <Edit3 className="w-2.5 h-2.5 opacity-50 group-hover/spec:opacity-100 transition" />
                     </span>
                   ) : (
                     <button
@@ -288,10 +306,11 @@ export default function DeliverableRowItem({
                         setSpecInput('');
                         setIsEditingSpec(true);
                       }}
-                      className="opacity-0 group-hover:opacity-80 hover:!opacity-100 text-[10px] font-bold px-1.5 py-0.5 rounded-md text-stone-400 hover:text-amber-800 dark:text-stone-500 dark:hover:text-amber-300 bg-stone-100/70 hover:bg-amber-50 dark:bg-stone-800/60 dark:hover:bg-amber-950/30 border border-dashed border-stone-200 hover:border-amber-300 transition cursor-pointer shrink-0"
+                      className="opacity-50 hover:opacity-100 group-hover:opacity-100 text-[10px] font-bold px-2 py-0.5 rounded-md text-amber-800 dark:text-amber-300 bg-amber-50/80 dark:bg-amber-950/30 border border-dashed border-amber-300 dark:border-amber-700/60 hover:border-amber-400 transition cursor-pointer shrink-0 flex items-center gap-1"
                       title="Add deliverable specs (e.g. 25 Mins, 500 Photos)"
                     >
-                      + Specs
+                      <Plus className="w-2.5 h-2.5" />
+                      <span>Specs</span>
                     </button>
                   )}
                 </div>
@@ -310,83 +329,115 @@ export default function DeliverableRowItem({
         </div>
       </div>
 
-      {/* ── 2. ASSIGNEE, DUE DATE, STATUS & ACTIONS (RESPONSIVE ROW CLUSTER) ── */}
-      <div className="flex flex-wrap items-center gap-2.5 lg:gap-3 shrink-0">
-        {/* Assignee Selector (Spacious min-w-[190px], role mini chip [ED], [CV]) */}
-        <div className="w-full sm:w-52 lg:w-56 min-w-[190px]">
+      {/* ── 2. EXACT HORIZONTAL LINE CONTROLS CLUSTER (ALIGNABLE COLUMNS) ── */}
+      <div className="flex items-center gap-2.5 lg:gap-3 shrink-0 flex-nowrap overflow-x-auto pb-1 xl:pb-0">
+        {/* Column 1: Assignee Selector (Clean fixed width w-44 sm:w-48, atomic single-shot update) */}
+        <div className="w-44 sm:w-48 shrink-0">
           <Searchable3DCreamSelect
             value={currentAssignee}
             onChange={(val) => {
               const matched = teamMembers.find(m => m.id === val || m.name === val);
-              onUpdateItem(item.id, 'assigned_member_id', val === 'unassigned' ? null : (matched?.id || val));
-              onUpdateItem(item.id, 'assigned_to', val === 'unassigned' ? null : (matched?.name || val));
+              const assigned_member_id = val === 'unassigned' ? null : (matched?.id || val);
+              const assigned_to = val === 'unassigned' ? null : (matched?.name || val);
+
+              if (onUpdateItemFields) {
+                onUpdateItemFields(item.id, { assigned_member_id, assigned_to });
+              } else {
+                onUpdateItem(item.id, 'assigned_member_id', assigned_member_id);
+                onUpdateItem(item.id, 'assigned_to', assigned_to);
+              }
             }}
             options={teamMemberOptions}
             searchable={true}
+            usePortal={true}
             searchPlaceholder="🔍 Search editor..."
             placeholder="+ Assign Editor"
-            usePortal={true}
           />
         </div>
 
-        {/* Due Date & Countdown Status (Generous margin mx-1 sm:mx-2 min-w-[145px] gap-2) */}
-        <div className="flex items-center gap-2 mx-1 sm:mx-2 min-w-[145px] max-w-[215px] flex-1 sm:flex-initial">
-          <div className="flex items-center gap-1.5 bg-white dark:bg-stone-900 px-2.5 py-1.5 rounded-xl border border-[#EAE5DA] dark:border-stone-700 text-xs shadow-2xs flex-1 min-w-[110px]">
-            <Calendar className="w-3.5 h-3.5 text-slate-400 dark:text-stone-500 shrink-0" />
+        {/* Column 2: Due Date & Countdown Status (Clean width w-48 sm:w-52, direct box click) */}
+        <div className="w-48 sm:w-52 shrink-0 flex items-center gap-1.5">
+          <div 
+            onClick={() => datePickerRef.current?.showPicker?.() || datePickerRef.current?.focus()}
+            className="relative flex items-center gap-1.5 bg-white dark:bg-stone-900 px-2.5 py-1.5 rounded-xl border border-[#EAE5DA] dark:border-stone-700 text-xs shadow-2xs cursor-pointer flex-1 hover:border-amber-400 transition min-w-0"
+            title="Click to select due date"
+          >
+            <Calendar className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0 pointer-events-none" />
             <input
+              ref={datePickerRef}
               type="date"
               value={dueDateStr}
               onChange={(e) => {
-                onUpdateItem(item.id, 'due_date', e.target.value);
-                onUpdateItem(item.id, 'deadline', e.target.value);
+                const dateVal = e.target.value;
+                if (onUpdateItemFields) {
+                  onUpdateItemFields(item.id, { due_date: dateVal, deadline: dateVal });
+                } else {
+                  onUpdateItem(item.id, 'due_date', dateVal);
+                  onUpdateItem(item.id, 'deadline', dateVal);
+                }
               }}
-              className="bg-transparent text-[11px] font-bold text-slate-700 dark:text-stone-200 focus:outline-none cursor-pointer w-full"
+              className="bg-transparent text-[11px] font-bold text-slate-700 dark:text-stone-200 focus:outline-none cursor-pointer w-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:cursor-pointer"
             />
           </div>
 
           {deadlineInfo && (
-            <span className={`px-2 py-1 rounded-lg text-[10px] border shadow-2xs whitespace-nowrap shrink-0 ${deadlineInfo.className}`}>
+            <span className={`px-2 py-1 rounded-lg text-[10px] font-black border shadow-2xs whitespace-nowrap shrink-0 ${deadlineInfo.className}`}>
               {deadlineInfo.label}
             </span>
           )}
         </div>
 
-        {/* Status Dropdown (Full width, min-w-[140px], luxury color pills, zero truncation) */}
-        <div className="w-full sm:w-36 lg:w-44 min-w-[140px]">
+        {/* Column 3: Status Dropdown (Fixed width w-36 sm:w-40, dynamically loaded from Settings) */}
+        <div className="w-36 sm:w-40 shrink-0">
           <Searchable3DCreamSelect
             value={currentStatus}
-            onChange={(val) => onUpdateItem(item.id, 'status', val)}
-            options={STATUS_OPTIONS}
             usePortal={true}
+            onChange={(val) => {
+              if (onUpdateItemFields) {
+                onUpdateItemFields(item.id, { status: val });
+              } else {
+                onUpdateItem(item.id, 'status', val);
+              }
+            }}
+            options={statusOptions}
           />
         </div>
 
-        {/* Action Icons */}
-        <div className="flex items-center gap-1 shrink-0 ml-auto sm:ml-0">
+        {/* Column 4: Action Icons */}
+        <div className="flex items-center gap-1 shrink-0">
           {/* Comments Button */}
           <button
             type="button"
             onClick={() => onOpenComments(item.id, item.title)}
             title="Activity notes & revisions"
-            className="px-2.5 py-1.5 rounded-lg border border-[#EAE5DA] dark:border-stone-700 bg-white dark:bg-stone-800 text-slate-600 dark:text-stone-300 hover:text-amber-700 hover:border-amber-400 transition cursor-pointer flex items-center gap-1.5 shadow-2xs text-[11px]"
+            className="px-2 py-1.5 rounded-lg border border-[#EAE5DA] dark:border-stone-700 bg-white dark:bg-stone-800 text-slate-600 dark:text-stone-300 hover:text-amber-700 hover:border-amber-400 transition cursor-pointer flex items-center gap-1 shadow-2xs text-[11px]"
           >
             <MessageSquare className="w-3.5 h-3.5 text-amber-600" />
             <span className="font-black">{commentCount}</span>
           </button>
 
-          {/* Drive link action */}
+          {/* Drive & Resource Links action */}
           {onOpenDrive && (
             <button
               type="button"
               onClick={() => onOpenDrive(item.id, item.drive_link || '')}
-              title={item.drive_link ? 'Open Drive Link' : 'Add Drive Link'}
-              className={`p-1.5 rounded-lg border transition cursor-pointer text-xs ${
-                item.drive_link 
-                  ? 'bg-sky-50 dark:bg-sky-950/40 border-sky-300 dark:border-sky-800 text-sky-700 dark:text-sky-300 shadow-2xs' 
+              title={
+                (item.drive_links && item.drive_links.length > 0)
+                  ? `${item.drive_links.length} drive/resource link(s) added`
+                  : item.drive_link
+                  ? 'Open Drive Link'
+                  : 'Add Drive / Review Links'
+              }
+              className={`px-2 py-1.5 rounded-lg border transition cursor-pointer text-xs flex items-center gap-1 shadow-2xs ${
+                (item.drive_links && item.drive_links.length > 0) || item.drive_link
+                  ? 'bg-sky-50 dark:bg-sky-950/40 border-sky-300 dark:border-sky-800 text-sky-700 dark:text-sky-300' 
                   : 'bg-white dark:bg-stone-800 border-[#EAE5DA] dark:border-stone-700 text-slate-400 hover:text-sky-600'
               }`}
             >
               <Link2 className="w-3.5 h-3.5" />
+              {((item.drive_links?.length || 0) > 0) && (
+                <span className="font-black text-[10px]">{item.drive_links?.length}</span>
+              )}
             </button>
           )}
 

@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
-import { supabase, clearAllSupabaseAuthCookies } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import {
   User,
   Lock,
@@ -270,18 +270,65 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      // Clear any conflicting or stale session chunks before fresh login
-      clearAllSupabaseAuthCookies();
+      // Clear stale workspace profile cache from previous sessions
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('sc_studio_name');
+        localStorage.removeItem('sc_user_name');
+        localStorage.removeItem('sc_avatar_url');
+        localStorage.removeItem('sc_logo_url');
+        localStorage.removeItem('sc_active_workspace_id');
+        localStorage.removeItem('active_workspace_id');
+        localStorage.removeItem('sc_user_email');
+      }
 
       const cleanIdent = identifier.trim().toLowerCase();
 
-      const { data, error: authErr } = await supabase.auth.signInWithPassword({
-        email: cleanIdent,
-        password: password,
-      });
+      // Timeout safeguard: Never let login button hang longer than 12 seconds
+      const loginPromise = (async () => {
+        // Step 1: Attempt server-side login to atomically set HTTP response cookies
+        try {
+          const apiRes = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: cleanIdent, password }),
+          });
 
-      if (authErr) {
-        if (portal === 'team' && authErr.message.includes('Invalid login credentials')) {
+          if (apiRes.ok) {
+            const apiJson = await apiRes.json();
+            if (apiJson.success && apiJson.session) {
+              try {
+                await supabase.auth.setSession(apiJson.session);
+              } catch (_) {}
+              return { user: apiJson.user, session: apiJson.session, error: null };
+            }
+          } else {
+            const errJson = await apiRes.json().catch(() => ({}));
+            if (apiRes.status === 401 || errJson.error) {
+              return { user: null, session: null, error: new Error(errJson.error || 'Invalid email/phone or password') };
+            }
+          }
+        } catch (_) {
+          // Network issue reaching internal API, fallback to client-side auth below
+        }
+
+        // Step 2: Fallback to direct client-side sign in
+        const { data, error: authErr } = await supabase.auth.signInWithPassword({
+          email: cleanIdent,
+          password: password,
+        });
+
+        return { user: data?.user, session: data?.session, error: authErr };
+      })();
+
+      const timeoutPromise = new Promise<{ user: any; session: any; error: any }>((_, reject) =>
+        setTimeout(() => reject(new Error('Connection timed out. Please check your network and try again.')), 12000)
+      );
+
+      const result = await Promise.race([loginPromise, timeoutPromise]);
+
+      if (result.error) {
+        const authErr = result.error;
+        if (portal === 'team' && authErr.message?.includes('Invalid login credentials')) {
           try {
             const checkRes = await fetch(`/api/team/check-invite?email=${encodeURIComponent(cleanIdent)}`);
             const checkJson = await checkRes.json();
@@ -298,14 +345,12 @@ export default function LoginPage() {
         throw authErr;
       }
 
-      if (data?.user) {
+      if (result.user || result.session) {
         const defaultPath = portal === 'team' ? '/team/dashboard' : '/workspace';
         const destination = getSanitizedRedirectUrl(searchParams.get('redirectTo'), defaultPath);
-
-        // HARD NAVIGATION:
-        // Ensures the browser commits and flushes document.cookie to HTTP request headers,
-        // bypasses the Next.js client router cache, and prevents infinite redirect loops.
         window.location.href = destination;
+      } else {
+        throw new Error('Login failed. Please check your credentials and try again.');
       }
     } catch (err: any) {
       console.error('[Login] Error:', err);

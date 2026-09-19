@@ -14,22 +14,7 @@ export async function GET(req: NextRequest) {
     const targetUserId = userId;
 
     if (!targetUserId || targetUserId === 'demo_user') {
-      return NextResponse.json({
-        success: true,
-        profile: {
-          id: 'demo_user',
-          fullName: 'Studio Owner',
-          studioName: 'StudioCore Workspace',
-          email: userEmail || 'user@studiocore.in',
-          phone: '',
-          address: '',
-          avatarUrl: '',
-          logoUrl: '',
-          instagram: '',
-          youtube: '',
-          facebook: '',
-        },
-      });
+      return NextResponse.json({ error: 'Unauthorized: Session required' }, { status: 401 });
     }
 
     // 1. Fetch Profile row
@@ -103,10 +88,10 @@ export async function POST(req: NextRequest) {
       phone,
     } = body;
 
-    const targetUserId = userId !== 'demo_user' ? userId : body.userId;
+    const targetUserId = userId && userId !== 'demo_user' ? userId : null;
 
     if (!targetUserId) {
-      return NextResponse.json({ error: 'Unauthorized: User ID required' }, { status: 401 });
+      return NextResponse.json({ error: 'Unauthorized: User authentication required' }, { status: 401 });
     }
 
     const cleanStudioName = (studioName || '').trim();

@@ -10,6 +10,7 @@ import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { LeadTable } from '@/components/dashboard/lead-table';
 import { MasterSettingsHub } from '@/components/settings/master-settings-hub';
 import { extractFinancialsFromQuotation, findFinalQuotationForLead, syncQuotationToTeamManagerEvents } from '@/lib/quotation-finance-sync';
+import { parseQuotationDeliverables } from '@/lib/services/postProductionSyncService';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 
 const MOCK_WORKSPACE_ID = '00000000-0000-0000-0000-000000000000';
@@ -648,108 +649,19 @@ export default function LeadsPage() {
             .update({ client_id: targetClientId })
             .eq('id', leadId);
 
-          // Auto-create Post-Production Project for new client
-          const defaultDeliverables = [
-            {
-              id: `deliv_photo_1_${Date.now()}`,
-              title: 'Edited Photos',
-              category: 'photos',
-              count: '500 Photos',
-              assigned_to: 'Vikram (Photo Retoucher)',
-              deadline: parsedEventDate ? new Date(new Date(parsedEventDate).getTime() + 15 * 86400000).toISOString().split('T')[0] : '',
-              status: 'pending',
-              drive_link: '',
-              comments: []
-            },
-            {
-              id: `deliv_photo_2_${Date.now()}`,
-              title: 'Save the Date Photo',
-              category: 'photos',
-              count: '5 Photos',
-              assigned_to: 'Vikram (Photo Retoucher)',
-              deadline: parsedEventDate ? new Date(new Date(parsedEventDate).getTime() - 10 * 86400000).toISOString().split('T')[0] : '',
-              status: 'pending',
-              drive_link: '',
-              comments: []
-            },
-            {
-              id: `deliv_photo_3_${Date.now()}`,
-              title: 'Instagram Posts',
-              category: 'photos',
-              count: '10 Posts',
-              assigned_to: 'Vikram (Photo Retoucher)',
-              deadline: parsedEventDate ? new Date(new Date(parsedEventDate).getTime() + 5 * 86400000).toISOString().split('T')[0] : '',
-              status: 'pending',
-              drive_link: '',
-              comments: []
-            },
-            {
-              id: `deliv_video_1_${Date.now()}`,
-              title: 'Cinematic Film',
-              category: 'videos',
-              count: '25 Mins',
-              assigned_to: 'Amit (Senior Video Editor)',
-              deadline: parsedEventDate ? new Date(new Date(parsedEventDate).getTime() + 30 * 86400000).toISOString().split('T')[0] : '',
-              status: 'pending',
-              drive_link: '',
-              comments: []
-            },
-            {
-              id: `deliv_video_2_${Date.now()}`,
-              title: 'Cinematic Teaser',
-              category: 'videos',
-              count: '1 Min',
-              assigned_to: 'Rahul (Teaser Specialist)',
-              deadline: parsedEventDate ? new Date(new Date(parsedEventDate).getTime() + 7 * 86400000).toISOString().split('T')[0] : '',
-              status: 'in_progress',
-              drive_link: '',
-              comments: []
-            },
-            {
-              id: `deliv_video_3_${Date.now()}`,
-              title: 'Traditional Full Video',
-              category: 'videos',
-              count: '2 Hours',
-              assigned_to: 'Suresh (Traditional Editor)',
-              deadline: parsedEventDate ? new Date(new Date(parsedEventDate).getTime() + 45 * 86400000).toISOString().split('T')[0] : '',
-              status: 'pending',
-              drive_link: '',
-              comments: []
-            },
-            {
-              id: `deliv_video_4_${Date.now()}`,
-              title: 'Viral Instagram Reels',
-              category: 'videos',
-              count: '3 Reels',
-              assigned_to: 'Priya (Reels Specialist)',
-              deadline: parsedEventDate ? new Date(new Date(parsedEventDate).getTime() + 10 * 86400000).toISOString().split('T')[0] : '',
-              status: 'pending',
-              drive_link: '',
-              comments: []
-            },
-            {
-              id: `deliv_album_1_${Date.now()}`,
-              title: 'Main Wedding Album',
-              category: 'albums',
-              count: '40 Pages',
-              assigned_to: 'Rohan (Album Designer)',
-              deadline: parsedEventDate ? new Date(new Date(parsedEventDate).getTime() + 60 * 86400000).toISOString().split('T')[0] : '',
-              status: 'pending',
-              drive_link: '',
-              comments: []
-            },
-            {
-              id: `deliv_album_2_${Date.now()}`,
-              title: 'Parent / Mini Album',
-              category: 'albums',
-              count: '20 Pages',
-              assigned_to: 'Rohan (Album Designer)',
-              deadline: parsedEventDate ? new Date(new Date(parsedEventDate).getTime() + 60 * 86400000).toISOString().split('T')[0] : '',
-              status: 'pending',
-              drive_link: '',
-              comments: []
+          // Auto-create Post-Production Project for new client (strictly sync from quotation, NO demo data)
+          let initialDeliverables: any[] = [];
+          let ppNotes = '';
+          let enabledSegments = ['Wedding'];
+
+          if (latestQuote?.content_json) {
+            const parsed = parseQuotationDeliverables(latestQuote);
+            if (parsed.deliverables.length > 0) {
+              initialDeliverables = parsed.deliverables;
+              enabledSegments = parsed.enabledSegments;
+              ppNotes = `quotation_id:${latestQuote.template_id || latestQuote.id || ''};quotation_title:${latestQuote.content_json?.meta?.project_name || 'Final Quotation'};pp_config:${encodeURIComponent(JSON.stringify({ enabled_segments: enabledSegments }))};`;
             }
-          ];
+          }
 
           await supabase
             .from('post_production_projects')
@@ -757,10 +669,23 @@ export default function LeadsPage() {
               user_id: currentWorkspaceId,
               workspace_id: currentWorkspaceId,
               client_id: targetClientId,
-              project_manager_name: 'Sushant (Lead Manager)',
+              project_manager_name: null,
               overall_status: 'active',
-              deliverables: defaultDeliverables
+              deliverables: initialDeliverables,
+              notes: ppNotes,
             }]);
+
+          if (enabledSegments.length > 0) {
+            try {
+              await supabase
+                .from('post_production_project_config')
+                .upsert({
+                  project_id: targetClientId,
+                  enabled_segments: enabledSegments,
+                  updated_at: new Date().toISOString()
+                }, { onConflict: 'project_id' });
+            } catch (_) {}
+          }
         }
       }
 

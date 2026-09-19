@@ -3,13 +3,14 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  ChevronDown, Calendar, Layers, FileCheck, Plus, Sparkles, UserCheck, Search, X
+  ChevronDown, Calendar, Layers, FileCheck, Plus, Sparkles, UserCheck, Search, X, RefreshCw
 } from 'lucide-react';
 import { PostProductionDeliverable } from './DeliverableCategorySection';
 import SegmentContainer from './SegmentContainer';
 import Searchable3DCreamSelect, { Searchable3DCreamSelectOption } from '@/components/ui/Searchable3DCreamSelect';
 import { DEFAULT_EVENT_TYPES } from '@/lib/workspace-settings';
 import PostProductionConfirmModal from './PostProductionConfirmModal';
+import { PostProductionTeamMember } from '../page';
 
 export interface PostProductionProjectData {
   id: string;
@@ -32,14 +33,16 @@ export interface PostProductionProjectData {
 
 interface PostProductionCardProps {
   project: PostProductionProjectData;
-  teamMembers: { id: string; name: string; role?: string }[];
+  teamMembers: PostProductionTeamMember[];
   quotations: any[];
   eventTypes?: { id?: string; name: string; category?: string }[];
   isExpanded: boolean;
+  isHighlighted?: boolean;
   onToggleExpand: () => void;
   onUpdateProject: (projectId: string, updated: Partial<PostProductionProjectData>) => void;
   onOpenComments: (itemId: string, title: string) => void;
   onOpenDrive: (itemId: string, currentLink: string) => void;
+  onResyncQuotation?: () => void;
 }
 
 export default function PostProductionCard({
@@ -48,10 +51,12 @@ export default function PostProductionCard({
   quotations,
   eventTypes,
   isExpanded,
+  isHighlighted = false,
   onToggleExpand,
   onUpdateProject,
   onOpenComments,
   onOpenDrive,
+  onResyncQuotation,
 }: PostProductionCardProps) {
   const [activeSegmentTab, setActiveSegmentTab] = useState<string>('All');
   const [isAddingSegment, setIsAddingSegment] = useState(false);
@@ -106,26 +111,28 @@ export default function PostProductionCard({
   })();
 
   // PM Options with wide display and role tags
+  // PM Options: Clean luxury display with Profile Avatar and Full Name ONLY
   const pmOptions: Searchable3DCreamSelectOption[] = useMemo(() => {
+    // Sort team members alphabetically
+    const sortedMembers = [...teamMembers].sort((a, b) => a.name.localeCompare(b.name));
+
     return [
       {
         value: 'unassigned',
-        label: 'Unassigned (No PM)',
-        badge: 'None',
-        badgeClassName: 'bg-stone-200 dark:bg-stone-700 text-stone-600 dark:text-stone-300',
+        label: 'Assign PM',
       },
-      ...teamMembers.map(m => {
+      ...sortedMembers.map(m => {
         const initials = m.name
           .split(' ')
           .map(w => w[0])
           .join('')
           .slice(0, 2)
           .toUpperCase();
+
         return {
           value: m.name,
           label: m.name,
           initials,
-          roleTag: m.role || 'Member',
         };
       }),
     ];
@@ -135,7 +142,37 @@ export default function PostProductionCard({
   const handleUpdateItem = (itemId: string, field: keyof PostProductionDeliverable, value: any) => {
     const updated = deliverables.map(item => {
       if (item.id === itemId) {
-        return { ...item, [field]: value };
+        const nextItem = { ...item, [field]: value };
+        if (field === 'specs') {
+          nextItem.count = value;
+        } else if (field === 'count') {
+          nextItem.specs = value;
+        }
+        return nextItem;
+      }
+      return item;
+    });
+
+    const allDone = updated.length > 0 && updated.every(d => (d.status || '').toLowerCase().includes('done'));
+    const newStatus = allDone ? 'completed' : 'active';
+
+    onUpdateProject(project.id, {
+      deliverables: updated,
+      overall_status: newStatus as any,
+    });
+  };
+
+  // Atomic Multi-Field Deliverable Item Update (Fixes race condition on Assign Editor)
+  const handleUpdateItemFields = (itemId: string, fields: Partial<PostProductionDeliverable>) => {
+    const updated = deliverables.map(item => {
+      if (item.id === itemId) {
+        const nextItem = { ...item, ...fields };
+        if (fields.specs !== undefined) {
+          nextItem.count = fields.specs;
+        } else if (fields.count !== undefined) {
+          nextItem.specs = fields.count;
+        }
+        return nextItem;
       }
       return item;
     });
@@ -155,14 +192,17 @@ export default function PostProductionCard({
     onUpdateProject(project.id, { deliverables: updated });
   };
 
-  // Handle Add Item to Category
-  const handleAddItem = (segment: string, category: string, title: string) => {
+  // Handle Add Item to Category with Specs
+  const handleAddItem = (segment: string, category: string, title: string, specs?: string) => {
+    const cleanSpecs = specs ? specs.trim() : null;
     const newItem: PostProductionDeliverable = {
       id: 'deliv_' + Date.now() + '_' + Math.random().toString(36).substring(7),
       project_id: project.project_id || undefined,
       segment,
       category,
       title,
+      specs: cleanSpecs,
+      count: cleanSpecs,
       status: 'Upcoming',
       assigned_member_id: null,
       assigned_to: null,
@@ -268,7 +308,14 @@ export default function PostProductionCard({
   }, [enabledSegments, activeSegmentTab]);
 
   return (
-    <div className="bg-[#FFFDF9] dark:bg-[#181614] rounded-2xl border border-[#EAE5DA] dark:border-stone-800 shadow-xs overflow-hidden transition-all hover:border-amber-300/80">
+    <div 
+      id={`project-card-${project.id}`}
+      className={`bg-[#FFFDF9] dark:bg-[#181614] rounded-2xl border shadow-xs overflow-hidden transition-all duration-300 ${
+        isHighlighted
+          ? 'border-amber-500 ring-4 ring-amber-400/50 shadow-xl shadow-amber-500/10 scale-[1.005]'
+          : 'border-[#EAE5DA] dark:border-stone-800 hover:border-amber-300/80'
+      }`}
+    >
       {/* ── CARD HEADER (FULL-CLICK ACCORDION TRIGGER) ── */}
       <div 
         onClick={onToggleExpand}
@@ -281,24 +328,10 @@ export default function PostProductionCard({
               {project.client_name}
             </h2>
 
-            {project.couple_names && (
-              <span className="text-xs font-bold text-slate-500 dark:text-stone-400 truncate">
-                ({project.couple_names})
-              </span>
-            )}
-
             {/* Overall Status Badge */}
             <span className={`px-2.5 py-0.5 rounded-full text-xs font-extrabold border ${statusBadgeStyle}`}>
               {project.overall_status === 'completed' ? 'Completed' : project.overall_status === 'delayed' ? 'Delayed' : 'Active'}
             </span>
-
-            {/* Event Type & Date */}
-            {project.event_date && (
-              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-stone-300 bg-[#FDFBF7] dark:bg-stone-800/80 px-2.5 py-1 rounded-xl border border-[#EAE5DA] dark:border-stone-700">
-                <Calendar className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                <span>{new Date(project.event_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
-              </div>
-            )}
 
             {/* Synced Quotation Indicator */}
             {project.quotation_title && (
@@ -306,53 +339,70 @@ export default function PostProductionCard({
                 onClick={(e) => e.stopPropagation()}
                 className="hidden sm:flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 px-2.5 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800/60"
               >
-                <FileCheck className="w-3.5 h-3.5" />
+                <FileCheck className="w-3.5 h-3.5 shrink-0" />
                 <span className="truncate max-w-[160px]">{project.quotation_title}</span>
+                {onResyncQuotation && (
+                  <button
+                    type="button"
+                    title="Re-sync deliverables from this quotation"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (confirm('Re-sync deliverables from this quotation? This will refresh quotation deliverables while preserving your custom items.')) {
+                        onResyncQuotation();
+                      }
+                    }}
+                    className="p-0.5 rounded hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition cursor-pointer ml-0.5 text-emerald-800 dark:text-emerald-300"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                  </button>
+                )}
               </div>
             )}
           </div>
 
-          {/* Dynamic Progress Bar & Deliverables Ratio */}
-          <div className="flex items-center gap-4 max-w-md pt-1">
-            <div className="flex-1 bg-slate-100 dark:bg-stone-800 h-2.5 rounded-full overflow-hidden border border-slate-200/80 dark:border-stone-700">
+          {/* Clean 3D Cream Status Bar & Deliverables Ratio */}
+          <div className="flex items-center gap-3.5 max-w-md pt-1">
+            <div className="flex-1 h-3 rounded-full p-[2px] bg-[#EFECE6] dark:bg-stone-800/90 border border-[#DDD7CB] dark:border-stone-700 shadow-[inset_0_1.5px_3px_rgba(0,0,0,0.12),inset_0_0_1px_rgba(0,0,0,0.15)] overflow-hidden">
               <div
-                className="h-full bg-gradient-to-r from-amber-500 to-emerald-500 rounded-full transition-all duration-500"
+                className={`h-full rounded-full transition-all duration-500 ${
+                  progressPercent === 100
+                    ? 'bg-gradient-to-r from-emerald-500 via-emerald-600 to-teal-600 shadow-[0_1px_2px_rgba(16,185,129,0.3),inset_0_1px_0_rgba(255,255,255,0.45)]'
+                    : 'bg-gradient-to-r from-[#D4AF37] via-[#C5A028] to-[#997A15] shadow-[0_1px_2px_rgba(180,130,20,0.25),inset_0_1px_0_rgba(255,255,255,0.4)]'
+                }`}
                 style={{ width: `${progressPercent}%` }}
               />
             </div>
-            <span className="text-xs font-black text-slate-700 dark:text-stone-300 whitespace-nowrap">
+            <span className="text-xs font-black text-slate-800 dark:text-stone-200 whitespace-nowrap">
               {progressPercent}% <span className="text-slate-400 font-medium text-[11px]">({completedCount}/{totalCount} Done)</span>
             </span>
           </div>
         </div>
 
-        {/* Header Right Controls: PM Selector & Chevron Toggle */}
+        {/* Header Right Controls: Single 3D PM Selector & Chevron Toggle */}
         <div 
           onClick={(e) => e.stopPropagation()} 
           className="flex items-center gap-3 shrink-0"
         >
-          {/* PM Selector with Explicit PM: Badge & Wide Popover */}
-          <div className="flex items-center gap-2 bg-white dark:bg-stone-900 border border-[#EAE5DA] dark:border-stone-800 px-3 py-1.5 rounded-xl shadow-2xs">
-            <div className="flex items-center gap-1.5 shrink-0 text-amber-900 dark:text-amber-300">
-              <UserCheck className="w-3.5 h-3.5 text-amber-600" />
-              <span className="text-[11px] font-black tracking-wider uppercase">PM:</span>
-            </div>
-            <div className="w-48 sm:w-56">
-              <Searchable3DCreamSelect
-                value={project.project_manager_name || 'unassigned'}
-                onChange={(val) => {
-                  const matched = teamMembers.find(m => m.name === val || m.id === val);
-                  onUpdateProject(project.id, {
-                    project_manager_id: val === 'unassigned' ? null : (matched?.id || null),
-                    project_manager_name: val === 'unassigned' ? null : (matched?.name || val),
-                  });
-                }}
-                options={pmOptions}
-                searchable={true}
-                searchPlaceholder="🔍 Search PM..."
-                placeholder="Assign PM"
-              />
-            </div>
+          {/* PM Selector: Clean Single 3D Cream Box with clear label */}
+          <div className="w-48 sm:w-56">
+            <span className="text-[10px] font-black uppercase tracking-wider text-amber-900/70 dark:text-amber-400/70 block mb-1">
+              Project Manager
+            </span>
+            <Searchable3DCreamSelect
+              value={project.project_manager_name || 'unassigned'}
+              onChange={(val) => {
+                const matched = teamMembers.find(m => m.name === val || m.id === val);
+                onUpdateProject(project.id, {
+                  project_manager_id: val === 'unassigned' ? null : (matched?.id || null),
+                  project_manager_name: val === 'unassigned' ? null : (matched?.name || val),
+                });
+              }}
+              options={pmOptions}
+              searchable={true}
+              usePortal={true}
+              searchPlaceholder="🔍 Search PM..."
+              placeholder="Assign PM"
+            />
           </div>
 
           {/* Expand/Collapse Toggle */}
@@ -406,7 +456,19 @@ export default function PostProductionCard({
 
                   {enabledSegments.map(seg => {
                     const isSelected = activeSegmentTab === seg;
-                    const segIcon = seg === 'Pre-Wedding' ? '💍' : seg === 'Wedding' ? '💒' : '✨';
+                    const getSegIcon = (s: string) => {
+                      const low = s.toLowerCase();
+                      if (low.includes('pre-wedding') || low.includes('prewedding')) return '💍';
+                      if (low.includes('wedding')) return '💒';
+                      if (low.includes('reception')) return '🥂';
+                      if (low.includes('haldi')) return '🌼';
+                      if (low.includes('mehendi') || low.includes('mehndi')) return '🌿';
+                      if (low.includes('sangeet')) return '💃';
+                      if (low.includes('engagement') || low.includes('roka')) return '💍';
+                      if (low.includes('cocktail')) return '🍸';
+                      return '✨';
+                    };
+                    const segIcon = getSegIcon(seg);
 
                     return (
                       <div
@@ -561,10 +623,12 @@ export default function PostProductionCard({
               <div className="space-y-6">
                 {segmentsToRender.map(segName => {
                   const segDeliverables = deliverables.filter(d => {
-                    if (segName === 'Wedding') {
-                      return d.segment === 'Wedding' || (!d.segment && d.segment !== 'Pre-Wedding');
+                    const dSeg = (d.segment || 'Wedding').trim().toLowerCase();
+                    const targetSeg = segName.trim().toLowerCase();
+                    if (targetSeg === 'wedding') {
+                      return dSeg === 'wedding' || !d.segment;
                     }
-                    return d.segment === segName;
+                    return dSeg === targetSeg;
                   });
 
                   const disabledCats = project.disabled_categories?.[segName] || [];
@@ -577,6 +641,7 @@ export default function PostProductionCard({
                       teamMembers={teamMembers}
                       disabledCategories={disabledCats}
                       onUpdateItem={handleUpdateItem}
+                      onUpdateItemFields={handleUpdateItemFields}
                       onDeleteItem={handleDeleteItem}
                       onAddItem={handleAddItem}
                       onRemoveCategory={handleRemoveCategory}

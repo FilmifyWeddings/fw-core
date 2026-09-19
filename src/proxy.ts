@@ -127,14 +127,6 @@ export async function proxy(request: NextRequest) {
                 path: '/',
               })
             );
-
-            // Prune orphaned/stale cookie chunks from request that are no longer in cookiesToSet
-            const existingCookies = request.cookies.getAll();
-            existingCookies.forEach((c) => {
-              if (c.name.includes('-auth-token.') && !newlySetNames.has(c.name)) {
-                response.cookies.set(c.name, '', { maxAge: 0, path: '/' });
-              }
-            });
           },
         },
       });
@@ -202,8 +194,13 @@ export async function proxy(request: NextRequest) {
           let unescaped = rawVal;
           if (unescaped.startsWith('base64-')) {
             try {
-              unescaped = Buffer.from(unescaped.substring(7), 'base64').toString('utf-8');
-            } catch (_) {}
+              unescaped = Buffer.from(unescaped.substring(7), 'base64url').toString('utf-8');
+            } catch (_) {
+              try {
+                const normalized = unescaped.substring(7).replace(/-/g, '+').replace(/_/g, '/');
+                unescaped = Buffer.from(normalized, 'base64').toString('utf-8');
+              } catch (_) {}
+            }
           }
           const parsed = JSON.parse(unescaped);
           const tok = parsed?.access_token || (Array.isArray(parsed) ? parsed[0] : null);
@@ -365,14 +362,6 @@ export async function proxy(request: NextRequest) {
       const loginUrl = new URL('/login', request.url);
       loginUrl.searchParams.set('redirectTo', pathname);
       const redirectResponse = NextResponse.redirect(loginUrl, { status: 303 });
-
-      // If user had stale/corrupted cookies that failed auth, purge them so the browser stops sending dead chunks
-      const allCookies = request.cookies.getAll();
-      allCookies.forEach(c => {
-        if (c.name.includes('-token') || c.name.startsWith('sb-')) {
-          redirectResponse.cookies.set(c.name, '', { maxAge: 0, path: '/' });
-        }
-      });
 
       return redirectResponse;
     }

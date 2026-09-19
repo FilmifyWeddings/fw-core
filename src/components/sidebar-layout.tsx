@@ -69,9 +69,11 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   };
 
   const [collapsed, setCollapsed] = useState(false);
-  const [userEmail, setUserEmail] = useState<string>('user@studiocore.in');
-  const [userName, setUserName] = useState<string>('Studio Owner');
-  const [workspaceName, setWorkspaceName] = useState<string>('StudioCore');
+  const [mounted, setMounted] = useState(false);
+  const [userEmail, setUserEmail] = useState<string>('');
+
+  const [userName, setUserName] = useState<string>('');
+  const [workspaceName, setWorkspaceName] = useState<string>('');
   const [userAvatarUrl, setUserAvatarUrl] = useState<string>('');
   const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
   const [showOnboardingCelebration, setShowOnboardingCelebration] = useState<boolean>(false);
@@ -92,24 +94,24 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       const cachedLogo = localStorage.getItem('sc_logo_url');
       const cachedUserName = localStorage.getItem('sc_user_name');
 
-      if (cachedStudioName) setWorkspaceName(cachedStudioName);
+      if (cachedStudioName && cachedStudioName !== 'StudioCore Workspace') setWorkspaceName(cachedStudioName);
       if (cachedAvatar || cachedLogo) setUserAvatarUrl(cachedAvatar || cachedLogo || '');
-      if (cachedUserName) setUserName(cachedUserName);
+      if (cachedUserName && cachedUserName !== 'Studio Owner') setUserName(cachedUserName);
     }
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
-        setUserEmail(session.user.email || 'user@studiocore.in');
+        setUserEmail(session.user.email || '');
         setUserId(session.user.id);
 
         // Fallback to user metadata immediately
-        const metaStudio = session.user.user_metadata?.workspace_name || session.user.user_metadata?.studio_name || 'My Studio';
-        const metaName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || 'Studio Owner';
+        const metaStudio = session.user.user_metadata?.workspace_name || session.user.user_metadata?.studio_name || '';
+        const metaName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || '';
         const metaAvatar = session.user.user_metadata?.avatar_url || '';
 
-        setWorkspaceName(metaStudio);
-        setUserName(metaName);
+        if (metaStudio) setWorkspaceName(metaStudio);
+        if (metaName) setUserName(metaName);
         if (metaAvatar) setUserAvatarUrl(metaAvatar);
 
         // Fetch authoritative profile from API (bypassing client RLS safely)
@@ -121,19 +123,19 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
           const res = await fetch('/api/user/profile-setup', { headers });
           if (res.ok) {
             const json = await res.json();
-            if (json?.profile) {
+            if (json?.profile && json.profile.id !== 'demo_user') {
               const p = json.profile;
               const finalStudio = p.studioName || metaStudio;
               const finalName = p.fullName || metaName;
               const finalAvatar = p.avatarUrl || p.logoUrl || metaAvatar;
 
-              setWorkspaceName(finalStudio);
-              setUserName(finalName);
+              if (finalStudio) setWorkspaceName(finalStudio);
+              if (finalName) setUserName(finalName);
               if (finalAvatar) setUserAvatarUrl(finalAvatar);
 
               if (typeof window !== 'undefined') {
-                localStorage.setItem('sc_studio_name', finalStudio);
-                localStorage.setItem('sc_user_name', finalName);
+                if (finalStudio) localStorage.setItem('sc_studio_name', finalStudio);
+                if (finalName) localStorage.setItem('sc_user_name', finalName);
                 if (finalAvatar) localStorage.setItem('sc_avatar_url', finalAvatar);
               }
             }
@@ -146,12 +148,14 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   }, []);
 
   useEffect(() => {
+    setMounted(true);
     const savedCollapsed = localStorage.getItem('sidebar_collapsed');
     if (savedCollapsed !== null) {
       setCollapsed(savedCollapsed === 'true');
     } else {
       setCollapsed(false);
     }
+
 
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -234,8 +238,17 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
 
   const handleSignOut = async () => {
     if (confirm('Are you sure you want to sign out from StudioCore?')) {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('sc_studio_name');
+        localStorage.removeItem('sc_user_name');
+        localStorage.removeItem('sc_avatar_url');
+        localStorage.removeItem('sc_logo_url');
+        localStorage.removeItem('sc_active_workspace_id');
+        localStorage.removeItem('active_workspace_id');
+        localStorage.removeItem('sc_user_email');
+      }
       await supabase.auth.signOut();
-      router.push('/login');
+      window.location.href = '/login';
     }
   };
 
@@ -247,7 +260,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     iconBg: 'bg-[#EEF2FF] text-[#4F46E5]',
   };
 
-  const hasPartnerWorkspaces = availableWorkspaces?.some(w => !w.isOwner);
+  const hasPartnerWorkspaces = mounted && Boolean(availableWorkspaces?.some(w => !w.isOwner));
 
   const baseMenuItems = isOwner ? [
     {
@@ -605,7 +618,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs font-bold text-zinc-900 truncate leading-tight group-hover:text-amber-800 transition">
-                      {userName || 'Studio Owner'}
+                      {userName || workspaceName || 'Studio Account'}
                     </p>
                     <p className="text-[10px] text-zinc-400 truncate leading-tight mt-0.5">
                       {userEmail}

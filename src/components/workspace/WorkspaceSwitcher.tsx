@@ -264,10 +264,12 @@ export function WorkspaceSwitcher({ isCollapsed = false }: WorkspaceSwitcherProp
           </div>
           <div className="overflow-hidden">
             <div className="flex items-center gap-1.5">
-              <span className="text-xs font-black text-zinc-900 tracking-tight truncate max-w-[110px]">
+              <span className="text-xs font-black text-zinc-900 tracking-tight truncate max-w-[110px]" suppressHydrationWarning>
                 {workspaceName || 'StudioCore'}
               </span>
-              <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded-md tracking-wider ${
+              <span 
+                suppressHydrationWarning
+                className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded-md tracking-wider ${
                 isOwner 
                   ? 'bg-amber-100 text-amber-800 border border-amber-200' 
                   : 'bg-indigo-100 text-indigo-800 border border-indigo-200'
@@ -275,7 +277,7 @@ export function WorkspaceSwitcher({ isCollapsed = false }: WorkspaceSwitcherProp
                 {isOwner ? 'Owner' : userRole}
               </span>
             </div>
-            <p className="text-[10px] text-zinc-400 font-medium truncate">
+            <p className="text-[10px] text-zinc-400 font-medium truncate" suppressHydrationWarning>
               {isOwner ? 'Full Studio Access' : 'Partner Workspace Portal'}
             </p>
           </div>

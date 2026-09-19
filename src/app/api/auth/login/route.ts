@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 import { supabaseAdmin, supabase } from '@/lib/supabase';
 import { normalizePhoneNumber } from '@/lib/auth-otp-store';
@@ -59,20 +60,24 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Authenticate with Supabase using resolved email via clean isolated auth client
-    const authClient = createClient(
+    // Authenticate with Supabase using resolved email via @supabase/ssr createServerClient
+    const cookiesToSetList: { name: string; value: string; options: any }[] = [];
+    const ssrClient = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://nviwtgnqplebzsgdemlm.supabase.co',
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_HaCj2xEYg_e98o-UJccdvA_5OUl9t63',
       {
-        auth: {
-          persistSession: false,
-          autoRefreshToken: false,
-          detectSessionInUrl: false,
+        cookies: {
+          getAll() {
+            return req.cookies.getAll();
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach((c) => cookiesToSetList.push(c));
+          },
         },
       }
     );
 
-    const { data: signInData, error: signInErr } = await authClient.auth.signInWithPassword({
+    const { data: signInData, error: signInErr } = await ssrClient.auth.signInWithPassword({
       email: targetEmail,
       password: (password || '').trim(),
     });
@@ -85,7 +90,6 @@ export async function POST(req: NextRequest) {
     }
 
     const session = signInData.session;
-    // 30 days if rememberMe, otherwise 7 days
     const maxAge = rememberMe ? 60 * 60 * 24 * 30 : 60 * 60 * 24 * 7;
     const isHttps = process.env.NODE_ENV === 'production' || req.nextUrl.protocol === 'https:';
 
@@ -94,6 +98,7 @@ export async function POST(req: NextRequest) {
       user: {
         id: session.user.id,
         email: session.user.email,
+        user_metadata: session.user.user_metadata,
       },
       session: {
         access_token: session.access_token,
@@ -106,14 +111,18 @@ export async function POST(req: NextRequest) {
       redirectUrl: '/workspace',
     });
 
-    // Clean and prune any old/orphaned chunk cookies from request
-    req.cookies.getAll().forEach(c => {
-      if (c.name.includes('-auth-token.') || c.name.startsWith('sb-')) {
-        res.cookies.set(c.name, '', { maxAge: 0, path: '/' });
-      }
+    // Set official @supabase/ssr cookies on response
+    cookiesToSetList.forEach(({ name, value, options }) => {
+      res.cookies.set(name, value, {
+        ...options,
+        sameSite: 'lax',
+        secure: isHttps,
+        path: '/',
+        maxAge: options?.maxAge ?? maxAge,
+      });
     });
 
-    // Set auth cookies directly on HTTP Response Headers
+    // Also set standard sb-access-token for legacy / direct inspection
     res.cookies.set('sb-access-token', session.access_token, {
       path: '/',
       maxAge,
