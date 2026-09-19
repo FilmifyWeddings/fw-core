@@ -162,21 +162,24 @@ let memCachedHubStats = {
 };
 
 export default function WorkspaceHubPage() {
-  const [userName, setUserName] = useState<string>(() => {
-    if (memCachedHubUserName) return memCachedHubUserName;
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('sc_user_name');
-      if (stored) {
-        memCachedHubUserName = stored.split(' ')[0];
-        return memCachedHubUserName;
-      }
-    }
-    return '';
-  });
+  const [userName, setUserName] = useState<string>('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
-  const [stats, setStats] = useState(() => {
-    if (memCachedHubStats.leadsCount > 0 || memCachedHubStats.bookingsCount > 0) return memCachedHubStats;
+  const [stats, setStats] = useState(memCachedHubStats);
+
+  useEffect(() => {
+    // Fast synchronous client hydration from cache on mount
+    if (memCachedHubUserName) {
+      setUserName(memCachedHubUserName);
+    } else if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('sc_user_name');
+      if (stored) {
+        const name = stored.split(' ')[0];
+        memCachedHubUserName = name;
+        setUserName(name);
+      }
+    }
+
     if (typeof window !== 'undefined') {
       try {
         const stored = localStorage.getItem('sc_cached_hub_stats');
@@ -184,15 +187,12 @@ export default function WorkspaceHubPage() {
           const parsed = JSON.parse(stored);
           if (parsed && typeof parsed === 'object') {
             memCachedHubStats = parsed;
-            return parsed;
+            setStats(parsed);
           }
         }
       } catch (_) {}
     }
-    return memCachedHubStats;
-  });
 
-  useEffect(() => {
     async function loadDashboardData() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
@@ -268,7 +268,7 @@ export default function WorkspaceHubPage() {
           {/* Left Column: Welcome & Value Proposition */}
           <div className="lg:col-span-5 space-y-4">
             <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-white/90 border border-[#E8E2D6] shadow-2xs text-xs font-bold text-zinc-800">
-              <span>Welcome back, {userName}!</span>
+              <span suppressHydrationWarning>Welcome back, {userName}!</span>
               <span className="text-sm">👋</span>
             </div>
 

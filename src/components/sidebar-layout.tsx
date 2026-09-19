@@ -36,11 +36,13 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   const { isOwner, userRole, permissions, availableWorkspaces, activeWorkspace } = useWorkspace();
   const hasFetchedRef = useRef(false);
   const stageParam = searchParams?.get('stage') || searchParams?.get('filter') || searchParams?.get('view') || '';
+  const [collapsed, setCollapsed] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
+  const queryStudioCode = searchParams?.get('studio') || searchParams?.get('ws') || '';
   const currentStudioCode = 
-    searchParams?.get('studio') || 
-    searchParams?.get('ws') || 
-    (activeWorkspace?.workspaceId === 'all' ? 'all' : (activeWorkspace?.studioSlug || activeWorkspace?.workspaceId)) || 
+    queryStudioCode || 
+    (mounted ? (activeWorkspace?.workspaceId === 'all' ? 'all' : (activeWorkspace?.studioSlug || activeWorkspace?.workspaceId)) : '') || 
     '';
 
   const formatPathWithStudio = useCallback((path: string) => {
@@ -67,9 +69,6 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     }
     return pathname === subPath;
   };
-
-  const [collapsed, setCollapsed] = useState(false);
-  const [mounted, setMounted] = useState(false);
   const [userEmail, setUserEmail] = useState<string>('');
 
   const [userName, setUserName] = useState<string>('');
@@ -551,6 +550,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                 <Link
                   href={formatPathWithStudio(item.path)}
                   prefetch={true}
+                  suppressHydrationWarning
                   onMouseEnter={() => router.prefetch(formatPathWithStudio(item.path))}
                   className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition-all duration-200 ${
                     isActive
@@ -593,6 +593,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                           key={sub.name}
                           href={formatPathWithStudio(sub.path)}
                           prefetch={true}
+                          suppressHydrationWarning
                           onMouseEnter={() => router.prefetch(formatPathWithStudio(sub.path))}
                           className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${
                             isSubActive
@@ -777,6 +778,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                       <Link
                         href={formatPathWithStudio(item.path)}
                         prefetch={true}
+                        suppressHydrationWarning
                         onMouseEnter={() => router.prefetch(formatPathWithStudio(item.path))}
                         onClick={() => setMobileDrawerOpen(false)}
                         className={`flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition ${
