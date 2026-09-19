@@ -118,19 +118,43 @@ const parseLeadComment = (comm: any): any => {
   };
 };
 
+// Module-level in-memory cache for instant 0ms transitions
+let memCachedLeads: Lead[] = [];
+let memCachedStages: any[] = DEFAULT_STAGES;
+let memCachedPreferences: any = null;
+
 export default function LeadsPage() {
   const router = useRouter();
   const { workspaceId, workspaceName, isOwner, userRole, permissions } = useWorkspace();
   const [userId, setUserId] = useState<string>('');
   const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [stages, setStages] = useState<any[]>(DEFAULT_STAGES);
-  const [preferences, setPreferences] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+
+  // Synchronous initialization from in-memory cache or localStorage
+  const [leads, setLeads] = useState<Lead[]>(() => {
+    if (memCachedLeads.length > 0) return memCachedLeads;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_cached_leads');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            memCachedLeads = parsed;
+            return parsed;
+          }
+        }
+      } catch (_) {}
+    }
+    return [];
+  });
+
+  const [stages, setStages] = useState<any[]>(() => memCachedStages);
+  const [preferences, setPreferences] = useState<any>(() => memCachedPreferences);
+  const [loading, setLoading] = useState<boolean>(() => memCachedLeads.length === 0);
   const [page, setPage] = useState<number>(0);
   const [hasMore, setHasMore] = useState<boolean>(true);
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const PAGE_SIZE = 50;
+
 
   const leadsAccess = isOwner ? 'ALL_MANAGE' : (permissions?.leads_access || 'NONE');
   const isReadOnly = !isOwner && (leadsAccess === 'ASSIGNED_VIEW' || leadsAccess === 'ALL_VIEW');
@@ -360,7 +384,9 @@ export default function LeadsPage() {
     }
 
     if (pageNum === 0) {
-      setLoading(true);
+      if (memCachedLeads.length === 0) {
+        setLoading(true);
+      }
       setPage(0);
     } else {
       setLoadingMore(true);
@@ -407,7 +433,7 @@ export default function LeadsPage() {
 
         if (leadsErr) {
           console.error('[Leads Direct Load Error]:', leadsErr);
-          if (pageNum === 0) setLeads([]);
+          if (pageNum === 0 && memCachedLeads.length === 0) setLeads([]);
         } else if (dbLeads) {
           setHasMore(dbLeads.length >= PAGE_SIZE);
           sanitizedLeads = (dbLeads as any[]).map(l => {
@@ -452,11 +478,19 @@ export default function LeadsPage() {
 
       if (pageNum === 0) {
         setLeads(sanitizedLeads);
+        memCachedLeads = sanitizedLeads;
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('sc_cached_leads', JSON.stringify(sanitizedLeads));
+          } catch (_) {}
+        }
       } else {
         setLeads(prev => {
           const existingIds = new Set(prev.map(l => l.id));
           const newLeads = sanitizedLeads.filter(l => !existingIds.has(l.id));
-          return [...prev, ...newLeads];
+          const merged = [...prev, ...newLeads];
+          memCachedLeads = merged;
+          return merged;
         });
       }
 
@@ -484,6 +518,11 @@ export default function LeadsPage() {
             }
           }
         } catch (_) {}
+
+        if (loadedStages.length > 0) {
+          setStages(loadedStages);
+          memCachedStages = loadedStages;
+        }
 
         if (loadedStages.length === 0) {
           const { data: dbStages } = await supabase
@@ -1066,7 +1105,7 @@ export default function LeadsPage() {
       <div className="flex-1 min-h-0 min-w-0 w-full flex flex-col overflow-hidden">
         
         {/* Lead Table Container */}
-        {loading ? (
+        {loading && leads.length === 0 ? (
           <StudioCoreLiquidLoader label="Loading Leads & Pipelines..." fullscreen={false} />
         ) : (
           <React.Suspense fallback={<StudioCoreLiquidLoader label="Loading Leads & Pipelines..." fullscreen={false} />}>

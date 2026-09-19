@@ -25,28 +25,52 @@ export default function PublicProposalPage() {
       }
 
       try {
-        // Fetch quotation record by public_token
-        const { data: quoteRow, error } = await supabase
+        // 1. Fetch quotation record by public_token
+        let targetId = '';
+        const { data: quoteRow } = await supabase
           .from('quotations')
           .select('quotation_number, id, status')
           .eq('public_token', token)
           .maybeSingle();
 
-        if (error || !quoteRow) {
-          console.error('[Public Preview Router] Quotation record not found for token:', token, error);
-          setErrorMsg('Quotation preview is temporarily unavailable.');
-          setLoading(false);
-          return;
-        }
+        if (quoteRow) {
+          targetId = quoteRow.quotation_number || quoteRow.id;
+        } else {
+          // 2. Fallback: check by quotation_number or id
+          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(token);
+          let fallbackQuery = supabase.from('quotations').select('quotation_number, id');
+          if (isUuid) {
+            fallbackQuery = fallbackQuery.or(`id.eq.${token},quotation_number.eq.${token}`);
+          } else {
+            fallbackQuery = fallbackQuery.eq('quotation_number', token);
+          }
+          const { data: quoteFallback } = await fallbackQuery.maybeSingle();
 
-        const targetId = quoteRow.quotation_number || quoteRow.id;
+          if (quoteFallback) {
+            targetId = quoteFallback.quotation_number || quoteFallback.id;
+          } else {
+            // 3. Fallback: check quotation_documents by template_id
+            const { data: docRow } = await supabase
+              .from('quotation_documents')
+              .select('template_id')
+              .eq('template_id', token)
+              .maybeSingle();
+
+            if (docRow?.template_id) {
+              targetId = docRow.template_id;
+            } else {
+              // 4. Default to token directly
+              targetId = token;
+            }
+          }
+        }
 
         // Redirect seamlessly to builder in read-only public preview mode
         router.replace(`/workspace/quotations/builder/templet/${targetId}?preview=public&token=${token}`);
       } catch (e) {
         console.error('[Public Preview Router] Resolution error:', e);
-        setErrorMsg('Quotation preview is temporarily unavailable.');
-        setLoading(false);
+        // Even on catch, try navigating directly to public preview
+        router.replace(`/workspace/quotations/builder/templet/${token}?preview=public&token=${token}`);
       }
     }
 

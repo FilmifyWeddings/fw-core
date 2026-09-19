@@ -47,9 +47,27 @@ interface EventGallery {
   created_at: string;
 }
 
+// Module-level in-memory cache for instant 0ms millisecond transitions
+let memCachedGalleries: EventGallery[] = [];
+
 export default function GalleryManagerPage() {
-  const [galleries, setGalleries] = useState<EventGallery[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [galleries, setGalleries] = useState<EventGallery[]>(() => {
+    if (memCachedGalleries.length > 0) return memCachedGalleries;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_cached_galleries');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            memCachedGalleries = parsed;
+            return parsed;
+          }
+        }
+      } catch (_) {}
+    }
+    return [];
+  });
+  const [loading, setLoading] = useState(() => memCachedGalleries.length === 0);
   const [selectedGallery, setSelectedGallery] = useState<EventGallery | null>(null);
 
   // Modals
@@ -84,12 +102,18 @@ export default function GalleryManagerPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchGalleries = useCallback(async () => {
-    setLoading(true);
+    if (memCachedGalleries.length === 0) setLoading(true);
     try {
       const res = await fetch('/api/gallery/events');
       const json = await res.json();
       if (json.success && Array.isArray(json.galleries)) {
         setGalleries(json.galleries);
+        memCachedGalleries = json.galleries;
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('sc_cached_galleries', JSON.stringify(json.galleries));
+          } catch (_) {}
+        }
       }
     } catch (err) {
       console.error('Failed to load galleries:', err);

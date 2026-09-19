@@ -82,19 +82,24 @@ const GOOGLE_PRESET_COLORS = [
   '#f97316', // 9. Bright Orange
 ];
 
+// Module-level in-memory cache for instant 0ms millisecond transitions
+let memCachedEventTypes: WorkspaceEventType[] = [];
+let memCachedCrewRoles: WorkspaceCrewRole[] = [];
+let memCachedHasLoadedSettings = false;
+
 export default function SettingsPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<SettingsTab>('leads');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !memCachedHasLoadedSettings);
   const [saving, setSaving] = useState(false);
   const [saveToast, setSaveToast] = useState<string | null>(null);
   const [workspaceId, setWorkspaceId] = useState('');
   const [activeColorPickerId, setActiveColorPickerId] = useState<string | null>(null);
 
   // Functions & Crew Roles States
-  const [eventTypes, setEventTypes] = useState<WorkspaceEventType[]>(DEFAULT_EVENT_TYPES);
-  const [crewRoles, setCrewRoles] = useState<WorkspaceCrewRole[]>([]);
-  const [loadingCrewRoles, setLoadingCrewRoles] = useState<boolean>(true);
+  const [eventTypes, setEventTypes] = useState<WorkspaceEventType[]>(() => memCachedEventTypes.length > 0 ? memCachedEventTypes : DEFAULT_EVENT_TYPES);
+  const [crewRoles, setCrewRoles] = useState<WorkspaceCrewRole[]>(() => memCachedCrewRoles);
+  const [loadingCrewRoles, setLoadingCrewRoles] = useState<boolean>(() => !memCachedHasLoadedSettings);
   const [newEventName, setNewEventName] = useState('');
   const [newRoleName, setNewRoleName] = useState('');
   const [newRoleCode, setNewRoleCode] = useState('');
@@ -523,17 +528,23 @@ export default function SettingsPage() {
       // Fetch Workspace Event Types and Crew Roles
       if (wId) {
         const ev = await fetchWorkspaceEventTypes(wId);
-        if (ev && ev.length > 0) setEventTypes(ev);
+        if (ev && ev.length > 0) {
+          setEventTypes(ev);
+          memCachedEventTypes = ev;
+        }
         setLoadingCrewRoles(true);
         const cr = await fetchWorkspaceCrewRoles(wId);
         setCrewRoles(cr || []);
+        memCachedCrewRoles = cr || [];
         setLoadingCrewRoles(false);
+        memCachedHasLoadedSettings = true;
       }
     } catch (err) {
       console.error('Failed to load settings:', err);
     } finally {
       setLoading(false);
       setLoadingCrewRoles(false);
+      memCachedHasLoadedSettings = true;
     }
   }, [router, getAuthHeaders]);
 
@@ -917,7 +928,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Content Panel */}
-        {loading ? (
+        {loading && !memCachedHasLoadedSettings ? (
           <div className="py-20 text-center text-zinc-500 space-y-3 bg-white rounded-2xl border border-amber-200/90 shadow-xs">
             <RefreshCw className="w-8 h-8 animate-spin mx-auto text-[#0F9D58]" />
             <p className="text-sm font-semibold">Loading user settings from Supabase Database...</p>

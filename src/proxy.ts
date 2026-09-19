@@ -27,8 +27,14 @@ export async function proxy(request: NextRequest) {
       return clearResponse;
     }
 
+    // Check if visiting a read-only public quotation preview (e.g. /workspace/quotations/builder/templet/[id]?preview=public or ?token=...)
+    const isPublicQuotationPreview =
+      pathname.startsWith('/workspace/quotations/builder/templet/') &&
+      (request.nextUrl.searchParams.get('preview') === 'public' || request.nextUrl.searchParams.has('token'));
+
     // 1. UNCONDITIONAL PASS FOR PUBLIC & AUTH PATHS
     const isPublicRoute =
+      isPublicQuotationPreview ||
       pathname === '/login' ||
       pathname === '/blocked' ||
       pathname.startsWith('/blocked') ||
@@ -343,17 +349,19 @@ export async function proxy(request: NextRequest) {
     }
 
     const isProtectedRoute =
-      pathname.startsWith('/dashboard') ||
-      pathname.startsWith('/workspace') ||
-      pathname.startsWith('/integrations') ||
-      pathname.startsWith('/team-manager') ||
-      pathname.startsWith('/leads') ||
-      pathname.startsWith('/single-send') ||
-      pathname.startsWith('/quotations') ||
-      pathname.startsWith('/settings') ||
-      pathname.startsWith('/broadcast-campaigns') ||
-      pathname.startsWith('/admin') ||
-      pathname.startsWith('/api/integrations');
+      !isPublicQuotationPreview && (
+        pathname.startsWith('/dashboard') ||
+        pathname.startsWith('/workspace') ||
+        pathname.startsWith('/integrations') ||
+        pathname.startsWith('/team-manager') ||
+        pathname.startsWith('/leads') ||
+        pathname.startsWith('/single-send') ||
+        pathname.startsWith('/quotations') ||
+        pathname.startsWith('/settings') ||
+        pathname.startsWith('/broadcast-campaigns') ||
+        pathname.startsWith('/admin') ||
+        pathname.startsWith('/api/integrations')
+      );
 
     if (isProtectedRoute && !user) {
       if (pathname.startsWith('/api/')) {

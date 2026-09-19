@@ -239,7 +239,9 @@ export const DEFAULT_AIRY_PROPOSAL = {
     phone: '+91 98765 43210',
     email: 'hello@studiocore.in',
     website: 'www.studiocore.in',
-    social: '@studiocoreweddings',
+    social: '@filmifyweddings',
+    instagramHandle: '@filmifyweddings',
+    instagramUrl: 'https://instagram.com/filmifyweddings',
     photo: '',
     photoHeight: 360,
     photoWidth: 75,
@@ -519,7 +521,9 @@ export function normalizeQuotationData(rawInput: any, baseTemplate?: any) {
     phone: thankSrc.phone || d.thankYouPage?.phone || '',
     email: thankSrc.email || d.thankYouPage?.email || '',
     website: thankSrc.website || d.thankYouPage?.website || '',
-    social: thankSrc.social || d.thankYouPage?.social || '',
+    social: thankSrc.social || thankSrc.instagramHandle || thankSrc.instagram || d.thankYouPage?.social || '',
+    instagramHandle: thankSrc.instagramHandle || thankSrc.instagram || thankSrc.social || d.thankYouPage?.instagramHandle || '',
+    instagramUrl: thankSrc.instagramUrl || thankSrc.instagram_url || d.thankYouPage?.instagramUrl || '',
     photo: thankSrc.photo !== undefined ? thankSrc.photo : (d.thankYouPage?.photo || ''),
   };
 

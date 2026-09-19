@@ -36,15 +36,35 @@ const DEFAULT_EVENT_TYPES = [
   'Maternity & Baby Shower'
 ];
 
+// Module-level in-memory cache for instant 0ms millisecond transitions
+let memCachedClients: WorkspaceClient[] = [];
+let memCachedFinanceRecordsMap = new Map<string, ClientFinanceRecord>();
+let memCachedTeamMembers: WorkspaceMemberOption[] = [];
+
 export default function ClientsPage() {
   const router = useRouter();
-  const [clients, setClients] = useState<WorkspaceClient[]>([]);
+  const [clients, setClients] = useState<WorkspaceClient[]>(() => {
+    if (memCachedClients.length > 0) return memCachedClients;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_cached_clients');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            memCachedClients = parsed;
+            return parsed;
+          }
+        }
+      } catch (_) {}
+    }
+    return [];
+  });
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string>('');
-  const [financeRecordsMap, setFinanceRecordsMap] = useState<Map<string, ClientFinanceRecord>>(new Map());
+  const [financeRecordsMap, setFinanceRecordsMap] = useState<Map<string, ClientFinanceRecord>>(() => memCachedFinanceRecordsMap);
   const [isExcelMigrationModalOpen, setIsExcelMigrationModalOpen] = useState(false);
   const [leads, setLeads] = useState<Lead[]>([]);
-  const [teamMembers, setTeamMembers] = useState<WorkspaceMemberOption[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [teamMembers, setTeamMembers] = useState<WorkspaceMemberOption[]>(() => memCachedTeamMembers);
+  const [loading, setLoading] = useState(() => memCachedClients.length === 0);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'completed' | 'archived'>('all');
   const [eventTypeFilter, setEventTypeFilter] = useState<string>('all');
@@ -225,11 +245,19 @@ export default function ClientsPage() {
       try {
         const members = await fetchWorkspaceTeamMembers(workspaceId);
         setTeamMembers(members);
+        memCachedTeamMembers = members;
       } catch (memErr) {
         console.warn('Could not load team members:', memErr);
       }
 
       setClients(existingClientList);
+      memCachedClients = existingClientList;
+      memCachedFinanceRecordsMap = fMap;
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('sc_cached_clients', JSON.stringify(existingClientList));
+        } catch (_) {}
+      }
     } catch (err) {
       console.error('Error fetching clients and syncing leads:', err);
     } finally {
@@ -958,7 +986,7 @@ export default function ClientsPage() {
         {/* ─────────────────────────────────────────────────────────────
             CLIENT CARDS / TABLE LIST (CLICKABLE FOR 360 WORKSPACE)
         ───────────────────────────────────────────────────────────── */}
-        {loading ? (
+        {loading && clients.length === 0 ? (
           <StudioCoreLiquidLoader label="Loading Clients Directory..." fullscreen={false} />
         ) : filteredClients.length === 0 ? (
           <div className="bg-[#FFFDF9] p-12 rounded-2xl border border-dashed border-amber-300/80 text-center space-y-4 shadow-xs">

@@ -22,6 +22,16 @@ import { CanvaFontSelector } from '@/components/CanvaFontSelector';
 import { loadCustomFontsFromAPI, registerFontFace, ensureFontsReady, preloadActiveFont } from '@/lib/font-loader';
 import { BirdsSVG, MonogramSVG } from '@/components/QuotationSVGs';
 
+function InstagramIcon({ className = "w-3.5 h-3.5", style }: { className?: string; style?: React.CSSProperties }) {
+  return (
+    <svg className={className} style={style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect width="20" height="20" x="2" y="2" rx="5" ry="5"/>
+      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
+      <line x1="17.5" x2="17.51" y1="6.5" y2="6.5"/>
+    </svg>
+  );
+}
+
 const MasterMediaModal = dynamic(
   () => import('@/components/MasterMediaModal').then(m => m.MasterMediaModal),
   { ssr: false }
@@ -624,6 +634,8 @@ const DEFAULT_AIRY_PROPOSAL = {
     contactNumber: '+91 98765 43210',
     email: 'contact@filmifyweddings.com',
     website: 'www.filmifyweddings.com',
+    instagramHandle: '@filmifyweddings',
+    instagramUrl: 'https://instagram.com/filmifyweddings',
     photo: '',
     photoHeight: 360,
     photoWidth: 75,
@@ -1072,6 +1084,60 @@ function chunkArray<T>(arr: T[] | undefined | null, size: number): T[][] {
   for (let i = 0; i < arr.length; i += size) {
     chunks.push(arr.slice(i, i + size));
   }
+  return chunks;
+}
+
+/**
+ * Dynamically paginates Terms & Conditions text into A4 page chunks based on available vertical space.
+ * Prevents premature page breaks and fills the card down towards the bottom of the page before breaking.
+ */
+function paginateTermsPageLines(
+  text: string,
+  hasPhoto: boolean,
+  photoHeight: number = 360
+): string[][] {
+  const lines = (text || '').split('\n').filter(l => l.trim().length > 0);
+  if (lines.length === 0) return [[]];
+
+  // A4 canvas height: 1123px. p-8 padding is 64px (top + bottom) -> 1059px available.
+  const maxPageHeight = 1059;
+  const headerHeight = 90; // Kicker + Heading + margins
+  const boxPadding = 56;   // p-6 / p-7 card padding
+  const safetyBuffer = 30; // safety margin for line wrapping & subpixel layout
+
+  const chunks: string[][] = [];
+  let currentChunk: string[] = [];
+  let currentChunkHeight = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const isFirstPage = chunks.length === 0;
+    const availableHeight = (isFirstPage && hasPhoto)
+      ? (maxPageHeight - headerHeight - boxPadding - photoHeight - safetyBuffer)
+      : (maxPageHeight - headerHeight - boxPadding - safetyBuffer);
+
+    // In ~660px box width at 13.5px font, approx 75 characters fit per wrapped line
+    const wrappedLines = Math.max(1, Math.ceil(line.length / 75));
+    // 23px per wrapped line (leading-[1.65]) + 14px gap between paragraphs
+    const itemHeight = wrappedLines * 23 + 14;
+
+    if (currentChunk.length === 0) {
+      currentChunk.push(line);
+      currentChunkHeight = itemHeight;
+    } else if (currentChunkHeight + itemHeight <= availableHeight) {
+      currentChunk.push(line);
+      currentChunkHeight += itemHeight;
+    } else {
+      chunks.push(currentChunk);
+      currentChunk = [line];
+      currentChunkHeight = itemHeight;
+    }
+  }
+
+  if (currentChunk.length > 0) {
+    chunks.push(currentChunk);
+  }
+
   return chunks;
 }
 
@@ -1971,6 +2037,40 @@ function normalizeQuotationData(loaded: any) {
       bgOpacity: loaded.addOnsPage?.bgOpacity ?? d.addOnsPage.bgOpacity ?? 40,
       frameShape: loaded.addOnsPage?.frameShape ?? d.addOnsPage.frameShape ?? 'rounded',
       imagePosition: loaded.addOnsPage?.imagePosition ?? d.addOnsPage.imagePosition ?? 'bottom',
+    },
+    termsPage: {
+      ...d.termsPage,
+      ...(loaded.termsPage || {}),
+      heading: loaded.termsPage?.heading ?? d.termsPage.heading,
+      text: loaded.termsPage?.text ?? d.termsPage.text,
+      photo: loaded.termsPage?.photo ?? d.termsPage.photo ?? '',
+      photoHeight: loaded.termsPage?.photoHeight ?? d.termsPage.photoHeight ?? 360,
+      photoWidth: loaded.termsPage?.photoWidth ?? d.termsPage.photoWidth ?? 75,
+      photoFocalY: loaded.termsPage?.photoFocalY ?? d.termsPage.photoFocalY ?? 50,
+      bgOpacity: loaded.termsPage?.bgOpacity ?? d.termsPage.bgOpacity ?? 40,
+      frameShape: loaded.termsPage?.frameShape ?? d.termsPage.frameShape ?? 'arch',
+      imagePosition: loaded.termsPage?.imagePosition ?? d.termsPage.imagePosition ?? 'bottom',
+    },
+    thankYouPage: {
+      ...d.thankYouPage,
+      ...(loaded.thankYouPage || {}),
+      heading: loaded.thankYouPage?.heading ?? d.thankYouPage.heading,
+      subHeading: loaded.thankYouPage?.subHeading ?? d.thankYouPage.subHeading,
+      message: loaded.thankYouPage?.message ?? d.thankYouPage.message,
+      brandLogoUrl: loaded.thankYouPage?.brandLogoUrl ?? d.thankYouPage.brandLogoUrl ?? '',
+      brandName: loaded.thankYouPage?.brandName ?? d.thankYouPage.brandName,
+      contactNumber: loaded.thankYouPage?.contactNumber ?? d.thankYouPage.contactNumber ?? '',
+      email: loaded.thankYouPage?.email ?? d.thankYouPage.email ?? '',
+      website: loaded.thankYouPage?.website ?? d.thankYouPage.website ?? '',
+      instagramHandle: loaded.thankYouPage?.instagramHandle ?? loaded.thankYouPage?.instagram ?? loaded.thankYouPage?.social ?? d.thankYouPage.instagramHandle ?? '',
+      instagramUrl: loaded.thankYouPage?.instagramUrl ?? loaded.thankYouPage?.instagram_url ?? d.thankYouPage.instagramUrl ?? '',
+      photo: loaded.thankYouPage?.photo ?? d.thankYouPage.photo ?? '',
+      photoHeight: loaded.thankYouPage?.photoHeight ?? d.thankYouPage.photoHeight ?? 360,
+      photoWidth: loaded.thankYouPage?.photoWidth ?? d.thankYouPage.photoWidth ?? 75,
+      photoFocalY: loaded.thankYouPage?.photoFocalY ?? d.thankYouPage.photoFocalY ?? 50,
+      bgOpacity: loaded.thankYouPage?.bgOpacity ?? d.thankYouPage.bgOpacity ?? 40,
+      frameShape: loaded.thankYouPage?.frameShape ?? d.thankYouPage.frameShape ?? 'arch',
+      imagePosition: loaded.thankYouPage?.imagePosition ?? d.thankYouPage.imagePosition ?? 'bottom',
     },
 
     // Backwards Compatibility Aliases
@@ -4971,6 +5071,35 @@ function StudioCoreAiryBuilderContent() {
                     className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
                   />
                 </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="block text-[9px] uppercase font-bold text-zinc-500">Instagram Handle</label>
+                    <input
+                      type="text"
+                      placeholder="@filmifyweddings"
+                      value={data.thankYouPage?.instagramHandle || data.thankYouPage?.instagram || ''}
+                      onChange={(e) => {
+                        const currentObj = data.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage;
+                        setData({ ...data, thankYouPage: { ...currentObj, instagramHandle: e.target.value, instagram: e.target.value } });
+                      }}
+                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-[9px] uppercase font-bold text-zinc-500">Instagram Link (URL)</label>
+                    <input
+                      type="text"
+                      placeholder="https://instagram.com/..."
+                      value={data.thankYouPage?.instagramUrl || ''}
+                      onChange={(e) => {
+                        const currentObj = data.thankYouPage || DEFAULT_AIRY_PROPOSAL.thankYouPage;
+                        setData({ ...data, thankYouPage: { ...currentObj, instagramUrl: e.target.value } });
+                      }}
+                      className="w-full p-2 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-bold text-xs"
+                    />
+                  </div>
+                </div>
               </div>
 
               <UnifiedPhotoControls
@@ -5339,6 +5468,28 @@ function StudioCoreAiryBuilderContent() {
               title="Preview Template"
             >
               <Eye className="w-3.5 h-3.5 stroke-[2.5]" /> <span>Preview</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={async () => {
+                const shareId = data.public_token || templateId || 'templet';
+                const shareUrl = `${window.location.origin}/p/quotation/${shareId}`;
+                try {
+                  if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(shareUrl);
+                    alert(`Public quotation link copied to clipboard!\n\n${shareUrl}\n\nAnyone with this link can view the proposal without logging in.`);
+                  } else {
+                    prompt('Copy public quotation link:', shareUrl);
+                  }
+                } catch {
+                  prompt('Copy public quotation link:', shareUrl);
+                }
+              }}
+              className="px-3 sm:px-4 py-1.5 rounded-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-[10px] sm:text-[11px] font-extrabold transition-all flex items-center gap-1.5 cursor-pointer shadow-md hover:shadow-lg active:scale-95"
+              title="Share Public Proposal Link"
+            >
+              <Share2 className="w-3.5 h-3.5 stroke-[2.5]" /> <span>Share</span>
             </button>
 
             <button
@@ -5780,26 +5931,26 @@ function StudioCoreAiryBuilderContent() {
                                   </h2>
                                 </div>
 
-                                <div className="w-full max-w-xl mx-auto space-y-4 my-auto">
+                                <div className="w-full max-w-[710px] mx-auto space-y-4 my-auto">
                                   {funcChunk.map((func: any, index: number) => {
                                     const previousCardsCount = funcChunks.slice(0, chunkIdx).reduce((sum, chunk) => sum + chunk.length, 0);
                                     const globalIdx = previousCardsCount + index;
                                     return (
                                       <div 
                                         key={func.id || globalIdx} 
-                                        className="p-4 rounded-2xl border transition-all space-y-2.5 shadow-xs"
+                                        className="p-4 sm:p-5 rounded-2xl border transition-all space-y-3 shadow-xs"
                                         style={{ 
                                           borderColor: borderColor || 'rgba(0,0,0,0.12)',
                                           backgroundColor: boxBgColor || 'rgba(0,0,0,0.03)'
                                         }}
                                       >
                                         {/* Function Name & Timing Header */}
-                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b pb-2" style={{ borderColor: borderColor || 'rgba(0,0,0,0.1)' }}>
-                                          <h3 className="text-xl tracking-wider font-semibold uppercase" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b pb-2.5" style={{ borderColor: borderColor || 'rgba(0,0,0,0.1)' }}>
+                                          <h3 className="text-xl sm:text-2xl tracking-wider font-semibold uppercase" style={{ color: textColor, fontFamily: data.primaryFont }}>
                                             {resolveFunctionTitle(func.name)}
                                           </h3>
-                                          <div className="text-[10px] tracking-widest uppercase font-bold font-sans px-2.5 py-0.5 rounded-full border shadow-2xs inline-flex items-center gap-1 self-start sm:self-auto" style={{ color: kickerColor, borderColor: borderColor || 'rgba(0,0,0,0.15)', backgroundColor: pageBgColor }}>
-                                            <Calendar className="w-3 h-3" />
+                                          <div className="text-xs tracking-wider uppercase font-semibold font-sans px-3 py-1 rounded-full border shadow-2xs inline-flex items-center gap-1.5 self-start sm:self-auto" style={{ color: kickerColor, borderColor: borderColor || 'rgba(0,0,0,0.15)', backgroundColor: pageBgColor }}>
+                                            <Calendar className="w-3.5 h-3.5 shrink-0" />
                                             <span className="font-sans font-medium tracking-tight">
                                               {[
                                                 (func as FunctionItem).dateNotFixed ? 'DATE NOT FIXED' : func.date,
@@ -5812,19 +5963,19 @@ function StudioCoreAiryBuilderContent() {
 
                                         {/* Venue Location */}
                                         {func.location && (
-                                          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider opacity-90" style={{ color: textColor }}>
-                                            <MapPin className="w-3.5 h-3.5 shrink-0 text-amber-600" style={{ color: kickerColor }} />
+                                          <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide opacity-95" style={{ color: textColor }}>
+                                            <MapPin className="w-4 h-4 shrink-0 text-amber-600" style={{ color: kickerColor }} />
                                             <span>{func.location}</span>
                                           </div>
                                         )}
 
                                         {/* Requirements & Crew List */}
                                         {func.requirements && func.requirements.length > 0 && (
-                                          <div className="space-y-1 pt-0.5">
-                                            <span className="text-[10px] uppercase font-bold tracking-widest block opacity-75" style={{ color: kickerColor }}>
+                                          <div className="space-y-1.5 pt-0.5">
+                                            <span className="text-xs uppercase font-bold tracking-wider block opacity-90" style={{ color: kickerColor }}>
                                               Crew &amp; Requirements:
                                             </span>
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs font-medium">
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm font-medium">
                                               {func.requirements.map((req: any, rIdx: number) => {
                                                 const q = req.qty || 1;
                                                 let label = req.name;
@@ -5837,7 +5988,7 @@ function StudioCoreAiryBuilderContent() {
                                                 }
                                                 return (
                                                   <div key={rIdx} className="flex items-center gap-1.5" style={{ color: textColor }}>
-                                                    <Camera className="w-3.5 h-3.5 shrink-0" style={{ color: kickerColor }} />
+                                                    <Camera className="w-4 h-4 shrink-0" style={{ color: kickerColor }} />
                                                     <span>{`${q} × ${label}`}</span>
                                                   </div>
                                                 );
@@ -5849,7 +6000,7 @@ function StudioCoreAiryBuilderContent() {
                                         {/* Custom Notes */}
                                         {func.notes && (
                                           <p 
-                                            className="text-xs italic leading-relaxed opacity-85 pt-1 border-t whitespace-pre-wrap [overflow-wrap:anywhere] [word-break:break-word]" 
+                                            className="text-sm italic leading-relaxed opacity-90 pt-1.5 border-t whitespace-pre-wrap [overflow-wrap:anywhere] [word-break:break-word]" 
                                             style={{ 
                                               color: textColor, 
                                               borderColor: borderColor || 'rgba(0,0,0,0.08)',
@@ -6366,8 +6517,8 @@ function StudioCoreAiryBuilderContent() {
 
                       {pageItem.type === 'termsPage' && (() => {
                         const termsRaw = data.termsPage?.text || DEFAULT_AIRY_PROPOSAL.termsPage.text || '';
-                        const termLines = termsRaw.split('\n').filter(Boolean);
-                        const termsChunks = chunkArray(termLines, 13);
+                        const hasPhoto = !!(data.termsPage?.photo && data.termsPage?.frameShape !== 'background');
+                        const termsChunks = paginateTermsPageLines(termsRaw, hasPhoto, data.termsPage?.photoHeight || 360);
                         return termsChunks.map((termsChunk, chunkIdx) => (
                           <section 
                             key={`terms-chunk-${chunkIdx}`}
@@ -6441,7 +6592,7 @@ function StudioCoreAiryBuilderContent() {
                                     className="p-6 sm:p-7 rounded-2xl border shadow-xs leading-relaxed flex-1 flex flex-col justify-start"
                                     style={{ backgroundColor: boxBgColor, borderColor, color: textColor }}
                                   >
-                                    <p className="text-xs whitespace-pre-line leading-relaxed opacity-95 font-medium flex-1">
+                                    <p className="text-[13.5px] sm:text-sm whitespace-pre-line leading-[1.65] opacity-95 font-medium flex-1">
                                       {termsChunk.join('\n\n')}
                                     </p>
                                   </div>
@@ -6505,13 +6656,13 @@ function StudioCoreAiryBuilderContent() {
                 />
               )}
 
-              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-14 ${
+              <div className={`relative z-10 mx-auto text-center flex flex-col h-full w-full py-10 ${
                 data.thankYouPage?.frameShape === 'full-width' || (data.thankYouPage?.imagePosition as string) === 'full' 
                   ? 'px-0' 
                   : 'px-12'
               } justify-between`}>
                 
-                <div className={`flex flex-col items-center justify-center w-full my-auto ${data.thankYouPage?.frameShape === 'full-width' || (data.thankYouPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
+                <div className={`flex flex-col items-center justify-center w-full flex-1 my-auto ${data.thankYouPage?.frameShape === 'full-width' || (data.thankYouPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
                   {/* TOP IMAGE POSITION */}
                   {data.thankYouPage?.photo && data.thankYouPage?.frameShape !== 'background' && data.thankYouPage?.imagePosition === 'top' && (
                     <SectionImageRenderer
@@ -6542,68 +6693,101 @@ function StudioCoreAiryBuilderContent() {
                   {/* CENTER OR BOTTOM IMAGE POSITION */}
                   {data.thankYouPage?.photo && data.thankYouPage?.frameShape !== 'background' && (data.thankYouPage?.imagePosition === 'center' || data.thankYouPage?.imagePosition === 'bottom' || !data.thankYouPage?.imagePosition) && (
                     <SectionImageRenderer
-                      photo={data.thankYouPage?.photo}
-                      frameShape={data.thankYouPage?.frameShape}
-                      photoHeight={data.thankYouPage?.photoHeight}
-                      photoWidth={data.thankYouPage?.photoWidth}
-                      photoFocalY={data.thankYouPage?.photoFocalY}
+                      photo={data.thankYouPage.photo}
+                      frameShape={data.thankYouPage.frameShape}
+                      photoHeight={data.thankYouPage.photoHeight}
+                      photoWidth={data.thankYouPage.photoWidth}
+                      photoFocalY={data.thankYouPage.photoFocalY}
                       isBottomFlush={data.thankYouPage?.imagePosition === 'bottom'}
                       altText="Thank You Photo"
                     />
                   )}
                 </div>
 
-                {/* BOTTOM FLUSH BRANDING FOOTER */}
-                <div className={`w-full pt-6 border-t ${data.thankYouPage?.frameShape === 'full-width' || (data.thankYouPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`} style={{ borderColor }}>
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-semibold">
-                    
-                    {/* Brand Logo & Name */}
-                    <div className="flex items-center gap-3">
-                      {(data.thankYouPage?.brandLogoUrl || data.cover?.brandLogoUrl) ? (
-                        <img 
-                          src={data.thankYouPage?.brandLogoUrl || data.cover?.brandLogoUrl} 
-                          alt="Brand Logo" 
-                          crossOrigin="anonymous"
-                          className="h-10 w-auto object-contain bg-transparent"
-                        />
-                      ) : null}
-                      <span className="font-extrabold uppercase tracking-widest text-sm" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                        {data.thankYouPage?.brandName || data.cover?.brandName || 'FILMIFY WEDDINGS'}
-                      </span>
-                    </div>
+                {/* BOTTOM FLUSH BRANDING FOOTER CONTAINER */}
+                <div className={`w-full mt-auto ${data.thankYouPage?.frameShape === 'full-width' || (data.thankYouPage?.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
+                  <div className="w-full pt-6 pb-2 border-t" style={{ borderColor }}>
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-semibold">
+                      
+                      {/* Brand Logo & Name */}
+                      <div className="flex items-center gap-3">
+                        {(data.thankYouPage?.brandLogoUrl || data.cover?.brandLogoUrl) ? (
+                          <img 
+                            src={data.thankYouPage?.brandLogoUrl || data.cover?.brandLogoUrl} 
+                            alt="Brand Logo" 
+                            crossOrigin="anonymous"
+                            className="h-10 w-auto object-contain bg-transparent"
+                          />
+                        ) : null}
+                        <span className="font-extrabold uppercase tracking-widest text-sm" style={{ color: textColor, fontFamily: data.primaryFont }}>
+                          {data.thankYouPage?.brandName || data.cover?.brandName || 'FILMIFY WEDDINGS'}
+                        </span>
+                      </div>
 
-                    {/* Contact details list */}
-                    <div className="flex flex-wrap items-center justify-center gap-4 text-[11px]">
-                      {data.thankYouPage?.contactNumber && (
-                        <div className="flex items-center gap-1.5" style={{ color: textColor }}>
-                          <Phone className="w-3.5 h-3.5 text-amber-600" style={{ color: kickerColor }} />
-                          <span className="font-sans font-medium">{data.thankYouPage.contactNumber}</span>
-                        </div>
-                      )}
-                      {data.thankYouPage?.email && (
-                        <div className="flex items-center gap-1.5" style={{ color: textColor }}>
-                          <Mail className="w-3.5 h-3.5 text-amber-600" style={{ color: kickerColor }} />
-                          <span className="font-sans font-medium">{data.thankYouPage.email}</span>
-                        </div>
-                      )}
-                      {data.thankYouPage?.website && (
-                        <div className="flex items-center gap-1.5" style={{ color: textColor }}>
-                          <Globe className="w-3.5 h-3.5 text-amber-600" style={{ color: kickerColor }} />
-                          <span className="font-sans font-medium">{data.thankYouPage.website}</span>
-                        </div>
-                      )}
-                    </div>
+                      {/* Contact details list */}
+                      <div className="flex flex-wrap items-center justify-center gap-4 text-[11px]">
+                        {data.thankYouPage?.contactNumber && (
+                          <a 
+                            href={`tel:${data.thankYouPage.contactNumber.replace(/\s+/g, '')}`} 
+                            className="flex items-center gap-1.5 hover:opacity-80 transition-opacity" 
+                            style={{ color: textColor }}
+                          >
+                            <Phone className="w-3.5 h-3.5 text-amber-600" style={{ color: kickerColor }} />
+                            <span className="font-sans font-medium">{data.thankYouPage.contactNumber}</span>
+                          </a>
+                        )}
+                        {data.thankYouPage?.email && (
+                          <a 
+                            href={`mailto:${data.thankYouPage.email}`} 
+                            className="flex items-center gap-1.5 hover:opacity-80 transition-opacity" 
+                            style={{ color: textColor }}
+                          >
+                            <Mail className="w-3.5 h-3.5 text-amber-600" style={{ color: kickerColor }} />
+                            <span className="font-sans font-medium">{data.thankYouPage.email}</span>
+                          </a>
+                        )}
+                        {data.thankYouPage?.website && (
+                          <a 
+                            href={data.thankYouPage.website.startsWith('http') ? data.thankYouPage.website : `https://${data.thankYouPage.website}`} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="flex items-center gap-1.5 hover:underline hover:opacity-80 transition-opacity" 
+                            style={{ color: textColor }}
+                          >
+                            <Globe className="w-3.5 h-3.5 text-amber-600" style={{ color: kickerColor }} />
+                            <span className="font-sans font-medium">{data.thankYouPage.website}</span>
+                          </a>
+                        )}
+                        {(data.thankYouPage?.instagramHandle || data.thankYouPage?.instagram || data.thankYouPage?.social) && (
+                          (() => {
+                            const handle = data.thankYouPage.instagramHandle || data.thankYouPage.instagram || data.thankYouPage.social;
+                            const url = data.thankYouPage.instagramUrl || `https://instagram.com/${handle.replace('@', '')}`;
+                            return (
+                              <a 
+                                href={url} 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                className="flex items-center gap-1.5 hover:underline hover:opacity-80 transition-opacity" 
+                                style={{ color: textColor }}
+                              >
+                                <InstagramIcon className="w-3.5 h-3.5 text-amber-600" style={{ color: kickerColor }} />
+                                <span className="font-sans font-medium">{handle}</span>
+                              </a>
+                            );
+                          })()
+                        )}
+                      </div>
 
+                    </div>
                   </div>
+
+                  {/* CANVAS FOOTER WATERMARK */}
+                  {isLastPage && (
+                    <div className="w-full text-center pt-3 pb-1 text-xs text-gray-400 font-medium tracking-wide select-none">
+                      Created by StudioCore.in
+                    </div>
+                  )}
                 </div>
-
-
-                {/* CANVAS FOOTER WATERMARK */}
-                {isLastPage && (
-                  <div className="w-full text-center py-4 text-xs text-gray-400 font-medium tracking-wide border-t border-gray-100 mt-auto select-none">
-                    Created by StudioCore.in
-                  </div>
-                )}
               </div>
             </section>
                       )}

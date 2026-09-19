@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import DeliverableRowItem from './DeliverableRowItem';
 import PostProductionConfirmModal from './PostProductionConfirmModal';
-import { fetchPostProductionSettings, DEFAULT_POST_PRODUCTION_CATEGORIES, normalizePreset } from '@/lib/post-production-settings';
+import { fetchPostProductionSettings, getCachedPostProductionSettings, DEFAULT_POST_PRODUCTION_CATEGORIES, normalizePreset } from '@/lib/post-production-settings';
 
 export interface DeliverableDriveLink {
   id: string;
@@ -31,6 +31,8 @@ export interface PostProductionDeliverable {
   category: string;
   custom_category_name?: string;
   title: string;
+  specs?: string | null;
+  count?: string | null;
   status: 'Upcoming' | 'In Progress' | 'Under Review' | 'Done' | string;
   assigned_member_id?: string | null;
   assigned_to?: string | null;
@@ -41,11 +43,10 @@ export interface PostProductionDeliverable {
   drive_links?: DeliverableDriveLink[];
   comments?: DeliverableCommentItem[];
   comments_count?: number;
-  count?: string | number | null;
-  specs?: string | number | null;
   is_custom?: boolean;
   is_hidden?: boolean;
   segment_order?: number;
+  created_at?: string;
 }
 
 interface DeliverableCategorySectionProps {
@@ -53,13 +54,14 @@ interface DeliverableCategorySectionProps {
   category: string;
   items: PostProductionDeliverable[];
   teamMembers: { id: string; name: string; role?: string }[];
+  onAddItem: (segment: string, category: string, title: string, specs?: string) => void;
+  onAddMultipleItems?: (items: Partial<PostProductionDeliverable>[]) => void;
   onUpdateItem: (itemId: string, field: keyof PostProductionDeliverable, value: any) => void;
   onUpdateItemFields?: (itemId: string, fields: Partial<PostProductionDeliverable>) => void;
   onDeleteItem: (itemId: string) => void;
-  onAddItem: (segment: string, category: string, title: string, specs?: string) => void;
-  onRemoveCategory?: (segment: string, category: string) => void;
   onOpenComments: (itemId: string, title: string) => void;
   onOpenDrive?: (itemId: string, currentLink: string) => void;
+  onRemoveCategory?: (segment: string, category: string) => void;
 }
 
 export default function DeliverableCategorySection({
@@ -67,32 +69,33 @@ export default function DeliverableCategorySection({
   category,
   items,
   teamMembers,
+  onAddItem,
+  onAddMultipleItems,
   onUpdateItem,
   onUpdateItemFields,
   onDeleteItem,
-  onAddItem,
-  onRemoveCategory,
   onOpenComments,
   onOpenDrive,
+  onRemoveCategory,
 }: DeliverableCategorySectionProps) {
   const [isAddingItem, setIsAddingItem] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedPresets, setSelectedPresets] = useState<Set<string>>(new Set());
-  const [presetSpecs, setPresetSpecs] = useState<Record<string, string>>({});
   const [customTitle, setCustomTitle] = useState('');
   const [customSpecs, setCustomSpecs] = useState('');
   const [customSelected, setCustomSelected] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedPresets, setSelectedPresets] = useState<Set<string>>(new Set());
+  const [presetSpecs, setPresetSpecs] = useState<Record<string, string>>({});
   const [showDeleteCatConfirm, setShowDeleteCatConfirm] = useState(false);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Focus search input when dropdown opens
+  // Auto-focus search input when opening dropdown
   useEffect(() => {
     if (isAddingItem) {
       setTimeout(() => {
         searchInputRef.current?.focus();
-      }, 60);
+      }, 50);
     }
   }, [isAddingItem]);
 
@@ -121,7 +124,23 @@ export default function DeliverableCategorySection({
   }, [isAddingItem]);
 
   // Category Presets from settings: { title: string; defaultSpecs: string }
-  const [categoryPresets, setCategoryPresets] = useState<{ title: string; defaultSpecs: string }[]>([]);
+  // Loaded synchronously from in-memory cache (0ms)
+  const [categoryPresets, setCategoryPresets] = useState<{ title: string; defaultSpecs: string }[]>(() => {
+    const cached = getCachedPostProductionSettings();
+    const match = cached.categories?.find(c => c.name.toLowerCase() === category.toLowerCase());
+    if (match && match.presets.length > 0) {
+      return match.presets.map(p => {
+        const n = normalizePreset(p);
+        return { title: n.title, defaultSpecs: n.specs };
+      });
+    }
+    const defMatch = DEFAULT_POST_PRODUCTION_CATEGORIES.find(c => c.name.toLowerCase() === category.toLowerCase());
+    const rawPresets = defMatch?.presets || [{ title: 'Standard Deliverable', specs: '' }, { title: 'Final Master Export', specs: '' }];
+    return rawPresets.map(p => {
+      const n = normalizePreset(p);
+      return { title: n.title, defaultSpecs: n.specs };
+    });
+  });
 
   const loadCategorySettings = () => {
     fetchPostProductionSettings().then(settings => {
@@ -146,19 +165,10 @@ export default function DeliverableCategorySection({
         });
         setCategoryPresets(normalized);
       }
-    }).catch(() => {
-      const defMatch = DEFAULT_POST_PRODUCTION_CATEGORIES.find(c => c.name.toLowerCase() === category.toLowerCase());
-      const rawPresets = defMatch?.presets || [{ title: 'Standard Deliverable', specs: '' }, { title: 'Final Master Export', specs: '' }];
-      const normalized = rawPresets.map(p => {
-        const n = normalizePreset(p);
-        return { title: n.title, defaultSpecs: n.specs };
-      });
-      setCategoryPresets(normalized);
-    });
+    }).catch(() => {});
   };
 
   useEffect(() => {
-    loadCategorySettings();
     const handleSettingsUpdated = () => {
       loadCategorySettings();
     };

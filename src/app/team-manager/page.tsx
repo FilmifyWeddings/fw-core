@@ -38,6 +38,10 @@ import DeleteMemberWarningModal from '../workspace/team/components/DeleteMemberW
 import { WorkspaceCrewRole, fetchWorkspaceCrewRoles, fetchWorkspaceEventTypes, saveAllWorkspaceEventTypes, getRoleShortCode, getRoleAbbr } from '@/lib/workspace-settings';
 import { useWorkspaceData } from '@/context/WorkspaceDataContext';
 
+// Module-level in-memory cache for instant 0ms transitions
+let memCachedTMProjects: FWProject[] = [];
+let memCachedTMTeamMembers: FWTeamMember[] = [];
+
 // 1. Deterministic Client Gradient Consistency based on Project ID / Name Hash
 const getGradientByProjectId = (id: string) => {
   if (!id) return 'bg-gradient-to-b from-purple-700 via-indigo-700 to-indigo-900';
@@ -118,13 +122,15 @@ export default function TeamManagerPage() {
   
   // Dynamic Time-Based Greeting & Studio Profile Name
   const greetingInfo = useMemo(() => {
-    const hour = new Date().getHours();
-    if (hour < 12) return { text: 'Good Morning', emoji: '🌅' };
-    if (hour < 17) return { text: 'Good Afternoon', emoji: '☀️' };
-    return { text: 'Good Evening', emoji: '🌙' };
+    const hours = new Date().getHours();
+    let timeGreeting = 'Good Morning';
+    if (hours >= 12 && hours < 17) timeGreeting = 'Good Afternoon';
+    else if (hours >= 17) timeGreeting = 'Good Evening';
+
+    return { timeGreeting };
   }, []);
 
-  const studioName = useMemo(() => {
+  const studioDisplayName = useMemo(() => {
     if (workspaceName) return workspaceName;
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('fw_studio_name');
@@ -153,10 +159,41 @@ export default function TeamManagerPage() {
     }
   }, [activeTab, canManageTeam]);
   
-  // Real Data State & Current User Workspace ID
+  // Real Data State & Current User Workspace ID (Synchronous 0ms hydration)
   const [currentUserId, setCurrentUserId] = useState<string>('');
-  const [projects, setProjects] = useState<FWProject[]>([]);
-  const [teamMembers, setTeamMembers] = useState<FWTeamMember[]>([]);
+  const [projects, setProjects] = useState<FWProject[]>(() => {
+    if (memCachedTMProjects.length > 0) return memCachedTMProjects;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_cached_tm_projects');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            memCachedTMProjects = parsed;
+            return parsed;
+          }
+        }
+      } catch (_) {}
+    }
+    return [];
+  });
+
+  const [teamMembers, setTeamMembers] = useState<FWTeamMember[]>(() => {
+    if (memCachedTMTeamMembers.length > 0) return memCachedTMTeamMembers;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_cached_tm_members');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            memCachedTMTeamMembers = parsed;
+            return parsed;
+          }
+        }
+      } catch (_) {}
+    }
+    return [];
+  });
 
   const currentMember = useMemo(() => {
     return teamMembers.find(m =>
@@ -170,7 +207,7 @@ export default function TeamManagerPage() {
   const [selectedFinanceMember, setSelectedFinanceMember] = useState<any>(null);
   const [isFinanceDrawerOpen, setIsFinanceDrawerOpen] = useState(false);
   const [memberFinancials, setMemberFinancials] = useState<Record<string, TeamFinancialSummary>>({});
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(() => memCachedTMProjects.length === 0);
   const [error, setError] = useState<string | null>(null);
 
 
@@ -656,7 +693,14 @@ export default function TeamManagerPage() {
       }
 
       setProjects(projectsDataToSet);
-
+      memCachedTMProjects = projectsDataToSet;
+      memCachedTMTeamMembers = combinedMembers;
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('sc_cached_tm_projects', JSON.stringify(projectsDataToSet));
+          localStorage.setItem('sc_cached_tm_members', JSON.stringify(combinedMembers));
+        } catch (_) {}
+      }
 
     } catch (err: any) {
       console.error('[TeamManager] fetchAllData Exception:', err);
@@ -672,10 +716,12 @@ export default function TeamManagerPage() {
       const uid = session?.user?.id || '';
       setCurrentUserId(uid);
       const effectiveWsId = workspaceId || uid;
-      await fetchAllData(effectiveWsId);
+      const isSilent = memCachedTMProjects.length > 0;
+      await fetchAllData(effectiveWsId, isSilent);
     }
     initUserAndFetch();
   }, [workspaceId]);
+
 
   // Handle Team Member Save (Create / Edit)
   const handleSaveTeamMember = async (memberData: {
@@ -1573,7 +1619,7 @@ export default function TeamManagerPage() {
     return list;
   }, [projects, searchQuery, selectedRoleFilter, unifiedFilters]);
 
-  if (loading) {
+  if (loading && projects.length === 0) {
     return <StudioCoreLiquidLoader label="Loading Bookings & Operations..." />;
   }
 
@@ -1621,7 +1667,7 @@ export default function TeamManagerPage() {
                     Team Manager
                   </h1>
                   <p suppressHydrationWarning className="text-[9px] font-medium text-slate-400 mt-0.5 leading-none">
-                    {greetingInfo.text}, {studioName} {greetingInfo.emoji}
+                    {greetingInfo.timeGreeting}, {studioDisplayName} 👋
                   </p>
                 </div>
               </div>
@@ -1834,7 +1880,7 @@ export default function TeamManagerPage() {
         {/* ─── TAB VIEW: CARDS VIEW (SMART DUAL RESPONSIVE LAYOUT: PC DESKTOP + MOBILE APP CARDS) ─── */}
         {activeTab === 'projects' && (
           <div className="space-y-8">
-            {loading ? (
+            {loading && projects.length === 0 ? (
               <StudioCoreLiquidLoader label="Loading Bookings & Operations..." fullscreen={false} />
             ) : filteredProjects.length === 0 ? (
               <div className="bg-white p-12 rounded-3xl border border-slate-200 text-center space-y-4 shadow-2xs">
@@ -3544,7 +3590,7 @@ export default function TeamManagerPage() {
         project={whatsappModalData.project}
         subEvent={whatsappModalData.subEvent}
         workspaceId={workspaceId || currentUserId}
-        studioName={studioName || 'Filmify Weddings'}
+        studioName={studioDisplayName || 'Filmify Weddings'}
         projectManagerName={(whatsappModalData.project as any)?.project_manager_name || 'Studio Manager'}
         previousMemberName={whatsappModalData.previousMemberName}
         previousRate={whatsappModalData.previousRate}

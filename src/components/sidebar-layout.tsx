@@ -209,7 +209,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   }, [collapsed]);
 
   useEffect(() => {
-    // Pre-warm core workspace routes for instant millisecond transitions
+    // Pre-warm all core workspace routes for instant millisecond transitions
     const coreRoutes = [
       '/workspace',
       '/leads',
@@ -218,12 +218,27 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       '/workspace/post-production',
       '/workspace/team',
       '/workspace/finance',
+      '/workspace/clients',
+      '/workspace/gallery',
+      '/workspace/attendance',
+      '/workspace/integrations',
+      '/workspace/settings',
+      '/support',
     ];
     coreRoutes.forEach((route) => {
       try {
         router.prefetch(route);
       } catch (_) {}
     });
+
+    // Idle background pre-warming of critical caches
+    const timer = setTimeout(() => {
+      import('@/lib/post-production-settings').then(m => {
+        m.fetchPostProductionSettings().catch(() => {});
+      }).catch(() => {});
+    }, 1500);
+
+    return () => clearTimeout(timer);
   }, [router]);
 
   useEffect(() => {

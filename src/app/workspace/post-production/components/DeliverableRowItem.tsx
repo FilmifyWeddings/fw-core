@@ -8,7 +8,7 @@ import {
 import { PostProductionDeliverable } from './DeliverableCategorySection';
 import Searchable3DCreamSelect, { Searchable3DCreamSelectOption } from '@/components/ui/Searchable3DCreamSelect';
 import PostProductionConfirmModal from './PostProductionConfirmModal';
-import { fetchPostProductionSettings, DEFAULT_POST_PRODUCTION_STATUSES } from '@/lib/post-production-settings';
+import { fetchPostProductionSettings, getCachedPostProductionSettings, DEFAULT_POST_PRODUCTION_STATUSES } from '@/lib/post-production-settings';
 
 interface DeliverableRowItemProps {
   item: PostProductionDeliverable;
@@ -55,13 +55,31 @@ export default function DeliverableRowItem({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const datePickerRef = useRef<HTMLInputElement | null>(null);
 
-  // Dynamic workflow statuses loaded from settings
-  const [statusOptions, setStatusOptions] = useState<Searchable3DCreamSelectOption[]>([
-    { value: 'Upcoming', label: 'Upcoming', color: '#d97706' },
-    { value: 'In Progress', label: 'In Progress', color: '#0284c7' },
-    { value: 'Under Review', label: 'Under Review', color: '#9333ea' },
-    { value: 'Done', label: 'Done', color: '#059669' },
-  ]);
+  // Dynamic workflow statuses loaded synchronously from memory cache (0ms)
+  const [statusOptions, setStatusOptions] = useState<Searchable3DCreamSelectOption[]>(() => {
+    const cached = getCachedPostProductionSettings();
+    if (cached && cached.statuses && cached.statuses.length > 0) {
+      const opts = cached.statuses.map(s => ({
+        value: s.name,
+        label: s.name,
+        color: s.color,
+      }));
+      if (item.status && !opts.some(o => o.value.toLowerCase() === item.status.toLowerCase())) {
+        opts.push({
+          value: item.status,
+          label: item.status,
+          color: '#64748b',
+        });
+      }
+      return opts;
+    }
+    return [
+      { value: 'Upcoming', label: 'Upcoming', color: '#d97706' },
+      { value: 'In Progress', label: 'In Progress', color: '#0284c7' },
+      { value: 'Under Review', label: 'Under Review', color: '#9333ea' },
+      { value: 'Done', label: 'Done', color: '#059669' },
+    ];
+  });
 
   const loadStatusSettings = () => {
     fetchPostProductionSettings().then(settings => {
@@ -84,7 +102,6 @@ export default function DeliverableRowItem({
   };
 
   useEffect(() => {
-    loadStatusSettings();
     const handleSettingsUpdated = () => {
       loadStatusSettings();
     };
@@ -92,7 +109,8 @@ export default function DeliverableRowItem({
     return () => {
       window.removeEventListener('post_production_settings_updated', handleSettingsUpdated);
     };
-  }, []);
+  }, [item.status]);
+
 
   useEffect(() => {
     setTitleInput(item.title);

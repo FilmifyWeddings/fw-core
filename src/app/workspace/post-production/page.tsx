@@ -26,17 +26,43 @@ export interface PostProductionTeamMember {
   hasPMAccess?: boolean;
 }
 
+// Module-level in-memory cache for instant 0ms transitions
+let memCachedPostProdProjects: PostProductionProjectData[] = [];
+let memCachedPostProdTeamMembers: PostProductionTeamMember[] = [];
+let memCachedPostProdClients: any[] = [];
+let memCachedPostProdQuotations: any[] = [];
+
 export default function PostProductionPage() {
-  const [projects, setProjects] = useState<PostProductionProjectData[]>([]);
-  const [clients, setClients] = useState<any[]>([]);
-  const [quotations, setQuotations] = useState<any[]>([]);
-  const [teamMembers, setTeamMembers] = useState<PostProductionTeamMember[]>([]);
+  const [projects, setProjects] = useState<PostProductionProjectData[]>(() => {
+    if (memCachedPostProdProjects.length > 0) return memCachedPostProdProjects;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_cached_pp_projects');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            memCachedPostProdProjects = parsed;
+            return parsed;
+          }
+        }
+      } catch (_) {}
+    }
+    return [];
+  });
+  const [clients, setClients] = useState<any[]>(() => memCachedPostProdClients);
+  const [quotations, setQuotations] = useState<any[]>(() => memCachedPostProdQuotations);
+  const [teamMembers, setTeamMembers] = useState<PostProductionTeamMember[]>(() => memCachedPostProdTeamMembers);
   const [eventTypes, setEventTypes] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(() => memCachedPostProdProjects.length === 0);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Expanded & highlighted cards
-  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
+  const [expandedCards, setExpandedCards] = useState<Set<string>>(() => {
+    if (memCachedPostProdProjects.length > 0) {
+      return new Set([memCachedPostProdProjects[0].id]);
+    }
+    return new Set();
+  });
   const [highlightedCardId, setHighlightedCardId] = useState<string | null>(null);
 
   // Overdue Center Modal State
@@ -72,7 +98,9 @@ export default function PostProductionPage() {
   }, []);
 
   const fetchPostProductionData = async () => {
-    setLoading(true);
+    if (memCachedPostProdProjects.length === 0) {
+      setLoading(true);
+    }
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const workspaceId = session?.user?.id || 'ws_demo';
@@ -414,6 +442,15 @@ export default function PostProductionPage() {
       }
 
       setProjects(cards);
+      memCachedPostProdProjects = cards;
+      memCachedPostProdTeamMembers = members;
+      memCachedPostProdClients = clients;
+      memCachedPostProdQuotations = quotations;
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('sc_cached_pp_projects', JSON.stringify(cards));
+        } catch (_) {}
+      }
       if (cards.length > 0) {
         setExpandedCards(new Set([cards[0].id]));
       }
@@ -423,6 +460,7 @@ export default function PostProductionPage() {
       setLoading(false);
     }
   };
+
 
   // Toggle card expansion
   const toggleCardExpansion = (projectId: string) => {
@@ -1054,7 +1092,7 @@ export default function PostProductionPage() {
         {/* ─────────────────────────────────────────────────────────────
             CLIENT POST-PRODUCTION CARDS LIST
         ───────────────────────────────────────────────────────────── */}
-        {loading ? (
+        {loading && projects.length === 0 ? (
           <StudioCoreLiquidLoader label="Loading Segmented Production Pipelines..." fullscreen={false} />
         ) : filteredProjects.length === 0 ? (
           <div className="bg-[#FFFDF9] dark:bg-[#181614] p-12 rounded-2xl border border-dashed border-amber-300/80 text-center space-y-4 shadow-xs">

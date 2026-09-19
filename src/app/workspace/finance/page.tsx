@@ -61,6 +61,11 @@ const DEFAULT_TEAM_MEMBERS = [
   'Sushant (Operations Head)'
 ];
 
+// Module-level in-memory cache for instant 0ms transitions
+let memCachedFinanceRecords: ClientFinanceRecord[] = [];
+let memCachedFinanceExpenses: FinanceExpenseItem[] = [];
+let memCachedFinanceClients: WorkspaceClient[] = [];
+
 export default function FinancePage() {
   const { workspaceMembers } = useWorkspaceData();
   const { userName, isOwner, userEmail, workspaceId } = useWorkspace();
@@ -78,11 +83,61 @@ export default function FinancePage() {
   }, [financeTeamMembers]);
 
   const [activeTab, setActiveTab] = useState<'clients' | 'expenses' | 'analytics'>('clients');
-  const [clients, setClients] = useState<WorkspaceClient[]>([]);
-  const [financeRecords, setFinanceRecords] = useState<ClientFinanceRecord[]>([]);
-  const [expenses, setExpenses] = useState<FinanceExpenseItem[]>([]);
+
+  // Synchronous initialization from in-memory cache or localStorage
+  const [clients, setClients] = useState<WorkspaceClient[]>(() => {
+    if (memCachedFinanceClients.length > 0) return memCachedFinanceClients;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_cached_finance_clients');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            memCachedFinanceClients = parsed;
+            return parsed;
+          }
+        }
+      } catch (_) {}
+    }
+    return [];
+  });
+
+  const [financeRecords, setFinanceRecords] = useState<ClientFinanceRecord[]>(() => {
+    if (memCachedFinanceRecords.length > 0) return memCachedFinanceRecords;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_cached_finance_records');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            memCachedFinanceRecords = parsed;
+            return parsed;
+          }
+        }
+      } catch (_) {}
+    }
+    return [];
+  });
+
+  const [expenses, setExpenses] = useState<FinanceExpenseItem[]>(() => {
+    if (memCachedFinanceExpenses.length > 0) return memCachedFinanceExpenses;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_cached_finance_expenses');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            memCachedFinanceExpenses = parsed;
+            return parsed;
+          }
+        }
+      } catch (_) {}
+    }
+    return [];
+  });
+
   const [auditLogs, setAuditLogs] = useState<FinanceAuditLog[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(() => memCachedFinanceRecords.length === 0);
 
   // ─────────────────────────────────────────────────────────────
   // 👥 TEAM MEMBERS LIST & HANDLED BY ATTRIBUTION
@@ -111,9 +166,34 @@ export default function FinancePage() {
   // 🔐 ADMIN SECURITY GATE & HARD PIN LOCK (ZERO DOM EXPOSURE)
   // ─────────────────────────────────────────────────────────────
   const [securitySettings, setSecuritySettings] = useState<FinanceSecuritySettings | null>(null);
-  const [isPinVerified, setIsPinVerified] = useState<boolean>(false);
-  const [isCheckingPinStatus, setIsCheckingPinStatus] = useState<boolean>(true);
+  const [isPinVerified, setIsPinVerified] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const key = sessionStorage.key(i);
+        if (key && key.startsWith('finance_unlocked_')) {
+          return true;
+        }
+      }
+    }
+    return false;
+  });
+  const [isCheckingPinStatus, setIsCheckingPinStatus] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const key = sessionStorage.key(i);
+        if (key && key.startsWith('finance_unlocked_')) {
+          return false;
+        }
+      }
+      const savedPinLock = localStorage.getItem('sc_finance_pin_required');
+      if (savedPinLock === 'false') {
+        return false;
+      }
+    }
+    return false;
+  });
   const [isPinRequired, setIsPinRequired] = useState<boolean>(false);
+
 
   // ─────────────────────────────────────────────────────────────
   // 🔍 UNIFIED ADVANCED FILTERS & SEARCH
@@ -506,7 +586,9 @@ export default function FinancePage() {
   // 📥 FETCH FINANCE DATA, AUDIT LOGS, CLIENTS & TEAM
   // ─────────────────────────────────────────────────────────────
   const fetchFinanceData = async () => {
-    setLoading(true);
+    if (memCachedFinanceRecords.length === 0) {
+      setLoading(true);
+    }
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const workspaceId = session?.user?.id || 'ws_demo';
@@ -648,156 +730,45 @@ export default function FinancePage() {
           if (quoteDocs && quoteDocs.length > 0) {
             const leadGroups = new Map<string, any[]>();
             for (const doc of quoteDocs) {
-              const matchedId = doc.lead_id || allLookupIds.find(lid => doc.template_id?.includes(lid.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8)));
-              if (matchedId) {
-                if (!leadGroups.has(matchedId)) leadGroups.set(matchedId, []);
-                leadGroups.get(matchedId)!.push(doc);
+              const parsed = extractFinancialsFromQuotation(doc.content_json);
+              if (parsed) {
+                quoteDocMap.set(doc.template_id, parsed);
+                if (doc.lead_id) {
+                  const arr = leadGroups.get(doc.lead_id) || [];
+                  arr.push({ ...parsed, template_id: doc.template_id, version: doc.lead_version || doc.version });
+                  leadGroups.set(doc.lead_id, arr);
+                }
               }
             }
-
-            leadGroups.forEach((docs, lookupId) => {
-              allLeadQuotesMap.set(lookupId, docs);
-              const leadObj = leadMap.get(lookupId);
-              const finalDoc = docs.find(d => 
-                d.content_json?.is_final === true || 
-                d.is_final === true || 
-                (leadObj?.final_quotation_id && (d.template_id === leadObj.final_quotation_id || d.id === leadObj.final_quotation_id))
-              );
-              if (finalDoc) {
-                quoteDocMap.set(lookupId, finalDoc);
-              }
+            leadGroups.forEach((quotes, leadId) => {
+              quotes.sort((a, b) => (b.version || 0) - (a.version || 0));
+              allLeadQuotesMap.set(leadId, quotes);
             });
           }
         } catch (err) {
-          console.warn('[Finance] Error fetching quotation documents:', err);
+          console.warn('[Finance] Quotations document lookup notice:', err);
         }
       }
 
-      // 5. Synthesize Records (ZERO DUMMY DATA GUARANTEE)
+      // 5. Build Unified Client Finance Records
       const finalRecords: ClientFinanceRecord[] = [];
 
       for (const c of clientList) {
         const existing = financeMap.get(c.id);
+        const availableQuotes = (c.lead_id ? allLeadQuotesMap.get(c.lead_id) : []) || [];
         const leadObj = c.lead_id ? leadMap.get(c.lead_id) : null;
-        const leadDocs = (c.lead_id ? allLeadQuotesMap.get(c.lead_id) : null) || allLeadQuotesMap.get(c.id) || [];
-        const availableQuotes = leadDocs.map(d => {
-          const v = Number(d.lead_version || d.version || 1);
-          const f = d.content_json ? extractFinancialsFromQuotation(d.content_json, c.event_date) : null;
-          const couple = d.content_json?.cover?.coupleName || d.content_json?.cover?.groomName || '';
-          const isFinal = d.content_json?.is_final === true || 
-            d.is_final === true || 
-            (leadObj?.final_quotation_id && (d.template_id === leadObj.final_quotation_id || d.id === leadObj.final_quotation_id));
-          return {
-            template_id: d.template_id,
-            version: v,
-            title: couple ? `${couple} (v${v}.0)` : `Quotation v${v}.0`,
-            is_final: Boolean(isFinal),
-            created_at: d.created_at,
-            financials: f
-          };
-        });
+        const linkedFinalQuote = availableQuotes.find(q => q.is_final || (leadObj?.final_quotation_id && q.template_id === leadObj.final_quotation_id));
+        const hasFinalQuotation = Boolean(linkedFinalQuote || existing?.has_final_quotation);
+        const finalVersion = linkedFinalQuote?.version || existing?.final_quotation_version;
 
-        let linkedFinalQuote = (c.lead_id ? quoteDocMap.get(c.lead_id) : null) || quoteDocMap.get(c.id);
-        if (!linkedFinalQuote && leadDocs.length > 0) {
-          linkedFinalQuote = leadDocs.find(d => 
-            d.content_json?.is_final === true || 
-            d.is_final === true || 
-            (leadObj?.final_quotation_id && (d.template_id === leadObj.final_quotation_id || d.id === leadObj.final_quotation_id))
-          );
-        }
-        if (!linkedFinalQuote && leadObj?.final_quotation_id && leadDocs.length > 0) {
-          linkedFinalQuote = leadDocs.find(d => d.template_id === leadObj.final_quotation_id || d.id === leadObj.final_quotation_id) || leadDocs[0];
+        let handledBy = (c as any).handled_by || (c as any).assigned_team_member_name;
+        if (!handledBy && (c as any).custom_data?.handled_by) handledBy = (c as any).custom_data.handled_by;
+        if (!handledBy && c.notes && typeof c.notes === 'string') {
+          const match = c.notes.match(/handled_by:\s*([^\n\r,]+)/i);
+          if (match && match[1]) handledBy = match[1].trim();
         }
 
-        const hasFinalQuotation = Boolean(linkedFinalQuote || leadObj?.final_quotation_id);
-        if (!linkedFinalQuote && hasFinalQuotation && leadDocs.length > 0) {
-          linkedFinalQuote = leadDocs[0];
-        }
-
-        const finalVersion = linkedFinalQuote ? Number(linkedFinalQuote.lead_version || linkedFinalQuote.version || 1) : undefined;
-        const qFinancials = linkedFinalQuote && linkedFinalQuote.content_json
-          ? extractFinancialsFromQuotation(linkedFinalQuote.content_json, c.event_date)
-          : null;
-
-        // Extract handled by attribution
-        const rawHandled = (c as any).handled_by || (c as any).assigned_team_member_name || (existing as any)?.handled_by || 'Unassigned';
-        const handledBy = isPlaceholderName(rawHandled) ? 'Unassigned' : rawHandled;
-
-        const hasDummyMilestones = Array.isArray(existing?.milestones) && existing.milestones.some((m: any) => 
-          String(m.step_name || m.title || '').includes('(15%)') || 
-          String(m.step_name || m.title || '').includes('(35%)') ||
-          String(m.id || '').startsWith('m_1_')
-        );
-
-        if (hasFinalQuotation && qFinancials && qFinancials.final_total_amount > 0) {
-          const isDbCorruptOrMissing = !existing || 
-            Number(existing.final_total_amount) <= 0 || 
-            Number(existing.base_package_price) <= 10 || 
-            existing.final_total_amount !== qFinancials.final_total_amount ||
-            hasDummyMilestones ||
-            !existing.milestones ||
-            existing.milestones.length === 0;
-
-          const recordData: ClientFinanceRecord = {
-            id: existing?.id || `fin_${c.id}`,
-            user_id: workspaceId,
-            workspace_id: workspaceId,
-            client_id: c.id,
-            client: { ...c, handled_by: handledBy } as any,
-            has_final_quotation: true,
-            final_quotation_version: finalVersion,
-            final_quotation_id: linkedFinalQuote.template_id,
-            available_quotations: availableQuotes,
-            base_package_price: qFinancials.base_package_price,
-            discount_amount: qFinancials.discount_amount,
-            accommodation_charges: qFinancials.accommodation_charges,
-            travel_charges: qFinancials.travel_charges,
-            additional_charges: qFinancials.additional_charges,
-            subtotal_amount: qFinancials.subtotal_amount,
-            gst_rate: qFinancials.gst_rate,
-            gst_amount: qFinancials.gst_amount,
-            final_total_amount: qFinancials.final_total_amount,
-            received_amount: existing?.received_amount !== undefined && existing.received_amount > qFinancials.received_amount
-              ? Math.round(Number(existing.received_amount))
-              : qFinancials.received_amount,
-            pending_amount: Math.max(0, qFinancials.final_total_amount - (existing?.received_amount !== undefined && existing.received_amount > qFinancials.received_amount ? Number(existing.received_amount) : qFinancials.received_amount)),
-            payment_status: (existing?.payment_status && existing.payment_status !== 'pending')
-              ? existing.payment_status
-              : qFinancials.payment_status,
-            milestones: Array.isArray(existing?.milestones) && existing.milestones.length > 0 && !hasDummyMilestones && !isDbCorruptOrMissing
-              ? existing.milestones
-              : (qFinancials.milestones.length > 0 ? qFinancials.milestones : (existing?.milestones || [])),
-            created_at: existing?.created_at || c.created_at || new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          };
-
-          if (isDbCorruptOrMissing && workspaceId !== 'ws_demo') {
-            supabase
-              .from('client_finance_records')
-              .upsert([{
-                user_id: workspaceId,
-                workspace_id: workspaceId,
-                client_id: c.id,
-                base_package_price: qFinancials.base_package_price,
-                discount_amount: qFinancials.discount_amount,
-                accommodation_charges: qFinancials.accommodation_charges,
-                travel_charges: qFinancials.travel_charges,
-                additional_charges: qFinancials.additional_charges,
-                subtotal_amount: qFinancials.subtotal_amount,
-                gst_rate: qFinancials.gst_rate,
-                gst_amount: qFinancials.gst_amount,
-                final_total_amount: qFinancials.final_total_amount,
-                received_amount: recordData.received_amount,
-                pending_amount: recordData.pending_amount,
-                payment_status: recordData.payment_status,
-                milestones: recordData.milestones,
-                updated_at: new Date().toISOString()
-              }], { onConflict: 'client_id' })
-              .then(() => {});
-          }
-
-          finalRecords.push(recordData);
-        } else if (existing) {
+        if (existing) {
           const rawBase = Math.max(0, Math.round(Number(existing.base_package_price) || Number(c.total_package_amount) || 0));
           const discount = Math.max(0, Math.round(Number(existing.discount_amount) || 0));
           const accommodation = Math.max(0, Math.round(Number(existing.accommodation_charges) || 0));
@@ -871,6 +842,7 @@ export default function FinancePage() {
       }
 
       setFinanceRecords(finalRecords);
+      memCachedFinanceRecords = finalRecords;
       if (finalRecords.length > 0) {
         setExpandedCards(new Set([finalRecords[0].id]));
       }
@@ -953,6 +925,7 @@ export default function FinancePage() {
         ...legacyExpenseList.filter(e => !studioIds.has(e.id))
       ];
       setExpenses(combinedExpenses);
+      memCachedFinanceExpenses = combinedExpenses;
 
       // 7. Fetch Audit Logs
       try {
@@ -975,6 +948,15 @@ export default function FinancePage() {
       }
 
       setClients(clientList);
+      memCachedFinanceClients = clientList;
+
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('sc_cached_finance_records', JSON.stringify(finalRecords));
+          localStorage.setItem('sc_cached_finance_expenses', JSON.stringify(combinedExpenses));
+          localStorage.setItem('sc_cached_finance_clients', JSON.stringify(clientList));
+        } catch (_) {}
+      }
     } catch (e) {
       console.error('Error fetching finance data:', e);
     } finally {
@@ -2135,8 +2117,8 @@ export default function FinancePage() {
     setIsQuotationModalOpen(true);
   };
 
-  // 1. Loading state while verifying PIN status
-  if (isCheckingPinStatus) {
+  // 1. Loading state while verifying PIN status (only blocks on true cold start with zero cached data)
+  if (isCheckingPinStatus && !isPinVerified && financeRecords.length === 0) {
     return <StudioCoreLiquidLoader label="Loading Finance & Accounts..." />;
   }
 
@@ -2773,7 +2755,7 @@ export default function FinancePage() {
         ───────────────────────────────────────────────────────────── */}
         {activeTab === 'clients' && (
           <div className="space-y-4">
-            {loading ? (
+            {loading && financeRecords.length === 0 ? (
               <StudioCoreLiquidLoader label="Loading Finance & Accounts..." fullscreen={false} />
             ) : filteredRecords.length === 0 ? (
               <div className="text-center py-16 bg-white rounded-3xl border border-slate-100 space-y-3">

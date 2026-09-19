@@ -67,12 +67,31 @@ interface ActivityLog {
   created_at: string;
 }
 
+// Module-level in-memory cache for instant 0ms millisecond transitions
+let memCachedTeamMembers: TeamMember[] = [];
+let memCachedLogs: ActivityLog[] = [];
+
 export default function WorkspaceTeamPage() {
   const { workspaceId, workspaceName, isOwner, userEmail, userName } = useWorkspace();
   const [activeTab, setActiveTab] = useState<'directory' | 'activity_logs'>('directory');
-  const [members, setMembers] = useState<TeamMember[]>([]);
-  const [logs, setLogs] = useState<ActivityLog[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [members, setMembers] = useState<TeamMember[]>(() => {
+    if (memCachedTeamMembers.length > 0) return memCachedTeamMembers;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_cached_team_members');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            memCachedTeamMembers = parsed;
+            return parsed;
+          }
+        }
+      } catch (_) {}
+    }
+    return [];
+  });
+  const [logs, setLogs] = useState<ActivityLog[]>(() => memCachedLogs);
+  const [loading, setLoading] = useState(() => memCachedTeamMembers.length === 0);
   const [logsLoading, setLogsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('All');
@@ -262,6 +281,12 @@ export default function WorkspaceTeamPage() {
       }
 
       setMembers(combinedMembers);
+      memCachedTeamMembers = combinedMembers;
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('sc_cached_team_members', JSON.stringify(combinedMembers));
+        } catch (_) {}
+      }
       loadFinancialSummaries(combinedMembers);
     } catch (err) {
       console.error('[WorkspaceTeamPage] Load members error:', err);
@@ -707,7 +732,7 @@ export default function WorkspaceTeamPage() {
     }
   };
 
-  if (loading) {
+  if (loading && members.length === 0) {
     return <StudioCoreLiquidLoader label="Loading Team & Partners..." />;
   }
 

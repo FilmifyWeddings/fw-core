@@ -152,15 +152,44 @@ const MODULES_LIST: WorkspaceModule[] = [
   }
 ];
 
+// Module-level in-memory cache for instant 0ms millisecond transitions
+let memCachedHubUserName = '';
+let memCachedHubStats = {
+  leadsCount: 0,
+  bookingsCount: 0,
+  revenue: '₹0',
+  pendingPayments: '₹0'
+};
+
 export default function WorkspaceHubPage() {
-  const [userName, setUserName] = useState<string>('');
+  const [userName, setUserName] = useState<string>(() => {
+    if (memCachedHubUserName) return memCachedHubUserName;
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('sc_user_name');
+      if (stored) {
+        memCachedHubUserName = stored.split(' ')[0];
+        return memCachedHubUserName;
+      }
+    }
+    return '';
+  });
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
-  const [stats, setStats] = useState({
-    leadsCount: 0,
-    bookingsCount: 0,
-    revenue: '₹0',
-    pendingPayments: '₹0'
+  const [stats, setStats] = useState(() => {
+    if (memCachedHubStats.leadsCount > 0 || memCachedHubStats.bookingsCount > 0) return memCachedHubStats;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_cached_hub_stats');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && typeof parsed === 'object') {
+            memCachedHubStats = parsed;
+            return parsed;
+          }
+        }
+      } catch (_) {}
+    }
+    return memCachedHubStats;
   });
 
   useEffect(() => {
@@ -169,11 +198,9 @@ export default function WorkspaceHubPage() {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
           const metaName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || '';
-          if (metaName) {
-            setUserName(metaName.split(' ')[0]);
-          } else {
-            setUserName(session.user.email?.split('@')[0] || 'User');
-          }
+          const resolvedName = metaName ? metaName.split(' ')[0] : (session.user.email?.split('@')[0] || 'User');
+          setUserName(resolvedName);
+          memCachedHubUserName = resolvedName;
 
           const { count: realLeads } = await supabase
             .from('leads')
@@ -199,12 +226,19 @@ export default function WorkspaceHubPage() {
             });
           }
 
-          setStats({
+          const newStats = {
             leadsCount: lCount,
             bookingsCount: acceptedCount,
             revenue: totRevenue > 0 ? `₹${totRevenue.toLocaleString('en-IN')}` : '₹0',
             pendingPayments: '₹0'
-          });
+          };
+          setStats(newStats);
+          memCachedHubStats = newStats;
+          if (typeof window !== 'undefined') {
+            try {
+              localStorage.setItem('sc_cached_hub_stats', JSON.stringify(newStats));
+            } catch (_) {}
+          }
         }
       } catch (e) {
         console.error('Error fetching dashboard statistics:', e);

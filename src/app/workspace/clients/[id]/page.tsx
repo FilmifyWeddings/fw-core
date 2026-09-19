@@ -1589,9 +1589,7 @@ export default function ClientWorkspaceDetailPage() {
                         <button
                           type="button"
                           onClick={() => {
-                            const clientUrl = doc.public_token 
-                              ? `/p/quotation/${doc.public_token}` 
-                              : `/workspace/quotations/builder/templet/${doc.template_id}?preview=public`;
+                            const clientUrl = `/p/quotation/${doc.public_token || doc.template_id}`;
                             window.open(clientUrl, '_blank');
                           }}
                           className="px-3 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-[#EAE5DA] transition text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer"

@@ -137,13 +137,35 @@ function generateUniqueCopyName(requestedTitle: string, existingTitles: string[]
   return `${baseTitle} Copy ${counter}`;
 }
 
+// Module-level in-memory cache for instant 0ms transitions
+let memCachedQuotations: SavedQuotation[] = [];
+let memCachedUserImages: UserGalleryImage[] = [];
+
 export default function WorkspaceQuotationsGalleryPage() {
   const router = useRouter();
+
+  // Synchronous initialization from in-memory cache or localStorage
+  const [quotations, setQuotations] = useState<SavedQuotation[]>(() => {
+    if (memCachedQuotations.length > 0) return memCachedQuotations;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('wg_quotations_cache');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            memCachedQuotations = parsed;
+            return parsed;
+          }
+        }
+      } catch (_) {}
+    }
+    return [];
+  });
 
   // User Session & Security
   const [userId, setUserId] = useState<string>('');
   const [userEmail, setUserEmail] = useState<string>('');
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(() => memCachedQuotations.length === 0);
   const [mounted, setMounted] = useState<boolean>(false);
 
   useEffect(() => {
@@ -151,8 +173,13 @@ export default function WorkspaceQuotationsGalleryPage() {
   }, []);
 
   // Dynamic Data States
-  const [quotations, setQuotations] = useState<SavedQuotation[]>([]);
-  const [activeQuotationId, setActiveQuotationId] = useState<string>('1');
+  const [activeQuotationId, setActiveQuotationId] = useState<string>(() => {
+    if (memCachedQuotations.length > 0) {
+      return memCachedQuotations[0].quotation_number || memCachedQuotations[0].id || '1';
+    }
+    return '1';
+  });
+
   const [activeCoverPhoto, setActiveCoverPhoto] = useState<string>('https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=800&q=80');
   const [activeCoupleName, setActiveCoupleName] = useState<string>('Rahul & Neha');
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
@@ -681,6 +708,12 @@ export default function WorkspaceQuotationsGalleryPage() {
         }
 
         setQuotations(combined);
+        memCachedQuotations = combined;
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('wg_quotations_cache', JSON.stringify(combined));
+          } catch (_) {}
+        }
         const primary = combined[0];
         const primaryId = primary.quotation_number || primary.id;
         setActiveQuotationId(primaryId);
@@ -701,6 +734,7 @@ export default function WorkspaceQuotationsGalleryPage() {
 
         if (imgData) {
           setUserImages(imgData as UserGalleryImage[]);
+          memCachedUserImages = imgData as UserGalleryImage[];
           localStorage.setItem(`wg_gallery_cache_${currentUserId}`, JSON.stringify(imgData));
         }
       } catch (err) {
@@ -808,9 +842,10 @@ export default function WorkspaceQuotationsGalleryPage() {
     q.quotation_number?.toLowerCase().includes(quotationSearch.toLowerCase())
   );
 
-  if (loading) {
+  if (loading && quotations.length === 0) {
     return <StudioCoreLiquidLoader label="Loading Quotations & Proposals..." />;
   }
+
 
   return (
     <div className="min-h-screen bg-[#FAF9F6] dark:bg-[#070708] text-slate-800 dark:text-zinc-100 p-4 lg:p-8 space-y-6 lg:space-y-8 pb-24 lg:pb-8">

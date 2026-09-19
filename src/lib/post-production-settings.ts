@@ -87,15 +87,16 @@ export const DEFAULT_POST_PRODUCTION_SETTINGS: PostProductionSettingsData = {
 };
 
 const STORAGE_KEY = 'fw_post_production_settings';
+const CACHE_TTL_MS = 120000; // 2 minutes
 
-/**
- * Fetch Post-Production Settings from Supabase with Strict Multi-Tenant Isolation.
- * Strictly queries the requested workspace_id. Never leaks other studios' presets or statuses.
- */
-export async function fetchPostProductionSettings(workspaceId?: string): Promise<PostProductionSettingsData> {
+// In-memory module-level cache & in-flight promise deduplication
+const memoryCache: Record<string, PostProductionSettingsData | undefined> = {};
+const inFlightPromise: Record<string, Promise<PostProductionSettingsData> | undefined> = {};
+const lastFetchTime: Record<string, number | undefined> = {};
+
+function resolveTargetWsId(workspaceId?: string): string {
   let targetWsId: string = workspaceId || '';
 
-  // If no workspaceId provided, resolve from URL studio param, localStorage or active session
   if (!targetWsId && typeof window !== 'undefined') {
     try {
       const urlParams = new URLSearchParams(window.location.search);
@@ -103,31 +104,95 @@ export async function fetchPostProductionSettings(workspaceId?: string): Promise
     } catch (_) {}
   }
 
-  if (!targetWsId) {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user?.id) targetWsId = session.user.id;
-    } catch (_) {}
+  return targetWsId || 'ws_demo';
+}
+
+/**
+ * Synchronously get cached post-production settings in 0ms (memory-first, then localStorage fallback).
+ */
+export function getCachedPostProductionSettings(workspaceId?: string): PostProductionSettingsData {
+  const finalWsId = resolveTargetWsId(workspaceId);
+
+  // 1. Check in-memory cache
+  if (memoryCache[finalWsId]) {
+    return memoryCache[finalWsId];
   }
 
-  const finalWsId = targetWsId || 'ws_demo';
-
-  // 1. Check workspace-specific LocalStorage cache for instant UI response
+  // 2. Check localStorage
   if (typeof window !== 'undefined') {
     try {
       const cached = localStorage.getItem(`${STORAGE_KEY}_${finalWsId}`);
       if (cached) {
         const parsed = JSON.parse(cached);
         if (parsed.categories && parsed.statuses) {
-          syncFromSupabase(finalWsId).catch(() => {});
+          memoryCache[finalWsId] = parsed;
           return parsed;
         }
       }
     } catch (_) {}
   }
 
-  // 2. Fetch directly from Supabase for this workspace
-  return await syncFromSupabase(finalWsId);
+  return DEFAULT_POST_PRODUCTION_SETTINGS;
+}
+
+/**
+ * Fetch Post-Production Settings from Supabase with Strict Multi-Tenant Isolation.
+ * Strictly queries the requested workspace_id. Deduplicates in-flight calls and uses in-memory cache.
+ */
+export async function fetchPostProductionSettings(workspaceId?: string): Promise<PostProductionSettingsData> {
+  const finalWsId = resolveTargetWsId(workspaceId);
+
+  // 1. Check in-memory cache (fresh within TTL)
+  const cachedMem = memoryCache[finalWsId];
+  const lastTime = lastFetchTime[finalWsId] || 0;
+  const isFresh = cachedMem && (Date.now() - lastTime < CACHE_TTL_MS);
+
+  if (isFresh) {
+    return cachedMem;
+  }
+
+  // 2. If memory cache exists but is stale, return it immediately and revalidate in background
+  if (cachedMem) {
+    if (!inFlightPromise[finalWsId]) {
+      inFlightPromise[finalWsId] = syncFromSupabase(finalWsId).finally(() => {
+        delete inFlightPromise[finalWsId];
+      });
+    }
+    return cachedMem;
+  }
+
+  // 3. Check localStorage
+  if (typeof window !== 'undefined') {
+    try {
+      const cached = localStorage.getItem(`${STORAGE_KEY}_${finalWsId}`);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed.categories && parsed.statuses) {
+          memoryCache[finalWsId] = parsed;
+          lastFetchTime[finalWsId] = Date.now();
+          // Revalidate in background if not already in flight
+          if (!inFlightPromise[finalWsId]) {
+            inFlightPromise[finalWsId] = syncFromSupabase(finalWsId).finally(() => {
+              delete inFlightPromise[finalWsId];
+            });
+          }
+          return parsed;
+        }
+      }
+    } catch (_) {}
+  }
+
+  // 4. If request is already in-flight, await the same promise (prevents 200+ concurrent requests!)
+  if (inFlightPromise[finalWsId]) {
+    return inFlightPromise[finalWsId];
+  }
+
+  // 5. Fetch directly from Supabase with deduplication
+  inFlightPromise[finalWsId] = syncFromSupabase(finalWsId).finally(() => {
+    delete inFlightPromise[finalWsId];
+  });
+
+  return inFlightPromise[finalWsId];
 }
 
 async function syncFromSupabase(workspaceId: string): Promise<PostProductionSettingsData> {
@@ -153,6 +218,9 @@ async function syncFromSupabase(workspaceId: string): Promise<PostProductionSett
           : DEFAULT_POST_PRODUCTION_STATUSES,
       };
 
+      memoryCache[workspaceId] = result;
+      lastFetchTime[workspaceId] = Date.now();
+
       if (typeof window !== 'undefined') {
         localStorage.setItem(`${STORAGE_KEY}_${workspaceId}`, JSON.stringify(result));
       }
@@ -162,8 +230,8 @@ async function syncFromSupabase(workspaceId: string): Promise<PostProductionSett
     console.warn('Could not read post_production_settings from Supabase for workspace:', workspaceId, err);
   }
 
-  // Return default settings for this workspace if no custom row exists yet
-  return DEFAULT_POST_PRODUCTION_SETTINGS;
+  // Return cached or default settings for this workspace
+  return memoryCache[workspaceId] || DEFAULT_POST_PRODUCTION_SETTINGS;
 }
 
 /**
@@ -173,23 +241,12 @@ export async function savePostProductionSettings(
   workspaceId: string,
   settings: PostProductionSettingsData
 ): Promise<boolean> {
-  let targetWsId: string = workspaceId || '';
-  if (!targetWsId && typeof window !== 'undefined') {
-    try {
-      const urlParams = new URLSearchParams(window.location.search);
-      targetWsId = urlParams.get('studio') || urlParams.get('workspace_id') || localStorage.getItem('active_workspace_id') || '';
-    } catch (_) {}
-  }
-  if (!targetWsId) {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user?.id) targetWsId = session.user.id;
-    } catch (_) {}
-  }
+  const finalWsId = resolveTargetWsId(workspaceId);
 
-  const finalWsId = targetWsId || 'ws_demo';
+  // 1. Update in-memory cache and LocalStorage immediately
+  memoryCache[finalWsId] = settings;
+  lastFetchTime[finalWsId] = Date.now();
 
-  // 1. Update LocalStorage immediately for THIS workspace only
   if (typeof window !== 'undefined') {
     try {
       localStorage.setItem(`${STORAGE_KEY}_${finalWsId}`, JSON.stringify(settings));
@@ -220,3 +277,4 @@ export async function savePostProductionSettings(
     return false;
   }
 }
+

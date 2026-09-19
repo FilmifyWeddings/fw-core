@@ -32,9 +32,15 @@ const GeofenceMapPicker = dynamic(
   { ssr: false }
 );
 
+// Module-level in-memory cache for instant 0ms millisecond transitions
+let memCachedAttendanceMembers: FWTeamMember[] = [];
+let memCachedAttendanceRecords: AttendanceRecord[] = [];
+let memCachedAttendanceLocations: AttendanceLocation[] = [];
+let memCachedAttendanceShifts: AttendanceShift[] = [];
+
 export default function AttendancePage() {
   const [activeTab, setActiveTab] = useState<'roster' | 'live' | 'matrix' | 'leaves'>('roster');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => memCachedAttendanceMembers.length === 0);
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
   // Punch Alert Toast state (5-second auto dismiss)
@@ -52,10 +58,40 @@ export default function AttendancePage() {
   }, [punchAlert]);
 
   // Data states
-  const [teamMembers, setTeamMembers] = useState<FWTeamMember[]>([]);
-  const [records, setRecords] = useState<AttendanceRecord[]>([]);
-  const [locations, setLocations] = useState<AttendanceLocation[]>([]);
-  const [shifts, setShifts] = useState<AttendanceShift[]>([]);
+  const [teamMembers, setTeamMembers] = useState<FWTeamMember[]>(() => {
+    if (memCachedAttendanceMembers.length > 0) return memCachedAttendanceMembers;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_cached_attendance_members');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            memCachedAttendanceMembers = parsed;
+            return parsed;
+          }
+        }
+      } catch (_) {}
+    }
+    return [];
+  });
+  const [records, setRecords] = useState<AttendanceRecord[]>(() => {
+    if (memCachedAttendanceRecords.length > 0) return memCachedAttendanceRecords;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_cached_attendance_records');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            memCachedAttendanceRecords = parsed;
+            return parsed;
+          }
+        }
+      } catch (_) {}
+    }
+    return [];
+  });
+  const [locations, setLocations] = useState<AttendanceLocation[]>(() => memCachedAttendanceLocations);
+  const [shifts, setShifts] = useState<AttendanceShift[]>(() => memCachedAttendanceShifts);
   const [leaveRequests, setLeaveRequests] = useState<AttendanceLeaveRequest[]>([]);
   const [memberLinks, setMemberLinks] = useState<AttendanceMemberLink[]>([]);
 
@@ -238,6 +274,12 @@ export default function AttendancePage() {
       });
 
       setTeamMembers(uniqueMembers);
+      memCachedAttendanceMembers = uniqueMembers;
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('sc_cached_attendance_members', JSON.stringify(uniqueMembers));
+        } catch (_) {}
+      }
 
       // 2. Fetch Attendance Records & attendance_logs for selected date strictly scoped to user_id
       let recQuery = supabase
@@ -317,7 +359,14 @@ export default function AttendancePage() {
         }
       });
 
-      setRecords(Array.from(mergedMap.values()));
+      const finalRecs = Array.from(mergedMap.values());
+      setRecords(finalRecs);
+      memCachedAttendanceRecords = finalRecs;
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('sc_cached_attendance_records', JSON.stringify(finalRecs));
+        } catch (_) {}
+      }
 
       // 3. Fetch Geofence Locations
       // 3. Fetch Geofence Locations via dedicated backend endpoint
@@ -327,6 +376,7 @@ export default function AttendancePage() {
           const { locations: locData } = await locRes.json();
           const locs = locData || [];
           setLocations(locs);
+          memCachedAttendanceLocations = locs;
           if (locs.length > 0) {
             setSelectedLocation(prev => prev && locs.some((l: any) => l.id === prev.id) ? prev : locs[0]);
           }
@@ -991,7 +1041,7 @@ export default function AttendancePage() {
   const onLeaveCount = leaveRequests.filter(l => l.status === 'approved' && l.start_date <= selectedDate && l.end_date >= selectedDate).length;
   const liveWorkingCount = inHouseStaff.filter(m => records.some(r => isRecordForMember(r, m) && (r.check_in_time || r.punch_in_time) && !(r.check_out_time || r.punch_out_time))).length;
 
-  if (loading) {
+  if (loading && records.length === 0 && teamMembers.length === 0) {
     return <StudioCoreLiquidLoader label="Loading Attendance Roster..." />;
   }
 
