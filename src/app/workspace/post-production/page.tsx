@@ -78,10 +78,26 @@ export default function PostProductionPage() {
         if (stored) {
           const parsed = JSON.parse(stored);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            memCachedPostProdProjects = parsed;
-            setProjects(parsed);
+            // Strict deduplication of deliverables right upon reading from localStorage
+            const cleanParsed = parsed.map(p => {
+              if (Array.isArray(p.deliverables) && p.deliverables.length > 0) {
+                const seenKeys = new Set<string>();
+                const uniqueDelivs: any[] = [];
+                for (const d of p.deliverables) {
+                  const key = `${(d.segment || 'Wedding').toLowerCase()}_${(d.category || 'Photos').toLowerCase()}_${cleanDeliverableTitle(d.title || d.name || '').toLowerCase()}`;
+                  if (!seenKeys.has(key)) {
+                    seenKeys.add(key);
+                    uniqueDelivs.push(d);
+                  }
+                }
+                return { ...p, deliverables: uniqueDelivs };
+              }
+              return p;
+            });
+            memCachedPostProdProjects = cleanParsed;
+            setProjects(cleanParsed);
             setLoading(false);
-            setExpandedCards(new Set([parsed[0].id]));
+            setExpandedCards(new Set([cleanParsed[0].id]));
           }
         }
       } catch (_) {}

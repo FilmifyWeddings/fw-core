@@ -32,7 +32,11 @@ export default async function Image({ params }: ImageProps) {
   let imageSrc: string | null = null;
   if (coverPhoto) {
     try {
-      const res = await fetch(coverPhoto, { signal: AbortSignal.timeout(3500) });
+      let optimizedPhotoUrl = coverPhoto;
+      if (optimizedPhotoUrl.includes('images.unsplash.com')) {
+        optimizedPhotoUrl = optimizedPhotoUrl.replace(/&w=\d+/, '') + '&w=600&q=75';
+      }
+      const res = await fetch(optimizedPhotoUrl, { signal: AbortSignal.timeout(1500) });
       if (res.ok) {
         const buffer = await res.arrayBuffer();
         const base64 = Buffer.from(buffer).toString('base64');
@@ -313,6 +317,9 @@ export default async function Image({ params }: ImageProps) {
     ),
     {
       ...size,
+      headers: {
+        'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800',
+      },
     }
   );
 }

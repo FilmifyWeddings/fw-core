@@ -27,10 +27,34 @@ export async function proxy(request: NextRequest) {
       return clearResponse;
     }
 
-    // Check if visiting a read-only public quotation preview (e.g. /workspace/quotations/builder/templet/[id]?preview=public or ?token=...)
+    // Social media crawler detection for link previews (WhatsApp, Facebook, Twitter, Telegram, etc.)
+    const userAgent = (request.headers.get('user-agent') || '').toLowerCase();
+    const isSocialCrawler =
+      userAgent.includes('whatsapp') ||
+      userAgent.includes('facebookexternalhit') ||
+      userAgent.includes('facebot') ||
+      userAgent.includes('twitterbot') ||
+      userAgent.includes('telegrambot') ||
+      userAgent.includes('linkedinbot') ||
+      userAgent.includes('slackbot') ||
+      userAgent.includes('discordbot') ||
+      userAgent.includes('pinterest') ||
+      userAgent.includes('googlebot') ||
+      userAgent.includes('bingbot') ||
+      userAgent.includes('applebot');
+
+    // Check if visiting a read-only public quotation preview or its opengraph/social image
     const isPublicQuotationPreview =
-      pathname.startsWith('/workspace/quotations/builder/templet/') &&
-      (request.nextUrl.searchParams.get('preview') === 'public' || request.nextUrl.searchParams.has('token'));
+      pathname.startsWith('/p/quotation/') ||
+      pathname.includes('/opengraph-image') ||
+      pathname.includes('/twitter-image') ||
+      (pathname.startsWith('/workspace/quotations/builder/templet/') &&
+        (request.nextUrl.searchParams.get('preview') === 'public' ||
+          request.nextUrl.searchParams.has('token') ||
+          pathname.includes('/opengraph-image') ||
+          pathname.includes('/twitter-image') ||
+          pathname.includes('/icon') ||
+          isSocialCrawler));
 
     // 1. UNCONDITIONAL PASS FOR PUBLIC & AUTH PATHS
     const isPublicRoute =
