@@ -402,12 +402,14 @@ export function isDemoDeliverables(deliverables: any[]): boolean {
  * Finds the most relevant finalized or approved quotation for a client.
  */
 export function findClientFinalQuotation(client: { id: string; name?: string; lead_id?: string | null }, quotations: any[]): any | null {
-  if (!quotations || quotations.length === 0) return null;
+  if (!quotations || quotations.length === 0 || !client) return null;
   const clientNameLower = (client.name || '').toLowerCase().trim();
   const leadId = (client as any).lead_id ? String((client as any).lead_id).toLowerCase().trim() : '';
   const leadShortId = leadId ? leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8) : '';
 
   const matched = quotations.filter(q => {
+    if (!q) return false;
+
     // 1. Match by client ID
     if (q.client_id && q.client_id === client.id) return true;
 
@@ -416,14 +418,20 @@ export function findClientFinalQuotation(client: { id: string; name?: string; le
 
     // 3. Match by template_id or quotation_number containing lead ID or short code
     const qNum = (q.quotation_number || q.template_id || q.id || '').toLowerCase();
-    if (leadShortId && qNum.includes(leadShortId)) return true;
-    if (leadId && qNum.includes(leadId)) return true;
+    if (leadShortId && leadShortId.length >= 4 && qNum.includes(leadShortId)) return true;
+    if (leadId && leadId.length >= 6 && qNum.includes(leadId)) return true;
 
-    // 4. Match by Client Name or Couple Name
+    // 4. Exact match by Client Name (STRICT: non-empty and at least 3 chars)
     const qName = (q.client_name || q.content_json?.meta?.client_name || q.document_json?.meta?.client_name || '').toLowerCase().trim();
+    if (clientNameLower && qName && clientNameLower.length >= 3 && qName.length >= 3) {
+      if (qName === clientNameLower) return true;
+    }
+
+    // 5. Exact match by Couple Names (STRICT: non-empty and at least 3 chars)
     const qCouple = (q.couple_names || q.content_json?.cover?.coupleName || q.document_json?.cover?.coupleName || '').toLowerCase().trim();
-    if (clientNameLower && (qName === clientNameLower || qName.includes(clientNameLower) || clientNameLower.includes(qName))) return true;
-    if (clientNameLower && (qCouple === clientNameLower || qCouple.includes(clientNameLower) || clientNameLower.includes(qCouple))) return true;
+    if (clientNameLower && qCouple && clientNameLower.length >= 3 && qCouple.length >= 3) {
+      if (qCouple === clientNameLower) return true;
+    }
 
     return false;
   });

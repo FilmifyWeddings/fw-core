@@ -310,7 +310,9 @@ export default function PostProductionCard({
   return (
     <div 
       id={`project-card-${project.id}`}
-      className={`bg-[#FFFDF9] dark:bg-[#181614] rounded-2xl border shadow-xs overflow-hidden transition-all duration-300 ${
+      className={`bg-[#FFFDF9] dark:bg-[#181614] rounded-2xl border shadow-xs ${
+        isExpanded ? 'overflow-visible' : 'overflow-hidden'
+      } transition-all duration-300 ${
         isHighlighted
           ? 'border-amber-500 ring-4 ring-amber-400/50 shadow-xl shadow-amber-500/10 scale-[1.005]'
           : 'border-[#EAE5DA] dark:border-stone-800 hover:border-amber-300/80'
@@ -319,7 +321,9 @@ export default function PostProductionCard({
       {/* ── CARD HEADER (FULL-CLICK ACCORDION TRIGGER) ── */}
       <div 
         onClick={onToggleExpand}
-        className="p-5 sm:p-6 bg-gradient-to-r from-amber-50/40 via-[#FFFDF9] to-amber-50/20 dark:from-stone-900 dark:via-[#181614] dark:to-stone-900 border-b border-[#EAE5DA] dark:border-stone-800 flex flex-col lg:flex-row lg:items-center justify-between gap-4 cursor-pointer select-none transition-colors hover:bg-amber-50/20"
+        className={`p-5 sm:p-6 bg-gradient-to-r from-amber-50/40 via-[#FFFDF9] to-amber-50/20 dark:from-stone-900 dark:via-[#181614] dark:to-stone-900 border-b border-[#EAE5DA] dark:border-stone-800 flex flex-col lg:flex-row lg:items-center justify-between gap-4 cursor-pointer select-none transition-colors hover:bg-amber-50/20 rounded-t-2xl ${
+          !isExpanded ? 'rounded-b-2xl' : ''
+        }`}
       >
         {/* Left Client & Event Info */}
         <div className="space-y-2 flex-1 min-w-0">
@@ -332,32 +336,6 @@ export default function PostProductionCard({
             <span className={`px-2.5 py-0.5 rounded-full text-xs font-extrabold border ${statusBadgeStyle}`}>
               {project.overall_status === 'completed' ? 'Completed' : project.overall_status === 'delayed' ? 'Delayed' : 'Active'}
             </span>
-
-            {/* Synced Quotation Indicator */}
-            {project.quotation_title && (
-              <div 
-                onClick={(e) => e.stopPropagation()}
-                className="hidden sm:flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 px-2.5 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800/60"
-              >
-                <FileCheck className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate max-w-[160px]">{project.quotation_title}</span>
-                {onResyncQuotation && (
-                  <button
-                    type="button"
-                    title="Re-sync deliverables from this quotation"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (confirm('Re-sync deliverables from this quotation? This will refresh quotation deliverables while preserving your custom items.')) {
-                        onResyncQuotation();
-                      }
-                    }}
-                    className="p-0.5 rounded hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition cursor-pointer ml-0.5 text-emerald-800 dark:text-emerald-300"
-                  >
-                    <RefreshCw className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-            )}
           </div>
 
           {/* Clean 3D Cream Status Bar & Deliverables Ratio */}
@@ -432,11 +410,42 @@ export default function PostProductionCard({
           >
             {/* Deliverables Architecture Toolbar & Segment Switcher Tabs */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#EAE5DA] dark:border-stone-800 pb-3">
-              <div className="flex items-center gap-2">
-                <Layers className="w-4 h-4 text-amber-600" />
-                <span className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-stone-200">
-                  Deliverables Architecture
-                </span>
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-amber-600" />
+                  <span className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-stone-200">
+                    Deliverables Architecture
+                  </span>
+                </div>
+
+                {/* Final Quotation Badge (Displayed INSIDE the card body) */}
+                {project.quotation_title && (
+                  <div 
+                    onClick={(e) => e.stopPropagation()}
+                    className="flex items-center gap-1.5 text-xs font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-1 rounded-xl border border-emerald-200 dark:border-emerald-800/60 shadow-2xs"
+                  >
+                    <FileCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <span className="text-[10px] font-semibold text-stone-500 dark:text-stone-400 uppercase tracking-wider">Final Quotation:</span>
+                    <span className="truncate max-w-[200px] sm:max-w-[280px] text-emerald-950 dark:text-emerald-200 font-extrabold">
+                      {project.quotation_title}
+                    </span>
+                    {onResyncQuotation && (
+                      <button
+                        type="button"
+                        title="Re-sync deliverables from this final quotation"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm(`Re-sync deliverables from "${project.quotation_title}"? This will refresh quotation deliverables while preserving your custom items.`)) {
+                            onResyncQuotation();
+                          }
+                        }}
+                        className="p-1 rounded hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition cursor-pointer ml-1 text-emerald-800 dark:text-emerald-300 hover:text-emerald-950"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Segment Tabs & + Add Custom Segment */}

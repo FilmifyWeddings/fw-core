@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
-  Camera, Video, BookOpen, Plus, Sparkles, Trash2, X, CheckSquare, Square, Check
+  Camera, Video, BookOpen, Plus, Sparkles, Trash2, X, CheckSquare, Square, Check, Search, ChevronDown
 } from 'lucide-react';
 import DeliverableRowItem from './DeliverableRowItem';
 import PostProductionConfirmModal from './PostProductionConfirmModal';
@@ -76,12 +76,49 @@ export default function DeliverableCategorySection({
   onOpenDrive,
 }: DeliverableCategorySectionProps) {
   const [isAddingItem, setIsAddingItem] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [selectedPresets, setSelectedPresets] = useState<Set<string>>(new Set());
   const [presetSpecs, setPresetSpecs] = useState<Record<string, string>>({});
   const [customTitle, setCustomTitle] = useState('');
   const [customSpecs, setCustomSpecs] = useState('');
   const [customSelected, setCustomSelected] = useState(false);
   const [showDeleteCatConfirm, setShowDeleteCatConfirm] = useState(false);
+
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Focus search input when dropdown opens
+  useEffect(() => {
+    if (isAddingItem) {
+      setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 60);
+    }
+  }, [isAddingItem]);
+
+  // Click outside & Escape key listener to cleanly close dropdown
+  useEffect(() => {
+    if (!isAddingItem) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsAddingItem(false);
+      }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsAddingItem(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isAddingItem]);
 
   // Category Presets from settings: { title: string; defaultSpecs: string }
   const [categoryPresets, setCategoryPresets] = useState<{ title: string; defaultSpecs: string }[]>([]);
@@ -130,6 +167,35 @@ export default function DeliverableCategorySection({
       window.removeEventListener('post_production_settings_updated', handleSettingsUpdated);
     };
   }, [category]);
+
+  // Filtered Presets based on live search query
+  const filteredPresets = useMemo(() => {
+    if (!searchQuery.trim()) return categoryPresets;
+    const q = searchQuery.toLowerCase().trim();
+    return categoryPresets.filter(p => 
+      p.title.toLowerCase().includes(q) || 
+      (p.defaultSpecs && p.defaultSpecs.toLowerCase().includes(q))
+    );
+  }, [categoryPresets, searchQuery]);
+
+  const isAllFilteredSelected = filteredPresets.length > 0 && filteredPresets.every(p => selectedPresets.has(p.title));
+
+  const handleToggleSelectAll = () => {
+    setSelectedPresets(prev => {
+      const next = new Set(prev);
+      if (isAllFilteredSelected) {
+        filteredPresets.forEach(p => next.delete(p.title));
+      } else {
+        filteredPresets.forEach(p => {
+          next.add(p.title);
+          if (p.defaultSpecs && !presetSpecs[p.title]) {
+            setPresetSpecs(s => ({ ...s, [p.title]: p.defaultSpecs }));
+          }
+        });
+      }
+      return next;
+    });
+  };
 
   // Category Theme Icons, Minimal Light Backgrounds & Colors
   const config = useMemo(() => {
@@ -213,6 +279,7 @@ export default function DeliverableCategorySection({
     setCustomTitle('');
     setCustomSpecs('');
     setCustomSelected(false);
+    setSearchQuery('');
     setIsAddingItem(false);
   };
 
@@ -241,24 +308,269 @@ export default function DeliverableCategorySection({
           </div>
         </div>
 
-        {/* Header Action Buttons */}
+        {/* Header Action Buttons & 3D Creamy Multi-Select Dropdown Popover */}
         <div className="flex items-center gap-2 self-end sm:self-auto">
-          {/* Add Deliverable button */}
-          <button
-            type="button"
-            onClick={() => {
-              setIsAddingItem(prev => !prev);
-              setSelectedPresets(new Set());
-              setPresetSpecs({});
-              setCustomTitle('');
-              setCustomSpecs('');
-              setCustomSelected(false);
-            }}
-            className="px-3 py-1.5 text-xs font-bold text-amber-900 dark:text-amber-200 bg-amber-100/80 dark:bg-amber-950/60 hover:bg-amber-200/90 border border-amber-300 dark:border-amber-700 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Add Deliverable</span>
-          </button>
+          {/* Add Deliverable Dropdown Trigger & Popover */}
+          <div className="relative" ref={dropdownRef}>
+            <button
+              type="button"
+              onClick={() => {
+                setIsAddingItem(prev => !prev);
+                if (isAddingItem) {
+                  setSearchQuery('');
+                }
+              }}
+              className="px-3 py-1.5 text-xs font-bold text-amber-900 dark:text-amber-200 bg-amber-100/80 dark:bg-amber-950/60 hover:bg-amber-200/90 border border-amber-300 dark:border-amber-700 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs active:translate-y-0.5"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add Deliverable</span>
+              <ChevronDown className={`w-3 h-3 text-amber-700 dark:text-amber-400 transition-transform duration-200 ${isAddingItem ? 'rotate-180' : ''}`} />
+            </button>
+
+            {/* ── 3D Creamy Multi-Select Dropdown Popover ── */}
+            {isAddingItem && (
+              <form 
+                onSubmit={handleBatchAdd}
+                className="absolute right-0 top-full mt-2 w-[calc(100vw-2.5rem)] sm:w-[460px] max-w-[460px] bg-[#FFFDF9] dark:bg-[#1C1A17] rounded-2xl border border-[#EAE5DA] dark:border-stone-700 border-t-2 border-t-amber-400 dark:border-t-amber-500 shadow-[0_20px_50px_rgba(0,0,0,0.18)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.6)] z-50 flex flex-col font-sans overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* 1. Header with icon, category, segment name & close button */}
+                <div className="p-3.5 border-b border-[#EAE5DA] dark:border-stone-800 bg-gradient-to-r from-amber-50/80 via-[#FFFDF9] to-amber-50/50 dark:from-stone-900 dark:via-[#1C1A17] dark:to-stone-900 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-1.5 rounded-lg bg-amber-100/80 dark:bg-amber-950/80 border border-amber-300/80 dark:border-amber-700/80 shadow-2xs">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-black text-amber-950 dark:text-amber-200 uppercase tracking-wider block">
+                        Add {category} Deliverables
+                      </span>
+                      <span className="text-[10px] text-stone-500 dark:text-stone-400 font-semibold">
+                        {segment} • Multi-select &amp; specs
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAddingItem(false);
+                      setSearchQuery('');
+                    }}
+                    className="p-1 text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 transition cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* 2. Top Search Bar */}
+                <div className="px-3 pt-3 pb-2 bg-[#FFFDF9] dark:bg-[#1C1A17]">
+                  <div className="relative flex items-center">
+                    <Search className="w-3.5 h-3.5 text-stone-400 dark:text-stone-500 absolute left-3 pointer-events-none" />
+                    <input
+                      ref={searchInputRef}
+                      type="text"
+                      placeholder={`🔍 Search ${category.toLowerCase()} deliverables...`}
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full pl-9 pr-8 py-2 text-xs bg-[#FAF8F5] dark:bg-stone-900 border border-[#EAE5DA] dark:border-stone-700 rounded-xl text-slate-800 dark:text-stone-100 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 transition-all font-medium shadow-2xs"
+                    />
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setSearchQuery('')}
+                        className="absolute right-2.5 p-0.5 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* 3. Filter Stats & Select All / Deselect All */}
+                <div className="px-3.5 py-1.5 flex items-center justify-between text-[11px] border-b border-[#EAE5DA]/70 dark:border-stone-800/70 bg-[#FAF8F5]/80 dark:bg-stone-900/60">
+                  <span className="font-semibold text-[10px] uppercase tracking-wider text-stone-500 dark:text-stone-400">
+                    {filteredPresets.length} {filteredPresets.length === 1 ? 'Deliverable' : 'Deliverables'} Available
+                  </span>
+                  {filteredPresets.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleToggleSelectAll}
+                      className="font-bold text-amber-700 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 hover:underline cursor-pointer text-[11px]"
+                    >
+                      {isAllFilteredSelected ? 'Deselect All' : 'Select All'}
+                    </button>
+                  )}
+                </div>
+
+                {/* 4. Scrollable Presets List with Proper Scrollbar */}
+                <div className="max-h-60 sm:max-h-64 overflow-y-auto p-2.5 space-y-1.5 [scrollbar-width:thin] [scrollbar-color:#E6D7BE_transparent]">
+                  {filteredPresets.length === 0 ? (
+                    <div className="p-4 text-center rounded-xl bg-amber-50/40 dark:bg-stone-900/40 border border-dashed border-amber-200 dark:border-stone-800 text-stone-500 space-y-1">
+                      <p className="text-xs font-semibold text-stone-600 dark:text-stone-300">
+                        No deliverables match &quot;{searchQuery}&quot;
+                      </p>
+                      <p className="text-[11px] text-stone-400">
+                        You can add it as a custom deliverable below 👇
+                      </p>
+                    </div>
+                  ) : (
+                    filteredPresets.map((item) => {
+                      const preset = item.title;
+                      const isSelected = selectedPresets.has(preset);
+                      const currentSpec = presetSpecs[preset] !== undefined ? presetSpecs[preset] : item.defaultSpecs;
+
+                      return (
+                        <div
+                          key={preset}
+                          onClick={() => togglePresetSelection(preset)}
+                          className={`p-2 sm:p-2.5 rounded-xl border text-xs font-bold transition-all flex items-center justify-between gap-2.5 cursor-pointer select-none ${
+                            isSelected
+                              ? 'bg-gradient-to-r from-amber-50/90 to-[#FFFDF9] dark:from-amber-950/40 dark:to-stone-900 border-amber-400/90 dark:border-amber-700 shadow-2xs ring-1 ring-amber-400/20'
+                              : 'bg-[#FAF8F5] dark:bg-stone-800/70 border-[#EAE5DA] dark:border-stone-700 hover:border-amber-300/80 dark:hover:border-amber-700/80 hover:bg-white dark:hover:bg-stone-800 shadow-2xs'
+                          }`}
+                        >
+                          {/* Left: Checkbox & Title */}
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                            {isSelected ? (
+                              <CheckSquare className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                            ) : (
+                              <Square className="w-4 h-4 text-stone-400 dark:text-stone-500 shrink-0" />
+                            )}
+                            <span className={`truncate text-xs ${isSelected ? 'font-black text-amber-950 dark:text-amber-200' : 'text-slate-800 dark:text-stone-200 font-semibold'}`}>
+                              {preset}
+                            </span>
+                          </div>
+
+                          {/* Right: Individual Specs Input */}
+                          <div 
+                            className="w-28 sm:w-32 shrink-0"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <input
+                              type="text"
+                              placeholder={item.defaultSpecs ? item.defaultSpecs : 'Specs / Count'}
+                              value={currentSpec}
+                              onChange={(e) => handlePresetSpecChange(preset, e.target.value)}
+                              className={`w-full px-2 py-1 text-[11px] font-bold rounded-lg border transition-all focus:outline-none ${
+                                isSelected
+                                  ? 'bg-white dark:bg-stone-900 border-amber-300 dark:border-amber-700 text-amber-950 dark:text-amber-100 focus:ring-1 focus:ring-amber-500'
+                                  : 'bg-white dark:bg-stone-900/60 border-[#EAE5DA] dark:border-stone-700 text-slate-800 dark:text-stone-200 placeholder:text-stone-400 focus:ring-1 focus:ring-amber-400'
+                              }`}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+
+                  {/* 5. Custom Deliverable Section */}
+                  <div className="pt-2 border-t border-[#EAE5DA] dark:border-stone-800">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-stone-500 dark:text-stone-400 flex items-center gap-1">
+                        <Plus className="w-3 h-3 text-amber-500" />
+                        + Add Custom Deliverable:
+                      </span>
+                      {searchQuery && !customTitle && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCustomTitle(searchQuery);
+                            setCustomSelected(true);
+                          }}
+                          className="text-[10px] font-bold text-amber-700 dark:text-amber-400 hover:underline cursor-pointer"
+                        >
+                          Use &quot;{searchQuery}&quot;
+                        </button>
+                      )}
+                    </div>
+
+                    <div className={`p-2 rounded-xl border text-xs font-bold transition-all flex flex-col sm:flex-row items-stretch sm:items-center gap-2 ${
+                      customSelected || customTitle.trim()
+                        ? 'bg-gradient-to-r from-amber-50/90 to-[#FFFDF9] dark:from-amber-950/40 dark:to-stone-900 border-amber-400/90 dark:border-amber-700 shadow-2xs ring-1 ring-amber-400/20'
+                        : 'bg-[#FAF8F5] dark:bg-stone-800/70 border-[#EAE5DA] dark:border-stone-700 shadow-2xs'
+                    }`}>
+                      <div 
+                        onClick={() => setCustomSelected(prev => !prev)}
+                        className="flex items-center gap-2 shrink-0 cursor-pointer select-none"
+                      >
+                        {customSelected || customTitle.trim() ? (
+                          <CheckSquare className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                        ) : (
+                          <Square className="w-4 h-4 text-stone-400 dark:text-stone-500 shrink-0" />
+                        )}
+                        <span className="text-[11px] font-bold text-slate-700 dark:text-stone-300 whitespace-nowrap">
+                          Custom
+                        </span>
+                      </div>
+
+                      <input
+                        type="text"
+                        placeholder="Custom name (e.g. 60-Sec Reel)..."
+                        value={customTitle}
+                        onChange={(e) => {
+                          setCustomTitle(e.target.value);
+                          if (e.target.value.trim()) setCustomSelected(true);
+                        }}
+                        className="flex-1 min-w-0 px-2.5 py-1 text-xs font-medium bg-white dark:bg-stone-900 border border-[#EAE5DA] dark:border-stone-700 rounded-lg text-slate-900 dark:text-stone-100 placeholder:text-stone-400 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      />
+
+                      <input
+                        type="text"
+                        placeholder="Specs / Count"
+                        value={customSpecs}
+                        onChange={(e) => {
+                          setCustomSpecs(e.target.value);
+                          if (e.target.value.trim()) setCustomSelected(true);
+                        }}
+                        className="w-full sm:w-28 shrink-0 px-2 py-1 text-[11px] font-medium bg-white dark:bg-stone-900 border border-[#EAE5DA] dark:border-stone-700 rounded-lg text-slate-900 dark:text-stone-100 placeholder:text-stone-400 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 6. Sticky Footer Action Bar */}
+                <div className="p-3 border-t border-[#EAE5DA] dark:border-stone-800 bg-gradient-to-r from-[#FAF8F5] via-[#FFFDF9] to-[#FAF8F5] dark:from-stone-900 dark:via-[#1C1A17] dark:to-stone-900 flex items-center justify-between gap-2">
+                  <div className="text-[11px] font-bold text-stone-600 dark:text-stone-300">
+                    {totalToAddCount > 0 ? (
+                      <span className="text-amber-900 dark:text-amber-300 font-extrabold flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                        {totalToAddCount} {totalToAddCount === 1 ? 'deliverable' : 'deliverables'} selected
+                      </span>
+                    ) : (
+                      <span className="text-stone-400">0 selected</span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAddingItem(false);
+                        setSearchQuery('');
+                      }}
+                      className="px-3 py-1.5 text-xs font-bold text-stone-500 hover:text-stone-800 dark:text-stone-400 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-xl transition cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+
+                    <button
+                      type="submit"
+                      disabled={totalToAddCount === 0}
+                      className="px-4 py-1.5 text-xs font-black bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 active:translate-y-0.5 text-white rounded-xl shadow-md shadow-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none transition-all cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>
+                        {totalToAddCount > 1 
+                          ? `Add Selected (${totalToAddCount})` 
+                          : totalToAddCount === 1
+                          ? 'Add Selected (1)'
+                          : 'Add Deliverable'}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              </form>
+            )}
+          </div>
 
           {/* Remove Category button */}
           {onRemoveCategory && (
@@ -273,182 +585,6 @@ export default function DeliverableCategorySection({
           )}
         </div>
       </div>
-
-      {/* ── Multi-Select Threaded Deliverables Dropdown / Panel with Checkboxes & Per-Item Specs ── */}
-      {isAddingItem && (
-        <form 
-          onSubmit={handleBatchAdd}
-          className="p-4 bg-white dark:bg-stone-900 rounded-2xl border border-amber-400/80 dark:border-amber-700/80 shadow-lg space-y-3.5"
-        >
-          <div className="flex items-center justify-between border-b border-amber-100 dark:border-stone-800 pb-2">
-            <span className="text-xs font-black text-amber-950 dark:text-amber-300 flex items-center gap-1.5">
-              <Sparkles className="w-4 h-4 text-amber-500" />
-              Add {category} Deliverables to {segment} (Select Multiple with Individual Specs)
-            </span>
-            <button
-              type="button"
-              onClick={() => setIsAddingItem(false)}
-              className="text-slate-400 hover:text-slate-600 dark:hover:text-stone-200 text-xs font-bold cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* 1. 3D Cream Presets List with Checkbox, Title & Per-Item Specs */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-[11px] font-black text-slate-600 dark:text-stone-300 uppercase tracking-wider block">
-                Select Deliverables &amp; Set Individual Specs:
-              </label>
-              <button
-                type="button"
-                onClick={() => {
-                  if (selectedPresets.size === categoryPresets.length) {
-                    setSelectedPresets(new Set());
-                  } else {
-                    setSelectedPresets(new Set(categoryPresets.map(p => p.title)));
-                  }
-                }}
-                className="text-[11px] font-bold text-amber-700 dark:text-amber-400 hover:underline cursor-pointer"
-              >
-                {selectedPresets.size === categoryPresets.length ? 'Deselect All' : 'Select All Presets'}
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-72 overflow-y-auto p-1">
-              {categoryPresets.map((item) => {
-                const preset = item.title;
-                const isSelected = selectedPresets.has(preset);
-                return (
-                  <div
-                    key={preset}
-                    className={`p-2.5 rounded-xl border text-xs font-bold transition flex items-center justify-between gap-2 select-none ${
-                      isSelected
-                        ? 'bg-amber-50/90 dark:bg-amber-950/50 border-amber-400/90 dark:border-amber-700 shadow-2xs'
-                        : 'bg-[#FAF8F5] dark:bg-stone-800/80 border-[#EAE5DA] dark:border-stone-700 hover:border-amber-300/80 shadow-2xs'
-                    }`}
-                  >
-                    {/* Left: Checkbox & Preset Title */}
-                    <div 
-                      onClick={() => togglePresetSelection(preset)}
-                      className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer"
-                    >
-                      {isSelected ? (
-                        <CheckSquare className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                      ) : (
-                        <Square className="w-4 h-4 text-slate-400 shrink-0" />
-                      )}
-                      <span className={`truncate ${isSelected ? 'font-black text-amber-950 dark:text-amber-200' : 'text-slate-700 dark:text-stone-300'}`}>
-                        {preset}
-                      </span>
-                    </div>
-
-                    {/* Right: Individual Per-Item Specs Input */}
-                    <div className="w-36 shrink-0">
-                      <input
-                        type="text"
-                        placeholder={item.defaultSpecs ? `Default: ${item.defaultSpecs}` : 'Specs / Count'}
-                        value={presetSpecs[preset] !== undefined ? presetSpecs[preset] : item.defaultSpecs}
-                        onChange={(e) => handlePresetSpecChange(preset, e.target.value)}
-                        onClick={(e) => e.stopPropagation()}
-                        className={`w-full px-2.5 py-1 text-[11px] font-bold rounded-lg border transition-all focus:outline-none ${
-                          isSelected
-                            ? 'bg-white dark:bg-stone-900 border-amber-300 dark:border-amber-700 text-amber-950 dark:text-amber-200 focus:ring-1 focus:ring-amber-500'
-                            : 'bg-white dark:bg-stone-900/60 border-[#EAE5DA] dark:border-stone-700 text-slate-800 dark:text-stone-200 placeholder:text-slate-400 focus:ring-1 focus:ring-amber-400'
-                        }`}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* 2. Custom Deliverable Row with Checkbox, Title & Specs */}
-          <div className="pt-2 border-t border-amber-100 dark:border-stone-800">
-            <label className="text-[11px] font-black text-slate-600 dark:text-stone-300 uppercase tracking-wider block mb-1.5">
-              + Or Add Custom Deliverable:
-            </label>
-            <div className={`p-2.5 rounded-xl border text-xs font-bold transition flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 ${
-              customSelected || customTitle.trim()
-                ? 'bg-amber-50/90 dark:bg-amber-950/50 border-amber-400/90 shadow-2xs'
-                : 'bg-[#FAF8F5] dark:bg-stone-800/80 border-[#EAE5DA] dark:border-stone-700 shadow-2xs'
-            }`}>
-              <div 
-                onClick={() => setCustomSelected(prev => !prev)}
-                className="flex items-center gap-2.5 shrink-0 cursor-pointer"
-              >
-                {customSelected || customTitle.trim() ? (
-                  <CheckSquare className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                ) : (
-                  <Square className="w-4 h-4 text-slate-400 shrink-0" />
-                )}
-                <span className="text-slate-700 dark:text-stone-300 font-bold whitespace-nowrap">
-                  Custom Item
-                </span>
-              </div>
-
-              <div className="flex-1 min-w-0">
-                <input
-                  type="text"
-                  placeholder={`Custom deliverable name (e.g. 60-Sec Reel, Drone Highlights)...`}
-                  value={customTitle}
-                  onChange={(e) => {
-                    setCustomTitle(e.target.value);
-                    if (e.target.value.trim()) setCustomSelected(true);
-                  }}
-                  className="w-full px-2.5 py-1 text-xs font-bold bg-white dark:bg-stone-900 border border-[#EAE5DA] dark:border-stone-700 rounded-lg text-slate-900 dark:text-stone-100 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                />
-              </div>
-
-              <div className="w-full sm:w-36 shrink-0">
-                <input
-                  type="text"
-                  placeholder="Specs / Count"
-                  value={customSpecs}
-                  onChange={(e) => {
-                    setCustomSpecs(e.target.value);
-                    if (e.target.value.trim()) setCustomSelected(true);
-                  }}
-                  className="w-full px-2.5 py-1 text-[11px] font-bold bg-white dark:bg-stone-900 border border-[#EAE5DA] dark:border-stone-700 rounded-lg text-slate-900 dark:text-stone-100 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Action Footer */}
-          <div className="flex items-center justify-between pt-2 border-t border-amber-100 dark:border-stone-800">
-            <span className="text-[11px] font-bold text-slate-500">
-              {totalToAddCount > 0 
-                ? `${totalToAddCount} deliverable(s) ready to add with specs` 
-                : 'Check presets or type custom title above'}
-            </span>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setIsAddingItem(false)}
-                className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 cursor-pointer"
-              >
-                Cancel
-              </button>
-
-              <button
-                type="submit"
-                disabled={totalToAddCount === 0}
-                className="px-4 py-2 text-xs font-black bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
-              >
-                <Plus className="w-4 h-4" />
-                <span>
-                  {totalToAddCount > 1 
-                    ? `Add Selected (${totalToAddCount} Deliverables)` 
-                    : 'Add Deliverable'}
-                </span>
-              </button>
-            </div>
-          </div>
-        </form>
-      )}
 
       {/* ── Deliverable Items List ── */}
       {items.length === 0 ? (

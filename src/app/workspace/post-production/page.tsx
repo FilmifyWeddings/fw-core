@@ -14,7 +14,7 @@ import PostProductionFilterModal, { PostProductionFilters } from './components/P
 import DeliverableCommentDrawer from './components/DeliverableCommentDrawer';
 import PostProductionOverdueModal, { OverdueDeliverableItem } from './components/PostProductionOverdueModal';
 import { PostProductionDeliverable } from './components/DeliverableCategorySection';
-import { autoSyncClientDeliverables, persistDeliverablesDecoupled, isDemoDeliverables } from '@/lib/services/postProductionSyncService';
+import { autoSyncClientDeliverables, persistDeliverablesDecoupled, isDemoDeliverables, findClientFinalQuotation } from '@/lib/services/postProductionSyncService';
 import { Searchable3DCreamSelectOption } from '@/components/ui/Searchable3DCreamSelect';
 import { fetchWorkspaceEventTypes } from '@/lib/workspace-settings';
 
@@ -316,8 +316,22 @@ export default function PostProductionPage() {
         const effectivePM = ppp?.project_manager_name || matchedFwProject?.project_manager_name || client.project_manager_name || matchedPMName || null;
         const effectivePMId = ppp?.project_manager_id || matchedFwProject?.project_manager_id || client.project_manager_id || matchedPMId || null;
 
-        let quotationId = ppp?.notes?.includes('quotation_id:') ? ppp.notes.split('quotation_id:')[1]?.split(';')[0] : null;
-        let quotationTitle = ppp?.notes?.includes('quotation_title:') ? ppp.notes.split('quotation_title:')[1]?.split(';')[0] : null;
+        // Reliably match client's true final quotation
+        const clientFinalQuote = findClientFinalQuotation(client, qList);
+        let quotationId: string | null = clientFinalQuote ? (clientFinalQuote.template_id || clientFinalQuote.id) : null;
+        let quotationTitle: string | null = clientFinalQuote ? (clientFinalQuote.title || clientFinalQuote.quotation_number || 'Final Quotation') : null;
+
+        // If client has no matched final quote, only use stored notes if they genuinely belong to this client
+        if (!quotationId && ppp?.notes?.includes('quotation_id:')) {
+          const storedQId = ppp.notes.split('quotation_id:')[1]?.split(';')[0];
+          const storedQTitle = ppp.notes.includes('quotation_title:') ? ppp.notes.split('quotation_title:')[1]?.split(';')[0] : null;
+          // Validate stored quote against qList to ensure it doesn't belong to another client
+          const foundQuote = qList.find(q => q.id === storedQId || q.template_id === storedQId);
+          if (foundQuote && (foundQuote.client_id === client.id || (client.name && foundQuote.client_name && foundQuote.client_name.toLowerCase().trim() === client.name.toLowerCase().trim()))) {
+            quotationId = storedQId;
+            quotationTitle = storedQTitle;
+          }
+        }
 
         // Section & Segment Configuration
         const projConfig = matchedFwProject ? configByProjectId.get(matchedFwProject.id) : null;
@@ -335,9 +349,9 @@ export default function PostProductionPage() {
           } catch (_) {}
         }
 
-        // Auto-sync deliverables from client's approved / final quotation if none exist or if existing are demo seeds
+        // Auto-sync deliverables from client's approved / final quotation ONLY if this client legitimately has one
         const hasDemo = isDemoDeliverables(projectDeliverables);
-        const shouldSync = projectDeliverables.length === 0 || hasDemo;
+        const shouldSync = (projectDeliverables.length === 0 || hasDemo) && Boolean(clientFinalQuote);
 
         if (shouldSync) {
           const syncResult = autoSyncClientDeliverables(client, qList, projectDeliverables);
