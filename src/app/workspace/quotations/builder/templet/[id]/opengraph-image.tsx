@@ -1,5 +1,6 @@
 import { ImageResponse } from 'next/og';
 import { resolvePublicQuotation } from '@/lib/public-quotation';
+import sharp from 'sharp';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -28,28 +29,37 @@ export default async function Image({ params }: ImageProps) {
   const eventDate = quote?.eventDate || '';
   const location = quote?.location || '';
 
-  // Safe image pre-fetch into base64 data URI to prevent Satori rendering crashes
+  // Safe image pre-fetch and normalize to standard JPEG buffer/data URI using sharp
   let imageSrc: string | null = null;
   if (coverPhoto) {
-    if (coverPhoto.startsWith('data:image/')) {
-      imageSrc = coverPhoto;
-    } else {
-      try {
+    try {
+      let buffer: Buffer | null = null;
+      if (coverPhoto.startsWith('data:image/')) {
+        const base64Data = coverPhoto.replace(/^data:image\/[a-zA-Z+]+;base64,/, '');
+        buffer = Buffer.from(base64Data, 'base64');
+      } else {
         let optimizedPhotoUrl = coverPhoto;
         if (optimizedPhotoUrl.includes('images.unsplash.com')) {
           optimizedPhotoUrl = optimizedPhotoUrl.replace(/&w=\d+/, '') + '&w=600&q=75';
         }
         const res = await fetch(optimizedPhotoUrl, { signal: AbortSignal.timeout(1500) });
         if (res.ok) {
-          const buffer = await res.arrayBuffer();
-          const base64 = Buffer.from(buffer).toString('base64');
-          const mime = res.headers.get('content-type') || 'image/jpeg';
-          imageSrc = `data:${mime};base64,${base64}`;
+          const ab = await res.arrayBuffer();
+          buffer = Buffer.from(ab);
         }
-      } catch (e) {
-        console.warn('[opengraph-image] Failed to fetch coverPhoto:', e);
-        imageSrc = null;
       }
+
+      if (buffer && buffer.length > 0) {
+        // Convert any format (WebP, HEIC, PNG, etc.) to optimized JPEG for Satori
+        const jpgBuffer = await sharp(buffer)
+          .resize(500, null, { withoutEnlargement: true })
+          .jpeg({ quality: 82 })
+          .toBuffer();
+        imageSrc = `data:image/jpeg;base64,${jpgBuffer.toString('base64')}`;
+      }
+    } catch (e) {
+      console.warn('[opengraph-image] Failed to process coverPhoto with sharp:', e);
+      imageSrc = null;
     }
   }
 
