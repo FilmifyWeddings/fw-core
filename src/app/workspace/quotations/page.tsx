@@ -18,6 +18,7 @@ import { removeCachedDocumentLocal } from '@/lib/indexeddb-cache';
 import { getThemeFromKey } from '@/lib/quotation-theme';
 import QuotationDocumentCanvas from '@/components/QuotationDocumentCanvas';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
+import { QuotaLimitAlertModal } from '@/components/workspace/QuotaLimitAlertModal';
 
 interface SavedQuotation {
   id: string;
@@ -144,42 +145,17 @@ let memCachedUserImages: UserGalleryImage[] = [];
 export default function WorkspaceQuotationsGalleryPage() {
   const router = useRouter();
 
-  // Synchronous initialization from in-memory cache or localStorage
-  const [quotations, setQuotations] = useState<SavedQuotation[]>(() => {
-    if (memCachedQuotations.length > 0) return memCachedQuotations;
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = localStorage.getItem('wg_quotations_cache');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            memCachedQuotations = parsed;
-            return parsed;
-          }
-        }
-      } catch (_) {}
-    }
-    return [];
-  });
+  // Quotation Designs State (SSR-safe initial values)
+  const [quotations, setQuotations] = useState<SavedQuotation[]>([]);
 
   // User Session & Security
   const [userId, setUserId] = useState<string>('');
   const [userEmail, setUserEmail] = useState<string>('');
-  const [loading, setLoading] = useState<boolean>(() => memCachedQuotations.length === 0);
+  const [loading, setLoading] = useState<boolean>(true);
   const [mounted, setMounted] = useState<boolean>(false);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
   // Dynamic Data States
-  const [activeQuotationId, setActiveQuotationId] = useState<string>(() => {
-    if (memCachedQuotations.length > 0) {
-      return memCachedQuotations[0].quotation_number || memCachedQuotations[0].id || '1';
-    }
-    return '1';
-  });
-
+  const [activeQuotationId, setActiveQuotationId] = useState<string>('1');
   const [activeCoverPhoto, setActiveCoverPhoto] = useState<string>('https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=800&q=80');
   const [activeCoupleName, setActiveCoupleName] = useState<string>('Rahul & Neha');
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
@@ -189,6 +165,17 @@ export default function WorkspaceQuotationsGalleryPage() {
   const [deletingQuote, setDeletingQuote] = useState<SavedQuotation | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [quotaModal, setQuotaModal] = useState<{
+    isOpen: boolean;
+    type: 'quotation' | 'image';
+    currentCount: number;
+    maxLimit: number;
+  }>({
+    isOpen: false,
+    type: 'quotation',
+    currentCount: 0,
+    maxLimit: 10
+  });
 
   const isSuperAdminUser = userEmail.toLowerCase() === 'sushantnawale700@gmail.com';
 
@@ -359,6 +346,17 @@ export default function WorkspaceQuotationsGalleryPage() {
     }
 
     if (quote.is_system_template || quoteId === 'FW-2WT85Y0' || quoteId === 'SYSTEM_DEFAULT_WEDDING') {
+      // Check quota limit before cloning system template into user workspace
+      if (quotations.length >= 10) {
+        setQuotaModal({
+          isOpen: true,
+          type: 'quotation',
+          currentCount: quotations.length,
+          maxLimit: 10
+        });
+        return;
+      }
+
       setCloningGlobalId(quoteId);
 
       try {
@@ -438,20 +436,7 @@ export default function WorkspaceQuotationsGalleryPage() {
     }
   };
 
-  const [userImages, setUserImages] = useState<UserGalleryImage[]>(() => {
-    if (typeof window !== 'undefined') {
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('wg_gallery_cache_')) {
-          try {
-            const parsed = JSON.parse(localStorage.getItem(key) || '[]');
-            if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-          } catch {}
-        }
-      }
-    }
-    return [];
-  });
+  const [userImages, setUserImages] = useState<UserGalleryImage[]>([]);
 
   // Modals & Drawers States
   const [showQuotationsModal, setShowQuotationsModal] = useState<boolean>(false);
@@ -463,6 +448,17 @@ export default function WorkspaceQuotationsGalleryPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDuplicateDesign = async (sourceQuote: SavedQuotation) => {
+    // Check quota limit before duplicating design
+    if (quotations.length >= 10) {
+      setQuotaModal({
+        isOpen: true,
+        type: 'quotation',
+        currentCount: quotations.length,
+        maxLimit: 10
+      });
+      return;
+    }
+
     const sourceId = sourceQuote.quotation_number || sourceQuote.id;
     setDuplicatingId(sourceId);
 
@@ -572,6 +568,56 @@ export default function WorkspaceQuotationsGalleryPage() {
   ];
 
   useEffect(() => {
+    setMounted(true);
+
+    // Instant sync from in-memory cache or localStorage on client mount (avoids SSR hydration mismatch)
+    if (memCachedQuotations.length > 0) {
+      setQuotations(memCachedQuotations);
+      setLoading(false);
+      const primary = memCachedQuotations[0];
+      if (primary) {
+        setActiveQuotationId(primary.quotation_number || primary.id || '1');
+        if (primary.client_name) setActiveCoupleName(primary.client_name);
+        if (primary.content_json?.cover?.photoUrl) setActiveCoverPhoto(primary.content_json.cover.photoUrl);
+      }
+    } else {
+      try {
+        const stored = localStorage.getItem('wg_quotations_cache');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            memCachedQuotations = parsed;
+            setQuotations(parsed);
+            setLoading(false);
+            const primary = parsed[0];
+            if (primary) {
+              setActiveQuotationId(primary.quotation_number || primary.id || '1');
+              if (primary.client_name) setActiveCoupleName(primary.client_name);
+              if (primary.content_json?.cover?.photoUrl) setActiveCoverPhoto(primary.content_json.cover.photoUrl);
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (memCachedUserImages.length > 0) {
+      setUserImages(memCachedUserImages);
+    } else {
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('wg_gallery_cache_')) {
+            const parsed = JSON.parse(localStorage.getItem(key) || '[]');
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              memCachedUserImages = parsed;
+              setUserImages(parsed);
+              break;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
     console.log('=== GLOBAL_SITE_SYNC_VERIFIED_799 ===');
     async function loadUserDataSilently() {
       try {
@@ -760,7 +806,12 @@ export default function WorkspaceQuotationsGalleryPage() {
 
   const triggerFileSelection = () => {
     if (userImages.length >= 10) {
-      alert('Maximum limit reached: You can upload up to 10 images.');
+      setQuotaModal({
+        isOpen: true,
+        type: 'image',
+        currentCount: userImages.length,
+        maxLimit: 10
+      });
       return;
     }
     if (fileInputRef.current) {
@@ -774,7 +825,12 @@ export default function WorkspaceQuotationsGalleryPage() {
     if (!file) return;
 
     if (userImages.length >= 10) {
-      alert('Maximum limit reached: You can upload up to 10 images.');
+      setQuotaModal({
+        isOpen: true,
+        type: 'image',
+        currentCount: userImages.length,
+        maxLimit: 10
+      });
       return;
     }
 
@@ -842,11 +898,6 @@ export default function WorkspaceQuotationsGalleryPage() {
     q.quotation_number?.toLowerCase().includes(quotationSearch.toLowerCase())
   );
 
-  if (loading && quotations.length === 0) {
-    return <StudioCoreLiquidLoader label="Loading Quotations & Proposals..." />;
-  }
-
-
   return (
     <div className="min-h-screen bg-[#FAF9F6] dark:bg-[#070708] text-slate-800 dark:text-zinc-100 p-4 lg:p-8 space-y-6 lg:space-y-8 pb-24 lg:pb-8">
       
@@ -880,8 +931,8 @@ export default function WorkspaceQuotationsGalleryPage() {
 
           <div>
             <span className="text-xs font-bold text-indigo-900/70 dark:text-indigo-300">Quotations</span>
-            <h4 className="text-xl sm:text-2xl font-black text-indigo-950 dark:text-white mt-0.5">
-              {quotations.length} <span className="text-xs sm:text-sm font-normal text-indigo-700/60 dark:text-indigo-400">/ 10 Limit</span>
+            <h4 className="text-xl sm:text-2xl font-black text-indigo-950 dark:text-white mt-0.5" suppressHydrationWarning>
+              {mounted ? quotations.length : 0} <span className="text-xs sm:text-sm font-normal text-indigo-700/60 dark:text-indigo-400">/ 10 Limit</span>
             </h4>
           </div>
 
@@ -889,13 +940,13 @@ export default function WorkspaceQuotationsGalleryPage() {
             <div className="h-2 w-full bg-indigo-200/70 dark:bg-indigo-950 rounded-full overflow-hidden">
               <div 
                 className="h-full bg-indigo-600 rounded-full transition-all duration-500" 
-                style={{ width: `${Math.min(100, (quotations.length / 10) * 100)}%` }}
+                style={{ width: `${Math.min(100, ((mounted ? quotations.length : 0) / 10) * 100)}%` }}
               />
             </div>
           </div>
 
           <div className="pt-2 border-t border-indigo-200/60 dark:border-indigo-900/50 flex items-center justify-between text-xs font-bold text-indigo-950 dark:text-indigo-200">
-            <span>View All Quotations ({quotations.length})</span>
+            <span suppressHydrationWarning>View All Quotations ({mounted ? quotations.length : 0})</span>
             <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
           </div>
         </motion.div>
@@ -913,15 +964,15 @@ export default function WorkspaceQuotationsGalleryPage() {
             <button 
               type="button"
               onClick={triggerFileSelection}
-              disabled={isUploading || userImages.length >= 10}
+              disabled={isUploading}
               className={`px-3 py-1.5 rounded-xl text-white font-bold text-xs shadow-sm transition-all flex items-center gap-1 cursor-pointer ${
-                userImages.length >= 10 
-                  ? 'bg-zinc-400 cursor-not-allowed opacity-75' 
+                (mounted ? userImages.length : 0) >= 10 
+                  ? 'bg-amber-600 hover:bg-amber-700' 
                   : 'bg-pink-600 hover:bg-pink-700'
               }`}
             >
-              {userImages.length >= 10 ? <AlertTriangle className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
-              {isUploading ? `Uploading... ${uploadProgress}%` : userImages.length >= 10 ? `Limit (${userImages.length}/10)` : 'Add Image'}
+              {(mounted ? userImages.length : 0) >= 10 ? <AlertTriangle className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+              {isUploading ? `Uploading... ${uploadProgress}%` : (mounted ? userImages.length : 0) >= 10 ? `Limit (${mounted ? userImages.length : 0}/10)` : 'Add Image'}
             </button>
           </div>
 
@@ -970,8 +1021,14 @@ export default function WorkspaceQuotationsGalleryPage() {
       {/* Responsive Designs Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-5">
         
-        {/* DYNAMIC USER QUOTATION CARDS (1:1 Thumbnail Sync, Dynamic Custom Title, Instant Duplication) */}
-        {quotations.length > 0 ? (
+        {loading && quotations.length === 0 ? (
+          <div className="col-span-full py-16 flex justify-center items-center">
+            <StudioCoreLiquidLoader label="Loading Quotations & Proposals..." fullscreen={false} />
+          </div>
+        ) : (
+          <>
+            {/* DYNAMIC USER QUOTATION CARDS (1:1 Thumbnail Sync, Dynamic Custom Title, Instant Duplication) */}
+            {quotations.length > 0 ? (
           quotations.map((quote, idx) => {
             const quoteId = quote.quotation_number || quote.id;
             const customTitle = quote.title || (quote as any).content_json?.designName || 'Wedding - Design 1';
@@ -1313,6 +1370,8 @@ export default function WorkspaceQuotationsGalleryPage() {
             </div>
           </motion.div>
         ))}
+          </>
+        )}
 
       </div>
 
@@ -1328,9 +1387,9 @@ export default function WorkspaceQuotationsGalleryPage() {
             >
               <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800 pb-3 shrink-0">
                 <div>
-                  <h3 className="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                  <h3 className="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2" suppressHydrationWarning>
                     <FileText className="w-5 h-5 text-indigo-600" />
-                    Your Saved Quotations ({quotations.length} / 10)
+                    Your Saved Quotations ({mounted ? quotations.length : 0} / 10)
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
                     All created quotations are automatically saved to your account.
@@ -1363,8 +1422,20 @@ export default function WorkspaceQuotationsGalleryPage() {
                     <p className="text-xs font-bold text-slate-500 dark:text-zinc-400">No saved quotations found.</p>
                     <button 
                       type="button"
-                      onClick={() => { setShowQuotationsModal(false); router.push('/workspace/quotations/builder/templet/1'); }}
-                      className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700"
+                      onClick={() => { 
+                        if (quotations.length >= 10) {
+                          setQuotaModal({
+                            isOpen: true,
+                            type: 'quotation',
+                            currentCount: quotations.length,
+                            maxLimit: 10
+                          });
+                          return;
+                        }
+                        setShowQuotationsModal(false); 
+                        router.push('/workspace/quotations/builder/templet/1'); 
+                      }}
+                      className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 cursor-pointer"
                     >
                       + Create New Quotation
                     </button>
@@ -1387,19 +1458,32 @@ export default function WorkspaceQuotationsGalleryPage() {
                         </p>
                       </div>
 
-                      <div className="flex items-center gap-3 shrink-0">
+                      <div className="flex items-center gap-2 shrink-0">
                         {q.financials?.total_amount && (
                           <span className="text-xs font-black text-slate-900 dark:text-white hidden sm:inline">
                             ₹{q.financials.total_amount.toLocaleString()}
                           </span>
                         )}
                         <Link 
-                          href="/workspace/quotations/builder/templet/1"
+                          href={`/workspace/quotations/builder/templet/${q.quotation_number || q.id}`}
                           onClick={() => setShowQuotationsModal(false)}
                           className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm"
                         >
                           Edit
                         </Link>
+                        {(!q.is_system_template || isSuperAdminUser) && (
+                          <button
+                            type="button"
+                            title="Delete Quotation"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeletingQuote(q);
+                            }}
+                            className="p-1.5 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))
@@ -1612,6 +1696,22 @@ export default function WorkspaceQuotationsGalleryPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Quota Limit Alert Modal */}
+      <QuotaLimitAlertModal
+        isOpen={quotaModal.isOpen}
+        onClose={() => setQuotaModal(prev => ({ ...prev, isOpen: false }))}
+        type={quotaModal.type}
+        currentCount={quotaModal.currentCount}
+        maxLimit={quotaModal.maxLimit}
+        onManageAction={() => {
+          if (quotaModal.type === 'quotation') {
+            setShowQuotationsModal(true);
+          } else {
+            setShowGalleryModal(true);
+          }
+        }}
+      />
 
     </div>
   );

@@ -1047,7 +1047,7 @@ export default function AttendancePage() {
 
   return (
     <div className="min-h-screen bg-[#FDFCF7] text-slate-900 pb-24 pt-2 px-4 sm:px-6 lg:px-8 font-sans">
-      <div className="max-w-7xl mx-auto space-y-6">
+      <div className="w-full space-y-6">
 
         {/* ─────────────────────────────────────────────────────────────
             HEADER & ACTION CONTROLS

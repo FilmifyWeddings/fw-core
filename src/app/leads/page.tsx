@@ -129,31 +129,42 @@ export default function LeadsPage() {
   const [userId, setUserId] = useState<string>('');
   const [userEmail, setUserEmail] = useState<string | null>(null);
 
-  // Synchronous initialization from in-memory cache or localStorage
-  const [leads, setLeads] = useState<Lead[]>(() => {
-    if (memCachedLeads.length > 0) return memCachedLeads;
-    if (typeof window !== 'undefined') {
+  const [mounted, setMounted] = useState<boolean>(false);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [stages, setStages] = useState<any[]>(DEFAULT_STAGES);
+  const [preferences, setPreferences] = useState<any>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [page, setPage] = useState<number>(0);
+  const [hasMore, setHasMore] = useState<boolean>(true);
+  const [loadingMore, setLoadingMore] = useState<boolean>(false);
+  const PAGE_SIZE = 50;
+
+  // Hydrate cache on client mount to eliminate SSR/CSR hydration mismatch
+  useEffect(() => {
+    setMounted(true);
+    if (memCachedLeads.length > 0) {
+      setLeads(memCachedLeads);
+      setLoading(false);
+    } else {
       try {
         const stored = localStorage.getItem('sc_cached_leads');
         if (stored) {
           const parsed = JSON.parse(stored);
           if (Array.isArray(parsed) && parsed.length > 0) {
             memCachedLeads = parsed;
-            return parsed;
+            setLeads(parsed);
+            setLoading(false);
           }
         }
       } catch (_) {}
     }
-    return [];
-  });
-
-  const [stages, setStages] = useState<any[]>(() => memCachedStages);
-  const [preferences, setPreferences] = useState<any>(() => memCachedPreferences);
-  const [loading, setLoading] = useState<boolean>(() => memCachedLeads.length === 0);
-  const [page, setPage] = useState<number>(0);
-  const [hasMore, setHasMore] = useState<boolean>(true);
-  const [loadingMore, setLoadingMore] = useState<boolean>(false);
-  const PAGE_SIZE = 50;
+    if (memCachedStages && memCachedStages.length > 0) {
+      setStages(memCachedStages);
+    }
+    if (memCachedPreferences) {
+      setPreferences(memCachedPreferences);
+    }
+  }, []);
 
 
   const leadsAccess = isOwner ? 'ALL_MANAGE' : (permissions?.leads_access || 'NONE');
@@ -1081,7 +1092,7 @@ export default function LeadsPage() {
     }
   };
 
-  if (!isOwner && leadsAccess === 'NONE') {
+  if (mounted && !isOwner && leadsAccess === 'NONE') {
     return (
       <div className="min-h-screen bg-[#FAF9F6] p-8 flex items-center justify-center">
         <div className="bg-white rounded-3xl p-8 max-w-md w-full text-center border border-zinc-200 shadow-xl space-y-4">

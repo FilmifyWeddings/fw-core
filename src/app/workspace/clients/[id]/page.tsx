@@ -434,6 +434,10 @@ export default function ClientWorkspaceDetailPage() {
 
       // Sync finance
       fetchFinanceAndSyncMilestones(client);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('quotation_finalized', { detail: { clientId: client.id, quotationId: q.template_id } }));
+        localStorage.setItem('post_production_updated', Date.now().toString());
+      }
     } catch (e) {
       console.error('Error setting final quotation:', e);
     } finally {
@@ -1072,7 +1076,7 @@ export default function ClientWorkspaceDetailPage() {
 
   return (
     <div className="min-h-screen bg-[#FAF9F5] text-slate-900 pb-24 pt-2 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto space-y-6">
+      <div className="w-full space-y-6">
 
         {/* ── BREADCRUMB & BACK BUTTON ── */}
         <div className="flex items-center justify-between">

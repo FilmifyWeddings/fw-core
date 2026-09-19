@@ -2140,8 +2140,8 @@ export default function FinancePage() {
 
   // 3. ONLY REACHED IF 100% VERIFIED
   return (
-    <div className="min-h-screen bg-[#FDFBF7] text-slate-900 pb-28 pt-3 px-3 sm:px-5 lg:px-7 font-sans selection:bg-amber-100 selection:text-amber-900 w-full max-w-full overflow-x-hidden">
-      <div className="w-full max-w-[1680px] mx-auto space-y-4 sm:space-y-5">
+    <div className="min-h-screen bg-[#FDFBF7] text-slate-900 pb-28 pt-3 px-4 sm:px-6 lg:px-8 font-sans selection:bg-amber-100 selection:text-amber-900 w-full max-w-full overflow-x-hidden">
+      <div className="w-full space-y-4 sm:space-y-5">
 
         {/* ─────────────────────────────────────────────────────────────
             TOP 5 METRIC CARDS WITH SPARKLINES (APP-GRADE 2-COL MOBILE STRIP)

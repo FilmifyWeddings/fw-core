@@ -29,6 +29,9 @@ export interface Searchable3DCreamSelectProps {
   disabled?: boolean;
   label?: string;
   usePortal?: boolean;
+  isOpen?: boolean;
+  onToggle?: (open: boolean) => void;
+  onClose?: () => void;
   headerAction?: {
     label: string;
     onClick: () => void;
@@ -55,10 +58,29 @@ export default function Searchable3DCreamSelect({
   disabled = false,
   label,
   usePortal = true,
+  isOpen: controlledIsOpen,
+  onToggle,
+  onClose,
   headerAction,
   inlineAdd,
 }: Searchable3DCreamSelectProps) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [internalIsOpen, setInternalIsOpen] = useState(false);
+  const isControlled = controlledIsOpen !== undefined;
+  const isOpen = isControlled ? controlledIsOpen : internalIsOpen;
+
+  const setIsOpen = (next: boolean | ((prev: boolean) => boolean)) => {
+    const nextVal = typeof next === 'function' ? next(isOpen) : next;
+    if (!isControlled) {
+      setInternalIsOpen(nextVal);
+    }
+    if (onToggle) {
+      onToggle(nextVal);
+    }
+    if (!nextVal && onClose) {
+      onClose();
+    }
+  };
+
   const [searchQuery, setSearchQuery] = useState('');
   const [coords, setCoords] = useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width: 260 });
   const [isMounted, setIsMounted] = useState(false);

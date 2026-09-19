@@ -661,7 +661,7 @@ export default function ClientsPage() {
 
   return (
     <div className="min-h-screen bg-[#FDFBF7] text-slate-900 pb-28 pt-4 px-4 sm:px-6 lg:px-8 font-sans selection:bg-amber-100 selection:text-amber-900">
-      <div className="max-w-7xl mx-auto space-y-6">
+      <div className="w-full space-y-6">
 
         {/* ─────────────────────────────────────────────────────────────
             HEADER & ACTIONS

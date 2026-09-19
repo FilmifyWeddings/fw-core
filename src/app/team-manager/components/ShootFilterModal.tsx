@@ -305,7 +305,7 @@ export default function ShootFilterModal({
             
             {/* 1. Studio Filter */}
             {showStudioFilter && (
-              <div className={`space-y-1.5 relative ${openDropdown === 'studio' ? 'z-[60]' : 'z-10'}`}>
+              <div className={`space-y-1.5 relative ${openDropdown === 'studio' ? 'z-[80]' : 'z-[25]'}`}>
                 <label className="text-xs font-bold text-slate-700 dark:text-stone-300 uppercase tracking-wider flex items-center gap-1.5">
                   <Building2 className="w-3.5 h-3.5 text-rose-500" />
                   <span>Filter by Studio Owner</span>
@@ -318,12 +318,15 @@ export default function ShootFilterModal({
                   searchPlaceholder="🔍 Search studio..."
                   placeholder="All Studios (Consolidated)"
                   usePortal={false}
+                  isOpen={openDropdown === 'studio'}
+                  onToggle={(open) => setOpenDropdown(open ? 'studio' : 'none')}
+                  onClose={() => setOpenDropdown('none')}
                 />
               </div>
             )}
 
             {/* 2. Month Filter */}
-            <div className="space-y-1.5 relative z-10">
+            <div className="space-y-1.5 relative z-[20]">
               <label className="text-xs font-bold text-slate-700 dark:text-stone-300 uppercase tracking-wider flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                 <span>Select Booking Month</span>
@@ -345,7 +348,7 @@ export default function ShootFilterModal({
             </div>
 
             {/* 3. Custom Date Range */}
-            <div className="space-y-1.5 relative z-10">
+            <div className="space-y-1.5 relative z-[15]">
               <label className="text-xs font-bold text-slate-700 dark:text-stone-300 uppercase tracking-wider flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                 <span>Custom Date Range (From → To)</span>
@@ -373,7 +376,7 @@ export default function ShootFilterModal({
             </div>
 
             {/* 4. Event Types Multi-select with 3D Checkboxes */}
-            <div className={`space-y-1.5 relative ${openDropdown === 'event' ? 'z-[60]' : 'z-10'}`}>
+            <div className={`space-y-1.5 relative ${openDropdown === 'event' ? 'z-[80]' : 'z-[14]'}`}>
               <MultiSelect3DCreamDropdown
                 label="Event Type"
                 icon={<Tag className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />}
@@ -390,7 +393,7 @@ export default function ShootFilterModal({
             </div>
 
             {/* 5. Filter by Team Member Multi-select */}
-            <div className={`space-y-1.5 relative ${openDropdown === 'member' ? 'z-[60]' : 'z-10'}`}>
+            <div className={`space-y-1.5 relative ${openDropdown === 'member' ? 'z-[80]' : 'z-[13]'}`}>
               <MultiSelect3DCreamDropdown
                 label="Filter by Team Member"
                 icon={<Users className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />}
@@ -412,7 +415,7 @@ export default function ShootFilterModal({
 
             {/* 6. Project Manager (PM) Multi-select */}
             {showPmFilter && (
-              <div className={`space-y-1.5 relative ${openDropdown === 'pm' ? 'z-[60]' : 'z-10'}`}>
+              <div className={`space-y-1.5 relative ${openDropdown === 'pm' ? 'z-[80]' : 'z-[12]'}`}>
                 <MultiSelect3DCreamDropdown
                   label="Project Manager (PM)"
                   icon={<UserCheck className="w-3.5 h-3.5 text-indigo-600" />}
@@ -434,7 +437,7 @@ export default function ShootFilterModal({
             )}
 
             {/* 7. Crew Assignment Status Multi-select */}
-            <div className={`space-y-1.5 relative ${openDropdown === 'status' ? 'z-[60]' : 'z-10'}`}>
+            <div className={`space-y-1.5 relative ${openDropdown === 'status' ? 'z-[80]' : 'z-[11]'}`}>
               <MultiSelect3DCreamDropdown
                 label="Crew Assignment Status"
                 icon={<Users className="w-3.5 h-3.5 text-slate-600 dark:text-stone-400" />}
@@ -454,7 +457,7 @@ export default function ShootFilterModal({
             </div>
 
             {/* 8. Crew Roles Multi-select */}
-            <div className={`space-y-1.5 relative ${openDropdown === 'role' ? 'z-[60]' : 'z-10'}`}>
+            <div className={`space-y-1.5 relative ${openDropdown === 'role' ? 'z-[80]' : 'z-[10]'}`}>
               <MultiSelect3DCreamDropdown
                 label="Crew Role"
                 icon={<Layers className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />}

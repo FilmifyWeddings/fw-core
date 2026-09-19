@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ChevronDown, Calendar, Layers, FileCheck, Plus, Sparkles, UserCheck, Search, X, RefreshCw
@@ -62,6 +62,11 @@ export default function PostProductionCard({
   const [isAddingSegment, setIsAddingSegment] = useState(false);
   const [segmentSearchQuery, setSegmentSearchQuery] = useState('');
   const [segmentToDelete, setSegmentToDelete] = useState<string | null>(null);
+  const [localPM, setLocalPM] = useState<string | null>(project.project_manager_name || null);
+
+  useEffect(() => {
+    setLocalPM(project.project_manager_name || null);
+  }, [project.project_manager_name]);
 
   const deliverables = useMemo(() => project.deliverables || [], [project.deliverables]);
 
@@ -116,7 +121,7 @@ export default function PostProductionCard({
     // Sort team members alphabetically
     const sortedMembers = [...teamMembers].sort((a, b) => a.name.localeCompare(b.name));
 
-    return [
+    const list: Searchable3DCreamSelectOption[] = [
       {
         value: 'unassigned',
         label: 'Assign PM',
@@ -136,7 +141,18 @@ export default function PostProductionCard({
         };
       }),
     ];
-  }, [teamMembers]);
+
+    const currentName = localPM || project.project_manager_name;
+    if (currentName && currentName !== 'unassigned' && !list.some(o => o.value === currentName)) {
+      list.push({
+        value: currentName,
+        label: currentName,
+        initials: currentName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase(),
+      });
+    }
+
+    return list;
+  }, [teamMembers, localPM, project.project_manager_name]);
 
   // Handle Deliverable Item Update
   const handleUpdateItem = (itemId: string, field: keyof PostProductionDeliverable, value: any) => {
@@ -367,12 +383,15 @@ export default function PostProductionCard({
               Project Manager
             </span>
             <Searchable3DCreamSelect
-              value={project.project_manager_name || 'unassigned'}
+              value={localPM || 'unassigned'}
               onChange={(val) => {
                 const matched = teamMembers.find(m => m.name === val || m.id === val);
+                const nextName = val === 'unassigned' ? null : (matched?.name || val);
+                const nextId = val === 'unassigned' ? null : (matched?.id || null);
+                setLocalPM(nextName);
                 onUpdateProject(project.id, {
-                  project_manager_id: val === 'unassigned' ? null : (matched?.id || null),
-                  project_manager_name: val === 'unassigned' ? null : (matched?.name || val),
+                  project_manager_id: nextId,
+                  project_manager_name: nextName,
                 });
               }}
               options={pmOptions}

@@ -99,6 +99,7 @@ export async function POST(req: NextRequest) {
         .update({
           final_quotation_id: shouldUnmark ? null : quotationId,
           quotation_id: shouldUnmark ? null : quotationId,
+          ...(shouldUnmark ? {} : { status: 'booked' }),
           updated_at: now
         })
         .eq('id', leadId);
@@ -389,6 +390,27 @@ export async function POST(req: NextRequest) {
                     enabled_segments: parsed.enabledSegments || ['Wedding'],
                     updated_at: now
                   }, { onConflict: 'project_id' });
+              } catch (_) {}
+
+              try {
+                await supabaseAdmin
+                  .from('post_production_deliverables')
+                  .delete()
+                  .eq('project_id', workspaceClientId);
+
+                if (parsed.deliverables && parsed.deliverables.length > 0) {
+                  const rowsToInsert = parsed.deliverables.map(deliv => ({
+                    project_id: workspaceClientId,
+                    segment: deliv.segment || 'Wedding',
+                    category: deliv.category || 'Photos',
+                    title: deliv.title,
+                    specs: deliv.specs || deliv.count || null,
+                    status: 'Upcoming',
+                    is_custom: false,
+                    updated_at: now
+                  }));
+                  await supabaseAdmin.from('post_production_deliverables').insert(rowsToInsert);
+                }
               } catch (_) {}
             }
           }

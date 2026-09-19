@@ -266,6 +266,10 @@ export function LeadQuotationModal({ isOpen, onClose, lead, onFinalSet }: LeadQu
         if (onFinalSet && !unmark) {
           onFinalSet(q);
         }
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('quotation_finalized', { detail: { leadId: lead.id, quotationId: q.template_id || q.id } }));
+          localStorage.setItem('post_production_updated', Date.now().toString());
+        }
       } else {
         setErrorMsg(json.error || 'Failed to update final quotation status.');
       }

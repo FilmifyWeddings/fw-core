@@ -194,6 +194,22 @@ async function handleUpdate(
 
     // ── NORMAL USER FORKING ENGINE ──
     if (isSystemTemplate) {
+      // Check workspace template quota limit (Max 10)
+      const { count: currentCount } = await supabaseAdmin
+        .from('quotation_templates')
+        .select('id', { count: 'exact', head: true })
+        .eq('workspace_id', workspaceId)
+        .eq('is_system_template', false);
+
+      if ((currentCount || 0) >= 10) {
+        return NextResponse.json({ 
+          error: 'Quotation Limit Reached: You have reached the maximum limit of 10 quotation designs. Please delete an existing design to create a new one.',
+          code: 'QUOTA_EXCEEDED',
+          limit: 10,
+          current: currentCount
+        }, { status: 403 });
+      }
+
       const randomSuffix = Math.random().toString(36).substring(2, 10).toUpperCase();
       const newTemplateId = `FW-USER-${randomSuffix}`;
 

@@ -16,7 +16,9 @@ export interface PostProductionComment {
  */
 export function categorizeDeliverable(text: string): 'Photos' | 'Videos' | 'Albums' {
   const t = (text || '').toLowerCase();
-  if (/album|book|photobook|sheet|print|flush\s*mount/i.test(t)) return 'Albums';
+  // Photo Calendar, Wall Calendar, Table Calendar, etc. are Album / Print deliverables, NOT Photos!
+  if (/calendar/i.test(t)) return 'Albums';
+  if (/album|book|photobook|sheet|print|flush\s*mount|magazine|box|frame/i.test(t)) return 'Albums';
   if (/video|film|teaser|reel|cinemat|trailer|footage|highlight/i.test(t)) return 'Videos';
   return 'Photos';
 }
@@ -65,6 +67,9 @@ export function determineDeliverableSegment(eventTitle: string, itemText: string
 export function cleanDeliverableTitle(text: string): string {
   if (!text) return '';
   let t = text.trim();
+
+  // Strip leading prefixes like "Complimentary ", "Free ", "Bonus "
+  t = t.replace(/^(?:complimentary|free|bonus)\s+/i, '');
 
   // Strip leading list enumeration like "1. ", "1) ", "• ", "- ", "* "
   t = t.replace(/^[\s•*–-]*\d+[\.)\]]\s*/, '');
@@ -227,7 +232,7 @@ export function parseQuotationDeliverables(q: any): {
       const lines: string[] = [];
 
       if (typeof delivRaw === 'string') {
-        lines.push(...delivRaw.split('\n').map((s: string) => s.trim()).filter(Boolean));
+        lines.push(...delivRaw.split(/[\n|;]+/).map((s: string) => s.trim()).filter(Boolean));
       } else if (Array.isArray(doc.shootDetails.selectedItems)) {
         lines.push(...doc.shootDetails.selectedItems.map((s: any) => String(s).trim()).filter(Boolean));
       }
@@ -525,12 +530,23 @@ export function autoSyncClientDeliverables(
     } catch (_) {}
   }
 
+  // Final strict deduplication by segment + category + clean title
+  const finalUnique: PostProductionDeliverable[] = [];
+  const seenSet = new Set<string>();
+  for (const d of parsed) {
+    const key = `${(d.segment || 'Wedding').toLowerCase()}_${(d.category || 'Photos').toLowerCase()}_${cleanDeliverableTitle(d.title || '').toLowerCase()}`;
+    if (!seenSet.has(key)) {
+      seenSet.add(key);
+      finalUnique.push(d);
+    }
+  }
+
   return {
-    deliverables: parsed,
+    deliverables: finalUnique,
     enabledSegments: enabledSegments.length > 0 ? enabledSegments : undefined,
     quotationId: qId,
     quotationTitle: qTitle,
-    wasSynced: parsed.length > 0,
+    wasSynced: finalUnique.length > 0,
   };
 }
 
@@ -585,26 +601,31 @@ export async function persistDeliverablesDecoupled(params: {
     }
 
     if (projectId && Array.isArray(deliverables)) {
-      for (const deliv of deliverables) {
-        if (deliv.id && deliv.title) {
-          try {
-            await supabase
-              .from('post_production_deliverables')
-              .upsert({
-                id: deliv.id.includes('-') ? deliv.id : undefined,
-                project_id: projectId,
-                segment: deliv.segment || 'Wedding',
-                category: deliv.category || 'Photos',
-                title: deliv.title,
-                status: deliv.status || 'Upcoming',
-                assigned_member_id: deliv.assigned_member_id || null,
-                due_date: deliv.due_date || deliv.deadline || null,
-                notes: deliv.notes || null,
-                is_custom: deliv.is_custom || false,
-                updated_at: new Date().toISOString(),
-              }, { onConflict: 'id' });
-          } catch (_) {}
+      try {
+        await supabase
+          .from('post_production_deliverables')
+          .delete()
+          .eq('project_id', projectId);
+
+        if (deliverables.length > 0) {
+          const rowsToInsert = deliverables.map(deliv => ({
+            project_id: projectId,
+            segment: deliv.segment || 'Wedding',
+            category: deliv.category || 'Photos',
+            custom_category_name: deliv.custom_category_name || null,
+            title: deliv.title,
+            specs: deliv.specs || deliv.count || null,
+            status: deliv.status || 'Upcoming',
+            assigned_member_id: deliv.assigned_member_id || null,
+            due_date: deliv.due_date || deliv.deadline || null,
+            notes: deliv.notes || null,
+            is_custom: deliv.is_custom || false,
+            updated_at: new Date().toISOString(),
+          }));
+          await supabase.from('post_production_deliverables').insert(rowsToInsert);
         }
+      } catch (delivErr) {
+        console.warn('Error syncing post_production_deliverables:', delivErr);
       }
     }
   } catch (err) {

@@ -14,7 +14,7 @@ import PostProductionFilterModal, { PostProductionFilters } from './components/P
 import DeliverableCommentDrawer from './components/DeliverableCommentDrawer';
 import PostProductionOverdueModal, { OverdueDeliverableItem } from './components/PostProductionOverdueModal';
 import { PostProductionDeliverable } from './components/DeliverableCategorySection';
-import { autoSyncClientDeliverables, persistDeliverablesDecoupled, isDemoDeliverables, findClientFinalQuotation } from '@/lib/services/postProductionSyncService';
+import { autoSyncClientDeliverables, persistDeliverablesDecoupled, isDemoDeliverables, findClientFinalQuotation, cleanDeliverableTitle } from '@/lib/services/postProductionSyncService';
 import { Searchable3DCreamSelectOption } from '@/components/ui/Searchable3DCreamSelect';
 import { fetchWorkspaceEventTypes } from '@/lib/workspace-settings';
 
@@ -33,36 +33,17 @@ let memCachedPostProdClients: any[] = [];
 let memCachedPostProdQuotations: any[] = [];
 
 export default function PostProductionPage() {
-  const [projects, setProjects] = useState<PostProductionProjectData[]>(() => {
-    if (memCachedPostProdProjects.length > 0) return memCachedPostProdProjects;
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = localStorage.getItem('sc_cached_pp_projects');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            memCachedPostProdProjects = parsed;
-            return parsed;
-          }
-        }
-      } catch (_) {}
-    }
-    return [];
-  });
-  const [clients, setClients] = useState<any[]>(() => memCachedPostProdClients);
-  const [quotations, setQuotations] = useState<any[]>(() => memCachedPostProdQuotations);
-  const [teamMembers, setTeamMembers] = useState<PostProductionTeamMember[]>(() => memCachedPostProdTeamMembers);
+  const [projects, setProjects] = useState<PostProductionProjectData[]>([]);
+  const [clients, setClients] = useState<any[]>([]);
+  const [quotations, setQuotations] = useState<any[]>([]);
+  const [teamMembers, setTeamMembers] = useState<PostProductionTeamMember[]>([]);
   const [eventTypes, setEventTypes] = useState<any[]>([]);
-  const [loading, setLoading] = useState<boolean>(() => memCachedPostProdProjects.length === 0);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [mounted, setMounted] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Expanded & highlighted cards
-  const [expandedCards, setExpandedCards] = useState<Set<string>>(() => {
-    if (memCachedPostProdProjects.length > 0) {
-      return new Set([memCachedPostProdProjects[0].id]);
-    }
-    return new Set();
-  });
+  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
   const [highlightedCardId, setHighlightedCardId] = useState<string | null>(null);
 
   // Overdue Center Modal State
@@ -86,14 +67,43 @@ export default function PostProductionPage() {
   const [drawerInitialTab, setDrawerInitialTab] = useState<'comments' | 'links'>('comments');
 
   useEffect(() => {
+    setMounted(true);
+    if (memCachedPostProdProjects.length > 0) {
+      setProjects(memCachedPostProdProjects);
+      setLoading(false);
+      setExpandedCards(new Set([memCachedPostProdProjects[0].id]));
+    } else {
+      try {
+        const stored = localStorage.getItem('sc_cached_pp_projects');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            memCachedPostProdProjects = parsed;
+            setProjects(parsed);
+            setLoading(false);
+            setExpandedCards(new Set([parsed[0].id]));
+          }
+        }
+      } catch (_) {}
+    }
+    if (memCachedPostProdTeamMembers.length > 0) {
+      setTeamMembers(memCachedPostProdTeamMembers);
+    }
     fetchPostProductionData();
 
     const handleSettingsUpdated = () => {
       fetchPostProductionData();
     };
     window.addEventListener('post_production_settings_updated', handleSettingsUpdated);
+    window.addEventListener('quotation_finalized', handleSettingsUpdated);
+    window.addEventListener('storage', (e) => {
+      if (e.key === 'sc_cached_pp_projects' || e.key === 'post_production_updated') {
+        fetchPostProductionData();
+      }
+    });
     return () => {
       window.removeEventListener('post_production_settings_updated', handleSettingsUpdated);
+      window.removeEventListener('quotation_finalized', handleSettingsUpdated);
     };
   }, []);
 
@@ -196,13 +206,37 @@ export default function PostProductionPage() {
         }
 
         const { data: qData } = await qQuery;
-        qList = qData || [];
+
+        // Also fetch quotation_documents for this workspace / user
+        let qDocQuery = supabase
+          .from('quotation_documents')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (workspaceId && workspaceId !== 'ws_demo') {
+          qDocQuery = qDocQuery.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
+        }
+
+        const { data: qDocData } = await qDocQuery;
+
+        const mergedMap = new Map<string, any>();
+        (qData || []).forEach((q: any) => mergedMap.set(q.id, q));
+        (qDocData || []).forEach((qd: any) => {
+          const key = qd.template_id || qd.id;
+          if (mergedMap.has(key)) {
+            mergedMap.set(key, { ...mergedMap.get(key), ...qd });
+          } else {
+            mergedMap.set(key, qd);
+          }
+        });
+
+        qList = Array.from(mergedMap.values());
         setQuotations(qList);
       } catch (qErr) {
         console.warn('Error fetching quotations:', qErr);
       }
 
-      // 3. Fetch Workspace Clients & FW Projects
+      // 3. Fetch Workspace Clients & FW Projects & Booked/Finalized Leads
       let clientQuery = supabase
         .from('workspace_clients')
         .select('*')
@@ -213,7 +247,47 @@ export default function PostProductionPage() {
       }
 
       const { data: clientData } = await clientQuery;
-      const clientList = clientData || [];
+      const clientList: any[] = clientData ? [...clientData] : [];
+
+      // Also fetch leads that have final_quotation_id or booked/accepted status
+      try {
+        let leadsQuery = supabase
+          .from('leads')
+          .select('*')
+          .or('final_quotation_id.not.is.null,status.in.(booked,accepted,closed,converted)')
+          .order('created_at', { ascending: false });
+
+        if (workspaceId && workspaceId !== 'ws_demo') {
+          leadsQuery = leadsQuery.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
+        }
+
+        const { data: leadsData } = await leadsQuery;
+        if (leadsData) {
+          for (const lead of leadsData) {
+            const exists = clientList.some(
+              c => c.id === lead.id || c.lead_id === lead.id || (c.name && lead.name && c.name.toLowerCase().trim() === lead.name.toLowerCase().trim())
+            );
+            if (!exists) {
+              clientList.push({
+                id: lead.id,
+                lead_id: lead.id,
+                name: lead.name || 'Untitled Client',
+                phone: lead.phone,
+                email: lead.email,
+                event_date: lead.event_date || lead.created_at,
+                event_type: lead.event_type || 'Wedding',
+                status: lead.status || 'booked',
+                created_at: lead.created_at,
+                notes: lead.notes,
+                final_quotation_id: lead.final_quotation_id
+              });
+            }
+          }
+        }
+      } catch (leadErr) {
+        console.warn('Error fetching booked leads for post production:', leadErr);
+      }
+
       setClients(clientList);
 
       // 4. Fetch FW Projects (master booking projects)
@@ -254,14 +328,17 @@ export default function PostProductionPage() {
 
       const pppMap = new Map<string, any>();
       if (pppData) {
-        pppData.forEach(p => pppMap.set(p.client_id, p));
+        pppData.forEach(p => {
+          if (p.client_id) pppMap.set(p.client_id, p);
+          if (p.id) pppMap.set(p.id, p);
+        });
       }
 
       // 6. Build Consolidated Project Cards List
       const cards: PostProductionProjectData[] = [];
 
       for (const client of clientList) {
-        const ppp = pppMap.get(client.id);
+        const ppp = pppMap.get(client.id) || (client.lead_id ? pppMap.get(client.lead_id) : null);
         const matchedFwProject = (fwProjects || []).find(
           fp => fp.client_name?.toLowerCase() === client.name?.toLowerCase() || fp.id === client.id
         );
@@ -277,7 +354,9 @@ export default function PostProductionPage() {
         // Gracefully normalize legacy deliverables (TitleCase categories, default segments, specs sync)
         projectDeliverables = projectDeliverables.map(d => {
           const rawCat = (d.category || 'Photos').trim().toLowerCase();
-          const normCat = (rawCat === 'photos' || rawCat === 'photo' || rawCat === 'stills') ? 'Photos'
+          const isCalendar = /calendar/i.test(d.title || '') || /calendar/i.test(d.name || '');
+          const normCat = isCalendar ? 'Albums'
+            : (rawCat === 'photos' || rawCat === 'photo' || rawCat === 'stills') ? 'Photos'
             : (rawCat === 'videos' || rawCat === 'video' || rawCat === 'films') ? 'Videos'
             : (rawCat === 'albums' || rawCat === 'album' || rawCat === 'photobooks') ? 'Albums'
             : (d.category ? (d.category.charAt(0).toUpperCase() + d.category.slice(1)) : 'Photos');
@@ -293,6 +372,18 @@ export default function PostProductionPage() {
             count: cleanSpecs,
           };
         });
+
+        // Strict deduplication of deliverables right upon load
+        const uniqueDelivs: any[] = [];
+        const seenKeys = new Set<string>();
+        for (const d of projectDeliverables) {
+          const key = `${(d.segment || 'Wedding').toLowerCase()}_${(d.category || 'Photos').toLowerCase()}_${cleanDeliverableTitle(d.title || '').toLowerCase()}`;
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            uniqueDelivs.push(d);
+          }
+        }
+        projectDeliverables = uniqueDelivs;
 
         // Extract project manager from client notes JSON, client columns, or handled_by
         let extractedPMName: string | null = null;
@@ -341,8 +432,12 @@ export default function PostProductionPage() {
           }
         }
 
-        const effectivePM = ppp?.project_manager_name || matchedFwProject?.project_manager_name || client.project_manager_name || matchedPMName || null;
-        const effectivePMId = ppp?.project_manager_id || matchedFwProject?.project_manager_id || client.project_manager_id || matchedPMId || null;
+        const effectivePM = (ppp && ('project_manager_name' in ppp) && ppp.project_manager_name !== undefined)
+          ? ppp.project_manager_name
+          : (matchedFwProject?.project_manager_name || client.project_manager_name || matchedPMName || null);
+        const effectivePMId = (ppp && ('project_manager_id' in ppp) && ppp.project_manager_id !== undefined)
+          ? ppp.project_manager_id
+          : (matchedFwProject?.project_manager_id || client.project_manager_id || matchedPMId || null);
 
         // Reliably match client's true final quotation
         const clientFinalQuote = findClientFinalQuotation(client, qList);
@@ -441,6 +536,51 @@ export default function PostProductionPage() {
         });
       }
 
+      // Include any standalone post_production_projects that may not be linked to a client record yet
+      if (pppData) {
+        for (const p of pppData) {
+          const alreadyAdded = cards.some(c => c.client_id === p.client_id || c.id === p.id);
+          if (!alreadyAdded && p.client_id) {
+            let pDeliverables: any[] = Array.isArray(p.deliverables) ? p.deliverables : [];
+            pDeliverables = pDeliverables.map(d => {
+              const rawCat = (d.category || 'Photos').trim().toLowerCase();
+              const isCalendar = /calendar/i.test(d.title || '') || /calendar/i.test(d.name || '');
+              const normCat = isCalendar ? 'Albums'
+                : (rawCat === 'photos' || rawCat === 'photo' || rawCat === 'stills') ? 'Photos'
+                : (rawCat === 'videos' || rawCat === 'video' || rawCat === 'films') ? 'Videos'
+                : (rawCat === 'albums' || rawCat === 'album' || rawCat === 'photobooks') ? 'Albums'
+                : (d.category ? (d.category.charAt(0).toUpperCase() + d.category.slice(1)) : 'Photos');
+              return {
+                ...d,
+                category: normCat,
+                segment: d.segment ? d.segment.trim() : 'Wedding',
+                specs: d.specs || d.count || null,
+                count: d.specs || d.count || null,
+              };
+            });
+
+            cards.push({
+              id: p.id || `proj_${p.client_id}`,
+              project_id: p.client_id,
+              workspace_id: workspaceId,
+              client_id: p.client_id,
+              client_name: p.client_name || 'Project Client',
+              couple_names: null,
+              event_date: p.created_at,
+              event_type: 'Wedding',
+              project_manager_id: p.project_manager_id || null,
+              project_manager_name: p.project_manager_name || null,
+              overall_status: p.overall_status || 'active',
+              deliverables: pDeliverables,
+              quotation_id: null,
+              quotation_title: null,
+              enabled_segments: ['Wedding'],
+              disabled_categories: undefined,
+            });
+          }
+        }
+      }
+
       setProjects(cards);
       memCachedPostProdProjects = cards;
       memCachedPostProdTeamMembers = members;
@@ -474,15 +614,89 @@ export default function PostProductionPage() {
 
   // Persist Project Deliverable Updates Decoupled
   const handleUpdateProject = async (projectId: string, updated: Partial<PostProductionProjectData>) => {
+    // 1. Synchronously update in-memory cache and localStorage for instant 0ms transitions
+    memCachedPostProdProjects = memCachedPostProdProjects.map(p => {
+      if (p.id === projectId) {
+        return { ...p, ...updated };
+      }
+      return p;
+    });
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('sc_cached_pp_projects', JSON.stringify(memCachedPostProdProjects));
+      } catch (_) {}
+    }
+
     setProjects(prev => prev.map(p => {
       if (p.id === projectId) {
         const merged = { ...p, ...updated };
+
+        // Strict deduplication of deliverables
+        let cleanDeliverables: any[] = merged.deliverables || [];
+        if (Array.isArray(cleanDeliverables) && cleanDeliverables.length > 0) {
+          const uniqueD: any[] = [];
+          const seenK = new Set<string>();
+          for (const d of cleanDeliverables) {
+            const key = `${(d.segment || 'Wedding').toLowerCase()}_${(d.category || 'Photos').toLowerCase()}_${cleanDeliverableTitle(d.title || '').toLowerCase()}`;
+            if (!seenK.has(key)) {
+              seenK.add(key);
+              uniqueD.push(d);
+            }
+          }
+          cleanDeliverables = uniqueD;
+          merged.deliverables = cleanDeliverables;
+        }
 
         // Save to post_production_projects in background
         (async () => {
           try {
             const { data: { session } } = await supabase.auth.getSession();
             const workspaceId = session?.user?.id || 'ws_demo';
+
+            // If PM changed, synchronize immediately to workspace_clients, fw_projects, and leads
+            if (updated.project_manager_name !== undefined || updated.project_manager_id !== undefined) {
+              const pmName = updated.project_manager_name ?? null;
+              const pmId = updated.project_manager_id ?? null;
+
+              if (merged.client_id) {
+                try {
+                  await supabase
+                    .from('workspace_clients')
+                    .update({
+                      project_manager_name: pmName,
+                      project_manager_id: pmId,
+                      handled_by: pmName,
+                      updated_at: new Date().toISOString(),
+                    })
+                    .eq('id', merged.client_id);
+                } catch (_) {}
+
+                try {
+                  await supabase
+                    .from('leads')
+                    .update({
+                      project_manager_name: pmName,
+                      project_manager_id: pmId,
+                      handled_by: pmName,
+                      updated_at: new Date().toISOString(),
+                    })
+                    .eq('id', merged.client_id);
+                } catch (_) {}
+              }
+
+              if (merged.project_id) {
+                try {
+                  await supabase
+                    .from('fw_projects')
+                    .update({
+                      project_manager_name: pmName,
+                      project_manager_id: pmId,
+                      updated_at: new Date().toISOString(),
+                    })
+                    .eq('id', merged.project_id);
+                } catch (_) {}
+              }
+            }
 
             const configEncoded = encodeURIComponent(JSON.stringify({
               enabled_segments: merged.enabled_segments,
@@ -494,7 +708,7 @@ export default function PostProductionPage() {
               project_manager_id: merged.project_manager_id,
               project_manager_name: merged.project_manager_name,
               overall_status: merged.overall_status,
-              deliverables: merged.deliverables,
+              deliverables: cleanDeliverables,
               notes: `quotation_id:${merged.quotation_id || ''};quotation_title:${merged.quotation_title || ''};pp_config:${configEncoded};`,
               updated_at: new Date().toISOString(),
             };
@@ -528,28 +742,34 @@ export default function PostProductionPage() {
               } catch (_) {}
             }
 
-            // Also synchronize with post_production_deliverables table if project_id exists
-            if (merged.project_id && Array.isArray(merged.deliverables)) {
-              for (const deliv of merged.deliverables) {
-                if (deliv.id && deliv.title) {
-                  await supabase
-                    .from('post_production_deliverables')
-                    .upsert({
-                      id: deliv.id.includes('-') ? deliv.id : undefined,
-                      project_id: merged.project_id,
-                      segment: deliv.segment || 'Wedding',
-                      category: deliv.category || 'Photos',
-                      custom_category_name: deliv.custom_category_name || null,
-                      title: deliv.title,
-                      specs: deliv.specs || deliv.count || null,
-                      status: deliv.status || 'Upcoming',
-                      assigned_member_id: deliv.assigned_member_id || null,
-                      due_date: deliv.due_date || deliv.deadline || null,
-                      notes: deliv.notes || null,
-                      is_hidden: deliv.is_hidden || false,
-                      updated_at: new Date().toISOString(),
-                    }, { onConflict: 'id' });
+            // Also synchronize with post_production_deliverables table (delete old rows first to prevent duplicate accumulation)
+            if (merged.project_id && Array.isArray(cleanDeliverables)) {
+              try {
+                await supabase
+                  .from('post_production_deliverables')
+                  .delete()
+                  .eq('project_id', merged.project_id);
+
+                if (cleanDeliverables.length > 0) {
+                  const rowsToInsert = cleanDeliverables.map(deliv => ({
+                    project_id: merged.project_id,
+                    segment: deliv.segment || 'Wedding',
+                    category: deliv.category || 'Photos',
+                    custom_category_name: deliv.custom_category_name || null,
+                    title: deliv.title,
+                    specs: deliv.specs || deliv.count || null,
+                    status: deliv.status || 'Upcoming',
+                    assigned_member_id: deliv.assigned_member_id || null,
+                    due_date: deliv.due_date || deliv.deadline || null,
+                    notes: deliv.notes || null,
+                    is_hidden: deliv.is_hidden || false,
+                    is_custom: deliv.is_custom || false,
+                    updated_at: new Date().toISOString(),
+                  }));
+                  await supabase.from('post_production_deliverables').insert(rowsToInsert);
                 }
+              } catch (delivErr) {
+                console.warn('Error replacing post_production_deliverables:', delivErr);
               }
             }
           } catch (err) {
@@ -789,13 +1009,13 @@ export default function PostProductionPage() {
       const existingMap = new Map<string, PostProductionDeliverable>();
       if (!isDemo) {
         (proj.deliverables || []).forEach(d => {
-          const key = `${(d.segment || '').toLowerCase()}_${(d.title || '').toLowerCase()}`;
+          const key = `${(d.segment || '').toLowerCase()}_${cleanDeliverableTitle(d.title || '').toLowerCase()}`;
           existingMap.set(key, d);
         });
       }
 
       const mergedDeliverables = syncResult.deliverables.map(newD => {
-        const key = `${(newD.segment || '').toLowerCase()}_${(newD.title || '').toLowerCase()}`;
+        const key = `${(newD.segment || '').toLowerCase()}_${cleanDeliverableTitle(newD.title || '').toLowerCase()}`;
         const existing = existingMap.get(key);
         if (existing) {
           return {
@@ -812,22 +1032,35 @@ export default function PostProductionPage() {
         return newD;
       });
 
-      // Retain custom deliverables created manually by user
+      // Retain custom deliverables created manually by user (avoid duplicate insertion)
       if (!isDemo) {
         (proj.deliverables || []).forEach(d => {
           if (d.is_custom) {
-            mergedDeliverables.push(d);
+            const key = `${(d.segment || '').toLowerCase()}_${cleanDeliverableTitle(d.title || '').toLowerCase()}`;
+            if (!mergedDeliverables.some(m => `${(m.segment || '').toLowerCase()}_${cleanDeliverableTitle(m.title || '').toLowerCase()}` === key)) {
+              mergedDeliverables.push(d);
+            }
           }
         });
+      }
+
+      // Final strict deduplication by segment + category + cleanTitle
+      const finalCleanDelivs: PostProductionDeliverable[] = [];
+      const seenSyncKeys = new Set<string>();
+      for (const d of mergedDeliverables) {
+        const key = `${(d.segment || 'Wedding').toLowerCase()}_${(d.category || 'Photos').toLowerCase()}_${cleanDeliverableTitle(d.title || '').toLowerCase()}`;
+        if (!seenSyncKeys.has(key)) {
+          seenSyncKeys.add(key);
+          finalCleanDelivs.push(d);
+        }
       }
 
       const updatedSegments = syncResult.enabledSegments && syncResult.enabledSegments.length > 0
         ? syncResult.enabledSegments
         : proj.enabled_segments;
 
-
       handleUpdateProject(projectId, {
-        deliverables: mergedDeliverables,
+        deliverables: finalCleanDelivs,
         quotation_id: syncResult.quotationId || proj.quotation_id,
         quotation_title: syncResult.quotationTitle || proj.quotation_title,
         enabled_segments: updatedSegments,
@@ -930,8 +1163,8 @@ export default function PostProductionPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#FAF9F5] dark:bg-[#121110] text-slate-900 dark:text-stone-100 pb-20 pt-2 px-2 sm:px-4 py-3">
-      <div className="w-full max-w-[1600px] mx-auto space-y-6">
+    <div className="min-h-screen bg-[#FAF9F5] dark:bg-[#121110] text-slate-900 dark:text-stone-100 pb-20 pt-2 px-4 sm:px-6 lg:px-8 py-3">
+      <div className="w-full space-y-6">
 
         {/* ─────────────────────────────────────────────────────────────
             HEADER & TOP CONTROLS (3D CREAM STUDIO SUITE)
@@ -970,7 +1203,7 @@ export default function PostProductionPage() {
               className="p-2 text-slate-600 dark:text-stone-300 hover:text-slate-900 bg-amber-50/60 dark:bg-stone-800 hover:bg-amber-100/80 border border-amber-200/80 dark:border-stone-700 rounded-xl transition shadow-2xs cursor-pointer"
               title="Refresh Data"
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${mounted && loading ? 'animate-spin' : ''}`} />
             </button>
           </div>
         </div>
@@ -984,8 +1217,8 @@ export default function PostProductionPage() {
               <p className="text-[11px] font-extrabold text-slate-500 dark:text-stone-400 uppercase tracking-wider">
                 Total Studio Projects
               </p>
-              <h3 className="text-2xl font-black text-slate-900 dark:text-stone-100 mt-1">
-                {totalStudioProjects} <span className="text-xs font-bold text-slate-500 dark:text-stone-400">Projects</span>
+              <h3 suppressHydrationWarning className="text-2xl font-black text-slate-900 dark:text-stone-100 mt-1">
+                {mounted ? totalStudioProjects : 0} <span className="text-xs font-bold text-slate-500 dark:text-stone-400">Projects</span>
               </h3>
             </div>
             <div className="w-11 h-11 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 flex items-center justify-center">
@@ -998,10 +1231,10 @@ export default function PostProductionPage() {
               <p className="text-[11px] font-extrabold text-slate-500 dark:text-stone-400 uppercase tracking-wider">
                 Overall Deliverables Done
               </p>
-              <h3 className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
-                {overallDeliverablesPercentage}%{' '}
+              <h3 suppressHydrationWarning className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
+                {mounted ? overallDeliverablesPercentage : 0}%{' '}
                 <span className="text-xs font-bold text-slate-500 dark:text-stone-400">
-                  ({completedDeliverablesCount}/{totalDeliverablesCount})
+                  ({mounted ? completedDeliverablesCount : 0}/{mounted ? totalDeliverablesCount : 0})
                 </span>
               </h3>
             </div>
@@ -1015,8 +1248,8 @@ export default function PostProductionPage() {
               <p className="text-[11px] font-extrabold text-slate-500 dark:text-stone-400 uppercase tracking-wider">
                 Active Pipeline
               </p>
-              <h3 className="text-2xl font-black text-blue-600 dark:text-blue-400 mt-1">
-                {activePipeline} <span className="text-xs font-bold text-slate-500 dark:text-stone-400">Active</span>
+              <h3 suppressHydrationWarning className="text-2xl font-black text-blue-600 dark:text-blue-400 mt-1">
+                {mounted ? activePipeline : 0} <span className="text-xs font-bold text-slate-500 dark:text-stone-400">Active</span>
               </h3>
             </div>
             <div className="w-11 h-11 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 flex items-center justify-center">
@@ -1034,16 +1267,16 @@ export default function PostProductionPage() {
                 <p className="text-[11px] font-extrabold text-slate-500 dark:text-stone-400 uppercase tracking-wider">
                   Delayed / Overdue
                 </p>
-                {overdueDeliverablesList.length > 0 && (
+                {mounted && overdueDeliverablesList.length > 0 && (
                   <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400 border border-rose-200 dark:border-rose-900 animate-pulse">
                     View
                   </span>
                 )}
               </div>
-              <h3 className="text-2xl font-black text-rose-600 dark:text-rose-400 mt-1">
-                {delayedProjectsCount}{' '}
+              <h3 suppressHydrationWarning className="text-2xl font-black text-rose-600 dark:text-rose-400 mt-1">
+                {mounted ? delayedProjectsCount : 0}{' '}
                 <span className="text-xs font-bold text-slate-500 dark:text-stone-400">
-                  Projects ({overdueDeliverablesList.length} items)
+                  Projects ({mounted ? overdueDeliverablesList.length : 0} items)
                 </span>
               </h3>
             </div>

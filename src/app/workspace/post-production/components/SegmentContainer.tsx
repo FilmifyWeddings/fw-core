@@ -9,9 +9,11 @@ import DeliverableCategorySection, { PostProductionDeliverable } from './Deliver
 import PostProductionConfirmModal from './PostProductionConfirmModal';
 import { fetchPostProductionSettings } from '@/lib/post-production-settings';
 
-export function normalizeCategoryName(cat: string): string {
+export function normalizeCategoryName(cat: string, title?: string): string {
+  if (title && /calendar/i.test(title)) return 'Albums';
   if (!cat) return 'Photos';
   const c = cat.trim().toLowerCase();
+  if (/calendar/i.test(c)) return 'Albums';
   if (c === 'photos' || c === 'photo' || c === 'stills') return 'Photos';
   if (c === 'videos' || c === 'video' || c === 'films') return 'Videos';
   if (c === 'albums' || c === 'album' || c === 'photobooks') return 'Albums';
@@ -168,9 +170,9 @@ export default function SegmentContainer({
     });
 
     deliverables.forEach(d => {
-      if (d.category) {
-        const norm = normalizeCategoryName(d.category);
-        if (!disabledLower.has(norm.toLowerCase()) && !disabledLower.has(d.category.toLowerCase())) {
+      if (d.category || d.title) {
+        const norm = normalizeCategoryName(d.category, d.title || (d as any).name);
+        if (!disabledLower.has(norm.toLowerCase()) && !disabledLower.has((d.category || '').toLowerCase())) {
           discovered.add(norm);
         }
       }
@@ -292,7 +294,7 @@ export default function SegmentContainer({
       ) : (
         <div className="space-y-4">
           {activeCategories.map(cat => {
-            const catDeliverables = deliverables.filter(d => normalizeCategoryName(d.category) === cat);
+            const catDeliverables = deliverables.filter(d => normalizeCategoryName(d.category, d.title || (d as any).name) === cat);
             return (
               <DeliverableCategorySection
                 key={`${segmentName}_${cat}`}
