@@ -31,21 +31,25 @@ export default async function Image({ params }: ImageProps) {
   // Safe image pre-fetch into base64 data URI to prevent Satori rendering crashes
   let imageSrc: string | null = null;
   if (coverPhoto) {
-    try {
-      let optimizedPhotoUrl = coverPhoto;
-      if (optimizedPhotoUrl.includes('images.unsplash.com')) {
-        optimizedPhotoUrl = optimizedPhotoUrl.replace(/&w=\d+/, '') + '&w=600&q=75';
+    if (coverPhoto.startsWith('data:image/')) {
+      imageSrc = coverPhoto;
+    } else {
+      try {
+        let optimizedPhotoUrl = coverPhoto;
+        if (optimizedPhotoUrl.includes('images.unsplash.com')) {
+          optimizedPhotoUrl = optimizedPhotoUrl.replace(/&w=\d+/, '') + '&w=600&q=75';
+        }
+        const res = await fetch(optimizedPhotoUrl, { signal: AbortSignal.timeout(1500) });
+        if (res.ok) {
+          const buffer = await res.arrayBuffer();
+          const base64 = Buffer.from(buffer).toString('base64');
+          const mime = res.headers.get('content-type') || 'image/jpeg';
+          imageSrc = `data:${mime};base64,${base64}`;
+        }
+      } catch (e) {
+        console.warn('[opengraph-image] Failed to fetch coverPhoto:', e);
+        imageSrc = null;
       }
-      const res = await fetch(optimizedPhotoUrl, { signal: AbortSignal.timeout(1500) });
-      if (res.ok) {
-        const buffer = await res.arrayBuffer();
-        const base64 = Buffer.from(buffer).toString('base64');
-        const mime = res.headers.get('content-type') || 'image/jpeg';
-        imageSrc = `data:${mime};base64,${base64}`;
-      }
-    } catch (e) {
-      console.warn('[opengraph-image] Failed to fetch coverPhoto:', e);
-      imageSrc = null;
     }
   }
 
@@ -90,6 +94,7 @@ export default async function Image({ params }: ImageProps) {
               height: '16px',
               borderTop: '2px solid #C8A86B',
               borderLeft: '2px solid #C8A86B',
+              display: 'flex',
             }}
           />
           <div
@@ -101,6 +106,7 @@ export default async function Image({ params }: ImageProps) {
               height: '16px',
               borderTop: '2px solid #C8A86B',
               borderRight: '2px solid #C8A86B',
+              display: 'flex',
             }}
           />
           <div
@@ -112,6 +118,7 @@ export default async function Image({ params }: ImageProps) {
               height: '16px',
               borderBottom: '2px solid #C8A86B',
               borderLeft: '2px solid #C8A86B',
+              display: 'flex',
             }}
           />
           <div
@@ -123,6 +130,7 @@ export default async function Image({ params }: ImageProps) {
               height: '16px',
               borderBottom: '2px solid #C8A86B',
               borderRight: '2px solid #C8A86B',
+              display: 'flex',
             }}
           />
 
@@ -159,13 +167,14 @@ export default async function Image({ params }: ImageProps) {
                   textTransform: 'uppercase',
                 }}
               >
-                ✦ {eventType} Quotation ✦
+                {`${eventType.toUpperCase()} QUOTATION`}
               </span>
             </div>
 
             {/* Couple / Client Name */}
             <div
               style={{
+                display: 'flex',
                 fontSize: clientName.length > 25 ? '40px' : '48px',
                 fontWeight: 900,
                 color: '#FFFFFF',
@@ -176,7 +185,7 @@ export default async function Image({ params }: ImageProps) {
                 textShadow: '0 2px 8px rgba(0, 0, 0, 0.6)',
               }}
             >
-              {clientName}
+              <span>{clientName}</span>
             </div>
 
             {/* Studio Branding */}
@@ -197,7 +206,7 @@ export default async function Image({ params }: ImageProps) {
                   textTransform: 'uppercase',
                 }}
               >
-                Crafted by {studioName}
+                {`Crafted by ${studioName}`}
               </span>
             </div>
 
@@ -301,13 +310,16 @@ export default async function Image({ params }: ImageProps) {
             >
               <div
                 style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
                   fontSize: '48px',
                   color: '#E8C582',
                   fontWeight: 800,
                   letterSpacing: '4px',
                 }}
               >
-                {clientName.split(' ')[0]?.[0] || 'W'}&{clientName.split('&')?.[1]?.trim()?.[0] || 'Q'}
+                <span>{`${clientName.split(' ')[0]?.[0] || 'W'} & ${clientName.split('&')?.[1]?.trim()?.[0] || 'Q'}`}</span>
               </div>
             </div>
           )}

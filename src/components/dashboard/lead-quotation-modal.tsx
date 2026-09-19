@@ -358,24 +358,11 @@ export function LeadQuotationModal({ isOpen, onClose, lead, onFinalSet }: LeadQu
   const handleSendLink = async (q: QuotationVersionItem) => {
     setGeneratingLink(q.template_id);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token || '';
-
-      const res = await fetch('/api/quotations/send-link', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ quotationId: q.template_id })
-      });
-
-      const json = await res.json();
-      if (json.success && json.publicUrl) {
-        setActiveShareModal({ quotationId: q.template_id, url: json.publicUrl });
-      } else {
-        setErrorMsg('Failed to generate preview link.');
-      }
+      const origin = typeof window !== 'undefined' && window.location.origin.includes('localhost')
+        ? window.location.origin
+        : 'https://studiocore.in';
+      const previewUrl = `${origin}/workspace/quotations/builder/templet/${q.template_id}?preview=public&token=${q.template_id}`;
+      setActiveShareModal({ quotationId: q.template_id, url: previewUrl });
     } catch (err) {
       console.error('Error generating send link:', err);
       setErrorMsg('Network error generating preview link.');
@@ -685,7 +672,7 @@ export function LeadQuotationModal({ isOpen, onClose, lead, onFinalSet }: LeadQu
                               <button
                                 type="button"
                                 onClick={() => {
-                                  const clientUrl = `/p/quotation/${q.public_token || q.template_id}`;
+                                  const clientUrl = `/workspace/quotations/builder/templet/${q.template_id}?preview=public&token=${q.template_id}`;
                                   window.open(clientUrl, '_blank');
                                 }}
                                 className="p-2 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 border border-zinc-200/80 dark:border-zinc-700 transition-all cursor-pointer flex items-center justify-center hover:scale-105"

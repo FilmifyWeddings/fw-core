@@ -153,7 +153,9 @@ export async function resolvePublicQuotation(token: string): Promise<PublicQuota
     let rawPhoto = coverObj.photoUrl || coverObj.photo || coverObj.imageUrl || '';
     let coverPhoto = '';
     if (rawPhoto) {
-      if (rawPhoto.startsWith('http://') || rawPhoto.startsWith('https://')) {
+      if (rawPhoto.startsWith('data:image/')) {
+        coverPhoto = rawPhoto;
+      } else if (rawPhoto.startsWith('http://') || rawPhoto.startsWith('https://')) {
         coverPhoto = rawPhoto;
       } else {
         const mediaPath = getMediaUrl(rawPhoto);
