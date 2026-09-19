@@ -294,7 +294,14 @@ export default function SegmentContainer({
       ) : (
         <div className="space-y-4">
           {activeCategories.map(cat => {
-            const catDeliverables = deliverables.filter(d => normalizeCategoryName(d.category, d.title || (d as any).name) === cat);
+            const rawCatDeliverables = deliverables.filter(d => normalizeCategoryName(d.category, d.title || (d as any).name) === cat);
+            const seenTitles = new Set<string>();
+            const catDeliverables = rawCatDeliverables.filter(d => {
+              const k = (d.title || (d as any).name || '').trim().toLowerCase();
+              if (seenTitles.has(k)) return false;
+              seenTitles.add(k);
+              return true;
+            });
             return (
               <DeliverableCategorySection
                 key={`${segmentName}_${cat}`}

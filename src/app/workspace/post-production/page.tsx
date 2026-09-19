@@ -347,6 +347,10 @@ export default function PostProductionPage() {
         let projectDeliverables: any[] = [];
         if (matchedFwProject && delivsByProjectId.has(matchedFwProject.id)) {
           projectDeliverables = delivsByProjectId.get(matchedFwProject.id) || [];
+        } else if (delivsByProjectId.has(client.id)) {
+          projectDeliverables = delivsByProjectId.get(client.id) || [];
+        } else if (ppp && delivsByProjectId.has(ppp.id)) {
+          projectDeliverables = delivsByProjectId.get(ppp.id) || [];
         } else if (ppp && Array.isArray(ppp.deliverables) && ppp.deliverables.length > 0) {
           projectDeliverables = ppp.deliverables;
         }

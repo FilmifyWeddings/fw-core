@@ -602,13 +602,25 @@ export async function persistDeliverablesDecoupled(params: {
 
     if (projectId && Array.isArray(deliverables)) {
       try {
-        await supabase
-          .from('post_production_deliverables')
-          .delete()
-          .eq('project_id', projectId);
+        const targetIds = Array.from(new Set([projectId, clientId, updateData?.[0]?.id].filter(Boolean)));
+        for (const tId of targetIds) {
+          await supabase
+            .from('post_production_deliverables')
+            .delete()
+            .eq('project_id', tId);
+        }
 
-        if (deliverables.length > 0) {
-          const rowsToInsert = deliverables.map(deliv => ({
+        // Deduplicate deliverables before inserting
+        const seen = new Set<string>();
+        const uniqueDeliverables = deliverables.filter(deliv => {
+          const key = (deliv.segment || 'Wedding').toLowerCase() + '___' + (deliv.category || 'Photos').toLowerCase() + '___' + (deliv.title || '').trim().toLowerCase();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+
+        if (uniqueDeliverables.length > 0) {
+          const rowsToInsert = uniqueDeliverables.map(deliv => ({
             project_id: projectId,
             segment: deliv.segment || 'Wedding',
             category: deliv.category || 'Photos',

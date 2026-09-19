@@ -109,17 +109,17 @@ export async function POST(req: NextRequest) {
     const xForwardedProto = req.headers?.get('x-forwarded-proto');
     const rawHost = xForwardedHost || req.headers?.get('host') || '';
 
-    let origin = 'https://test.studiocore.in';
+    let origin = 'https://studiocore.in';
 
     const isIpOrNip = (h: string) => h.includes('nip.io') || /^\d+\.\d+\.\d+\.\d+/.test(h);
 
-    if (envAppUrl && !envAppUrl.includes('localhost') && !envAppUrl.includes('ngrok') && !isIpOrNip(envAppUrl)) {
+    if (envAppUrl && !envAppUrl.includes('localhost') && !envAppUrl.includes('ngrok') && !isIpOrNip(envAppUrl) && !envAppUrl.includes('test.studiocore.in')) {
       origin = envAppUrl.replace(/\/$/, '');
-    } else if (rawHost && !rawHost.includes('localhost') && !rawHost.includes('127.0.0.1') && !isIpOrNip(rawHost)) {
+    } else if (rawHost && !rawHost.includes('localhost') && !rawHost.includes('127.0.0.1') && !isIpOrNip(rawHost) && !rawHost.includes('test.studiocore.in')) {
       const proto = xForwardedProto || (rawHost.includes('localhost') ? 'http' : 'https');
       origin = `${proto}://${rawHost.replace(/\/$/, '')}`;
     } else {
-      origin = 'https://test.studiocore.in';
+      origin = 'https://studiocore.in';
     }
 
     const publicUrl = `${origin}/p/quotation/${publicToken}`;
