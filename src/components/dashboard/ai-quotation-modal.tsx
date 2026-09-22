@@ -9,7 +9,6 @@ import {
 } from 'lucide-react';
 import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
-import AiMicButton from '@/components/AiMicButton';
 
 interface AiQuotationModalProps {
   isOpen: boolean;
@@ -433,13 +432,6 @@ LEAD & CLIENT CONTEXT:
                       <MessageSquare className="w-3.5 h-3.5 text-amber-500" />
                       <span>Add anything else for AI (Optional)</span>
                     </label>
-                    <AiMicButton
-                      size="sm"
-                      buttonText="AI Voice"
-                      onInsertComment={(text) =>
-                        setAdditionalNotes((prev) => (prev ? `${prev}\n${text}` : text))
-                      }
-                    />
                   </div>
                   <textarea
                     rows={4}

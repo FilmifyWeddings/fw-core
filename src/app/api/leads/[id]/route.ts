@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { syncBookedLeadOrFinalQuotation } from '@/lib/quotation-finance-sync';
 
 export const runtime = 'nodejs';
 
@@ -34,6 +35,29 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (error) {
       console.error('[API Lead Update Error]:', error);
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
+
+    // Auto-sync across Client Directory, Bookings, Post Production, and Finance when moved to Booked
+    const isBookedNow = Boolean(
+      payload.stage === 'booked' ||
+      payload.status === 'booked' ||
+      (payload.stage && String(payload.stage).toLowerCase().includes('book')) ||
+      (payload.status && String(payload.status).toLowerCase().includes('book')) ||
+      (body.stage_name && String(body.stage_name).toLowerCase().includes('book')) ||
+      (payload.stage_id && String(payload.stage_id).toLowerCase().includes('book'))
+    );
+
+    if (isBookedNow) {
+      try {
+        await syncBookedLeadOrFinalQuotation({
+          leadId,
+          workspaceId: data?.workspace_id,
+          forceBookedStatus: true,
+          supabaseClient: supabaseAdmin
+        });
+      } catch (syncErr) {
+        console.error('[API Lead Update Sync Error]:', syncErr);
+      }
     }
 
     return NextResponse.json({ success: true, lead: data });

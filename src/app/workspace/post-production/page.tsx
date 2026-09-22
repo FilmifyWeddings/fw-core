@@ -280,14 +280,15 @@ export default function PostProductionPage() {
         const { data: leadsData } = await leadsQuery;
         if (leadsData) {
           for (const lead of leadsData) {
+            const coupleName = lead.raw_payload?.couple_name || (lead as any).couple_names || lead.client_name || lead.name || 'Untitled Client';
             const exists = clientList.some(
-              c => c.id === lead.id || c.lead_id === lead.id || (c.name && lead.name && c.name.toLowerCase().trim() === lead.name.toLowerCase().trim())
+              c => c.id === lead.id || c.lead_id === lead.id || (c.name && coupleName && c.name.toLowerCase().trim() === coupleName.toLowerCase().trim())
             );
             if (!exists) {
               clientList.push({
                 id: lead.id,
                 lead_id: lead.id,
-                name: lead.name || 'Untitled Client',
+                name: coupleName,
                 phone: lead.phone,
                 email: lead.email,
                 event_date: lead.event_date || lead.created_at,

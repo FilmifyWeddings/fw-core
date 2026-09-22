@@ -9,7 +9,7 @@ import { supabase } from '@/lib/supabase';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { LeadTable } from '@/components/dashboard/lead-table';
 import { MasterSettingsHub } from '@/components/settings/master-settings-hub';
-import { extractFinancialsFromQuotation, findFinalQuotationForLead, syncQuotationToTeamManagerEvents } from '@/lib/quotation-finance-sync';
+import { extractFinancialsFromQuotation, extractCoupleNameFromQuotation, findFinalQuotationForLead, syncQuotationToTeamManagerEvents } from '@/lib/quotation-finance-sync';
 import { parseQuotationDeliverables } from '@/lib/services/postProductionSyncService';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 
@@ -631,7 +631,7 @@ export default function LeadsPage() {
 
       // 1. Extract best possible values from lead and raw payload
       const raw = mergedLead.raw_payload || {};
-      const clientName = mergedLead.name || raw.groom_name || raw.bride_name || 'Booked Client';
+      let clientName = (mergedLead as any).couple_names || raw.couple_name || (mergedLead as any).client_name || mergedLead.name || raw.groom_name || raw.bride_name || 'Booked Client';
       const clientPhone = mergedLead.phone || raw.phone || raw.contact || '';
       const clientEmail = mergedLead.email || raw.email || null;
       let eventType = raw.shoot_type || raw.event_type || raw.service || 'Wedding Photography';
@@ -648,6 +648,12 @@ export default function LeadsPage() {
 
       // 2. Fetch Strictly Final Quotation Version for this lead (if chosen)
       const latestQuote = await findFinalQuotationForLead(supabase, leadId);
+      if (latestQuote?.content_json) {
+        const quoteCouple = extractCoupleNameFromQuotation(latestQuote.content_json);
+        if (quoteCouple && quoteCouple !== 'Wedding Client' && quoteCouple !== 'Valued Client') {
+          clientName = quoteCouple;
+        }
+      }
       const quoteFinancials = latestQuote && latestQuote.content_json
         ? extractFinancialsFromQuotation(latestQuote.content_json, parsedEventDate)
         : null;
@@ -891,7 +897,7 @@ export default function LeadsPage() {
 
       // User confirmed un-booking: clean up client and bookings
       try {
-        const clientName = currentLead?.name || '';
+        const clientName = (currentLead as any)?.couple_names || currentLead?.raw_payload?.couple_name || currentLead?.client_name || currentLead?.name || '';
         // 1. Delete or deactivate linked client & finance
         if (currentLead?.client_id) {
           await supabase.from('workspace_clients').delete().eq('id', currentLead.client_id);

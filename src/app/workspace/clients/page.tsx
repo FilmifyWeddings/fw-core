@@ -221,11 +221,13 @@ export default function ClientsPage() {
             paidAmt = parseFloat(paidStr) || 0;
           }
 
+          const clientName = bookedLead.raw_payload?.couple_name || (bookedLead as any).couple_names || bookedLead.client_name || bookedLead.name || 'Booked Client';
+
           const newClientPayload = {
             user_id: workspaceId,
             workspace_id: workspaceId,
             lead_id: bookedLead.id,
-            name: bookedLead.name,
+            name: clientName,
             phone: bookedLead.phone || '',
             email: bookedLead.email || null,
             event_type: bookedLead.event_type || 'Wedding Photography',
@@ -238,7 +240,7 @@ export default function ClientsPage() {
               whatsapp_group_link: bookedLead.whatsapp_group_id ? `https://chat.whatsapp.com/${bookedLead.whatsapp_group_id}` : '',
               portal_token: `tok_${Date.now()}_${Math.random().toString(36).substring(5)}`,
               portal_pin: '123456',
-              plain_notes: `Auto-synced from Booked CRM Lead (${bookedLead.name})`,
+              plain_notes: `Auto-synced from Booked CRM Lead (${clientName})`,
               events: [
                 {
                   id: `ev_${Date.now()}`,

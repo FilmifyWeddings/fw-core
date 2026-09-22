@@ -366,7 +366,8 @@ export function LeadQuotationModal({
 
       if (json.success && (json.quotationId || json.templateId)) {
         const qId = json.quotationId || json.templateId;
-        setOpeningQuotation({ id: qId, title: `Quotation V${json.version || ''}`, step: 'Hydrating Builder Canvas...' });
+        const openingCouple = json.document?.cover?.coupleName || lead.raw_payload?.couple_name || lead.client_name || lead.name || 'Quotation';
+        setOpeningQuotation({ id: qId, title: `${openingCouple} - Quotation V${json.version || ''}`, step: 'Hydrating Builder Canvas...' });
 
         if (json.document) {
           try {
@@ -507,7 +508,7 @@ export function LeadQuotationModal({
                       QUOTATIONS
                     </h3>
                     <p className="text-[11px] font-bold text-amber-700 dark:text-amber-400 truncate max-w-[200px]">
-                      {lead.name}
+                      {lead.raw_payload?.couple_name || lead.raw_payload?.couple_names || (lead as any).couple_names || lead.client_name || lead.name}
                     </p>
                   </div>
                 </div>
@@ -633,17 +634,22 @@ export function LeadQuotationModal({
                               const coupleFromCover = cover.coupleName 
                                 || (cover.groomName && cover.brideName ? `${cover.groomName} & ${cover.brideName}` : (cover.groomName || cover.brideName || ''));
 
-                              if (coupleFromCover) {
-                                const eventType = (cover.eventType || content.eventGroup || 'Wedding').replace(/quotation/i, '').trim();
-                                return `${coupleFromCover} - ${eventType} Quotation`;
+                              const coupleName = coupleFromCover
+                                || (q as any).couple_name
+                                || (q as any).couple_names
+                                || lead?.raw_payload?.couple_name
+                                || lead?.raw_payload?.couple_names
+                                || (lead as any)?.couple_names
+                                || lead?.client_name
+                                || lead?.name
+                                || 'Couple';
+
+                              const eventType = (cover.eventType || (q as any).event_type || content.eventGroup || (lead as any)?.event_type || 'Wedding').replace(/quotation/i, '').trim();
+
+                              if (q.is_final) {
+                                return `${coupleName} - Final Quotation`;
                               }
 
-                              if (q.title && !q.title.startsWith('Client -') && !q.title.includes('Design 1') && !q.title.includes(' - Quotation V')) {
-                                return q.title;
-                              }
-
-                              const coupleName = lead?.name || 'Couple';
-                              const eventType = (cover.eventType || content.eventGroup || 'Wedding').replace(/quotation/i, '').trim();
                               return `${coupleName} - ${eventType} Quotation`;
                             })();
 

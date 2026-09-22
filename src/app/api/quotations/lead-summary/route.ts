@@ -41,10 +41,10 @@ export async function GET(req: NextRequest) {
         .not('lead_id', 'is', null),
       supabaseAdmin
         .from('quotations')
-        .select('id, client_id, quotation_number, title, status, is_final, public_token, workspace_id, created_at, updated_at'),
+        .select('id, client_id, quotation_number, title, couple_names, client_name, status, is_final, public_token, workspace_id, created_at, updated_at'),
       supabaseAdmin
         .from('leads')
-        .select('id, name, status, final_quotation_id, quotation_id, raw_payload')
+        .select('id, name, client_name, status, final_quotation_id, quotation_id, raw_payload')
         .or(`workspace_id.eq.${workspaceId},tenant_id.eq.${workspaceId}`)
     ]);
 
@@ -61,10 +61,10 @@ export async function GET(req: NextRequest) {
 
     const leadMap = new Map<string, { name: string; coupleName: string; finalId: string | null; isBooked: boolean }>();
     leads.forEach((l: any) => {
-      // Check final quotation id in direct column or raw_payload, or booked status
-      const finalId = l.final_quotation_id || l.raw_payload?.final_quotation_id || l.raw_payload?.quotation_id || l.quotation_id || null;
+      // Check final quotation id strictly (do NOT treat draft quotation_id as final!)
+      const finalId = l.final_quotation_id || l.raw_payload?.final_quotation_id || null;
       const isBooked = (l.status as string) === 'booked' || l.status === 'closed';
-      const coupleName = l.raw_payload?.couple_name || l.name || 'Client';
+      const coupleName = l.raw_payload?.couple_name || l.raw_payload?.couple_names || (l as any).couple_names || l.client_name || l.name || 'Client';
 
       leadMap.set(l.id, {
         name: l.name || 'Client',
@@ -72,7 +72,7 @@ export async function GET(req: NextRequest) {
         finalId,
         isBooked
       });
-      if (finalId || isBooked) {
+      if (finalId) {
         summary[l.id] = { count: 0, hasFinal: true, versions: [] };
       }
     });
@@ -116,7 +116,8 @@ export async function GET(req: NextRequest) {
       }
 
       const verNum = Number(d.lead_version || d.version || 1);
-      const quoteTitle = matchedQ?.title || (leadInfo?.coupleName ? `${leadInfo.coupleName} - Quotation V${verNum}` : `${leadInfo?.name || 'Client'} - Quotation V${verNum}`);
+      const coupleName = matchedQ?.couple_names || matchedQ?.client_name || leadInfo?.coupleName || leadInfo?.name || 'Client';
+      const quoteTitle = matchedQ?.title || `${coupleName} - Quotation V${verNum}`;
 
       summary[leadId].versions.push({
         id: d.id,
@@ -124,7 +125,8 @@ export async function GET(req: NextRequest) {
         lead_id: leadId,
         version: verNum,
         version_label: `V${verNum}`,
-        title: isFinal && !quoteTitle.includes('Final') ? `${leadInfo?.coupleName || leadInfo?.name || 'Client'} - Final Quotation` : quoteTitle,
+        title: isFinal && !quoteTitle.includes('Final') ? `${coupleName} - Final Quotation` : quoteTitle,
+        couple_name: coupleName,
         is_final: isFinal,
         public_token: matchedQ?.public_token || null,
         created_at: d.created_at,
@@ -156,10 +158,13 @@ export async function GET(req: NextRequest) {
         (v: any) => v.template_id === (q.quotation_number || q.id) || v.id === q.id
       );
 
+      const coupleName = q.couple_names || q.client_name || leadInfo?.coupleName || leadInfo?.name || 'Client';
+
       if (existingDoc) {
         if (isFinal) existingDoc.is_final = true;
         if (q.title) existingDoc.title = q.title;
         if (q.public_token) existingDoc.public_token = q.public_token;
+        if (!existingDoc.couple_name && coupleName) existingDoc.couple_name = coupleName;
       } else {
         const verNum = summary[leadId].versions.length + 1;
         summary[leadId].versions.push({
@@ -168,7 +173,8 @@ export async function GET(req: NextRequest) {
           lead_id: leadId,
           version: verNum,
           version_label: `V${verNum}`,
-          title: q.title || (leadInfo?.coupleName ? `${leadInfo.coupleName} - Quotation V${verNum}` : `${leadInfo?.name || 'Client'} - Quotation V${verNum}`),
+          title: q.title || `${coupleName} - Quotation V${verNum}`,
+          couple_name: coupleName,
           is_final: isFinal,
           public_token: q.public_token || null,
           created_at: q.created_at,
@@ -190,19 +196,14 @@ export async function GET(req: NextRequest) {
         item.hasFinal = true;
         item.finalVersion = finalVerItem.version;
       } else if (leadFinalId) {
-        item.hasFinal = true;
         const matched = item.versions.find((v: any) => v.template_id === leadFinalId || v.id === leadFinalId);
         if (matched) {
           matched.is_final = true;
+          item.hasFinal = true;
           item.finalVersion = matched.version;
-        } else if (item.versions.length > 0) {
-          item.finalVersion = item.versions[0].version;
-          item.versions[0].is_final = true;
+        } else {
+          item.hasFinal = false;
         }
-      } else if (leadInfo?.isBooked && item.versions.length > 0) {
-        item.hasFinal = true;
-        item.finalVersion = item.versions[0].version;
-        item.versions[0].is_final = true;
       } else {
         item.hasFinal = false;
       }

@@ -360,7 +360,7 @@ export function LeadDrawerQuotationsTab({
 
                     <div className="min-w-0 flex-1">
                       <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                        {q.title || `${lead.name || 'Client'} - Quotation V${q.version}`}
+                        {q.title || `${(q as any).couple_name || lead.raw_payload?.couple_name || lead.raw_payload?.couple_names || (lead as any).couple_names || lead.client_name || lead.name || 'Client'} - Quotation V${q.version}`}
                       </h4>
                       <p className="text-[10px] text-slate-400 dark:text-zinc-500 font-mono mt-0.5">
                         {updatedDateStr}

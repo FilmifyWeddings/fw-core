@@ -246,15 +246,17 @@ export async function GET(
     // 1. Fetch lead details to verify lead existence & access
     const { data: lead } = await supabaseAdmin
       .from('leads')
-      .select('id, workspace_id, name, email, phone, raw_payload')
+      .select('id, workspace_id, name, client_name, email, phone, final_quotation_id, raw_payload')
       .eq('id', leadId)
       .maybeSingle();
 
     const effectiveLead = lead || {
       id: leadId,
       name: 'Client',
+      client_name: 'Client',
       email: '',
       phone: '',
+      final_quotation_id: null,
       raw_payload: {}
     };
 
@@ -321,6 +323,10 @@ export async function GET(
       const cover = content.cover || {};
       const coupleName = cover.coupleName 
         || (cover.groomName && cover.brideName ? `${cover.groomName} & ${cover.brideName}` : (cover.groomName || cover.brideName || ''))
+        || effectiveLead.raw_payload?.couple_name
+        || effectiveLead.raw_payload?.couple_names
+        || (effectiveLead as any).couple_names
+        || effectiveLead.client_name
         || effectiveLead.name 
         || 'Couple';
 
@@ -339,7 +345,7 @@ export async function GET(
       }
 
       if (!title || title.trim() === '' || title === 'Wedding - Design 1') {
-        title = `${effectiveLead.name || 'Client'} - Wedding Quotation`;
+        title = `${coupleName} - Wedding Quotation`;
       }
 
       const matchingQuote = allQuotes.find((q: any) =>
@@ -381,16 +387,12 @@ export async function GET(
         matchingQuote?.status === 'accepted' ||
         (effectiveLead as any).final_quotation_id === doc.template_id ||
         (effectiveLead as any).final_quotation_id === doc.id ||
-        (effectiveLead as any).quotation_id === doc.template_id ||
-        (effectiveLead as any).quotation_id === doc.id ||
         (effectiveLead as any).raw_payload?.final_quotation_id === doc.template_id ||
-        (effectiveLead as any).raw_payload?.final_quotation_id === doc.id ||
-        (effectiveLead as any).raw_payload?.quotation_id === doc.template_id ||
-        (effectiveLead as any).raw_payload?.quotation_id === doc.id
+        (effectiveLead as any).raw_payload?.final_quotation_id === doc.id
       );
 
       const displayTitle = isFinal && !title.includes('Final')
-        ? `${coupleName || effectiveLead.name || 'Client'} - Final Quotation`
+        ? `${coupleName || 'Client'} - Final Quotation`
         : title;
 
       return {
@@ -400,6 +402,7 @@ export async function GET(
         version: leadVer,
         version_label: `V${leadVer}`,
         title: displayTitle,
+        couple_name: coupleName,
         content_json: content,
         is_final: isFinal,
         updated_at: doc.updated_at || doc.created_at || new Date().toISOString(),

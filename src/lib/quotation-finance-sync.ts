@@ -1,4 +1,7 @@
 import type { ClientFinanceRecord, FinanceMilestoneItem } from '@/types';
+import { supabaseAdmin } from '@/lib/supabase';
+import { SUPER_ADMIN_ID } from '@/lib/auth/admin-guard';
+import { parseQuotationDeliverables } from '@/lib/services/postProductionSyncService';
 
 export interface ExtractedQuotationFinancials {
   base_package_price: number;
@@ -960,3 +963,461 @@ export async function syncQuotationToTeamManagerEvents(
     return null;
   }
 }
+
+/**
+ * Authoritative Central Sync:
+ * Synchronizes a Booked Lead or Final Quotation across:
+ * 1. Client Directory (`workspace_clients` & `clients`)
+ * 2. Finance & Payments (`client_finance_records` & `finance_records`)
+ * 3. Booking Events (`fw_projects`, `fw_sub_events`, `fw_assignments`)
+ * 4. Post Production (`post_production_projects`, `post_production_project_config`, `post_production_deliverables`)
+ * 5. CRM Lead (`leads` table with client_id, couple_name, couple_names, booked status)
+ *
+ * All entities are strictly named after the Couple Name (e.g. "Rohan & Sneha Wedding" / "Rohan & Sneha").
+ */
+export async function syncBookedLeadOrFinalQuotation({
+  leadId,
+  quotationId,
+  workspaceId: explicitWorkspaceId,
+  forceBookedStatus = true,
+  supabaseClient = supabaseAdmin
+}: {
+  leadId: string;
+  quotationId?: string | null;
+  workspaceId?: string | null;
+  forceBookedStatus?: boolean;
+  supabaseClient?: any;
+}): Promise<{
+  success: boolean;
+  coupleName: string;
+  workspaceClientId: string | null;
+  leadId: string;
+} | null> {
+  if (!leadId) return null;
+
+  try {
+    const now = new Date().toISOString();
+
+    // 1. Fetch Lead
+    const { data: lead, error: leadErr } = await supabaseClient
+      .from('leads')
+      .select('*')
+      .eq('id', leadId)
+      .maybeSingle();
+
+    if (leadErr || !lead) {
+      console.warn(`[syncBookedLeadOrFinalQuotation] Lead not found or error: ${leadId}`, leadErr);
+      return null;
+    }
+
+    const workspaceId = lead.workspace_id || explicitWorkspaceId || lead.tenant_id || lead.created_by_user_id || SUPER_ADMIN_ID;
+
+    // 2. Fetch Target Quotation (either specified quotationId, or final_quotation_id, or latest quotation)
+    let finalDoc: any = null;
+    const targetQId = quotationId || lead.final_quotation_id || lead.raw_payload?.final_quotation_id;
+
+    if (targetQId) {
+      const { data: doc } = await supabaseClient
+        .from('quotation_documents')
+        .select('id, template_id, lead_id, version, lead_version, content_json')
+        .or(`template_id.eq.${targetQId},id.eq.${targetQId}`)
+        .maybeSingle();
+      if (doc) finalDoc = doc;
+    }
+
+    if (!finalDoc) {
+      finalDoc = await findFinalQuotationForLead(supabaseClient, leadId);
+    }
+    if (!finalDoc) {
+      finalDoc = await findLatestQuotationForLead(supabaseClient, leadId);
+    }
+
+    // 3. Extract Couple Name strictly (Prioritizes quotation cover couple name over raw contact person)
+    const rawPayload = lead.raw_payload || {};
+    const leadContactName = rawPayload.couple_name 
+      || rawPayload.couple_names 
+      || (lead as any).couple_names 
+      || lead.client_name 
+      || lead.name 
+      || 'Valued Client';
+
+    const coupleName = finalDoc?.content_json
+      ? extractCoupleNameFromQuotation(finalDoc.content_json, leadContactName)
+      : leadContactName;
+
+    const eventDate = lead.event_date || finalDoc?.content_json?.meta?.event_date || null;
+    const mainVenue = lead.location || finalDoc?.content_json?.meta?.venue || finalDoc?.content_json?.cover?.locationName || finalDoc?.content_json?.cover?.venue || 'TBD Venue';
+    const financials = extractFinancialsFromQuotation(finalDoc?.content_json, eventDate);
+    const eventType = financials.event_type || lead.event_type || 'Wedding Photography';
+
+    // 4. Update or Insert Client Directory (workspace_clients & clients)
+    let workspaceClientId: string | null = null;
+
+    const { data: existingWsClients } = await supabaseClient
+      .from('workspace_clients')
+      .select('id, name')
+      .or(`lead_id.eq.${leadId},id.eq.${leadId}`)
+      .order('created_at', { ascending: true });
+
+    const existingWsClient = existingWsClients?.[0];
+
+    const extendedNotesPayload = JSON.stringify({
+      client_code: `CL-${Math.floor(1000 + Math.random() * 9000)}`,
+      whatsapp_group_link: lead.whatsapp_group_id ? `https://chat.whatsapp.com/${lead.whatsapp_group_id}` : '',
+      whatsapp_group_id: lead.whatsapp_group_id || '',
+      portal_token: `tok_${Date.now()}_${Math.random().toString(36).substring(5)}`,
+      portal_pin: '1234',
+      portal_enabled: true,
+      plain_notes: `Auto-synced from Booked CRM Lead (${coupleName})`,
+      notes: `Auto-synced from Booked CRM Lead (${coupleName})`,
+      events: [
+        {
+          id: `ev_${Date.now()}`,
+          name: eventType,
+          date: eventDate || now.split('T')[0],
+          time_start: '05:00 PM',
+          time_end: '11:00 PM',
+          venue: mainVenue,
+          city: lead.city || 'Mumbai',
+          assigned_crew: '2 Photographers, 2 Cinematographers'
+        }
+      ]
+    });
+
+    const wsClientPayload = {
+      user_id: workspaceId,
+      workspace_id: workspaceId,
+      lead_id: leadId,
+      name: coupleName.trim(),
+      phone: lead.phone || null,
+      email: lead.email || null,
+      event_type: eventType,
+      event_date: eventDate,
+      total_package_amount: financials.final_total_amount,
+      paid_amount: financials.received_amount,
+      status: 'active',
+      notes: extendedNotesPayload,
+      updated_at: now
+    };
+
+    if (existingWsClient?.id) {
+      workspaceClientId = existingWsClient.id;
+      await supabaseClient
+        .from('workspace_clients')
+        .update(wsClientPayload)
+        .eq('id', workspaceClientId);
+    } else {
+      const { data: clientByName } = await supabaseClient
+        .from('workspace_clients')
+        .select('id')
+        .eq('workspace_id', workspaceId)
+        .ilike('name', coupleName.trim())
+        .maybeSingle();
+
+      if (clientByName?.id) {
+        workspaceClientId = clientByName.id;
+        await supabaseClient
+          .from('workspace_clients')
+          .update({ ...wsClientPayload, id: workspaceClientId })
+          .eq('id', workspaceClientId);
+      } else {
+        const { data: newWsClient } = await supabaseClient
+          .from('workspace_clients')
+          .insert({
+            ...wsClientPayload,
+            created_at: now
+          })
+          .select('id')
+          .single();
+        workspaceClientId = newWsClient?.id || null;
+      }
+    }
+
+    // Sync legacy clients table for backward compatibility
+    try {
+      if (workspaceId) {
+        const { data: existingLegacy } = await supabaseClient
+          .from('clients')
+          .select('id')
+          .eq('workspace_id', workspaceId)
+          .ilike('name', coupleName.trim())
+          .maybeSingle();
+
+        if (existingLegacy?.id) {
+          await supabaseClient
+            .from('clients')
+            .update({
+              name: coupleName.trim(),
+              phone: lead.phone || null,
+              email: lead.email || null,
+              updated_at: now
+            })
+            .eq('id', existingLegacy.id);
+        } else {
+          await supabaseClient
+            .from('clients')
+            .insert({
+              workspace_id: workspaceId,
+              name: coupleName.trim(),
+              phone: lead.phone || null,
+              email: lead.email || null,
+              created_at: now,
+              updated_at: now
+            });
+        }
+      }
+    } catch (_) {}
+
+    // 5. Upsert client_finance_records (Finance Page primary source of truth)
+    if (workspaceClientId) {
+      const clientFinPayload = {
+        user_id: workspaceId,
+        workspace_id: workspaceId,
+        client_id: workspaceClientId,
+        base_package_price: financials.base_package_price || financials.subtotal_amount,
+        discount_amount: financials.discount_amount || 0,
+        accommodation_charges: financials.accommodation_charges || 0,
+        travel_charges: financials.travel_charges || 0,
+        additional_charges: financials.additional_charges || 0,
+        subtotal_amount: financials.subtotal_amount,
+        gst_rate: financials.gst_rate || 0,
+        gst_amount: financials.gst_amount || 0,
+        final_total_amount: financials.final_total_amount,
+        received_amount: financials.received_amount,
+        pending_amount: financials.pending_amount,
+        payment_status: financials.payment_status,
+        milestones: financials.milestones,
+        notes: `Auto-generated from Quotation (${coupleName}).`,
+        updated_at: now
+      };
+
+      const { data: existingFin } = await supabaseClient
+        .from('client_finance_records')
+        .select('id')
+        .eq('client_id', workspaceClientId)
+        .maybeSingle();
+
+      if (existingFin?.id) {
+        await supabaseClient
+          .from('client_finance_records')
+          .update(clientFinPayload)
+          .eq('id', existingFin.id);
+      } else {
+        await supabaseClient
+          .from('client_finance_records')
+          .insert({
+            ...clientFinPayload,
+            created_at: now
+          });
+      }
+
+      // Legacy finance_records
+      try {
+        if (workspaceId) {
+          const { data: existingLegacyFin } = await supabaseClient
+            .from('finance_records')
+            .select('id')
+            .eq('workspace_id', workspaceId)
+            .or(`client_name.ilike.${coupleName.trim()},lead_id.eq.${leadId}`)
+            .maybeSingle();
+
+          const legacyFinPayload = {
+            workspace_id: workspaceId,
+            client_id: workspaceClientId,
+            lead_id: leadId,
+            client_name: coupleName.trim(),
+            event_name: eventType,
+            event_date: eventDate,
+            base_package_price: financials.base_package_price || financials.subtotal_amount,
+            discount_amount: financials.discount_amount || 0,
+            accommodation_charges: financials.accommodation_charges || 0,
+            travel_charges: financials.travel_charges || 0,
+            additional_charges: financials.additional_charges || 0,
+            subtotal_amount: financials.subtotal_amount,
+            gst_rate: financials.gst_rate || 0,
+            gst_amount: financials.gst_amount || 0,
+            final_total_amount: financials.final_total_amount,
+            received_amount: financials.received_amount,
+            pending_amount: financials.pending_amount,
+            payment_status: financials.payment_status,
+            payment_type: 'custom',
+            notes: `Auto-generated from Quotation (${coupleName}).`,
+            updated_at: now
+          };
+
+          if (existingLegacyFin?.id) {
+            await supabaseClient
+              .from('finance_records')
+              .update(legacyFinPayload)
+              .eq('id', existingLegacyFin.id);
+          } else {
+            await supabaseClient
+              .from('finance_records')
+              .insert({ ...legacyFinPayload, created_at: now });
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 6. Booking Events Sync: fw_projects + fw_sub_events + fw_assignments
+    try {
+      if (workspaceId && finalDoc?.content_json) {
+        await syncQuotationToTeamManagerEvents(
+          supabaseClient,
+          leadId,
+          finalDoc.content_json,
+          coupleName,
+          workspaceId,
+          eventDate,
+          mainVenue,
+          workspaceClientId
+        );
+      } else if (workspaceId) {
+        // Create master project if doesn't exist
+        const { data: existingProjs } = await supabaseClient
+          .from('fw_projects')
+          .select('id')
+          .eq('user_id', workspaceId)
+          .or(`client_id.eq.${workspaceClientId},client_name.ilike.%${coupleName.trim()}%`);
+
+        if (!existingProjs || existingProjs.length === 0) {
+          await supabaseClient
+            .from('fw_projects')
+            .insert([{
+              client_name: coupleName.trim(),
+              client_id: workspaceClientId || null,
+              main_date: eventDate || now.split('T')[0],
+              main_venue: mainVenue,
+              user_id: workspaceId,
+              status: 'active'
+            }]);
+        } else {
+          await supabaseClient
+            .from('fw_projects')
+            .update({
+              client_name: coupleName.trim(),
+              client_id: workspaceClientId || null,
+              main_date: eventDate || undefined,
+              main_venue: mainVenue || undefined,
+              updated_at: now
+            })
+            .eq('id', existingProjs[0].id);
+        }
+      }
+    } catch (tmErr) {
+      console.error('[syncBookedLeadOrFinalQuotation] Error syncing team manager:', tmErr);
+    }
+
+    // 7. Post-Production Sync: post_production_projects + deliverables
+    try {
+      if (workspaceId && finalDoc?.content_json) {
+        const parsed = parseQuotationDeliverables(finalDoc);
+        const clientTargets = [workspaceClientId, leadId].filter(Boolean) as string[];
+        const ppNotes = `quotation_id:${finalDoc.template_id || quotationId || ''};quotation_title:${finalDoc.content_json?.meta?.project_name || `${coupleName} Wedding`};pp_config:${encodeURIComponent(JSON.stringify({ enabled_segments: parsed.enabledSegments }))};`;
+
+        for (const cId of clientTargets) {
+          const { data: existingPPP } = await supabaseClient
+            .from('post_production_projects')
+            .select('id')
+            .eq('client_id', cId)
+            .maybeSingle();
+
+          if (existingPPP) {
+            await supabaseClient
+              .from('post_production_projects')
+              .update({
+                deliverables: parsed.deliverables,
+                notes: ppNotes,
+                overall_status: 'active',
+                updated_at: now
+              })
+              .eq('id', existingPPP.id);
+          } else {
+            await supabaseClient
+              .from('post_production_projects')
+              .insert({
+                user_id: workspaceId,
+                workspace_id: workspaceId,
+                client_id: cId,
+                deliverables: parsed.deliverables,
+                notes: ppNotes,
+                overall_status: 'active',
+                created_at: now,
+                updated_at: now
+              });
+          }
+        }
+
+        if (workspaceClientId) {
+          try {
+            await supabaseClient
+              .from('post_production_project_config')
+              .upsert({
+                project_id: workspaceClientId,
+                enabled_segments: parsed.enabledSegments || ['Wedding'],
+                updated_at: now
+              }, { onConflict: 'project_id' });
+          } catch (_) {}
+
+          try {
+            await supabaseClient
+              .from('post_production_deliverables')
+              .delete()
+              .eq('project_id', workspaceClientId);
+
+            if (parsed.deliverables && parsed.deliverables.length > 0) {
+              const rowsToInsert = parsed.deliverables.map((deliv: any) => ({
+                project_id: workspaceClientId,
+                segment: deliv.segment || 'Wedding',
+                category: deliv.category || 'Photos',
+                title: deliv.title,
+                specs: deliv.specs || deliv.count || null,
+                status: 'Upcoming',
+                is_custom: false,
+                updated_at: now
+              }));
+              await supabaseClient.from('post_production_deliverables').insert(rowsToInsert);
+            }
+          } catch (_) {}
+        }
+      }
+    } catch (ppErr) {
+      console.error('[syncBookedLeadOrFinalQuotation] Error syncing post production:', ppErr);
+    }
+
+    // 8. Update Lead Record with client_id, couple_name, and stage/status
+    try {
+      const updatedPayload = {
+        ...(lead.raw_payload || {}),
+        couple_name: coupleName.trim(),
+        couple_names: coupleName.trim(),
+        client_id: workspaceClientId,
+        ...(quotationId ? { final_quotation_id: quotationId } : {})
+      };
+
+      await supabaseClient
+        .from('leads')
+        .update({
+          client_id: workspaceClientId,
+          ...(forceBookedStatus ? { status: 'booked', stage: 'booked' } : {}),
+          ...(quotationId ? { final_quotation_id: quotationId } : {}),
+          raw_payload: updatedPayload,
+          updated_at: now
+        })
+        .eq('id', leadId);
+    } catch (leadUpErr) {
+      console.error('[syncBookedLeadOrFinalQuotation] Error updating lead payload:', leadUpErr);
+    }
+
+    return {
+      success: true,
+      coupleName: coupleName.trim(),
+      workspaceClientId,
+      leadId
+    };
+  } catch (err: any) {
+    console.error('[syncBookedLeadOrFinalQuotation] Exception:', err);
+    return null;
+  }
+}
+
