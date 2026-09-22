@@ -82,7 +82,7 @@ export default function AddTeamMemberModal({
   const [phoneNumber, setPhoneNumber] = useState('');
   const [email, setEmail] = useState('');
   const [avatarUrl, setAvatarUrl] = useState<string>('');
-  const [defaultDailyRate, setDefaultDailyRate] = useState<string>('');
+  const [defaultDailyRate, setDefaultDailyRate] = useState<string>('0');
   const [payoutFrequency, setPayoutFrequency] = useState<'daily' | 'monthly'>('daily');
   const [isCompressing, setIsCompressing] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -304,7 +304,7 @@ export default function AddTeamMemberModal({
       setPhoneNumber(cleanPhone);
       setEmail(memberToEdit.email || '');
       setAvatarUrl(memberToEdit.avatar_url || '');
-      setDefaultDailyRate(memberToEdit.default_daily_rate != null ? String(memberToEdit.default_daily_rate) : '');
+      setDefaultDailyRate(memberToEdit.default_daily_rate != null ? String(memberToEdit.default_daily_rate) : '0');
       setPayoutFrequency(memberToEdit.payout_frequency === 'monthly' ? 'monthly' : 'daily');
 
       const perms = memberToEdit.permissions || memberToEdit.studio_member_permissions || memberToEdit.member_permissions?.[0] || memberToEdit.member_permissions || {};
@@ -352,7 +352,7 @@ export default function AddTeamMemberModal({
       setPhoneNumber('');
       setEmail('');
       setAvatarUrl('');
-      setDefaultDailyRate('');
+      setDefaultDailyRate('0');
       setPayoutFrequency('daily');
       setLeadsAccess('NONE');
       setTeamManagerAccess('NONE');

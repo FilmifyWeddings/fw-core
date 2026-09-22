@@ -9,7 +9,7 @@ import {
   User, Check, FileText, Send, Layers, Wallet, TrendingUp, History,
   Receipt, ArrowUpRight, ShieldCheck, CheckCheck, RefreshCw, SlidersHorizontal,
   Phone, Mail, BarChart3, BookOpen, MapPin, Award, ChevronDown, CheckSquare, Square,
-  Printer, Download
+  Printer, Download, Search
 } from 'lucide-react';
 import { 
   TeamEventPayout, 
@@ -164,6 +164,9 @@ export default function TeamMemberFinanceDrawer({
     projectId?: string;
     subEventId?: string;
     assignmentId?: string;
+    paymentDate?: string;
+    paymentMethod?: string;
+    notes?: string;
   } | null>(null);
 
   const [paymentAmount, setPaymentAmount] = useState<string>('');
@@ -494,6 +497,22 @@ export default function TeamMemberFinanceDrawer({
     });
   }, [studioShoots, shootsYearFilter]);
 
+  // Search query for shoot events in Shoot Bookings & Payment Ledger tab:
+  const [shootSearchQuery, setShootSearchQuery] = useState<string>('');
+
+  const searchedShoots = useMemo(() => {
+    if (!shootSearchQuery.trim()) return filteredShoots;
+    const q = shootSearchQuery.trim().toLowerCase();
+    return filteredShoots.filter(p => {
+      const client = (p.client_name || '').toLowerCase();
+      const eventName = (p.event_name || p.sub_event?.event_title || '').toLowerCase();
+      const role = (p.role || '').toLowerCase();
+      const venue = (p.venue || '').toLowerCase();
+      const date = (p.event_date || '').toLowerCase();
+      return client.includes(q) || eventName.includes(q) || role.includes(q) || venue.includes(q) || date.includes(q);
+    });
+  }, [filteredShoots, shootSearchQuery]);
+
   // Ensure top banner cards strictly sum all rows currently listed in Bookings & Events:
   const fallbackEvents = useMemo(() => {
     if (!Array.isArray(member?.events)) return [];
@@ -793,7 +812,10 @@ export default function TeamMemberFinanceDrawer({
 
   // Payment Settlement Handler for Bookings
   const handlePaymentSubmit = async (paramsOrEvent?: React.FormEvent | {
-    amount: number;
+    agreedAmount?: number;
+    paidAmount?: number;
+    balanceAmount?: number;
+    amount?: number;
     paymentDate: string;
     paymentMode: string;
     paymentRef: string;
@@ -805,26 +827,32 @@ export default function TeamMemberFinanceDrawer({
     }
 
     const isParamObj = paramsOrEvent && !('preventDefault' in paramsOrEvent);
-    const amountVal = isParamObj ? paramsOrEvent.amount : Number(paymentAmount);
+    const agreedVal = isParamObj && paramsOrEvent.agreedAmount !== undefined 
+      ? Number(paramsOrEvent.agreedAmount) 
+      : (paymentTarget?.totalAmount !== undefined ? Number(paymentTarget.totalAmount) : 0);
+    const paidVal = isParamObj && paramsOrEvent.paidAmount !== undefined 
+      ? Number(paramsOrEvent.paidAmount) 
+      : (isParamObj ? Number(paramsOrEvent.amount) : Number(paymentAmount));
     const pDate = isParamObj ? paramsOrEvent.paymentDate : paymentDate;
     const pMode = (isParamObj ? paramsOrEvent.paymentMode : paymentMode) as any;
     const pRef = isParamObj ? paramsOrEvent.paymentRef : paymentRef;
     const pNotes = isParamObj ? paramsOrEvent.paymentNotes : paymentNotes;
     const pAutoSync = isParamObj ? paramsOrEvent.autoSyncFinance : autoSyncFinance;
 
-    if (!paymentTarget || isNaN(amountVal) || amountVal < 0) return;
+    if (!paymentTarget || isNaN(agreedVal) || agreedVal < 0 || isNaN(paidVal) || paidVal < 0) return;
 
     setSubmittingPayment(true);
     try {
-      const amount = amountVal;
-      const isZeroSettle = amount === 0;
+      const amount = paidVal;
       const safeAssignmentId = paymentTarget?.id ? String(paymentTarget.id) : `pay_${Date.now()}`;
       const memberId = member?.id;
       const memberName = member?.name || 'Team Member';
       const mType = member?.primary_type?.toLowerCase() || ((member as any)?.member_types?.includes('PARTNER') ? 'partner' : 'team_member');
       const paymentType = paymentTarget.type === 'EVENT' ? 'Shoot Fee' : paymentTarget.type === 'ALBUM' ? 'Album / Lab Fee' : 'Advance Payout';
 
-      const pStatus = (isZeroSettle || amount >= paymentTarget.balanceAmount) ? 'completed' : 'partial';
+      let finalAgreed = agreedVal;
+      let finalPaid = paidVal;
+      let finalBalance = Math.max(0, agreedVal - paidVal);
 
       if (paymentTarget.type === 'EVENT') {
         const trancheResult = await recordCrewPayoutTranche({
@@ -836,23 +864,34 @@ export default function TeamMemberFinanceDrawer({
           subEventId: paymentTarget.subEventId,
           clientName: paymentTarget.clientName,
           eventName: paymentTarget.title,
-          installmentAmount: amount,
+          installmentAmount: Math.max(0, paidVal - Number(paymentTarget.paidAmount || 0)),
           paymentDate: pDate,
           paymentMode: pMode,
           referenceNo: pRef,
           notes: pNotes,
           currentAgreedAmount: paymentTarget.totalAmount,
-          currentPaidAmount: paymentTarget.paidAmount
+          currentPaidAmount: paymentTarget.paidAmount,
+          explicitAgreedAmount: agreedVal,
+          explicitPaidAmount: paidVal
         });
 
         // Immediately update this event payout in local state for 0ms visual feedback
+        finalAgreed = trancheResult.newAgreed !== undefined ? trancheResult.newAgreed : agreedVal;
+        finalPaid = trancheResult.newPaid !== undefined ? trancheResult.newPaid : paidVal;
+        finalBalance = trancheResult.newBalance !== undefined ? trancheResult.newBalance : Math.max(0, finalAgreed - finalPaid);
+        const finalStatus = (finalBalance === 0 && finalAgreed > 0) ? 'PAID' : (finalPaid > 0 ? 'PARTIAL' : 'PENDING');
+
         setPayouts(prev => prev.map(p => {
           if (p.id === paymentTarget.id) {
             return {
               ...p,
-              paid_amount: trancheResult.newPaid,
-              balance_amount: trancheResult.newBalance,
-              status: trancheResult.newStatus as any
+              agreed_amount: finalAgreed,
+              paid_amount: finalPaid,
+              balance_amount: finalBalance,
+              status: finalStatus as any,
+              payment_date: pDate,
+              payment_method: pMode,
+              notes: pNotes
             };
           }
           return p;
@@ -881,6 +920,13 @@ export default function TeamMemberFinanceDrawer({
         });
       }
 
+      const updatedMetrics = {
+        ...summary,
+        total_paid: summary.total_paid + (finalPaid - Number(paymentTarget.paidAmount || 0)),
+        total_balance: Math.max(0, summary.total_balance - (Number(paymentTarget.balanceAmount || 0) - finalBalance))
+      };
+      setSummary(updatedMetrics);
+
       // Immediate Real-Time Cache Revalidation & Sync
       try {
         if (typeof (window as any).mutate === 'function') {
@@ -888,25 +934,26 @@ export default function TeamMemberFinanceDrawer({
         }
       } catch (_) {}
       router.refresh();
-      showToast(`Payment of ₹${amount.toLocaleString('en-IN')} logged & synced to Expenses & Analytics!`);
-
-      const balanceDeduction = isZeroSettle ? paymentTarget.balanceAmount : amount;
-      const updatedMetrics = {
-        ...summary,
-        total_paid: summary.total_paid + amount,
-        total_balance: Math.max(0, summary.total_balance - balanceDeduction)
-      };
-      setSummary(updatedMetrics);
-      onFinancialUpdate?.(member!.id, updatedMetrics);
-
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('team_finance_updated', {
-          detail: { memberId: member!.id, amount, summary: updatedMetrics }
-        }));
-      }
+      showToast(`Commercials updated successfully! (Agreed: ₹${agreedVal.toLocaleString('en-IN')}, Paid: ₹${paidVal.toLocaleString('en-IN')})`);
 
       setIsPaymentModalOpen(false);
       setPaymentTarget(null);
+
+      // Trigger finance update event for immediate outer table synchronization
+      if (typeof window !== 'undefined' && memberId) {
+        window.dispatchEvent(new CustomEvent('team_finance_updated', {
+          detail: {
+            memberId,
+            assignmentId: paymentTarget.id,
+            amount,
+            newAgreed: finalAgreed,
+            newPaid: finalPaid,
+            newBalance: finalBalance,
+            summary: updatedMetrics
+          }
+        }));
+      }
+      onFinancialUpdate?.(member!.id, updatedMetrics);
 
       loadData();
     } catch (err) {
@@ -1179,6 +1226,27 @@ export default function TeamMemberFinanceDrawer({
                   </div>
                 )}
 
+                {/* Search Bar for Shoots Ledger */}
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={shootSearchQuery}
+                    onChange={(e) => setShootSearchQuery(e.target.value)}
+                    placeholder="Search shoot by couple, event, role, venue, or date..."
+                    className="w-full pl-8 pr-8 py-1.5 bg-stone-50 hover:bg-white focus:bg-white border border-stone-200 focus:border-amber-400 rounded-xl text-xs font-medium text-stone-800 placeholder-stone-400 outline-none transition shadow-2xs"
+                  />
+                  {shootSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setShootSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 p-0.5 rounded-md text-xs font-bold cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
                 {/* Shoots Roster Year Selector Pills */}
                 {availableShootsYears.length > 1 && (
                   <div className="flex items-center gap-1.5 flex-wrap pb-1">
@@ -1225,8 +1293,21 @@ export default function TeamMemberFinanceDrawer({
                       <p className="text-xs font-bold text-stone-600">No Shoot Assignments Found</p>
                       <p className="text-[11px] text-stone-400">Assign this member to upcoming events in Team Manager or add a custom event above.</p>
                     </div>
+                  ) : searchedShoots.length === 0 ? (
+                    <div className="p-8 text-center bg-white rounded-2xl border border-stone-200 text-stone-400 space-y-1">
+                      <Search className="w-8 h-8 text-stone-300 mx-auto mb-2" />
+                      <p className="text-xs font-bold text-stone-600">No Shoots Match "{shootSearchQuery}"</p>
+                      <p className="text-[11px] text-stone-400">Try searching with a different couple name, event title, or venue.</p>
+                      <button
+                        type="button"
+                        onClick={() => setShootSearchQuery('')}
+                        className="mt-2 text-xs font-bold text-amber-600 hover:underline cursor-pointer"
+                      >
+                        Clear Search
+                      </button>
+                    </div>
                   ) : (
-                    filteredShoots.map((payout) => {
+                    searchedShoots.map((payout) => {
                       const rawCardAgreed = Number(payout.agreed_amount) || 0;
                       const cardPaid = Number(payout.paid_amount || 0);
                       const cardAgreed = (isInHouse && rawCardAgreed === Number(member?.default_daily_rate) && cardPaid === 0) ? 0 : rawCardAgreed;
@@ -1287,32 +1368,39 @@ export default function TeamMemberFinanceDrawer({
                             </div>
                           </div>
 
-                          {!isPaid && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setPaymentTarget({
-                                  type: 'EVENT',
-                                  id: payout.id,
-                                  title: displayEvent,
-                                  clientName: displayClient,
-                                  totalAmount: cardAgreed,
-                                  paidAmount: cardPaid,
-                                  balanceAmount: cardDue,
-                                  role: payout.role,
-                                  projectId: payout.project_id || (payout as any).project?.id,
-                                  subEventId: payout.sub_event_id || (payout as any).sub_event?.id,
-                                  assignmentId: payout.id
-                                });
-                                setPaymentAmount(String(cardDue > 0 ? cardDue : (cardAgreed > 0 ? cardAgreed : '')));
-                                setIsPaymentModalOpen(true);
-                              }}
-                              className="w-full py-1.5 bg-stone-900 hover:bg-stone-800 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center justify-center gap-1.5 transition"
-                            >
-                              <CreditCard className="w-3.5 h-3.5 text-amber-400" />
-                              <span>Record Payment</span>
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPaymentTarget({
+                                type: 'EVENT',
+                                id: payout.id,
+                                title: displayEvent,
+                                clientName: displayClient,
+                                totalAmount: cardAgreed,
+                                paidAmount: cardPaid,
+                                balanceAmount: cardDue,
+                                role: payout.role,
+                                projectId: payout.project_id || (payout as any).project?.id,
+                                subEventId: payout.sub_event_id || (payout as any).sub_event?.id,
+                                assignmentId: payout.id,
+                                paymentDate: (payout as any).payment_date,
+                                paymentMethod: (payout as any).payment_method,
+                                notes: (payout as any).notes
+                              });
+                              setPaymentAmount(String(cardDue > 0 ? cardDue : (cardPaid > 0 ? cardPaid : (cardAgreed > 0 ? cardAgreed : '0'))));
+                              setIsPaymentModalOpen(true);
+                            }}
+                            className={`w-full py-1.5 font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center justify-center gap-1.5 transition ${
+                              isPaid
+                                ? 'bg-stone-100 hover:bg-stone-200 text-stone-700 border border-stone-300/80'
+                                : cardAgreed === 0
+                                  ? 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300'
+                                  : 'bg-stone-900 hover:bg-stone-800 text-white'
+                            }`}
+                          >
+                            <CreditCard className={`w-3.5 h-3.5 ${isPaid ? 'text-emerald-600' : 'text-amber-400'}`} />
+                            <span>{isPaid ? 'Edit Payment / Commercial (Settled)' : cardAgreed === 0 ? 'Edit Commercial / Record Payment (₹0 Rate)' : 'Record Payment / Edit Fee'}</span>
+                          </button>
                         </div>
                       );
                     })

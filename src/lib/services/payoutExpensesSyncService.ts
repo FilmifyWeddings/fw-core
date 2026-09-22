@@ -36,6 +36,8 @@ export interface RecordCrewPayoutTrancheParams {
   notes?: string;
   currentAgreedAmount?: number;
   currentPaidAmount?: number;
+  explicitAgreedAmount?: number;
+  explicitPaidAmount?: number;
 }
 
 /**
@@ -247,7 +249,9 @@ export async function recordCrewPayoutTranche(params: RecordCrewPayoutTranchePar
   const cleanMemberName = params.memberName.trim();
 
   // 1. Fetch current assignment to ensure exact cumulative calculation
-  let agreed = Number(params.currentAgreedAmount) || 0;
+  let agreed = params.explicitAgreedAmount !== undefined 
+    ? Number(params.explicitAgreedAmount) 
+    : (Number(params.currentAgreedAmount) || 0);
   let prevPaid = Number(params.currentPaidAmount) || 0;
   let resolvedProjectId = params.projectId || null;
   let resolvedSubEventId = params.subEventId || null;
@@ -262,7 +266,7 @@ export async function recordCrewPayoutTranche(params: RecordCrewPayoutTranchePar
       .maybeSingle();
 
     if (currentAssign) {
-      if (currentAssign.agreed_amount !== undefined && currentAssign.agreed_amount !== null) {
+      if (params.explicitAgreedAmount === undefined && currentAssign.agreed_amount !== undefined && currentAssign.agreed_amount !== null) {
         agreed = Number(currentAssign.agreed_amount) || 0;
       }
       const existingPaid = Number(currentAssign.paid_amount ?? currentAssign.advance_amount ?? 0);
@@ -278,26 +282,40 @@ export async function recordCrewPayoutTranche(params: RecordCrewPayoutTranchePar
     console.warn('[payoutExpensesSyncService] Current assignment fetch warning:', err);
   }
 
-  // 2. Compute cumulative figures
-  const isZeroSettle = installmentAmount === 0;
-  const newPaid = isZeroSettle ? agreed : prevPaid + installmentAmount;
-  const newBalance = isZeroSettle ? 0 : Math.max(0, agreed - newPaid);
-  const newStatus = (newBalance === 0 && (agreed > 0 || isZeroSettle)) ? 'PAID' : (newPaid > 0 ? 'PARTIALLY_PAID' : 'PENDING');
+  // 2. Compute figures
+  let newPaid: number;
+  let newBalance: number;
+  if (params.explicitPaidAmount !== undefined) {
+    newPaid = Math.max(0, Number(params.explicitPaidAmount));
+    newBalance = Math.max(0, agreed - newPaid);
+  } else {
+    const isZeroSettle = installmentAmount === 0;
+    newPaid = isZeroSettle ? agreed : prevPaid + installmentAmount;
+    newBalance = isZeroSettle ? 0 : Math.max(0, agreed - newPaid);
+  }
 
-  // 3. Insert tranche record into fw_crew_payment_tranches (if amount > 0)
+  const isZeroRate = agreed === 0 && newPaid === 0;
+  const newStatus = isZeroRate ? 'PENDING' : (newBalance === 0 && agreed > 0) ? 'PAID' : (newPaid > 0 ? 'PARTIALLY_PAID' : 'PENDING');
+  const paymentStatusDb = isZeroRate ? 'pending' : (newBalance === 0 && agreed > 0) ? 'completed' : (newPaid > 0 ? 'partial' : 'pending');
+
+  // 3. Insert tranche record into fw_crew_payment_tranches (if installment or payment disbursed > 0)
+  const effectiveDisbursed = params.explicitPaidAmount !== undefined 
+    ? Math.max(0, newPaid - prevPaid) 
+    : installmentAmount;
+
   let trancheId: string | null = null;
-  if (installmentAmount > 0) {
+  if (effectiveDisbursed > 0) {
     const tranchePayload = {
       user_id: currentUserId,
       assignment_id: params.assignmentId,
       member_id: params.memberId,
       project_id: resolvedProjectId,
       sub_event_id: resolvedSubEventId,
-      amount: installmentAmount,
+      amount: effectiveDisbursed,
       payment_date: paymentDate,
       payment_mode: paymentMode,
       reference_no: params.referenceNo || null,
-      notes: params.notes || `Tranche payment for ${resolvedClientName} (${resolvedEventName})`
+      notes: params.notes || `Payout for ${resolvedClientName} (${resolvedEventName})`
     };
 
     const { data: insertedTranche, error: trancheErr } = await supabase
@@ -314,26 +332,46 @@ export async function recordCrewPayoutTranche(params: RecordCrewPayoutTranchePar
   }
 
   // 4. Update fw_assignments atomically
+  const assignPayload: any = {
+    agreed_amount: agreed,
+    paid_amount: newPaid,
+    advance_amount: newPaid,
+    balance_amount: newBalance,
+    payment_status: paymentStatusDb,
+    payment_method: paymentMode,
+    payment_date: paymentDate,
+    updated_at: new Date().toISOString()
+  };
+  if (params.notes) assignPayload.notes = params.notes;
+  if (newBalance === 0 && agreed > 0) assignPayload.status = 'COMPLETED';
+
   const { error: assignUpdateErr } = await supabase
     .from('fw_assignments')
-    .update({
-      paid_amount: newPaid,
-      advance_amount: newPaid,
-      balance_amount: newBalance,
-      payment_status: newStatus,
-      status: newBalance === 0 ? 'COMPLETED' : undefined,
-      payment_method: paymentMode,
-      payment_date: paymentDate,
-      updated_at: new Date().toISOString()
-    })
+    .update(assignPayload)
     .eq('id', params.assignmentId);
 
   if (assignUpdateErr) {
     console.warn('[payoutExpensesSyncService] fw_assignments update notice:', assignUpdateErr.message);
   }
 
+  // 4.5. Update crew_assignments_finance
+  try {
+    await supabase
+      .from('crew_assignments_finance')
+      .update({
+        final_agreed_amount: agreed,
+        advance_paid_amount: newPaid,
+        payment_status: paymentStatusDb,
+        payment_method: paymentMode,
+        payment_date: paymentDate,
+        notes: params.notes || undefined,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', params.assignmentId);
+  } catch (_) {}
+
   // 5. Strict Studio Expense Insertion into studio_expenses
-  if (installmentAmount > 0) {
+  if (effectiveDisbursed > 0) {
     try {
       const expensePayload = {
         user_id: currentUserId,
@@ -342,11 +380,11 @@ export async function recordCrewPayoutTranche(params: RecordCrewPayoutTranchePar
         assignment_id: params.assignmentId,
         category: 'Crew Payout',
         title: `${cleanMemberName} - Shoot Remuneration (${resolvedEventName})`,
-        amount: installmentAmount,
+        amount: effectiveDisbursed,
         expense_date: paymentDate,
         payment_mode: paymentMode,
         reference_no: params.referenceNo || null,
-        notes: params.notes || `Tranche payment for ${resolvedClientName} (${resolvedEventName})`,
+        notes: params.notes || `Payout for ${resolvedClientName} (${resolvedEventName})`,
         is_synced_payout: true,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
@@ -369,14 +407,15 @@ export async function recordCrewPayoutTranche(params: RecordCrewPayoutTranchePar
     await supabase
       .from('team_event_payouts')
       .update({
+        agreed_amount: agreed,
         paid_amount: newPaid,
         balance_amount: newBalance,
-        status: newStatus === 'PAID' ? 'PAID' : 'PARTIAL',
+        status: isZeroRate ? 'PENDING' : (newBalance === 0 && agreed > 0 ? 'PAID' : newPaid > 0 ? 'PARTIAL' : 'PENDING'),
         payment_date: paymentDate,
         payment_method: paymentMode,
         updated_at: new Date().toISOString()
       })
-      .or(`assignment_id.eq.${params.assignmentId},and(member_id.eq.${params.memberId},sub_event_id.eq.${resolvedSubEventId})`);
+      .or(`id.eq.${params.assignmentId},assignment_id.eq.${params.assignmentId},and(member_id.eq.${params.memberId},sub_event_id.eq.${resolvedSubEventId})`);
   } catch (_) {}
 
   // 7. Dispatch real-time events across windows & tabs
@@ -385,7 +424,7 @@ export async function recordCrewPayoutTranche(params: RecordCrewPayoutTranchePar
       detail: {
         memberId: params.memberId,
         assignmentId: params.assignmentId,
-        installmentAmount,
+        newAgreed: agreed,
         newPaid,
         newBalance,
         newStatus
@@ -397,10 +436,11 @@ export async function recordCrewPayoutTranche(params: RecordCrewPayoutTranchePar
   return {
     success: true,
     trancheId,
+    newAgreed: agreed,
     newPaid,
     newBalance,
     newStatus,
-    installmentAmount
+    installmentAmount: effectiveDisbursed
   };
 }
 

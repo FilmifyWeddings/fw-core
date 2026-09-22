@@ -46,6 +46,11 @@ interface TeamMember {
   default_daily_rate?: number;
   default_currency?: string;
   payout_frequency?: string;
+  assignments?: any[];
+  payouts?: any[];
+  commercial_agreed?: number;
+  commercial_paid?: number;
+  commercial_balance?: number;
   permissions?: {
     leads_access?: string;
     team_manager_access?: string;
@@ -53,6 +58,7 @@ interface TeamMember {
     post_production_access?: string;
     finance_access?: string;
   };
+  [key: string]: any;
 }
 
 interface ActivityLog {
@@ -353,29 +359,65 @@ export default function WorkspaceTeamPage() {
   useEffect(() => {
     const handleFinanceUpdated = (e?: any) => {
       const detail = e?.detail;
-      if (detail?.memberId && detail?.amount) {
-        setMemberFinancials(prev => {
-          const current = prev[detail.memberId];
-          if (current) {
-            const newPaid = current.total_paid + Number(detail.amount);
-            const newBal = Math.max(0, current.total_balance - Number(detail.amount));
-            return {
-              ...prev,
-              [detail.memberId]: {
-                ...current,
-                total_paid: newPaid,
-                total_balance: newBal
-              }
-            };
-          }
-          return prev;
-        });
+      if (detail?.memberId) {
+        if (detail?.amount) {
+          setMemberFinancials(prev => {
+            const current = prev[detail.memberId];
+            if (current) {
+              const newPaid = current.total_paid + Number(detail.amount);
+              const newBal = Math.max(0, current.total_balance - Number(detail.amount));
+              return {
+                ...prev,
+                [detail.memberId]: {
+                  ...current,
+                  total_paid: newPaid,
+                  total_balance: newBal
+                }
+              };
+            }
+            return prev;
+          });
+        }
+        if (detail.newAgreed !== undefined || detail.newPaid !== undefined) {
+          setMembers(prev => prev.map(m => {
+            if (m.id === detail.memberId) {
+              const updatedAssigns = (m.assignments || []).map((a: any) => {
+                if (String(a.id) === String(detail.assignmentId)) {
+                  return {
+                    ...a,
+                    agreed_amount: detail.newAgreed !== undefined ? detail.newAgreed : a.agreed_amount,
+                    paid_amount: detail.newPaid !== undefined ? detail.newPaid : a.paid_amount,
+                    balance_amount: detail.newBalance !== undefined ? detail.newBalance : a.balance_amount
+                  };
+                }
+                return a;
+              });
+              const updatedPayouts = (m.payouts || []).map((p: any) => {
+                if (String(p.id) === String(detail.assignmentId)) {
+                  return {
+                    ...p,
+                    agreed_amount: detail.newAgreed !== undefined ? detail.newAgreed : p.agreed_amount,
+                    paid_amount: detail.newPaid !== undefined ? detail.newPaid : p.paid_amount,
+                    balance_amount: detail.newBalance !== undefined ? detail.newBalance : p.balance_amount
+                  };
+                }
+                return p;
+              });
+              return {
+                ...m,
+                assignments: updatedAssigns,
+                payouts: updatedPayouts
+              };
+            }
+            return m;
+          }));
+        }
       }
-      loadFinancialSummaries(members);
+      loadMembers();
     };
     window.addEventListener('team_finance_updated', handleFinanceUpdated);
     return () => window.removeEventListener('team_finance_updated', handleFinanceUpdated);
-  }, [members, loadFinancialSummaries]);
+  }, [loadMembers]);
 
   useEffect(() => {
     if (activeTab === 'activity_logs') {
@@ -1128,6 +1170,9 @@ export default function WorkspaceTeamPage() {
         workspaceName={workspaceName || 'Filmify Weddings'}
         member={selectedFinanceMember}
         initialSummary={selectedFinanceMember ? memberFinancials[selectedFinanceMember.id] : null}
+        onFinancialUpdate={() => {
+          loadMembers();
+        }}
       />
 
       {/* Luxury Red Delete Warning Modal */}

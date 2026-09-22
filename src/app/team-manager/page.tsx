@@ -857,6 +857,25 @@ export default function TeamManagerPage() {
 
         const matchedMemberObj = memberId ? teamMembers.find(m => m.id === memberId) || null : null;
 
+        const isMemberInHouse = 
+          (matchedMemberObj as any)?.payout_frequency === 'monthly' ||
+          (matchedMemberObj as any)?.primary_type === 'IN_HOUSE' ||
+          (matchedMemberObj as any)?.primary_type === 'in_house' ||
+          (matchedMemberObj as any)?.type === 'IN_HOUSE' ||
+          (matchedMemberObj as any)?.type === 'in_house' ||
+          ((matchedMemberObj as any)?.member_types && (matchedMemberObj as any)?.member_types.includes('IN_HOUSE')) ||
+          ((matchedMemberObj as any)?.member_types && (matchedMemberObj as any)?.member_types.includes('in_house'));
+
+        const defaultAssignedRate = isMemberInHouse ? 0 : Number(
+          (matchedMemberObj as any)?.default_daily_rate ?? 
+          (matchedMemberObj as any)?.default_rate ?? 
+          (matchedMemberObj as any)?.daily_rate ?? 
+          (matchedMemberObj as any)?.day_rate ?? 
+          (matchedMemberObj as any)?.per_day_rate ?? 
+          (matchedMemberObj as any)?.custom_rate ?? 
+          0
+        );
+
         // 1. INSTANT OPTIMISTIC UI STATE UPDATE (NO PAGE RELOAD / NO RE-FETCH)
         setProjects(prevProjects =>
           prevProjects.map(proj => ({
@@ -872,7 +891,12 @@ export default function TeamManagerPage() {
                           ...a, 
                           assigned_member_id: memberId, 
                           fw_team_members: matchedMemberObj,
-                          assigned_member_name: matchedMemberObj?.name || (a as any).assigned_member_name 
+                          assigned_member_name: matchedMemberObj?.name || (a as any).assigned_member_name,
+                          agreed_amount: defaultAssignedRate,
+                          paid_amount: 0,
+                          advance_amount: 0,
+                          balance_amount: defaultAssignedRate,
+                          payment_status: 'pending'
                         }
                       : a
                   )
@@ -886,6 +910,11 @@ export default function TeamManagerPage() {
                       assigned_member_id: memberId,
                       fw_team_members: matchedMemberObj,
                       assigned_member_name: matchedMemberObj?.name,
+                      agreed_amount: defaultAssignedRate,
+                      paid_amount: 0,
+                      advance_amount: 0,
+                      balance_amount: defaultAssignedRate,
+                      payment_status: 'pending',
                     },
                   ];
               return { ...se, fw_assignments: updatedAssignments };
@@ -1021,6 +1050,12 @@ export default function TeamManagerPage() {
               // Exact primary key update!
               const updatePayload: any = { 
                 assigned_member_id: memberId,
+                assigned_member_name: matchedMemberObj?.name || null,
+                agreed_amount: defaultAssignedRate,
+                paid_amount: 0,
+                advance_amount: 0,
+                balance_amount: defaultAssignedRate,
+                payment_status: 'pending',
                 status: memberId ? 'assigned' : 'pending'
               };
               if (currentUid) {
@@ -1042,6 +1077,12 @@ export default function TeamManagerPage() {
                 sub_event_id: activeAssign.sub_event_id,
                 required_role: activeAssign.required_role,
                 assigned_member_id: memberId,
+                assigned_member_name: matchedMemberObj?.name || null,
+                agreed_amount: defaultAssignedRate,
+                paid_amount: 0,
+                advance_amount: 0,
+                balance_amount: defaultAssignedRate,
+                payment_status: 'pending',
                 sub_event_name: subEventObj?.event_title || 'Wedding Event',
                 sub_event_date: subEventObj?.event_date || new Date().toISOString().split('T')[0],
                 start_time: subEventObj?.roll_call_time || '10:00',
