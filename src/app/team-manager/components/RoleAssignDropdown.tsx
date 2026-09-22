@@ -56,7 +56,7 @@ export default function RoleAssignDropdown({
   const calculatePopoverPosition = (rect: DOMRect) => {
     const spaceBelow = window.innerHeight - rect.bottom;
     const spaceAbove = rect.top;
-    const openAbove = spaceBelow < 330 && spaceAbove > spaceBelow;
+    const openAbove = (spaceBelow < 350 && spaceAbove > spaceBelow) || (spaceBelow < 300 && spaceAbove > 180);
     const left = Math.max(10, Math.min(rect.left - 40, window.innerWidth - 270));
 
     if (openAbove) {
@@ -115,10 +115,14 @@ export default function RoleAssignDropdown({
   const handleOpenPopover = (e: React.MouseEvent<HTMLDivElement>) => {
     if (readOnly) return;
     e.stopPropagation();
-    const rect = e.currentTarget.getBoundingClientRect();
+    if (isOpen) {
+      handleClose();
+      return;
+    }
+    const rect = triggerRef.current ? triggerRef.current.getBoundingClientRect() : e.currentTarget.getBoundingClientRect();
     setPopoverPos(calculatePopoverPosition(rect));
     setSearchQuery('');
-    setIsOpen(!isOpen);
+    setIsOpen(true);
   };
 
   const handleClose = () => {
@@ -324,7 +328,7 @@ export default function RoleAssignDropdown({
         <>
           {/* BACKDROP OVERLAY TO CLOSE */}
           <div
-            className="fixed inset-0 z-[90]"
+            className="fixed inset-0 z-[99998]"
             onClick={handleClose}
           />
           <AnimatePresence>
@@ -340,7 +344,7 @@ export default function RoleAssignDropdown({
                   : { top: `${popoverPos.top}px` }),
                 left: `${popoverPos.left}px`,
                 maxHeight: popoverPos.maxHeight ? `${popoverPos.maxHeight}px` : undefined,
-                zIndex: 95,
+                zIndex: 99999,
               }}
               className="w-64 bg-white border border-[#6C5CE7]/20 rounded-[18px] shadow-[0_25px_60px_rgba(0,0,0,0.35)] p-3 space-y-2 text-left select-none flex flex-col"
             >
