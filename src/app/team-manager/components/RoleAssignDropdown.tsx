@@ -7,7 +7,7 @@ import { FWAssignment, FWTeamMember } from '@/types';
 import { Search, Plus, Check } from 'lucide-react';
 import { getRoleShortCode, getRoleAbbr } from '@/lib/workspace-settings';
 import { useWorkspaceData } from '@/context/WorkspaceDataContext';
-import { checkRoleSlotMatch } from '../hooks/useTeamManagerFilter';
+import { checkRoleSlotMatch, isCardFilterActive } from '../hooks/useTeamManagerFilter';
 import { UnifiedFilterState } from './ShootFilterModal';
 
 interface RoleAssignDropdownProps {
@@ -131,8 +131,11 @@ export default function RoleAssignDropdown({
     slotMatch.isTargetedSlot
   );
 
+  const isFilterActive = isCardFilterActive(unifiedFilters);
+  const isDimmed = isFilterActive && !isSelectedSpotlight;
+
   return (
-    <div className="relative inline-block" ref={triggerRef}>
+    <div className={`relative inline-block transition-opacity duration-200 ${isDimmed ? 'opacity-35 grayscale contrast-75' : ''}`} ref={triggerRef}>
       {/* TRIGGER UI */}
       {variant === 'chip' ? (
         <div

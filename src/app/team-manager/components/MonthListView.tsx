@@ -9,7 +9,7 @@ import {
 import RoleAssignDropdown from './RoleAssignDropdown';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { resolveEventCrewVisibility } from '@/lib/permissions/rbacRules';
-import { isSubEventMatch } from '../hooks/useTeamManagerFilter';
+import { isSubEventMatch, isRoleMatching } from '../hooks/useTeamManagerFilter';
 
 interface MonthListViewProps {
   projects: FWProject[];
@@ -98,12 +98,12 @@ export default function MonthListView({
         // Legacy single role filter (top pill)
         if (selectedRoleFilter !== 'All') {
           const assignments = resolveSubEventAssignments(se, teamMembers);
-          const hasRole = assignments.some((a) => a.required_role === selectedRoleFilter);
+          const hasRole = assignments.some((a) => isRoleMatching(selectedRoleFilter, a.required_role));
           if (!hasRole) return;
         }
 
         // Strict unified filter matching (strict co-filtering of role + status, dates, PM, member, event types)
-        if (!isSubEventMatch(se, project, unifiedFilters)) return;
+        if (!isSubEventMatch(se, project, unifiedFilters, teamMembers)) return;
 
         const isTbd = Boolean((se as any).is_date_tbd) || !se.event_date || se.event_date.toLowerCase() === 'tbd' || se.event_date.toLowerCase().includes('not fix');
         const d = se.event_date ? new Date(se.event_date) : null;

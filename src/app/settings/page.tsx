@@ -665,6 +665,13 @@ export default function SettingsPage() {
               session_timeout_minutes: Number(financeTimeoutMins) || 60,
               updated_at: new Date().toISOString()
             }], { onConflict: 'workspace_id' });
+
+          try {
+            localStorage.setItem('sc_finance_pin_required', financePinLocked ? 'true' : 'false');
+            if (financePinLocked) {
+              sessionStorage.removeItem(`finance_unlocked_${wId}`);
+            }
+          } catch (_) {}
         } catch (secSaveErr) {
           console.warn('Finance vault save note:', secSaveErr);
         }

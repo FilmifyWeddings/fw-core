@@ -190,9 +190,17 @@ export default function FinancePage() {
         return false;
       }
     }
+    return true;
+  });
+  const [isPinRequired, setIsPinRequired] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const savedPinLock = localStorage.getItem('sc_finance_pin_required');
+      if (savedPinLock === 'true') {
+        return true;
+      }
+    }
     return false;
   });
-  const [isPinRequired, setIsPinRequired] = useState<boolean>(false);
 
 
   // ─────────────────────────────────────────────────────────────
@@ -517,6 +525,9 @@ export default function FinancePage() {
           setSecuritySettings(secData);
 
           if (secData && secData.is_locked) {
+            try {
+              localStorage.setItem('sc_finance_pin_required', 'true');
+            } catch (_) {}
             setIsPinRequired(true);
             const unlockTimestamp = sessionStorage.getItem(`finance_unlocked_${wsId}`);
             if (unlockTimestamp) {
@@ -532,6 +543,9 @@ export default function FinancePage() {
               setIsPinVerified(false);
             }
           } else {
+            try {
+              localStorage.setItem('sc_finance_pin_required', 'false');
+            } catch (_) {}
             setIsPinRequired(false);
             setIsPinVerified(true);
           }
@@ -2142,28 +2156,29 @@ export default function FinancePage() {
     setIsQuotationModalOpen(true);
   };
 
-  // 1. Loading state while verifying PIN status (only blocks on true cold start with zero cached data)
-  if (isCheckingPinStatus && !isPinVerified && financeRecords.length === 0) {
-    return <StudioCoreLiquidLoader label="Loading Finance & Accounts..." />;
+  // 1. HARD ZERO-DOM SECURITY GATE: If PIN is NOT verified, NEVER render the finance dashboard DOM
+  if (!isPinVerified) {
+    if (isPinRequired) {
+      return (
+        <div className="flex min-h-[85vh] w-full items-center justify-center p-4 bg-[#FDFBF7]">
+          <FinancePinVerificationCard
+            securitySettings={securitySettings}
+            workspaceId={currentWorkspaceId}
+            onSuccess={() => {
+              sessionStorage.setItem(`finance_unlocked_${currentWorkspaceId}`, Date.now().toString());
+              setIsPinVerified(true);
+            }}
+          />
+        </div>
+      );
+    }
+
+    if (isCheckingPinStatus) {
+      return <StudioCoreLiquidLoader label="Verifying Security..." />;
+    }
   }
 
-  // 2. HARD PIN-LOCK GATE: If PIN is required and not verified, render ONLY the PIN Gate Card (ZERO Finance DOM)
-  if (isPinRequired && !isPinVerified) {
-    return (
-      <div className="flex min-h-[85vh] w-full items-center justify-center p-4 bg-[#FDFBF7]">
-        <FinancePinVerificationCard
-          securitySettings={securitySettings}
-          workspaceId={currentWorkspaceId}
-          onSuccess={() => {
-            sessionStorage.setItem(`finance_unlocked_${currentWorkspaceId}`, Date.now().toString());
-            setIsPinVerified(true);
-          }}
-        />
-      </div>
-    );
-  }
-
-  // 3. ONLY REACHED IF 100% VERIFIED
+  // 2. ONLY REACHED IF 100% VERIFIED
   return (
     <div className="min-h-screen bg-[#FDFBF7] text-slate-900 pb-28 pt-3 px-4 sm:px-6 lg:px-8 font-sans selection:bg-amber-100 selection:text-amber-900 w-full max-w-full overflow-x-hidden">
       <div className="w-full space-y-4 sm:space-y-5">

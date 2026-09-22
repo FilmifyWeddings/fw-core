@@ -23,8 +23,7 @@ import { parseClientExtended } from '@/components/clients/client-insider-modal';
 import { logProjectActivity, logCrewAssignmentChange } from '@/lib/services/projectAuditService';
 import ProjectHistoryModal from './components/ProjectHistoryModal';
 import TeamManagerAllHistoryModal from './components/TeamManagerAllHistoryModal';
-import { checkProjectUnassignedWarning } from './components/TeamManagerProjectCard';
-import { isProjectMatch, isSubEventMatch, isPmMatch, checkRoleSlotMatch, getCardHighlightClass, isCardFilterActive as checkIsFilterActive, extractSubEventSlots } from './hooks/useTeamManagerFilter';
+import { isProjectMatch, isSubEventMatch, isPmMatch, checkRoleSlotMatch, getCardHighlightClass, isCardFilterActive as checkIsFilterActive, extractSubEventSlots, isRoleMatching, isSlotAssigned } from './hooks/useTeamManagerFilter';
 import AddProjectModal from './components/AddProjectModal';
 import AddTeamMemberModal from './components/AddTeamMemberModal';
 import TeamSettingsModal from './components/TeamSettingsModal';
@@ -1547,16 +1546,17 @@ export default function TeamManagerPage() {
 
       // 2. Role Filter (legacy dropdown or unified)
       if (selectedRoleFilter !== 'All') {
-        const hasRole = p.fw_sub_events?.some(se =>
-          se.fw_assignments?.some(a => a.required_role === selectedRoleFilter)
-        );
+        const hasRole = p.fw_sub_events?.some(se => {
+          const slots = extractSubEventSlots(se, teamMembers);
+          return slots.some(s => isRoleMatching(selectedRoleFilter, s.required_role || s.role_name || s.role));
+        });
         if (!hasRole) return false;
       }
 
       // 3. Strict Interconnected Match (Studio, Month, Dates, Event Types, PMs, Members, Co-filtered Roles + Statuses)
-      return isProjectMatch(p, unifiedFilters);
+      return isProjectMatch(p, unifiedFilters, teamMembers);
     });
-  }, [projects, activeTab, searchQuery, selectedRoleFilter, unifiedFilters]);
+  }, [projects, activeTab, searchQuery, selectedRoleFilter, unifiedFilters, teamMembers]);
 
   // Filter Stats calculation for top banner (Projects count, Sub-Events count, Unassigned slots count)
   const filterStats = useMemo(() => {
@@ -1567,6 +1567,8 @@ export default function TeamManagerPage() {
         projectsCount: projects.filter(p => !p.is_archived).length,
         subEventsCount: 0,
         unassignedSlotsCount: 0,
+        assignedSlotsCount: 0,
+        targetedSlotsCount: 0,
         totalSlotsCount: 0,
         activeRoles: [] as string[],
         activeStatuses: [] as string[],
@@ -1575,6 +1577,8 @@ export default function TeamManagerPage() {
 
     let subEventsCount = 0;
     let unassignedSlotsCount = 0;
+    let assignedSlotsCount = 0;
+    let targetedSlotsCount = 0;
     let totalSlotsCount = 0;
 
     const activeRoles: string[] = [];
@@ -1583,7 +1587,7 @@ export default function TeamManagerPage() {
     }
     if (unifiedFilters?.roles && unifiedFilters.roles.length > 0) {
       unifiedFilters.roles.forEach(r => {
-        if (!activeRoles.some(ar => ar.toLowerCase() === r.toLowerCase())) {
+        if (!activeRoles.some(ar => isRoleMatching(ar, r))) {
           activeRoles.push(r);
         }
       });
@@ -1593,42 +1597,57 @@ export default function TeamManagerPage() {
       ? unifiedFilters.assignmentStatuses
       : (unifiedFilters?.assignmentStatus && unifiedFilters.assignmentStatus !== 'all' ? [unifiedFilters.assignmentStatus] : []);
 
+    const matchingProjectIds = new Set<string>();
+
     filteredProjects.forEach(project => {
-      const subEvents = (project.fw_sub_events || []).filter(se => isSubEventMatch(se, project, unifiedFilters));
-      subEventsCount += subEvents.length;
+      const matchingSubEvents = (project.fw_sub_events || []).filter(se =>
+        isSubEventMatch(se, project, unifiedFilters, teamMembers)
+      );
 
-      subEvents.forEach(se => {
-        const slots = extractSubEventSlots(se);
-        slots.forEach((slot: any) => {
-          const slotRoleName = slot.required_role || slot.role_name || slot.role || '';
-          const slotRoleCode = slot.role_short_code || slot.role_code || slot.code || '';
+      if (matchingSubEvents.length > 0) {
+        matchingProjectIds.add(project.id);
+        subEventsCount += matchingSubEvents.length;
 
-          const matchesRole = activeRoles.length === 0 || activeRoles.some(r =>
-            r.toLowerCase() === slotRoleName.toLowerCase() ||
-            (slotRoleCode && r.toUpperCase() === slotRoleCode.toUpperCase())
-          );
+        matchingSubEvents.forEach(se => {
+          const slots = extractSubEventSlots(se, teamMembers);
+          slots.forEach((slot: any) => {
+            const slotRoleName = slot.required_role || slot.role_name || slot.role || '';
 
-          if (!matchesRole) return;
+            const matchesRole = activeRoles.length === 0 || activeRoles.some(r =>
+              isRoleMatching(r, slotRoleName)
+            );
 
-          totalSlotsCount++;
-          const isAssigned = Boolean(slot.assigned_member_id || slot.team_member_id || slot.is_assigned);
-          if (!isAssigned) {
-            unassignedSlotsCount++;
-          }
+            if (!matchesRole) return;
+
+            totalSlotsCount++;
+            const isAssigned = isSlotAssigned(slot);
+            if (isAssigned) {
+              assignedSlotsCount++;
+            } else {
+              unassignedSlotsCount++;
+            }
+
+            const slotMatch = checkRoleSlotMatch(slot, unifiedFilters);
+            if (slotMatch.isTargetedSlot) {
+              targetedSlotsCount++;
+            }
+          });
         });
-      });
+      }
     });
 
     return {
       isActive: true,
-      projectsCount: filteredProjects.length,
+      projectsCount: matchingProjectIds.size,
       subEventsCount,
       unassignedSlotsCount,
+      assignedSlotsCount,
+      targetedSlotsCount,
       totalSlotsCount,
       activeRoles,
       activeStatuses,
     };
-  }, [projects, filteredProjects, unifiedFilters, searchQuery, selectedRoleFilter]);
+  }, [projects, filteredProjects, unifiedFilters, searchQuery, selectedRoleFilter, teamMembers]);
 
 
   // Flatten TBD / Date Not Fixed shoots for Card View & Month View consistency with ALL active filters applied
@@ -1637,118 +1656,44 @@ export default function TeamManagerPage() {
     projects.forEach((p) => {
       if (p.is_archived) return;
 
-      // 1. Project Manager (PM) Filter (Multi-select array or single PM)
-      const activePmIds = (unifiedFilters?.pmIds && unifiedFilters.pmIds.length > 0)
-        ? unifiedFilters.pmIds
-        : (unifiedFilters?.pmId && unifiedFilters.pmId !== 'all' ? [unifiedFilters.pmId] : []);
-
-      if (activePmIds.length > 0) {
-        const pObj: any = p;
-        const pmId = String(pObj.project_manager_id || pObj.project_manager?.id || '').toLowerCase();
-        const pmName = String(
-          pObj.project_manager_name ||
-          pObj.project_manager?.name ||
-          (typeof pObj.project_manager === 'string' ? pObj.project_manager : '') ||
-          pObj.lead_assigned_to ||
-          ''
-        ).toLowerCase();
-        const matchPm = activePmIds.some(target => {
-          const t = target.toLowerCase();
-          return pmId === t || pmName === t;
-        });
-        if (!matchPm) return;
-      }
-
-      // Studio Filter
-      if (unifiedFilters?.studioId && unifiedFilters.studioId !== 'all') {
-        if (p.user_id !== unifiedFilters.studioId) return;
+      // Search Term Filter (Client name, Project title, Sub-event title, Venue)
+      if (searchQuery && searchQuery.trim() !== '') {
+        const q = searchQuery.toLowerCase().trim();
+        const matchClient = (p.client_name || '').toLowerCase().includes(q);
+        const matchProject = ((p as any).title || (p as any).project_name || '').toLowerCase().includes(q);
+        const matchSub = (p.fw_sub_events || []).some(se => (se.event_title || (se as any).name || (se as any).event_type || '').toLowerCase().includes(q));
+        const matchVenue = (p.main_venue || '').toLowerCase().includes(q);
+        if (!matchClient && !matchProject && !matchSub && !matchVenue) return;
       }
 
       (p.fw_sub_events || []).forEach((se) => {
-        const isTbd = Boolean((se as any).is_date_tbd) || !se.event_date || se.event_date.toLowerCase() === 'tbd' || se.event_date.toLowerCase().includes('not fix');
+        const isTbd = Boolean((se as any).is_date_tbd) || !se.event_date || String(se.event_date).toLowerCase() === 'tbd' || String(se.event_date).toLowerCase().includes('not fix');
         const d = se.event_date ? new Date(se.event_date) : null;
         if (!isTbd && d && !isNaN(d.getTime())) return;
 
-        // 2. Search Term Filter (Client name, Project title, Sub-event title, Venue)
-        if (searchQuery && searchQuery.trim() !== '') {
-          const q = searchQuery.toLowerCase().trim();
-          const matchClient = (p.client_name || '').toLowerCase().includes(q);
-          const matchProject = ((p as any).title || (p as any).project_name || '').toLowerCase().includes(q);
-          const matchEvent = (se.event_title || (se as any).name || (se as any).event_type || '').toLowerCase().includes(q);
-          const matchVenue = (se.venue_name || p.main_venue || '').toLowerCase().includes(q);
-          if (!matchClient && !matchProject && !matchEvent && !matchVenue) return;
-        }
-
-        // 3. Event Type Filter (e.g., 'Pre Wedding', 'Wedding', 'Haldi')
-        if (unifiedFilters?.eventTypes && unifiedFilters.eventTypes.length > 0) {
-          const eventTitle = (se.event_title || (se as any).name || (se as any).event_type || '').toLowerCase();
-          const matchType = unifiedFilters.eventTypes.some(t => eventTitle.includes(t.toLowerCase()));
-          if (!matchType) return;
-        }
-
-        // 4. Role Filter (Top toolbar role pill)
+        // Role Filter (Top toolbar role pill)
         if (selectedRoleFilter && selectedRoleFilter !== 'All') {
-          const hasRole = (se.fw_assignments || []).some(a => a.required_role === selectedRoleFilter);
+          const slots = extractSubEventSlots(se, teamMembers);
+          const hasRole = slots.some(s => isRoleMatching(selectedRoleFilter, s.required_role || s.role_name || s.role));
           if (!hasRole) return;
         }
 
-        // 5. Strict Co-Filtering: Crew Role + Assignment Status on sub-event slots
-        const hasRoleFilter = Boolean(unifiedFilters?.roles && unifiedFilters.roles.length > 0);
-        const activeStatuses = (unifiedFilters?.assignmentStatuses && unifiedFilters.assignmentStatuses.length > 0)
-          ? unifiedFilters.assignmentStatuses
-          : (unifiedFilters?.assignmentStatus && unifiedFilters.assignmentStatus !== 'all' ? [unifiedFilters.assignmentStatus] : []);
-        const hasStatusFilter = activeStatuses.length > 0;
-
-        if (hasRoleFilter || hasStatusFilter) {
-          const slots = se.fw_assignments || [];
-          if (slots.length === 0) return;
-
-          const slotMatches = slots.some((roleSlot: any) => {
-            const slotRoleName = roleSlot.required_role || roleSlot.role_name || roleSlot.role || '';
-            const slotRoleCode = roleSlot.role_short_code || roleSlot.role_code || roleSlot.code || '';
-
-            const matchesRole = !hasRoleFilter || (unifiedFilters?.roles || []).some((r: string) =>
-              r.toLowerCase() === slotRoleName.toLowerCase() ||
-              (slotRoleCode && r.toUpperCase() === slotRoleCode.toUpperCase())
-            );
-            if (!matchesRole) return false;
-
-            const isAssigned = Boolean(roleSlot.assigned_member_id);
-            if (hasStatusFilter) {
-              const wantsAssigned = activeStatuses.some(s => s.toLowerCase() === 'assigned' || s.toLowerCase() === 'fully_assigned');
-              const wantsUnassigned = activeStatuses.some(s => s.toLowerCase() === 'unassigned');
-              if (wantsAssigned && wantsUnassigned) return true;
-              if (wantsAssigned && !isAssigned) return false;
-              if (wantsUnassigned && isAssigned) return false;
-            }
-            return true;
-          });
-
-          if (!slotMatches) return;
-        }
-
-        // 7. Unified Team Member Spotlight Filter (Multi-select array or single member)
-        const activeMemberIds = (unifiedFilters?.memberIds && unifiedFilters.memberIds.length > 0)
-          ? unifiedFilters.memberIds
-          : (unifiedFilters?.memberId && unifiedFilters.memberId !== 'all' ? [unifiedFilters.memberId] : []);
-
-        if (activeMemberIds.length > 0) {
-          const hasMember = (se.fw_assignments || []).some(a => {
-            const mId = (a.assigned_member_id || (a as any).team_member_id || (a.fw_team_members as any)?.id || '').toLowerCase();
-            const mName = ((a.fw_team_members as any)?.name || (a as any).clean_name || '').toLowerCase();
-            return activeMemberIds.some(target => {
-              const t = target.toLowerCase();
-              return mId === t || mName === t;
-            });
-          });
-          if (!hasMember) return;
-        }
+        // Strict Interconnected Match (Studio, Month/Dates, Event Types, PM, Member, Strict Co-filtered Roles + Statuses)
+        const isMatch = isSubEventMatch(
+          se,
+          p,
+          unifiedFilters?.monthYear && unifiedFilters.monthYear !== 'all'
+            ? { ...unifiedFilters, monthYear: 'all' }
+            : unifiedFilters,
+          teamMembers
+        );
+        if (!isMatch) return;
 
         list.push({ project: p, subEvent: se });
       });
     });
     return list;
-  }, [projects, searchQuery, selectedRoleFilter, unifiedFilters]);
+  }, [projects, searchQuery, selectedRoleFilter, unifiedFilters, teamMembers]);
 
   if (!isMounted || (loading && projects.length === 0)) {
     return <StudioCoreLiquidLoader label="Loading Bookings & Operations..." />;
@@ -2013,22 +1958,46 @@ export default function TeamManagerPage() {
                   <span className="text-slate-500 font-medium">{filterStats.subEventsCount === 1 ? 'Sub-Event' : 'Sub-Events'}</span>
                 </div>
 
-                <div className={`flex items-center gap-1.5 px-3 py-1 rounded-xl shadow-2xs text-xs font-bold ${
-                  filterStats.unassignedSlotsCount > 0
-                    ? 'bg-rose-50 dark:bg-rose-950/40 border border-rose-300/80 text-rose-700 dark:text-rose-300'
-                    : 'bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300/80 text-emerald-700 dark:text-emerald-300'
-                }`}>
-                  {filterStats.unassignedSlotsCount > 0 ? (
-                    <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
-                  ) : (
-                    <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                  )}
-                  <span>{filterStats.unassignedSlotsCount}</span>
-                  <span className="font-semibold">
-                    {filterStats.unassignedSlotsCount === 1 ? 'Unassigned Slot' : 'Unassigned Slots'}
-                    {filterStats.activeRoles.length > 0 ? ` (${filterStats.activeRoles.join(', ')})` : ''} to Assign
-                  </span>
-                </div>
+                {(() => {
+                  const activeStatuses = filterStats.activeStatuses || [];
+                  const wantsAssigned = activeStatuses.some(s => s.toLowerCase() === 'assigned' || s.toLowerCase() === 'fully_assigned');
+                  const wantsUnassigned = activeStatuses.some(s => s.toLowerCase() === 'unassigned');
+                  const isAssignedOnly = wantsAssigned && !wantsUnassigned;
+                  const displayCount = isAssignedOnly ? filterStats.assignedSlotsCount : filterStats.unassignedSlotsCount;
+                  const roleLabel = filterStats.activeRoles.length > 0 ? ` (${filterStats.activeRoles.join(', ')})` : '';
+
+                  if (isAssignedOnly) {
+                    return (
+                      <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl shadow-2xs text-xs font-bold bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300/80 text-emerald-700 dark:text-emerald-300">
+                        <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>{displayCount}</span>
+                        <span className="font-semibold">
+                          {displayCount === 1 ? 'Assigned Slot' : 'Assigned Slots'}
+                          {roleLabel}
+                        </span>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className={`flex items-center gap-1.5 px-3 py-1 rounded-xl shadow-2xs text-xs font-bold ${
+                      displayCount > 0
+                        ? 'bg-rose-50 dark:bg-rose-950/40 border border-rose-300/80 text-rose-700 dark:text-rose-300'
+                        : 'bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300/80 text-emerald-700 dark:text-emerald-300'
+                    }`}>
+                      {displayCount > 0 ? (
+                        <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+                      ) : (
+                        <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                      )}
+                      <span>{displayCount}</span>
+                      <span className="font-semibold">
+                        {displayCount === 1 ? 'Unassigned Slot' : 'Unassigned Slots'}
+                        {roleLabel} {displayCount > 0 ? 'to Assign' : ''}
+                      </span>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Clear All Button */}
@@ -2630,7 +2599,7 @@ export default function TeamManagerPage() {
                         {/* HORIZONTAL MODERN GRADIENT SUB-EVENT CARDS STACK */}
                         <div className="space-y-4">
                           {(isCardFilterActive
-                            ? (project.fw_sub_events || []).filter(se => isSubEventMatch(se, project, unifiedFilters))
+                            ? (project.fw_sub_events || []).filter(se => isSubEventMatch(se, project, unifiedFilters, teamMembers))
                             : (project.fw_sub_events || [])
                           ).map((subEvent) => {
                             const isTbd = Boolean((subEvent as any).is_date_tbd) || !subEvent.event_date || isNaN(new Date(subEvent.event_date).getTime());
@@ -2814,15 +2783,17 @@ export default function TeamManagerPage() {
                                           return null;
                                         }
 
+                                        const isFilterActive = checkIsFilterActive(unifiedFilters) || Boolean(searchQuery.trim()) || selectedRoleFilter !== 'All';
                                         const slotMatch = checkRoleSlotMatch(assignment, unifiedFilters);
                                         const isTargeted = isSelectedSpotlight || slotMatch.isTargetedSlot;
+                                        const isDimmed = isFilterActive && !isTargeted;
 
                                         return (
-                                          <div key={assignment.id} className="relative flex flex-col items-center min-w-[68px]">
+                                          <div key={assignment.id} className={`relative flex flex-col items-center min-w-[68px] transition-opacity duration-200 ${isDimmed ? 'opacity-35 grayscale contrast-75' : ''}`}>
                                             <div
                                               className={`relative flex flex-col items-center transition-all duration-300 ${
                                                 isTargeted
-                                                  ? 'rounded-lg ring-2 ring-amber-400/80 bg-amber-50/70 dark:bg-amber-950/30 p-1 shadow-sm shadow-amber-300/40 animate-pulse'
+                                                  ? 'rounded-lg ring-2 ring-amber-400/80 bg-amber-50/70 dark:bg-amber-950/30 p-1 shadow-sm shadow-amber-300/40'
                                                   : ''
                                               }`}
                                             >
@@ -2946,7 +2917,7 @@ export default function TeamManagerPage() {
                     const isCardFilterActive = checkIsFilterActive(unifiedFilters);
                     const isProjectPmMatched = isPmMatch(project, unifiedFilters);
                     const subEvents = isCardFilterActive
-                      ? (project.fw_sub_events || []).filter(se => isSubEventMatch(se, project, unifiedFilters))
+                      ? (project.fw_sub_events || []).filter(se => isSubEventMatch(se, project, unifiedFilters, teamMembers))
                       : (project.fw_sub_events || []);
                     const projectGradient = getGradientByProjectId(project.id || project.client_name);
                     const cardHighlightClass = getCardHighlightClass(isCardFilterActive, true);
@@ -3304,15 +3275,17 @@ export default function TeamManagerPage() {
                                             return null;
                                           }
 
+                                          const isFilterActive = checkIsFilterActive(unifiedFilters) || Boolean(searchQuery.trim()) || selectedRoleFilter !== 'All';
                                           const slotMatch = checkRoleSlotMatch(assignment, unifiedFilters);
                                           const isTargeted = isSelectedSpotlight || slotMatch.isTargetedSlot;
+                                          const isDimmed = isFilterActive && !isTargeted;
 
                                           return (
                                             <div
                                               key={assignment.id}
-                                              className={`relative flex flex-col items-center transition-all duration-300 ${
+                                              className={`relative flex flex-col items-center transition-all duration-300 ${isDimmed ? 'opacity-35 grayscale contrast-75' : ''} ${
                                                 isTargeted
-                                                  ? 'rounded-lg ring-2 ring-amber-400/80 bg-amber-50/70 dark:bg-amber-950/30 p-1 shadow-sm shadow-amber-300/40 animate-pulse'
+                                                  ? 'rounded-lg ring-2 ring-amber-400/80 bg-amber-50/70 dark:bg-amber-950/30 p-1 shadow-sm shadow-amber-300/40'
                                                   : ''
                                               }`}
                                             >
@@ -3480,6 +3453,7 @@ export default function TeamManagerPage() {
             teamMembers={teamMembers}
             searchQuery={searchQuery}
             selectedRoleFilter={selectedRoleFilter}
+            unifiedFilters={unifiedFilters}
             format12HourTime={format12HourTime}
             getGradientByProjectId={getGradientByProjectId}
             onAssignMember={handleAssignMember}

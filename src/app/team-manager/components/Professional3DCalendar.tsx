@@ -11,12 +11,15 @@ import {
 import RoleAssignDropdown from './RoleAssignDropdown';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { resolveEventCrewVisibility } from '@/lib/permissions/rbacRules';
+import { isSubEventMatch, isRoleMatching } from '../hooks/useTeamManagerFilter';
+import { UnifiedFilterState } from './ShootFilterModal';
 
 interface Professional3DCalendarProps {
   projects: FWProject[];
   teamMembers: FWTeamMember[];
   searchQuery: string;
   selectedRoleFilter: string;
+  unifiedFilters?: UnifiedFilterState | any;
   format12HourTime: (time?: string) => string;
   getGradientByProjectId: (id: string) => string;
   onAssignMember: (assignmentId: string, memberId: string | null) => void;
@@ -113,6 +116,7 @@ export default function Professional3DCalendar({
   teamMembers,
   searchQuery: parentSearchQuery,
   selectedRoleFilter,
+  unifiedFilters,
   format12HourTime,
   getGradientByProjectId,
   onAssignMember,
@@ -204,9 +208,11 @@ export default function Professional3DCalendar({
         const assignments = resolveSubEventAssignments(se, teamMembers);
 
         if (selectedRoleFilter && selectedRoleFilter !== 'All') {
-          const hasRole = assignments.some((a) => a.required_role === selectedRoleFilter);
+          const hasRole = assignments.some((a) => isRoleMatching(selectedRoleFilter, a.required_role));
           if (!hasRole) return;
         }
+
+        if (!isSubEventMatch(se, project, unifiedFilters, teamMembers)) return;
 
         const dateStr = se.event_date;
         if (!dateStr) return;
@@ -218,7 +224,7 @@ export default function Professional3DCalendar({
     });
 
     return map;
-  }, [projects, effectiveSearch, selectedRoleFilter, teamMembers]);
+  }, [projects, effectiveSearch, selectedRoleFilter, teamMembers, unifiedFilters]);
 
   // Generate 42 grid cells (Monday-aligned)
   const monthDays = useMemo(() => {
@@ -713,6 +719,9 @@ export default function Professional3DCalendar({
                                           variant="avatar"
                                           readOnly={isReadOnly}
                                           isMasked={false}
+                                          isAdmin={!isTmReadOnly}
+                                          selectedFilterMemberId={unifiedFilters?.memberId || null}
+                                          unifiedFilters={unifiedFilters}
                                           existingAssignments={assignments}
                                         />
                                       );
@@ -981,6 +990,9 @@ export default function Professional3DCalendar({
                                         variant="avatar"
                                         readOnly={isReadOnly}
                                         isMasked={false}
+                                        isAdmin={!isTmReadOnly}
+                                        selectedFilterMemberId={unifiedFilters?.memberId || null}
+                                        unifiedFilters={unifiedFilters}
                                         existingAssignments={assignments}
                                       />
                                     );

@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
-import { FWProject } from '@/types';
+import { FWProject, FWTeamMember } from '@/types';
 import { UnifiedFilterState } from '../components/ShootFilterModal';
+import { resolveSubEventAssignments } from '@/lib/team-helpers';
+import { getRoleShortCode, parseRoleAndNumber } from '@/lib/workspace-settings';
 
 /**
  * ⚡ Checks if any filter is actively enabled
@@ -24,44 +26,83 @@ export function isCardFilterActive(filters?: UnifiedFilterState | null): boolean
 }
 
 /**
- * ⚡ Extracts or synthesizes sub-event slots including unassigned roles from subEvent.roles
+ * ⚡ Evaluates whether a crew slot is genuinely assigned to an active team member.
  */
-export function extractSubEventSlots(subEvent: any): any[] {
+export function isSlotAssigned(slot: any): boolean {
+  if (!slot) return false;
+  const mId = slot.assigned_member_id || slot.team_member_id;
+  if (!mId) return false;
+  const str = String(mId).trim().toLowerCase();
+  if (!str || str === 'null' || str === 'undefined' || str === 'unassigned' || str === 'none') {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * ⚡ Canonical Role Matcher
+ * Resolves short codes (TP, CP, CV, Ass, Dron), full role names, sequential numbered roles (TP 1, TP 2),
+ * and common wedding aliases (e.g. Wedding Photographer <-> Traditional Photographer).
+ */
+export function isRoleMatching(targetRole?: string | null, candidateRole?: string | null): boolean {
+  if (!targetRole || !candidateRole) return false;
+
+  const t = String(targetRole).trim().toLowerCase();
+  const c = String(candidateRole).trim().toLowerCase();
+  if (!t || !c) return false;
+
+  // 1. Direct case-insensitive match
+  if (t === c) return true;
+
+  // 2. Base role match stripping numbers (e.g. "TP 1", "TP 2", "Traditional Photographer 2")
+  const parsedT = parseRoleAndNumber(targetRole);
+  const parsedC = parseRoleAndNumber(candidateRole);
+  const baseT = parsedT.baseRole.trim().toLowerCase();
+  const baseC = parsedC.baseRole.trim().toLowerCase();
+  if (baseT === baseC) return true;
+
+  // 3. Short codes normalization via getRoleShortCode
+  const codeT = getRoleShortCode(baseT).toLowerCase();
+  const codeC = getRoleShortCode(baseC).toLowerCase();
+  if (codeT && codeC && codeT === codeC) return true;
+
+  // 4. Common wedding photography/videography heuristics
+  const isTradPhoto = (s: string) => s.includes('trad') && (s.includes('photo') || s.includes('tp'));
+  const isCandidPhoto = (s: string) => s.includes('candid') && (s.includes('photo') || s.includes('cp'));
+  const isTradVideo = (s: string) => s.includes('trad') && (s.includes('vid') || s.includes('tv'));
+  const isCine = (s: string) => s.includes('cine') || s.includes('kinematic') || s.includes('cv');
+  const isDrone = (s: string) => s.includes('dron') || s.includes('dp');
+  const isAssistant = (s: string) => s.includes('assist') || s.includes('helper') || s.includes('ass') || s.includes('ast');
+
+  if (isTradPhoto(t) && isTradPhoto(c)) return true;
+  if (isCandidPhoto(t) && isCandidPhoto(c)) return true;
+  if (isTradVideo(t) && isTradVideo(c)) return true;
+  if (isCine(t) && isCine(c)) return true;
+  if (isDrone(t) && isDrone(c)) return true;
+  if (isAssistant(t) && isAssistant(c)) return true;
+
+  // 5. Generic "Wedding Photographer" / "Photographer" matching photo roles
+  if (t.includes('wedding photographer') || t === 'photographer') {
+    if (c.includes('photo') || c === 'tp' || c === 'cp' || isTradPhoto(c) || isCandidPhoto(c)) return true;
+  }
+  if (c.includes('wedding photographer') || c === 'photographer') {
+    if (t.includes('photo') || t === 'tp' || t === 'cp' || isTradPhoto(t) || isCandidPhoto(t)) return true;
+  }
+
+  // 6. Substring match for custom roles (e.g. "Live Camera", "Face AI", "Makeup Art")
+  if (t.includes(c) || c.includes(t)) return true;
+
+  return false;
+}
+
+/**
+ * ⚡ Authoritative Sub-Event Slot Extractor
+ * Strictly delegates to resolveSubEventAssignments to preserve real 1-to-1 database slots,
+ * prevent deduplication of multiple same-role crew slots, and generate exact unassigned placeholders.
+ */
+export function extractSubEventSlots(subEvent: any, teamMembers: any[] = []): any[] {
   if (!subEvent) return [];
-  const existingAssignments: any[] = subEvent.fw_assignments || subEvent.assignments || [];
-
-  let rawRoles: string[] = [];
-  if (Array.isArray(subEvent.roles)) {
-    rawRoles = subEvent.roles;
-  } else if (typeof subEvent.roles === 'string') {
-    try { rawRoles = JSON.parse(subEvent.roles); } catch (e) {}
-  } else if (Array.isArray(subEvent.roles_assigned)) {
-    rawRoles = subEvent.roles_assigned;
-  } else if (Array.isArray(subEvent.event_roles)) {
-    rawRoles = subEvent.event_roles;
-  }
-
-  if (rawRoles.length === 0) {
-    return existingAssignments.length > 0 ? existingAssignments : (subEvent.required_roles || []);
-  }
-
-  const assignRoles = existingAssignments.map((a: any) => a.required_role).filter(Boolean);
-  const allRoles = Array.from(new Set([...rawRoles, ...assignRoles]));
-
-  return allRoles.map((role: string, idx: number) => {
-    const existing = existingAssignments.find(
-      (a: any) => a.required_role?.toLowerCase() === role.toLowerCase()
-    );
-    if (existing) return existing;
-    return {
-      id: `${subEvent.id || 'slot'}-role-${idx}`,
-      sub_event_id: subEvent.id,
-      project_id: subEvent.project_id,
-      required_role: role,
-      assigned_member_id: null,
-      fw_team_members: null,
-    };
-  });
+  return resolveSubEventAssignments(subEvent, teamMembers);
 }
 
 /**
@@ -97,7 +138,8 @@ export function isPmMatch(project: any, filters?: UnifiedFilterState | null): bo
 export function isSubEventMatch(
   subEvent: any,
   project?: FWProject | any,
-  filters?: UnifiedFilterState | null
+  filters?: UnifiedFilterState | null,
+  teamMembers: any[] = []
 ): boolean {
   if (!filters || !isCardFilterActive(filters)) return true;
 
@@ -115,18 +157,21 @@ export function isSubEventMatch(
     if (!isPmMatch(project, filters)) return false;
   }
 
+  const isTbd = Boolean(subEvent.is_date_tbd) || !subEvent.event_date || String(subEvent.event_date).toLowerCase() === 'tbd' || String(subEvent.event_date).toLowerCase().includes('not fix');
+
   // 3. Booking Month Filter (e.g. '2026-09')
   if (filters.monthYear && filters.monthYear !== 'all') {
+    if (isTbd) return false; // TBD shoots don't belong to a specific calendar month
     const eventDate = subEvent.event_date || '';
     if (!eventDate.startsWith(filters.monthYear)) return false;
   }
 
   // 4. Custom Date Range
   if (filters.startDate) {
-    if ((subEvent.event_date || '') < filters.startDate) return false;
+    if (isTbd || (subEvent.event_date || '') < filters.startDate) return false;
   }
   if (filters.endDate) {
-    if ((subEvent.event_date || '') > filters.endDate) return false;
+    if (isTbd || (subEvent.event_date || '') > filters.endDate) return false;
   }
 
   // 5. Event Types Multi-select
@@ -136,17 +181,18 @@ export function isSubEventMatch(
     if (!matchType) return false;
   }
 
-  // 6. Team Member Filter
+  // 6. Extract Authoritative Slots
+  const slots = extractSubEventSlots(subEvent, teamMembers);
+
+  // 7. Team Member Filter
   const activeMemberIds = (filters.memberIds && filters.memberIds.length > 0)
     ? filters.memberIds
     : (filters.memberId && filters.memberId !== 'all' ? [filters.memberId] : []);
 
-  const slots = extractSubEventSlots(subEvent);
-
   if (activeMemberIds.length > 0) {
     const hasMember = slots.some((a: any) => {
       const mId = String(a.assigned_member_id || a.team_member_id || (a.fw_team_members as any)?.id || '').toLowerCase();
-      const mName = String((a.fw_team_members as any)?.name || a.clean_name || a.member_name || '').toLowerCase();
+      const mName = String((a.fw_team_members as any)?.name || a.clean_name || a.member_name || a.assigned_member_name || '').toLowerCase();
       return activeMemberIds.some(target => {
         const t = target.toLowerCase();
         return (mId && mId === t) || (mName && mName.includes(t));
@@ -155,7 +201,7 @@ export function isSubEventMatch(
     if (!hasMember) return false;
   }
 
-  // 7. Strict Joint Filtering: CREW ROLE + ASSIGNMENT STATUS
+  // 8. Strict Joint Filtering: CREW ROLE + ASSIGNMENT STATUS
   const hasRoleFilter = Boolean(filters.roles && filters.roles.length > 0);
   const activeStatuses = (filters.assignmentStatuses && filters.assignmentStatuses.length > 0)
     ? filters.assignmentStatuses
@@ -165,19 +211,14 @@ export function isSubEventMatch(
   if (hasRoleFilter || hasStatusFilter) {
     if (slots.length === 0) return false;
 
-    // Check if at least ONE slot in THIS sub-event satisfies the intersection
+    // Check if at least ONE slot in THIS sub-event satisfies BOTH role and status filters
     const matchFound = slots.some((roleSlot: any) => {
       const slotRoleName = roleSlot.required_role || roleSlot.role_name || roleSlot.role || '';
-      const slotRoleCode = roleSlot.role_short_code || roleSlot.role_code || roleSlot.code || '';
 
-      const matchesRole = !hasRoleFilter || filters.roles.some((r: string) =>
-        r.toLowerCase() === slotRoleName.toLowerCase() ||
-        (slotRoleCode && r.toUpperCase() === slotRoleCode.toUpperCase())
-      );
-
+      const matchesRole = !hasRoleFilter || filters.roles.some((r: string) => isRoleMatching(r, slotRoleName));
       if (!matchesRole) return false;
 
-      const isAssigned = Boolean(roleSlot.assigned_member_id || roleSlot.team_member_id || roleSlot.is_assigned);
+      const isAssigned = isSlotAssigned(roleSlot);
 
       if (hasStatusFilter) {
         const wantsAssigned = activeStatuses.some(s => s.toLowerCase() === 'assigned' || s.toLowerCase() === 'fully_assigned');
@@ -201,7 +242,11 @@ export function isSubEventMatch(
  * ⚡ Strict Interconnected Project Match Logic
  * Delegates to isSubEventMatch across project's sub-events
  */
-export function isProjectMatch(project: FWProject, filters?: UnifiedFilterState | null): boolean {
+export function isProjectMatch(
+  project: FWProject,
+  filters?: UnifiedFilterState | null,
+  teamMembers: any[] = []
+): boolean {
   if (!filters || !isCardFilterActive(filters)) return true;
 
   // 1. Studio Filter
@@ -235,7 +280,7 @@ export function isProjectMatch(project: FWProject, filters?: UnifiedFilterState 
     return !hasSubEventFilter;
   }
 
-  return subEvents.some((se: any) => isSubEventMatch(se, project, filters));
+  return subEvents.some((se: any) => isSubEventMatch(se, project, filters, teamMembers));
 }
 
 /**
@@ -251,13 +296,18 @@ export function checkRoleSlotMatch(
   isRoleMatch: boolean;
   isMemberMatch: boolean;
 } {
+  const isAssigned = isSlotAssigned(roleSlot);
+
   if (!filters || !isCardFilterActive(filters)) {
-    return { isTargetedSlot: false, isUnassignedSlot: false, isRoleMatch: false, isMemberMatch: false };
+    return {
+      isTargetedSlot: false,
+      isUnassignedSlot: !isAssigned,
+      isRoleMatch: false,
+      isMemberMatch: false,
+    };
   }
 
   const slotRoleName = roleSlot.required_role || roleSlot.role_name || roleSlot.role || '';
-  const slotRoleCode = roleSlot.role_short_code || roleSlot.role_code || roleSlot.code || '';
-  const isAssigned = Boolean(roleSlot.assigned_member_id || roleSlot.team_member_id || roleSlot.is_assigned);
 
   // 1. Member Match
   const activeMemberIds = (filters.memberIds && filters.memberIds.length > 0)
@@ -266,7 +316,7 @@ export function checkRoleSlotMatch(
   const hasMemberFilter = activeMemberIds.length > 0;
 
   const mId = String(roleSlot.assigned_member_id || roleSlot.team_member_id || (roleSlot.fw_team_members as any)?.id || '').toLowerCase();
-  const mName = String((roleSlot.fw_team_members as any)?.name || roleSlot.clean_name || roleSlot.member_name || '').toLowerCase();
+  const mName = String((roleSlot.fw_team_members as any)?.name || roleSlot.clean_name || roleSlot.member_name || roleSlot.assigned_member_name || '').toLowerCase();
 
   const isMemberMatch = hasMemberFilter && activeMemberIds.some(target => {
     const t = target.toLowerCase();
@@ -280,10 +330,7 @@ export function checkRoleSlotMatch(
     : (filters.assignmentStatus && filters.assignmentStatus !== 'all' ? [filters.assignmentStatus] : []);
   const hasStatusFilter = activeStatuses.length > 0;
 
-  const matchesRole = !hasRoleFilter || filters.roles.some((r: string) =>
-    r.toLowerCase() === slotRoleName.toLowerCase() ||
-    (slotRoleCode && r.toUpperCase() === slotRoleCode.toUpperCase())
-  );
+  const matchesRole = !hasRoleFilter || filters.roles.some((r: string) => isRoleMatching(r, slotRoleName));
 
   let matchesStatus = true;
   if (hasStatusFilter) {
@@ -297,7 +344,13 @@ export function checkRoleSlotMatch(
     }
   }
 
-  const isTargeted = isMemberMatch || ((hasRoleFilter || hasStatusFilter) && matchesRole && matchesStatus);
+  // A slot is targeted if member filter matches, OR if (role / status filter active and matches both)
+  let isTargeted = false;
+  if (hasMemberFilter) {
+    isTargeted = isMemberMatch;
+  } else if (hasRoleFilter || hasStatusFilter) {
+    isTargeted = matchesRole && matchesStatus;
+  }
 
   return {
     isTargetedSlot: isTargeted,
@@ -313,9 +366,7 @@ export function checkRoleSlotMatch(
  * Returns clean focus border without animate-pulse.
  */
 export function getCardHighlightClass(isFilterActive?: boolean, isCardMatched?: boolean): string {
-  if (isFilterActive && isCardMatched) {
-    return 'ring-1.5 ring-amber-400/60 shadow-md';
-  }
+  // Whole card does NOT blink or show amber rings per user request: "वो पूरा कार्ड ब्लिंक नहीं होना चाहिए केवल वही रोल हाईलाइट होना चाहिए जो अनअसाइन है"
   return '';
 }
 
@@ -326,7 +377,8 @@ export function useTeamManagerFilter(
   projects: FWProject[],
   filters: UnifiedFilterState,
   searchQuery: string = '',
-  selectedRoleFilter: string = 'All'
+  selectedRoleFilter: string = 'All',
+  teamMembers: FWTeamMember[] = []
 ) {
   const isFilterActive = useMemo(() => isCardFilterActive(filters), [filters]);
 
@@ -345,21 +397,21 @@ export function useTeamManagerFilter(
       // 2. Legacy single role filter
       if (selectedRoleFilter !== 'All') {
         const hasRole = project.fw_sub_events?.some(se =>
-          se.fw_assignments?.some(a => a.required_role === selectedRoleFilter)
+          extractSubEventSlots(se, teamMembers).some(a => isRoleMatching(selectedRoleFilter, a.required_role))
         );
         if (!hasRole) return false;
       }
 
       // 3. Strict Interconnected Match
-      return isProjectMatch(project, filters);
+      return isProjectMatch(project, filters, teamMembers);
     });
-  }, [projects, filters, searchQuery, selectedRoleFilter]);
+  }, [projects, filters, searchQuery, selectedRoleFilter, teamMembers]);
 
   return {
     filteredProjects,
     isFilterActive,
-    isProjectMatch: (p: FWProject) => isProjectMatch(p, filters),
-    isSubEventMatch: (se: any, p: FWProject) => isSubEventMatch(se, p, filters),
+    isProjectMatch: (p: FWProject) => isProjectMatch(p, filters, teamMembers),
+    isSubEventMatch: (se: any, p: FWProject) => isSubEventMatch(se, p, filters, teamMembers),
     checkRoleSlotMatch: (slot: any) => checkRoleSlotMatch(slot, filters),
     getCardHighlightClass: (isMatched: boolean) => getCardHighlightClass(isFilterActive, isMatched),
   };
