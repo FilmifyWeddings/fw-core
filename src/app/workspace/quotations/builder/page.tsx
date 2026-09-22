@@ -553,7 +553,7 @@ const DEFAULT_AIRY_PROPOSAL = {
     kicker: 'SCHEDULE',
     heading: 'PAYMENT TERMS & SCHEDULE',
     steps: [
-      { id: 'pt-1', date: '10 FEB 26', stepName: 'Token Booking Amount', amount: 25000, status: 'Completed' },
+      { id: 'pt-1', date: '10 FEB 26', stepName: 'Token Booking Amount', amount: 25000, status: 'Pending' },
       { id: 'pt-2', date: '01 MAR 26', stepName: 'Advance Amount (Pre-Event)', amount: 75000, status: 'Pending' },
       { id: 'pt-3', date: '06 MAR 26', stepName: 'On Wedding Day', amount: 50000, status: 'Pending' },
       { id: 'pt-4', date: '25 MAR 26', stepName: 'Final Delivery Amount', amount: 20000, status: 'Pending' },
@@ -4057,9 +4057,9 @@ function StudioCoreAiryBuilderContent() {
                       const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
                       const oldSteps = currentObj.steps || [];
                       const updated = [
-                        { ...oldSteps[0], id: oldSteps[0]?.id || 'pt-1', stepName: oldSteps[0]?.stepName || 'Token Advance Amount', name: oldSteps[0]?.name || 'Token Advance Amount', amount: s1, status: 'Completed', date: oldSteps[0]?.date || 'Booking Date' },
-                        { ...oldSteps[1], id: oldSteps[1]?.id || 'pt-2', stepName: oldSteps[1]?.stepName || 'Main Event Day Amount', name: oldSteps[1]?.name || 'Main Event Day Amount', amount: s2, status: 'Pending', date: oldSteps[1]?.date || 'Event Day' },
-                        { ...oldSteps[2], id: oldSteps[2]?.id || 'pt-3', stepName: oldSteps[2]?.stepName || 'Final Delivery Amount', name: oldSteps[2]?.name || 'Final Delivery Amount', amount: s3, status: 'Pending', date: oldSteps[2]?.date || 'Deliverables Handover' },
+                        { ...oldSteps[0], id: oldSteps[0]?.id || 'pt-1', stepName: oldSteps[0]?.stepName || 'Token Advance Amount', name: oldSteps[0]?.name || 'Token Advance Amount', amount: s1, status: oldSteps[0]?.status === 'Completed' ? 'Completed' : 'Pending', date: oldSteps[0]?.date || 'Booking Date' },
+                        { ...oldSteps[1], id: oldSteps[1]?.id || 'pt-2', stepName: oldSteps[1]?.stepName || 'Main Event Day Amount', name: oldSteps[1]?.name || 'Main Event Day Amount', amount: s2, status: oldSteps[1]?.status === 'Completed' ? 'Completed' : 'Pending', date: oldSteps[1]?.date || 'Event Day' },
+                        { ...oldSteps[2], id: oldSteps[2]?.id || 'pt-3', stepName: oldSteps[2]?.stepName || 'Final Delivery Amount', name: oldSteps[2]?.name || 'Final Delivery Amount', amount: s3, status: oldSteps[2]?.status === 'Completed' ? 'Completed' : 'Pending', date: oldSteps[2]?.date || 'Deliverables Handover' },
                       ];
                       const summary = calculatePaymentTermsSummary(updated, total);
                       setData({
@@ -4088,9 +4088,9 @@ function StudioCoreAiryBuilderContent() {
                       const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
                       const oldSteps = currentObj.steps || [];
                       const updated = [
-                        { ...oldSteps[0], id: oldSteps[0]?.id || 'pt-1', stepName: oldSteps[0]?.stepName || 'Booking Token Amount', name: oldSteps[0]?.name || 'Booking Token Amount', amount: s1, status: 'Completed', date: oldSteps[0]?.date || 'Booking Date' },
-                        { ...oldSteps[1], id: oldSteps[1]?.id || 'pt-2', stepName: oldSteps[1]?.stepName || 'Event Stage Amount', name: oldSteps[1]?.name || 'Event Stage Amount', amount: s2, status: 'Pending', date: oldSteps[1]?.date || 'Event Day' },
-                        { ...oldSteps[2], id: oldSteps[2]?.id || 'pt-3', stepName: oldSteps[2]?.stepName || 'Final Delivery Amount', name: oldSteps[2]?.name || 'Final Delivery Amount', amount: s3, status: 'Pending', date: oldSteps[2]?.date || 'Deliverables Handover' },
+                        { ...oldSteps[0], id: oldSteps[0]?.id || 'pt-1', stepName: oldSteps[0]?.stepName || 'Booking Token Amount', name: oldSteps[0]?.name || 'Booking Token Amount', amount: s1, status: oldSteps[0]?.status === 'Completed' ? 'Completed' : 'Pending', date: oldSteps[0]?.date || 'Booking Date' },
+                        { ...oldSteps[1], id: oldSteps[1]?.id || 'pt-2', stepName: oldSteps[1]?.stepName || 'Event Stage Amount', name: oldSteps[1]?.name || 'Event Stage Amount', amount: s2, status: oldSteps[1]?.status === 'Completed' ? 'Completed' : 'Pending', date: oldSteps[1]?.date || 'Event Day' },
+                        { ...oldSteps[2], id: oldSteps[2]?.id || 'pt-3', stepName: oldSteps[2]?.stepName || 'Final Delivery Amount', name: oldSteps[2]?.name || 'Final Delivery Amount', amount: s3, status: oldSteps[2]?.status === 'Completed' ? 'Completed' : 'Pending', date: oldSteps[2]?.date || 'Deliverables Handover' },
                       ];
                       const summary = calculatePaymentTermsSummary(updated, total);
                       setData({
@@ -4118,8 +4118,8 @@ function StudioCoreAiryBuilderContent() {
                       const currentObj = data.paymentTermsPage || DEFAULT_AIRY_PROPOSAL.paymentTermsPage;
                       const oldSteps = currentObj.steps || [];
                       const updated = [
-                        { ...oldSteps[0], id: oldSteps[0]?.id || 'pt-1', stepName: oldSteps[0]?.stepName || 'Advance Booking Amount', name: oldSteps[0]?.name || 'Advance Booking Amount', amount: s1, status: 'Completed', date: oldSteps[0]?.date || 'Booking Date' },
-                        { ...oldSteps[1], id: oldSteps[1]?.id || 'pt-2', stepName: oldSteps[1]?.stepName || 'Final Settlement Amount', name: oldSteps[1]?.name || 'Final Settlement Amount', amount: s2, status: 'Pending', date: oldSteps[1]?.date || 'Deliverables Handover' },
+                        { ...oldSteps[0], id: oldSteps[0]?.id || 'pt-1', stepName: oldSteps[0]?.stepName || 'Advance Booking Amount', name: oldSteps[0]?.name || 'Advance Booking Amount', amount: s1, status: oldSteps[0]?.status === 'Completed' ? 'Completed' : 'Pending', date: oldSteps[0]?.date || 'Booking Date' },
+                        { ...oldSteps[1], id: oldSteps[1]?.id || 'pt-2', stepName: oldSteps[1]?.stepName || 'Final Settlement Amount', name: oldSteps[1]?.name || 'Final Settlement Amount', amount: s2, status: oldSteps[1]?.status === 'Completed' ? 'Completed' : 'Pending', date: oldSteps[1]?.date || 'Deliverables Handover' },
                       ];
                       const summary = calculatePaymentTermsSummary(updated, total);
                       setData({

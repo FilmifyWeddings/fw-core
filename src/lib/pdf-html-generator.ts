@@ -684,7 +684,7 @@ export function renderQuotationToHTML(documentData: any): string {
     kicker: 'PAYMENT SCHEDULE',
     heading: 'PAYMENT TERMS & SCHEDULE',
     steps: [
-      { id: '1', stepName: 'Token Booking Amount', date: '10 FEB 26', amount: 25000, status: 'COMPLETED' },
+      { id: '1', stepName: 'Token Booking Amount', date: '10 FEB 26', amount: 25000, status: 'PENDING' },
       { id: '2', stepName: 'Advance Amount (Pre-Event)', date: '01 MAR 26', amount: 75000, status: 'PENDING' },
       { id: '3', stepName: 'On Wedding Day', date: '06 MAR 26', amount: 50000, status: 'PENDING' },
       { id: '4', stepName: 'Final Delivery Amount', date: '25 MAR 26', amount: 20000, status: 'PENDING' }

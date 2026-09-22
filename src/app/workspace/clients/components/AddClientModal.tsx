@@ -6,6 +6,7 @@ import { UserPlus, X, Check, Users, Sparkles } from 'lucide-react';
 import Searchable3DCreamSelect, { Searchable3DCreamSelectOption } from '@/components/ui/Searchable3DCreamSelect';
 import type { Lead } from '@/types';
 import type { WorkspaceMemberOption } from '@/lib/team-helpers';
+import { safeParseCurrencyOrBudget } from '@/lib/budget-helpers';
 
 export interface AddClientFormData {
   name: string;
@@ -152,8 +153,10 @@ export default function AddClientModal({
       let leadPaid = '';
       if (lead.raw_payload) {
         const raw = lead.raw_payload;
-        leadPkg = String(raw.package_amount || raw.budget || raw.amount || '').replace(/[^0-9.]/g, '');
-        leadPaid = String(raw.paid_amount || raw.advance || raw.token || '').replace(/[^0-9.]/g, '');
+        const parsedPkg = safeParseCurrencyOrBudget(raw.package_amount || raw.amount || raw.budget || 0);
+        leadPkg = parsedPkg > 0 ? String(parsedPkg) : '';
+        const parsedPaid = safeParseCurrencyOrBudget(raw.paid_amount || raw.advance || raw.token || 0);
+        leadPaid = parsedPaid > 0 ? String(parsedPaid) : '';
       }
 
       setFormData((prev) => ({

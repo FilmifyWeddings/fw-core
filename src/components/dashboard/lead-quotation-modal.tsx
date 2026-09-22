@@ -273,18 +273,21 @@ export function LeadQuotationModal({
     if (onFinalSet && !unmark) {
       onFinalSet({ ...q, is_final: true });
     }
+
+    // ⚡ Update sc_quotation_summary_map immediately so the table row turns green in 0ms!
     if (typeof window !== 'undefined') {
       try {
-        localStorage.removeItem('sc_cached_finance_records');
-        localStorage.removeItem('sc_cached_finance_clients');
-        localStorage.removeItem('sc_cached_clients');
+        const stored = localStorage.getItem('sc_quotation_summary_map');
+        const map = stored ? JSON.parse(stored) : {};
+        map[lead.id] = {
+          count: updated.length,
+          hasFinal: !unmark,
+          finalVersion: unmark ? undefined : q.version,
+          versions: updated
+        };
+        localStorage.setItem('sc_quotation_summary_map', JSON.stringify(map));
       } catch (_) {}
-      window.dispatchEvent(new CustomEvent('quotation_finalized', { 
-        detail: { leadId: lead.id, quotationId: q.template_id || q.id, unmark } 
-      }));
-      localStorage.setItem('post_production_updated', Date.now().toString());
     }
-
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
@@ -310,7 +313,19 @@ export function LeadQuotationModal({
         json = {};
       }
 
-      if (!res.ok || !json.success) {
+      if (res.ok && json.success) {
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.removeItem('sc_cached_finance_records');
+            localStorage.removeItem('sc_cached_finance_clients');
+            localStorage.removeItem('sc_cached_clients');
+            localStorage.setItem('post_production_updated', Date.now().toString());
+          } catch (_) {}
+          window.dispatchEvent(new CustomEvent('quotation_finalized', { 
+            detail: { leadId: lead.id, quotationId: q.template_id || q.id, unmark } 
+          }));
+        }
+      } else {
         // Rollback on server error
         setQuotations(previousQuotations);
         safeSessionSet(cacheKey, previousQuotations);
@@ -623,7 +638,7 @@ export function LeadQuotationModal({
                           }}
                           className={`p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border transition-all space-y-2.5 group ${
                             q.is_final
-                              ? 'border-amber-400 dark:border-amber-500/80 bg-amber-50/20 dark:bg-amber-950/10 shadow-xs'
+                              ? 'border-emerald-400 dark:border-emerald-500/80 bg-emerald-50/20 dark:bg-emerald-950/10 shadow-xs'
                               : 'border-zinc-200/80 dark:border-zinc-800 hover:border-amber-300'
                           }`}
                         >
@@ -658,7 +673,7 @@ export function LeadQuotationModal({
                                 <div className="flex items-start gap-2.5 min-w-0 flex-1">
                                   <span className={`px-2 py-1 rounded-lg text-[10px] font-black shrink-0 ${
                                     q.is_final 
-                                      ? 'bg-amber-500 text-white shadow-2xs' 
+                                      ? 'bg-emerald-600 text-white shadow-2xs' 
                                       : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
                                   }`}>
                                     V{q.version}
@@ -684,10 +699,10 @@ export function LeadQuotationModal({
                                         setUnmarkingFinalQuotation(q);
                                       }}
                                       disabled={settingFinalId === q.template_id}
-                                      className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-black bg-gradient-to-r from-amber-500 to-[#F36F21] text-white shadow-sm border border-amber-400 hover:brightness-110 transition cursor-pointer shrink-0"
+                                      className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-black bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-sm border border-emerald-400 hover:brightness-110 transition cursor-pointer shrink-0"
                                       title="Click to Unlock / Unmark Final Quotation"
                                     >
-                                      <Crown className="w-3 h-3 text-amber-100" />
+                                      <CheckCircle2 className="w-3 h-3 text-emerald-100" />
                                       <span>Final Quotation (Locked)</span>
                                     </button>
                                   ) : (

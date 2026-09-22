@@ -4,7 +4,7 @@ import React, { useState, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FWAssignment, FWTeamMember } from '@/types';
-import { Search, Plus, Check } from 'lucide-react';
+import { Search, Plus, Check, AlertCircle } from 'lucide-react';
 import { getRoleShortCode, getRoleAbbr } from '@/lib/workspace-settings';
 import { useWorkspaceData } from '@/context/WorkspaceDataContext';
 import { checkRoleSlotMatch, isCardFilterActive } from '../hooks/useTeamManagerFilter';
@@ -44,6 +44,12 @@ export default function RoleAssignDropdown({
   const { crewRoles } = useWorkspaceData();
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [confirmModalData, setConfirmModalData] = useState<{
+    memberId: string;
+    memberName: string;
+    existingRole: string;
+    newRole: string;
+  } | null>(null);
   const [popoverPos, setPopoverPos] = useState<{
     top?: number;
     bottom?: number;
@@ -410,21 +416,25 @@ export default function RoleAssignDropdown({
                     <button
                       key={m.id}
                       type="button"
-                      disabled={isAlreadyAssignedElsewhere}
                       onClick={() => {
                         if (isAlreadyAssignedElsewhere) {
-                          alert(`"${cleanMName}" is already assigned as "${alreadyAssignedRole}" in this event. Each crew role must be assigned to a different person.`);
+                          setConfirmModalData({
+                            memberId: m.id,
+                            memberName: cleanMName,
+                            existingRole: alreadyAssignedRole || 'Crew',
+                            newRole: role || 'Crew',
+                          });
                           return;
                         }
                         handleClose();
                         onAssignMember(assignment.id, m.id);
                       }}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition ${
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
                         isAlreadyAssignedElsewhere
-                          ? 'opacity-40 cursor-not-allowed bg-slate-50 text-slate-400'
+                          ? 'bg-amber-50/50 hover:bg-amber-100/70 text-slate-800 border border-amber-200/50'
                           : isSelected
-                          ? 'bg-emerald-50 text-emerald-950 border border-emerald-300 shadow-2xs cursor-pointer'
-                          : 'text-[#0B111E] hover:bg-zinc-50 cursor-pointer'
+                          ? 'bg-emerald-50 text-emerald-950 border border-emerald-300 shadow-2xs'
+                          : 'text-[#0B111E] hover:bg-zinc-50'
                       }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
@@ -449,7 +459,7 @@ export default function RoleAssignDropdown({
                         )}
                         <div className="text-left leading-tight min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className={`block font-black text-xs truncate ${isSelected ? 'text-emerald-900' : isAlreadyAssignedElsewhere ? 'text-slate-500' : 'text-slate-900'}`}>
+                            <span className={`block font-black text-xs truncate ${isSelected ? 'text-emerald-900' : isAlreadyAssignedElsewhere ? 'text-slate-800' : 'text-slate-900'}`}>
                               {cleanMName}
                             </span>
                             {isSelected && (
@@ -459,7 +469,7 @@ export default function RoleAssignDropdown({
                             )}
                             {isAlreadyAssignedElsewhere && (
                               <span className="px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300">
-                                ⚠️ Already Assigned ({getRoleAbbr(alreadyAssignedRole, crewRoles)})
+                                ⚠️ Assigned ({getRoleAbbr(alreadyAssignedRole, crewRoles)})
                               </span>
                             )}
                           </div>
@@ -475,6 +485,49 @@ export default function RoleAssignDropdown({
               </div>
             </motion.div>
           </AnimatePresence>
+
+          {/* DUPLICATE ASSIGNMENT CONFIRMATION MODAL */}
+          {confirmModalData && (
+            <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150" onClick={(e) => e.stopPropagation()}>
+              <div className="bg-white rounded-2xl p-5 max-w-sm w-full shadow-2xl border border-slate-200 space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                    <AlertCircle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900">Reassign Crew Member</h3>
+                    <p className="text-xs text-slate-600 mt-1">
+                      <span className="font-bold text-slate-900">{confirmModalData.memberName}</span> is currently assigned as <span className="font-bold text-amber-800">&quot;{confirmModalData.existingRole}&quot;</span> in this event.
+                    </p>
+                    <p className="text-xs text-slate-600 mt-1">
+                      Do you want to reassign them to <span className="font-bold text-indigo-700">&quot;{confirmModalData.newRole}&quot;</span>?
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmModalData(null)}
+                    className="px-3.5 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const mId = confirmModalData.memberId;
+                      setConfirmModalData(null);
+                      handleClose();
+                      onAssignMember(assignment.id, mId);
+                    }}
+                    className="px-4 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-600/20 transition cursor-pointer"
+                  >
+                    Reassign Member
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </>,
         document.body
       )}

@@ -24,6 +24,7 @@ import ClientStatusDropdown from './components/ClientStatusDropdown';
 import type { WorkspaceClient, Lead, ClientFinanceRecord, FinanceMilestoneItem } from '@/types';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import Searchable3DCreamSelect, { Searchable3DCreamSelectOption } from '@/components/ui/Searchable3DCreamSelect';
+import { safeParseCurrencyOrBudget } from '@/lib/budget-helpers';
 
 const DEFAULT_EVENT_TYPES = [
   'Wedding Photography',
@@ -210,15 +211,13 @@ export default function ClientsPage() {
         const alreadyLinked = existingLeadIds.has(bookedLead.id) || (leadPhoneDigits && existingClientPhones.has(leadPhoneDigits));
 
         if (!alreadyLinked && bookedLead.name) {
-          // Parse amount from lead raw payload
+          // Parse amount safely from lead raw payload
           let packageAmt = 0;
           let paidAmt = 0;
           if (bookedLead.raw_payload) {
             const raw = bookedLead.raw_payload;
-            const amtStr = String(raw.package_amount || raw.budget || raw.amount || '0').replace(/[^0-9.]/g, '');
-            packageAmt = parseFloat(amtStr) || 0;
-            const paidStr = String(raw.paid_amount || raw.advance || raw.token || '0').replace(/[^0-9.]/g, '');
-            paidAmt = parseFloat(paidStr) || 0;
+            packageAmt = safeParseCurrencyOrBudget(raw.package_amount || raw.amount || raw.budget || 0);
+            paidAmt = safeParseCurrencyOrBudget(raw.paid_amount || raw.advance || raw.token || 0);
           }
 
           const clientName = bookedLead.raw_payload?.couple_name || (bookedLead as any).couple_names || bookedLead.client_name || bookedLead.name || 'Booked Client';
@@ -1046,8 +1045,11 @@ export default function ClientsPage() {
           <div className="space-y-3">
             {filteredClients.map((client) => {
               const ext = parseClientExtended(client);
-              const isPaidFull = (client.paid_amount || 0) >= (client.total_package_amount || 0) && client.total_package_amount > 0;
-              const dueAmount = Math.max(0, (client.total_package_amount || 0) - (client.paid_amount || 0));
+              const fin = financeRecordsMap.get(client.id);
+              const totalPkg = fin?.final_total_amount ?? client.total_package_amount ?? 0;
+              const paidAmt = fin?.received_amount ?? client.paid_amount ?? 0;
+              const dueAmount = fin?.pending_amount ?? Math.max(0, totalPkg - paidAmt);
+              const isPaidFull = paidAmt >= totalPkg && totalPkg > 0;
 
               return (
                 <motion.div
@@ -1162,7 +1164,7 @@ export default function ClientsPage() {
                   <div className="lg:col-span-3 flex items-center justify-between lg:justify-end gap-3.5 w-full pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100">
                     <div className="text-left lg:text-right space-y-0.5">
                       <span className="font-mono font-black text-sm text-slate-900 block">
-                        ₹{(client.total_package_amount || 0).toLocaleString('en-IN')}
+                        ₹{totalPkg.toLocaleString('en-IN')}
                       </span>
                       <p className="text-[11px] font-bold">
                         {isPaidFull ? (
@@ -1171,7 +1173,7 @@ export default function ClientsPage() {
                           </span>
                         ) : (
                           <span className="text-amber-800">
-                            Paid: ₹{(client.paid_amount || 0).toLocaleString('en-IN')} • Due: ₹{dueAmount.toLocaleString('en-IN')}
+                            Paid: ₹{paidAmt.toLocaleString('en-IN')} • Due: ₹{dueAmount.toLocaleString('en-IN')}
                           </span>
                         )}
                       </p>

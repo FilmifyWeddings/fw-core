@@ -478,7 +478,7 @@ export default function PostProductionPage() {
         }
 
         // Section & Segment Configuration
-        const projConfig = matchedFwProject ? configByProjectId.get(matchedFwProject.id) : null;
+        const projConfig = (matchedFwProject && configByProjectId.get(matchedFwProject.id)) || configByProjectId.get(client.id) || (ppp && configByProjectId.get(ppp.id)) || null;
         let enabledSegments: string[] | undefined = projConfig?.enabled_segments;
         let disabledCategories: Record<string, string[]> | undefined = projConfig?.disabled_categories;
 
@@ -522,15 +522,18 @@ export default function PostProductionPage() {
               notes: ppNotes,
             });
 
-            if (matchedFwProject?.id && enabledSegments) {
+            const targetConfigIds = [matchedFwProject?.id, client.id].filter(Boolean) as string[];
+            if (targetConfigIds.length > 0 && enabledSegments) {
               try {
-                supabase
-                  .from('post_production_project_config')
-                  .upsert({
-                    project_id: matchedFwProject.id,
-                    enabled_segments: enabledSegments,
-                    updated_at: new Date().toISOString()
-                  }, { onConflict: 'project_id' });
+                for (const pid of targetConfigIds) {
+                  await supabase
+                    .from('post_production_project_config')
+                    .upsert({
+                      project_id: pid,
+                      enabled_segments: enabledSegments,
+                      updated_at: new Date().toISOString()
+                    }, { onConflict: 'project_id' });
+                }
               } catch (_) {}
             }
           }
@@ -750,44 +753,49 @@ export default function PostProductionPage() {
             }
 
             // Synchronize with post_production_project_config table
-            if (merged.project_id && (updated.enabled_segments !== undefined || updated.disabled_categories !== undefined)) {
+            const targetIds = [merged.project_id, merged.client_id].filter(Boolean) as string[];
+            if (targetIds.length > 0 && (updated.enabled_segments !== undefined || updated.disabled_categories !== undefined)) {
               try {
-                await supabase
-                  .from('post_production_project_config')
-                  .upsert({
-                    project_id: merged.project_id,
-                    enabled_segments: merged.enabled_segments || ['Wedding'],
-                    disabled_categories: merged.disabled_categories || {},
-                    updated_at: new Date().toISOString(),
-                  }, { onConflict: 'project_id' });
+                for (const pid of targetIds) {
+                  await supabase
+                    .from('post_production_project_config')
+                    .upsert({
+                      project_id: pid,
+                      enabled_segments: merged.enabled_segments || ['Wedding'],
+                      disabled_categories: merged.disabled_categories || {},
+                      updated_at: new Date().toISOString(),
+                    }, { onConflict: 'project_id' });
+                }
               } catch (_) {}
             }
 
             // Also synchronize with post_production_deliverables table (delete old rows first to prevent duplicate accumulation)
-            if (merged.project_id && Array.isArray(cleanDeliverables)) {
+            if (targetIds.length > 0 && Array.isArray(cleanDeliverables)) {
               try {
-                await supabase
-                  .from('post_production_deliverables')
-                  .delete()
-                  .eq('project_id', merged.project_id);
+                for (const pid of targetIds) {
+                  await supabase
+                    .from('post_production_deliverables')
+                    .delete()
+                    .eq('project_id', pid);
 
-                if (cleanDeliverables.length > 0) {
-                  const rowsToInsert = cleanDeliverables.map(deliv => ({
-                    project_id: merged.project_id,
-                    segment: deliv.segment || 'Wedding',
-                    category: deliv.category || 'Photos',
-                    custom_category_name: deliv.custom_category_name || null,
-                    title: deliv.title,
-                    specs: deliv.specs || deliv.count || null,
-                    status: deliv.status || 'Upcoming',
-                    assigned_member_id: deliv.assigned_member_id || null,
-                    due_date: deliv.due_date || deliv.deadline || null,
-                    notes: deliv.notes || null,
-                    is_hidden: deliv.is_hidden || false,
-                    is_custom: deliv.is_custom || false,
-                    updated_at: new Date().toISOString(),
-                  }));
-                  await supabase.from('post_production_deliverables').insert(rowsToInsert);
+                  if (cleanDeliverables.length > 0) {
+                    const rowsToInsert = cleanDeliverables.map(deliv => ({
+                      project_id: pid,
+                      segment: deliv.segment || 'Wedding',
+                      category: deliv.category || 'Photos',
+                      custom_category_name: deliv.custom_category_name || null,
+                      title: deliv.title,
+                      specs: deliv.specs || deliv.count || null,
+                      status: deliv.status || 'Upcoming',
+                      assigned_member_id: deliv.assigned_member_id || null,
+                      due_date: deliv.due_date || deliv.deadline || null,
+                      notes: deliv.notes || null,
+                      is_hidden: deliv.is_hidden || false,
+                      is_custom: deliv.is_custom || false,
+                      updated_at: new Date().toISOString(),
+                    }));
+                    await supabase.from('post_production_deliverables').insert(rowsToInsert);
+                  }
                 }
               } catch (delivErr) {
                 console.warn('Error replacing post_production_deliverables:', delivErr);

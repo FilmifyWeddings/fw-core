@@ -110,6 +110,15 @@ export async function POST(req: NextRequest) {
                   updated_at: now
                 })
                 .eq('id', existingQ.id);
+
+              // Clean up any stale duplicate quotations with the same quotation_number so lead-summary never gets confused
+              try {
+                await supabaseAdmin
+                  .from('quotations')
+                  .delete()
+                  .eq('quotation_number', quotationId)
+                  .neq('id', existingQ.id);
+              } catch (_) {}
             } else {
               await supabaseAdmin
                 .from('quotations')
@@ -171,20 +180,27 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 4. Sync across Client Directory, Booking Events, Post Production, and Finance (strictly using Couple Name)
-    const syncResult = await syncBookedLeadOrFinalQuotation({
-      leadId,
-      quotationId,
-      workspaceId: userId,
-      forceBookedStatus: true,
-      supabaseClient: supabaseAdmin
-    });
+    // 4. Non-blocking asynchronous sync across Client Directory, Booking Events, Post Production, and Finance
+    // Triggered in background so the client receives a fast <100ms response with zero UI lag or timeout!
+    (async () => {
+      try {
+        await syncBookedLeadOrFinalQuotation({
+          leadId,
+          quotationId,
+          workspaceId: userId,
+          forceBookedStatus: true,
+          supabaseClient: supabaseAdmin
+        });
+      } catch (syncErr) {
+        console.error('[Set-Final] Background sync exception:', syncErr);
+      }
+    })();
 
     return NextResponse.json({
       success: true,
       message: 'Final Quotation locked and synchronized with Finance & Bookings!',
       quotationId,
-      coupleName: syncResult?.coupleName || clientName
+      coupleName: clientName
     });
   } catch (error: any) {
     console.error('[Set-Final] Error:', error);

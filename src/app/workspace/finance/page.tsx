@@ -166,41 +166,10 @@ export default function FinancePage() {
   // 🔐 ADMIN SECURITY GATE & HARD PIN LOCK (ZERO DOM EXPOSURE)
   // ─────────────────────────────────────────────────────────────
   const [securitySettings, setSecuritySettings] = useState<FinanceSecuritySettings | null>(null);
-  const [isPinVerified, setIsPinVerified] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      for (let i = 0; i < sessionStorage.length; i++) {
-        const key = sessionStorage.key(i);
-        if (key && key.startsWith('finance_unlocked_')) {
-          return true;
-        }
-      }
-    }
-    return false;
-  });
-  const [isCheckingPinStatus, setIsCheckingPinStatus] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      for (let i = 0; i < sessionStorage.length; i++) {
-        const key = sessionStorage.key(i);
-        if (key && key.startsWith('finance_unlocked_')) {
-          return false;
-        }
-      }
-      const savedPinLock = localStorage.getItem('sc_finance_pin_required');
-      if (savedPinLock === 'false') {
-        return false;
-      }
-    }
-    return true;
-  });
-  const [isPinRequired, setIsPinRequired] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const savedPinLock = localStorage.getItem('sc_finance_pin_required');
-      if (savedPinLock === 'true') {
-        return true;
-      }
-    }
-    return false;
-  });
+  const [isMounted, setIsMounted] = useState<boolean>(false);
+  const [isPinVerified, setIsPinVerified] = useState<boolean>(false);
+  const [isCheckingPinStatus, setIsCheckingPinStatus] = useState<boolean>(true);
+  const [isPinRequired, setIsPinRequired] = useState<boolean>(false);
 
 
   // ─────────────────────────────────────────────────────────────
@@ -497,14 +466,15 @@ export default function FinancePage() {
   // 🚀 INITIAL SECURITY CHECK (HARD PIN GATE INITIALIZATION)
   // ─────────────────────────────────────────────────────────────
   useEffect(() => {
-    let isMounted = true;
+    setIsMounted(true);
+    let isCancelled = false;
 
     async function initSecurityAndSession() {
       setIsCheckingPinStatus(true);
       try {
         const { data: { session } } = await supabase.auth.getSession();
         const wsId = session?.user?.id || 'ws_demo';
-        if (isMounted) {
+        if (!isCancelled) {
           setCurrentWorkspaceId(wsId);
         }
 
@@ -521,7 +491,7 @@ export default function FinancePage() {
           console.warn('Finance security settings notice:', e);
         }
 
-        if (isMounted) {
+        if (!isCancelled) {
           setSecuritySettings(secData);
 
           if (secData && secData.is_locked) {
@@ -552,12 +522,12 @@ export default function FinancePage() {
         }
       } catch (err) {
         console.error('Error during security check:', err);
-        if (isMounted) {
+        if (!isCancelled) {
           setIsPinRequired(false);
           setIsPinVerified(true);
         }
       } finally {
-        if (isMounted) {
+        if (!isCancelled) {
           setIsCheckingPinStatus(false);
         }
       }
@@ -566,7 +536,7 @@ export default function FinancePage() {
     initSecurityAndSession();
 
     return () => {
-      isMounted = false;
+      isCancelled = true;
     };
   }, []);
 
@@ -2156,9 +2126,9 @@ export default function FinancePage() {
     setIsQuotationModalOpen(true);
   };
 
-  // 1. HARD ZERO-DOM SECURITY GATE: If PIN is NOT verified, NEVER render the finance dashboard DOM
-  if (!isPinVerified) {
-    if (isPinRequired) {
+  // 1. HARD ZERO-DOM SECURITY GATE: If component not mounted or PIN is NOT verified, NEVER render the finance dashboard DOM
+  if (!isMounted || !isPinVerified) {
+    if (isMounted && isPinRequired) {
       return (
         <div className="flex min-h-[85vh] w-full items-center justify-center p-4 bg-[#FDFBF7]">
           <FinancePinVerificationCard
@@ -2173,9 +2143,7 @@ export default function FinancePage() {
       );
     }
 
-    if (isCheckingPinStatus) {
-      return <StudioCoreLiquidLoader label="Verifying Security..." />;
-    }
+    return <StudioCoreLiquidLoader label="Verifying Security..." />;
   }
 
   // 2. ONLY REACHED IF 100% VERIFIED

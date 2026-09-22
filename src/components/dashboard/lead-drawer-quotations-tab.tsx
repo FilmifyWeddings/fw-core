@@ -129,6 +129,20 @@ export function LeadDrawerQuotationsTab({
     setSettingFinalId(q.template_id);
     setErrorMsg(null);
 
+    // ⚡ INSTANT 0ms OPTIMISTIC UPDATE
+    const previousQuotations = [...quotations];
+    const optimisticUpdated = quotations.map(item => ({
+      ...item,
+      is_final: unmark ? false : item.template_id === q.template_id
+    }));
+    setQuotations(optimisticUpdated);
+    safeSessionSet(`lead_quotes_cache_${lead.id}`, optimisticUpdated);
+    if (onQuotationChange) {
+      queueMicrotask(() => {
+        onQuotationChange(lead.id, optimisticUpdated);
+      });
+    }
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
@@ -149,20 +163,6 @@ export function LeadDrawerQuotationsTab({
       const json = await res.json().catch(() => ({}));
 
       if (res.ok && json.success) {
-        const updated = quotations.map(item => ({
-          ...item,
-          is_final: unmark ? false : item.template_id === q.template_id
-        }));
-
-        setQuotations(updated);
-        safeSessionSet(`lead_quotes_cache_${lead.id}`, updated);
-
-        if (onQuotationChange) {
-          queueMicrotask(() => {
-            onQuotationChange(lead.id, updated);
-          });
-        }
-
         if (onLeadUpdate) {
           onLeadUpdate(lead.id, {
             final_quotation_id: unmark ? undefined : q.template_id,
@@ -174,15 +174,36 @@ export function LeadDrawerQuotationsTab({
         }
 
         if (typeof window !== 'undefined') {
+          try {
+            localStorage.removeItem('sc_cached_finance_records');
+            localStorage.removeItem('sc_cached_finance_clients');
+            localStorage.removeItem('sc_cached_clients');
+            localStorage.setItem('post_production_updated', Date.now().toString());
+          } catch (_) {}
           window.dispatchEvent(new CustomEvent('quotation_finalized', {
             detail: { leadId: lead.id, quotationId: q.template_id, unmark }
           }));
         }
       } else {
+        // Rollback on server error
+        setQuotations(previousQuotations);
+        safeSessionSet(`lead_quotes_cache_${lead.id}`, previousQuotations);
+        if (onQuotationChange) {
+          queueMicrotask(() => {
+            onQuotationChange(lead.id, previousQuotations);
+          });
+        }
         setErrorMsg(json.error || 'Failed to update final quotation status.');
       }
     } catch (err: any) {
       console.error('[LeadDrawerQuotationsTab] Set final error:', err);
+      setQuotations(previousQuotations);
+      safeSessionSet(`lead_quotes_cache_${lead.id}`, previousQuotations);
+      if (onQuotationChange) {
+        queueMicrotask(() => {
+          onQuotationChange(lead.id, previousQuotations);
+        });
+      }
       setErrorMsg('Failed to update final quotation.');
     } finally {
       setSettingFinalId(null);

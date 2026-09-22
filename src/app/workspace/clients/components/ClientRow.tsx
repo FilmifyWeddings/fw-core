@@ -121,8 +121,10 @@ export const ClientRow: React.FC<ClientRowProps> = ({
   onStatusChange,
 }) => {
   const ext = parseClientExtended(client);
-  const dueAmount = Math.max(0, (client.total_package_amount || 0) - (client.paid_amount || 0));
-  const isPaidFull = dueAmount === 0 && (client.total_package_amount || 0) > 0;
+  const totalPkg = client.total_package_amount || 0;
+  const paidAmt = client.paid_amount || 0;
+  const dueAmount = Math.max(0, totalPkg - paidAmt);
+  const isPaidFull = dueAmount === 0 && totalPkg > 0 && paidAmt > 0;
   const pmName = client.project_manager_name || ext.project_manager_name;
 
   return (

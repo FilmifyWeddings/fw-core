@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
     const [docsRes, quotesRes, leadsRes] = await Promise.all([
       supabaseAdmin
         .from('quotation_documents')
-        .select('id, template_id, lead_id, workspace_id, version, lead_version, created_at, updated_at')
+        .select('id, template_id, lead_id, workspace_id, version, lead_version, content_json, created_at, updated_at')
         .not('lead_id', 'is', null),
       supabaseAdmin
         .from('quotations')
@@ -63,7 +63,7 @@ export async function GET(req: NextRequest) {
     leads.forEach((l: any) => {
       // Check final quotation id strictly (do NOT treat draft quotation_id as final!)
       const finalId = l.final_quotation_id || l.raw_payload?.final_quotation_id || null;
-      const isBooked = (l.status as string) === 'booked' || l.status === 'closed';
+      const isBooked = (l.status || '').toLowerCase() === 'booked' || (l.status || '').toLowerCase() === 'closed';
       const coupleName = l.raw_payload?.couple_name || l.raw_payload?.couple_names || (l as any).couple_names || l.client_name || l.name || 'Client';
 
       leadMap.set(l.id, {
@@ -89,9 +89,23 @@ export async function GET(req: NextRequest) {
 
     const quoteByNum = new Map<string, any>();
     quotes.forEach((q: any) => {
-      if (q.quotation_number) quoteByNum.set(q.quotation_number, q);
-      quoteByNum.set(q.id, q);
-      if (q.client_id && !quoteByNum.has(q.client_id)) quoteByNum.set(q.client_id, q);
+      // Prioritize is_final: true quotations so a draft quotation never overwrites a final quotation!
+      if (q.quotation_number) {
+        const existing = quoteByNum.get(q.quotation_number);
+        if (!existing || (!existing.is_final && q.is_final)) {
+          quoteByNum.set(q.quotation_number, q);
+        }
+      }
+      const existingId = quoteByNum.get(q.id);
+      if (!existingId || (!existingId.is_final && q.is_final)) {
+        quoteByNum.set(q.id, q);
+      }
+      if (q.client_id) {
+        const existingClient = quoteByNum.get(q.client_id);
+        if (!existingClient || (!existingClient.is_final && q.is_final)) {
+          quoteByNum.set(q.client_id, q);
+        }
+      }
     });
 
     // 1. Process quotation_documents
@@ -105,7 +119,9 @@ export async function GET(req: NextRequest) {
 
       const leadInfo = leadMap.get(leadId);
       const matchedQ = quoteByNum.get(d.template_id) || quoteByNum.get(d.id);
+      const isDocFinal = d.content_json?.is_final === true;
       const isFinal = Boolean(
+        isDocFinal ||
         matchedQ?.is_final === true ||
         matchedQ?.status === 'accepted' ||
         (leadInfo?.finalId && (leadInfo.finalId === d.template_id || leadInfo.finalId === d.id))

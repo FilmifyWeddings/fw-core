@@ -34,6 +34,7 @@ import type {
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import ClientStatusDropdown from '@/app/workspace/clients/components/ClientStatusDropdown';
 import { compressMoodboardImage } from '@/lib/compressor';
+import { parseQuotationDeliverables, isDemoDeliverables } from '@/lib/services/postProductionSyncService';
 
 // Helper to compute initials from client name
 function getClientInitials(name: string): string {
@@ -266,8 +267,8 @@ export default function ClientWorkspaceDetailPage() {
 
   // ── Effective ClientFinanceRecord for ClientFinanceCard ──
   const effectiveFinanceRecord: ClientFinanceRecord = useMemo(() => {
-    const totalPkg = financeRecord?.final_total_amount || client?.total_package_amount || 0;
-    const paid = financeRecord?.received_amount || client?.paid_amount || 0;
+    const totalPkg = financeRecord?.final_total_amount ?? client?.total_package_amount ?? 0;
+    const paid = financeRecord?.received_amount ?? client?.paid_amount ?? 0;
     const pending = financeRecord?.pending_amount ?? Math.max(0, totalPkg - paid);
 
     return {
@@ -1090,20 +1091,84 @@ export default function ClientWorkspaceDetailPage() {
   };
 
   // ─────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────
   // 3. FETCH POST-PRODUCTION
   // ─────────────────────────────────────────────────────────────
   const fetchPostProduction = async (c: WorkspaceClient) => {
     setLoadingPostProd(true);
     try {
-      const { data } = await supabase
+      // 1. Fetch post_production_projects for this client
+      const { data: pppData } = await supabase
         .from('post_production_projects')
         .select('*')
         .eq('client_id', c.id)
         .maybeSingle();
 
-      if (data) {
-        setPostProductionProject(data);
+      // 2. Fetch target project_id from fw_projects if available
+      let targetProjectId = (pppData as any)?.project_id || (pppData as any)?.id;
+      if (!targetProjectId) {
+        const { data: fwProj } = await supabase
+          .from('fw_projects')
+          .select('id')
+          .or(`client_id.eq.${c.id},lead_id.eq.${c.lead_id || c.id}`)
+          .maybeSingle();
+        if (fwProj?.id) targetProjectId = fwProj.id;
       }
+
+      // 3. Fetch post_production_project_config for enabled_segments
+      const configIds = [c.id, targetProjectId, (pppData as any)?.id].filter(Boolean) as string[];
+      let enabledSegments: string[] = ['Wedding'];
+      if (configIds.length > 0) {
+        const { data: cfg } = await supabase
+          .from('post_production_project_config')
+          .select('enabled_segments')
+          .in('project_id', configIds)
+          .maybeSingle();
+        if (cfg?.enabled_segments && Array.isArray(cfg.enabled_segments)) {
+          enabledSegments = cfg.enabled_segments;
+        }
+      }
+
+      // 4. Fetch post_production_deliverables if present
+      let deliverables = Array.isArray(pppData?.deliverables) ? pppData.deliverables : [];
+      if (configIds.length > 0) {
+        const { data: delivRows } = await supabase
+          .from('post_production_deliverables')
+          .select('*')
+          .in('project_id', configIds)
+          .order('created_at', { ascending: true });
+        if (delivRows && delivRows.length > 0) {
+          deliverables = delivRows;
+        }
+      }
+
+      // 5. If no deliverables or stale demo, auto-sync from final quotation
+      if (!pppData || deliverables.length === 0 || isDemoDeliverables(deliverables)) {
+        const targetLeadId = c.lead_id || c.id;
+        const leadShort = targetLeadId ? targetLeadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8) : '';
+        const { data: quoteDocs } = await supabase
+          .from('quotation_documents')
+          .select('*')
+          .or(`lead_id.eq.${targetLeadId},client_id.eq.${c.id},template_id.ilike.%${leadShort}%`)
+          .order('created_at', { ascending: false });
+
+        const finalQuote = quoteDocs?.find((q: any) => q.is_final === true || q.content_json?.is_final === true) || quoteDocs?.[0];
+        if (finalQuote) {
+          const parsed = parseQuotationDeliverables(finalQuote);
+          deliverables = parsed.deliverables;
+          enabledSegments = parsed.enabledSegments;
+        }
+      }
+
+      setPostProductionProject({
+        ...(pppData || {}),
+        id: pppData?.id || `pp_${c.id}`,
+        client_id: c.id,
+        project_id: targetProjectId,
+        deliverables: deliverables,
+        enabled_segments: enabledSegments,
+        overall_status: pppData?.overall_status || 'active'
+      } as any);
     } catch (e) {
       console.error('Error fetching post production:', e);
     } finally {
@@ -1164,8 +1229,8 @@ export default function ClientWorkspaceDetailPage() {
             gst_rate: financials.gst_rate,
             gst_amount: financials.gst_amount,
             final_total_amount: financials.final_total_amount,
-            received_amount: financials.received_amount || totalPaid,
-            pending_amount: Math.max(0, financials.final_total_amount - (financials.received_amount || totalPaid)),
+            received_amount: financials.received_amount ?? totalPaid ?? 0,
+            pending_amount: Math.max(0, financials.final_total_amount - (financials.received_amount ?? totalPaid ?? 0)),
             payment_status: financials.payment_status,
             milestones: financials.milestones,
             updated_at: new Date().toISOString()
@@ -1185,7 +1250,7 @@ export default function ClientWorkspaceDetailPage() {
               .from('workspace_clients')
               .update({
                 total_package_amount: financials.final_total_amount,
-                paid_amount: financials.received_amount || totalPaid,
+                paid_amount: financials.received_amount ?? totalPaid ?? 0,
                 event_type: financials.event_type || c.event_type || undefined,
                 updated_at: new Date().toISOString()
               })
@@ -1212,36 +1277,36 @@ export default function ClientWorkspaceDetailPage() {
               step_name: 'Token Booking Amount (15%)',
               amount: tokenAmt,
               due_date: tokenDate,
-              status: totalPaid >= tokenAmt ? 'completed' : 'pending',
+              status: totalPaid >= tokenAmt && totalPaid > 0 ? 'completed' : 'pending',
               payment_mode: 'UPI',
-              paid_date: totalPaid >= tokenAmt ? tokenDate : null
+              paid_date: totalPaid >= tokenAmt && totalPaid > 0 ? tokenDate : null
             },
             {
               id: `m_2_${c.id.slice(0, 6)}`,
               step_name: 'Advance Amount - Pre-Event (35%)',
               amount: advAmt,
               due_date: preEventDate,
-              status: totalPaid >= (tokenAmt + advAmt) ? 'completed' : 'pending',
+              status: totalPaid >= (tokenAmt + advAmt) && totalPaid > 0 ? 'completed' : 'pending',
               payment_mode: 'Bank Transfer',
-              paid_date: totalPaid >= (tokenAmt + advAmt) ? preEventDate : null
+              paid_date: totalPaid >= (tokenAmt + advAmt) && totalPaid > 0 ? preEventDate : null
             },
             {
               id: `m_3_${c.id.slice(0, 6)}`,
               step_name: 'On Wedding Day (35%)',
               amount: eventAmt,
               due_date: weddingDate,
-              status: totalPaid >= (tokenAmt + advAmt + eventAmt) ? 'completed' : 'pending',
+              status: totalPaid >= (tokenAmt + advAmt + eventAmt) && totalPaid > 0 ? 'completed' : 'pending',
               payment_mode: 'UPI',
-              paid_date: totalPaid >= (tokenAmt + advAmt + eventAmt) ? weddingDate : null
+              paid_date: totalPaid >= (tokenAmt + advAmt + eventAmt) && totalPaid > 0 ? weddingDate : null
             },
             {
               id: `m_4_${c.id.slice(0, 6)}`,
               step_name: 'Final Delivery & Album Handover (15%)',
               amount: finalAmt,
               due_date: deliveryDate,
-              status: totalPaid >= totalPkg && totalPkg > 0 ? 'completed' : 'pending',
+              status: totalPaid >= totalPkg && totalPkg > 0 && totalPaid > 0 ? 'completed' : 'pending',
               payment_mode: 'Bank Transfer',
-              paid_date: totalPaid >= totalPkg && totalPkg > 0 ? deliveryDate : null
+              paid_date: totalPaid >= totalPkg && totalPkg > 0 && totalPaid > 0 ? deliveryDate : null
             }
           ];
 

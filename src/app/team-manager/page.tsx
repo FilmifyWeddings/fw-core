@@ -250,6 +250,13 @@ export default function TeamManagerPage() {
     openAbove: boolean;
     maxHeight?: number;
   } | null>(null);
+  const [duplicateAssignmentConfirm, setDuplicateAssignmentConfirm] = useState<{
+    assignmentId: string;
+    memberId: string;
+    memberName: string;
+    existingRole: string;
+    newRole: string;
+  } | null>(null);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
   const [eventTypesList, setEventTypesList] = useState<string[]>([
     "Wedding Ceremony", "Haldi", "Sangeet", "Mehendi", "Reception", "Pre-Wedding"
@@ -839,22 +846,6 @@ export default function TeamManagerPage() {
         .find(a => a.id === assignmentId);
 
       if (activeAssign) {
-        // Prevent duplicate assignment of the same person in the same sub-event
-        if (memberId) {
-          const subEventObj = projects
-            .flatMap(p => p.fw_sub_events || [])
-            .find(se => se.id === activeAssign.sub_event_id);
-          const currentAssignments = subEventObj ? resolveSubEventAssignments(subEventObj, teamMembers) : [];
-          const existingSlot = currentAssignments.find(
-            a => a.id !== assignmentId && a.assigned_member_id === memberId
-          );
-          if (existingSlot) {
-            const memberName = teamMembers.find(m => m.id === memberId)?.name || 'This crew member';
-            alert(`${memberName} is already assigned as "${existingSlot.required_role}" in this event. Each crew role must be assigned to a different person.`);
-            return;
-          }
-        }
-
         const matchedMemberObj = memberId ? teamMembers.find(m => m.id === memberId) || null : null;
 
         const isMemberInHouse = 
@@ -876,6 +867,14 @@ export default function TeamManagerPage() {
           0
         );
 
+        const subEventObj = projects
+          .flatMap(p => p.fw_sub_events || [])
+          .find(se => se.id === activeAssign.sub_event_id);
+        const currentAssignments = subEventObj ? resolveSubEventAssignments(subEventObj, teamMembers) : [];
+        const existingSlot = memberId ? currentAssignments.find(
+          a => a.id !== assignmentId && a.assigned_member_id === memberId
+        ) : null;
+
         // 1. INSTANT OPTIMISTIC UI STATE UPDATE (NO PAGE RELOAD / NO RE-FETCH)
         setProjects(prevProjects =>
           prevProjects.map(proj => ({
@@ -884,8 +883,25 @@ export default function TeamManagerPage() {
               if (se.id !== activeAssign.sub_event_id) return se;
               const existingAssignments = se.fw_assignments || [];
               const exists = existingAssignments.some(a => a.id === assignmentId);
+
+              // If member was in another slot in this event, unassign that slot
+              let intermediate = existingAssignments;
+              if (existingSlot) {
+                intermediate = intermediate.map(a =>
+                  a.id === existingSlot.id
+                    ? {
+                        ...a,
+                        assigned_member_id: null,
+                        assigned_member_name: null,
+                        fw_team_members: null,
+                        status: 'pending'
+                      }
+                    : a
+                );
+              }
+
               const updatedAssignments = exists
-                ? existingAssignments.map(a =>
+                ? intermediate.map(a =>
                     a.id === assignmentId
                       ? { 
                           ...a, 
@@ -901,7 +917,7 @@ export default function TeamManagerPage() {
                       : a
                   )
                 : [
-                    ...existingAssignments,
+                    ...intermediate,
                     {
                       id: assignmentId,
                       project_id: activeAssign.project_id,
@@ -1045,7 +1061,23 @@ export default function TeamManagerPage() {
                 agreed_amount: defaultAmount
               });
             }
-            // 2. Persist assignment to DB
+            // 2. If member was previously assigned to another slot in this sub-event, unassign that old slot in DB first
+            if (existingSlot && existingSlot.id && !String(existingSlot.id).includes('-role-')) {
+              try {
+                await supabase
+                  .from('fw_assignments')
+                  .update({
+                    assigned_member_id: null,
+                    assigned_member_name: null,
+                    status: 'pending'
+                  })
+                  .eq('id', String(existingSlot.id));
+              } catch (e) {
+                console.warn('[TeamManager] Previous slot unassignment notice:', e);
+              }
+            }
+
+            // 3. Persist assignment to DB
             if (assignmentId && !String(assignmentId || '').includes('-role-')) {
               // Exact primary key update!
               const updatePayload: any = { 
@@ -2850,7 +2882,7 @@ export default function TeamManagerPage() {
                                           return null;
                                         }
 
-                                        const isFilterActive = checkIsFilterActive(unifiedFilters) || Boolean(searchQuery.trim()) || selectedRoleFilter !== 'All';
+                                        const isFilterActive = checkIsFilterActive(unifiedFilters) || selectedRoleFilter !== 'All';
                                         const slotMatch = checkRoleSlotMatch(assignment, unifiedFilters);
                                         const isTargeted = isSelectedSpotlight || slotMatch.isTargetedSlot;
                                         const isDimmed = isFilterActive && !isTargeted;
@@ -3339,7 +3371,7 @@ export default function TeamManagerPage() {
                                             return null;
                                           }
 
-                                          const isFilterActive = checkIsFilterActive(unifiedFilters) || Boolean(searchQuery.trim()) || selectedRoleFilter !== 'All';
+                                          const isFilterActive = checkIsFilterActive(unifiedFilters) || selectedRoleFilter !== 'All';
                                           const slotMatch = checkRoleSlotMatch(assignment, unifiedFilters);
                                           const isTargeted = isSelectedSpotlight || slotMatch.isTargetedSlot;
                                           const isDimmed = isFilterActive && !isTargeted;
@@ -3819,21 +3851,26 @@ export default function TeamManagerPage() {
                       <button
                         key={m.id}
                         type="button"
-                        disabled={isAlreadyAssignedElsewhere}
                         onClick={() => {
                           if (isAlreadyAssignedElsewhere) {
-                            alert(`"${cleanMName}" is already assigned as "${alreadyAssignedRole}" in this event. Each crew role must be assigned to a different person.`);
+                            setDuplicateAssignmentConfirm({
+                              assignmentId: activeAssignment.id,
+                              memberId: m.id,
+                              memberName: cleanMName,
+                              existingRole: alreadyAssignedRole || 'Crew',
+                              newRole: activeAssignment.required_role || 'Crew',
+                            });
                             return;
                           }
                           handleAssignMember(activeAssignment.id, m.id);
                           setDropdownPos(null);
                         }}
-                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition ${
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
                           isAlreadyAssignedElsewhere
-                            ? 'opacity-40 cursor-not-allowed bg-slate-50 text-slate-400'
+                            ? 'bg-amber-50/50 hover:bg-amber-100/70 text-slate-800 border border-amber-200/50'
                             : isSelected
-                            ? 'bg-emerald-50 text-emerald-950 border border-emerald-300 shadow-2xs cursor-pointer'
-                            : 'text-[#0B111E] hover:bg-zinc-50 cursor-pointer'
+                            ? 'bg-emerald-50 text-emerald-950 border border-emerald-300 shadow-2xs'
+                            : 'text-[#0B111E] hover:bg-zinc-50'
                         }`}
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
@@ -3855,7 +3892,7 @@ export default function TeamManagerPage() {
                           )}
                           <div className="text-left leading-tight min-w-0">
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className={`block font-black text-xs truncate ${isSelected ? 'text-emerald-900' : isAlreadyAssignedElsewhere ? 'text-slate-500' : 'text-slate-900'}`}>
+                              <span className={`block font-black text-xs truncate ${isSelected ? 'text-emerald-900' : isAlreadyAssignedElsewhere ? 'text-slate-800' : 'text-slate-900'}`}>
                                 {cleanMName}
                               </span>
                               {isSelected && (
@@ -3865,7 +3902,7 @@ export default function TeamManagerPage() {
                               )}
                               {isAlreadyAssignedElsewhere && (
                                 <span className="px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300">
-                                  ⚠️ Already Assigned ({getRoleAbbr(alreadyAssignedRole, customCrewRoles)})
+                                  ⚠️ Assigned ({getRoleAbbr(alreadyAssignedRole, customCrewRoles)})
                                 </span>
                               )}
                             </div>
@@ -3880,6 +3917,49 @@ export default function TeamManagerPage() {
                   })}
               </div>
             </motion.div>
+
+            {/* DUPLICATE ASSIGNMENT CONFIRMATION MODAL */}
+            {duplicateAssignmentConfirm && (
+              <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150" onClick={(e) => e.stopPropagation()}>
+                <div className="bg-white rounded-2xl p-5 max-w-sm w-full shadow-2xl border border-slate-200 space-y-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                      <AlertCircle className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-black text-slate-900">Reassign Crew Member</h3>
+                      <p className="text-xs text-slate-600 mt-1">
+                        <span className="font-bold text-slate-900">{duplicateAssignmentConfirm.memberName}</span> is currently assigned as <span className="font-bold text-amber-800">&quot;{duplicateAssignmentConfirm.existingRole}&quot;</span> in this event.
+                      </p>
+                      <p className="text-xs text-slate-600 mt-1">
+                        Do you want to reassign them to <span className="font-bold text-indigo-700">&quot;{duplicateAssignmentConfirm.newRole}&quot;</span>?
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setDuplicateAssignmentConfirm(null)}
+                      className="px-3.5 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = duplicateAssignmentConfirm;
+                        setDuplicateAssignmentConfirm(null);
+                        setDropdownPos(null);
+                        handleAssignMember(target.assignmentId, target.memberId);
+                      }}
+                      className="px-4 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-600/20 transition cursor-pointer"
+                    >
+                      Reassign Member
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </>,
           document.body
         );

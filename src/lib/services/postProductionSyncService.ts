@@ -24,41 +24,78 @@ export function categorizeDeliverable(text: string): 'Photos' | 'Videos' | 'Albu
 }
 
 /**
- * Determine the specific event segment (Pre-Wedding, Wedding, Haldi, Sangeet, Reception, etc.)
+ * Determines the single primary main event segment for a quotation (e.g. "Wedding", "Reception", "Engagement").
+ * If any function or event contains "Wedding", the main segment is strictly "Wedding".
+ * If no function is "Wedding", picks the primary major event (e.g. "Reception", "Engagement", "Sangeet").
  */
-export function determineDeliverableSegment(eventTitle: string, itemText: string): string {
-  const et = (eventTitle || '').trim();
-  const etLow = et.toLowerCase();
-  const combined = (eventTitle + ' ' + itemText).toLowerCase();
+export function determineMainEventSegment(docOrQuotation: any): string {
+  if (!docOrQuotation) return 'Wedding';
 
-  if (/pre-wedding|pre\s*wedding|pre\s*shoot/i.test(combined) || /pre-wedding|pre\s*wedding/i.test(etLow)) {
-    return 'Pre-Wedding';
+  let doc: any = docOrQuotation;
+  if (typeof docOrQuotation.content_json === 'string') {
+    try { doc = JSON.parse(docOrQuotation.content_json); } catch (_) {}
+  } else if (docOrQuotation.content_json) {
+    doc = docOrQuotation.content_json;
   }
-  if (/wedding/i.test(etLow) || /wedding/i.test(combined)) {
+
+  const candidateNames: string[] = [];
+
+  // 1. Functions Page
+  if (Array.isArray(doc?.functionsPage?.items)) {
+    doc.functionsPage.items.forEach((f: any) => {
+      const name = f.name || f.title || '';
+      if (name) candidateNames.push(name.trim());
+    });
+  }
+
+  // 2. Events breakdown / events array
+  if (Array.isArray(doc?.events)) {
+    doc.events.forEach((e: any) => {
+      const name = e.title || e.name || e.event_title || '';
+      if (name) candidateNames.push(name.trim());
+    });
+  }
+
+  // 3. Cover event type
+  const coverType = doc?.cover?.eventType || doc?.event_type || doc?.eventGroup || '';
+  if (coverType) candidateNames.push(coverType.trim());
+
+  // Filter out Pre-Wedding shoot
+  const nonPreWedding = candidateNames.filter(n => !/pre-wedding|pre\s*wedding|pre\s*shoot/i.test(n));
+
+  // If ANY non-pre-wedding function or cover mentions "wedding", main segment is strictly "Wedding"
+  if (nonPreWedding.some(n => /wedding/i.test(n)) || /wedding/i.test(coverType)) {
     return 'Wedding';
   }
-  if (/reception/i.test(etLow)) {
-    return 'Reception';
+
+  // If no "wedding", check major event hierarchy
+  if (nonPreWedding.some(n => /reception/i.test(n))) return 'Reception';
+  if (nonPreWedding.some(n => /engagement|roka|ring\s*ceremony/i.test(n))) return 'Engagement';
+  if (nonPreWedding.some(n => /sangeet/i.test(n))) return 'Sangeet';
+  if (nonPreWedding.some(n => /haldi/i.test(n))) return 'Haldi';
+
+  if (nonPreWedding.length > 0) {
+    const clean = nonPreWedding[0].replace(/photography|cinematography|shoot/gi, '').trim();
+    if (clean) return clean.charAt(0).toUpperCase() + clean.slice(1);
   }
-  if (/haldi/i.test(etLow)) {
-    return 'Haldi';
-  }
-  if (/mehendi|mehndi/i.test(etLow)) {
-    return 'Mehendi';
-  }
-  if (/sangeet/i.test(etLow)) {
-    return 'Sangeet';
-  }
-  if (/engagement|roka|ring\s*ceremony/i.test(etLow)) {
-    return 'Engagement';
-  }
-  if (/cocktail/i.test(etLow)) {
-    return 'Cocktail';
-  }
-  if (et) {
-    return et.charAt(0).toUpperCase() + et.slice(1);
-  }
+
   return 'Wedding';
+}
+
+/**
+ * Determine the specific event segment (strictly "Pre-Wedding" or the project's Main Event Segment).
+ * All sub-functions (Haldi, Sangeet, Reception, Mehendi, etc.) are consolidated under the main event segment!
+ */
+export function determineDeliverableSegment(eventTitle: string, itemText: string, mainEventSegment: string = 'Wedding'): string {
+  const combined = (eventTitle + ' ' + itemText).toLowerCase();
+
+  // If explicitly pre-wedding, assign to Pre-Wedding
+  if (/pre-wedding|pre\s*wedding|pre\s*shoot/i.test(combined)) {
+    return 'Pre-Wedding';
+  }
+
+  // ALL other deliverables belong to the single main event segment (e.g. Wedding)!
+  return mainEventSegment || 'Wedding';
 }
 
 /**
@@ -173,9 +210,19 @@ export function parseQuotationDeliverables(q: any): {
   enabledSegments: string[];
 } {
   if (!q) return { deliverables: [], enabledSegments: ['Wedding'] };
+
+  // 1. PRIMARY SOURCE: Parse modern quotation content_json
+  let doc: any = null;
+  if (q.content_json) {
+    try {
+      doc = typeof q.content_json === 'string' ? JSON.parse(q.content_json) : q.content_json;
+    } catch (_) {}
+  }
+
+  const mainEventSegment = determineMainEventSegment(doc || q);
   const result: PostProductionDeliverable[] = [];
   const seen = new Set<string>();
-  const discoveredSegments = new Set<string>(['Wedding']);
+  const discoveredSegments = new Set<string>([mainEventSegment]);
 
   const addUniqueItem = (
     title: string,
@@ -186,7 +233,7 @@ export function parseQuotationDeliverables(q: any): {
   ) => {
     const cleanTitle = cleanDeliverableTitle(title);
     if (!cleanTitle) return;
-    const cleanSegment = segment.trim() || 'Wedding';
+    const cleanSegment = segment === 'Pre-Wedding' ? 'Pre-Wedding' : mainEventSegment;
     const key = cleanSegment.toLowerCase() + '_' + category.toLowerCase() + '_' + cleanTitle.toLowerCase();
     if (!seen.has(key)) {
       seen.add(key);
@@ -209,14 +256,6 @@ export function parseQuotationDeliverables(q: any): {
       });
     }
   };
-
-  // 1. PRIMARY SOURCE: Parse modern quotation content_json
-  let doc: any = null;
-  if (q.content_json) {
-    try {
-      doc = typeof q.content_json === 'string' ? JSON.parse(q.content_json) : q.content_json;
-    } catch (_) {}
-  }
 
   if (doc) {
     const pageSequence = Array.isArray(doc.pageSequence) ? doc.pageSequence : [];
@@ -259,8 +298,7 @@ export function parseQuotationDeliverables(q: any): {
       items.forEach((item) => {
         const str = String(item).trim();
         if (str) {
-          const isPreWedItem = /pre-wedding|pre\s*wedding/i.test(str);
-          const segment = (isPreWedItem && hasPreWeddingPage) ? 'Pre-Wedding' : 'Wedding';
+          const segment = determineDeliverableSegment('', str, mainEventSegment);
           const category = categorizeDeliverable(str);
           const specs = extractDeliverableSpecs(str);
           addUniqueItem(str, segment, category, 'From Quotation Deliverables Page', specs);
@@ -273,8 +311,7 @@ export function parseQuotationDeliverables(q: any): {
       doc.specialValueAdditions.selectedItems.forEach((item: string) => {
         const str = String(item).trim();
         if (str) {
-          const isPreWed = /pre-wedding|pre\s*wedding/i.test(str);
-          const segment = (isPreWed && hasPreWeddingPage) ? 'Pre-Wedding' : 'Wedding';
+          const segment = determineDeliverableSegment('', str, mainEventSegment);
           const category = categorizeDeliverable(str);
           const specs = extractDeliverableSpecs(str);
           addUniqueItem(str, segment, category, 'From Special Value Additions', specs);
@@ -290,10 +327,10 @@ export function parseQuotationDeliverables(q: any): {
           func.deliverables.forEach((d: string) => {
             const str = String(d).trim();
             if (str) {
-              const seg = funcName || 'Wedding';
+              const seg = determineDeliverableSegment(funcName, str, mainEventSegment);
               const category = categorizeDeliverable(str);
               const specs = extractDeliverableSpecs(str);
-              addUniqueItem(str, seg, category, 'From Function: ' + seg, specs);
+              addUniqueItem(str, seg, category, 'From Function: ' + funcName, specs);
             }
           });
         }
@@ -312,7 +349,7 @@ export function parseQuotationDeliverables(q: any): {
         const delivs = Array.isArray(ev.deliverables) ? ev.deliverables : [];
         delivs.forEach((d: string) => {
           if (typeof d === 'string' && d.trim()) {
-            const segment = determineDeliverableSegment(evTitle, d);
+            const segment = determineDeliverableSegment(evTitle, d, mainEventSegment);
             const category = categorizeDeliverable(d);
             const specs = extractDeliverableSpecs(d);
             addUniqueItem(d, segment, category, 'From Event: ' + evTitle, specs);
@@ -331,7 +368,7 @@ export function parseQuotationDeliverables(q: any): {
           if (Array.isArray(page.paginatedDelivs)) {
             page.paginatedDelivs.forEach((itemText: string) => {
               if (typeof itemText === 'string' && itemText.trim()) {
-                const segment = determineDeliverableSegment('', itemText);
+                const segment = determineDeliverableSegment('', itemText, mainEventSegment);
                 const category = categorizeDeliverable(itemText);
                 const specs = extractDeliverableSpecs(itemText);
                 addUniqueItem(itemText, segment, category, 'From Quotation Canvas', specs);
@@ -345,7 +382,7 @@ export function parseQuotationDeliverables(q: any): {
                 el.gridItems.forEach((gi: any) => {
                   const clean = (gi.content || gi.title || '').trim();
                   if (clean) {
-                    const segment = determineDeliverableSegment('', clean);
+                    const segment = determineDeliverableSegment('', clean, mainEventSegment);
                     const category = categorizeDeliverable(clean);
                     const specs = extractDeliverableSpecs(clean);
                     addUniqueItem(clean, segment, category, 'From Quotation Deliverables Page', specs);
@@ -364,16 +401,20 @@ export function parseQuotationDeliverables(q: any): {
   addOns.forEach((addon: any) => {
     if (addon.selected !== false && addon.title) {
       const clean = addon.title.trim();
-      const segment = determineDeliverableSegment('', clean);
+      const segment = determineDeliverableSegment('', clean, mainEventSegment);
       const category = categorizeDeliverable(clean);
       const specs = extractDeliverableSpecs(clean);
       addUniqueItem(clean, segment, category, 'From Quotation Add-On', specs);
     }
   });
 
+  const segmentsList = discoveredSegments.has('Pre-Wedding')
+    ? ['Pre-Wedding', mainEventSegment]
+    : [mainEventSegment];
+
   return {
     deliverables: result,
-    enabledSegments: Array.from(discoveredSegments),
+    enabledSegments: segmentsList,
   };
 }
 

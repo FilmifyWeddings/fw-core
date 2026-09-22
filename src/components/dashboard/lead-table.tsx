@@ -594,10 +594,19 @@ export function LeadTable({
           const json = await res.json();
           if (!isCancelled && json.success && json.summary) {
             setQuotationSummaryMap(prev => {
-              const merged = {
-                ...prev,
-                ...json.summary
-              };
+              const merged = { ...prev };
+              for (const [lId, sum] of Object.entries(json.summary as Record<string, any>)) {
+                const prevItem = prev[lId];
+                if (prevItem?.hasFinal && !sum.hasFinal) {
+                  merged[lId] = {
+                    ...sum,
+                    hasFinal: true,
+                    finalVersion: prevItem.finalVersion || sum.finalVersion
+                  };
+                } else {
+                  merged[lId] = sum;
+                }
+              }
               if (typeof window !== 'undefined') {
                 try {
                   localStorage.setItem('sc_quotation_summary_map', JSON.stringify(merged));
@@ -2967,9 +2976,11 @@ export function LeadTable({
                     {/* Quotation Quick Icon (3-State: Default dark gray, Draft orange, Final green) */}
                     {(() => {
                       const qSummary = quotationSummaryMap[lead.id];
-                      const isBooked = (lead.status as string) === 'booked' || lead.status === 'closed' || (lead as any).stage === 'booked';
+                      const statusLower = (lead.status as string || '').toLowerCase();
+                      const isBooked = statusLower === 'booked' || statusLower === 'closed' || (lead as any).stage === 'booked';
                       const isFinal = Boolean(
                         qSummary?.hasFinal === true ||
+                        lead.final_quotation_id ||
                         lead.raw_payload?.final_quotation_id ||
                         isBooked
                       );
@@ -3833,7 +3844,8 @@ export function LeadTable({
                             {/* Lead Quotations Management Action (3-State: Default dark gray, Draft orange, Final green) */}
                             {quickActionsConfig.quotation !== false && (() => {
                               const qSummary = quotationSummaryMap[lead.id];
-                              const isBooked = (lead.status as string) === 'booked' || lead.status === 'closed' || (lead as any).stage === 'booked';
+                              const statusLower = (lead.status as string || '').toLowerCase();
+                              const isBooked = statusLower === 'booked' || statusLower === 'closed' || (lead as any).stage === 'booked';
                               const isFinal = Boolean(
                                 qSummary?.hasFinal === true ||
                                 lead.final_quotation_id ||
@@ -4886,6 +4898,11 @@ export function LeadTable({
         lead={quotationModalLead} 
         initialQuotations={quotationModalLead ? (quotationSummaryMap[quotationModalLead.id]?.versions || []) : []}
         onQuotationChange={handleQuotationChange}
+        onFinalSet={(q) => {
+          if (quotationModalLead) {
+            handleQuotationChange(quotationModalLead.id, [{ ...q, is_final: true }]);
+          }
+        }}
       />
     </div>
   );

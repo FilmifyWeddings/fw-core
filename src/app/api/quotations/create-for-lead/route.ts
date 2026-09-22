@@ -90,14 +90,19 @@ export async function POST(req: NextRequest) {
     clonedDoc.designName = quotationTitle;
     clonedDoc.title = quotationTitle;
 
-    // Ensure payment term steps have unique IDs
+    // Ensure all payment term steps strictly start as 'Pending' with ₹0 received for new lead quotations
     if (clonedDoc.paymentTermsPage?.steps && Array.isArray(clonedDoc.paymentTermsPage.steps)) {
+      const totalPricing = clonedDoc.pricingPage?.basePrice || 0;
       clonedDoc.paymentTermsPage.steps = clonedDoc.paymentTermsPage.steps.map((s: any, idx: number) => ({
         ...s,
         id: s.id || `pt_${Date.now()}_${idx}_${Math.random().toString(36).substring(7)}`,
         stepName: s.stepName || s.name || `Installment #${idx + 1}`,
-        name: s.name || s.stepName || `Installment #${idx + 1}`
+        name: s.name || s.stepName || `Installment #${idx + 1}`,
+        status: 'Pending',
+        paid_date: null
       }));
+      clonedDoc.paymentTermsPage.receivedAmount = 0;
+      clonedDoc.paymentTermsPage.pendingAmount = clonedDoc.paymentTermsPage.fixedAmount || totalPricing;
     }
 
     if (Array.isArray(clonedDoc.pages)) {
