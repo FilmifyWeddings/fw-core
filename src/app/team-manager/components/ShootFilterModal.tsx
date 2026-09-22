@@ -65,8 +65,8 @@ const DEFAULT_EVENT_TYPES = [
   'Haldi',
   'Mehendi',
   'Sangeet',
-  'Pre-Wedding Shoot',
-  'Post-Wedding Shoot',
+  'Pre-Wedding',
+  'Post-Wedding',
   'Maternity Shoot',
   'Birthday Party',
   'Corporate Event'
@@ -147,9 +147,24 @@ export default function ShootFilterModal({
     return parts[0].slice(0, 2).toUpperCase();
   };
 
-  // Merge defaults with available props
+  // Merge defaults with available props, canonicalizing Pre-Wedding and Post-Wedding variants into single clean options
   const allEventTypes = useMemo(() => {
-    return Array.from(new Set([...DEFAULT_EVENT_TYPES, ...availableEventTypes])).filter(Boolean);
+    const rawList = [...DEFAULT_EVENT_TYPES, ...availableEventTypes].filter(Boolean);
+    const canonicalSet = new Set<string>();
+
+    rawList.forEach((t) => {
+      const clean = t.trim();
+      const stripped = clean.toLowerCase().replace(/[\s\-_]/g, '');
+      if (stripped.startsWith('prewedding')) {
+        canonicalSet.add('Pre-Wedding');
+      } else if (stripped.startsWith('postwedding')) {
+        canonicalSet.add('Post-Wedding');
+      } else {
+        canonicalSet.add(clean);
+      }
+    });
+
+    return Array.from(canonicalSet);
   }, [availableEventTypes]);
 
   const allRoles = useMemo(() => {

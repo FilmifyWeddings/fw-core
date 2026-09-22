@@ -44,8 +44,63 @@ export default function RoleAssignDropdown({
   const { crewRoles } = useWorkspaceData();
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [popoverPos, setPopoverPos] = useState<{ top: number; left: number } | null>(null);
+  const [popoverPos, setPopoverPos] = useState<{
+    top?: number;
+    bottom?: number;
+    left: number;
+    openAbove: boolean;
+    maxHeight?: number;
+  } | null>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
+
+  const calculatePopoverPosition = (rect: DOMRect) => {
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const openAbove = spaceBelow < 330 && spaceAbove > spaceBelow;
+    const left = Math.max(10, Math.min(rect.left - 40, window.innerWidth - 270));
+
+    if (openAbove) {
+      return {
+        bottom: window.innerHeight - rect.top + 6,
+        left,
+        openAbove: true,
+        maxHeight: Math.min(380, rect.top - 16),
+      };
+    } else {
+      return {
+        top: rect.bottom + 6,
+        left,
+        openAbove: false,
+        maxHeight: Math.min(380, spaceBelow - 16),
+      };
+    }
+  };
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+
+    const updatePosition = () => {
+      if (!triggerRef.current) {
+        setIsOpen(false);
+        setPopoverPos(null);
+        return;
+      }
+      const rect = triggerRef.current.getBoundingClientRect();
+      if (rect.bottom < 0 || rect.top > window.innerHeight) {
+        setIsOpen(false);
+        setPopoverPos(null);
+        return;
+      }
+      setPopoverPos(calculatePopoverPosition(rect));
+    };
+
+    window.addEventListener('scroll', updatePosition, true);
+    window.addEventListener('resize', updatePosition);
+    return () => {
+      window.removeEventListener('scroll', updatePosition, true);
+      window.removeEventListener('resize', updatePosition);
+    };
+  }, [isOpen]);
 
   const memberObj = assignment.fw_team_members || (assignment.assigned_member_id ? teamMembers.find(m => m.id === assignment.assigned_member_id || (Boolean((assignment as any).assigned_member_name) && m.name.toLowerCase() === String((assignment as any).assigned_member_name).toLowerCase())) : null);
   const isAssigned = Boolean(assignment.assigned_member_id || memberObj);
@@ -61,10 +116,7 @@ export default function RoleAssignDropdown({
     if (readOnly) return;
     e.stopPropagation();
     const rect = e.currentTarget.getBoundingClientRect();
-    const top = rect.bottom + 6;
-    // Keep popover inside window bounds horizontally
-    const left = Math.max(10, Math.min(rect.left - 40, window.innerWidth - 270));
-    setPopoverPos({ top, left });
+    setPopoverPos(calculatePopoverPosition(rect));
     setSearchQuery('');
     setIsOpen(!isOpen);
   };
@@ -277,17 +329,20 @@ export default function RoleAssignDropdown({
           />
           <AnimatePresence>
             <motion.div
-              initial={{ opacity: 0, scale: 0.92, y: -4 }}
+              initial={{ opacity: 0, scale: 0.92, y: popoverPos.openAbove ? 4 : -4 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.92, y: -4 }}
+              exit={{ opacity: 0, scale: 0.92, y: popoverPos.openAbove ? 4 : -4 }}
               transition={{ type: 'spring', damping: 20, stiffness: 350 }}
               style={{
                 position: 'fixed',
-                top: `${popoverPos.top}px`,
+                ...(popoverPos.openAbove
+                  ? { bottom: `${popoverPos.bottom}px` }
+                  : { top: `${popoverPos.top}px` }),
                 left: `${popoverPos.left}px`,
+                maxHeight: popoverPos.maxHeight ? `${popoverPos.maxHeight}px` : undefined,
                 zIndex: 95,
               }}
-              className="w-64 bg-white border border-[#6C5CE7]/20 rounded-[18px] shadow-[0_25px_60px_rgba(0,0,0,0.35)] p-3 space-y-2 text-left select-none"
+              className="w-64 bg-white border border-[#6C5CE7]/20 rounded-[18px] shadow-[0_25px_60px_rgba(0,0,0,0.35)] p-3 space-y-2 text-left select-none flex flex-col"
             >
               {/* SEARCH INPUT BAR */}
               <div className="relative">
@@ -322,7 +377,7 @@ export default function RoleAssignDropdown({
               <div className="h-px bg-zinc-100 my-1" />
 
               {/* MEMBER SELECTION LIST */}
-              <div className="max-h-48 overflow-y-auto space-y-0.5 pr-1">
+              <div className="max-h-56 overflow-y-auto space-y-0.5 pr-1 flex-1 min-h-0">
                 {/* UNASSIGN OPTION */}
                 <button
                   type="button"

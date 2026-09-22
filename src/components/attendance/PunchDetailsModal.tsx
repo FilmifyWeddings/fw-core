@@ -46,7 +46,13 @@ export default function PunchDetailsModal({
   const rec = dayData.record || dayData;
   const timing = dayData.timing || rec.timing;
   const isPunched = Boolean(rec && (rec.check_in_time || rec.punch_in_time));
-  const isToday = dayData.date === new Date().toISOString().split('T')[0];
+  const todayIstStr = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(new Date());
+  const isToday = dayData.date === todayIstStr;
   const isActiveNow = Boolean(rec && rec.check_in_time && !rec.check_out_time && isToday);
 
   // Photos

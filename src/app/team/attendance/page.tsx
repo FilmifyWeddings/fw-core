@@ -104,7 +104,23 @@ export default function TeamAttendancePage() {
 
   // Monthly Report Calculations
   const monthlyStats = useMemo(() => {
-    const records = monthlyHistory.filter(r => (r.date || '').startsWith(selectedMonth));
+    const todayDateStr = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(new Date());
+
+    let allRecords = [...monthlyHistory];
+    if (todayRecord) {
+      const idx = allRecords.findIndex(r => r.id === todayRecord.id || r.date === todayRecord.date);
+      if (idx >= 0) {
+        allRecords[idx] = { ...allRecords[idx], ...todayRecord };
+      } else {
+        allRecords.unshift(todayRecord);
+      }
+    }
+    const records = allRecords.filter(r => (r.date || '').startsWith(selectedMonth));
     const uniquePresentDates = new Set(
       records
         .filter(r => r.check_in_time || r.status === 'present' || r.status === 'late' || r.status === 'half_day')
@@ -139,7 +155,7 @@ export default function TeamAttendancePage() {
         totalOvertimeMinutes += timing.overtimeMinutes;
       }
 
-      const isTodayRec = r.date === new Date().toISOString().split('T')[0];
+      const isTodayRec = r.date === todayDateStr;
       let dayMins = 0;
       if (r.check_in_time && r.check_out_time) {
         const inMs = new Date(r.check_in_time).getTime();
@@ -166,20 +182,13 @@ export default function TeamAttendancePage() {
       };
     });
 
-    // Calendar Days generation (all days without skipping!)
+    // Calendar Days generation (Today is always at the top for current month!)
     const [yearStr, monthStr] = (selectedMonth || '').split('-');
     const year = parseInt(yearStr, 10) || new Date().getFullYear();
     const month = parseInt(monthStr, 10) || (new Date().getMonth() + 1);
     const totalDaysInMonth = new Date(year, month, 0).getDate();
-    const todayDateStr = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Kolkata',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    }).format(new Date());
 
-    const calendarDays: any[] = [];
-    for (let d = totalDaysInMonth; d >= 1; d--) {
+    const buildDayObject = (d: number) => {
       const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       const dayDate = new Date(dateStr + 'T12:00:00');
       const dayOfWeekShort = dayDate.toLocaleDateString('en-US', { weekday: 'short' });
@@ -208,7 +217,7 @@ export default function TeamAttendancePage() {
           isWeekOffDuty = true;
         }
 
-        calendarDays.push({
+        return {
           date: dateStr,
           type: dutyType,
           record: punchRec,
@@ -217,61 +226,72 @@ export default function TeamAttendancePage() {
           isHolidayDuty,
           isWeekOffDuty,
           holidayName: holidayMatch?.name || null
-        });
-        continue;
+        };
       }
 
       // 2. Is there a Company Holiday?
       if (holidayMatch) {
-        calendarDays.push({
+        return {
           date: dateStr,
           type: 'holiday',
           record: null,
           title: holidayMatch.name || 'Company Holiday',
           note: holidayMatch.note
-        });
-        continue;
+        };
       }
 
       // 3. Is there an approved Leave?
       const leave = (recentLeaves || []).find(l => dateStr >= l.start_date && dateStr <= l.end_date && l.status !== 'rejected');
       if (leave) {
-        calendarDays.push({
+        return {
           date: dateStr,
           type: 'leave',
           record: null,
           title: `Leave (${leave.leave_type || 'Approved'})`,
           note: leave.reason
-        });
-        continue;
+        };
       }
 
       // 4. Is it a Weekly Off?
       if (isOff) {
-        calendarDays.push({
+        return {
           date: dateStr,
           type: 'weekly_off',
           record: null,
           title: 'Weekly Off'
-        });
-        continue;
+        };
       }
 
       // 5. Past vs Future
       if (dateStr > todayDateStr) {
-        calendarDays.push({
+        return {
           date: dateStr,
           type: 'upcoming',
           record: null,
           title: 'Scheduled Shift'
-        });
+        };
       } else {
-        calendarDays.push({
+        return {
           date: dateStr,
           type: 'absent',
           record: null,
           title: dateStr === todayDateStr ? 'Not Punched In Today' : 'Absent (No Punch Marked)'
-        });
+        };
+      }
+    };
+
+    const isCurrentMonth = selectedMonth === todayDateStr.substring(0, 7);
+    const todayDayNum = isCurrentMonth ? parseInt(todayDateStr.split('-')[2], 10) : totalDaysInMonth;
+
+    const calendarDays: any[] = [];
+    // 1. Current & Past days in descending order (Today is always position #1!)
+    for (let d = (isCurrentMonth ? Math.min(todayDayNum, totalDaysInMonth) : totalDaysInMonth); d >= 1; d--) {
+      calendarDays.push(buildDayObject(d));
+    }
+    // 2. Upcoming future days in current month (listed after today)
+    if (isCurrentMonth) {
+      for (let d = todayDayNum + 1; d <= totalDaysInMonth; d++) {
+        calendarDays.push(buildDayObject(d));
       }
     }
 

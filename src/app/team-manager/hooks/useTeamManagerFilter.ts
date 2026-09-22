@@ -96,6 +96,60 @@ export function isRoleMatching(targetRole?: string | null, candidateRole?: strin
 }
 
 /**
+ * ⚡ Event Type Normalizer & Canonical Matcher
+ * Handles all whitespace, hyphenation, and case variations:
+ * e.g., "pre-wedding", "pre - wedding", "pre wedding", "Pre-Wedding Shoot"
+ */
+export function normalizeEventType(val: string): string {
+  if (!val) return '';
+  return String(val)
+    .toLowerCase()
+    .replace(/\s*-\s*/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function isEventTypeMatch(candText: string, targetType: string): boolean {
+  if (!candText || !targetType) return false;
+
+  const cand = normalizeEventType(candText);
+  const target = normalizeEventType(targetType);
+
+  if (!cand || !target) return false;
+
+  // Direct normalized substring match
+  if (cand.includes(target)) return true;
+
+  const candStripped = cand.replace(/[\s\-_]/g, '');
+  const targetStripped = target.replace(/[\s\-_]/g, '');
+
+  // Check Pre-Wedding variants
+  const isPreWeddingTarget = target.includes('pre-wedding') || targetStripped.startsWith('prewedding');
+  if (isPreWeddingTarget) {
+    return candStripped.includes('prewedding') || cand.includes('pre-wedding') || cand.includes('pre wedding');
+  }
+
+  // Check Post-Wedding variants
+  const isPostWeddingTarget = target.includes('post-wedding') || targetStripped.startsWith('postwedding');
+  if (isPostWeddingTarget) {
+    return candStripped.includes('postwedding') || cand.includes('post-wedding') || cand.includes('post wedding');
+  }
+
+  // Prevent generic "wedding" from accidentally matching "pre-wedding" or "post-wedding"
+  const isWeddingTarget = target === 'wedding' || target === 'wedding ceremony';
+  if (isWeddingTarget) {
+    if (candStripped.includes('prewedding') || candStripped.includes('postwedding')) {
+      return false;
+    }
+  }
+
+  // General stripped substring match
+  if (candStripped.includes(targetStripped)) return true;
+
+  return false;
+}
+
+/**
  * ⚡ Authoritative Sub-Event Slot Extractor
  * Strictly delegates to resolveSubEventAssignments to preserve real 1-to-1 database slots,
  * prevent deduplication of multiple same-role crew slots, and generate exact unassigned placeholders.
@@ -174,10 +228,23 @@ export function isSubEventMatch(
     if (isTbd || (subEvent.event_date || '') > filters.endDate) return false;
   }
 
-  // 5. Event Types Multi-select
+  // 5. Event Types Multi-select (Canonical normalization: matches "pre - wedding", "pre-wedding", "pre wedding", etc.)
   if (filters.eventTypes && filters.eventTypes.length > 0) {
-    const eventTitle = (subEvent.event_title || subEvent.name || subEvent.event_type || '').toLowerCase();
-    const matchType = filters.eventTypes.some(t => eventTitle.includes(t.toLowerCase()));
+    const candidateStrings = [
+      subEvent.event_title,
+      subEvent.name,
+      subEvent.event_type,
+      (subEvent as any).title,
+      (subEvent as any).type,
+      (subEvent as any).project_name,
+      (subEvent as any).project?.project_name,
+      (subEvent as any).project?.event_type
+    ].filter(Boolean);
+
+    const matchType = filters.eventTypes.some(targetFilter => {
+      return candidateStrings.some(cand => isEventTypeMatch(cand, targetFilter));
+    });
+
     if (!matchType) return false;
   }
 

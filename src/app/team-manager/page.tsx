@@ -243,10 +243,16 @@ export default function TeamManagerPage() {
   const [memberSearchQuery, setMemberSearchQuery] = useState<string>("");
   const [isAddMemberOpen, setIsAddMemberOpen] = useState<boolean>(false);
   const [editingMember, setEditingMember] = useState<FWTeamMember | null>(null);
-  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number } | null>(null);
+  const [dropdownPos, setDropdownPos] = useState<{
+    top?: number;
+    bottom?: number;
+    left: number;
+    openAbove: boolean;
+    maxHeight?: number;
+  } | null>(null);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
   const [eventTypesList, setEventTypesList] = useState<string[]>([
-    "Wedding Ceremony", "Haldi", "Sangeet", "Mehendi", "Reception", "Pre-Wedding Shoot"
+    "Wedding Ceremony", "Haldi", "Sangeet", "Mehendi", "Reception", "Pre-Wedding"
   ]);
   const [customCrewRoles, setCustomCrewRoles] = useState<WorkspaceCrewRole[]>([]);
   const [activeAssignmentForMember, setActiveAssignmentForMember] = useState<{
@@ -398,8 +404,31 @@ export default function TeamManagerPage() {
   };
 
   // ─────────────────────────────────────────────────────────────
-  // DYNAMIC SCROLL TRACKING FOR ASSIGNMENT POPOVER
+  // DYNAMIC SCROLL TRACKING & SMART FLIP FOR ASSIGNMENT POPOVER
   // ─────────────────────────────────────────────────────────────
+  const calculateDropdownPosition = (rect: DOMRect) => {
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const openAbove = spaceBelow < 330 && spaceAbove > spaceBelow;
+    const left = Math.max(10, Math.min(rect.left - 60, window.innerWidth - 270));
+
+    if (openAbove) {
+      return {
+        bottom: window.innerHeight - rect.top + 6,
+        left,
+        openAbove: true,
+        maxHeight: Math.min(380, rect.top - 16),
+      };
+    } else {
+      return {
+        top: rect.bottom + 6,
+        left,
+        openAbove: false,
+        maxHeight: Math.min(380, spaceBelow - 16),
+      };
+    }
+  };
+
   useEffect(() => {
     if (!activeDropdownId) return;
 
@@ -415,10 +444,7 @@ export default function TeamManagerPage() {
         setActiveDropdownId(null);
         setDropdownPos(null);
       } else {
-        setDropdownPos({
-          top: Math.min(rect.bottom + 6, window.innerHeight - 280),
-          left: Math.max(10, Math.min(rect.left - 100, window.innerWidth - 270)),
-        });
+        setDropdownPos(calculateDropdownPosition(rect));
       }
     };
 
@@ -2808,10 +2834,7 @@ export default function TeamManagerPage() {
                                                   } else {
                                                     setActiveDropdownId(assignment.id);
                                                     setMemberSearchQuery('');
-                                                    setDropdownPos({
-                                                      top: Math.min(rect.bottom + 6, window.innerHeight - 280),
-                                                      left: Math.max(10, Math.min(rect.left - 100, window.innerWidth - 270)),
-                                                    });
+                                                    setDropdownPos(calculateDropdownPosition(rect));
                                                   }
                                                 }}
                                                 className={`flex flex-col items-center group min-w-[50px] max-w-[76px] text-center select-none ${
@@ -3294,11 +3317,14 @@ export default function TeamManagerPage() {
                                                 onClick={(e) => {
                                                   if (isTmReadOnly || eventVisibility === 'FULL_CREW') return;
                                                   const rect = e.currentTarget.getBoundingClientRect();
-                                                  setDropdownPos({
-                                                    top: Math.min(rect.bottom + 6, window.innerHeight - 280),
-                                                    left: Math.max(10, Math.min(rect.left - 40, window.innerWidth - 270)),
-                                                  });
-                                                  setActiveDropdownId(activeDropdownId === assignment.id ? null : assignment.id);
+                                                  if (activeDropdownId === assignment.id) {
+                                                     setActiveDropdownId(null);
+                                                     setDropdownPos(null);
+                                                   } else {
+                                                     setActiveDropdownId(assignment.id);
+                                                     setMemberSearchQuery('');
+                                                     setDropdownPos(calculateDropdownPosition(rect));
+                                                   }
                                                 }}
                                                 className={`flex flex-col items-center group select-none relative min-w-[50px] max-w-[76px] text-center ${
                                                   isTmReadOnly || eventVisibility === 'FULL_CREW' ? 'cursor-default' : 'cursor-pointer'
@@ -3646,17 +3672,20 @@ export default function TeamManagerPage() {
               }} 
             />
             <motion.div
-              initial={{ opacity: 0, scale: 0.92, y: -4 }}
+              initial={{ opacity: 0, scale: 0.92, y: dropdownPos.openAbove ? 4 : -4 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.92, y: -4 }}
+              exit={{ opacity: 0, scale: 0.92, y: dropdownPos.openAbove ? 4 : -4 }}
               transition={{ type: 'spring', damping: 20, stiffness: 350 }}
               style={{
                 position: 'fixed',
-                top: `${dropdownPos.top}px`,
+                ...(dropdownPos.openAbove
+                  ? { bottom: `${dropdownPos.bottom}px` }
+                  : { top: `${dropdownPos.top}px` }),
                 left: `${dropdownPos.left}px`,
+                maxHeight: dropdownPos.maxHeight ? `${dropdownPos.maxHeight}px` : undefined,
                 zIndex: 99999,
               }}
-              className="w-64 bg-white border border-[#6C5CE7]/20 rounded-[18px] shadow-[0_25px_60px_rgba(0,0,0,0.35)] p-3 space-y-2 text-left"
+              className="w-64 bg-white border border-[#6C5CE7]/20 rounded-[18px] shadow-[0_25px_60px_rgba(0,0,0,0.35)] p-3 space-y-2 text-left select-none flex flex-col"
             >
               {/* SEARCH INPUT BAR */}
               <div className="relative">
@@ -3693,7 +3722,7 @@ export default function TeamManagerPage() {
               <div className="h-px bg-zinc-100 my-1" />
 
               {/* MEMBER SELECTION LIST */}
-              <div className="max-h-48 overflow-y-auto space-y-0.5 pr-1">
+              <div className="max-h-56 overflow-y-auto space-y-0.5 pr-1 flex-1 min-h-0">
                 {/* UNASSIGN OPTION */}
                 <button
                   type="button"

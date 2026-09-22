@@ -100,7 +100,17 @@ export default function StaffDetailsModal({
   });
 
   const [statusFilter, setStatusFilter] = useState<'all' | 'present' | 'late' | 'half_day' | 'absent' | 'holiday' | 'week_off'>('all');
-  const [fetchedRecords, setFetchedRecords] = useState<any[]>([]);
+  const [fetchedRecords, setFetchedRecords] = useState<any[]>(() => {
+    if (!member?.id || !records || records.length === 0) return [];
+    const targetIds = [String(member.id)];
+    if ((member as any).aliasIds && Array.isArray((member as any).aliasIds)) {
+      (member as any).aliasIds.forEach((id: any) => {
+        const sId = String(id);
+        if (!targetIds.includes(sId)) targetIds.push(sId);
+      });
+    }
+    return (records || []).filter(r => r.member_id && targetIds.includes(String(r.member_id)));
+  });
   const [companyHolidays, setCompanyHolidays] = useState<any[]>([]);
   const [memberLeaves, setMemberLeaves] = useState<any[]>([]);
   const [loadingRecords, setLoadingRecords] = useState(false);
@@ -366,6 +376,30 @@ export default function StaffDetailsModal({
         if (recError) console.warn('attendance_records query error:', recError);
 
         const mergedMap = new Map<string, any>();
+        // Seed mergedMap with existing live records from props to avoid any blank flicker on today
+        (records || []).forEach((r: any) => {
+          if (r.member_id && targetIds.includes(String(r.member_id))) {
+            const recInPhoto = r.check_in_photo || r.check_in_selfie || r.check_in_photo_path || r.selfie_url || r.photo_path || null;
+            const recOutPhoto = r.check_out_photo || r.check_out_selfie || r.punch_out_selfie || r.check_out_photo_path || null;
+            mergedMap.set(r.date, {
+              ...r,
+              punch_in_time: r.punch_in_time || r.check_in_time,
+              punch_out_time: r.punch_out_time || r.check_out_time,
+              punch_in_lat: r.punch_in_lat || r.check_in_lat || null,
+              punch_in_lng: r.punch_in_lng || r.check_in_lng || null,
+              punch_out_lat: r.punch_out_lat || r.check_out_lat || null,
+              punch_out_lng: r.punch_out_lng || r.check_out_lng || null,
+              selfie_url: recInPhoto,
+              check_in_photo: recInPhoto,
+              check_in_selfie: recInPhoto,
+              check_out_selfie_url: recOutPhoto,
+              check_out_photo: recOutPhoto,
+              check_out_selfie: recOutPhoto,
+              location_address: r.location_address || r.location_name || null,
+              check_out_address: r.check_out_address || r.location_address || r.location_name || null,
+            });
+          }
+        });
         (recData || []).forEach((r: any) => {
           const recInPhoto = r.check_in_photo || r.check_in_selfie || r.check_in_photo_path || r.selfie_url || r.photo_path || null;
           const recOutPhoto = r.check_out_photo || r.check_out_selfie || r.punch_out_selfie || r.check_out_photo_path || null;
@@ -538,11 +572,13 @@ export default function StaffDetailsModal({
     let approvedLeaveDays = 0;
     let explicitAbsentDays = 0;
 
-    const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+    const todayStr = getLocalDateString(new Date());
     const effectiveEnd = endDate < todayStr ? endDate : todayStr;
 
-    const sDate = new Date(startDate);
-    const eDate = new Date(effectiveEnd);
+    const [sy, sm, sd] = startDate.split('-').map(Number);
+    const [ey, em, ed] = effectiveEnd.split('-').map(Number);
+    const sDate = new Date(sy, sm - 1, sd, 12, 0, 0);
+    const eDate = new Date(ey, em - 1, ed, 12, 0, 0);
 
     const custom = (member?.custom_data as any) || {};
     const rawOffs = member?.weekly_offs || custom.weekly_offs || ['Sunday'];
@@ -559,7 +595,7 @@ export default function StaffDetailsModal({
       while (cur <= eDate) {
         const dayLong = cur.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
         const dayShort = cur.toLocaleDateString('en-US', { weekday: 'short' }).toLowerCase();
-        const dateIso = cur.toISOString().split('T')[0];
+        const dateIso = getLocalDateString(cur);
 
         const isWeeklyOff = offDayNames.some(o => o === dayLong || o === dayShort || dayLong.includes(o));
         const isHoliday = (companyHolidays || []).some(h => h.holiday_date === dateIso) || fetchedRecords.find(r => r.date === dateIso)?.status === 'holiday';
@@ -610,10 +646,11 @@ export default function StaffDetailsModal({
 
   // Active check-in state to drive live continuous work hours in header stats
   const activeTodayRecord = useMemo(() => {
+    const todayStr = getLocalDateString(new Date());
     return fetchedRecords.find(r => {
       const inTime = r.punch_in_time || r.check_in_time;
       const outTime = r.punch_out_time || r.check_out_time;
-      return Boolean(inTime && !outTime);
+      return Boolean(inTime && !outTime && r.date === todayStr);
     });
   }, [fetchedRecords]);
 
@@ -630,16 +667,13 @@ export default function StaffDetailsModal({
   const memberLogs = useMemo(() => {
     if (!startDate || !endDate) return [];
 
-    const sDate = new Date(startDate + 'T00:00:00');
-    const eDate = new Date(endDate + 'T00:00:00');
+    const [sy, sm, sd] = startDate.split('-').map(Number);
+    const [ey, em, ed] = endDate.split('-').map(Number);
+    const sDate = new Date(sy, sm - 1, sd, 12, 0, 0);
+    const eDate = new Date(ey, em - 1, ed, 12, 0, 0);
     if (isNaN(sDate.getTime()) || isNaN(eDate.getTime()) || sDate > eDate) return [];
 
-    const todayIstStr = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Kolkata',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    }).format(new Date());
+    const todayIstStr = getLocalDateString(new Date());
 
     const custom = (member?.custom_data as any) || {};
     const rawOffs = member?.weekly_offs || custom.weekly_offs || ['Sunday'];
@@ -655,7 +689,7 @@ export default function StaffDetailsModal({
     const cur = new Date(eDate);
 
     while (cur >= sDate) {
-      const dateStr = cur.toISOString().split('T')[0];
+      const dateStr = getLocalDateString(cur);
       const dayLong = cur.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
       const dayShort = cur.toLocaleDateString('en-US', { weekday: 'short' }).toLowerCase();
 
@@ -777,6 +811,17 @@ export default function StaffDetailsModal({
             status: 'upcoming',
             title: 'Scheduled Shift',
             notes: 'Upcoming shift',
+            isHolidayDuty: false,
+            isWeekOffDuty: false
+          });
+        } else if (dateStr === todayIstStr) {
+          logs.push({
+            id: `today_pending_${dateStr}`,
+            date: dateStr,
+            isPunched: false,
+            status: 'pending',
+            title: 'Not Checked In Yet (Today)',
+            notes: 'Working day is in progress. Check-in is pending.',
             isHolidayDuty: false,
             isWeekOffDuty: false
           });
@@ -1071,7 +1116,9 @@ export default function StaffDetailsModal({
                         <div
                           key={log.id}
                           className={`p-4 rounded-2xl border transition-all ${
-                            log.status === 'absent'
+                            log.status === 'pending'
+                              ? 'bg-amber-50/50 border-amber-300 hover:border-amber-400'
+                              : log.status === 'absent'
                               ? 'bg-rose-50/40 border-rose-200 hover:border-rose-300'
                               : log.status === 'holiday'
                               ? 'bg-amber-50/30 border-amber-200 hover:border-amber-300'
@@ -1087,6 +1134,11 @@ export default function StaffDetailsModal({
                               <span className="text-xs font-extrabold text-slate-900">
                                 {formatDate(log.date)}
                               </span>
+                              {log.status === 'pending' && (
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs animate-pulse">
+                                  ⏳ NOT CHECKED IN YET (TODAY)
+                                </span>
+                              )}
                               {log.status === 'absent' && (
                                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-300 shadow-2xs">
                                   ❌ ABSENT
@@ -1164,7 +1216,9 @@ export default function StaffDetailsModal({
 
                           <div className="mt-2 text-xs text-slate-600 font-medium flex items-center gap-2">
                             <span>
-                              {log.status === 'absent'
+                              {log.status === 'pending'
+                                ? '⏳ Working day is in progress. Member check-in is pending.'
+                                : log.status === 'absent'
                                 ? '⚠️ Attendance was not marked on this scheduled working day.'
                                 : log.status === 'holiday'
                                 ? `🎉 ${log.title || 'Official Company Festival / Public Holiday'}`
