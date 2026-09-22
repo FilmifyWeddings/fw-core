@@ -104,6 +104,24 @@ const getEventDotColor = (title: string = '') => {
   return 'bg-emerald-500';
 };
 
+// Event Badge Styles (Soft background + colored left accent bar matching calendar UI)
+const getEventBadgeStyle = (title: string = '') => {
+  const t = title.toLowerCase();
+  if (t.includes('wedding') || t.includes('shaadi') || t.includes('mandap') || t.includes('phera')) {
+    return 'bg-rose-50 text-rose-700 border-l-[3px] border-rose-500';
+  }
+  if (t.includes('sangeet') || t.includes('reception') || t.includes('cocktail') || t.includes('party') || t.includes('dj')) {
+    return 'bg-purple-50 text-purple-700 border-l-[3px] border-purple-500';
+  }
+  if (t.includes('haldi') || t.includes('mehendi') || t.includes('mehndi') || t.includes('pithi') || t.includes('engagement')) {
+    return 'bg-amber-50 text-amber-800 border-l-[3px] border-amber-500';
+  }
+  if (t.includes('pre-wedding') || t.includes('pre wedding') || t.includes('post-wedding') || t.includes('shoot')) {
+    return 'bg-sky-50 text-sky-700 border-l-[3px] border-sky-500';
+  }
+  return 'bg-emerald-50 text-emerald-700 border-l-[3px] border-emerald-500';
+};
+
 const getInitials = (name?: string | null) => {
   if (!name) return 'PM';
   const parts = name.trim().split(' ');
@@ -390,7 +408,7 @@ export default function Professional3DCalendar({
                   key={dayIso}
                   type="button"
                   onClick={() => setSelectedDate(day)}
-                  className={`relative flex flex-col items-center justify-between p-1 sm:p-1.5 rounded-xl transition-all cursor-pointer min-h-[48px] sm:min-h-[58px] ${
+                  className={`relative flex flex-col items-start justify-start p-1 sm:p-1.5 rounded-xl transition-all cursor-pointer min-h-[64px] sm:min-h-[76px] lg:min-h-[82px] overflow-hidden ${
                     isSelected
                       ? 'bg-blue-600 text-white font-black shadow-lg shadow-blue-500/30 scale-[1.03] z-10'
                       : isToday
@@ -401,7 +419,7 @@ export default function Professional3DCalendar({
                   }`}
                 >
                   {/* Day Number */}
-                  <div className="flex items-center justify-between w-full px-0.5">
+                  <div className="flex items-center justify-between w-full px-0.5 mb-1 shrink-0">
                     <span className={`text-xs sm:text-sm ${isSelected ? 'text-white font-black' : 'font-bold'}`}>
                       {day.getDate()}
                     </span>
@@ -412,28 +430,40 @@ export default function Professional3DCalendar({
                     )}
                   </div>
 
-                  {/* Event Indicator Dots */}
-                  <div className="w-full flex items-center justify-center gap-1 mt-auto pb-0.5">
-                    {dayEvents.length > 0 && (
-                      <div className="flex items-center gap-1 overflow-hidden">
-                        {dayEvents.slice(0, 3).map((ev, i) => {
-                          const dotColor = getEventDotColor(ev.subEvent.event_title);
-                          return (
-                            <span
-                              key={i}
-                              className={`w-1.5 h-1.5 rounded-full ${
-                                isSelected ? 'bg-white' : dotColor
-                              }`}
-                              title={ev.subEvent.event_title}
-                            />
-                          );
-                        })}
-                        {dayEvents.length > 3 && (
-                          <span className={`text-[8px] font-extrabold leading-none ${isSelected ? 'text-white' : 'text-slate-500'}`}>
-                            +{dayEvents.length - 3}
-                          </span>
-                        )}
-                      </div>
+                  {/* Event Badges with Couple Name */}
+                  <div className="w-full flex-1 flex flex-col gap-1 overflow-hidden">
+                    {dayEvents.slice(0, 2).map((ev, i) => {
+                      const coupleName = (
+                        ev.project?.client_name || 
+                        (ev.project as any)?.couple_title || 
+                        (ev.subEvent as any)?.client_name || 
+                        ev.subEvent?.event_title || 
+                        'Shoot'
+                      ).split(' - ')[0].split(' • ')[0].trim();
+
+                      const badgeStyle = getEventBadgeStyle(ev.subEvent?.event_title);
+
+                      return (
+                        <div
+                          key={i}
+                          className={`w-full text-[9px] sm:text-[10px] font-bold truncate px-1 py-0.5 rounded-[4px] text-left leading-tight transition-colors ${
+                            isSelected
+                              ? 'bg-white/25 text-white border-l-[3px] border-white backdrop-blur-xs font-black'
+                              : `${badgeStyle} shadow-2xs`
+                          }`}
+                          title={`${coupleName} - ${ev.subEvent?.event_title || 'Shoot'}`}
+                        >
+                          {coupleName}
+                        </div>
+                      );
+                    })}
+
+                    {dayEvents.length > 2 && (
+                      <span className={`text-[8px] sm:text-[9px] font-extrabold leading-none px-0.5 mt-auto ${
+                        isSelected ? 'text-white/90' : 'text-slate-500 hover:text-indigo-600'
+                      }`}>
+                        +{dayEvents.length - 2} more
+                      </span>
                     )}
                   </div>
                 </button>
@@ -443,11 +473,11 @@ export default function Professional3DCalendar({
 
           {/* Bottom Legend */}
           <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-[10px] font-bold text-slate-500">
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-500"/> Wedding</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-500"/> Sangeet</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500"/> Haldi</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-sky-500"/> Pre-Wed</span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-[3px] bg-rose-100 border-l-2 border-rose-500 inline-block"/> Wedding</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-[3px] bg-purple-100 border-l-2 border-purple-500 inline-block"/> Sangeet</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-[3px] bg-amber-100 border-l-2 border-amber-500 inline-block"/> Haldi</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-[3px] bg-sky-100 border-l-2 border-sky-500 inline-block"/> Pre-Wed</span>
             </div>
             <span className="text-slate-400 font-semibold hidden 2xl:inline">
               {currentMonthTotalEvents} shoots
@@ -839,19 +869,45 @@ export default function Professional3DCalendar({
                   key={dayIso}
                   type="button"
                   onClick={() => setSelectedDate(day)}
-                  className={`relative flex flex-col items-center justify-center h-10 rounded-xl transition-all ${
+                  className={`relative flex flex-col items-center justify-start p-1 min-h-[50px] rounded-xl transition-all overflow-hidden ${
                     isSelected
                       ? 'bg-blue-600 text-white font-black shadow-md shadow-blue-500/30'
                       : isToday
                       ? 'bg-blue-50 border border-blue-400 text-blue-900 font-extrabold'
                       : isCurrentMonth
-                      ? 'text-slate-800 hover:bg-slate-100'
+                      ? 'text-slate-800 hover:bg-slate-100 bg-slate-50/60'
                       : 'text-slate-300 opacity-40'
                   }`}
                 >
-                  <span className="text-xs">{day.getDate()}</span>
+                  <span className="text-xs font-bold leading-none">{day.getDate()}</span>
                   {dayEvents.length > 0 && (
-                    <span className={`w-1 h-1 rounded-full mt-0.5 ${isSelected ? 'bg-white' : 'bg-blue-500'}`} />
+                    <div className="w-full mt-0.5 space-y-0.5 overflow-hidden">
+                      {dayEvents.slice(0, 1).map((ev, i) => {
+                        const couple = (
+                          ev.project?.client_name || 
+                          (ev.project as any)?.couple_title || 
+                          (ev.subEvent as any)?.client_name || 
+                          ev.subEvent?.event_title || 
+                          'Shoot'
+                        ).split(' - ')[0].split(' • ')[0].trim();
+                        const badgeStyle = getEventBadgeStyle(ev.subEvent?.event_title);
+                        return (
+                          <div
+                            key={i}
+                            className={`w-full text-[7.5px] font-bold truncate px-1 py-0.2 rounded-xs leading-none text-left ${
+                              isSelected ? 'bg-white/25 text-white border-l-2 border-white' : badgeStyle
+                            }`}
+                          >
+                            {couple}
+                          </div>
+                        );
+                      })}
+                      {dayEvents.length > 1 && (
+                        <span className={`text-[7px] font-extrabold block text-left px-0.5 leading-none ${isSelected ? 'text-white/90' : 'text-slate-400'}`}>
+                          +{dayEvents.length - 1}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </button>
               );
