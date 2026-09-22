@@ -283,15 +283,20 @@ export default function LoginPage() {
 
       const cleanIdent = identifier.trim().toLowerCase();
 
-      // Timeout safeguard: Never let login button hang longer than 12 seconds
+      // Timeout safeguard: Never let login button hang longer than 25 seconds
       const loginPromise = (async () => {
         // Step 1: Attempt server-side login to atomically set HTTP response cookies
         try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 6000);
+
           const apiRes = await fetch('/api/auth/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email: cleanIdent, password }),
+            signal: controller.signal
           });
+          clearTimeout(timer);
 
           if (apiRes.ok) {
             const apiJson = await apiRes.json();
@@ -308,7 +313,7 @@ export default function LoginPage() {
             }
           }
         } catch (_) {
-          // Network issue reaching internal API, fallback to client-side auth below
+          // Network issue or timeout reaching internal API, fallback to direct client-side auth below
         }
 
         // Step 2: Fallback to direct client-side sign in
@@ -321,7 +326,7 @@ export default function LoginPage() {
       })();
 
       const timeoutPromise = new Promise<{ user: any; session: any; error: any }>((_, reject) =>
-        setTimeout(() => reject(new Error('Connection timed out. Please check your network and try again.')), 12000)
+        setTimeout(() => reject(new Error('Connection timed out. Please check your network and try again.')), 25000)
       );
 
       const result = await Promise.race([loginPromise, timeoutPromise]);

@@ -96,8 +96,9 @@ Analyze the client requirements, notes, or conversation below and convert them i
     * "Traditional Photographer" (TP, Traditional Photography, Traditional Photo)
     * "Candid Photographer" (CP, Candid Photography, Candid Photo, Candid Photos)
     * "Traditional Videographer" (TV, Traditional Video, Traditional Videography, Tred Video)
+    * "Semi Cinematic" (Semi-Cinematic, Semi Kinematic, Semi-Kinematic, Semi-Cine, Semi Cine, Semi Cinematic Video, Semi Cine Video)
+    * "Semi Standard" (Semi-Standard, Semi Traditional, Semi-Traditional, Semi Standard Video, Semi Traditional Video, Semi-Trad)
     * "Social Media Person" (Story Creator, Social Media Manager)
-    * "Semi Cinematic" (Semi-Cine, Semi Cinematic Video)
     * "Reel Creator" (Reels, Reel Person, Reel Maker, Instagram Reel)
     * "Live Videography" (Live Streaming, LED Live Setup, Live TV)
     * "Drone Pilot" (Drone, Drone Videography, Aerial Drone)
@@ -105,6 +106,7 @@ Analyze the client requirements, notes, or conversation below and convert them i
     * "Team Manager" (TM, Event Coordinator, Shoot Manager)
     * "Makeup Artist" (MUA, Bridal Makeup)
     * "Family Photographer" (Family Photos, Family Photography)
+    * IMPORTANT: If user mentions "semi-kinematic" or "semi-cinematic", output exact name "Semi Cinematic". If user mentions "semi-standard" or "semi-traditional", output exact name "Semi Standard".
     * If any new/custom crew role is mentioned, add it directly with its exact name and qty!
 
 5. DELIVERABLES (deliverablesPage):
@@ -433,7 +435,7 @@ LEAD & CLIENT CONTEXT:
                     </label>
                     <AiMicButton
                       size="sm"
-                      buttonText="Voice AI Note"
+                      buttonText="AI Voice"
                       onInsertComment={(text) =>
                         setAdditionalNotes((prev) => (prev ? `${prev}\n${text}` : text))
                       }

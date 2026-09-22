@@ -103,6 +103,8 @@ export const DEFAULT_CREW_ROLES: WorkspaceCrewRole[] = [
   { id: 'def_role_7', name: 'Drone Pilot', short_code: 'DP', category: 'Drone', is_default: true, display_order: 8 },
   { id: 'def_role_8', name: 'Family Photographer', short_code: 'FP', category: 'Photography', is_default: true, display_order: 9 },
   { id: 'def_role_9', name: 'Reels Creator', short_code: 'RC', category: 'Social Media', is_default: true, display_order: 10 },
+  { id: 'def_role_sc', name: 'Semi Cinematic', short_code: 'SC', category: 'Cinematography', is_default: true, display_order: 11 },
+  { id: 'def_role_ss', name: 'Semi Standard', short_code: 'SS', category: 'Cinematography', is_default: true, display_order: 12 },
 ];
 
 export const DEFAULT_QUOTATION_DELIVERABLES: WorkspaceQuotationDeliverable[] = [
@@ -194,6 +196,8 @@ export const DEFAULT_PRE_WEDDING_REQUIREMENTS: string[] = [
   'Cinematography',
   'Drone',
   'Traditional Video',
+  'Semi Cinematic',
+  'Semi Standard',
   'Pre-Wedding Film',
   'Portable Changing Room',
 ];
@@ -246,83 +250,144 @@ export const DEFAULT_WORKSPACE_QUOTATION_SETTINGS: WorkspaceQuotationSettings = 
 };
 
 /**
+ * Splits a role into its base name and numeric suffix.
+ * e.g., "Traditional Videographer 2" -> { baseRole: "Traditional Videographer", number: 2 }
+ * e.g., "Traditional Videographer" -> { baseRole: "Traditional Videographer", number: 1 }
+ * e.g., "TV 3" -> { baseRole: "TV", number: 3 }
+ * e.g., "TV" -> { baseRole: "TV", number: 1 }
+ */
+export function parseRoleAndNumber(roleStr?: string | null): { baseRole: string; number: number } {
+  const clean = String(roleStr || '').trim();
+  if (!clean) return { baseRole: '', number: 1 };
+
+  // Match ending numbers like " 2", " 3", "-2", etc.
+  const match = clean.match(/^(.*?)(?:\s+|[-_])(\d+)$/);
+  if (match && match[1] && match[2]) {
+    const num = parseInt(match[2], 10);
+    if (!isNaN(num) && num >= 1) {
+      return { baseRole: match[1].trim(), number: num };
+    }
+  }
+
+  return { baseRole: clean, number: 1 };
+}
+
+/**
+ * Formats a base role with a sequential number.
+ * If number <= 1, returns baseRole directly ("TV", NOT "TV 1").
+ * If number > 1, returns `${baseRole} ${number}` ("TV 2", "TV 3").
+ */
+export function formatRoleWithNumber(baseRole: string, number: number): string {
+  const clean = (baseRole || '').trim();
+  if (number <= 1) return clean;
+  return `${clean} ${number}`;
+}
+
+/**
  * Resolves short code for any given role name (custom or default).
+ * Preserves sequential numbering if present (e.g. TV, TV 2, TV 3).
  */
 export function getRoleShortCode(roleName?: string | null, customRoles?: WorkspaceCrewRole[]): string {
   if (!roleName) return 'CRW';
-  const clean = String(roleName).trim();
+  const { baseRole, number } = parseRoleAndNumber(roleName);
+  const clean = baseRole.trim();
+  if (!clean) return 'CRW';
+
+  let baseCode = '';
 
   // 1. Check in custom / loaded roles
   if (customRoles && customRoles.length > 0) {
     const found = customRoles.find(r => r.name.toLowerCase() === clean.toLowerCase() || r.short_code.toLowerCase() === clean.toLowerCase());
-    if (found?.short_code) return found.short_code.toUpperCase();
+    if (found?.short_code) baseCode = found.short_code.toUpperCase();
   }
 
   // 2. Check in default roles
-  const defaultFound = DEFAULT_CREW_ROLES.find(r => r.name.toLowerCase() === clean.toLowerCase() || r.short_code.toLowerCase() === clean.toLowerCase());
-  if (defaultFound?.short_code) return defaultFound.short_code.toUpperCase();
+  if (!baseCode) {
+    const defaultFound = DEFAULT_CREW_ROLES.find(r => r.name.toLowerCase() === clean.toLowerCase() || r.short_code.toLowerCase() === clean.toLowerCase());
+    if (defaultFound?.short_code) baseCode = defaultFound.short_code.toUpperCase();
+  }
 
   // 3. Fallback heuristic mappings
-  const lower = clean.toLowerCase();
-  if (lower.includes('sales') || lower.includes('sp')) return 'SP';
-  if (lower.includes('project') || lower.includes('pm')) return 'PM';
-  if (lower.includes('team') || lower.includes('tm')) return 'TM';
-  if (lower.includes('lead')) return 'LP';
-  // CHECK VIDEOGRAPHER / CINE FIRST BEFORE PHOTO / TRADITIONAL
-  if (lower.includes('trad') && (lower.includes('vid') || lower.includes('cine') || lower.includes('tv'))) return 'TV';
-  if (lower.includes('trad') && (lower.includes('photo') || lower.includes('tp'))) return 'TP';
-  if (lower.includes('candid') && (lower.includes('cine') || lower.includes('vid'))) return 'CV';
-  if (lower.includes('candid') && lower.includes('photo')) return 'CP';
-  if (lower.includes('cine') || lower.includes('video')) return 'CV';
-  if (lower.includes('drone') || lower.includes('dp')) return 'DP';
-  if (lower.includes('assist') || lower.includes('helper') || lower.includes('as') || lower.includes('ast')) return 'AS';
-  if (lower.includes('reel') || lower.includes('social')) return 'RC';
-  if (lower.includes('live')) return 'LS';
-  if (lower.includes('album')) return 'AD';
-  if (lower.includes('edit') && lower.includes('photo')) return 'PE';
-  if (lower.includes('edit') && lower.includes('vid')) return 'VE';
-  if (lower.includes('editor')) return 'ED';
-
-  // 4. Generate initials from words
-  const words = clean.split(/[\s\-_]+/);
-  if (words.length >= 2) {
-    return (words[0][0] + words[1][0]).toUpperCase();
+  if (!baseCode) {
+    const lower = clean.toLowerCase();
+    if (lower.includes('sales') || lower.includes('sp')) baseCode = 'SP';
+    else if (lower.includes('project') || lower.includes('pm')) baseCode = 'PM';
+    else if (lower.includes('team') || lower.includes('tm')) baseCode = 'TM';
+    else if (lower.includes('lead')) baseCode = 'LP';
+    // CHECK SEMI ROLES FIRST BEFORE GENERAL
+    else if (lower.includes('semi') && (lower.includes('cine') || lower.includes('kinematic') || lower.includes('sc'))) baseCode = 'SC';
+    else if (lower.includes('semi') && (lower.includes('standard') || lower.includes('trad') || lower.includes('ss'))) baseCode = 'SS';
+    // CHECK VIDEOGRAPHER / CINE FIRST BEFORE PHOTO / TRADITIONAL
+    else if (lower.includes('trad') && (lower.includes('vid') || lower.includes('cine') || lower.includes('tv'))) baseCode = 'TV';
+    else if (lower.includes('trad') && (lower.includes('photo') || lower.includes('tp'))) baseCode = 'TP';
+    else if (lower.includes('candid') && (lower.includes('cine') || lower.includes('vid'))) baseCode = 'CV';
+    else if (lower.includes('candid') && lower.includes('photo')) baseCode = 'CP';
+    else if (lower.includes('cine') || lower.includes('video')) baseCode = 'CV';
+    else if (lower.includes('drone') || lower.includes('dp')) baseCode = 'DP';
+    else if (lower.includes('assist') || lower.includes('helper') || lower.includes('as') || lower.includes('ast')) baseCode = 'AS';
+    else if (lower.includes('reel') || lower.includes('social')) baseCode = 'RC';
+    else if (lower.includes('live')) baseCode = 'LS';
+    else if (lower.includes('album')) baseCode = 'AD';
+    else if (lower.includes('edit') && lower.includes('photo')) baseCode = 'PE';
+    else if (lower.includes('edit') && lower.includes('vid')) baseCode = 'VE';
+    else if (lower.includes('editor')) baseCode = 'ED';
+    else {
+      // 4. Generate initials from words
+      const words = clean.split(/[\s\-_]+/);
+      if (words.length >= 2) {
+        baseCode = (words[0][0] + words[1][0]).toUpperCase();
+      } else {
+        baseCode = clean.slice(0, 3).toUpperCase();
+      }
+    }
   }
-  return clean.slice(0, 3).toUpperCase();
+
+  return formatRoleWithNumber(baseCode, number);
 }
 
 export function getRoleAbbr(role: string = '', customRoles?: WorkspaceCrewRole[]): string {
-  const clean = (role || '').trim();
+  if (!role) return 'CR';
+  const { baseRole, number } = parseRoleAndNumber(role);
+  const clean = baseRole.trim();
   if (!clean) return 'CR';
+
+  let baseAbbr = '';
 
   // 1. Check in custom / loaded roles
   if (customRoles && customRoles.length > 0) {
     const found = customRoles.find(r => r.name.toLowerCase() === clean.toLowerCase() || r.short_code.toLowerCase() === clean.toLowerCase());
-    if (found?.short_code) return found.short_code.toUpperCase();
+    if (found?.short_code) baseAbbr = found.short_code.toUpperCase();
   }
 
   // 2. Check in default roles
-  const defaultFound = DEFAULT_CREW_ROLES.find(r => r.name.toLowerCase() === clean.toLowerCase() || r.short_code.toLowerCase() === clean.toLowerCase());
-  if (defaultFound?.short_code) return defaultFound.short_code.toUpperCase();
+  if (!baseAbbr) {
+    const defaultFound = DEFAULT_CREW_ROLES.find(r => r.name.toLowerCase() === clean.toLowerCase() || r.short_code.toLowerCase() === clean.toLowerCase());
+    if (defaultFound?.short_code) baseAbbr = defaultFound.short_code.toUpperCase();
+  }
 
-  const r = clean.toLowerCase();
-  if (r.includes('project') || r.includes('pm')) return 'PM';
-  if (r.includes('team') || r.includes('tm')) return 'TM';
+  if (!baseAbbr) {
+    const r = clean.toLowerCase();
+    if (r.includes('project') || r.includes('pm')) baseAbbr = 'PM';
+    else if (r.includes('team') || r.includes('tm')) baseAbbr = 'TM';
+    // CHECK SEMI ROLES FIRST BEFORE GENERAL
+    else if (r.includes('semi') && (r.includes('cine') || r.includes('kinematic') || r.includes('sc'))) baseAbbr = 'SC';
+    else if (r.includes('semi') && (r.includes('standard') || r.includes('trad') || r.includes('ss'))) baseAbbr = 'SS';
+    // CHECK VIDEOGRAPHER / CINE FIRST BEFORE PHOTO / TRADITIONAL
+    else if (r.includes('traditional') && (r.includes('video') || r.includes('vid') || r.includes('tv') || r.includes('cine'))) baseAbbr = 'TV';
+    else if (r.includes('tv') && !r.includes('photo')) baseAbbr = 'TV';
+    else if (r.includes('traditional') || r.includes('tp')) baseAbbr = 'TP';
+    else if (r.includes('cinematographer') || r.includes('cin') || r.includes('cv') || r.includes('video')) baseAbbr = 'CV';
+    else if (r.includes('candid') || r.includes('cp')) baseAbbr = 'CP';
+    else if (r.includes('drone') || r.includes('dp')) baseAbbr = 'DP';
+    else if (r.includes('lead') || r.includes('lp')) baseAbbr = 'LP';
+    else if (r.includes('editor') || r.includes('ed')) baseAbbr = 'ED';
+    else if (r.includes('assist') || r.includes('helper') || r.includes('ast') || r.includes('as')) baseAbbr = 'AS';
+    else if (r.includes('reel') || r.includes('social') || r.includes('rc')) baseAbbr = 'RC';
+    else if (r.includes('family') || r.includes('fp')) baseAbbr = 'FP';
+    else baseAbbr = clean.slice(0, 2).toUpperCase() || 'CR';
+  }
 
-  // CHECK VIDEOGRAPHER / CINE FIRST BEFORE PHOTO / TRADITIONAL
-  if (r.includes('traditional') && (r.includes('video') || r.includes('vid') || r.includes('tv') || r.includes('cine'))) return 'TV';
-  if (r.includes('tv') && !r.includes('photo')) return 'TV';
-  if (r.includes('traditional') || r.includes('tp')) return 'TP';
-  if (r.includes('cinematographer') || r.includes('cin') || r.includes('cv') || r.includes('video')) return 'CV';
-  if (r.includes('candid') || r.includes('cp')) return 'CP';
-  if (r.includes('drone') || r.includes('dp')) return 'DP';
-  if (r.includes('lead') || r.includes('lp')) return 'LP';
-  if (r.includes('editor') || r.includes('ed')) return 'ED';
-  if (r.includes('assist') || r.includes('helper') || r.includes('ast') || r.includes('as')) return 'AS';
-  if (r.includes('reel') || r.includes('social') || r.includes('rc')) return 'RC';
-  if (r.includes('family') || r.includes('fp')) return 'FP';
-
-  return clean.slice(0, 2).toUpperCase() || 'CR';
+  return formatRoleWithNumber(baseAbbr, number);
 }
 
 /**
@@ -706,6 +771,8 @@ export async function fetchWorkspaceCrewRoles(workspaceId?: string, userId?: str
         { name: 'Assistant', short_code: 'AS', category: 'Assistance' },
         { name: 'Drone Pilot', short_code: 'DP', category: 'Drone' },
         { name: 'Family Photographer', short_code: 'FP', category: 'Photography' },
+        { name: 'Semi Cinematic', short_code: 'SC', category: 'Cinematography' },
+        { name: 'Semi Standard', short_code: 'SS', category: 'Cinematography' },
       ];
 
       const seedPayload = defaultSeed.map((role) => ({

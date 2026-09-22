@@ -25,6 +25,7 @@ import {
   fetchWorkspaceMemberRatesMap, 
   saveWorkspaceMemberRate 
 } from '@/lib/team-finance-sync';
+import { saveMemberStudioPermissions } from '@/lib/permissions/rbacRules';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 
 interface TeamMember {
@@ -164,7 +165,7 @@ export default function WorkspaceTeamPage() {
             default_daily_rate: typeof wsRatesMap[m.id] === 'object' ? wsRatesMap[m.id].rate : (wsRatesMap[m.id] != null ? wsRatesMap[m.id] : (m.default_daily_rate || 0)),
             payout_frequency: typeof wsRatesMap[m.id] === 'object' && wsRatesMap[m.id].frequency ? wsRatesMap[m.id].frequency : (m.payout_frequency || 'daily'),
             default_currency: m.default_currency || 'INR',
-            permissions: m.member_permissions?.[0] || m.member_permissions || undefined,
+            permissions: m.studio_member_permissions || m.permissions || m.member_permissions?.[0] || m.member_permissions || undefined,
           }));
         }
       } catch (_) {}
@@ -202,8 +203,34 @@ export default function WorkspaceTeamPage() {
         }
       }
 
-      // 4. Fetch aggregated assignments & payouts to hydrate live commercials
+      // 3.5 Ensure exact permissions from studio_member_permissions table
       const allMemberIds = combinedMembers.map(m => m.id).filter(Boolean);
+      if (allMemberIds.length > 0) {
+        try {
+          const { data: smpData } = await supabase
+            .from('studio_member_permissions')
+            .select('*')
+            .eq('owner_id', currentUid)
+            .in('member_id', allMemberIds);
+
+          if (smpData && smpData.length > 0) {
+            const smpMap = new Map(smpData.map(p => [p.member_id, p]));
+            combinedMembers = combinedMembers.map(m => {
+              const sp = smpMap.get(m.id);
+              if (sp) {
+                return {
+                  ...m,
+                  permissions: sp,
+                  studio_member_permissions: sp,
+                };
+              }
+              return m;
+            });
+          }
+        } catch (_) {}
+      }
+
+      // 4. Fetch aggregated assignments & payouts to hydrate live commercials
       if (allMemberIds.length > 0) {
         try {
           const [assignRes, payoutRes] = await Promise.allSettled([
@@ -477,6 +504,11 @@ export default function WorkspaceTeamPage() {
           // Save isolated studio member rate
           if (savedMemberId && memberData.default_daily_rate != null) {
             await saveWorkspaceMemberRate(effectiveWsId, savedMemberId, Number(memberData.default_daily_rate), memberData.default_currency || 'INR', memberData.payout_frequency || 'daily');
+          }
+
+          // Save isolated studio member permissions
+          if (savedMemberId && memberData.permissions) {
+            await saveMemberStudioPermissions(currentUid, savedMemberId, memberData.permissions).catch(() => {});
           }
 
           // 3. Log Audit Activity

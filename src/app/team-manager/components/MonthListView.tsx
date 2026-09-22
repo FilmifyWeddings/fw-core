@@ -364,6 +364,7 @@ export default function MonthListView({
                                     isAdmin={!isTmReadOnly}
                                     selectedFilterMemberId={unifiedFilters?.memberId || null}
                                     unifiedFilters={unifiedFilters}
+                                    existingAssignments={assignments}
                               />
                             );
                           })}
@@ -567,6 +568,7 @@ export default function MonthListView({
                                     isAdmin={!isTmReadOnly}
                                     selectedFilterMemberId={unifiedFilters?.memberId || null}
                                     unifiedFilters={unifiedFilters}
+                                    existingAssignments={assignments}
                                   />
                                 );
                               })}
@@ -773,6 +775,7 @@ export default function MonthListView({
                                           isAdmin={!isTmReadOnly}
                                           selectedFilterMemberId={unifiedFilters?.memberId || null}
                                           unifiedFilters={unifiedFilters}
+                                          existingAssignments={assignments}
                                         />
                                       );
                                     })}

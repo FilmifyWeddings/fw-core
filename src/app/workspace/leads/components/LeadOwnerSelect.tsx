@@ -200,32 +200,11 @@ export default function LeadOwnerSelect({
   const isUnassigned = currentOwner.toLowerCase() === 'unassigned' || !currentOwner;
 
   // ── STRICT WHITELIST FILTER: ONLY MEMBERS WITH 'SALES PERSON' (SP) ROLE ──
-  // Always preserve currently assigned owner (e.g. Chad Thun...) in the options even if array parsing evaluates false during initial hydration
   const salesTeamMembers = useMemo(() => {
-    const list = (consolidatedMembers || []).filter(isMemberSalesPerson);
-
-    if (!isUnassigned && currentOwner) {
-      const alreadyExists = list.some(
-        m => m.name.toLowerCase() === currentOwner.toLowerCase()
-      );
-      if (!alreadyExists) {
-        const matched = consolidatedMembers.find(
-          m => m.name.toLowerCase() === currentOwner.toLowerCase()
-        );
-        list.unshift(
-          matched || {
-            id: currentOwner,
-            name: currentOwner,
-            roles: ['Sales Person'],
-            role_code: 'SP',
-            is_sales_person: true,
-          }
-        );
-      }
-    }
-
-    return list.sort((a, b) => a.name.localeCompare(b.name));
-  }, [consolidatedMembers, isUnassigned, currentOwner]);
+    return (consolidatedMembers || [])
+      .filter(isMemberSalesPerson)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [consolidatedMembers]);
 
   // Selected Member Details (if assigned to a sales person)
   const selectedMember = useMemo(() => {
@@ -311,34 +290,22 @@ export default function LeadOwnerSelect({
             : 'bg-[#FFFDF9] dark:bg-stone-900 border-[#EAE5DA] dark:border-stone-800 text-slate-800 dark:text-stone-200 hover:border-amber-400'
         } ${isOpen ? 'ring-2 ring-amber-500/20 border-amber-400' : ''}`}
       >
-        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
           {isUnassigned ? (
             <div className="w-5 h-5 rounded-full bg-rose-100 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center text-[10px] font-black shrink-0">
               —
             </div>
+          ) : selectedMember?.avatar_url ? (
+            <img src={selectedMember.avatar_url} alt={currentOwner} className="w-5 h-5 rounded-full object-cover shrink-0 border border-amber-300 dark:border-amber-700" />
           ) : (
             <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 border bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-700">
               {currentOwner.slice(0, 2).toUpperCase()}
             </div>
           )}
 
-          <span className="truncate text-xs font-bold">
-            {isUnassigned ? (
-              'Unassigned'
-            ) : selectedMember ? (
-              <span>
-                <span className="text-amber-800 dark:text-amber-300 font-extrabold">[SP]</span> • {currentOwner}
-              </span>
-            ) : (
-              currentOwner
-            )}
+          <span className="truncate text-xs font-bold text-slate-800 dark:text-stone-200">
+            {isUnassigned ? 'Unassigned' : currentOwner}
           </span>
-
-          {!isUnassigned && (
-            <span className="text-[9px] font-black bg-gradient-to-r from-amber-500 to-amber-600 text-white px-1.5 py-0.2 rounded-md shadow-2xs shrink-0 tracking-wider">
-              SP
-            </span>
-          )}
         </div>
 
         <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 shrink-0 ${isOpen ? 'rotate-180 text-amber-600' : ''}`} />
@@ -376,7 +343,7 @@ export default function LeadOwnerSelect({
                 <input
                   ref={searchInputRef}
                   type="text"
-                  placeholder="🔍 Search sales rep..."
+                  placeholder="🔍 Search sales person..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-8 pr-3 py-1.5 text-xs bg-white dark:bg-stone-800 border border-[#EAE5DA] dark:border-stone-700 rounded-xl text-slate-900 dark:text-stone-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 font-medium"
@@ -397,7 +364,7 @@ export default function LeadOwnerSelect({
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <div className="w-5 h-5 rounded-full bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300 flex items-center justify-center font-black text-xs">
+                  <div className="w-6 h-6 rounded-full bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300 flex items-center justify-center font-black text-xs">
                     —
                   </div>
                   <span>Unassigned</span>
@@ -407,12 +374,9 @@ export default function LeadOwnerSelect({
 
               {/* 2. SALES PERSONS ONLY (WHITELISTED) */}
               {salesTeamMembers.length > 0 ? (
-                <div className="pt-1.5 space-y-1">
-                  <div className="px-2 py-1 flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-amber-800 dark:text-amber-400">
-                    <span className="flex items-center gap-1">
-                      <Sparkles className="w-3 h-3 text-amber-500" />
-                      Available Sales Reps ({salesTeamMembers.length})
-                    </span>
+                <div className="pt-1 space-y-1">
+                  <div className="px-2 py-1 text-[10px] font-bold text-slate-400 dark:text-stone-500 uppercase tracking-wider">
+                    Sales Team ({salesTeamMembers.length})
                   </div>
 
                   {filteredSales.map(m => {
@@ -424,30 +388,24 @@ export default function LeadOwnerSelect({
                         onClick={() => handleSelect(m.name, m.id)}
                         className={`w-full flex items-center justify-between p-2 rounded-xl transition cursor-pointer text-xs select-none ${
                           isSelected
-                            ? 'bg-amber-100/70 dark:bg-amber-950/50 text-amber-950 dark:text-amber-100 font-black border border-amber-300 dark:border-amber-800 shadow-2xs'
-                            : 'text-slate-800 dark:text-stone-200 hover:bg-amber-50/60 dark:hover:bg-amber-950/20 font-bold'
+                            ? 'bg-amber-100/70 dark:bg-amber-950/50 text-amber-950 dark:text-amber-100 font-bold border border-amber-300 dark:border-amber-800 shadow-2xs'
+                            : 'text-slate-800 dark:text-stone-200 hover:bg-amber-50/60 dark:hover:bg-amber-950/20 font-medium'
                         }`}
                       >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className="w-6 h-6 rounded-full bg-amber-200 dark:bg-amber-900/80 text-amber-900 dark:text-amber-200 flex items-center justify-center font-black text-[10px] shrink-0 border border-amber-300">
-                            {m.name.slice(0, 2).toUpperCase()}
-                          </div>
-                          <div className="text-left min-w-0">
-                            <p className="truncate text-xs font-black">
-                              <span className="text-amber-700 dark:text-amber-400">[SP]</span> • {m.name}
-                            </p>
-                            <p className="text-[10px] text-amber-700 dark:text-amber-400 font-semibold truncate">
-                              Sales Person
-                            </p>
-                          </div>
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          {m.avatar_url ? (
+                            <img src={m.avatar_url} alt={m.name} className="w-6 h-6 rounded-full object-cover shrink-0 border border-amber-200" />
+                          ) : (
+                            <div className="w-6 h-6 rounded-full bg-amber-100 dark:bg-amber-900/80 text-amber-900 dark:text-amber-200 flex items-center justify-center font-bold text-[10px] shrink-0 border border-amber-300/80">
+                              {m.name.slice(0, 2).toUpperCase()}
+                            </div>
+                          )}
+                          <span className="truncate text-xs font-semibold text-slate-900 dark:text-stone-100">
+                            {m.name}
+                          </span>
                         </div>
 
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-2xs">
-                            [SP] Sales
-                          </span>
-                          {isSelected && <Check className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400" />}
-                        </div>
+                        {isSelected && <Check className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />}
                       </button>
                     );
                   })}

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { extractFinancialsFromQuotation, syncQuotationToTeamManagerEvents } from '@/lib/quotation-finance-sync';
+import { extractFinancialsFromQuotation, extractCoupleNameFromQuotation, syncQuotationToTeamManagerEvents } from '@/lib/quotation-finance-sync';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -131,7 +131,7 @@ export async function PUT(
       workspace_id: currentUserId,
       quotation_number: id || 'FW-2026-001',
       title: title || content_json?.designName || 'Wedding - Design 1',
-      client_name: client_name || `${content_json?.cover?.groomName || 'Rahul'} & ${content_json?.cover?.brideName || 'Neha'}`,
+      client_name: extractCoupleNameFromQuotation(content_json, client_name),
       financials: financials || { total_amount: 0 },
       status: status || 'draft',
       updated_at: new Date().toISOString(),
@@ -186,7 +186,7 @@ export async function PUT(
 
         if (isLeadFinal && targetLeadOrClientId) {
           const finData = extractFinancialsFromQuotation(content_json);
-          const cName = client_name || content_json?.cover?.coupleName || 'Valued Client';
+          const cName = extractCoupleNameFromQuotation(content_json, client_name);
           const evDate = finData.event_date || content_json?.meta?.event_date || null;
           const venue = content_json?.meta?.venue || content_json?.cover?.venue || null;
 

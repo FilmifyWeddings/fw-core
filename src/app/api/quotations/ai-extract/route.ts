@@ -136,6 +136,36 @@ function normalizeCrewRoleName(rawRole: string): string {
   if (!rawRole) return 'Candid Photographer';
   const s = rawRole.toLowerCase().trim();
 
+  // 0. Semi Cinematic / Semi Kinematic (MUST be checked before general Cinematographer!)
+  if (
+    s.includes('semi-cinematic') || 
+    s.includes('semi cinematic') || 
+    s.includes('semi-kinematic') || 
+    s.includes('semi kinematic') || 
+    s.includes('semi-cine') || 
+    s.includes('semi cine') || 
+    s.includes('semi cinema') || 
+    s === 'sc' || 
+    s === 'scv'
+  ) {
+    return 'Semi Cinematic';
+  }
+
+  // 0.1 Semi Standard / Semi Traditional (MUST be checked before general Traditional!)
+  if (
+    s.includes('semi-standard') || 
+    s.includes('semi standard') || 
+    s.includes('semi-traditional') || 
+    s.includes('semi traditional') || 
+    s.includes('semi-trad') || 
+    s.includes('semi trad') || 
+    s === 'ss' || 
+    s === 'stv' || 
+    s === 'sst'
+  ) {
+    return 'Semi Standard';
+  }
+
   // 1. Cinematographer & all variations / spelling mistakes
   if (
     s.includes('cinematog') || 
@@ -287,7 +317,10 @@ PAGE-BY-PAGE RULES & MAPPING:
   - location: Venue or city if specified, else EMPTY string "".
   - notes: Special notes if specified, else EMPTY string "".
   - requirements: Array of { name: string, qty: number } using standard normalized names:
-    * "Cinematographer", "Traditional Photographer", "Candid Photographer", "Traditional Videographer", "Social Media Person", "Semi Cinematic", "Reel Creator", "Live Videography", "Drone Pilot", "Assistant", "Team Manager", "Makeup Artist", "Family Photographer". (Custom roles allowed).
+    * "Cinematographer", "Traditional Photographer", "Candid Photographer", "Traditional Videographer", "Semi Cinematic", "Semi Standard", "Social Media Person", "Reel Creator", "Live Videography", "Drone Pilot", "Assistant", "Team Manager", "Makeup Artist", "Family Photographer".
+    * If user mentions "semi-kinematic" or "semi-cinematic", output exact name "Semi Cinematic".
+    * If user mentions "semi-standard" or "semi-traditional", output exact name "Semi Standard".
+    * (Custom roles also allowed).
 
 5. DELIVERABLES (deliverablesPage):
 - selectedItems: Array of deliverable strings requested by user.
@@ -539,6 +572,31 @@ function fallbackHeuristicExtractor(contextData: any) {
 
   // Extract requirements from notes if specified
   const parsedRequirements: any[] = [];
+
+  // Check for Semi Cinematic / Semi Kinematic
+  if (
+    fullText.includes('semi-cinematic') || 
+    fullText.includes('semi cinematic') || 
+    fullText.includes('semi-kinematic') || 
+    fullText.includes('semi kinematic') || 
+    fullText.includes('semi cine') ||
+    fullText.includes('semi-cine')
+  ) {
+    parsedRequirements.push({ name: 'Semi Cinematic', qty: 1 });
+  }
+
+  // Check for Semi Standard / Semi Traditional
+  if (
+    fullText.includes('semi-standard') || 
+    fullText.includes('semi standard') || 
+    fullText.includes('semi-traditional') || 
+    fullText.includes('semi traditional') || 
+    fullText.includes('semi trad') ||
+    fullText.includes('semi-trad')
+  ) {
+    parsedRequirements.push({ name: 'Semi Standard', qty: 1 });
+  }
+
   const reqMatches = [...userNotes.matchAll(/(?:name|role)?[:\s]*["']?([A-Za-z\s]+(?:Photographer|Videographer|Cinematographer|Drone|Pilot|Assistant|Creator|Person))["']?/gi)];
   if (reqMatches.length > 0) {
     reqMatches.forEach((m) => {

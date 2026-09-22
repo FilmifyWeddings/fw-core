@@ -10,11 +10,11 @@ import {
 } from 'lucide-react';
 import { Lead, LeadStatus, LeadScore } from '@/types';
 import { supabase } from '@/lib/supabase';
-import { QuotationBuilder } from './quotation-builder';
 import { TeamTasksManager } from './team-tasks-manager';
 import { CRMDropdown } from './crm-dropdown';
 import LeadOwnerSelect from '@/app/workspace/leads/components/LeadOwnerSelect';
 import AiMicButton from '@/components/AiMicButton';
+import { LeadDrawerQuotationsTab } from './lead-drawer-quotations-tab';
 
 interface LeadInsiderDrawerProps {
   lead: Lead | null;
@@ -24,6 +24,8 @@ interface LeadInsiderDrawerProps {
   customSources?: string[];
   userEmail?: string | null;
   commentsOnlyMode?: boolean;
+  initialQuotations?: any[];
+  onQuotationChange?: (leadId: string, updatedVersions: any[]) => void;
 }
 
 const MOCK_TEAM_MEMBERS = [
@@ -146,9 +148,11 @@ export function LeadInsiderDrawer({
   stages = [],
   customSources = [],
   userEmail,
-  commentsOnlyMode = false
+  commentsOnlyMode = false,
+  initialQuotations = [],
+  onQuotationChange
 }: LeadInsiderDrawerProps) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'comments_timeline' | 'quotes' | 'assets'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'comments_timeline' | 'quotes'>('overview');
   const [isMounted, setIsMounted] = useState(false);
   const [commentText, setCommentText] = useState('');
 
@@ -755,7 +759,7 @@ export function LeadInsiderDrawer({
               />
               <AiMicButton
                 size="md"
-                buttonText="Voice AI"
+                buttonText="AI Voice"
                 onInsertComment={(text) =>
                   setCommentText((prev) => (prev ? `${prev} ${text}` : text))
                 }
@@ -1042,34 +1046,15 @@ export function LeadInsiderDrawer({
           </h3>
 
           <div className="flex items-center gap-1">
-            {lead.raw_payload?.is_archived ? (
-              <button
-                type="button"
-                onClick={() => {
-                  const updated = { ...lead.raw_payload, is_archived: false };
-                  handleFieldChange({ raw_payload: updated });
-                }}
-                className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[11px] font-black flex items-center gap-1 cursor-pointer"
-                title="Restore to Active Pipeline"
-              >
-                <FolderOpen className="w-3.5 h-3.5" />
-                <span>Restore Lead</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  if (confirm('Archive this lead? It will be moved to the Archived Leads Vault.')) {
-                    const updated = { ...lead.raw_payload, is_archived: true };
-                    handleFieldChange({ raw_payload: updated });
-                  }
-                }}
-                className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 transition-colors cursor-pointer"
-                title="Archive Lead"
-              >
-                <Archive className="w-4 h-4" />
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-200 dark:border-zinc-700"
+              title="Close Details"
+            >
+              <X className="w-4 h-4" />
+              <span>Cancel</span>
+            </button>
           </div>
         </div>
 
@@ -1099,9 +1084,8 @@ export function LeadInsiderDrawer({
           <div className="flex border-b border-slate-200/80 dark:border-zinc-850 bg-white/50 dark:bg-[#141312]/50 p-1.5 gap-1 shrink-0 px-4">
             {[
               { id: 'overview', label: 'Details', icon: Briefcase },
-              { id: 'comments_timeline', label: 'Notes & Timeline', icon: MessageSquare },
-              { id: 'quotes', label: 'Quotations', icon: FileText },
-              { id: 'assets', label: 'Assets', icon: FileIcon }
+              { id: 'comments_timeline', label: 'Comments', icon: MessageSquare },
+              { id: 'quotes', label: 'Quotations', icon: FileText }
             ].map(t => {
               const Icon = t.icon;
               const active = activeTab === t.id;
@@ -1111,7 +1095,7 @@ export function LeadInsiderDrawer({
                   onClick={() => setActiveTab(t.id as any)}
                   className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[11px] font-bold rounded-xl transition-all ${
                     active 
-                      ? 'bg-blue-600 text-white shadow-xs' 
+                      ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-xs' 
                       : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
@@ -1292,55 +1276,57 @@ export function LeadInsiderDrawer({
                       </div>
                     </div>
 
-                    {/* 3. NOTES CARD (Image 3 Style) */}
+                    {/* 3. LATEST COMMENT CARD */}
                     <div 
                       onClick={() => setActiveTab('comments_timeline')}
-                      className="bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-800/60 rounded-3xl p-4 space-y-2 cursor-pointer hover:border-indigo-400 transition-all shadow-xs"
+                      className="bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/60 rounded-3xl p-4 space-y-2 cursor-pointer hover:border-amber-400 transition-all shadow-xs"
                     >
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-extrabold text-indigo-900 dark:text-indigo-200">Notes</span>
-                        <div className="w-6 h-6 rounded-lg bg-indigo-600/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-                          <Edit2 className="w-3 h-3" />
+                        <span className="text-xs font-extrabold text-amber-900 dark:text-amber-200">Latest Comment</span>
+                        <div className="w-6 h-6 rounded-lg bg-amber-600/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                          <MessageSquare className="w-3 h-3" />
                         </div>
                       </div>
-                      <p className="text-xs text-indigo-900/80 dark:text-indigo-200/80 font-medium leading-relaxed">
-                        {commentsList[0]?.text || 'Discussed wedding photography package. Waiting for final confirmation. Very interested in our premium package.'}
+                      <p className="text-xs text-amber-900/80 dark:text-amber-200/80 font-medium leading-relaxed">
+                        {commentsList[0]?.text || 'No comments added yet. Click here to add a note or reminder.'}
                       </p>
                     </div>
 
-                    {/* 4. RECENT ACTIVITY TIMELINE (Image 3 Style) */}
+                    {/* 4. RECENT ACTIVITY TIMELINE */}
                     <div className="space-y-2.5">
                       <span className="text-xs font-bold text-slate-800 dark:text-zinc-200 px-1">Recent Activity</span>
                       <div className="space-y-2">
-                        {/* Call Activity Item */}
+                        {/* Lead Created Activity */}
                         <div className="bg-white dark:bg-[#141312] border border-slate-200/80 dark:border-zinc-800/80 rounded-2xl p-3 flex items-center gap-3 shadow-xs">
-                          <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-                            <Phone className="w-4 h-4" />
+                          <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                            <Sparkles className="w-4 h-4" />
                           </div>
                           <div className="min-w-0 flex-1">
                             <span className="block text-xs font-bold text-slate-800 dark:text-zinc-200 truncate">
-                              Called to discuss package pricing
+                              Lead created from {lead.source || 'Direct Inquiry'}
                             </span>
                             <span className="block text-[10px] text-slate-400 dark:text-zinc-500 font-mono">
-                              2 days ago
+                              {formatDateTime(lead.created_at || new Date().toISOString())}
                             </span>
                           </div>
                         </div>
 
-                        {/* Proposal Activity Item */}
-                        <div className="bg-white dark:bg-[#141312] border border-slate-200/80 dark:border-zinc-800/80 rounded-2xl p-3 flex items-center gap-3 shadow-xs">
-                          <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-                            <FileText className="w-4 h-4" />
+                        {/* Recent Comment Activity if any */}
+                        {commentsList.length > 0 && (
+                          <div className="bg-white dark:bg-[#141312] border border-slate-200/80 dark:border-zinc-800/80 rounded-2xl p-3 flex items-center gap-3 shadow-xs">
+                            <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                              <MessageSquare className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <span className="block text-xs font-bold text-slate-800 dark:text-zinc-200 truncate">
+                                Note by {commentsList[0].authorName}
+                              </span>
+                              <span className="block text-[10px] text-slate-400 dark:text-zinc-500 font-mono">
+                                {formatDateTime(commentsList[0].createdAt)}
+                              </span>
+                            </div>
                           </div>
-                          <div className="min-w-0 flex-1">
-                            <span className="block text-xs font-bold text-slate-800 dark:text-zinc-200 truncate">
-                              Generated wedding quotation proposal
-                            </span>
-                            <span className="block text-[10px] text-slate-400 dark:text-zinc-500 font-mono">
-                              1 day ago
-                            </span>
-                          </div>
-                        </div>
+                        )}
                       </div>
                     </div>
 
@@ -1416,68 +1402,22 @@ export function LeadInsiderDrawer({
                   </motion.div>
                 )}
 
-                {/* TAB 3: QUOTATION BUILDER */}
+                {/* TAB 3: REAL QUOTATION VERSIONS */}
                 {activeTab === 'quotes' && (
                   <motion.div
                     key="quotes"
                     initial={{ opacity: 0, y: 5 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 5 }}
-                    className="space-y-6"
+                    className="space-y-4"
                   >
-                    <QuotationBuilder
+                    <LeadDrawerQuotationsTab
                       lead={lead}
-                      onLeadUpdate={handleFieldChange}
-                      userEmail={userEmail}
+                      initialQuotations={initialQuotations}
+                      onQuotationChange={onQuotationChange}
+                      onLeadUpdate={(leadId, fields) => handleFieldChange(fields)}
+                      onCloseDrawer={onClose}
                     />
-                  </motion.div>
-                )}
-
-                {/* TAB 5: WORKSPACE ASSETS */}
-                {activeTab === 'assets' && (
-                  <motion.div
-                    key="assets"
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 5 }}
-                    className="space-y-4 text-xs"
-                  >
-                    <div className="text-[10px] text-slate-500 dark:text-zinc-555 font-bold uppercase tracking-wider">Photography Documents</div>
-                    
-                    <div className="space-y-3">
-                      {[
-                        { name: 'Quotation_Taj_Lake_Palace.pdf', size: '1.4 MB', type: 'proposal', status: 'Approved' },
-                        { name: 'Invoice_Retainer_50k.pdf', size: '320 KB', type: 'invoice', status: 'Paid' },
-                        { name: 'Wedding_Photography_Contract.pdf', size: '780 KB', type: 'contract', status: 'Signed' }
-                      ].map((asset, idx) => (
-                        <div key={idx} className="flex items-center justify-between p-3 border border-slate-200 dark:border-zinc-900 bg-slate-50 dark:bg-zinc-950/40 rounded-xl">
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="w-8 h-8 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-500 flex items-center justify-center shrink-0">
-                              <FileText className="w-4 h-4" />
-                            </div>
-                            <div className="text-left min-w-0">
-                              <div className="font-bold text-slate-800 dark:text-zinc-200 truncate max-w-[180px]">{asset.name}</div>
-                              <div className="text-[9px] text-slate-500 mt-0.5">{asset.size} • {asset.type.toUpperCase()}</div>
-                            </div>
-                          </div>
-                          <span className={`px-2 py-0.5 rounded text-[8px] font-bold font-mono ${
-                            asset.status === 'Paid' || asset.status === 'Signed' || asset.status === 'Approved'
-                              ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
-                              : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
-                          }`}>
-                            {asset.status}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => alert('Supabase Object Storage direct browser upload triggered.')}
-                      className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-900 dark:hover:bg-zinc-850 border border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 mt-2"
-                    >
-                      <Plus className="w-4 h-4" /> Upload New Asset Proposal
-                    </button>
                   </motion.div>
                 )}
               </>

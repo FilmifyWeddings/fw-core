@@ -267,7 +267,14 @@ export async function downloadServerChromiumPdf(options: ServerPdfExportOptions)
     onProgress?.('PDF Downloaded Successfully!');
   } catch (err: any) {
     console.warn('[PDF Export Engine] Server rendering notice, switching to Canva-grade IFrame Sandbox Export:', err?.message);
-    onProgress?.('Generating PDF via IFrame Sandbox Engine...');
-    await exportClientCanvasToPDF('quotation-full-canvas', finalFilename, onProgress);
+    const canvasEl = document.getElementById('quotation-full-canvas');
+    if (canvasEl) {
+      onProgress?.('Generating PDF via IFrame Sandbox Engine...');
+      await exportClientCanvasToPDF('quotation-full-canvas', finalFilename, onProgress);
+    } else {
+      onProgress?.('Opening print-ready quotation view...');
+      window.open(`/api/quotations/${targetId}/render-html?print=true`, '_blank');
+      onProgress?.('Opened quotation print view in new tab.');
+    }
   }
 }

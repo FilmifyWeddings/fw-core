@@ -244,19 +244,54 @@ Please confirm your slot.
     setTimeout(() => setCopied(false), 2500);
   };
 
-  // Handle modal dismissal without saving commercials
+  // Handle modal dismissal: Keep crew assignment and save default commercials
   const handleModalClose = () => {
+    const effectiveWsId = workspaceId || (member as any)?.workspace_id || '';
+    const assignmentId = (subEvent?.fw_assignments || []).find(
+      (a: any) => a.required_role?.toLowerCase() === role?.toLowerCase()
+    )?.id;
+
+    saveCrewAssignmentCommercials({
+      workspaceId: effectiveWsId,
+      assignmentId,
+      projectId: project?.id,
+      subEventId: subEvent?.id,
+      member: {
+        id: member.id,
+        name: cleanMemberName,
+        phone: member.phone_number || member.phone || '',
+        primary_role: role
+      },
+      assignedRole: role,
+      agreedAmount: numericAgreed > 0 ? numericAgreed : configuredDefaultRate,
+      advancePaid: numericAdvance,
+      paymentStatus: paymentStatus,
+      paymentDate: paymentDate,
+      paymentMethod: paymentMethod,
+      referenceNo: refNo || undefined,
+      notes: notes || `Assigned via Team Manager for ${clientName} (${eventTitle})`,
+      clientName: clientName,
+      eventName: eventTitle,
+      eventDate: subEvent?.event_date
+    }).catch(err => {
+      console.error('[WhatsAppAssignmentModal] Close save error:', err);
+    });
+
     if (project?.id && !hasLoggedAssignmentRef.current) {
       hasLoggedAssignmentRef.current = true;
       logCrewAssignmentChange({
         projectId: project.id,
         subEventId: subEvent?.id,
+        workspaceId: effectiveWsId || undefined,
+        projectName: clientName || project?.client_name || undefined,
         eventTitle: eventTitle,
         previousMemberName: previousMemberName,
         newMemberName: cleanMemberName,
+        targetMemberId: member?.id || undefined,
+        targetMemberAvatar: member?.avatar_url || undefined,
         roleName: role,
         previousRate: previousRate || memberDefaultRate,
-        newRate: numericAgreed > 0 ? numericAgreed : undefined,
+        newRate: numericAgreed > 0 ? numericAgreed : configuredDefaultRate,
       }).catch(() => {});
     }
     onClose();
@@ -302,9 +337,13 @@ Please confirm your slot.
         logCrewAssignmentChange({
           projectId: project.id,
           subEventId: subEvent?.id,
+          workspaceId: effectiveWsId || undefined,
+          projectName: clientName || project?.client_name || undefined,
           eventTitle: eventTitle,
           previousMemberName: previousMemberName,
           newMemberName: cleanMemberName,
+          targetMemberId: member?.id || undefined,
+          targetMemberAvatar: member?.avatar_url || undefined,
           roleName: role,
           previousRate: previousRate || memberDefaultRate,
           newRate: numericAgreed,

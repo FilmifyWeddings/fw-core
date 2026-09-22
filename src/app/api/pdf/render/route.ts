@@ -16,24 +16,16 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
 async function getChromiumExecutablePath(): Promise<string | undefined> {
   const fs = await import('fs');
 
-  try {
-    const chromium = (await import('@sparticuz/chromium')).default;
-    const path = await chromium.executablePath();
-    if (path) return path;
-  } catch (e) {
-    console.warn('[PDF Server Pipeline] @sparticuz/chromium executable path notice:', e);
-  }
-
   const systemPaths = [
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
     '/usr/bin/chromium-browser',
     '/usr/bin/chromium',
     '/usr/bin/google-chrome-stable',
     '/usr/bin/google-chrome',
     '/snap/bin/chromium',
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     process.env.CHROME_PATH
   ];
@@ -41,6 +33,16 @@ async function getChromiumExecutablePath(): Promise<string | undefined> {
   for (const p of systemPaths) {
     if (p && fs.existsSync(p)) {
       return p;
+    }
+  }
+
+  if (process.platform !== 'win32') {
+    try {
+      const chromium = (await import('@sparticuz/chromium')).default;
+      const path = await chromium.executablePath();
+      if (path && fs.existsSync(path)) return path;
+    } catch (e) {
+      console.warn('[PDF Server Pipeline] @sparticuz/chromium executable path notice:', e);
     }
   }
 
@@ -281,15 +283,17 @@ export async function POST(req: NextRequest) {
     let executablePath = await getChromiumExecutablePath();
     let chromiumArgs = defaultLaunchArgs;
 
-    try {
-      const chromium = (await import('@sparticuz/chromium')).default;
-      const sparticuzPath = await chromium.executablePath();
-      if (sparticuzPath) {
-        executablePath = sparticuzPath;
-        chromiumArgs = [...chromium.args, '--font-render-hinting=none'];
+    if (!executablePath && process.platform !== 'win32') {
+      try {
+        const chromium = (await import('@sparticuz/chromium')).default;
+        const sparticuzPath = await chromium.executablePath();
+        if (sparticuzPath) {
+          executablePath = sparticuzPath;
+          chromiumArgs = [...chromium.args, '--font-render-hinting=none'];
+        }
+      } catch (e) {
+        console.warn('[PDF Server Pipeline] @sparticuz/chromium fallback notice:', e);
       }
-    } catch (e) {
-      console.warn('[PDF Server Pipeline] @sparticuz/chromium fallback notice:', e);
     }
 
     console.log('[PDF Server Pipeline] Chromium Executable Path:', executablePath || 'Default Search');

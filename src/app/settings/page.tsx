@@ -230,7 +230,6 @@ export default function SettingsPage() {
     { id: 'cool', name: 'Cool / Warm', color: '#06b6d4' },
     { id: 'hot', name: 'Hot Lead', color: '#f43f5e' },
     { id: 'booked', name: 'Booked', color: '#84cc16' },
-    { id: 'won', name: 'Won / Converted', color: '#10b981' },
     { id: 'lost', name: 'Lost / Closed', color: '#f43f5e' },
   ]);
 
@@ -432,12 +431,32 @@ export default function SettingsPage() {
 
           // Lead Stages
           if (Array.isArray(s.lead_stages) && s.lead_stages.length > 0) {
-            setLeadStages(s.lead_stages.map((st: any, idx: number) => {
-              if (typeof st === 'string') {
-                return { id: `st_${idx}`, name: st, color: GOOGLE_PRESET_COLORS[idx % GOOGLE_PRESET_COLORS.length] };
+            const sanitized = s.lead_stages
+              .filter((st: any) => {
+                const id = String(st?.id || (typeof st === 'string' ? st : '')).toLowerCase().trim();
+                const name = String(st?.name || (typeof st === 'string' ? st : '')).toLowerCase().trim();
+                if (id === 'won' || id === 'win') return false;
+                if (name === 'won' || name.startsWith('won ') || name.includes('won 🎉') || name.includes('won /') || name.includes('win')) return false;
+                return true;
+              })
+              .map((st: any, idx: number) => {
+                if (typeof st === 'string') {
+                  return { id: `st_${idx}`, name: st, color: GOOGLE_PRESET_COLORS[idx % GOOGLE_PRESET_COLORS.length] };
+                }
+                return st;
+              });
+
+            const hasBooked = sanitized.some((st: any) => st.id === 'booked' || String(st.name || '').toLowerCase().trim() === 'booked');
+            if (!hasBooked) {
+              const lostIdx = sanitized.findIndex((st: any) => st.id === 'lost' || String(st.name || '').toLowerCase().includes('lost'));
+              const bookedStage = { id: 'booked', name: 'Booked', color: '#84cc16' };
+              if (lostIdx !== -1) {
+                sanitized.splice(lostIdx, 0, bookedStage);
+              } else {
+                sanitized.push(bookedStage);
               }
-              return st;
-            }));
+            }
+            setLeadStages(sanitized);
           }
 
           // Budget Ranges
@@ -702,6 +721,10 @@ export default function SettingsPage() {
     setList: React.Dispatch<React.SetStateAction<DropdownItem[]>>,
     id: string
   ) => {
+    if (id === 'booked') {
+      alert('The "Booked" stage cannot be deleted because it is required to automatically synchronize leads with Team Manager, Finance, and Post-Production.');
+      return;
+    }
     setList(list.filter(item => item.id !== id));
   };
 
@@ -749,7 +772,9 @@ export default function SettingsPage() {
     addLabel: string = "Add another item"
   ) => (
     <div className="space-y-2.5 pt-2">
-      {list.map((item, index) => (
+      {list.map((item, index) => {
+        const isBookedStage = prefix === 'stage' && (item.id === 'booked' || item.name.toLowerCase().trim() === 'booked');
+        return (
         <div key={item.id} className="flex items-center gap-2 sm:gap-3 group relative">
           {/* Grip Handle */}
           <div className="cursor-grab text-slate-300 hover:text-zinc-500 transition-colors p-1">
@@ -813,25 +838,44 @@ export default function SettingsPage() {
           </div>
 
           {/* Text Input Box */}
-          <input
-            type="text"
-            value={item.name}
-            onChange={e => handleUpdateItemName(list, setList, item.id, e.target.value)}
-            className="flex-1 px-4 py-2 bg-white border border-amber-200/90 rounded-xl text-sm font-medium text-amber-950 focus:outline-none focus:border-[#0F9D58] focus:ring-1 focus:ring-[#0F9D58] shadow-xs"
-            placeholder="Option Name..."
-          />
+          <div className="flex-1 relative flex items-center">
+            <input
+              type="text"
+              value={item.name}
+              onChange={e => handleUpdateItemName(list, setList, item.id, e.target.value)}
+              className={`w-full px-4 py-2 bg-white border rounded-xl text-sm font-medium text-amber-950 focus:outline-none focus:border-[#0F9D58] focus:ring-1 focus:ring-[#0F9D58] shadow-xs ${
+                isBookedStage ? 'border-emerald-300/90 pr-28 font-semibold text-emerald-950' : 'border-amber-200/90'
+              }`}
+              placeholder="Option Name..."
+            />
+            {isBookedStage && (
+              <span className="absolute right-2.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0 select-none pointer-events-none">
+                <Lock className="w-3 h-3 text-emerald-600" /> Core Sync
+              </span>
+            )}
+          </div>
 
-          {/* Trash Icon Button */}
-          <button
-            type="button"
-            onClick={() => handleRemoveItem(list, setList, item.id)}
-            className="p-2 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
-            title="Delete option"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          {/* Trash Icon Button or Locked Icon */}
+          {isBookedStage ? (
+            <div
+              className="p-2 text-slate-300 cursor-not-allowed flex items-center justify-center"
+              title="System Stage: Required for Team Manager, Finance & Post-Production sync (Cannot be deleted)"
+            >
+              <Lock className="w-4 h-4 text-emerald-600/70" />
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => handleRemoveItem(list, setList, item.id)}
+              className="p-2 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+              title="Delete option"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
         </div>
-      ))}
+      );
+      })}
 
       {/* Add another item button */}
       <button

@@ -136,14 +136,28 @@ export async function POST(req: NextRequest) {
           quotation_number: quotationId,
           workspace_id: workspaceId,
           user_id: userId,
+          client_id: leadId,
           template_id: isUuid ? sourceTemplateId : null,
           title: quotationTitle,
           client_name: leadName,
+          couple_names: leadName,
           total_amount: clonedDoc.pricingPage?.basePrice || 0,
           status: 'draft',
+          is_final: false,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         });
+
+        // Also update lead's quotation_id and raw_payload so lead-summary reflects this immediately
+        await supabaseAdmin.from('leads').update({
+          quotation_id: quotationId,
+          raw_payload: {
+            ...(effectiveLead.raw_payload || {}),
+            quotation_id: quotationId,
+            couple_name: leadName
+          },
+          updated_at: new Date().toISOString()
+        }).eq('id', leadId);
       } catch (e) {}
     })();
 

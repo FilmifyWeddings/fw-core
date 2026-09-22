@@ -76,7 +76,7 @@ export default function AddTeamMemberModal({
   const [whatsappNumber, setWhatsappNumber] = useState('');
   const [email, setEmail] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
-  const [selectedRole, setSelectedRole] = useState('Senior Cinematographer');
+  const [selectedRole, setSelectedRole] = useState('');
 
   // Custom Dynamic Roles
   const [dbRoles, setDbRoles] = useState<StaffRole[]>([]);
@@ -163,7 +163,7 @@ export default function AddTeamMemberModal({
         setWhatsappNumber('');
         setEmail('');
         setAvatarUrl('');
-        setSelectedRole(DEFAULT_ROLES[0]);
+        setSelectedRole('');
         setLatitude(locations[0]?.latitude ? Number(locations[0].latitude) : 19.0596);
         setLongitude(locations[0]?.longitude ? Number(locations[0].longitude) : 72.8295);
         setRadiusMeters(locations[0]?.radius_meters ? Number(locations[0].radius_meters) : 150);
@@ -827,6 +827,7 @@ export default function AddTeamMemberModal({
                     }}
                     className="w-full px-3.5 py-2.5 bg-[#FAF9F5] border border-[#EAE5DA] rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20 cursor-pointer"
                   >
+                    <option value="">Select Primary Role...</option>
                     {allRolesList.map(role => (
                       <option key={role} value={role}>{role}</option>
                     ))}

@@ -44,7 +44,9 @@ interface LeadQuotationModalProps {
   isOpen: boolean;
   onClose: () => void;
   lead: Lead | null;
+  initialQuotations?: QuotationVersionItem[];
   onFinalSet?: (quotation: QuotationVersionItem) => void;
+  onQuotationChange?: (leadId: string, updatedVersions: QuotationVersionItem[]) => void;
 }
 
 function safeSessionSet(key: string, data: any) {
@@ -74,7 +76,14 @@ function safeSessionGet(key: string) {
   }
 }
 
-export function LeadQuotationModal({ isOpen, onClose, lead, onFinalSet }: LeadQuotationModalProps) {
+export function LeadQuotationModal({ 
+  isOpen, 
+  onClose, 
+  lead, 
+  initialQuotations = [],
+  onFinalSet,
+  onQuotationChange 
+}: LeadQuotationModalProps) {
   const router = useRouter();
   const [quotations, setQuotations] = useState<QuotationVersionItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -107,7 +116,21 @@ export function LeadQuotationModal({ isOpen, onClose, lead, onFinalSet }: LeadQu
 
   useEffect(() => {
     if (isOpen && lead?.id) {
-      loadQuotations();
+      const cacheKey = `lead_quotes_cache_${lead.id}`;
+      const cached = (initialQuotations && initialQuotations.length > 0)
+        ? initialQuotations
+        : safeSessionGet(cacheKey);
+
+      if (cached && Array.isArray(cached) && cached.length > 0) {
+        setQuotations(cached);
+        setLoading(false);
+      } else {
+        setQuotations([]);
+        setLoading(true);
+      }
+
+      // Silent background refresh to fetch public tokens and update badges
+      loadQuotations(Boolean(cached && cached.length > 0));
       loadAvailableTemplates();
     } else {
       setQuotations([]);
@@ -173,17 +196,19 @@ export function LeadQuotationModal({ isOpen, onClose, lead, onFinalSet }: LeadQu
     }
   };
 
-  const loadQuotations = async () => {
+  const loadQuotations = async (silent: boolean = false) => {
     if (!lead?.id) return;
     setErrorMsg(null);
 
     const cacheKey = `lead_quotes_cache_${lead.id}`;
-    const cachedData = safeSessionGet(cacheKey);
-    if (cachedData && Array.isArray(cachedData) && cachedData.length > 0) {
-      setQuotations(cachedData);
-      setLoading(false);
-    } else {
-      setLoading(true);
+    if (!silent) {
+      const cachedData = safeSessionGet(cacheKey);
+      if (cachedData && Array.isArray(cachedData) && cachedData.length > 0) {
+        setQuotations(cachedData);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
     }
 
     try {
@@ -207,16 +232,20 @@ export function LeadQuotationModal({ isOpen, onClose, lead, onFinalSet }: LeadQu
       if (json.success && Array.isArray(json.quotations)) {
         setQuotations(json.quotations);
         safeSessionSet(cacheKey, json.quotations);
+        if (onQuotationChange) {
+          queueMicrotask(() => {
+            onQuotationChange(lead.id, json.quotations);
+          });
+        }
 
         json.quotations.forEach((q: QuotationVersionItem) => {
           if (q.template_id) router.prefetch(`/workspace/quotations/builder/templet/${q.template_id}`);
         });
-      } else {
+      } else if (!silent) {
         setQuotations([]);
       }
     } catch (err: any) {
       console.error('[LeadQuotationModal] Fetch error:', err);
-      if (!cachedData) setErrorMsg(null);
     } finally {
       setLoading(false);
     }
@@ -228,6 +257,34 @@ export function LeadQuotationModal({ isOpen, onClose, lead, onFinalSet }: LeadQu
     setErrorMsg(null);
     setConfirmingFinalQuotation(null);
     setUnmarkingFinalQuotation(null);
+
+    // ⚡ INSTANT 0ms OPTIMISTIC UPDATE
+    const previousQuotations = [...quotations];
+    const updated = quotations.map(item => ({
+      ...item,
+      is_final: unmark ? false : item.template_id === q.template_id
+    }));
+    setQuotations(updated);
+    const cacheKey = `lead_quotes_cache_${lead.id}`;
+    safeSessionSet(cacheKey, updated);
+    if (onQuotationChange) {
+      onQuotationChange(lead.id, updated);
+    }
+    if (onFinalSet && !unmark) {
+      onFinalSet({ ...q, is_final: true });
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('sc_cached_finance_records');
+        localStorage.removeItem('sc_cached_finance_clients');
+        localStorage.removeItem('sc_cached_clients');
+      } catch (_) {}
+      window.dispatchEvent(new CustomEvent('quotation_finalized', { 
+        detail: { leadId: lead.id, quotationId: q.template_id || q.id, unmark } 
+      }));
+      localStorage.setItem('post_production_updated', Date.now().toString());
+    }
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
@@ -253,28 +310,22 @@ export function LeadQuotationModal({ isOpen, onClose, lead, onFinalSet }: LeadQu
         json = {};
       }
 
-      if (res.ok && json.success) {
-        setQuotations(prev => {
-          const updated = prev.map(item => ({
-            ...item,
-            is_final: unmark ? false : item.template_id === q.template_id
-          }));
-          const cacheKey = `lead_quotes_cache_${lead.id}`;
-          safeSessionSet(cacheKey, updated);
-          return updated;
-        });
-        if (onFinalSet && !unmark) {
-          onFinalSet(q);
+      if (!res.ok || !json.success) {
+        // Rollback on server error
+        setQuotations(previousQuotations);
+        safeSessionSet(cacheKey, previousQuotations);
+        if (onQuotationChange) {
+          onQuotationChange(lead.id, previousQuotations);
         }
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('quotation_finalized', { detail: { leadId: lead.id, quotationId: q.template_id || q.id } }));
-          localStorage.setItem('post_production_updated', Date.now().toString());
-        }
-      } else {
         setErrorMsg(json.error || 'Failed to update final quotation status.');
       }
     } catch (e: any) {
       console.error('Error setting final quotation:', e);
+      setQuotations(previousQuotations);
+      safeSessionSet(cacheKey, previousQuotations);
+      if (onQuotationChange) {
+        onQuotationChange(lead.id, previousQuotations);
+      }
       setErrorMsg('Failed to update final quotation.');
     } finally {
       setSettingFinalId(null);
@@ -577,16 +628,21 @@ export function LeadQuotationModal({ isOpen, onClose, lead, onFinalSet }: LeadQu
                         >
                           {(() => {
                             const displayTitle = (() => {
-                              if (q.title && q.title.includes(' - ') && !q.title.includes('Design 1')) {
-                                return q.title;
-                              }
                               const content = q.content_json || {};
                               const cover = content.cover || {};
-                              const coupleName = cover.coupleName 
-                                || (cover.groomName && cover.brideName ? `${cover.groomName} & ${cover.brideName}` : (cover.groomName || cover.brideName || ''))
-                                || q.title
-                                || lead?.name 
-                                || 'Couple';
+                              const coupleFromCover = cover.coupleName 
+                                || (cover.groomName && cover.brideName ? `${cover.groomName} & ${cover.brideName}` : (cover.groomName || cover.brideName || ''));
+
+                              if (coupleFromCover) {
+                                const eventType = (cover.eventType || content.eventGroup || 'Wedding').replace(/quotation/i, '').trim();
+                                return `${coupleFromCover} - ${eventType} Quotation`;
+                              }
+
+                              if (q.title && !q.title.startsWith('Client -') && !q.title.includes('Design 1') && !q.title.includes(' - Quotation V')) {
+                                return q.title;
+                              }
+
+                              const coupleName = lead?.name || 'Couple';
                               const eventType = (cover.eventType || content.eventGroup || 'Wedding').replace(/quotation/i, '').trim();
                               return `${coupleName} - ${eventType} Quotation`;
                             })();

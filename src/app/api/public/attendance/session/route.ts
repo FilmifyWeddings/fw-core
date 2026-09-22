@@ -87,12 +87,29 @@ export async function GET(request: NextRequest) {
       day: '2-digit'
     }).format(new Date());
 
-    // 3. Fetch Today's Attendance Record for this member
+    // Resolve any member aliases so no punch records are omitted
+    const memberAliasIds = [link.member_id];
+    if (member.email || member.name) {
+      const { data: aliasMembers } = await supabaseAdmin
+        .from('fw_team_members')
+        .select('id')
+        .eq('user_id', link.user_id)
+        .or(`email.ilike.${member.email || 'none'},name.ilike.${member.name || 'none'}`);
+      if (aliasMembers) {
+        aliasMembers.forEach((a: any) => {
+          if (a.id && !memberAliasIds.includes(a.id)) memberAliasIds.push(a.id);
+        });
+      }
+    }
+
+    // 3. Fetch Today's Attendance Record for this member (supporting aliases)
     const { data: todayRecord } = await supabaseAdmin
       .from('attendance_records')
       .select('*')
-      .eq('member_id', link.member_id)
+      .in('member_id', memberAliasIds)
       .eq('date', todayDate)
+      .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     // 4. Fetch Active Break if any
@@ -190,12 +207,14 @@ export async function GET(request: NextRequest) {
       }];
     }
 
-    // 7. Check if today is a Company Holiday or Weekly Off
-    const { data: holidayToday } = await supabaseAdmin
+    // 7. Check Company Holidays (all holidays for workspace + today's holiday)
+    const { data: allHolidays } = await supabaseAdmin
       .from('company_holidays')
-      .select('*')
-      .eq('holiday_date', todayDate)
-      .maybeSingle();
+      .select('id, holiday_date, name, note, is_optional')
+      .eq('user_id', link.user_id)
+      .order('holiday_date', { ascending: true });
+
+    const holidayToday = (allHolidays || []).find(h => h.holiday_date === todayDate) || null;
 
     const todayDayName = new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(new Date());
     const isWeeklyOff = Array.isArray(member.weekly_offs) && member.weekly_offs.includes(todayDayName);
@@ -230,22 +249,23 @@ export async function GET(request: NextRequest) {
       }];
     }
 
-    // 8. Fetch Current Month Attendance Records
+
+    // 9. Fetch Current Month Attendance Records (Complete columns including photos & GPS)
     const startOfMonth = `${todayDate.substring(0, 7)}-01`;
     const { data: monthlyHistory } = await supabaseAdmin
       .from('attendance_records')
-      .select('id, date, status, check_in_time, check_out_time, work_duration_minutes, late_minutes, overtime_minutes, check_in_photo_path, check_out_photo_path')
-      .eq('member_id', link.member_id)
+      .select('*')
+      .in('member_id', memberAliasIds)
       .gte('date', startOfMonth)
       .order('date', { ascending: false });
 
-    // 9. Fetch Recent Leave Requests
+    // 10. Fetch Recent Leave Requests
     const { data: recentLeaves } = await supabaseAdmin
       .from('attendance_leave_requests')
       .select('id, leave_type, start_date, end_date, reason, status, created_at')
-      .eq('member_id', link.member_id)
+      .in('member_id', memberAliasIds)
       .order('created_at', { ascending: false })
-      .limit(5);
+      .limit(10);
 
     return NextResponse.json({
       member,
@@ -262,6 +282,7 @@ export async function GET(request: NextRequest) {
       locations,
       shifts: shifts || [],
       holidayToday: holidayToday || null,
+      companyHolidays: allHolidays || [],
       isWeeklyOff: !!isWeeklyOff,
       monthlyHistory: monthlyHistory || [],
       recentLeaves: recentLeaves || []

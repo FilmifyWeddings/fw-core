@@ -1715,100 +1715,114 @@ function ThreeDCurvedFunctionEditor({
           </div>
 
           <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-            {availableRequirements.map((reqName) => {
-              const reqObj = safeRequirements.find(r => r.name === reqName);
-              const isSelected = !!reqObj;
-              return (
-                <div
-                  key={reqName}
-                  className={`flex items-center gap-2 p-2 rounded-xl border text-xs font-semibold transition-all group ${
-                    isSelected
-                      ? 'bg-amber-50/90 border-amber-300 text-amber-950 shadow-2xs font-bold'
-                      : 'bg-zinc-50/80 border-zinc-200/80 text-zinc-600 hover:bg-zinc-100'
-                  }`}
-                >
-                  {/* 1. Checkbox at START */}
-                  <button
-                    type="button"
-                    onClick={() => toggleRequirement(reqName)}
-                    className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 transition-all cursor-pointer ${
+            {(() => {
+              const combinedRequirements = Array.from(new Set([
+                ...safeRequirements.map((r: any) => r.name),
+                ...availableRequirements
+              ])).filter(Boolean);
+              const sortedRequirements = [...combinedRequirements].sort((a, b) => {
+                const aSel = safeRequirements.some((r: any) => r.name === a);
+                const bSel = safeRequirements.some((r: any) => r.name === b);
+                if (aSel && !bSel) return -1;
+                if (!aSel && bSel) return 1;
+                return 0;
+              });
+
+              return sortedRequirements.map((reqName) => {
+                const reqObj = safeRequirements.find(r => r.name === reqName);
+                const isSelected = !!reqObj;
+                return (
+                  <div
+                    key={reqName}
+                    className={`flex items-center gap-2 p-2 rounded-xl border text-xs font-semibold transition-all group ${
                       isSelected
-                        ? 'border-amber-600 bg-amber-600 text-white'
-                        : 'border-zinc-300 bg-white hover:border-amber-400'
+                        ? 'bg-amber-50/90 border-amber-300 text-amber-950 shadow-2xs font-bold'
+                        : 'bg-zinc-50/80 border-zinc-200/80 text-zinc-600 hover:bg-zinc-100'
                     }`}
                   >
-                    {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
-                  </button>
-
-                  {/* 2. Requirement Name */}
-                  <span 
-                    onClick={() => toggleRequirement(reqName)}
-                    className="flex-1 cursor-pointer select-none leading-tight truncate"
-                  >
-                    {reqName}
-                  </span>
-
-                  {/* 3. Quantity Selector (when selected) */}
-                  {isSelected && (
-                    <div className="flex items-center gap-1 shrink-0">
-                      <span className="text-[10px] font-bold text-amber-800">Qty:</span>
-                      <select
-                        value={reqObj?.qty || 1}
-                        onChange={(e) => changeRequirementQty(reqName, Number(e.target.value) || 1)}
-                        className="p-1 rounded-lg bg-white border border-amber-300 text-amber-950 font-bold text-[11px]"
-                      >
-                        {[1,2,3,4,5,6,7,8,9,10].map(num => (
-                          <option key={num} value={num}>{num}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  {/* 4. Edit & Delete Buttons */}
-                  <div className="flex items-center gap-0.5 shrink-0">
+                    {/* 1. Checkbox at START */}
                     <button
                       type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const edited = prompt('Edit Requirement item:', reqName);
-                        if (edited && edited.trim() && edited.trim() !== reqName) {
-                          const trimmed = edited.trim();
-                          if (onEditCustomRequirement) {
-                            onEditCustomRequirement(reqName, trimmed);
-                          }
-                          if (isSelected) {
-                            const updated = safeRequirements.map(r => r.name === reqName ? { ...r, name: trimmed } : r);
-                            onUpdate({ ...func, requirements: updated });
-                          }
-                        }
-                      }}
-                      className="p-1 text-zinc-400 hover:text-amber-700 hover:bg-amber-100 rounded-md transition-all cursor-pointer"
-                      title={`Edit ${reqName}`}
+                      onClick={() => toggleRequirement(reqName)}
+                      className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 transition-all cursor-pointer ${
+                        isSelected
+                          ? 'border-amber-600 bg-amber-600 text-white'
+                          : 'border-zinc-300 bg-white hover:border-amber-400'
+                      }`}
                     >
-                      <Edit3 className="w-3.5 h-3.5" />
+                      {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
                     </button>
 
-                    {onDeleteCustomRequirement && (
+                    {/* 2. Requirement Name */}
+                    <span 
+                      onClick={() => toggleRequirement(reqName)}
+                      className="flex-1 cursor-pointer select-none leading-tight truncate"
+                    >
+                      {reqName}
+                    </span>
+
+                    {/* 3. Quantity Selector (when selected) */}
+                    {isSelected && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-[10px] font-bold text-amber-800">Qty:</span>
+                        <select
+                          value={reqObj?.qty || 1}
+                          onChange={(e) => changeRequirementQty(reqName, Number(e.target.value) || 1)}
+                          className="p-1 rounded-lg bg-white border border-amber-300 text-amber-950 font-bold text-[11px]"
+                        >
+                          {[1,2,3,4,5,6,7,8,9,10].map(num => (
+                            <option key={num} value={num}>{num}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* 4. Edit & Delete Buttons */}
+                    <div className="flex items-center gap-0.5 shrink-0">
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          onDeleteCustomRequirement(reqName);
-                          if (isSelected) {
-                            const updated = safeRequirements.filter(r => r.name !== reqName);
-                            onUpdate({ ...func, requirements: updated });
+                          const edited = prompt('Edit Requirement item:', reqName);
+                          if (edited && edited.trim() && edited.trim() !== reqName) {
+                            const trimmed = edited.trim();
+                            if (onEditCustomRequirement) {
+                              onEditCustomRequirement(reqName, trimmed);
+                            }
+                            if (isSelected) {
+                              const updated = safeRequirements.map(r => r.name === reqName ? { ...r, name: trimmed } : r);
+                              onUpdate({ ...func, requirements: updated });
+                            }
                           }
                         }}
-                        className="p-1 text-zinc-400 hover:text-rose-600 hover:bg-rose-100 rounded-md transition-all cursor-pointer"
-                        title={`Delete ${reqName}`}
+                        className="p-1 text-zinc-400 hover:text-amber-700 hover:bg-amber-100 rounded-md transition-all cursor-pointer"
+                        title={`Edit ${reqName}`}
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Edit3 className="w-3.5 h-3.5" />
                       </button>
-                    )}
+
+                      {onDeleteCustomRequirement && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteCustomRequirement(reqName);
+                            if (isSelected) {
+                              const updated = safeRequirements.filter(r => r.name !== reqName);
+                              onUpdate({ ...func, requirements: updated });
+                            }
+                          }}
+                          className="p-1 text-zinc-400 hover:text-rose-600 hover:bg-rose-100 rounded-md transition-all cursor-pointer"
+                          title={`Delete ${reqName}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              });
+            })()}
           </div>
         </div>
 
@@ -2276,6 +2290,8 @@ function StudioCoreAiryBuilderContent() {
     'Cinematography',
     'Drone',
     'Traditional Video',
+    'Semi Cinematic',
+    'Semi Standard',
     'Pre-Wedding Film',
     'Portable Changing Room',
   ]);
@@ -2466,7 +2482,7 @@ function StudioCoreAiryBuilderContent() {
         const roles = await fetchWorkspaceCrewRoles(userId || undefined);
         if (Array.isArray(roles) && roles.length > 0) {
           const roleNames = roles.map(r => r.name);
-          setAvailableRequirements(roleNames);
+          setAvailableRequirements(prev => Array.from(new Set([...prev, ...roleNames, 'Semi Cinematic', 'Semi Standard'])).filter(Boolean));
         }
       } catch (err) {
         console.warn('[Builder] Error loading global workspace settings:', err);

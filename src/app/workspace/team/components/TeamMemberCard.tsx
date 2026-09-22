@@ -86,25 +86,21 @@ export default function TeamMemberCard({
   const quotationsAccess = member.quotations_access || member.permissions?.quotations_access;
   const postProductionAccess = member.post_production_access || member.permissions?.post_production_access;
   const financeAccess = member.finance_access || member.permissions?.finance_access;
-  const isAdmin = member.is_admin || member.role === 'admin' || member.role === 'owner' || member.primary_type === 'ADMIN' || member.permissions?.is_admin;
+  const isAdmin = member.is_admin === true || member.role === 'admin' || member.role === 'owner' || member.primary_type === 'ADMIN' || member.permissions?.is_admin === true;
 
-  const resolvedMember = {
-    ...member,
-    crm_access: crmAccess,
-    team_access: teamAccess,
-    quotations_access: quotationsAccess,
-    post_production_access: postProductionAccess,
-    finance_access: financeAccess,
-    is_admin: isAdmin,
+  const isGranted = (val: any) => {
+    if (!val) return false;
+    const s = String(val).trim().toLowerCase();
+    return !['none', 'hidden', 'false', '0', 'undefined', 'null', '', 'assigned_only_view', 'assigned_only'].includes(s);
   };
 
   const hasAnyAccess = Boolean(
-    resolvedMember.is_admin ||
-    (resolvedMember.crm_access && !['none', 'hidden', 'false'].includes(String(resolvedMember.crm_access).toLowerCase())) ||
-    (resolvedMember.team_access && !['none', 'hidden', 'false'].includes(String(resolvedMember.team_access).toLowerCase())) ||
-    (resolvedMember.quotations_access && !['none', 'hidden', 'false'].includes(String(resolvedMember.quotations_access).toLowerCase())) ||
-    (resolvedMember.post_production_access && !['none', 'hidden', 'false'].includes(String(resolvedMember.post_production_access).toLowerCase())) ||
-    (resolvedMember.finance_access && !['none', 'hidden', 'false'].includes(String(resolvedMember.finance_access).toLowerCase()))
+    isAdmin ||
+    isGranted(crmAccess) ||
+    isGranted(teamAccess) ||
+    isGranted(quotationsAccess) ||
+    isGranted(postProductionAccess) ||
+    isGranted(financeAccess)
   );
 
   return (
@@ -197,75 +193,79 @@ export default function TeamMemberCard({
       </div>
 
       {/* Bottom: Clean Portal Access Strip */}
-      {hasAnyAccess && (
-        <div className="flex items-center gap-1.5 flex-wrap mt-2 pt-1.5 border-t border-slate-50">
-          {/* Admin / Full Access */}
-          {resolvedMember.is_admin && (
-            <div 
-              title="Admin / Full Access"
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-600 border border-indigo-200/70 text-[10px] font-bold"
-            >
-              <ShieldCheck className="w-3 h-3 text-indigo-600"/>
-              <span className="hidden sm:inline">Admin</span>
-            </div>
-          )}
+      <div className="flex items-center gap-1.5 flex-wrap mt-2 pt-1.5 border-t border-slate-50">
+        {/* Admin / Full Access */}
+        {isAdmin && (
+          <div 
+            title="Admin / Full Access"
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-600 border border-indigo-200/70 text-[10px] font-bold"
+          >
+            <ShieldCheck className="w-3 h-3 text-indigo-600"/>
+            <span className="hidden sm:inline">Admin</span>
+          </div>
+        )}
 
-          {/* Leads & CRM Access */}
-          {resolvedMember.crm_access && !['none', 'hidden', 'false'].includes(String(resolvedMember.crm_access).toLowerCase()) && (
-            <div 
-              title={`Leads / CRM: ${resolvedMember.crm_access}`}
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-600 border border-blue-200/70 text-[10px] font-bold"
-            >
-              <UserCheck className="w-3 h-3 text-blue-600"/>
-              <span className="hidden sm:inline">CRM</span>
-            </div>
-          )}
+        {/* Leads & CRM Access */}
+        {isGranted(crmAccess) && (
+          <div 
+            title={`Leads / CRM: ${crmAccess}`}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-600 border border-blue-200/70 text-[10px] font-bold"
+          >
+            <UserCheck className="w-3 h-3 text-blue-600"/>
+            <span className="hidden sm:inline">CRM</span>
+          </div>
+        )}
 
-          {/* Team Portal Access */}
-          {resolvedMember.team_access && !['none', 'hidden', 'false'].includes(String(resolvedMember.team_access).toLowerCase()) && (
-            <div 
-              title={`Team Manager: ${resolvedMember.team_access}`}
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-purple-50 text-purple-600 border border-purple-200/70 text-[10px] font-bold"
-            >
-              <Users className="w-3 h-3 text-purple-600"/>
-              <span className="hidden sm:inline">Team</span>
-            </div>
-          )}
+        {/* Team Portal Access */}
+        {isGranted(teamAccess) && (
+          <div 
+            title={`Team Manager: ${teamAccess}`}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-purple-50 text-purple-600 border border-purple-200/70 text-[10px] font-bold"
+          >
+            <Users className="w-3 h-3 text-purple-600"/>
+            <span className="hidden sm:inline">Team</span>
+          </div>
+        )}
 
-          {/* Quotations Access */}
-          {resolvedMember.quotations_access && !['none', 'hidden', 'false'].includes(String(resolvedMember.quotations_access).toLowerCase()) && (
-            <div 
-              title={`Quotations: ${resolvedMember.quotations_access}`}
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-600 border border-amber-200/70 text-[10px] font-bold"
-            >
-              <FileText className="w-3 h-3 text-amber-600"/>
-              <span className="hidden sm:inline">Quotes</span>
-            </div>
-          )}
+        {/* Quotations Access */}
+        {isGranted(quotationsAccess) && (
+          <div 
+            title={`Quotations: ${quotationsAccess}`}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-600 border border-amber-200/70 text-[10px] font-bold"
+          >
+            <FileText className="w-3 h-3 text-amber-600"/>
+            <span className="hidden sm:inline">Quotes</span>
+          </div>
+        )}
 
-          {/* Post-Production Access */}
-          {resolvedMember.post_production_access && !['none', 'hidden', 'false'].includes(String(resolvedMember.post_production_access).toLowerCase()) && (
-            <div 
-              title={`Post Production: ${resolvedMember.post_production_access}`}
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-50 text-rose-600 border border-rose-200/70 text-[10px] font-bold"
-            >
-              <Film className="w-3 h-3 text-rose-600"/>
-              <span className="hidden sm:inline">Post</span>
-            </div>
-          )}
+        {/* Post-Production Access */}
+        {isGranted(postProductionAccess) && (
+          <div 
+            title={`Post Production: ${postProductionAccess}`}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-50 text-rose-600 border border-rose-200/70 text-[10px] font-bold"
+          >
+            <Film className="w-3 h-3 text-rose-600"/>
+            <span className="hidden sm:inline">Post</span>
+          </div>
+        )}
 
-          {/* Finance Access */}
-          {resolvedMember.finance_access && !['none', 'hidden', 'false'].includes(String(resolvedMember.finance_access).toLowerCase()) && (
-            <div 
-              title={`Finance: ${resolvedMember.finance_access}`}
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-600 border border-emerald-200/70 text-[10px] font-bold"
-            >
-              <DollarSign className="w-3 h-3 text-emerald-600"/>
-              <span className="hidden sm:inline">Finance</span>
-            </div>
-          )}
-        </div>
-      )}
+        {/* Finance Access */}
+        {isGranted(financeAccess) && (
+          <div 
+            title={`Finance: ${financeAccess}`}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-600 border border-emerald-200/70 text-[10px] font-bold"
+          >
+            <DollarSign className="w-3 h-3 text-emerald-600"/>
+            <span className="hidden sm:inline">Finance</span>
+          </div>
+        )}
+
+        {!hasAnyAccess && (
+          <span className="text-[10px] px-2 py-0.5 rounded bg-slate-50 text-slate-400 font-medium border border-slate-200/60">
+            No Access
+          </span>
+        )}
+      </div>
     </div>
   );
 }

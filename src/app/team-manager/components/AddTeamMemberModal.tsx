@@ -69,15 +69,15 @@ export default function AddTeamMemberModal({
   memberToEdit,
   isOpen,
   onClose,
-  initialRole = 'Photographer',
+  initialRole = '',
   onSave,
 }: AddTeamMemberModalProps) {
   const { workspaceId, userEmail, userId } = useWorkspace();
   const { workspaceMembers, crewRoles } = useWorkspaceData();
   const [name, setName] = useState('');
-  const [primaryRole, setPrimaryRole] = useState(initialRole);
-  const [selectedRoles, setSelectedRoles] = useState<string[]>([initialRole]);
-  const [selectedMemberTypes, setSelectedMemberTypes] = useState<string[]>(['IN_HOUSE']);
+  const [primaryRole, setPrimaryRole] = useState(initialRole || '');
+  const [selectedRoles, setSelectedRoles] = useState<string[]>(initialRole ? [initialRole] : []);
+  const [selectedMemberTypes, setSelectedMemberTypes] = useState<string[]>([]);
   const [countryCode, setCountryCode] = useState('+91');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [email, setEmail] = useState('');
@@ -276,11 +276,11 @@ export default function AddTeamMemberModal({
   const [isRegisteredUser, setIsRegisteredUser] = useState(false);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Granular Permissions Matrix State
+  // Granular Permissions Matrix State - Defaults strictly to NONE / No Access
   const [leadsAccess, setLeadsAccess] = useState<string>('NONE');
-  const [teamManagerAccess, setTeamManagerAccess] = useState<string>('ASSIGNED_ONLY_VIEW');
+  const [teamManagerAccess, setTeamManagerAccess] = useState<string>('NONE');
   const [quotationsAccess, setQuotationsAccess] = useState<string>('NONE');
-  const [postProductionAccess, setPostProductionAccess] = useState<string>('ASSIGNED_ONLY');
+  const [postProductionAccess, setPostProductionAccess] = useState<string>('NONE');
   const [financeAccess, setFinanceAccess] = useState<string>('NONE');
 
   // In-memory instant duplicate verification from Central Workspace Context (0ms, 0 network calls)
@@ -307,31 +307,47 @@ export default function AddTeamMemberModal({
       setDefaultDailyRate(memberToEdit.default_daily_rate != null ? String(memberToEdit.default_daily_rate) : '');
       setPayoutFrequency(memberToEdit.payout_frequency === 'monthly' ? 'monthly' : 'daily');
 
-      const perms = memberToEdit.permissions || memberToEdit.member_permissions?.[0] || memberToEdit.member_permissions || {};
-      setLeadsAccess(perms.leads_access || 'NONE');
-      setTeamManagerAccess(perms.team_manager_access || 'NONE');
-      setQuotationsAccess(perms.quotations_access || 'NONE');
-      setPostProductionAccess(perms.post_production_access || 'NONE');
-      setFinanceAccess(perms.finance_access || 'NONE');
+      const perms = memberToEdit.permissions || memberToEdit.studio_member_permissions || memberToEdit.member_permissions?.[0] || memberToEdit.member_permissions || {};
+      
+      const normalizeTeamAccess = (val?: string) => {
+        if (!val) return 'NONE';
+        const s = String(val).trim().toUpperCase();
+        if (['NONE', 'HIDDEN', 'FALSE', '0', 'ASSIGNED_ONLY_VIEW'].includes(s)) return 'NONE';
+        if (s === 'ASSIGNED_FULL_TEAM_VIEW') return 'ASSIGNED_FULL_CREW';
+        return s;
+      };
+
+      const normalizePostAccess = (val?: string) => {
+        if (!val) return 'NONE';
+        const s = String(val).trim().toUpperCase();
+        if (['NONE', 'HIDDEN', 'FALSE', '0', 'ASSIGNED_ONLY'].includes(s)) return 'NONE';
+        return s;
+      };
+
+      setLeadsAccess(perms.leads_access && perms.leads_access !== 'NONE' ? perms.leads_access : 'NONE');
+      setTeamManagerAccess(normalizeTeamAccess(perms.team_manager_access));
+      setQuotationsAccess(perms.quotations_access && perms.quotations_access !== 'NONE' ? perms.quotations_access : 'NONE');
+      setPostProductionAccess(normalizePostAccess(perms.post_production_access));
+      setFinanceAccess(perms.finance_access && perms.finance_access !== 'NONE' ? perms.finance_access : 'NONE');
       setIsRegisteredUser(true);
 
       const ownerId = workspaceId || userId;
       if (ownerId && memberToEdit.id) {
         getMemberStudioPermissions(ownerId, memberToEdit.id).then((sp) => {
           if (sp && sp.id) {
-            setLeadsAccess(sp.leads_access || 'NONE');
-            setTeamManagerAccess(sp.team_manager_access || 'NONE');
-            setQuotationsAccess(sp.quotations_access || 'NONE');
-            setPostProductionAccess(sp.post_production_access || 'NONE');
-            setFinanceAccess(sp.finance_access || 'NONE');
+            setLeadsAccess(sp.leads_access && sp.leads_access !== 'NONE' ? sp.leads_access : 'NONE');
+            setTeamManagerAccess(normalizeTeamAccess(sp.team_manager_access));
+            setQuotationsAccess(sp.quotations_access && sp.quotations_access !== 'NONE' ? sp.quotations_access : 'NONE');
+            setPostProductionAccess(normalizePostAccess(sp.post_production_access));
+            setFinanceAccess(sp.finance_access && sp.finance_access !== 'NONE' ? sp.finance_access : 'NONE');
           }
         }).catch(() => {});
       }
     } else if (isOpen) {
       setName('');
-      setPrimaryRole(initialRole);
-      setSelectedRoles([initialRole]);
-      setSelectedMemberTypes(['IN_HOUSE']);
+      setPrimaryRole(initialRole || '');
+      setSelectedRoles(initialRole ? [initialRole] : []);
+      setSelectedMemberTypes([]);
       setCountryCode('+91');
       setPhoneNumber('');
       setEmail('');
@@ -426,8 +442,7 @@ export default function AddTeamMemberModal({
   const toggleMemberType = (typeId: string) => {
     setSelectedMemberTypes(prev => {
       const exists = prev.includes(typeId);
-      const next = exists ? prev.filter(t => t !== typeId) : [...prev, typeId];
-      return next.length > 0 ? next : [typeId];
+      return exists ? prev.filter(t => t !== typeId) : [...prev, typeId];
     });
   };
 
@@ -526,6 +541,10 @@ export default function AddTeamMemberModal({
     }
     if (!email.trim()) {
       showAlertToast('Email ID is strictly required for portal login');
+      return;
+    }
+    if (selectedMemberTypes.length === 0) {
+      showAlertToast('Please select at least one Team Member Type');
       return;
     }
     if (isSelfEmail || isDuplicateEmail || isDisposableEmail) return;

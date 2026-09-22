@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
-import { extractFinancialsFromQuotation, syncQuotationToTeamManagerEvents } from '@/lib/quotation-finance-sync';
+import { extractFinancialsFromQuotation, extractCoupleNameFromQuotation, syncQuotationToTeamManagerEvents } from '@/lib/quotation-finance-sync';
 import { parseQuotationDeliverables } from '@/lib/services/postProductionSyncService';
 
 export const runtime = 'nodejs';
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
     let finalDoc: any = null;
 
     if (allDocs && allDocs.length > 0) {
-      for (const doc of allDocs) {
+      await Promise.all(allDocs.map(async (doc: any) => {
         const isTarget = doc.template_id === quotationId || doc.id === quotationId;
         const updatedContent = { ...(doc.content_json || {}) };
         
@@ -60,8 +60,7 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // Update each document in Supabase
-        await supabaseAdmin
+        return supabaseAdmin
           .from('quotation_documents')
           .update({
             content_json: updatedContent,
@@ -69,41 +68,101 @@ export async function POST(req: NextRequest) {
             updated_at: now
           })
           .eq('id', doc.id);
-      }
+      }));
     }
 
-    // 2. Also update quotations table
-    try {
-      if (shouldUnmark) {
-        await supabaseAdmin
-          .from('quotations')
-          .update({ status: 'draft', is_final: false, updated_at: now })
-          .or(`id.eq.${quotationId},quotation_number.eq.${quotationId},client_id.eq.${leadId}`);
-      } else {
-        await supabaseAdmin
-          .from('quotations')
-          .update({ status: 'draft', is_final: false, updated_at: now })
-          .eq('client_id', leadId);
+    // 2 & 3. Parallel update quotations and leads tables
+    const clientName = finalDoc?.content_json 
+      ? extractCoupleNameFromQuotation(finalDoc.content_json, '')
+      : '';
 
-        await supabaseAdmin
-          .from('quotations')
-          .update({ status: 'accepted', is_final: true, updated_at: now })
-          .or(`id.eq.${quotationId},quotation_number.eq.${quotationId}`);
-      }
-    } catch (_) {}
+    await Promise.all([
+      (async () => {
+        try {
+          if (shouldUnmark) {
+            await supabaseAdmin
+              .from('quotations')
+              .update({ status: 'draft', is_final: false, updated_at: now })
+              .or(`id.eq.${quotationId},quotation_number.eq.${quotationId},client_id.eq.${leadId}`);
+          } else {
+            await supabaseAdmin
+              .from('quotations')
+              .update({ status: 'draft', is_final: false, updated_at: now })
+              .eq('client_id', leadId);
 
-    // 3. Update Leads table
-    try {
-      await supabaseAdmin
-        .from('leads')
-        .update({
-          final_quotation_id: shouldUnmark ? null : quotationId,
-          quotation_id: shouldUnmark ? null : quotationId,
-          ...(shouldUnmark ? {} : { status: 'booked' }),
-          updated_at: now
-        })
-        .eq('id', leadId);
-    } catch (_) {}
+            const quoteTitle = clientName ? `${clientName} - Final Quotation` : 'Final Quotation';
+
+            const { data: existingQ } = await supabaseAdmin
+              .from('quotations')
+              .select('id')
+              .or(`id.eq.${quotationId},quotation_number.eq.${quotationId}`)
+              .maybeSingle();
+
+            if (existingQ) {
+              await supabaseAdmin
+                .from('quotations')
+                .update({
+                  client_id: leadId,
+                  title: quoteTitle,
+                  client_name: clientName || undefined,
+                  couple_names: clientName || undefined,
+                  status: 'accepted',
+                  is_final: true,
+                  updated_at: now
+                })
+                .eq('id', existingQ.id);
+            } else {
+              await supabaseAdmin
+                .from('quotations')
+                .insert({
+                  quotation_number: quotationId,
+                  user_id: userId,
+                  client_id: leadId,
+                  title: quoteTitle,
+                  client_name: clientName || undefined,
+                  couple_names: clientName || undefined,
+                  status: 'accepted',
+                  is_final: true,
+                  created_at: now,
+                  updated_at: now
+                });
+            }
+          }
+        } catch (qErr) {
+          console.error('[Set-Final] Error syncing quotations table:', qErr);
+        }
+      })(),
+      (async () => {
+        try {
+          const { data: currentLead } = await supabaseAdmin
+            .from('leads')
+            .select('raw_payload, status')
+            .eq('id', leadId)
+            .maybeSingle();
+
+          const currentPayload = currentLead?.raw_payload || {};
+          const updatedPayload = {
+            ...currentPayload,
+            final_quotation_id: shouldUnmark ? null : quotationId,
+            quotation_id: shouldUnmark ? null : quotationId,
+            ...(clientName ? { couple_name: clientName } : {})
+          };
+
+          await supabaseAdmin
+            .from('leads')
+            .update({
+              final_quotation_id: shouldUnmark ? null : quotationId,
+              quotation_id: shouldUnmark ? null : quotationId,
+              raw_payload: updatedPayload,
+              ...(shouldUnmark ? {} : { status: 'booked' }),
+              updated_at: now
+            })
+            .eq('id', leadId);
+        } catch (lErr) {
+          console.error('[Set-Final] Error updating lead raw_payload and final_quotation_id:', lErr);
+        }
+      })()
+    ]);
 
     if (shouldUnmark) {
       return NextResponse.json({
@@ -122,7 +181,7 @@ export async function POST(req: NextRequest) {
         .eq('id', leadId)
         .maybeSingle();
 
-      const clientName = leadData?.name || finalDoc.content_json?.meta?.client_name || 'Wedding Client';
+      const clientName = extractCoupleNameFromQuotation(finalDoc.content_json, leadData?.name);
       const eventDate = leadData?.event_date || finalDoc.content_json?.meta?.event_date || null;
       const workspaceId = leadData?.workspace_id || userId || finalDoc.content_json?.meta?.workspace_id;
 
@@ -134,11 +193,19 @@ export async function POST(req: NextRequest) {
       // Create or update workspace_clients and client_finance_records
       try {
         if (workspaceId) {
-          const { data: existingWorkspaceClient } = await supabaseAdmin
+          const { data: existingWorkspaceClients } = await supabaseAdmin
             .from('workspace_clients')
             .select('id, total_package_amount, paid_amount')
             .or(`lead_id.eq.${leadId},id.eq.${leadId}`)
-            .maybeSingle();
+            .order('created_at', { ascending: true });
+
+          const existingWorkspaceClient = existingWorkspaceClients?.[0];
+
+          // Clean up any extraneous duplicate rows if present
+          if (existingWorkspaceClients && existingWorkspaceClients.length > 1) {
+            const extraIds = existingWorkspaceClients.slice(1).map(c => c.id);
+            await supabaseAdmin.from('workspace_clients').delete().in('id', extraIds);
+          }
 
           if (existingWorkspaceClient?.id) {
             workspaceClientId = existingWorkspaceClient.id;
@@ -322,102 +389,106 @@ export async function POST(req: NextRequest) {
         console.error('[Set-Final] Error syncing finance record:', finErr);
       }
 
-      // Sync Quotation Sub-events to Team Manager Projects & Sub-Events
-      try {
-        if (workspaceId) {
-          await syncQuotationToTeamManagerEvents(
-            supabaseAdmin,
-            leadId,
-            finalDoc.content_json,
-            clientName,
-            workspaceId,
-            eventDate,
-            finalDoc.content_json?.meta?.venue || finalDoc.content_json?.cover?.venue || null,
-            workspaceClientId
-          );
-        }
-      } catch (tmErr) {
-        console.error('[Set-Final] Error syncing team manager events:', tmErr);
-      }
+      // Sync Quotation Sub-events to Team Manager Projects & Deliverables to Post-Production concurrently
+      await Promise.allSettled([
+        (async () => {
+          try {
+            if (workspaceId) {
+              await syncQuotationToTeamManagerEvents(
+                supabaseAdmin,
+                leadId,
+                finalDoc.content_json,
+                clientName,
+                workspaceId,
+                eventDate,
+                finalDoc.content_json?.meta?.venue || finalDoc.content_json?.cover?.venue || finalDoc.content_json?.cover?.locationName || 'TBD Venue',
+                workspaceClientId
+              );
+            }
+          } catch (tmErr) {
+            console.error('[Set-Final] Error syncing team manager events:', tmErr);
+          }
+        })(),
+        (async () => {
+          try {
+            if (workspaceId && finalDoc.content_json) {
+              const parsed = parseQuotationDeliverables(finalDoc);
+              if (parsed.deliverables && parsed.deliverables.length > 0) {
+                const clientTargets = [workspaceClientId, leadId].filter(Boolean) as string[];
+                const ppNotes = `quotation_id:${finalDoc.template_id || quotationId};quotation_title:${finalDoc.content_json?.meta?.project_name || 'Final Quotation'};pp_config:${encodeURIComponent(JSON.stringify({ enabled_segments: parsed.enabledSegments }))};`;
 
-      // Sync Quotation Deliverables & Segments (Pre-Wedding & Wedding) to Post-Production
-      try {
-        if (workspaceId && finalDoc.content_json) {
-          const parsed = parseQuotationDeliverables(finalDoc);
-          if (parsed.deliverables && parsed.deliverables.length > 0) {
-            const clientTargets = [workspaceClientId, leadId].filter(Boolean) as string[];
-            const ppNotes = `quotation_id:${finalDoc.template_id || quotationId};quotation_title:${finalDoc.content_json?.meta?.project_name || 'Final Quotation'};pp_config:${encodeURIComponent(JSON.stringify({ enabled_segments: parsed.enabledSegments }))};`;
+                for (const cId of clientTargets) {
+                  const { data: existingPPP } = await supabaseAdmin
+                    .from('post_production_projects')
+                    .select('id, client_id')
+                    .eq('client_id', cId)
+                    .maybeSingle();
 
-            for (const cId of clientTargets) {
-              const { data: existingPPP } = await supabaseAdmin
-                .from('post_production_projects')
-                .select('id, client_id')
-                .eq('client_id', cId)
-                .maybeSingle();
+                  if (existingPPP) {
+                    await supabaseAdmin
+                      .from('post_production_projects')
+                      .update({
+                        deliverables: parsed.deliverables,
+                        notes: ppNotes,
+                        overall_status: 'active',
+                        updated_at: now
+                      })
+                      .eq('id', existingPPP.id);
+                  } else {
+                    await supabaseAdmin
+                      .from('post_production_projects')
+                      .insert({
+                        user_id: workspaceId,
+                        workspace_id: workspaceId,
+                        client_id: cId,
+                        deliverables: parsed.deliverables,
+                        notes: ppNotes,
+                        overall_status: 'active',
+                        created_at: now,
+                        updated_at: now
+                      });
+                  }
+                }
 
-              if (existingPPP) {
-                await supabaseAdmin
-                  .from('post_production_projects')
-                  .update({
-                    deliverables: parsed.deliverables,
-                    notes: ppNotes,
-                    overall_status: 'active',
-                    updated_at: now
-                  })
-                  .eq('id', existingPPP.id);
-              } else {
-                await supabaseAdmin
-                  .from('post_production_projects')
-                  .insert({
-                    user_id: workspaceId,
-                    workspace_id: workspaceId,
-                    client_id: cId,
-                    deliverables: parsed.deliverables,
-                    notes: ppNotes,
-                    overall_status: 'active',
-                    created_at: now,
-                    updated_at: now
-                  });
+                if (workspaceClientId) {
+                  try {
+                    await supabaseAdmin
+                      .from('post_production_project_config')
+                      .upsert({
+                        project_id: workspaceClientId,
+                        enabled_segments: parsed.enabledSegments || ['Wedding'],
+                        updated_at: now
+                      }, { onConflict: 'project_id' });
+                  } catch (_) {}
+
+                  try {
+                    await supabaseAdmin
+                      .from('post_production_deliverables')
+                      .delete()
+                      .eq('project_id', workspaceClientId);
+
+                    if (parsed.deliverables && parsed.deliverables.length > 0) {
+                      const rowsToInsert = parsed.deliverables.map(deliv => ({
+                        project_id: workspaceClientId,
+                        segment: deliv.segment || 'Wedding',
+                        category: deliv.category || 'Photos',
+                        title: deliv.title,
+                        specs: deliv.specs || deliv.count || null,
+                        status: 'Upcoming',
+                        is_custom: false,
+                        updated_at: now
+                      }));
+                      await supabaseAdmin.from('post_production_deliverables').insert(rowsToInsert);
+                    }
+                  } catch (_) {}
+                }
               }
             }
-
-            if (workspaceClientId) {
-              try {
-                await supabaseAdmin
-                  .from('post_production_project_config')
-                  .upsert({
-                    project_id: workspaceClientId,
-                    enabled_segments: parsed.enabledSegments || ['Wedding'],
-                    updated_at: now
-                  }, { onConflict: 'project_id' });
-              } catch (_) {}
-
-              try {
-                await supabaseAdmin
-                  .from('post_production_deliverables')
-                  .delete()
-                  .eq('project_id', workspaceClientId);
-
-                if (parsed.deliverables && parsed.deliverables.length > 0) {
-                  const rowsToInsert = parsed.deliverables.map(deliv => ({
-                    project_id: workspaceClientId,
-                    segment: deliv.segment || 'Wedding',
-                    category: deliv.category || 'Photos',
-                    title: deliv.title,
-                    specs: deliv.specs || deliv.count || null,
-                    status: 'Upcoming',
-                    is_custom: false,
-                    updated_at: now
-                  }));
-                  await supabaseAdmin.from('post_production_deliverables').insert(rowsToInsert);
-                }
-              } catch (_) {}
-            }
+          } catch (ppErr) {
+            console.error('[Set-Final] Error syncing post-production project deliverables:', ppErr);
           }
-        }
-      } catch (ppErr) {
-        console.error('[Set-Final] Error syncing post-production project deliverables:', ppErr);
-      }
+        })()
+      ]);
     }
 
 

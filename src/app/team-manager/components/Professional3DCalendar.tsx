@@ -713,6 +713,7 @@ export default function Professional3DCalendar({
                                           variant="avatar"
                                           readOnly={isReadOnly}
                                           isMasked={false}
+                                          existingAssignments={assignments}
                                         />
                                       );
                                     });
@@ -980,6 +981,7 @@ export default function Professional3DCalendar({
                                         variant="avatar"
                                         readOnly={isReadOnly}
                                         isMasked={false}
+                                        existingAssignments={assignments}
                                       />
                                     );
                                   });

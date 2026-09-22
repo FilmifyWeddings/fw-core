@@ -2624,6 +2624,8 @@ function StudioCoreAiryBuilderContent() {
     'Cinematography',
     'Drone',
     'Traditional Video',
+    'Semi Cinematic',
+    'Semi Standard',
     'Pre-Wedding Film',
     'Portable Changing Room',
   ]);
@@ -2825,7 +2827,7 @@ function StudioCoreAiryBuilderContent() {
         const roles = await fetchWorkspaceCrewRoles(effectiveUid);
         if (Array.isArray(roles) && roles.length > 0) {
           const roleNames = roles.map(r => r.name);
-          setAvailableRequirements(roleNames);
+          setAvailableRequirements(prev => Array.from(new Set([...prev, ...roleNames, 'Semi Cinematic', 'Semi Standard'])).filter(Boolean));
         }
       } catch (err) {
         console.warn('[TemplateBuilder] Error loading global workspace settings:', err);
@@ -6385,8 +6387,8 @@ function StudioCoreAiryBuilderContent() {
                           </tr>
                         </thead>
                         <tbody className="divide-y text-xs font-semibold" style={{ borderColor, color: textColor }}>
-                          {(data.paymentTermsPage?.steps || []).map((step: any) => (
-                            <tr key={step.id} style={{ borderColor }}>
+                          {(data.paymentTermsPage?.steps || []).map((step: any, idx: number) => (
+                            <tr key={step.id || `step_${idx}`} style={{ borderColor }}>
                               <td className="py-3 px-4 font-sans font-medium tracking-tight uppercase">{step.date}</td>
                               <td className="py-3 px-4 font-bold">{step.stepName}</td>
                               <td className="py-3 px-4 text-right font-sans font-medium tracking-tight">₹{Number(step.amount || 0).toLocaleString('en-IN')}</td>

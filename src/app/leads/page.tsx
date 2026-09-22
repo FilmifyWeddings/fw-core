@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Database, RefreshCw, Settings, Bell, Check, ArrowLeft, Globe, X, AlertTriangle, Lock, ShieldAlert } from 'lucide-react';
+import { Database, Bell, Check, ArrowLeft, Globe, X, AlertTriangle, Lock, ShieldAlert } from 'lucide-react';
 import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
@@ -80,9 +80,46 @@ const DEFAULT_STAGES = [
   { id: 'cool', name: 'Cool / Warm', color: '#06b6d4', position: 2 },
   { id: 'hot', name: 'Hot 🔥', color: '#ef4444', position: 3 },
   { id: 'booked', name: 'Booked', color: '#10b981', position: 4 },
-  { id: 'won', name: 'Won 🎉', color: '#10b981', position: 5 },
-  { id: 'lost', name: 'Lost ❌', color: '#f43f5e', position: 6 }
+  { id: 'lost', name: 'Lost ❌', color: '#f43f5e', position: 5 }
 ];
+
+const sanitizeStagesList = (stages: any[]): any[] => {
+  if (!Array.isArray(stages)) return DEFAULT_STAGES;
+  let filtered = stages.filter((st: any) => {
+    const id = String(st?.id || '').toLowerCase().trim();
+    const name = String(st?.name || '').toLowerCase().trim();
+    if (id === 'won' || id === 'win') return false;
+    if (name === 'won' || name.startsWith('won ') || name.includes('won 🎉') || name.includes('won /') || name.includes('win')) return false;
+    return true;
+  });
+
+  const hasBooked = filtered.some((st: any) => {
+    const id = String(st?.id || '').toLowerCase().trim();
+    const name = String(st?.name || '').toLowerCase().trim();
+    return id === 'booked' || name === 'booked';
+  });
+
+  if (!hasBooked) {
+    const lostIdx = filtered.findIndex((st: any) => {
+      const id = String(st?.id || '').toLowerCase();
+      const name = String(st?.name || '').toLowerCase();
+      return id === 'lost' || name.includes('lost');
+    });
+    const bookedStage = { id: 'booked', name: 'Booked', color: '#10b981', position: lostIdx !== -1 ? lostIdx : filtered.length };
+    if (lostIdx !== -1) {
+      filtered.splice(lostIdx, 0, bookedStage);
+    } else {
+      filtered.push(bookedStage);
+    }
+  }
+
+  return filtered.map((st, idx) => ({
+    id: st.id || `st_${idx}`,
+    name: st.name,
+    color: st.color || '#3b82f6',
+    position: typeof st.position === 'number' ? st.position : idx
+  }));
+};
 
 const parseLeadComment = (comm: any): any => {
   if (comm && typeof comm === 'object') {
@@ -530,11 +567,6 @@ export default function LeadsPage() {
           }
         } catch (_) {}
 
-        if (loadedStages.length > 0) {
-          setStages(loadedStages);
-          memCachedStages = loadedStages;
-        }
-
         if (loadedStages.length === 0) {
           const { data: dbStages } = await supabase
             .from('crm_stages')
@@ -548,24 +580,14 @@ export default function LeadsPage() {
         }
 
         if (loadedStages.length === 0) {
-          const localStages = localStorage.getItem('leads_workspace_stages') || localStorage.getItem(`settings_stages_${targetUserId}`);
-          if (localStages) {
-            try {
-              const parsed = JSON.parse(localStages);
-              if (Array.isArray(parsed) && parsed.length > 0) {
-                loadedStages = parsed;
-              }
-            } catch (_) {}
-          }
-        }
-
-        if (loadedStages.length === 0) {
           loadedStages = DEFAULT_STAGES;
         }
 
-        setStages(loadedStages);
+        const cleanStages = sanitizeStagesList(loadedStages);
+        setStages(cleanStages);
+        memCachedStages = cleanStages;
         try {
-          localStorage.setItem('leads_workspace_stages', JSON.stringify(loadedStages));
+          localStorage.setItem('leads_workspace_stages', JSON.stringify(cleanStages));
         } catch (_) {}
 
         // Load Layout Configurations safely from LocalStorage
@@ -1166,9 +1188,9 @@ export default function LeadsPage() {
                   </div>
                   <div>
                     <h1 className="text-lg font-black tracking-tight text-zinc-900 dark:text-white">
-                      Leads Integration CRM & Webhooks
+                      Leads & CRM
                     </h1>
-                    <p className="text-[10px] text-[#706E6A] dark:text-zinc-400 font-semibold">Manage deal statuses, webhook configuration, and metadata</p>
+                    <p className="text-[10px] text-[#706E6A] dark:text-zinc-400 font-semibold">Manage deal statuses, client pipeline, and metadata</p>
                   </div>
                 </div>
 
@@ -1302,22 +1324,6 @@ export default function LeadsPage() {
                       </div>
                     )}
                   </div>
-
-                  <button
-                    onClick={() => setSettingsOpen(true)}
-                    className="p-2 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-xl transition-all flex items-center justify-center shadow-xs"
-                    title="Workspace Config Settings"
-                  >
-                    <Settings className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => loadLeadsAndPreferences(userId)}
-                    disabled={loading}
-                    className="p-2 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-xl transition-all flex items-center justify-center shadow-xs"
-                    title="Refresh leads data"
-                  >
-                    <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                  </button>
                 </div>
               </div>
             </div>

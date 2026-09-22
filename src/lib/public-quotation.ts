@@ -1,14 +1,32 @@
 import { supabaseAdmin } from '@/lib/supabase';
 import { getMediaUrl } from '@/lib/r2-storage';
+import { getThemeFromKey } from '@/lib/quotation-theme';
 
 export interface PublicQuotationMeta {
   targetId: string;
   clientName: string;
+  coupleName: string;
   eventType: string;
   studioName: string;
+  brandName: string;
+  brandLogoUrl: string;
+  brandLogoSize: number;
+  sideOption: string;
+  locationName: string;
+  subtitleText: string;
   title: string;
   description: string;
   coverPhoto: string;
+  frameShape: string;
+  photoWidth: number;
+  photoHeight: number;
+  photoFocalY: number;
+  bgOpacity: number;
+  imagePosition: string;
+  pageBgColor: string;
+  textColor: string;
+  kickerColor: string;
+  borderColor: string;
   eventDate?: string;
   location?: string;
   totalAmount?: number;
@@ -165,6 +183,43 @@ export async function resolvePublicQuotation(token: string): Promise<PublicQuota
       }
     }
 
+    const coupleName = coverCoupleName || splitGroomBride || clientName;
+
+    // Resolve Brand Name & Logo
+    const brandName = coverObj.brandName || studioName || 'Filmify Weddings';
+    let rawBrandLogo = coverObj.brandLogoUrl || '';
+    let brandLogoUrl = '';
+    if (rawBrandLogo) {
+      if (rawBrandLogo.startsWith('data:image/') || rawBrandLogo.startsWith('http://') || rawBrandLogo.startsWith('https://')) {
+        brandLogoUrl = rawBrandLogo;
+      } else {
+        const mediaPath = getMediaUrl(rawBrandLogo);
+        brandLogoUrl = mediaPath.startsWith('http') ? mediaPath : `https://studiocore.in${mediaPath}`;
+      }
+    }
+    const brandLogoSize = Number(coverObj.brandLogoSize) || 64;
+
+    // Resolve Side & Location Subtitle
+    const sideOption = (coverObj.sideOption || '').trim();
+    const locationName = (coverObj.locationName || coverObj.location || '').trim();
+    const subtitleText = [sideOption.toUpperCase(), locationName.toUpperCase()].filter(Boolean).join(' – ');
+
+    // Resolve Cover Frame & Photo Geometry
+    const frameShape = coverObj.frameShape || 'arch';
+    const photoWidth = Number(coverObj.photoWidth) || 92;
+    const photoHeight = Number(coverObj.photoHeight) || 690;
+    const photoFocalY = coverObj.photoFocalY !== undefined ? Number(coverObj.photoFocalY) : 50;
+    const bgOpacity = coverObj.bgOpacity !== undefined ? Number(coverObj.bgOpacity) : 25;
+    const imagePosition = coverObj.imagePosition || 'bottom';
+
+    // Resolve Dynamic Theme & Colors
+    const themeKey = contentJson?.look || contentJson?.theme || contentJson?.colorPalette || contentJson?.colorTheme;
+    const resolvedTheme = getThemeFromKey(themeKey);
+    const pageBgColor = contentJson?.pageBgColor || resolvedTheme.background || '#F0EDE5';
+    const textColor = contentJson?.textColor || resolvedTheme.primary || resolvedTheme.text || '#004643';
+    const kickerColor = resolvedTheme.kicker || resolvedTheme.primary || textColor;
+    const borderColor = resolvedTheme.borderColor || 'rgba(0,0,0,0.15)';
+
     // Resolve Title
     let title = '';
     const quoteTitle = quote?.title?.trim();
@@ -186,17 +241,34 @@ export async function resolvePublicQuotation(token: string): Promise<PublicQuota
     const description = `Personalized ${eventType} Quotation & Service Proposal for ${clientName} crafted by ${studioName}. Review customized packages, deliverables, event schedule, and transparent pricing.`;
 
     const eventDate = coverObj.eventDate || '';
-    const location = coverObj.locationName || coverObj.location || '';
+    const location = locationName;
     const totalAmount = quote?.financials?.total_amount || 0;
 
     return {
       targetId,
       clientName,
+      coupleName,
       eventType,
       studioName,
+      brandName,
+      brandLogoUrl,
+      brandLogoSize,
+      sideOption,
+      locationName,
+      subtitleText,
       title,
       description,
       coverPhoto,
+      frameShape,
+      photoWidth,
+      photoHeight,
+      photoFocalY,
+      bgOpacity,
+      imagePosition,
+      pageBgColor,
+      textColor,
+      kickerColor,
+      borderColor,
       eventDate,
       location,
       totalAmount,

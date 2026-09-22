@@ -358,6 +358,7 @@ export interface FWTeamMember {
   role_code?: string;
   role_codes?: string[];
   is_sales_person?: boolean;
+  aliasIds?: string[];
   created_at?: string;
   updated_at?: string;
 }

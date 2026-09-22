@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { resolveUserDefaultQuotationTemplate } from '@/lib/quotation-template-resolver';
-import { extractFinancialsFromQuotation, syncQuotationToTeamManagerEvents } from '@/lib/quotation-finance-sync';
+import { extractFinancialsFromQuotation, extractCoupleNameFromQuotation, syncQuotationToTeamManagerEvents } from '@/lib/quotation-finance-sync';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -258,14 +258,18 @@ export async function GET(
       raw_payload: {}
     };
 
-    // 2. Fetch quotation documents specifically for this lead (Strict lead_id matching)
-    const { data: matchedDocs, error: matchedDocsErr } = await supabaseAdmin
+    // 2. Fetch quotation documents specifically for this lead (Fast indexed lead_id query)
+    let { data: matchedDocs } = await supabaseAdmin
       .from('quotation_documents')
       .select('id, template_id, lead_id, version, lead_version, content_json, created_at, updated_at')
-      .or(`lead_id.eq.${leadId},template_id.eq.FW-L-${leadId},template_id.eq.FW-Q-${leadId}`);
+      .eq('lead_id', leadId);
 
-    if (matchedDocsErr) {
-      console.warn('[LeadQuotationsAPI] matchedDocs error:', matchedDocsErr);
+    if (!matchedDocs || matchedDocs.length === 0) {
+      const { data: fallbackDocs } = await supabaseAdmin
+        .from('quotation_documents')
+        .select('id, template_id, lead_id, version, lead_version, content_json, created_at, updated_at')
+        .or(`template_id.eq.FW-L-${leadId},template_id.eq.FW-Q-${leadId}`);
+      matchedDocs = fallbackDocs || [];
     }
 
     // 3. Fetch client response metadata & quotations in parallel
@@ -373,9 +377,21 @@ export async function GET(
       const isFinal = !!(
         content.is_final === true || 
         doc.is_final === true || 
+        (matchingQuote as any)?.is_final === true ||
+        matchingQuote?.status === 'accepted' ||
         (effectiveLead as any).final_quotation_id === doc.template_id ||
-        (effectiveLead as any).final_quotation_id === doc.id
+        (effectiveLead as any).final_quotation_id === doc.id ||
+        (effectiveLead as any).quotation_id === doc.template_id ||
+        (effectiveLead as any).quotation_id === doc.id ||
+        (effectiveLead as any).raw_payload?.final_quotation_id === doc.template_id ||
+        (effectiveLead as any).raw_payload?.final_quotation_id === doc.id ||
+        (effectiveLead as any).raw_payload?.quotation_id === doc.template_id ||
+        (effectiveLead as any).raw_payload?.quotation_id === doc.id
       );
+
+      const displayTitle = isFinal && !title.includes('Final')
+        ? `${coupleName || effectiveLead.name || 'Client'} - Final Quotation`
+        : title;
 
       return {
         id: doc.id,
@@ -383,7 +399,7 @@ export async function GET(
         lead_id: leadId,
         version: leadVer,
         version_label: `V${leadVer}`,
-        title,
+        title: displayTitle,
         content_json: content,
         is_final: isFinal,
         updated_at: doc.updated_at || doc.created_at || new Date().toISOString(),
@@ -629,7 +645,7 @@ export async function POST(
               supabaseAdmin,
               leadId,
               newQuotationJson,
-              leadName,
+              extractCoupleNameFromQuotation(newQuotationJson, leadName),
               currentUserId,
               calcFin.event_date || null,
               newQuotationJson?.cover?.venue || null,

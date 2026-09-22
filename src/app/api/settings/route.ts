@@ -20,7 +20,6 @@ const DEFAULT_SETTINGS = {
     { id: 'cool', name: 'Cool / Warm', color: '#06b6d4' },
     { id: 'hot', name: 'Hot 🔥', color: '#f43f5e' },
     { id: 'booked', name: 'Booked', color: '#84cc16' },
-    { id: 'won', name: 'Won 🎉', color: '#10b981' },
     { id: 'lost', name: 'Lost ❌', color: '#f43f5e' },
   ],
   lead_quick_actions: {
@@ -82,6 +81,49 @@ const DEFAULT_SETTINGS = {
   // Team
   lead_owners: ['Unassigned', 'Sahil Dhonde', 'Sushant Nawale', 'Production Team'],
 };
+
+function sanitizeLeadStages(stages: any[]): any[] {
+  if (!Array.isArray(stages)) return DEFAULT_SETTINGS.lead_stages;
+
+  let filtered = stages.filter((st: any) => {
+    const id = String(st?.id || (typeof st === 'string' ? st : '')).toLowerCase().trim();
+    const name = String(st?.name || (typeof st === 'string' ? st : '')).toLowerCase().trim();
+    if (id === 'won' || id === 'win') return false;
+    if (name === 'won' || name.startsWith('won ') || name.includes('won 🎉') || name.includes('won /') || name.includes('win')) return false;
+    return true;
+  }).map((st: any, idx: number) => {
+    if (typeof st === 'string') {
+      return { id: `st_${idx}`, name: st, color: '#3b82f6', position: idx };
+    }
+    return {
+      ...st,
+      id: st.id || `st_${idx}`,
+      position: typeof st.position === 'number' ? st.position : idx,
+    };
+  });
+
+  const hasBooked = filtered.some((st: any) => {
+    const id = String(st.id || '').toLowerCase().trim();
+    const name = String(st.name || '').toLowerCase().trim();
+    return id === 'booked' || name === 'booked';
+  });
+
+  if (!hasBooked) {
+    const lostIdx = filtered.findIndex((st: any) => {
+      const id = String(st.id || '').toLowerCase();
+      const name = String(st.name || '').toLowerCase();
+      return id === 'lost' || name.includes('lost');
+    });
+    const bookedStage = { id: 'booked', name: 'Booked', color: '#84cc16', position: lostIdx !== -1 ? lostIdx : filtered.length };
+    if (lostIdx !== -1) {
+      filtered.splice(lostIdx, 0, bookedStage);
+    } else {
+      filtered.push(bookedStage);
+    }
+  }
+
+  return filtered.map((st, i) => ({ ...st, position: i }));
+}
 
 /**
  * GET /api/settings?workspace_id=XXX
@@ -154,6 +196,7 @@ export async function GET(req: NextRequest) {
     const mergedSettings = {
       ...DEFAULT_SETTINGS,
       ...dbConfig,
+      lead_stages: sanitizeLeadStages(dbConfig.lead_stages || DEFAULT_SETTINGS.lead_stages),
       lead_quick_actions: {
         ...DEFAULT_SETTINGS.lead_quick_actions,
         ...(dbConfig.lead_quick_actions || {}),
@@ -213,9 +256,12 @@ export async function POST(req: NextRequest) {
 
     const currentConfig = existingConfig || DEFAULT_SETTINGS;
 
+    const stagesToPersist = sanitizeLeadStages(newSettings.lead_stages !== undefined ? newSettings.lead_stages : currentConfig.lead_stages);
+
     const updatedConfig = {
       ...currentConfig,
       ...newSettings,
+      lead_stages: stagesToPersist,
       lead_quick_actions: newSettings.lead_quick_actions ? {
         ...DEFAULT_SETTINGS.lead_quick_actions,
         ...(currentConfig.lead_quick_actions || {}),
@@ -262,14 +308,14 @@ export async function POST(req: NextRequest) {
     } catch (_) {}
 
     // Sync lead_stages to crm_stages table in Supabase
-    if (Array.isArray(newSettings.lead_stages) && newSettings.lead_stages.length > 0) {
+    if (Array.isArray(stagesToPersist) && stagesToPersist.length > 0) {
       try {
         await supabaseAdmin
           .from('crm_stages')
           .delete()
           .eq('workspace_id', workspaceId);
 
-        const stagesToInsert = newSettings.lead_stages.map((st: any, idx: number) => ({
+        const stagesToInsert = stagesToPersist.map((st: any, idx: number) => ({
           workspace_id: workspaceId,
           name: st.name,
           color: st.color || '#3b82f6',

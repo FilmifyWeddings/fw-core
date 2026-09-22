@@ -304,7 +304,7 @@ export async function POST(req: NextRequest) {
             .from('leads')
             .select('id, name, phone')
             .eq('workspace_id', targetWorkspaceId)
-            .or(`phone.eq.${leadgen_id},id.eq.${leadgen_id}`)
+            .or(`meta_lead_id.eq.${leadgen_id},raw_payload->>leadgen_id.eq.${leadgen_id}`)
             .maybeSingle();
 
           if (existingLead) {
@@ -460,6 +460,7 @@ export async function POST(req: NextRequest) {
           const newLeadRecord = {
             workspace_id: targetWorkspaceId,
             tenant_id: targetWorkspaceId,
+            meta_lead_id: leadgen_id,
             name: leadFields.full_name || 'Facebook Instant Lead',
             phone: leadFields.phone_number || `+91 ${Date.now().toString().slice(-10)}`,
             email: leadFields.email || `lead_${leadgen_id}@meta-admanager.com`,

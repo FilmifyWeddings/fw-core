@@ -22,8 +22,9 @@ import { handleUpdateBookingPM } from '../workspace/bookings/components/ProjectB
 import { parseClientExtended } from '@/components/clients/client-insider-modal';
 import { logProjectActivity, logCrewAssignmentChange } from '@/lib/services/projectAuditService';
 import ProjectHistoryModal from './components/ProjectHistoryModal';
+import TeamManagerAllHistoryModal from './components/TeamManagerAllHistoryModal';
 import { checkProjectUnassignedWarning } from './components/TeamManagerProjectCard';
-import { isProjectMatch, isSubEventMatch, isPmMatch, checkRoleSlotMatch, getCardHighlightClass, isCardFilterActive as checkIsFilterActive } from './hooks/useTeamManagerFilter';
+import { isProjectMatch, isSubEventMatch, isPmMatch, checkRoleSlotMatch, getCardHighlightClass, isCardFilterActive as checkIsFilterActive, extractSubEventSlots } from './hooks/useTeamManagerFilter';
 import AddProjectModal from './components/AddProjectModal';
 import AddTeamMemberModal from './components/AddTeamMemberModal';
 import TeamSettingsModal from './components/TeamSettingsModal';
@@ -160,7 +161,20 @@ export default function TeamManagerPage() {
   }, [activeTab, canManageTeam]);
   
   // Real Data State & Current User Workspace ID (Synchronous 0ms hydration)
-  const [currentUserId, setCurrentUserId] = useState<string>('');
+  const [currentUserId, setCurrentUserId] = useState<string>(() => userId || '');
+
+  useEffect(() => {
+    if (userId) {
+      setCurrentUserId(userId);
+    } else {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session?.user?.id) {
+          setCurrentUserId(session.user.id);
+        }
+      });
+    }
+  }, [userId]);
+
   const [projects, setProjects] = useState<FWProject[]>(() => {
     if (memCachedTMProjects.length > 0) return memCachedTMProjects;
     if (typeof window !== 'undefined') {
@@ -245,6 +259,9 @@ export default function TeamManagerPage() {
 
   // Luxury 3D History Modal Target State
   const [selectedProjectForHistory, setSelectedProjectForHistory] = useState<FWProject | null>(null);
+
+  // Workspace-wide All History Modal State
+  const [isAllHistoryOpen, setIsAllHistoryOpen] = useState<boolean>(false);
 
   // Permanent Delete Confirmation Modal Target State
   const [permanentDeleteTarget, setPermanentDeleteTarget] = useState<FWProject | null>(null);
@@ -797,6 +814,22 @@ export default function TeamManagerPage() {
         .find(a => a.id === assignmentId);
 
       if (activeAssign) {
+        // Prevent duplicate assignment of the same person in the same sub-event
+        if (memberId) {
+          const subEventObj = projects
+            .flatMap(p => p.fw_sub_events || [])
+            .find(se => se.id === activeAssign.sub_event_id);
+          const currentAssignments = subEventObj ? resolveSubEventAssignments(subEventObj, teamMembers) : [];
+          const existingSlot = currentAssignments.find(
+            a => a.id !== assignmentId && a.assigned_member_id === memberId
+          );
+          if (existingSlot) {
+            const memberName = teamMembers.find(m => m.id === memberId)?.name || 'This crew member';
+            alert(`${memberName} is already assigned as "${existingSlot.required_role}" in this event. Each crew role must be assigned to a different person.`);
+            return;
+          }
+        }
+
         const matchedMemberObj = memberId ? teamMembers.find(m => m.id === memberId) || null : null;
 
         // 1. INSTANT OPTIMISTIC UI STATE UPDATE (NO PAGE RELOAD / NO RE-FETCH)
@@ -810,7 +843,12 @@ export default function TeamManagerPage() {
               const updatedAssignments = exists
                 ? existingAssignments.map(a =>
                     a.id === assignmentId
-                      ? { ...a, assigned_member_id: memberId, fw_team_members: matchedMemberObj }
+                      ? { 
+                          ...a, 
+                          assigned_member_id: memberId, 
+                          fw_team_members: matchedMemberObj,
+                          assigned_member_name: matchedMemberObj?.name || (a as any).assigned_member_name 
+                        }
                       : a
                   )
                 : [
@@ -822,6 +860,7 @@ export default function TeamManagerPage() {
                       required_role: activeAssign.required_role,
                       assigned_member_id: memberId,
                       fw_team_members: matchedMemberObj,
+                      assigned_member_name: matchedMemberObj?.name,
                     },
                   ];
               return { ...se, fw_assignments: updatedAssignments };
@@ -834,6 +873,7 @@ export default function TeamManagerPage() {
           const subEventObj = projects
             .flatMap(p => p.fw_sub_events || [])
             .find(se => se.id === activeAssign.sub_event_id);
+          const projectObj = projects.find(p => p.id === activeAssign.project_id);
           const prevMem = teamMembers.find(m => m.id === activeAssign.assigned_member_id);
           const prevName = prevMem?.name || 'Crew Member';
           const actorName = currentMember?.name || workspaceName || activeWorkspace?.studioName || 'Admin';
@@ -842,8 +882,12 @@ export default function TeamManagerPage() {
           logCrewAssignmentChange({
             projectId: activeAssign.project_id,
             subEventId: activeAssign.sub_event_id || undefined,
+            workspaceId: workspaceId || currentUserId || undefined,
+            projectName: projectObj?.client_name || undefined,
             eventTitle: subEventObj?.event_title || 'event',
             previousMemberName: prevName,
+            targetMemberId: prevMem?.id || undefined,
+            targetMemberAvatar: prevMem?.avatar_url || undefined,
             roleName: activeAssign.required_role || 'Crew',
             isRemoval: true
           }).catch(() => {});
@@ -886,13 +930,16 @@ export default function TeamManagerPage() {
         // 4. BACKGROUND SILENT DB PERSISTENCE & FINANCE PAYOUT AUTO-SYNC
         (async () => {
           try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const currentUid = session?.user?.id || userId || currentUserId || workspaceId;
             const projectObj = projects.find(p => p.id === activeAssign.project_id);
+            const currentWsId = workspaceId || (projectObj as any)?.workspace_id || currentUid;
             const subEventObj = projects
               .flatMap(p => p.fw_sub_events || [])
               .find(se => se.id === activeAssign.sub_event_id);
 
             // 0. Ensure member exists in fw_team_members first to eliminate FK constraint errors
-            if (matchedMemberObj) {
+            if (matchedMemberObj && currentUid) {
               try {
                 await supabase.from('fw_team_members').upsert({
                   id: memberId,
@@ -902,14 +949,17 @@ export default function TeamManagerPage() {
                   primary_role: matchedMemberObj.primary_role || activeAssign.required_role || 'Crew',
                   avatar_url: matchedMemberObj.avatar_url || null,
                   default_daily_rate: matchedMemberObj.default_daily_rate || 0,
-                  user_id: currentUserId || undefined,
+                  user_id: currentUid,
+                  workspace_id: currentWsId,
                   is_active: true,
                 }, { onConflict: 'id' });
-              } catch (_) {}
+              } catch (e) {
+                console.warn('[TeamManager] fw_team_members upsert warning:', e);
+              }
             }
 
             // 1. Auto sync to Team & Partner Financial Engine (0 for In-House, default_daily_rate for Freelancers)
-            if (matchedMemberObj) {
+            if (matchedMemberObj && currentWsId) {
               const isInHouse = 
                 (matchedMemberObj as any).payout_frequency === 'monthly' ||
                 (matchedMemberObj as any).primary_type === 'IN_HOUSE' ||
@@ -929,7 +979,7 @@ export default function TeamManagerPage() {
                 0
               );
 
-              await saveOrUpdateEventPayout(workspaceId || currentUserId, {
+              await saveOrUpdateEventPayout(currentWsId, {
                 member_id: memberId,
                 member_name: matchedMemberObj.name,
                 project_id: activeAssign.project_id || undefined,
@@ -944,13 +994,17 @@ export default function TeamManagerPage() {
             // 2. Persist assignment to DB
             if (assignmentId && !String(assignmentId || '').includes('-role-')) {
               // Exact primary key update!
+              const updatePayload: any = { 
+                assigned_member_id: memberId,
+                status: memberId ? 'assigned' : 'pending'
+              };
+              if (currentUid) {
+                updatePayload.user_id = currentUid;
+                updatePayload.workspace_id = currentWsId;
+              }
               const { error: assignErr } = await supabase
                 .from('fw_assignments')
-                .update({ 
-                  assigned_member_id: memberId,
-                  status: memberId ? 'assigned' : 'pending',
-                  ...(currentUserId ? { user_id: currentUserId, workspace_id: currentUserId } : {})
-                })
+                .update(updatePayload)
                 .eq('id', String(assignmentId));
 
               if (assignErr) {
@@ -958,20 +1012,24 @@ export default function TeamManagerPage() {
               }
             } else {
               // Synthetic placeholder slot clicked: Insert new row into fw_assignments
+              const insertPayload: any = {
+                project_id: activeAssign.project_id,
+                sub_event_id: activeAssign.sub_event_id,
+                required_role: activeAssign.required_role,
+                assigned_member_id: memberId,
+                sub_event_name: subEventObj?.event_title || 'Wedding Event',
+                sub_event_date: subEventObj?.event_date || new Date().toISOString().split('T')[0],
+                start_time: subEventObj?.roll_call_time || '10:00',
+                end_time: subEventObj?.dismissal_estimate_time || '18:00',
+                status: memberId ? 'assigned' : 'pending'
+              };
+              if (currentUid) {
+                insertPayload.user_id = currentUid;
+                insertPayload.workspace_id = currentWsId;
+              }
               const { data: inserted, error: insertErr } = await supabase
                 .from('fw_assignments')
-                .insert([{
-                  project_id: activeAssign.project_id,
-                  sub_event_id: activeAssign.sub_event_id,
-                  required_role: activeAssign.required_role,
-                  assigned_member_id: memberId,
-                  sub_event_name: subEventObj?.event_title || 'Wedding Event',
-                  sub_event_date: subEventObj?.event_date || new Date().toISOString().split('T')[0],
-                  start_time: subEventObj?.roll_call_time || '10:00',
-                  end_time: subEventObj?.dismissal_estimate_time || '18:00',
-                  status: memberId ? 'assigned' : 'pending',
-                  ...(currentUserId ? { user_id: currentUserId, workspace_id: currentUserId } : {})
-                }])
+                .insert([insertPayload])
                 .select('id')
                 .single();
 
@@ -1500,6 +1558,79 @@ export default function TeamManagerPage() {
     });
   }, [projects, activeTab, searchQuery, selectedRoleFilter, unifiedFilters]);
 
+  // Filter Stats calculation for top banner (Projects count, Sub-Events count, Unassigned slots count)
+  const filterStats = useMemo(() => {
+    const isFilterActive = checkIsFilterActive(unifiedFilters) || Boolean(searchQuery.trim()) || selectedRoleFilter !== 'All';
+    if (!isFilterActive) {
+      return {
+        isActive: false,
+        projectsCount: projects.filter(p => !p.is_archived).length,
+        subEventsCount: 0,
+        unassignedSlotsCount: 0,
+        totalSlotsCount: 0,
+        activeRoles: [] as string[],
+        activeStatuses: [] as string[],
+      };
+    }
+
+    let subEventsCount = 0;
+    let unassignedSlotsCount = 0;
+    let totalSlotsCount = 0;
+
+    const activeRoles: string[] = [];
+    if (selectedRoleFilter !== 'All') {
+      activeRoles.push(selectedRoleFilter);
+    }
+    if (unifiedFilters?.roles && unifiedFilters.roles.length > 0) {
+      unifiedFilters.roles.forEach(r => {
+        if (!activeRoles.some(ar => ar.toLowerCase() === r.toLowerCase())) {
+          activeRoles.push(r);
+        }
+      });
+    }
+
+    const activeStatuses = (unifiedFilters?.assignmentStatuses && unifiedFilters.assignmentStatuses.length > 0)
+      ? unifiedFilters.assignmentStatuses
+      : (unifiedFilters?.assignmentStatus && unifiedFilters.assignmentStatus !== 'all' ? [unifiedFilters.assignmentStatus] : []);
+
+    filteredProjects.forEach(project => {
+      const subEvents = (project.fw_sub_events || []).filter(se => isSubEventMatch(se, project, unifiedFilters));
+      subEventsCount += subEvents.length;
+
+      subEvents.forEach(se => {
+        const slots = extractSubEventSlots(se);
+        slots.forEach((slot: any) => {
+          const slotRoleName = slot.required_role || slot.role_name || slot.role || '';
+          const slotRoleCode = slot.role_short_code || slot.role_code || slot.code || '';
+
+          const matchesRole = activeRoles.length === 0 || activeRoles.some(r =>
+            r.toLowerCase() === slotRoleName.toLowerCase() ||
+            (slotRoleCode && r.toUpperCase() === slotRoleCode.toUpperCase())
+          );
+
+          if (!matchesRole) return;
+
+          totalSlotsCount++;
+          const isAssigned = Boolean(slot.assigned_member_id || slot.team_member_id || slot.is_assigned);
+          if (!isAssigned) {
+            unassignedSlotsCount++;
+          }
+        });
+      });
+    });
+
+    return {
+      isActive: true,
+      projectsCount: filteredProjects.length,
+      subEventsCount,
+      unassignedSlotsCount,
+      totalSlotsCount,
+      activeRoles,
+      activeStatuses,
+    };
+  }, [projects, filteredProjects, unifiedFilters, searchQuery, selectedRoleFilter]);
+
+
   // Flatten TBD / Date Not Fixed shoots for Card View & Month View consistency with ALL active filters applied
   const tbdProjectsShoots = useMemo(() => {
     const list: { project: FWProject; subEvent: FWSubEvent }[] = [];
@@ -1619,7 +1750,7 @@ export default function TeamManagerPage() {
     return list;
   }, [projects, searchQuery, selectedRoleFilter, unifiedFilters]);
 
-  if (loading && projects.length === 0) {
+  if (!isMounted || (loading && projects.length === 0)) {
     return <StudioCoreLiquidLoader label="Loading Bookings & Operations..." />;
   }
 
@@ -1700,6 +1831,17 @@ export default function TeamManagerPage() {
                 </button>
               )}
 
+              {/* All History Button (Desktop) */}
+              <button
+                type="button"
+                onClick={() => setIsAllHistoryOpen(true)}
+                className="hidden sm:flex bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold h-7.5 px-3 rounded-xl items-center justify-center gap-1.5 shadow-2xs shrink-0 cursor-pointer transition-all"
+                title="All Team Manager History"
+              >
+                <History className="w-3.5 h-3.5 text-slate-600" />
+                <span>History</span>
+              </button>
+
               {/* Unified Filter Button */}
               <button
                 type="button"
@@ -1738,7 +1880,7 @@ export default function TeamManagerPage() {
             </div>
           </div>
 
-          {/* Mobile search bar with unified filter button */}
+          {/* Mobile search bar with unified filter button and history button */}
           <div className="sm:hidden flex items-center gap-2 w-full">
             <div className="relative flex-1">
               <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
@@ -1750,6 +1892,15 @@ export default function TeamManagerPage() {
                 className="w-full h-8 pl-7.5 pr-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 placeholder:text-slate-400 placeholder:text-[11px] focus:outline-none focus:border-[#6C5CE7] transition shadow-2xs"
               />
             </div>
+            <button 
+              type="button"
+              onClick={() => setIsAllHistoryOpen(true)}
+              className="h-8 px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center gap-1 text-xs font-bold shrink-0 shadow-xs cursor-pointer"
+              title="All History"
+            >
+              <History className="w-3.5 h-3.5 text-slate-500"/>
+              <span className="hidden sm:inline">History</span>
+            </button>
             <button 
               type="button"
               onClick={() => setIsUnifiedFilterOpen(!isUnifiedFilterOpen)}
@@ -1844,35 +1995,215 @@ export default function TeamManagerPage() {
             </div>
           </div>
 
-        {/* ACTIVE MEMBER SPOTLIGHT BANNER / BADGE */}
-        {((unifiedFilters?.memberIds && unifiedFilters.memberIds.length > 0) || (unifiedFilters?.memberId && unifiedFilters.memberId !== 'all')) && (
-          <div className="flex flex-wrap items-center gap-2 px-1">
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-50/90 border border-amber-300/90 text-amber-950 text-xs font-bold shadow-xs">
-              <span className="flex h-2.5 w-2.5 relative">
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500 animate-pulse"></span>
-              </span>
-              <span>
-                Spotlight Active:{' '}
-                <span className="text-amber-900 font-extrabold">
-                  {(() => {
-                    const ids = (unifiedFilters?.memberIds && unifiedFilters.memberIds.length > 0)
-                      ? unifiedFilters.memberIds
-                      : [unifiedFilters.memberId!];
-                    return ids.map(id => teamMembers.find(m => m.id === id)?.name || id).join(', ');
-                  })()}
-                </span>{' '}
-                <span className="text-amber-700 font-medium">
-                  ({filteredProjects.length} matching {filteredProjects.length === 1 ? 'project' : 'projects'})
-                </span>
-              </span>
+        {/* ─── PROMINENT FILTER STATS & SPOTLIGHT BANNER ─── */}
+        {filterStats.isActive && (
+          <div className="bg-gradient-to-r from-amber-500/10 via-indigo-500/10 to-purple-500/10 border border-amber-300/70 dark:border-amber-500/30 rounded-2xl p-3 shadow-xs space-y-2.5 transition-all">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              {/* Counts / Stats Pill Badges */}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs text-xs font-bold text-slate-800 dark:text-slate-100">
+                  <Folder className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>{filterStats.projectsCount}</span>
+                  <span className="text-slate-500 font-medium">{filterStats.projectsCount === 1 ? 'Project' : 'Projects'}</span>
+                </div>
+
+                <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs text-xs font-bold text-slate-800 dark:text-slate-100">
+                  <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                  <span>{filterStats.subEventsCount}</span>
+                  <span className="text-slate-500 font-medium">{filterStats.subEventsCount === 1 ? 'Sub-Event' : 'Sub-Events'}</span>
+                </div>
+
+                <div className={`flex items-center gap-1.5 px-3 py-1 rounded-xl shadow-2xs text-xs font-bold ${
+                  filterStats.unassignedSlotsCount > 0
+                    ? 'bg-rose-50 dark:bg-rose-950/40 border border-rose-300/80 text-rose-700 dark:text-rose-300'
+                    : 'bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300/80 text-emerald-700 dark:text-emerald-300'
+                }`}>
+                  {filterStats.unassignedSlotsCount > 0 ? (
+                    <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+                  ) : (
+                    <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                  )}
+                  <span>{filterStats.unassignedSlotsCount}</span>
+                  <span className="font-semibold">
+                    {filterStats.unassignedSlotsCount === 1 ? 'Unassigned Slot' : 'Unassigned Slots'}
+                    {filterStats.activeRoles.length > 0 ? ` (${filterStats.activeRoles.join(', ')})` : ''} to Assign
+                  </span>
+                </div>
+              </div>
+
+              {/* Clear All Button */}
               <button
                 type="button"
-                onClick={() => setUnifiedFilters(prev => ({ ...prev, memberId: 'all', memberIds: [] }))}
-                className="ml-2 px-2 py-0.5 rounded-lg bg-amber-200/80 hover:bg-amber-300 text-amber-950 text-[10px] font-black uppercase transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                onClick={() => {
+                  setUnifiedFilters({
+                    monthYear: 'all',
+                    startDate: '',
+                    endDate: '',
+                    eventTypes: [],
+                    roles: [],
+                    assignmentStatus: 'all',
+                    assignmentStatuses: [],
+                    pmId: 'all',
+                    pmIds: [],
+                    studioId: 'all',
+                    memberId: 'all',
+                    memberIds: [],
+                  });
+                  setSelectedRoleFilter('All');
+                  setSearchQuery('');
+                }}
+                className="px-2.5 py-1 rounded-lg bg-white/80 hover:bg-white text-slate-700 hover:text-rose-600 border border-slate-200 text-xs font-bold transition flex items-center gap-1 cursor-pointer shadow-2xs"
               >
-                <span>Clear Spotlight</span>
+                <span>Clear All Filters</span>
                 <X className="w-3 h-3" />
               </button>
+            </div>
+
+            {/* Filter Chips */}
+            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mr-1">Active Filters:</span>
+              
+              {/* Roles */}
+              {filterStats.activeRoles.map(role => (
+                <span key={role} className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-800 text-xs font-semibold">
+                  <span>Role: {role}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUnifiedFilters(prev => ({
+                        ...prev,
+                        roles: (prev.roles || []).filter(r => r.toLowerCase() !== role.toLowerCase()),
+                      }));
+                      if (selectedRoleFilter.toLowerCase() === role.toLowerCase()) {
+                        setSelectedRoleFilter('All');
+                      }
+                    }}
+                    className="hover:text-rose-600 cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              ))}
+
+              {/* Statuses */}
+              {filterStats.activeStatuses.map(status => (
+                <span key={status} className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold capitalize">
+                  <span>Status: {status}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUnifiedFilters(prev => ({
+                        ...prev,
+                        assignmentStatuses: (prev.assignmentStatuses || []).filter(s => s.toLowerCase() !== status.toLowerCase()),
+                        assignmentStatus: (prev.assignmentStatus || '').toLowerCase() === status.toLowerCase() ? 'all' : prev.assignmentStatus,
+                      }));
+                    }}
+                    className="hover:text-rose-600 cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              ))}
+
+              {/* Members */}
+              {((unifiedFilters?.memberIds && unifiedFilters.memberIds.length > 0) || (unifiedFilters?.memberId && unifiedFilters.memberId !== 'all')) && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-purple-50 border border-purple-200 text-purple-800 text-xs font-semibold">
+                  <span>
+                    Member:{' '}
+                    {(() => {
+                      const ids = (unifiedFilters?.memberIds && unifiedFilters.memberIds.length > 0)
+                        ? unifiedFilters.memberIds
+                        : [unifiedFilters.memberId!];
+                      return ids.map(id => teamMembers.find(m => m.id === id)?.name || id).join(', ');
+                    })()}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setUnifiedFilters(prev => ({ ...prev, memberId: 'all', memberIds: [] }))}
+                    className="hover:text-rose-600 cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+
+              {/* PMs */}
+              {((unifiedFilters?.pmIds && unifiedFilters.pmIds.length > 0) || (unifiedFilters?.pmId && unifiedFilters.pmId !== 'all')) && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-cyan-50 border border-cyan-200 text-cyan-800 text-xs font-semibold">
+                  <span>
+                    PM:{' '}
+                    {(() => {
+                      const ids = (unifiedFilters?.pmIds && unifiedFilters.pmIds.length > 0)
+                        ? unifiedFilters.pmIds
+                        : [unifiedFilters.pmId!];
+                      return ids.map(id => teamMembers.find(m => m.id === id)?.name || id).join(', ');
+                    })()}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setUnifiedFilters(prev => ({ ...prev, pmId: 'all', pmIds: [] }))}
+                    className="hover:text-rose-600 cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+
+              {/* Dates / Month */}
+              {unifiedFilters?.monthYear && unifiedFilters.monthYear !== 'all' && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-slate-100 border border-slate-300 text-slate-800 text-xs font-semibold">
+                  <span>Month: {unifiedFilters.monthYear}</span>
+                  <button
+                    type="button"
+                    onClick={() => setUnifiedFilters(prev => ({ ...prev, monthYear: 'all' }))}
+                    className="hover:text-rose-600 cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+
+              {/* Date Range */}
+              {(unifiedFilters?.startDate || unifiedFilters?.endDate) && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-slate-100 border border-slate-300 text-slate-800 text-xs font-semibold">
+                  <span>Range: {unifiedFilters.startDate || 'Any'} - {unifiedFilters.endDate || 'Any'}</span>
+                  <button
+                    type="button"
+                    onClick={() => setUnifiedFilters(prev => ({ ...prev, startDate: '', endDate: '' }))}
+                    className="hover:text-rose-600 cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+
+              {/* Event Types */}
+              {unifiedFilters?.eventTypes && unifiedFilters.eventTypes.length > 0 && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-slate-100 border border-slate-300 text-slate-800 text-xs font-semibold">
+                  <span>Events: {unifiedFilters.eventTypes.join(', ')}</span>
+                  <button
+                    type="button"
+                    onClick={() => setUnifiedFilters(prev => ({ ...prev, eventTypes: [] }))}
+                    className="hover:text-rose-600 cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+
+              {/* Search Query */}
+              {searchQuery.trim() && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-slate-100 border border-slate-300 text-slate-800 text-xs font-semibold">
+                  <span>Search: &quot;{searchQuery}&quot;</span>
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="hover:text-rose-600 cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
             </div>
           </div>
         )}
@@ -1944,10 +2275,7 @@ export default function TeamManagerPage() {
                     {isCardViewTbdExpanded && (
                       <div className="space-y-4 pt-1">
                         {tbdProjectsShoots.map(({ project, subEvent }) => {
-                          const assignments = (subEvent.fw_assignments || []).map((a) => ({
-                            ...a,
-                            fw_team_members: a.fw_team_members || (a.assigned_member_id ? teamMembers.find((m) => m.id === a.assigned_member_id) : null),
-                          }));
+                          const assignments = resolveSubEventAssignments(subEvent, teamMembers);
                           const assignedCount = assignments.filter((a) => a.assigned_member_id).length;
                           const totalSlots = assignments.length;
                           const eventVisibility = resolveEventCrewVisibility(
@@ -2065,6 +2393,7 @@ export default function TeamManagerPage() {
                                           subEventId={subEvent.id}
                                           projectId={project.id}
                                           teamMembers={teamMembers}
+                                          existingAssignments={assignments}
                                           onAssignMember={handleAssignMember}
                                           onAddNewMember={(info) => {
                                             setActiveAssignmentForMember({
@@ -2450,8 +2779,8 @@ export default function TeamManagerPage() {
                                     <div className="flex items-start gap-4 flex-wrap">
                                       {assignments.map((assignment: any) => {
                                         const isAssigned = assignment.assigned_member_id !== null;
-                                        const memberObj = assignment.fw_team_members || teamMembers.find(m => m.id === assignment.assigned_member_id);
-                                        const cleanName = (memberObj?.name || '').replace(/\.\.\./g, '').trim();
+                                        const memberObj = assignment.fw_team_members || (assignment.assigned_member_id ? teamMembers.find(m => m.id === assignment.assigned_member_id || (Boolean((assignment as any).assigned_member_name) && m.name.toLowerCase() === String((assignment as any).assigned_member_name).toLowerCase())) : null);
+                                        const cleanName = (memberObj?.name || (assignment as any).assigned_member_name || (assignment as any).member_name || '').replace(/\.\.\./g, '').trim();
                                         const role = assignment.required_role;
                                         const shortRole = getRoleAbbr(role, customCrewRoles);
 
@@ -2938,8 +3267,8 @@ export default function TeamManagerPage() {
                                       <div className="flex items-start gap-2.5 flex-wrap">
                                         {assignments.map((assignment: any) => {
                                           const isAssigned = assignment.assigned_member_id !== null;
-                                          const memberObj = assignment.fw_team_members || teamMembers.find(m => m.id === assignment.assigned_member_id);
-                                          const rawName = memberObj?.name || '';
+                                          const memberObj = assignment.fw_team_members || (assignment.assigned_member_id ? teamMembers.find(m => m.id === assignment.assigned_member_id || (Boolean((assignment as any).assigned_member_name) && m.name.toLowerCase() === String((assignment as any).assigned_member_name).toLowerCase())) : null);
+                                          const rawName = memberObj?.name || (assignment as any).assigned_member_name || (assignment as any).member_name || '';
                                           const cleanName = rawName.replace(/\.\.\./g, '').trim();
                                           const role = assignment.required_role;
                                           const shortRole = getRoleAbbr(role, customCrewRoles);
@@ -3320,6 +3649,19 @@ export default function TeamManagerPage() {
         if (!activeAssignment) return null;
         const isAssigned = activeAssignment.assigned_member_id !== null;
 
+        const currentSubEvent = projects
+          .flatMap(p => p.fw_sub_events || [])
+          .find(se => se.id === activeAssignment.sub_event_id);
+        const currentSubEventAssignments = currentSubEvent
+          ? resolveSubEventAssignments(currentSubEvent, teamMembers)
+          : [];
+        const otherSlotAssignedMemberMap = new Map<string, string>();
+        currentSubEventAssignments.forEach(a => {
+          if (a.id !== activeAssignment.id && a.assigned_member_id) {
+            otherSlotAssignedMemberMap.set(a.assigned_member_id, a.required_role || 'Crew');
+          }
+        });
+
         return createPortal(
           <>
             <div 
@@ -3426,19 +3768,28 @@ export default function TeamManagerPage() {
                     const isSelected = activeAssignment.assigned_member_id === m.id;
                     const cleanMName = m.name ? m.name.replace(/\.\.\./g, '').trim() : '';
                     const isRoleMatch = (m.primary_role || '').toLowerCase() === (activeAssignment.required_role || '').toLowerCase();
+                    const alreadyAssignedRole = otherSlotAssignedMemberMap.get(m.id);
+                    const isAlreadyAssignedElsewhere = Boolean(alreadyAssignedRole && !isSelected);
 
                     return (
                       <button
                         key={m.id}
                         type="button"
+                        disabled={isAlreadyAssignedElsewhere}
                         onClick={() => {
+                          if (isAlreadyAssignedElsewhere) {
+                            alert(`"${cleanMName}" is already assigned as "${alreadyAssignedRole}" in this event. Each crew role must be assigned to a different person.`);
+                            return;
+                          }
                           handleAssignMember(activeAssignment.id, m.id);
                           setDropdownPos(null);
                         }}
-                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
-                          isSelected
-                            ? 'bg-emerald-50 text-emerald-950 border border-emerald-300 shadow-2xs'
-                            : 'text-[#0B111E] hover:bg-zinc-50'
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition ${
+                          isAlreadyAssignedElsewhere
+                            ? 'opacity-40 cursor-not-allowed bg-slate-50 text-slate-400'
+                            : isSelected
+                            ? 'bg-emerald-50 text-emerald-950 border border-emerald-300 shadow-2xs cursor-pointer'
+                            : 'text-[#0B111E] hover:bg-zinc-50 cursor-pointer'
                         }`}
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
@@ -3460,12 +3811,17 @@ export default function TeamManagerPage() {
                           )}
                           <div className="text-left leading-tight min-w-0">
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className={`block font-black text-xs truncate ${isSelected ? 'text-emerald-900' : 'text-slate-900'}`}>
+                              <span className={`block font-black text-xs truncate ${isSelected ? 'text-emerald-900' : isAlreadyAssignedElsewhere ? 'text-slate-500' : 'text-slate-900'}`}>
                                 {cleanMName}
                               </span>
                               {isSelected && (
                                 <span className="px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300">
                                   ✓ Currently Assigned
+                                </span>
+                              )}
+                              {isAlreadyAssignedElsewhere && (
+                                <span className="px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300">
+                                  ⚠️ Already Assigned ({getRoleAbbr(alreadyAssignedRole, customCrewRoles)})
                                 </span>
                               )}
                             </div>
@@ -3508,7 +3864,7 @@ export default function TeamManagerPage() {
           setActiveAssignmentForMember(null);
         }}
         memberToEdit={editingMember}
-        initialRole={activeAssignmentForMember?.role || 'Ass'}
+        initialRole={activeAssignmentForMember?.role || ''}
         onSave={handleSaveTeamMember}
       />
 
@@ -3739,6 +4095,25 @@ export default function TeamManagerPage() {
           project={selectedProjectForHistory}
         />
       )}
+
+      {/* 9. Workspace-wide Team Manager All History Modal */}
+      <TeamManagerAllHistoryModal
+        isOpen={isAllHistoryOpen}
+        onClose={() => setIsAllHistoryOpen(false)}
+        projects={projects}
+        teamMembers={teamMembers}
+        workspaceId={workspaceId || currentUserId}
+        onOpenCrewModal={({ member, role, project, subEvent, previousRate }) => {
+          setWhatsappModalData({
+            isOpen: true,
+            member,
+            role,
+            project,
+            subEvent,
+            previousRate,
+          });
+        }}
+      />
     </div>
   );
 }

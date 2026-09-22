@@ -9,7 +9,7 @@ import {
 import EventBlock, { EventBlockData } from './EventBlock';
 import { FWProject } from '@/types';
 import { supabase } from '@/lib/supabase';
-import { getRoleShortCode } from '@/lib/workspace-settings';
+import { getRoleShortCode, parseRoleAndNumber, formatRoleWithNumber } from '@/lib/workspace-settings';
 import { useWorkspaceData } from '@/context/WorkspaceDataContext';
 
 // Robust unique UUID generator for sub-event blocks
@@ -47,28 +47,30 @@ interface AddProjectModalProps {
 
 const DRAFT_KEY_PREFIX = 'fw_event_form_draft_';
 
-// Merges roles from fw_assignments and fw_sub_events.roles, taking max instances per role without loss
+// Merges roles from fw_assignments and fw_sub_events.roles, taking max instances per role without loss and numbering sequentially (TV, TV 2, TV 3)
 export const mergeSubEventRoles = (assignedRoles: string[], dbRoles: string[], customRoles?: any[]): string[] => {
   const dbCounts = new Map<string, { name: string; count: number }>();
   dbRoles.forEach(r => {
     const trimmed = (r || '').trim();
     if (!trimmed) return;
-    const code = getRoleShortCode(trimmed, customRoles).toUpperCase();
-    const key = code || trimmed.toLowerCase();
+    const { baseRole } = parseRoleAndNumber(trimmed);
+    const code = getRoleShortCode(baseRole, customRoles).toUpperCase();
+    const key = code || baseRole.toLowerCase();
     const ex = dbCounts.get(key);
     if (ex) ex.count += 1;
-    else dbCounts.set(key, { name: trimmed, count: 1 });
+    else dbCounts.set(key, { name: baseRole, count: 1 });
   });
 
   const assignCounts = new Map<string, { name: string; count: number }>();
   assignedRoles.forEach(r => {
     const trimmed = (r || '').trim();
     if (!trimmed) return;
-    const code = getRoleShortCode(trimmed, customRoles).toUpperCase();
-    const key = code || trimmed.toLowerCase();
+    const { baseRole } = parseRoleAndNumber(trimmed);
+    const code = getRoleShortCode(baseRole, customRoles).toUpperCase();
+    const key = code || baseRole.toLowerCase();
     const ex = assignCounts.get(key);
     if (ex) ex.count += 1;
-    else assignCounts.set(key, { name: trimmed, count: 1 });
+    else assignCounts.set(key, { name: baseRole, count: 1 });
   });
 
   const allKeys = new Set([...dbCounts.keys(), ...assignCounts.keys()]);
@@ -88,7 +90,7 @@ export const mergeSubEventRoles = (assignedRoles: string[], dbRoles: string[], c
       }
     }
     for (let i = 0; i < count; i++) {
-      result.push(preferredName);
+      result.push(formatRoleWithNumber(preferredName, i + 1));
     }
   });
 
@@ -340,9 +342,22 @@ export default function AddProjectModal({
     setEventBlocks(prev =>
       prev.map(b => {
         if (b.id !== blockId) return b;
+        const { baseRole } = parseRoleAndNumber(role);
+        const baseKey = (getRoleShortCode(baseRole, crewRoles) || baseRole).toLowerCase();
+
+        // Count how many of this base role exist in b.roles currently
+        const count = b.roles.filter(r => {
+          const p = parseRoleAndNumber(r);
+          const rKey = (getRoleShortCode(p.baseRole, crewRoles) || p.baseRole).toLowerCase();
+          return rKey === baseKey;
+        }).length;
+
+        const nextIndex = count + 1;
+        const newRoleName = formatRoleWithNumber(baseRole, nextIndex);
+
         return {
           ...b,
-          roles: [...b.roles, role],
+          roles: [...b.roles, newRoleName],
         };
       })
     );
@@ -352,29 +367,39 @@ export default function AddProjectModal({
     setEventBlocks(prev =>
       prev.map(b => {
         if (b.id !== blockId) return b;
-        const target = roleNameOrCode.trim().toLowerCase();
-        const targetCode = getRoleShortCode(target, crewRoles).toLowerCase();
+        const { baseRole } = parseRoleAndNumber(roleNameOrCode);
+        const baseKey = (getRoleShortCode(baseRole, crewRoles) || baseRole).toLowerCase();
 
-        let idx = -1;
-        for (let i = b.roles.length - 1; i >= 0; i--) {
-          const r = (b.roles[i] || '').trim().toLowerCase();
-          if (r === target) {
-            idx = i;
-            break;
+        const matchingIndices: number[] = [];
+        b.roles.forEach((r, idx) => {
+          const p = parseRoleAndNumber(r);
+          const rKey = (getRoleShortCode(p.baseRole, crewRoles) || p.baseRole).toLowerCase();
+          if (rKey === baseKey) {
+            matchingIndices.push(idx);
           }
-          const rCode = getRoleShortCode(r, crewRoles).toLowerCase();
-          if (rCode === targetCode) {
-            idx = i;
-            break;
-          }
-        }
+        });
 
-        if (idx === -1) return b;
-        const next = [...b.roles];
-        next.splice(idx, 1);
+        if (matchingIndices.length === 0) return b;
+
+        // Remove the highest numbered / last one
+        const indexToRemove = matchingIndices[matchingIndices.length - 1];
+        const filtered = b.roles.filter((_, idx) => idx !== indexToRemove);
+
+        // Re-index remaining roles of this family to preserve sequential numbering
+        let counter = 0;
+        const reindexedRoles = filtered.map(r => {
+          const p = parseRoleAndNumber(r);
+          const rKey = (getRoleShortCode(p.baseRole, crewRoles) || p.baseRole).toLowerCase();
+          if (rKey === baseKey) {
+            counter += 1;
+            return formatRoleWithNumber(p.baseRole, counter);
+          }
+          return r;
+        });
+
         return {
           ...b,
-          roles: next,
+          roles: reindexedRoles,
         };
       })
     );
@@ -384,15 +409,13 @@ export default function AddProjectModal({
     setEventBlocks(prev =>
       prev.map(b => {
         if (b.id !== blockId) return b;
-        const target = roleNameOrCode.trim().toLowerCase();
-        const targetCode = getRoleShortCode(target, crewRoles).toLowerCase();
+        const { baseRole } = parseRoleAndNumber(roleNameOrCode);
+        const baseKey = (getRoleShortCode(baseRole, crewRoles) || baseRole).toLowerCase();
 
         const next = b.roles.filter(r => {
-          const rClean = (r || '').trim().toLowerCase();
-          if (rClean === target) return false;
-          const rCode = getRoleShortCode(rClean, crewRoles).toLowerCase();
-          if (rCode === targetCode) return false;
-          return true;
+          const p = parseRoleAndNumber(r);
+          const rKey = (getRoleShortCode(p.baseRole, crewRoles) || p.baseRole).toLowerCase();
+          return rKey !== baseKey;
         });
 
         return {
@@ -406,11 +429,11 @@ export default function AddProjectModal({
   const handleToggleRole = (blockId: string, role: string) => {
     const block = eventBlocks.find(b => b.id === blockId);
     if (!block) return;
-    const target = role.trim().toLowerCase();
-    const targetCode = getRoleShortCode(target, crewRoles).toLowerCase();
+    const { baseRole } = parseRoleAndNumber(role);
+    const baseKey = (getRoleShortCode(baseRole, crewRoles) || baseRole).toLowerCase();
     const hasRole = block.roles.some(r => {
-      const rLower = (r || '').trim().toLowerCase();
-      return rLower === target || getRoleShortCode(rLower, crewRoles).toLowerCase() === targetCode;
+      const p = parseRoleAndNumber(r);
+      return (getRoleShortCode(p.baseRole, crewRoles) || p.baseRole).toLowerCase() === baseKey;
     });
 
     if (hasRole) {

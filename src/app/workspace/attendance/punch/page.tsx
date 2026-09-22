@@ -26,29 +26,17 @@ export default function WorkspacePunchRedirect() {
         return;
       }
 
-      // Find team member linked to this user or create member link
-      const { data: member } = await supabase
-        .from('fw_team_members')
-        .select('id')
-        .eq('user_id', userId)
-        .maybeSingle();
+      // Call /api/team/attendance/me to resolve personal link for logged-in crew/owner
+      const res = await fetch('/api/team/attendance/me');
+      const data = await res.json();
 
-      if (member) {
-        const { data: link } = await supabase
-          .from('attendance_member_links')
-          .select('secure_token')
-          .eq('member_id', member.id)
-          .eq('is_active', true)
-          .maybeSingle();
-
-        if (link && link.secure_token) {
-          window.location.href = `/attendance/${link.secure_token}`;
-          return;
-        }
+      if (data?.success && data.secureToken) {
+        window.location.href = `/attendance/${data.secureToken}`;
+        return;
       }
 
-      // If no direct link found, redirect to admin hub
-      window.location.href = '/workspace/attendance';
+      // If no direct personal link, check if owner
+      window.location.href = '/team/attendance';
     } catch (err: any) {
       setError(err.message || 'Unable to resolve personal punch token');
       setLoading(false);

@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import type { FWTeamMember, AttendanceRecord, AttendanceShift } from '@/types';
 import { analyzeAttendanceRecordTiming } from '@/lib/attendance/time-calculations';
+import { supabase } from '@/lib/supabase';
 import { formatTime12h } from './StaffDetailsModal';
 
 interface StaffAttendanceRosterProps {
@@ -43,6 +44,21 @@ export default function StaffAttendanceRoster({
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [companyHolidays, setCompanyHolidays] = useState<any[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchHolidays = async () => {
+      try {
+        const { data } = await supabase
+          .from('company_holidays')
+          .select('id, holiday_date, name, note');
+        if (isMounted && data) setCompanyHolidays(data);
+      } catch (_) {}
+    };
+    fetchHolidays();
+    return () => { isMounted = false; };
+  }, []);
 
   // Continuous 1-second live ticker
   const [nowTick, setNowTick] = useState<number>(() => Date.now());
@@ -114,7 +130,8 @@ export default function StaffAttendanceRoster({
   const strictInHouse = useMemo(() => {
     const seenNames = new Set<string>();
     return members.filter((member: any) => {
-      if (member.is_active === false || member.active_status === false) return false;
+      const isInactive = (member.is_active === false && member.active_status !== true) || (member.active_status === false && member.is_active !== true);
+      if (isInactive) return false;
 
       const rawType = String(member.primary_type || '').toLowerCase().trim();
       const typesList = Array.isArray(member.member_types)
@@ -255,12 +272,31 @@ export default function StaffAttendanceRoster({
               <tbody className="divide-y divide-slate-100 font-sans">
                 {rosterList.map(({ member, record, timing }) => {
                   const memberIdStr = String(member.id);
-                  const isPresent = Boolean(record?.check_in_time || record?.punch_in_time);
-                  const isCheckedOut = Boolean(record?.check_out_time || record?.punch_out_time);
-                  const isLate = timing.isLate;
                   const punchInStr = record?.punch_in_time || record?.check_in_time;
                   const punchOutStr = record?.punch_out_time || record?.check_out_time;
+                  const isPresent = Boolean(punchInStr);
+                  const isCheckedOut = Boolean(punchOutStr);
+                  const isLate = timing.isLate;
                   const missedPunchOut = isMissedPunchOut(punchInStr, punchOutStr, record?.date || selectedDate);
+
+                  // Check Holiday & Weekly Off definitions for this member on selectedDate
+                  const dayDate = new Date(selectedDate + 'T12:00:00');
+                  const dayOfWeekShort = dayDate.toLocaleDateString('en-US', { weekday: 'short' });
+                  const dayOfWeekLong = dayDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+
+                  const custom = (member?.custom_data as any) || {};
+                  const rawOffs = member?.weekly_offs || custom.weekly_offs || ['Sunday'];
+                  const isWeeklyOff = Array.isArray(rawOffs)
+                    ? rawOffs.some((d: string) => {
+                        const s = String(d).toLowerCase();
+                        return s === dayOfWeekShort.toLowerCase() || s === dayOfWeekLong || dayOfWeekLong.includes(s);
+                      })
+                    : (dayOfWeekShort === 'Sun');
+
+                  const holidayMatch = (companyHolidays || []).find((h: any) => h.holiday_date === selectedDate);
+                  const isHoliday = Boolean(holidayMatch || record?.status === 'holiday' || (record as any)?.device_info?.is_holiday_work);
+                  const isHolidayDuty = isPresent && isHoliday;
+                  const isWeekOffDuty = isPresent && isWeeklyOff;
 
                   return (
                     <tr 
@@ -295,10 +331,14 @@ export default function StaffAttendanceRoster({
                       {/* Shift / Status (Active State Pill: Present / Absent) */}
                       <td className="py-3 px-4">
                         <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-black border ${
-                          record?.status === 'holiday' || (record as any)?.device_info?.is_holiday_work
-                            ? 'bg-purple-50 text-purple-700 border-purple-200'
-                            : record?.status === 'week_off' || (record as any)?.device_info?.is_week_off_work
-                            ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                          isHolidayDuty
+                            ? 'bg-amber-100 text-amber-900 border-amber-400 shadow-2xs'
+                            : isWeekOffDuty
+                            ? 'bg-indigo-100 text-indigo-900 border-indigo-400 shadow-2xs'
+                            : isHoliday
+                            ? 'bg-amber-50 text-amber-900 border-amber-200'
+                            : isWeeklyOff
+                            ? 'bg-indigo-50 text-indigo-800 border-indigo-200'
                             : record?.status === 'half_day'
                             ? 'bg-orange-50 text-orange-700 border-orange-200'
                             : isLate
@@ -309,10 +349,14 @@ export default function StaffAttendanceRoster({
                             ? 'bg-sky-50 text-sky-700 border-sky-200'
                             : 'bg-rose-50 text-rose-700 border-rose-200'
                         }`}>
-                          {record?.status === 'holiday' || (record as any)?.device_info?.is_holiday_work
-                            ? 'Holiday'
-                            : record?.status === 'week_off' || (record as any)?.device_info?.is_week_off_work
-                            ? 'Week-Off'
+                          {isHolidayDuty
+                            ? '🌴 Holiday Duty'
+                            : isWeekOffDuty
+                            ? '🛋️ Week-Off Duty'
+                            : isHoliday
+                            ? `🌴 ${holidayMatch?.name || 'Holiday'}`
+                            : isWeeklyOff
+                            ? '🛋️ Week-Off'
                             : record?.status === 'half_day'
                             ? 'Half-Day'
                             : isLate
@@ -384,12 +428,36 @@ export default function StaffAttendanceRoster({
                       {/* Active Work Hours with Continuous Live Timer */}
                       <td className="py-3 px-4 font-extrabold text-slate-900 font-mono">
                         {isCheckedOut ? (
-                          `${Math.floor(((record?.work_duration_minutes || record?.total_work_minutes) || 0) / 60)}h ${((record?.work_duration_minutes || record?.total_work_minutes) || 0) % 60}m`
+                          (() => {
+                            let mins = 0;
+                            if (punchInStr && punchOutStr) {
+                              const inMs = new Date(punchInStr).getTime();
+                              const outMs = new Date(punchOutStr).getTime();
+                              const gross = Math.max(0, Math.floor((outMs - inMs) / 60000));
+                              const breakMins = Number(record?.break_duration_minutes || (record as any)?.total_break_minutes) || 0;
+                              mins = Math.max(0, gross - breakMins);
+                            } else {
+                              mins = Number(record?.work_duration_minutes || record?.total_work_minutes) || 0;
+                            }
+                            return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+                          })()
                         ) : punchInStr ? (
                           missedPunchOut ? (
                             <div className="space-y-0.5">
                               <span className="text-slate-500 font-mono text-xs block">
-                                {Math.floor(((record?.work_duration_minutes || record?.total_work_minutes) || 0) / 60)}h ${((record?.work_duration_minutes || record?.total_work_minutes) || 0) % 60}m
+                                {(() => {
+                                  let mins = 0;
+                                  if (punchInStr && punchOutStr) {
+                                    const inMs = new Date(punchInStr).getTime();
+                                    const outMs = new Date(punchOutStr).getTime();
+                                    const gross = Math.max(0, Math.floor((outMs - inMs) / 60000));
+                                    const breakMins = Number(record?.break_duration_minutes || (record as any)?.total_break_minutes) || 0;
+                                    mins = Math.max(0, gross - breakMins);
+                                  } else {
+                                    mins = Number(record?.work_duration_minutes || record?.total_work_minutes) || 0;
+                                  }
+                                  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+                                })()}
                               </span>
                               <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-700">Missed Punch Out</span>
                             </div>

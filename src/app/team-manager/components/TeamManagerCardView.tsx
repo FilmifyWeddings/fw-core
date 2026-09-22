@@ -270,8 +270,8 @@ export default function TeamManagerCardView({
                         <div className="flex items-start gap-4 flex-wrap">
                           {assignments.map((assignment: any) => {
                             const isAssigned = assignment.assigned_member_id !== null;
-                            const memberObj = assignment.fw_team_members || teamMembers.find(m => m.id === assignment.assigned_member_id);
-                            const cleanName = (memberObj?.name || '').replace(/\.\.\./g, '').trim();
+                            const memberObj = assignment.fw_team_members || (assignment.assigned_member_id ? teamMembers.find(m => m.id === assignment.assigned_member_id || (Boolean((assignment as any).assigned_member_name) && m.name.toLowerCase() === String((assignment as any).assigned_member_name).toLowerCase())) : null);
+                            const cleanName = (memberObj?.name || (assignment as any).assigned_member_name || (assignment as any).member_name || '').replace(/\.\.\./g, '').trim();
                             const role = assignment.required_role;
                             const shortRole = getRoleAbbr(role, customCrewRoles);
 

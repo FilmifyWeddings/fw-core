@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, Calendar, Clock, MapPin, TrendingUp, Award, 
   CheckCircle2, Phone, RefreshCw, Compass, Camera, ExternalLink,
-  AlertTriangle, LogOut, UserX
+  AlertTriangle, LogOut, UserX, ChevronDown
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import type { FWTeamMember, AttendanceRecord, AttendanceShift } from '@/types';
@@ -17,6 +17,7 @@ interface StaffDetailsModalProps {
   member: FWTeamMember;
   records?: AttendanceRecord[];
   shifts?: AttendanceShift[];
+  onAttendanceChanged?: () => Promise<void> | void;
   onUpdateRecord?: (recordId: string, updates: Partial<AttendanceRecord>) => Promise<void>;
 }
 
@@ -86,6 +87,7 @@ export default function StaffDetailsModal({
   member,
   records = [],
   shifts = [],
+  onAttendanceChanged,
   onUpdateRecord
 }: StaffDetailsModalProps) {
   const [datePreset, setDatePreset] = useState<DatePreset>('month');
@@ -99,8 +101,157 @@ export default function StaffDetailsModal({
 
   const [statusFilter, setStatusFilter] = useState<'all' | 'present' | 'late' | 'half_day' | 'absent' | 'holiday' | 'week_off'>('all');
   const [fetchedRecords, setFetchedRecords] = useState<any[]>([]);
+  const [companyHolidays, setCompanyHolidays] = useState<any[]>([]);
+  const [memberLeaves, setMemberLeaves] = useState<any[]>([]);
   const [loadingRecords, setLoadingRecords] = useState(false);
   const [zoomImage, setZoomImage] = useState<string | null>(null);
+
+  // Manual regularization state
+  const [regularizingDate, setRegularizingDate] = useState<string | null>(null);
+  const [regularizeToast, setRegularizeToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  const handleRegularizeAttendance = async (date: string, newStatus: 'present' | 'half_day' | 'absent') => {
+    if (!member?.id) return;
+    setRegularizingDate(date);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const workspaceId = session?.user?.id || 'ws_demo';
+
+      const shiftStartStr = member.shift_start || shifts[0]?.start_time || '10:00';
+      const shiftEndStr = member.shift_end || shifts[0]?.end_time || '19:00';
+
+      let checkInISO: string | null = null;
+      let checkOutISO: string | null = null;
+      let workMinutes = 0;
+
+      if (newStatus === 'present') {
+        checkInISO = `${date}T${shiftStartStr.substring(0, 5)}:00.000+05:30`;
+        checkOutISO = `${date}T${shiftEndStr.substring(0, 5)}:00.000+05:30`;
+        workMinutes = 480; // 8 hours standard
+      } else if (newStatus === 'half_day') {
+        checkInISO = `${date}T${shiftStartStr.substring(0, 5)}:00.000+05:30`;
+        checkOutISO = `${date}T14:30:00.000+05:30`;
+        workMinutes = 240; // 4 hours standard
+      } else {
+        // absent
+        checkInISO = null;
+        checkOutISO = null;
+        workMinutes = 0;
+      }
+
+      const noteText = `Manually regularized to ${newStatus.toUpperCase()} by Admin`;
+
+      // 1. Upsert attendance_records
+      const recPayload = {
+        user_id: workspaceId,
+        workspace_id: workspaceId,
+        member_id: member.id,
+        date: date,
+        status: newStatus,
+        check_in_time: checkInISO,
+        check_out_time: checkOutISO,
+        check_in_verified: newStatus !== 'absent',
+        check_out_verified: newStatus !== 'absent',
+        work_duration_minutes: workMinutes,
+        total_work_minutes: workMinutes,
+        notes: noteText,
+        updated_at: new Date().toISOString()
+      };
+
+      const { error: recErr } = await supabase
+        .from('attendance_records')
+        .upsert([recPayload], { onConflict: 'member_id,date' });
+
+      if (recErr) console.warn('attendance_records upsert notice:', recErr);
+
+      // 2. Upsert / update attendance_logs
+      try {
+        const memIds = Array.from(new Set([String(member.id), ...(member.aliasIds || []).map(String)]));
+        const { data: existingLogs } = await supabase
+          .from('attendance_logs')
+          .select('id')
+          .in('member_id', memIds)
+          .eq('date', date);
+
+        if (existingLogs && existingLogs.length > 0) {
+          await supabase
+            .from('attendance_logs')
+            .update({
+              status: newStatus.toUpperCase(),
+              punch_in_time: checkInISO,
+              punch_out_time: checkOutISO,
+              total_work_minutes: workMinutes,
+              notes: noteText,
+              updated_at: new Date().toISOString()
+            })
+            .in('id', existingLogs.map(l => l.id));
+        } else if (newStatus !== 'absent') {
+          await supabase
+            .from('attendance_logs')
+            .insert([{
+              member_id: String(member.id),
+              member_name: member.name,
+              date: date,
+              status: newStatus.toUpperCase(),
+              punch_in_time: checkInISO,
+              punch_out_time: checkOutISO,
+              total_work_minutes: workMinutes,
+              notes: noteText
+            }]);
+        }
+      } catch (logErr) {
+        console.warn('attendance_logs sync notice:', logErr);
+      }
+
+      // 3. Optimistically update fetchedRecords
+      setFetchedRecords(prev => {
+        const existingIdx = prev.findIndex(r => r.date === date);
+        const updatedItem = {
+          ...(existingIdx >= 0 ? prev[existingIdx] : {}),
+          id: existingIdx >= 0 ? prev[existingIdx].id : `rec_${date}`,
+          member_id: member.id,
+          date,
+          status: newStatus,
+          punch_in_time: checkInISO,
+          punch_out_time: checkOutISO,
+          check_in_time: checkInISO,
+          check_out_time: checkOutISO,
+          total_work_minutes: workMinutes,
+          work_duration_minutes: workMinutes,
+          notes: noteText
+        };
+
+        if (existingIdx >= 0) {
+          const next = [...prev];
+          next[existingIdx] = updatedItem;
+          return next;
+        } else {
+          return [updatedItem, ...prev].sort((a, b) => b.date.localeCompare(a.date));
+        }
+      });
+
+      const label = newStatus === 'present' ? 'Present' : newStatus === 'half_day' ? 'Half Day' : 'Absent';
+      setRegularizeToast({
+        message: `${formatDate(date)} regularized as ${label}`,
+        type: 'success'
+      });
+      setTimeout(() => setRegularizeToast(null), 3500);
+
+      // 4. Notify parent workspace attendance roster
+      if (onAttendanceChanged) {
+        await onAttendanceChanged();
+      }
+    } catch (err: any) {
+      console.error('Regularize error:', err);
+      setRegularizeToast({
+        message: `Failed to update: ${err.message || err}`,
+        type: 'error'
+      });
+      setTimeout(() => setRegularizeToast(null), 4000);
+    } finally {
+      setRegularizingDate(null);
+    }
+  };
 
   // Active 1-second live ticker
   const [nowTick, setNowTick] = useState<number>(() => Date.now());
@@ -139,11 +290,9 @@ export default function StaffDetailsModal({
       setStartDate(todayStr);
       setEndDate(todayStr);
     } else if (preset === 'week') {
-      const d = new Date(today);
-      const day = d.getDay();
-      const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-      const monday = new Date(d.setDate(diff));
-      setStartDate(getLocalDateString(monday));
+      const past = new Date(today);
+      past.setDate(past.getDate() - 7);
+      setStartDate(getLocalDateString(past));
       setEndDate(todayStr);
     } else if (preset === 'month') {
       const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -165,12 +314,37 @@ export default function StaffDetailsModal({
     const loadMemberHistory = async () => {
       setLoadingRecords(true);
       try {
-        const targetId = String(member.id);
+        const targetIds = [String(member.id)];
+        if ((member as any).aliasIds && Array.isArray((member as any).aliasIds)) {
+          (member as any).aliasIds.forEach((id: any) => {
+            const sId = String(id);
+            if (!targetIds.includes(sId)) targetIds.push(sId);
+          });
+        }
+
+        // Query Company Holidays
+        try {
+          const { data: holData } = await supabase
+            .from('company_holidays')
+            .select('id, holiday_date, name, note')
+            .order('holiday_date', { ascending: true });
+          if (isMounted && holData) setCompanyHolidays(holData);
+        } catch (_) {}
+
+        // Query Leaves
+        try {
+          const { data: lData } = await supabase
+            .from('attendance_leave_requests')
+            .select('id, leave_type, start_date, end_date, reason, status')
+            .in('member_id', targetIds)
+            .neq('status', 'rejected');
+          if (isMounted && lData) setMemberLeaves(lData);
+        } catch (_) {}
 
         let logQuery = supabase
           .from('attendance_logs')
           .select('*')
-          .eq('member_id', targetId)
+          .in('member_id', targetIds)
           .order('date', { ascending: false });
 
         if (startDate) logQuery = logQuery.gte('date', startDate);
@@ -182,7 +356,7 @@ export default function StaffDetailsModal({
         let recQuery = supabase
           .from('attendance_records')
           .select('*')
-          .eq('member_id', targetId)
+          .in('member_id', targetIds)
           .order('date', { ascending: false });
 
         if (startDate) recQuery = recQuery.gte('date', startDate);
@@ -251,7 +425,7 @@ export default function StaffDetailsModal({
             mergedMap.set(log.date, {
               id: log.id,
               log_id: log.id,
-              member_id: targetId,
+              member_id: member.id,
               date: log.date,
               status: (log.status || 'present').toLowerCase(),
               check_in_time: log.punch_in_time,
@@ -321,6 +495,7 @@ export default function StaffDetailsModal({
 
     memberRecords.forEach(r => {
       const inTime = r.punch_in_time || r.check_in_time;
+      const outTime = r.punch_out_time || r.check_out_time;
       const isPresent = Boolean(inTime || r.status === 'present' || r.status === 'late' || r.status === 'half_day');
 
       if (isPresent) {
@@ -341,7 +516,20 @@ export default function StaffDetailsModal({
           totalOvertimeMinutes += timing.overtimeMinutes;
         }
 
-        const work = r.total_work_minutes || r.work_duration_minutes || 0;
+        // Calculate work duration strictly from check-in to check-out
+        // If currently clocked in without check-out, exclude from static sum so liveElapsedSec drives it
+        let work = 0;
+        if (inTime && outTime) {
+          const inMs = new Date(inTime).getTime();
+          const outMs = new Date(outTime).getTime();
+          const net = Math.max(0, Math.floor((outMs - inMs) / 60000));
+          const breakMins = Number(r.total_break_minutes || r.break_duration_minutes) || 0;
+          work = Math.max(0, net - breakMins);
+        } else if (inTime && !outTime) {
+          work = 0;
+        } else {
+          work = r.total_work_minutes || r.work_duration_minutes || 0;
+        }
         totalWorkMinutes += work;
       }
     });
@@ -374,19 +562,22 @@ export default function StaffDetailsModal({
         const dateIso = cur.toISOString().split('T')[0];
 
         const isWeeklyOff = offDayNames.some(o => o === dayLong || o === dayShort || dayLong.includes(o));
-        const rec = fetchedRecords.find(r => r.date === dateIso);
-        const isHoliday = rec?.status === 'holiday';
+        const isHoliday = (companyHolidays || []).some(h => h.holiday_date === dateIso) || fetchedRecords.find(r => r.date === dateIso)?.status === 'holiday';
+        const isLeave = (memberLeaves || []).some(l => dateIso >= l.start_date && dateIso <= l.end_date && l.status !== 'rejected');
 
         if (!isWeeklyOff && !isHoliday) {
           scheduledDays++;
         }
 
+        const rec = fetchedRecords.find(r => r.date === dateIso);
         if (rec) {
-          if (rec.status === 'leave' || rec.status === 'approved_leave') {
+          if (rec.status === 'leave' || rec.status === 'approved_leave' || isLeave) {
             approvedLeaveDays++;
           } else if (rec.status === 'absent') {
             explicitAbsentDays++;
           }
+        } else if (isLeave) {
+          approvedLeaveDays++;
         }
 
         cur.setDate(cur.getDate() + 1);
@@ -415,7 +606,7 @@ export default function StaffDetailsModal({
       avgHoursPerDay,
       punctualityScore
     };
-  }, [memberRecords, member, shifts, fetchedRecords, startDate, endDate]);
+  }, [memberRecords, member, shifts, fetchedRecords, startDate, endDate, companyHolidays, memberLeaves]);
 
   // Active check-in state to drive live continuous work hours in header stats
   const activeTodayRecord = useMemo(() => {
@@ -430,47 +621,193 @@ export default function StaffDetailsModal({
     if (!activeTodayRecord) return 0;
     const inTime = activeTodayRecord.punch_in_time || activeTodayRecord.check_in_time;
     if (!inTime) return 0;
-    return Math.max(0, Math.floor((nowTick - new Date(inTime).getTime()) / 1000));
+    const diffSec = Math.max(0, Math.floor((nowTick - new Date(inTime).getTime()) / 1000));
+    const breakSec = (Number(activeTodayRecord.total_break_minutes || activeTodayRecord.break_duration_minutes) || 0) * 60;
+    return Math.max(0, diffSec - breakSec);
   }, [activeTodayRecord, nowTick]);
 
-  // Map member records into structured audit timeline logs
+  // Map member records into structured audit timeline logs covering every single day in range
   const memberLogs = useMemo(() => {
-    return memberRecords.map(rec => {
-      const inTime = rec.punch_in_time || rec.check_in_time;
-      const outTime = rec.punch_out_time || rec.check_out_time;
-      const timing = analyzeAttendanceRecordTiming(rec, member, shifts[0]?.start_time || '10:00', shifts[0]?.end_time || '19:00');
+    if (!startDate || !endDate) return [];
 
-      const earlyMinutes = Number(rec.early_minutes || rec.early_arrival_minutes || (timing.isEarlyArrival ? timing.earlyArrivalMinutes : 0));
-      const lateMinutes = Number(rec.late_minutes || (timing.isLate ? timing.lateMinutes : 0));
-      const earlyCheckoutMinutes = Number(rec.early_checkout_minutes || (timing.isEarlyCheckout ? timing.earlyCheckoutMinutes : 0));
-      const overtimeMinutes = Number(rec.overtime_minutes || (timing.isOvertime ? timing.overtimeMinutes : 0));
-      const checkInPhoto = rec.check_in_photo || rec.selfie_url || rec.check_in_photo_path || rec.check_in_selfie;
-      const checkOutPhoto = rec.check_out_photo || rec.check_out_photo_path || rec.punch_out_selfie || rec.check_out_selfie || rec.check_out_selfie_url;
+    const sDate = new Date(startDate + 'T00:00:00');
+    const eDate = new Date(endDate + 'T00:00:00');
+    if (isNaN(sDate.getTime()) || isNaN(eDate.getTime()) || sDate > eDate) return [];
 
-      return {
-        id: rec.id || `log_${rec.date}`,
-        date: rec.date,
-        punch_in_time: inTime,
-        punch_out_time: outTime,
-        punch_in_lat: rec.punch_in_lat || rec.check_in_lat,
-        punch_in_lng: rec.punch_in_lng || rec.check_in_lng,
-        punch_out_lat: rec.punch_out_lat || rec.check_out_lat,
-        punch_out_lng: rec.punch_out_lng || rec.check_out_lng,
-        early_minutes: earlyMinutes,
-        late_minutes: lateMinutes,
-        early_checkout_minutes: earlyCheckoutMinutes,
-        overtime_minutes: overtimeMinutes,
-        selfie_url: checkInPhoto,
-        check_in_selfie: checkInPhoto,
-        check_out_selfie: checkOutPhoto,
-        check_out_selfie_url: checkOutPhoto,
-        location_address: rec.location_address || rec.location_name,
-        check_out_address: rec.check_out_address || rec.location_address || rec.location_name,
-        status: rec.status,
-        timing
-      };
+    const todayIstStr = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(new Date());
+
+    const custom = (member?.custom_data as any) || {};
+    const rawOffs = member?.weekly_offs || custom.weekly_offs || ['Sunday'];
+    const offDayNames: string[] = [];
+    if (Array.isArray(rawOffs)) {
+      rawOffs.forEach((d: string) => offDayNames.push(String(d).toLowerCase()));
+    } else if (typeof rawOffs === 'string') {
+      offDayNames.push(rawOffs.toLowerCase());
+    }
+    if (offDayNames.length === 0) offDayNames.push('sunday', 'sun');
+
+    const logs: any[] = [];
+    const cur = new Date(eDate);
+
+    while (cur >= sDate) {
+      const dateStr = cur.toISOString().split('T')[0];
+      const dayLong = cur.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+      const dayShort = cur.toLocaleDateString('en-US', { weekday: 'short' }).toLowerCase();
+
+      const holidayMatch = (companyHolidays || []).find(h => h.holiday_date === dateStr);
+      const isWeeklyOff = offDayNames.some(o => o === dayLong || o === dayShort || dayLong.includes(o));
+      const leaveMatch = (memberLeaves || []).find(l => dateStr >= l.start_date && dateStr <= l.end_date && l.status !== 'rejected');
+
+      const rec = fetchedRecords.find(r => r.date === dateStr);
+
+      if (rec) {
+        const inTime = rec.punch_in_time || rec.check_in_time;
+        const outTime = rec.punch_out_time || rec.check_out_time;
+        const timing = analyzeAttendanceRecordTiming(rec, member, shifts[0]?.start_time || '10:00', shifts[0]?.end_time || '19:00');
+
+        const isLateRecord = timing.isLate || rec.status === 'late' || (Number(rec.late_minutes) > 0);
+        const earlyMinutes = Number(rec.early_minutes || rec.early_arrival_minutes || (timing.isEarlyArrival ? timing.earlyArrivalMinutes : 0));
+        const lateMinutes = Number(rec.late_minutes || (timing.isLate ? timing.lateMinutes : 0));
+        const earlyCheckoutMinutes = Number(rec.early_checkout_minutes || (timing.isEarlyCheckout ? timing.earlyCheckoutMinutes : 0));
+        const overtimeMinutes = Number(rec.overtime_minutes || (timing.isOvertime ? timing.overtimeMinutes : 0));
+        const checkInPhoto = rec.check_in_photo || rec.selfie_url || rec.check_in_photo_path || rec.check_in_selfie;
+        const checkOutPhoto = rec.check_out_photo || rec.check_out_photo_path || rec.punch_out_selfie || rec.check_out_selfie || rec.check_out_selfie_url;
+
+        let dutyStatus = isLateRecord ? 'late' : (rec.status || 'present');
+        let isHolidayDuty = false;
+        let isWeekOffDuty = false;
+
+        if (holidayMatch) {
+          dutyStatus = 'worked_holiday';
+          isHolidayDuty = true;
+        } else if (isWeeklyOff) {
+          dutyStatus = 'worked_week_off';
+          isWeekOffDuty = true;
+        }
+
+        // Calculate work duration strictly from check-in to check-out
+        let durationMinutes = 0;
+        if (inTime && outTime) {
+          const inMs = new Date(inTime).getTime();
+          const outMs = new Date(outTime).getTime();
+          durationMinutes = Math.max(0, Math.floor((outMs - inMs) / 60000));
+        } else if (inTime && !outTime) {
+          const inMs = new Date(inTime).getTime();
+          const isToday = dateStr === todayIstStr;
+          const endMs = isToday ? nowTick : inMs;
+          durationMinutes = Math.max(0, Math.floor((endMs - inMs) / 60000));
+        } else {
+          durationMinutes = Number(rec.work_duration_minutes) || Number(rec.total_work_minutes) || 0;
+        }
+        const breakMins = Number(rec.total_break_minutes || rec.break_duration_minutes) || 0;
+        durationMinutes = Math.max(0, durationMinutes - breakMins);
+
+        logs.push({
+          id: rec.id || `log_${dateStr}`,
+          date: dateStr,
+          isPunched: true,
+          punch_in_time: inTime,
+          punch_out_time: outTime,
+          punch_in_lat: rec.punch_in_lat || rec.check_in_lat,
+          punch_in_lng: rec.punch_in_lng || rec.check_in_lng,
+          punch_out_lat: rec.punch_out_lat || rec.check_out_lat,
+          punch_out_lng: rec.punch_out_lng || rec.check_out_lng,
+          early_minutes: earlyMinutes,
+          late_minutes: lateMinutes,
+          early_checkout_minutes: earlyCheckoutMinutes,
+          overtime_minutes: overtimeMinutes,
+          selfie_url: checkInPhoto,
+          check_in_selfie: checkInPhoto,
+          check_out_selfie: checkOutPhoto,
+          check_out_selfie_url: checkOutPhoto,
+          location_address: rec.location_address || rec.location_name,
+          check_out_address: rec.check_out_address || rec.location_address || rec.location_name,
+          status: dutyStatus,
+          isHolidayDuty,
+          isWeekOffDuty,
+          holidayName: holidayMatch?.name || null,
+          durationMinutes,
+          timing
+        });
+      } else {
+        // No punch record logged for this date
+        if (holidayMatch) {
+          logs.push({
+            id: `holiday_${dateStr}`,
+            date: dateStr,
+            isPunched: false,
+            status: 'holiday',
+            title: holidayMatch.name || 'Company Holiday',
+            notes: holidayMatch.note || 'Official festival / public holiday',
+            isHolidayDuty: false,
+            isWeekOffDuty: false
+          });
+        } else if (leaveMatch) {
+          logs.push({
+            id: `leave_${dateStr}`,
+            date: dateStr,
+            isPunched: false,
+            status: 'leave',
+            title: `Leave (${leaveMatch.leave_type || 'Approved'})`,
+            notes: leaveMatch.reason || 'Approved leave request',
+            isHolidayDuty: false,
+            isWeekOffDuty: false
+          });
+        } else if (isWeeklyOff) {
+          logs.push({
+            id: `week_off_${dateStr}`,
+            date: dateStr,
+            isPunched: false,
+            status: 'week_off',
+            title: 'Weekly Off',
+            notes: 'Scheduled regular weekly day-off',
+            isHolidayDuty: false,
+            isWeekOffDuty: false
+          });
+        } else if (dateStr > todayIstStr) {
+          logs.push({
+            id: `upcoming_${dateStr}`,
+            date: dateStr,
+            isPunched: false,
+            status: 'upcoming',
+            title: 'Scheduled Shift',
+            notes: 'Upcoming shift',
+            isHolidayDuty: false,
+            isWeekOffDuty: false
+          });
+        } else {
+          logs.push({
+            id: `absent_${dateStr}`,
+            date: dateStr,
+            isPunched: false,
+            status: 'absent',
+            title: 'Absent / Not Marked',
+            notes: 'Attendance was not marked on this scheduled working day.',
+            isHolidayDuty: false,
+            isWeekOffDuty: false
+          });
+        }
+      }
+
+      cur.setDate(cur.getDate() - 1);
+    }
+
+    return logs.filter(log => {
+      if (statusFilter === 'all') return true;
+      if (statusFilter === 'late') return log.timing?.isLate;
+      if (statusFilter === 'present') return log.isPunched && (log.status === 'present' || log.isHolidayDuty || log.isWeekOffDuty);
+      if (statusFilter === 'half_day') return log.status === 'half_day';
+      if (statusFilter === 'absent') return log.status === 'absent';
+      if (statusFilter === 'holiday') return log.status === 'holiday' || log.isHolidayDuty;
+      if (statusFilter === 'week_off') return log.status === 'week_off' || log.isWeekOffDuty;
+      return log.status === statusFilter;
     });
-  }, [memberRecords, member, shifts]);
+  }, [startDate, endDate, fetchedRecords, companyHolidays, memberLeaves, member, shifts, statusFilter, nowTick]);
 
   if (!isOpen) return null;
 
@@ -576,10 +913,56 @@ export default function StaffDetailsModal({
           {/* ── BODY CONTENT ── */}
           <div className="p-6 overflow-y-auto space-y-6 flex-1 bg-[#FFFDF9]">
 
-            {/* ── 5 SUMMARY METRIC CARDS (With Continuous Live Ticking Hours & Formatted Times) ── */}
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            {/* Regularization Feedback Toast */}
+            <AnimatePresence>
+              {regularizeToast && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  className={`p-3 rounded-2xl text-xs font-bold flex items-center justify-between shadow-sm ${
+                    regularizeToast.type === 'success'
+                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                      : 'bg-rose-50 text-rose-800 border border-rose-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    {regularizeToast.type === 'success' ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    ) : (
+                      <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                    )}
+                    <span>{regularizeToast.message}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRegularizeToast(null)}
+                    className="p-1 rounded-md hover:bg-black/5 text-slate-400 hover:text-slate-700"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* ── 6 SUMMARY METRIC CARDS (With Present Days, Continuous Live Ticking Hours & Formatted Times) ── */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               
-              {/* 1. Total Working Time (Continuously Ticking if Clocked In) */}
+              {/* 1. Present Days (Verified Attendance) */}
+              <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-[#EAE5DA] shadow-2xs space-y-1">
+                <div className="flex items-center justify-between text-xs text-slate-500">
+                  <span className="font-extrabold uppercase tracking-wider text-[10px]">Present Days</span>
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                </div>
+                <div className="text-xl font-black text-emerald-700 font-mono">
+                  {stats.presentDays} {stats.presentDays === 1 ? 'Day' : 'Days'}
+                </div>
+                <p className="text-[10.5px] text-slate-400 font-medium truncate">
+                  {stats.halfDays > 0 ? `Incl. ${stats.halfDays} Half ${stats.halfDays === 1 ? 'Day' : 'Days'}` : 'Verified on-duty'}
+                </p>
+              </div>
+
+              {/* 2. Total Working Time (Continuously Ticking if Clocked In) */}
               <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-[#EAE5DA] shadow-2xs space-y-1">
                 <div className="flex items-center justify-between text-xs text-slate-500">
                   <span className="font-extrabold uppercase tracking-wider text-[10px]">Total Work Time</span>
@@ -682,37 +1065,218 @@ export default function StaffDetailsModal({
                     const outTime = log.punch_out_time;
                     const missed = isMissedPunchOut(inTime, outTime, log.date);
 
+                    // 1. UNPUNCHED DAYS (Absent, Company Holiday, Weekly Off, Approved Leave, Upcoming)
+                    if (!log.isPunched) {
+                      return (
+                        <div
+                          key={log.id}
+                          className={`p-4 rounded-2xl border transition-all ${
+                            log.status === 'absent'
+                              ? 'bg-rose-50/40 border-rose-200 hover:border-rose-300'
+                              : log.status === 'holiday'
+                              ? 'bg-amber-50/30 border-amber-200 hover:border-amber-300'
+                              : log.status === 'week_off'
+                              ? 'bg-indigo-50/30 border-indigo-200 hover:border-indigo-300'
+                              : log.status === 'leave'
+                              ? 'bg-sky-50/30 border-sky-200 hover:border-sky-300'
+                              : 'bg-slate-50/50 border-slate-200'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div className="flex items-center gap-2.5">
+                              <span className="text-xs font-extrabold text-slate-900">
+                                {formatDate(log.date)}
+                              </span>
+                              {log.status === 'absent' && (
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-300 shadow-2xs">
+                                  ❌ ABSENT
+                                </span>
+                              )}
+                              {log.status === 'holiday' && (
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs">
+                                  🌴 COMPANY HOLIDAY
+                                </span>
+                              )}
+                              {log.status === 'week_off' && (
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-indigo-100 text-indigo-900 border border-indigo-300 shadow-2xs">
+                                  🛋️ WEEKLY OFF
+                                </span>
+                              )}
+                              {log.status === 'leave' && (
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-sky-100 text-sky-900 border border-sky-300 shadow-2xs">
+                                  🏖️ APPROVED LEAVE
+                                </span>
+                              )}
+                              {log.status === 'upcoming' && (
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                                  📅 UPCOMING
+                                </span>
+                              )}
+                            </div>
+                            
+                            <div className="flex items-center gap-2">
+                              <span className="text-[11px] text-slate-400 font-mono hidden sm:inline">
+                                No Check-In Recorded
+                              </span>
+                              {/* Admin Manual Regularization Selector */}
+                              <div className="flex items-center gap-1.5 bg-white/95 px-2 py-1 rounded-xl border border-slate-200 shadow-2xs">
+                                <span className="text-[10px] font-black uppercase text-slate-400 hidden sm:inline">Mark:</span>
+                                <div className="relative inline-flex items-center">
+                                  <select
+                                    disabled={regularizingDate === log.date}
+                                    value={
+                                      log.status === 'half_day'
+                                        ? 'half_day'
+                                        : log.status === 'present'
+                                        ? 'present'
+                                        : log.status === 'absent'
+                                        ? 'absent'
+                                        : ''
+                                    }
+                                    onChange={(e) => {
+                                      const val = e.target.value as 'present' | 'half_day' | 'absent';
+                                      if (val) handleRegularizeAttendance(log.date, val);
+                                    }}
+                                    className={`text-xs font-bold py-1 pl-2 pr-7 rounded-lg border appearance-none cursor-pointer transition focus:outline-none focus:ring-1 ${
+                                      log.status === 'present'
+                                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300 focus:ring-emerald-500'
+                                        : log.status === 'half_day'
+                                        ? 'bg-orange-50 text-orange-800 border-orange-300 focus:ring-orange-500'
+                                        : log.status === 'absent'
+                                        ? 'bg-rose-50 text-rose-800 border-rose-300 focus:ring-rose-500'
+                                        : 'bg-white text-slate-700 border-slate-200 focus:ring-slate-400'
+                                    }`}
+                                  >
+                                    <option value="" disabled>Select Status</option>
+                                    <option value="present">🟢 Present</option>
+                                    <option value="half_day">🟠 Half Day</option>
+                                    <option value="absent">🔴 Absent</option>
+                                  </select>
+                                  {regularizingDate === log.date ? (
+                                    <RefreshCw className="w-3 h-3 text-slate-500 animate-spin absolute right-2 pointer-events-none" />
+                                  ) : (
+                                    <ChevronDown className="w-3 h-3 text-slate-400 absolute right-2 pointer-events-none" />
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="mt-2 text-xs text-slate-600 font-medium flex items-center gap-2">
+                            <span>
+                              {log.status === 'absent'
+                                ? '⚠️ Attendance was not marked on this scheduled working day.'
+                                : log.status === 'holiday'
+                                ? `🎉 ${log.title || 'Official Company Festival / Public Holiday'}`
+                                : log.status === 'week_off'
+                                ? '🛋️ Scheduled regular weekly day-off'
+                                : log.status === 'leave'
+                                ? `🏖️ ${log.title} — ${log.notes || 'Approved leave request'}`
+                                : 'Scheduled upcoming working shift'}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // 2. PUNCHED DAYS (Present, Late, Half-Day, Holiday Duty, Week-Off Duty)
                     return (
-                      <div key={log.id} className="p-4 bg-white border border-slate-200/90 rounded-2xl shadow-2xs space-y-3 hover:border-amber-300 transition">
+                      <div
+                        key={log.id}
+                        className={`p-4 bg-white border rounded-2xl shadow-2xs space-y-3 transition hover:border-amber-300 ${
+                          log.isHolidayDuty
+                            ? 'border-amber-300 bg-amber-50/10'
+                            : log.isWeekOffDuty
+                            ? 'border-indigo-300 bg-indigo-50/10'
+                            : 'border-slate-200/90'
+                        }`}
+                      >
                         <div className="flex items-center justify-between flex-wrap gap-2">
                           <div className="flex items-center gap-2">
                             <span className="text-xs font-extrabold text-slate-900">
                               {formatDate(log.date)}
                             </span>
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-black border ${
-                              log.status === 'holiday'
-                                ? 'bg-purple-50 text-purple-800 border-purple-200'
-                                : log.status === 'week_off'
-                                ? 'bg-indigo-50 text-indigo-800 border-indigo-200'
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
+                              log.isHolidayDuty
+                                ? 'bg-amber-100 text-amber-900 border-amber-400 shadow-2xs'
+                                : log.isWeekOffDuty
+                                ? 'bg-indigo-100 text-indigo-900 border-indigo-400 shadow-2xs'
                                 : log.status === 'half_day'
                                 ? 'bg-orange-50 text-orange-800 border-orange-200'
                                 : log.timing?.isLate
                                 ? 'bg-amber-50 text-amber-800 border-amber-300'
                                 : 'bg-emerald-50 text-emerald-800 border-emerald-200'
                             }`}>
-                              {(log.status || 'PRESENT').toUpperCase()}
+                              {log.isHolidayDuty
+                                ? '🌴 HOLIDAY DUTY'
+                                : log.isWeekOffDuty
+                                ? '🛋️ WEEK-OFF DUTY'
+                                : (log.status || 'PRESENT').toUpperCase()}
                             </span>
+                            {log.durationMinutes > 0 && (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-slate-100 text-slate-700 font-mono border border-slate-200">
+                                ⏱️ {Math.floor(log.durationMinutes / 60)}h {log.durationMinutes % 60}m
+                              </span>
+                            )}
                           </div>
 
-                          {/* Status Indicators */}
+                          {/* Status Indicators & Admin Regularization */}
                           <div className="flex items-center gap-2">
                             {missed && (
                               <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-100 text-rose-700">
                                 Missed Punch Out
                               </span>
                             )}
+                            {/* Admin Manual Regularization Selector */}
+                            <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded-xl border border-slate-200 shadow-2xs">
+                              <span className="text-[10px] font-black uppercase text-slate-400 hidden sm:inline">Change:</span>
+                              <div className="relative inline-flex items-center">
+                                <select
+                                  disabled={regularizingDate === log.date}
+                                  value={
+                                    log.status === 'half_day'
+                                      ? 'half_day'
+                                      : log.status === 'present' || log.isHolidayDuty || log.isWeekOffDuty
+                                      ? 'present'
+                                      : 'absent'
+                                  }
+                                  onChange={(e) => {
+                                    const val = e.target.value as 'present' | 'half_day' | 'absent';
+                                    if (val) handleRegularizeAttendance(log.date, val);
+                                  }}
+                                  className={`text-xs font-bold py-1 pl-2 pr-7 rounded-lg border appearance-none cursor-pointer transition focus:outline-none focus:ring-1 ${
+                                    log.status === 'present' || log.isHolidayDuty || log.isWeekOffDuty
+                                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300 focus:ring-emerald-500'
+                                      : log.status === 'half_day'
+                                      ? 'bg-orange-50 text-orange-800 border-orange-300 focus:ring-orange-500'
+                                      : 'bg-rose-50 text-rose-800 border-rose-300 focus:ring-rose-500'
+                                  }`}
+                                >
+                                  <option value="present">🟢 Present</option>
+                                  <option value="half_day">🟠 Half Day</option>
+                                  <option value="absent">🔴 Absent</option>
+                                </select>
+                                {regularizingDate === log.date ? (
+                                  <RefreshCw className="w-3 h-3 text-slate-500 animate-spin absolute right-2 pointer-events-none" />
+                                ) : (
+                                  <ChevronDown className="w-3 h-3 text-slate-400 absolute right-2 pointer-events-none" />
+                                )}
+                              </div>
+                            </div>
                           </div>
                         </div>
+
+                        {/* Special Duty Banner for Holiday / Week-Off Work */}
+                        {log.isHolidayDuty && (
+                          <div className="px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] font-bold flex items-center gap-1.5">
+                            <span>🌴 Special Duty: Attendance logged on Company Festival Holiday ({log.holidayName || 'Holiday'})</span>
+                          </div>
+                        )}
+                        {log.isWeekOffDuty && (
+                          <div className="px-3 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-900 text-[11px] font-bold flex items-center gap-1.5">
+                            <span>🛋️ Special Duty: Attendance logged on scheduled Weekly Off</span>
+                          </div>
+                        )}
 
                         {/* Punch In / Out Timings & Inline Thumbnails */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2.5 border-t border-slate-100 text-xs">

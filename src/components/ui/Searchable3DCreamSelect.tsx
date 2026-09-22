@@ -184,10 +184,10 @@ export default function Searchable3DCreamSelect({
     const q = searchQuery.toLowerCase().trim();
     return options.filter(
       opt =>
-        opt.label.toLowerCase().includes(q) ||
-        (opt.badge && opt.badge.toLowerCase().includes(q)) ||
-        (opt.subLabel && opt.subLabel.toLowerCase().includes(q)) ||
-        (opt.roleTag && opt.roleTag.toLowerCase().includes(q))
+        String(opt?.label ?? '').toLowerCase().includes(q) ||
+        (opt?.badge ? String(opt.badge).toLowerCase().includes(q) : false) ||
+        (opt?.subLabel ? String(opt.subLabel).toLowerCase().includes(q) : false) ||
+        (opt?.roleTag ? String(opt.roleTag).toLowerCase().includes(q) : false)
     );
   }, [options, searchQuery, searchable]);
 
@@ -195,7 +195,7 @@ export default function Searchable3DCreamSelect({
     return options.find(opt => opt.value === value);
   }, [options, value]);
 
-  const isCurrentUnassigned = selectedOption && (selectedOption.value === 'unassigned' || selectedOption.label.toLowerCase().includes('unassigned'));
+  const isCurrentUnassigned = selectedOption && (selectedOption.value === 'unassigned' || String(selectedOption.label ?? '').toLowerCase().includes('unassigned'));
 
   const handleSelect = (val: string, e?: React.MouseEvent) => {
     if (e) {
@@ -323,7 +323,7 @@ export default function Searchable3DCreamSelect({
         ) : (
           filteredOptions.map(option => {
             const isSelected = option.value === value;
-            const isUnassignedOpt = option.value === 'unassigned' || option.label.toLowerCase().includes('unassigned');
+            const isUnassignedOpt = option.value === 'unassigned' || String(option?.label ?? '').toLowerCase().includes('unassigned');
             return (
               <div
                 key={option.value}

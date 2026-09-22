@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Users, UserPlus, Plus, Minus, Trash2, Sparkles, Check } from 'lucide-react';
-import { WorkspaceCrewRole, saveWorkspaceCrewRole, getRoleShortCode, DEFAULT_CREW_ROLES } from '@/lib/workspace-settings';
+import { WorkspaceCrewRole, saveWorkspaceCrewRole, getRoleShortCode, DEFAULT_CREW_ROLES, parseRoleAndNumber, formatRoleWithNumber } from '@/lib/workspace-settings';
 import { useWorkspaceData } from '@/context/WorkspaceDataContext';
 
 interface RoleGridProps {
@@ -17,29 +17,30 @@ interface RoleGridProps {
 
 // Maps short codes or raw names to clean, readable full names
 const getReadableRoleName = (rawName: string, code: string): string => {
-  const clean = (rawName || '').trim();
+  const { baseRole, number } = parseRoleAndNumber(rawName);
+  const clean = baseRole.trim();
   const upper = clean.toUpperCase();
   const upperCode = (code || '').toUpperCase();
 
-  if (upper === 'CV' || upperCode === 'CV' || clean.toLowerCase() === 'cinematic') return 'Cinematographer';
-  if (upper === 'CP' || upperCode === 'CP') return 'Candid Photographer';
-  if (upper === 'TP' || upperCode === 'TP') return 'Traditional Photographer';
-  if (upper === 'TV' || upperCode === 'TV') return 'Traditional Videographer';
-  if (upper === 'DP' || upperCode === 'DP') return 'Drone Pilot';
-  if (upper === 'AS' || upperCode === 'AS' || upper === 'AST') return 'Assistant';
-  if (upper === 'RC' || upperCode === 'RC') return 'Reels Creator';
-  if (upper === 'TM' || upperCode === 'TM') return 'Team Manager';
-  if (upper === 'SP' || upperCode === 'SP') return 'Sales Person';
-  if (upper === 'P' || upper === 'PH' || upperCode === 'P' || upperCode === 'PH') return 'Photographer';
-  if (upper === 'PM' || upperCode === 'PM') return 'Project Manager';
-  if (upper === 'FP' || upperCode === 'FP') return 'Family Photographer';
-  if (upper === 'LS' || upperCode === 'LS') return 'Live Streaming';
-  if (upper === 'CRW') return 'Crew Member';
+  let readable = clean;
+  if (upper === 'CV' || upperCode === 'CV' || clean.toLowerCase() === 'cinematic') readable = 'Cinematographer';
+  else if (upper === 'CP' || upperCode === 'CP') readable = 'Candid Photographer';
+  else if (upper === 'TP' || upperCode === 'TP') readable = 'Traditional Photographer';
+  else if (upper === 'TV' || upperCode === 'TV') readable = 'Traditional Videographer';
+  else if (upper === 'DP' || upperCode === 'DP') readable = 'Drone Pilot';
+  else if (upper === 'AS' || upperCode === 'AS' || upper === 'AST') readable = 'Assistant';
+  else if (upper === 'RC' || upperCode === 'RC') readable = 'Reels Creator';
+  else if (upper === 'TM' || upperCode === 'TM') readable = 'Team Manager';
+  else if (upper === 'SP' || upperCode === 'SP') readable = 'Sales Person';
+  else if (upper === 'P' || upper === 'PH' || upperCode === 'P' || upperCode === 'PH') readable = 'Photographer';
+  else if (upper === 'PM' || upperCode === 'PM') readable = 'Project Manager';
+  else if (upper === 'FP' || upperCode === 'FP') readable = 'Family Photographer';
+  else if (upper === 'LS' || upperCode === 'LS') readable = 'Live Streaming';
+  else if (upper === 'CRW') readable = 'Crew Member';
+  else if (clean.length > 2) readable = clean;
+  else readable = clean || code;
 
-  if (clean.length > 2) {
-    return clean;
-  }
-  return clean || code;
+  return formatRoleWithNumber(readable, number);
 };
 
 export default function RoleGrid({
@@ -114,7 +115,8 @@ export default function RoleGrid({
   const displayItems: Array<{ name: string; code: string }> = [];
 
   const addDisplayItem = (name: string, rawCode?: string) => {
-    const cleanName = (name || '').trim();
+    const { baseRole } = parseRoleAndNumber(name);
+    const cleanName = baseRole.trim();
     if (!cleanName) return;
     const cleanCode = (rawCode || getRoleShortCode(cleanName, dbRoles)).trim().toUpperCase();
 
@@ -143,12 +145,13 @@ export default function RoleGrid({
     addDisplayItem(sel);
   });
 
-  // Count instances for an item (matching name or short code)
+  // Count instances for an item (matching name or short code across base roles)
   const getItemCount = (item: { name: string; code: string }): number => {
     const targetName = item.name.trim().toLowerCase();
     const targetCode = item.code.trim().toLowerCase();
     return selectedRoles.filter(r => {
-      const rClean = (r || '').trim().toLowerCase();
+      const { baseRole } = parseRoleAndNumber(r);
+      const rClean = baseRole.trim().toLowerCase();
       if (!rClean) return false;
       if (rClean === targetName || rClean === targetCode) return true;
       const rCode = getRoleShortCode(rClean, dbRoles).toLowerCase();

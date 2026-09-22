@@ -1,19 +1,27 @@
 import { ImageResponse } from 'next/og';
 import { resolvePublicQuotation } from '@/lib/public-quotation';
-import sharp from 'sharp';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export const alt = 'Quotation Preview';
 export const size = {
-  width: 1200,
-  height: 630,
+  width: 800,
+  height: 800,
 };
 export const contentType = 'image/png';
 
 interface ImageProps {
   params: Promise<{ token: string }>;
+}
+
+async function getSharp(): Promise<any> {
+  try {
+    // Prefer Next's internal sharp instance to prevent dual libvips DLL conflicts on Windows
+    return (await import('next/node_modules/sharp')).default;
+  } catch {
+    return (await import('sharp')).default;
+  }
 }
 
 export default async function Image({ params }: ImageProps) {
@@ -22,12 +30,20 @@ export default async function Image({ params }: ImageProps) {
 
   const quote = token ? await resolvePublicQuotation(token) : null;
 
-  const clientName = quote?.clientName || 'Valued Client';
-  const eventType = quote?.eventType || 'Wedding';
-  const studioName = quote?.studioName || 'Filmify Weddings';
+  const coupleName = (quote?.coupleName || quote?.clientName || 'Valued Client').toUpperCase();
+  const eventType = (quote?.eventType || 'Wedding').toUpperCase();
+  const brandName = (quote?.brandName || quote?.studioName || 'Filmify Weddings').toUpperCase();
+  const brandLogoUrl = quote?.brandLogoUrl || '';
+  const brandLogoSize = quote?.brandLogoSize || 64;
+  const subtitleText = quote?.subtitleText || '';
   const coverPhoto = quote?.coverPhoto || '';
-  const eventDate = quote?.eventDate || '';
-  const location = quote?.location || '';
+  const frameShape = quote?.frameShape || 'arch';
+  const photoWidth = quote?.photoWidth || 92;
+  const photoFocalY = quote?.photoFocalY !== undefined ? quote.photoFocalY : 50;
+  const bgOpacity = quote?.bgOpacity !== undefined ? quote.bgOpacity : 25;
+  const pageBgColor = quote?.pageBgColor || '#F0EDE5';
+  const textColor = quote?.textColor || '#004643';
+  const kickerColor = quote?.kickerColor || quote?.textColor || '#004643';
 
   // Safe image pre-fetch and normalize to standard JPEG buffer/data URI using sharp
   let imageSrc: string | null = null;
@@ -40,9 +56,9 @@ export default async function Image({ params }: ImageProps) {
       } else {
         let optimizedPhotoUrl = coverPhoto;
         if (optimizedPhotoUrl.includes('images.unsplash.com')) {
-          optimizedPhotoUrl = optimizedPhotoUrl.replace(/&w=\d+/, '') + '&w=600&q=75';
+          optimizedPhotoUrl = optimizedPhotoUrl.replace(/&w=\d+/, '') + '&w=800&q=80';
         }
-        const res = await fetch(optimizedPhotoUrl, { signal: AbortSignal.timeout(1500) });
+        const res = await fetch(optimizedPhotoUrl, { signal: AbortSignal.timeout(2000) });
         if (res.ok) {
           const ab = await res.arrayBuffer();
           buffer = Buffer.from(ab);
@@ -50,10 +66,11 @@ export default async function Image({ params }: ImageProps) {
       }
 
       if (buffer && buffer.length > 0) {
-        // Convert any format (WebP, HEIC, PNG, etc.) to optimized JPEG for Satori
-        const jpgBuffer = await sharp(buffer)
-          .resize(500, null, { withoutEnlargement: true })
-          .jpeg({ quality: 82 })
+        const sharpInstance = await getSharp();
+        const jpgBuffer = await sharpInstance(buffer)
+          .flatten({ background: pageBgColor })
+          .resize(800, null, { withoutEnlargement: true })
+          .jpeg({ quality: 85 })
           .toBuffer();
         imageSrc = `data:image/jpeg;base64,${jpgBuffer.toString('base64')}`;
       }
@@ -63,277 +80,243 @@ export default async function Image({ params }: ImageProps) {
     }
   }
 
+  // Safe brand logo pre-fetch and normalize using sharp
+  let brandLogoSrc: string | null = null;
+  if (brandLogoUrl) {
+    try {
+      let logoBuffer: Buffer | null = null;
+      if (brandLogoUrl.startsWith('data:image/')) {
+        const base64Data = brandLogoUrl.replace(/^data:image\/[a-zA-Z+]+;base64,/, '');
+        logoBuffer = Buffer.from(base64Data, 'base64');
+      } else {
+        const res = await fetch(brandLogoUrl, { signal: AbortSignal.timeout(1500) });
+        if (res.ok) {
+          const ab = await res.arrayBuffer();
+          logoBuffer = Buffer.from(ab);
+        }
+      }
+      if (logoBuffer && logoBuffer.length > 0) {
+        const sharpInstance = await getSharp();
+        const pngBuffer = await sharpInstance(logoBuffer)
+          .resize(null, 80, { withoutEnlargement: true })
+          .png()
+          .toBuffer();
+        brandLogoSrc = `data:image/png;base64,${pngBuffer.toString('base64')}`;
+      }
+    } catch (e) {
+      console.warn('[opengraph-image] Failed to process brandLogoUrl:', e);
+      brandLogoSrc = null;
+    }
+  }
+
+  const calculatedPhotoWidth = Math.round(800 * (Math.min(photoWidth, 100) / 100));
+  const archRadius = `${Math.round(calculatedPhotoWidth / 2)}px`;
+
   return new ImageResponse(
     (
       <div
         style={{
-          width: '100%',
-          height: '100%',
+          width: '800px',
+          height: '800px',
           display: 'flex',
           flexDirection: 'column',
-          backgroundColor: '#0F0D0C',
-          backgroundImage: 'radial-gradient(circle at 50% 30%, #2A211B 0%, #0F0D0C 75%)',
-          padding: '24px',
+          alignItems: 'center',
+          justifyContent: imageSrc && frameShape !== 'background' ? 'space-between' : 'center',
+          backgroundColor: pageBgColor,
           boxSizing: 'border-box',
-          fontFamily: 'serif',
           position: 'relative',
+          overflow: 'hidden',
+          paddingTop: '50px',
+          fontFamily: 'serif',
         }}
       >
-        {/* Luxury Gold Double Border */}
-        <div
-          style={{
-            width: '100%',
-            height: '100%',
-            border: '2px solid rgba(200, 168, 107, 0.45)',
-            padding: '32px 48px',
-            display: 'flex',
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            boxSizing: 'border-box',
-            position: 'relative',
-          }}
-        >
-          {/* Subtle Corner Accents */}
+        {/* If frameShape === 'background', render full background photo */}
+        {imageSrc && frameShape === 'background' && (
           <div
             style={{
               position: 'absolute',
-              top: '12px',
-              left: '12px',
-              width: '16px',
-              height: '16px',
-              borderTop: '2px solid #C8A86B',
-              borderLeft: '2px solid #C8A86B',
+              top: 0,
+              left: 0,
+              width: '800px',
+              height: '800px',
               display: 'flex',
-            }}
-          />
-          <div
-            style={{
-              position: 'absolute',
-              top: '12px',
-              right: '12px',
-              width: '16px',
-              height: '16px',
-              borderTop: '2px solid #C8A86B',
-              borderRight: '2px solid #C8A86B',
-              display: 'flex',
-            }}
-          />
-          <div
-            style={{
-              position: 'absolute',
-              bottom: '12px',
-              left: '12px',
-              width: '16px',
-              height: '16px',
-              borderBottom: '2px solid #C8A86B',
-              borderLeft: '2px solid #C8A86B',
-              display: 'flex',
-            }}
-          />
-          <div
-            style={{
-              position: 'absolute',
-              bottom: '12px',
-              right: '12px',
-              width: '16px',
-              height: '16px',
-              borderBottom: '2px solid #C8A86B',
-              borderRight: '2px solid #C8A86B',
-              display: 'flex',
-            }}
-          />
-
-          {/* Left Content Area */}
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-              alignItems: imageSrc ? 'flex-start' : 'center',
-              width: imageSrc ? '640px' : '100%',
-              textAlign: imageSrc ? 'left' : 'center',
+              overflow: 'hidden',
+              zIndex: 1,
             }}
           >
-            {/* Event Type Badge */}
-            <div
+            <img
+              src={imageSrc}
+              alt="Cover Background"
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '6px 16px',
-                borderRadius: '999px',
-                border: '1px solid rgba(200, 168, 107, 0.6)',
-                backgroundColor: 'rgba(200, 168, 107, 0.12)',
-                marginBottom: '20px',
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                objectPosition: `50% ${photoFocalY}%`,
+                opacity: (bgOpacity || 25) / 100,
               }}
-            >
-              <span
-                style={{
-                  fontSize: '13px',
-                  fontWeight: 800,
-                  color: '#E8C582',
-                  letterSpacing: '3px',
-                  textTransform: 'uppercase',
-                }}
-              >
-                {`${eventType.toUpperCase()} QUOTATION`}
-              </span>
-            </div>
+            />
+          </div>
+        )}
 
-            {/* Couple / Client Name */}
-            <div
+        {/* Top Text / Typography Container */}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '100%',
+            paddingLeft: '32px',
+            paddingRight: '32px',
+            boxSizing: 'border-box',
+            textAlign: 'center',
+            zIndex: 10,
+          }}
+        >
+          {/* Couple Name */}
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              marginBottom: '14px',
+            }}
+          >
+            <span
               style={{
-                display: 'flex',
-                fontSize: clientName.length > 25 ? '40px' : '48px',
-                fontWeight: 900,
-                color: '#FFFFFF',
-                letterSpacing: '3px',
-                lineHeight: 1.15,
+                color: textColor,
+                fontSize: coupleName.length > 20 ? '36px' : '48px',
+                letterSpacing: '0.18em',
                 textTransform: 'uppercase',
-                marginBottom: '16px',
-                textShadow: '0 2px 8px rgba(0, 0, 0, 0.6)',
+                fontWeight: 900,
+                textAlign: 'center',
               }}
             >
-              <span>{clientName}</span>
-            </div>
-
-            {/* Studio Branding */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                marginBottom: '20px',
-              }}
-            >
-              <span
-                style={{
-                  fontSize: '16px',
-                  fontWeight: 700,
-                  color: '#C8A86B',
-                  letterSpacing: '3px',
-                  textTransform: 'uppercase',
-                }}
-              >
-                {`Crafted by ${studioName}`}
-              </span>
-            </div>
-
-            {/* Event Details (Date & Location) */}
-            {(eventDate || location) && (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  fontSize: '14px',
-                  color: '#A8A29E',
-                  letterSpacing: '2px',
-                  textTransform: 'uppercase',
-                  marginBottom: '24px',
-                }}
-              >
-                {eventDate && <span>{eventDate}</span>}
-                {eventDate && location && <span>•</span>}
-                {location && <span>{location}</span>}
-              </div>
-            )}
-
-            {/* Call to action bar */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                padding: '10px 22px',
-                borderRadius: '12px',
-                backgroundColor: 'rgba(200, 168, 107, 0.18)',
-                border: '1px solid rgba(200, 168, 107, 0.4)',
-              }}
-            >
-              <span
-                style={{
-                  fontSize: '12px',
-                  fontWeight: 800,
-                  color: '#E8C582',
-                  letterSpacing: '2px',
-                  textTransform: 'uppercase',
-                }}
-              >
-                View Personalized Proposal & Pricing
-              </span>
-            </div>
+              {coupleName}
+            </span>
           </div>
 
-          {/* Right Area: Quotation First Page Photo / Arch Preview */}
-          {imageSrc ? (
+          {/* Event Type Quotation */}
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              marginBottom: '18px',
+            }}
+          >
+            <span
+              style={{
+                color: textColor,
+                fontSize: '16px',
+                letterSpacing: '0.22em',
+                textTransform: 'uppercase',
+                fontWeight: 700,
+                textAlign: 'center',
+              }}
+            >
+              {`${eventType} QUOTATION`}
+            </span>
+          </div>
+
+          {/* Brand Name or Logo */}
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              marginBottom: '14px',
+            }}
+          >
+            {brandLogoSrc ? (
+              <img
+                src={brandLogoSrc}
+                alt={brandName}
+                style={{
+                  height: `${Math.min(brandLogoSize || 48, 56)}px`,
+                  objectFit: 'contain',
+                }}
+              />
+            ) : (
+              <span
+                style={{
+                  color: textColor,
+                  fontSize: '18px',
+                  letterSpacing: '0.25em',
+                  textTransform: 'uppercase',
+                  fontWeight: 900,
+                  textAlign: 'center',
+                }}
+              >
+                {brandName}
+              </span>
+            )}
+          </div>
+
+          {/* Subtitle (Side Option & Location) */}
+          {subtitleText ? (
             <div
               style={{
                 display: 'flex',
-                alignItems: 'center',
                 justifyContent: 'center',
-                position: 'relative',
-                width: '380px',
-                height: '490px',
+                alignItems: 'center',
               }}
             >
-              {/* Arch Frame */}
-              <div
+              <span
                 style={{
-                  width: '360px',
-                  height: '470px',
-                  borderRadius: '180px 180px 18px 18px',
-                  border: '3px solid #C8A86B',
-                  overflow: 'hidden',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: '#1E1916',
-                  boxShadow: '0 20px 40px rgba(0,0,0,0.7), 0 0 20px rgba(200, 168, 107, 0.3)',
-                  position: 'relative',
+                  color: kickerColor,
+                  fontSize: '13px',
+                  letterSpacing: '0.18em',
+                  textTransform: 'uppercase',
+                  fontWeight: 600,
+                  opacity: 0.9,
+                  textAlign: 'center',
                 }}
               >
-                <img
-                  src={imageSrc}
-                  alt={clientName}
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'cover',
-                  }}
-                />
-              </div>
+                {subtitleText}
+              </span>
             </div>
-          ) : (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: '280px',
-                height: '280px',
-                borderRadius: '50%',
-                border: '2px solid rgba(200, 168, 107, 0.5)',
-                backgroundColor: 'rgba(200, 168, 107, 0.08)',
-              }}
-            >
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '48px',
-                  color: '#E8C582',
-                  fontWeight: 800,
-                  letterSpacing: '4px',
-                }}
-              >
-                <span>{`${clientName.split(' ')[0]?.[0] || 'W'} & ${clientName.split('&')?.[1]?.trim()?.[0] || 'Q'}`}</span>
-              </div>
-            </div>
-          )}
+          ) : null}
         </div>
+
+        {/* Bottom Photo (when not background) */}
+        {imageSrc && frameShape !== 'background' && (
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'flex-end',
+              width: '100%',
+              marginTop: '12px',
+              zIndex: 10,
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                width: frameShape === 'full-width' ? '800px' : `${calculatedPhotoWidth}px`,
+                height: '490px',
+                overflow: 'hidden',
+                borderTopLeftRadius: frameShape === 'arch' ? archRadius : frameShape === 'rounded' ? '28px' : '0px',
+                borderTopRightRadius: frameShape === 'arch' ? archRadius : frameShape === 'rounded' ? '28px' : '0px',
+                borderBottomLeftRadius: '0px',
+                borderBottomRightRadius: '0px',
+                backgroundColor: 'transparent',
+              }}
+            >
+              <img
+                src={imageSrc}
+                alt="Wedding Couple"
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  objectPosition: `50% ${photoFocalY}%`,
+                }}
+              />
+            </div>
+          </div>
+        )}
       </div>
     ),
     {

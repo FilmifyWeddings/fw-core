@@ -6,6 +6,7 @@ import { WorkspaceClient } from '@/types';
 import { type WorkspaceMemberOption } from '@/lib/team-helpers';
 import { parseClientExtended, serializeClientExtended } from '@/components/clients/client-insider-modal';
 import { Calendar, UserPlus, Check, ChevronRight } from 'lucide-react';
+import ClientStatusDropdown from './ClientStatusDropdown';
 
 /**
  * ⚡ Bidirectional PM Assignment for Client Directory
@@ -108,12 +109,16 @@ export interface ClientRowProps {
   client: WorkspaceClient;
   onSelectClient?: (client: WorkspaceClient) => void;
   onOpenQuickAssign?: (client: WorkspaceClient) => void;
+  onToggleStatus?: (client: WorkspaceClient) => void;
+  onStatusChange?: (client: WorkspaceClient, newStatus: 'active' | 'completed') => void;
 }
 
 export const ClientRow: React.FC<ClientRowProps> = ({
   client,
   onSelectClient,
   onOpenQuickAssign,
+  onToggleStatus,
+  onStatusChange,
 }) => {
   const ext = parseClientExtended(client);
   const dueAmount = Math.max(0, (client.total_package_amount || 0) - (client.paid_amount || 0));
@@ -123,80 +128,65 @@ export const ClientRow: React.FC<ClientRowProps> = ({
   return (
     <div
       onClick={() => onSelectClient?.(client)}
-      className="p-4 rounded-2xl bg-white border border-[#EAE5DA] hover:border-amber-400 hover:shadow-md transition-all flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 group cursor-pointer"
+      className="p-4 rounded-2xl bg-white border border-[#EAE5DA] hover:border-amber-400 hover:shadow-md transition-all grid grid-cols-1 lg:grid-cols-12 gap-4 items-center group cursor-pointer"
     >
-      {/* Left: Client Name & Contact */}
-      <div className="flex items-center gap-3.5 min-w-[240px]">
-        <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 to-amber-600 text-white font-black text-sm flex items-center justify-center shadow-xs">
+      {/* Col 1-5: Client Name & Contact */}
+      <div className="lg:col-span-5 flex items-center gap-3.5 min-w-0">
+        <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 to-amber-600 text-white font-black text-sm flex items-center justify-center shadow-xs shrink-0">
           {client.name ? client.name.slice(0, 2).toUpperCase() : 'CL'}
         </div>
-        <div>
-          <h3 className="font-extrabold text-sm text-slate-900 group-hover:text-amber-800 transition-colors">
+        <div className="min-w-0 flex-1">
+          <h3 className="font-extrabold text-sm text-slate-900 group-hover:text-amber-800 transition-colors truncate">
             {client.name}
           </h3>
-          <p className="text-xs text-slate-500 font-medium">{client.phone}</p>
+          <p className="text-xs text-slate-500 font-medium truncate">{client.phone}</p>
         </div>
       </div>
 
-      {/* Center: Event Info */}
-      <div className="flex items-center gap-4 text-xs min-w-[180px]">
-        <div className="space-y-1">
-          <span className="px-2.5 py-1 rounded-xl text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200 inline-block">
-            {client.event_type}
-          </span>
-          <p className="flex items-center gap-1 text-slate-600 font-semibold text-[11px]">
-            <Calendar className="w-3 h-3 text-slate-400" />
-            {client.event_date
-              ? new Date(client.event_date).toLocaleDateString('en-IN', {
-                  day: '2-digit',
-                  month: 'short',
-                  year: 'numeric',
-                })
-              : 'Date not set'}
-          </p>
-        </div>
+      {/* Col 6-7: Event Info */}
+      <div className="lg:col-span-2 flex items-center">
+        <span className="px-2.5 py-1 rounded-xl text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200 inline-block truncate max-w-full">
+          {client.event_type || 'Wedding & Reception'}
+        </span>
       </div>
 
-      {/* Project Manager Badge / Quick Assign */}
-      <div
-        onClick={(e) => {
-          e.stopPropagation();
-          onOpenQuickAssign?.(client);
-        }}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-[#EAE5DA] hover:border-indigo-300 bg-white hover:bg-indigo-50/50 transition-all cursor-pointer shadow-2xs group/pm shrink-0"
-        title="Click to Assign or Change Project Manager"
-      >
-        {pmName ? (
-          <div className="flex items-center gap-2">
-            <span className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white text-[10px] font-black flex items-center justify-center shadow-xs">
-              {pmName.split(/\s+/).filter(Boolean).map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
-            </span>
-            <div>
-              <span className="text-[9px] font-extrabold text-indigo-600 uppercase tracking-wider block leading-tight">
-                PM Assigned
+      {/* Col 8-9: Project Manager Badge / Quick Assign */}
+      <div className="lg:col-span-2 flex items-center">
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenQuickAssign?.(client);
+          }}
+          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-[#EAE5DA] hover:border-indigo-300 bg-white hover:bg-indigo-50/50 transition-all cursor-pointer shadow-2xs group/pm max-w-full"
+          title="Click to Assign or Change Project Manager"
+        >
+          {pmName ? (
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white text-[10px] font-black flex items-center justify-center shadow-xs shrink-0">
+                {pmName.split(/\s+/).filter(Boolean).map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
               </span>
-              <span className="text-xs font-black text-slate-900 group-hover/pm:text-indigo-700">
+              <span className="text-xs font-black text-slate-900 group-hover/pm:text-indigo-700 truncate max-w-[110px]">
                 {pmName}
               </span>
             </div>
-          </div>
-        ) : (
-          <div className="flex items-center gap-1.5 text-slate-400 group-hover/pm:text-indigo-600">
-            <UserPlus className="w-3.5 h-3.5 text-indigo-500" />
-            <span className="text-xs font-bold text-slate-600 group-hover/pm:text-indigo-600">+ Assign PM</span>
-          </div>
-        )}
+          ) : (
+            <div className="flex items-center gap-1.5 text-slate-400 group-hover/pm:text-indigo-600">
+              <UserPlus className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+              <span className="text-xs font-bold text-slate-600 group-hover/pm:text-indigo-600 whitespace-nowrap">+ Assign PM</span>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Right: Billing & Status */}
-      <div className="flex items-center justify-between lg:justify-end gap-6 ml-auto w-full lg:w-auto pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100">
-        <div className="text-right space-y-0.5">
+      {/* Col 10-12: Billing & Status */}
+      <div className="lg:col-span-3 flex items-center justify-between lg:justify-end gap-3.5 w-full pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100">
+        <div className="text-left lg:text-right space-y-0.5">
           <span className="font-mono font-black text-sm text-slate-900 block">
             ₹{(client.total_package_amount || 0).toLocaleString('en-IN')}
           </span>
           <p className="text-[11px] font-bold">
             {isPaidFull ? (
-              <span className="text-emerald-600 font-extrabold flex items-center gap-1 justify-end">
+              <span className="text-emerald-600 font-extrabold flex items-center gap-1 lg:justify-end">
                 <Check className="w-3 h-3" /> Paid in Full
               </span>
             ) : (
@@ -207,17 +197,20 @@ export const ClientRow: React.FC<ClientRowProps> = ({
           </p>
         </div>
 
-        <span
-          className={`px-2.5 py-1 rounded-full text-xs font-extrabold border ${
-            client.status === 'completed'
-              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-              : 'bg-blue-50 text-blue-700 border-blue-200'
-          }`}
-        >
-          {client.status === 'completed' ? 'Completed' : 'Active'}
-        </span>
+        {/* Active / Completed Status Dropdown */}
+        <ClientStatusDropdown
+          status={client.status}
+          clientId={client.id}
+          onStatusChange={(newStatus) => {
+            if (onStatusChange) {
+              onStatusChange(client, newStatus);
+            } else {
+              client.status = newStatus;
+            }
+          }}
+        />
 
-        <div className="w-8 h-8 rounded-xl bg-amber-50 group-hover:bg-amber-400 text-amber-800 group-hover:text-slate-900 flex items-center justify-center transition-all shadow-2xs">
+        <div className="w-8 h-8 rounded-xl bg-amber-50 group-hover:bg-amber-400 text-amber-800 group-hover:text-slate-900 flex items-center justify-center transition-all shadow-2xs shrink-0">
           <ChevronRight className="w-4 h-4" />
         </div>
       </div>

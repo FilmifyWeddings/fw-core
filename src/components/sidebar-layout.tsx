@@ -9,7 +9,8 @@ import {
   Film, IndianRupee, Clock, Layers, BarChart3, Settings, 
   Headphones, LogOut, ChevronDown, ChevronRight, ChevronLeft, 
   Menu, X, Sparkles, UserCheck, Archive, UserX, CheckCircle2, 
-  ArrowUpRight, Bell, ShieldCheck, Crown, Briefcase, HardDrive, Camera
+  ArrowUpRight, Bell, ShieldCheck, Crown, Briefcase, HardDrive, Camera,
+  Flame, PhoneCall, CheckSquare
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import StudioProfileEditModal from '@/components/workspace/StudioProfileEditModal';
@@ -59,13 +60,20 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
 
   const checkIsSubActive = (subPath: string) => {
     if (subPath === '/leads') {
-      return pathname === '/leads' && !stageParam;
+      return pathname === '/leads' && (!stageParam || stageParam === 'all' || stageParam === 'overview');
     }
-    if (subPath.includes('stage=lost')) {
-      return pathname.startsWith('/leads') && stageParam === 'lost';
-    }
-    if (subPath.includes('stage=archived')) {
-      return pathname.startsWith('/leads') && (stageParam === 'archived' || stageParam === 'archive');
+    if (pathname.startsWith('/leads')) {
+      const match = subPath.match(/stage=([^&]+)/);
+      if (match) {
+        const target = match[1].toLowerCase();
+        if (target === 'archived') {
+          return stageParam === 'archived' || stageParam === 'archive';
+        }
+        if (target === 'cool') {
+          return stageParam === 'cool' || stageParam === 'warm';
+        }
+        return stageParam.toLowerCase() === target;
+      }
     }
     return pathname === subPath;
   };
@@ -293,7 +301,11 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       iconBg: 'bg-[#E6F4EA] text-[#137333]',
       subItems: [
         { name: 'All Leads', path: '/leads', icon: Target },
-        { name: 'Qualified', path: '/leads?stage=qualified', icon: UserCheck },
+        { name: 'New Leads', path: '/leads?stage=new', icon: Sparkles },
+        { name: 'Contacted', path: '/leads?stage=contacted', icon: PhoneCall },
+        { name: 'Cool / Warm', path: '/leads?stage=cool', icon: Clock },
+        { name: 'Hot Leads', path: '/leads?stage=hot', icon: Flame },
+        { name: 'Booked', path: '/leads?stage=booked', icon: CheckCircle2 },
         { name: 'Lost Leads', path: '/leads?stage=lost', icon: UserX },
         { name: 'Archived', path: '/leads?stage=archived', icon: Archive },
       ]
@@ -341,6 +353,13 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       iconBg: 'bg-[#FFE4E6] text-[#E11D48]',
     },
     {
+      id: 'tasks',
+      name: 'Tasks & Notes',
+      path: '/workspace/tasks',
+      icon: CheckSquare,
+      iconBg: 'bg-[#FEF3C7] text-[#D97706]',
+    },
+    {
       id: 'finance',
       name: 'Finance & Payments',
       path: '/workspace/finance',
@@ -385,6 +404,16 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       path: '/leads',
       icon: Target,
       iconBg: 'bg-[#E6F4EA] text-[#137333]',
+      subItems: [
+        { name: 'All Leads', path: '/leads', icon: Target },
+        { name: 'New Leads', path: '/leads?stage=new', icon: Sparkles },
+        { name: 'Contacted', path: '/leads?stage=contacted', icon: PhoneCall },
+        { name: 'Cool / Warm', path: '/leads?stage=cool', icon: Clock },
+        { name: 'Hot Leads', path: '/leads?stage=hot', icon: Flame },
+        { name: 'Booked', path: '/leads?stage=booked', icon: CheckCircle2 },
+        { name: 'Lost Leads', path: '/leads?stage=lost', icon: UserX },
+        { name: 'Archived', path: '/leads?stage=archived', icon: Archive },
+      ]
     }] : []),
     // 2. Bookings & Team Manager
     ...(permissions?.team_manager_access && permissions.team_manager_access !== 'NONE' ? [{
@@ -426,6 +455,14 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       icon: IndianRupee,
       iconBg: 'bg-[#FEF9C3] text-[#A16207]',
     }] : []),
+    // 7. Smart Attendance (For team members & crew)
+    {
+      id: 'team-attendance',
+      name: 'Smart Attendance',
+      path: '/team/attendance',
+      icon: Clock,
+      iconBg: 'bg-[#DCFCE7] text-[#15803D]',
+    },
     {
       id: 'support',
       name: 'Help & Support',
@@ -792,6 +829,30 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                         </div>
                         <span>{item.name}</span>
                       </Link>
+
+                      {item.id === 'leads' && (item as any).subItems && pathname.startsWith('/leads') && (
+                        <div className="pl-9 pr-2 py-1 space-y-1 mt-0.5 border-l-2 border-amber-200 ml-4.5">
+                          {(item as any).subItems.map((sub: any) => {
+                            const isSubActive = checkIsSubActive(sub.path);
+                            return (
+                              <Link
+                                key={sub.name}
+                                href={formatPathWithStudio(sub.path)}
+                                prefetch={true}
+                                onClick={() => setMobileDrawerOpen(false)}
+                                className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${
+                                  isSubActive
+                                    ? 'bg-amber-100/70 text-amber-900 font-bold'
+                                    : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100/60'
+                                }`}
+                              >
+                                <sub.icon className="w-3 h-3" />
+                                <span>{sub.name}</span>
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

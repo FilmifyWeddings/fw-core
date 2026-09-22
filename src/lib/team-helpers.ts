@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import { getRoleShortCode } from '@/lib/workspace-settings';
+import { getRoleShortCode, parseRoleAndNumber, formatRoleWithNumber } from '@/lib/workspace-settings';
 
 export interface WorkspaceMemberOption {
   id: string;
@@ -8,6 +8,8 @@ export interface WorkspaceMemberOption {
   phone?: string;
   role?: string;
   avatar_url?: string;
+  primary_type?: string;
+  member_types?: string[];
 }
 
 export async function fetchWorkspaceTeamMembers(workspaceId?: string): Promise<WorkspaceMemberOption[]> {
@@ -26,41 +28,19 @@ export async function fetchWorkspaceTeamMembers(workspaceId?: string): Promise<W
         });
         const json = await res.json();
         if (json.success && Array.isArray(json.members) && json.members.length > 0) {
-          members = json.members.map((m: any) => ({
-            id: m.id || m.user_id,
-            name: m.name || m.full_name || 'Team Member',
-            email: m.email || '',
-            phone: m.phone || '',
-            role: m.primary_role || m.role || 'Project Manager',
-            avatar_url: m.avatar_url || '',
-          }));
+          members = json.members;
         }
       }
     } catch (_) {}
 
-    // 2. Also merge from fw_team_members
-    if (currentUid) {
-      const { data: fwData } = await supabase
+    // 2. Fallback to direct supabase query on fw_team_members
+    if (members.length === 0 && effectiveWsId) {
+      const { data: directMembers } = await supabase
         .from('fw_team_members')
         .select('*')
-        .eq('user_id', currentUid);
-
-      if (fwData && fwData.length > 0) {
-        for (const f of fwData) {
-          const exists = members.some(
-            c => c.name.toLowerCase() === f.name.toLowerCase() || (f.email && c.email?.toLowerCase() === f.email.toLowerCase())
-          );
-          if (!exists) {
-            members.push({
-              id: f.id,
-              name: f.name,
-              email: f.email || '',
-              phone: f.phone_number ? `${f.country_code || '+91'} ${f.phone_number}` : '',
-              role: f.primary_role || 'Crew',
-              avatar_url: f.avatar_url || '',
-            });
-          }
-        }
+        .or(`workspace_id.eq.${effectiveWsId},user_id.eq.${effectiveWsId}`);
+      if (directMembers && directMembers.length > 0) {
+        members = directMembers;
       }
     }
 
@@ -74,12 +54,12 @@ export async function fetchWorkspaceTeamMembers(workspaceId?: string): Promise<W
 import type { FWAssignment, FWSubEvent, FWTeamMember } from '../types';
 
 /**
- * Resolves sub-event assignments with zero data-loss and full multiplier support.
+ * Resolves sub-event assignments with zero data-loss, strict slot order stability,
+ * sequential role numbering (TV, TV 2, TV 3), and robust member resolution.
+ * - Adheres strictly to the order defined in subEvent.roles (e.g. ['CV', 'TC']).
+ * - Slot positions NEVER shift, invert, or swap when assigning/unassigning crew.
  * - Retains ALL existing database assignments in subEvent.fw_assignments.
- * - Counts existing assignments per role.
- * - Counts requested roles in subEvent.roles (e.g. 2 Cinematographers).
- * - Appends placeholder unassigned slots only for the difference (requestedCount - existingCount).
- * - NEVER deduplicates identical roles with Set.
+ * - Resolves assigned member avatars and names across both fw_team_members and workspace_members.
  */
 export function resolveSubEventAssignments(
   subEvent: FWSubEvent,
@@ -98,60 +78,120 @@ export function resolveSubEventAssignments(
 
   const existingAssignments: FWAssignment[] = (subEvent.fw_assignments || []) as FWAssignment[];
 
-  // 1. Map existing DB assignments and attach their matched team member
-  const resolvedAssignments: FWAssignment[] = existingAssignments.map((existing: any) => {
-    const matched = existing.fw_team_members || (existing.assigned_member_id ? teamMembers.find(m => m.id === existing.assigned_member_id) : null);
-    return {
-      ...existing,
-      fw_team_members: matched || existing.fw_team_members || null
-    };
-  });
-
-  // Helper to normalize role key (matches short code and name)
-  const getRoleKey = (roleStr?: string | null): string => {
-    const clean = String(roleStr || '').trim().toLowerCase();
+  // Helper to normalize base role key (e.g. 'Traditional Videographer' -> 'tv', 'CV 2' -> 'cv')
+  const getBaseRoleKey = (roleStr?: string | null): string => {
+    const { baseRole } = parseRoleAndNumber(roleStr);
+    const clean = baseRole.trim().toLowerCase();
     if (!clean) return '';
     const code = getRoleShortCode(clean);
     return (code || clean).toLowerCase();
   };
 
-  // 2. Count existing assignments per role (normalized key matching)
-  const existingCountByRole: Record<string, number> = {};
-  resolvedAssignments.forEach(a => {
-    const rKey = getRoleKey(a.required_role);
-    if (rKey) {
-      existingCountByRole[rKey] = (existingCountByRole[rKey] || 0) + 1;
+  // Helper to resolve FWTeamMember object for an assignment
+  const resolveMemberObj = (existing: any): FWTeamMember | null => {
+    let matched = existing.fw_team_members || null;
+    if (!matched && existing.assigned_member_id) {
+      matched = teamMembers.find(m => m.id === existing.assigned_member_id) || null;
     }
-  });
+    if (!matched && existing.assigned_member_name) {
+      const cleanAssigned = String(existing.assigned_member_name).toLowerCase().trim();
+      matched = teamMembers.find(m => m.name.toLowerCase().trim() === cleanAssigned) || null;
+    }
+    if (!matched && (existing.assigned_member_id || existing.assigned_member_name)) {
+      const fallbackName = existing.assigned_member_name || existing.member_name || '';
+      if (fallbackName) {
+        matched = {
+          id: existing.assigned_member_id || `fallback-${fallbackName}`,
+          name: fallbackName,
+          primary_role: existing.required_role || 'Crew',
+          is_active: true
+        } as FWTeamMember;
+      }
+    }
+    return matched;
+  };
 
-  // 3. Count requested roles in rawRoles
-  const rawRoleCounts: Record<string, { roleName: string; count: number }> = {};
-  rawRoles.forEach(r => {
-    const trimmed = String(r || '').trim();
+  // If no rawRoles specified, fallback to ordered existing assignments
+  if (!rawRoles || rawRoles.length === 0) {
+    return existingAssignments.map(existing => ({
+      ...existing,
+      fw_team_members: resolveMemberObj(existing)
+    }));
+  }
+
+  // Track remaining existing assignments to match against rawRoles
+  const remainingExisting = [...existingAssignments];
+  const resolvedAssignments: FWAssignment[] = [];
+
+  // Track sequential numbering for duplicate base roles in rawRoles
+  const roleCounters: Record<string, number> = {};
+
+  rawRoles.forEach((roleItem) => {
+    const trimmed = String(roleItem || '').trim();
     if (!trimmed) return;
-    const rKey = getRoleKey(trimmed);
-    if (!rawRoleCounts[rKey]) {
-      rawRoleCounts[rKey] = { roleName: trimmed, count: 0 };
-    }
-    rawRoleCounts[rKey].count += 1;
-  });
 
-  // 4. For any role where rawRoles requires MORE slots than exist in resolvedAssignments, add unassigned placeholder slots
-  Object.keys(rawRoleCounts).forEach(rKey => {
-    const { roleName, count: requestedCount } = rawRoleCounts[rKey];
-    const existingCount = existingCountByRole[rKey] || 0;
-    const needed = requestedCount - existingCount;
-    for (let i = 0; i < needed; i++) {
+    const { baseRole, number: explicitNum } = parseRoleAndNumber(trimmed);
+    const baseKey = getBaseRoleKey(baseRole);
+
+    let slotNum = 1;
+    if (explicitNum > 1) {
+      slotNum = explicitNum;
+      roleCounters[baseKey] = Math.max(roleCounters[baseKey] || 0, explicitNum);
+    } else {
+      roleCounters[baseKey] = (roleCounters[baseKey] || 0) + 1;
+      slotNum = roleCounters[baseKey];
+    }
+
+    const formattedRole = formatRoleWithNumber(baseRole, slotNum);
+
+    // 1. Try exact role string match first
+    let matchIdx = remainingExisting.findIndex(
+      a => (a.required_role || '').trim().toLowerCase() === formattedRole.toLowerCase()
+    );
+
+    // 2. Try matching by base role key AND slot number
+    if (matchIdx === -1) {
+      matchIdx = remainingExisting.findIndex(a => {
+        const parsed = parseRoleAndNumber(a.required_role);
+        return getBaseRoleKey(parsed.baseRole) === baseKey && parsed.number === slotNum;
+      });
+    }
+
+    // 3. Try matching by base role key
+    if (matchIdx === -1) {
+      matchIdx = remainingExisting.findIndex(a => {
+        const parsed = parseRoleAndNumber(a.required_role);
+        return getBaseRoleKey(parsed.baseRole) === baseKey;
+      });
+    }
+
+    if (matchIdx >= 0) {
+      const matched = remainingExisting.splice(matchIdx, 1)[0];
       resolvedAssignments.push({
-        id: `${subEvent.id}-role-${rKey}-${existingCount + i}`,
+        ...matched,
+        required_role: formattedRole,
+        fw_team_members: resolveMemberObj(matched)
+      });
+    } else {
+      // Unassigned placeholder strictly placed at this exact slot position
+      resolvedAssignments.push({
+        id: `${subEvent.id}-role-${baseKey}-${slotNum}`,
         sub_event_id: subEvent.id,
         project_id: subEvent.project_id,
-        required_role: roleName,
+        required_role: formattedRole,
         assigned_member_id: null,
         fw_team_members: null,
         status: 'pending'
       });
     }
+  });
+
+  // Append any extra assignments from DB that were not part of rawRoles
+  remainingExisting.forEach(extra => {
+    resolvedAssignments.push({
+      ...extra,
+      fw_team_members: resolveMemberObj(extra)
+    });
   });
 
   return resolvedAssignments;

@@ -111,7 +111,15 @@ export default function AddClientModal({
     }));
   }, [eventTypes]);
 
-  // 3. Project Manager Options
+  // 3. Project Manager Options (In-House Only, Avatar + Name)
+  const inHouseTeamMembers = useMemo(() => {
+    return teamMembers.filter((m: any) => {
+      const typeStr = (m.primary_type || m.type || '').toUpperCase();
+      const typesArr = (m.member_types || []).map((t: string) => String(t).toUpperCase());
+      return typeStr === 'IN_HOUSE' || typesArr.includes('IN_HOUSE') || (!typeStr && typesArr.length === 0);
+    });
+  }, [teamMembers]);
+
   const pmOptions: Searchable3DCreamSelectOption[] = useMemo(() => {
     const opts: Searchable3DCreamSelectOption[] = [
       {
@@ -122,18 +130,16 @@ export default function AddClientModal({
       },
     ];
 
-    teamMembers.forEach((member) => {
+    inHouseTeamMembers.forEach((member) => {
       opts.push({
         value: member.id,
         label: member.name,
         initials: getMemberInitials(member.name),
-        roleTag: member.role || 'Project Manager',
-        subLabel: member.email || undefined,
       });
     });
 
     return opts;
-  }, [teamMembers]);
+  }, [inHouseTeamMembers]);
 
   // Auto-fill when CRM lead is selected
   const handleLeadSelect = (leadId: string) => {

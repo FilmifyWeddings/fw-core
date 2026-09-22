@@ -567,11 +567,22 @@ export default function FinancePage() {
     const handleExpensesUpdated = () => {
       fetchFinanceData();
     };
+    const handleQuotationFinalized = () => {
+      memCachedFinanceRecords = [];
+      memCachedFinanceClients = [];
+      try {
+        localStorage.removeItem('sc_cached_finance_records');
+        localStorage.removeItem('sc_cached_finance_clients');
+      } catch (_) {}
+      fetchFinanceData();
+    };
     window.addEventListener('finance_expenses_updated', handleExpensesUpdated);
     window.addEventListener('team_finance_updated', handleExpensesUpdated);
+    window.addEventListener('quotation_finalized', handleQuotationFinalized);
     return () => {
       window.removeEventListener('finance_expenses_updated', handleExpensesUpdated);
       window.removeEventListener('team_finance_updated', handleExpensesUpdated);
+      window.removeEventListener('quotation_finalized', handleQuotationFinalized);
     };
   }, [isPinVerified, isCheckingPinStatus, currentWorkspaceId]);
 
@@ -1316,20 +1327,34 @@ export default function FinancePage() {
 
     setFinanceRecords(prev => prev.map(rec => {
       if (rec.id === recordId) {
-        const updatedMilestones = (rec.milestones || []).map(m => {
-          if (m.id === milestone.id) {
-            return {
-              ...m,
-              amount: numAmt,
-              status: (completePaymentFormData.status as any),
-              paid_date: isComp ? (completePaymentFormData.payment_date || new Date().toISOString().split('T')[0]) : undefined,
-              payment_mode: isComp ? completePaymentFormData.payment_mode : undefined,
-              reference_id: completePaymentFormData.reference_id || null,
-              notes: completePaymentFormData.notes || null
+        const updatedMilestones = [...(rec.milestones || [])];
+        const mIndex = updatedMilestones.findIndex(m => m.id === milestone.id);
+
+        if (mIndex !== -1) {
+          const originalAmt = Number(updatedMilestones[mIndex].amount) || 0;
+          const diff = originalAmt - numAmt;
+
+          updatedMilestones[mIndex] = {
+            ...updatedMilestones[mIndex],
+            amount: numAmt,
+            status: (completePaymentFormData.status as any),
+            paid_date: isComp ? (completePaymentFormData.payment_date || new Date().toISOString().split('T')[0]) : undefined,
+            payment_mode: isComp ? completePaymentFormData.payment_mode : undefined,
+            reference_id: completePaymentFormData.reference_id || null,
+            notes: completePaymentFormData.notes || null
+          };
+
+          // Automatic Partial Rollover: Difference is added to the subsequent milestone
+          if (diff !== 0 && mIndex + 1 < updatedMilestones.length) {
+            const nextM = updatedMilestones[mIndex + 1];
+            const nextOriginalAmt = Number(nextM.amount) || 0;
+            const newNextAmt = Math.max(0, nextOriginalAmt + diff);
+            updatedMilestones[mIndex + 1] = {
+              ...nextM,
+              amount: newNextAmt
             };
           }
-          return m;
-        });
+        }
 
         const finalUpdated = computeFinanceTotals(rec, updatedMilestones);
         updateFinanceRecordInDB(finalUpdated);

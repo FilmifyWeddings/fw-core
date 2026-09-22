@@ -111,7 +111,14 @@ export function CRMDropdown({
       return 0;
     });
 
-    return [...customs, ...systems];
+    const combined = [...customs, ...systems];
+    const seen = new Set<string>();
+    return combined.filter(o => {
+      const k = String(o.value ?? o.label ?? '');
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
   }, [options]);
 
   // ── 2. Fixed Width Calculation (Requirement 1 & 6) ──────────

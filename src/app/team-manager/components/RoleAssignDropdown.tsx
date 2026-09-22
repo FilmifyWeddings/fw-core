@@ -23,6 +23,7 @@ interface RoleAssignDropdownProps {
   isAdmin?: boolean;
   selectedFilterMemberId?: string | null;
   unifiedFilters?: UnifiedFilterState | null;
+  existingAssignments?: FWAssignment[];
 }
 
 export default function RoleAssignDropdown({
@@ -38,6 +39,7 @@ export default function RoleAssignDropdown({
   isAdmin = false,
   selectedFilterMemberId = null,
   unifiedFilters = null,
+  existingAssignments = [],
 }: RoleAssignDropdownProps) {
   const { crewRoles } = useWorkspaceData();
   const [isOpen, setIsOpen] = useState(false);
@@ -45,9 +47,9 @@ export default function RoleAssignDropdown({
   const [popoverPos, setPopoverPos] = useState<{ top: number; left: number } | null>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
 
-  const memberObj = assignment.fw_team_members || (assignment.assigned_member_id ? teamMembers.find(m => m.id === assignment.assigned_member_id) : null);
+  const memberObj = assignment.fw_team_members || (assignment.assigned_member_id ? teamMembers.find(m => m.id === assignment.assigned_member_id || (Boolean((assignment as any).assigned_member_name) && m.name.toLowerCase() === String((assignment as any).assigned_member_name).toLowerCase())) : null);
   const isAssigned = Boolean(assignment.assigned_member_id || memberObj);
-  const rawName = memberObj?.name || '';
+  const rawName = memberObj?.name || (assignment as any).assigned_member_name || (assignment as any).member_name || '';
   const cleanName = rawName.replace(/\.\.\./g, '').trim();
   const role = assignment.required_role;
 
@@ -100,6 +102,18 @@ export default function RoleAssignDropdown({
       return (a.name || '').localeCompare(b.name || '');
     });
   }, [teamMembers, searchQuery, assignment.assigned_member_id, role]);
+
+  const otherSlotAssignedMemberMap = useMemo(() => {
+    const map = new Map<string, string>(); // memberId -> roleName
+    if (existingAssignments && existingAssignments.length > 0) {
+      existingAssignments.forEach(a => {
+        if (a.id !== assignment.id && a.assigned_member_id) {
+          map.set(a.assigned_member_id, a.required_role || 'Crew');
+        }
+      });
+    }
+    return map;
+  }, [existingAssignments, assignment.id]);
 
   const slotMatch = checkRoleSlotMatch(assignment, unifiedFilters);
   const isSelectedSpotlight = Boolean(
@@ -189,7 +203,7 @@ export default function RoleAssignDropdown({
                           ? 'bg-gradient-to-br from-amber-500 to-amber-600'
                           : 'bg-gradient-to-br from-emerald-500 to-teal-600'
                       }`}>
-                        {cleanName.slice(0, 2).toUpperCase() || getRoleAbbr(role, crewRoles)}
+                        {cleanName ? cleanName.slice(0, 2).toUpperCase() : getRoleAbbr(role, crewRoles)}
                       </div>
                     )}
                   </div>
@@ -327,19 +341,28 @@ export default function RoleAssignDropdown({
                   const isSelected = assignment.assigned_member_id === m.id;
                   const cleanMName = m.name ? m.name.replace(/\.\.\./g, '').trim() : '';
                   const isRoleMatch = (m.primary_role || '').toLowerCase() === (role || '').toLowerCase();
+                  const alreadyAssignedRole = otherSlotAssignedMemberMap.get(m.id);
+                  const isAlreadyAssignedElsewhere = Boolean(alreadyAssignedRole && !isSelected);
 
                   return (
                     <button
                       key={m.id}
                       type="button"
+                      disabled={isAlreadyAssignedElsewhere}
                       onClick={() => {
+                        if (isAlreadyAssignedElsewhere) {
+                          alert(`"${cleanMName}" is already assigned as "${alreadyAssignedRole}" in this event. Each crew role must be assigned to a different person.`);
+                          return;
+                        }
                         handleClose();
                         onAssignMember(assignment.id, m.id);
                       }}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
-                        isSelected
-                          ? 'bg-emerald-50 text-emerald-950 border border-emerald-300 shadow-2xs'
-                          : 'text-[#0B111E] hover:bg-zinc-50'
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition ${
+                        isAlreadyAssignedElsewhere
+                          ? 'opacity-40 cursor-not-allowed bg-slate-50 text-slate-400'
+                          : isSelected
+                          ? 'bg-emerald-50 text-emerald-950 border border-emerald-300 shadow-2xs cursor-pointer'
+                          : 'text-[#0B111E] hover:bg-zinc-50 cursor-pointer'
                       }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
@@ -364,12 +387,17 @@ export default function RoleAssignDropdown({
                         )}
                         <div className="text-left leading-tight min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className={`block font-black text-xs truncate ${isSelected ? 'text-emerald-900' : 'text-slate-900'}`}>
+                            <span className={`block font-black text-xs truncate ${isSelected ? 'text-emerald-900' : isAlreadyAssignedElsewhere ? 'text-slate-500' : 'text-slate-900'}`}>
                               {cleanMName}
                             </span>
                             {isSelected && (
                               <span className="px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300">
                                 ✓ Currently Assigned
+                              </span>
+                            )}
+                            {isAlreadyAssignedElsewhere && (
+                              <span className="px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300">
+                                ⚠️ Already Assigned ({getRoleAbbr(alreadyAssignedRole, crewRoles)})
                               </span>
                             )}
                           </div>

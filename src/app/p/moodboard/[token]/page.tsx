@@ -24,7 +24,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   try {
     const { data: moodboard } = await supabaseAdmin
       .from('client_moodboards')
-      .select('client_id, workspace_id, couple_photos')
+      .select('client_id, workspace_id, couple_photos, event_type, title')
       .eq('token', token)
       .maybeSingle();
 
@@ -77,8 +77,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       }
     }
 
-    const title = `💍 ${clientName} • Wedding Mood Board & Prep Portal`;
-    const description = `Interactive mood board, VIP family tagged portraits, ceremony schedule, and outfit styling for ${clientName} by ${studioName}.`;
+    const eventTitle = moodboard?.title || `${moodboard?.event_type || 'Event'} Mood Board`;
+    const title = `💍 ${clientName} • ${eventTitle} | ${studioName}`;
+    const description = `Interactive mood board, shoot locations, coordinators, and pose inspiration for ${clientName} by ${studioName}.`;
 
     return {
       title: `${clientName} • Wedding Mood Board | ${studioName}`,

@@ -221,6 +221,8 @@ export async function POST(req: NextRequest) {
             default_currency: cleanCurrency,
             payout_frequency: cleanFrequency,
             is_active: true,
+            primary_type: memberPayload.primary_type,
+            member_types: memberPayload.member_types,
           }, { onConflict: 'id' });
       } catch (_) {}
 
@@ -238,25 +240,33 @@ export async function POST(req: NextRequest) {
       } catch (_) {}
     }
 
-    // 3. Upsert into member_permissions table
-    if (targetMemberId && permissions) {
+    // 3. Upsert into member_permissions table - strictly default to NONE (No Access)
+    if (targetMemberId) {
       try {
+        const p = permissions || {};
+        const cleanTeamAccess = p.team_manager_access && !['ASSIGNED_ONLY_VIEW', 'NONE', 'HIDDEN', 'FALSE'].includes(String(p.team_manager_access).toUpperCase())
+          ? p.team_manager_access
+          : 'NONE';
+        const cleanPostAccess = p.post_production_access && !['ASSIGNED_ONLY', 'NONE', 'HIDDEN', 'FALSE'].includes(String(p.post_production_access).toUpperCase())
+          ? p.post_production_access
+          : 'NONE';
+
+        const permPayload = {
+          member_id: targetMemberId,
+          workspace_id,
+          leads_access: p.leads_access && p.leads_access !== 'NONE' ? p.leads_access : 'NONE',
+          team_manager_access: cleanTeamAccess,
+          quotations_access: p.quotations_access && p.quotations_access !== 'NONE' ? p.quotations_access : 'NONE',
+          post_production_access: cleanPostAccess,
+          finance_access: p.finance_access && p.finance_access !== 'NONE' ? p.finance_access : 'NONE',
+          updated_at: new Date().toISOString(),
+        };
+
         const { data: existingPerm } = await supabaseAdmin
           .from('member_permissions')
           .select('id')
           .eq('member_id', targetMemberId)
           .maybeSingle();
-
-        const permPayload = {
-          member_id: targetMemberId,
-          workspace_id,
-          leads_access: permissions.leads_access || 'NONE',
-          team_manager_access: permissions.team_manager_access || 'ASSIGNED_ONLY_VIEW',
-          quotations_access: permissions.quotations_access || 'NONE',
-          post_production_access: permissions.post_production_access || 'ASSIGNED_ONLY',
-          finance_access: permissions.finance_access || 'NONE',
-          updated_at: new Date().toISOString(),
-        };
 
         if (existingPerm?.id) {
           await supabaseAdmin
@@ -276,11 +286,11 @@ export async function POST(req: NextRequest) {
             .upsert({
               owner_id: user.id,
               member_id: targetMemberId,
-              leads_access: permissions.leads_access || 'NONE',
-              team_manager_access: permissions.team_manager_access || 'NONE',
-              quotations_access: permissions.quotations_access || 'NONE',
-              post_production_access: permissions.post_production_access || 'NONE',
-              finance_access: permissions.finance_access || 'NONE',
+              leads_access: permPayload.leads_access,
+              team_manager_access: permPayload.team_manager_access,
+              quotations_access: permPayload.quotations_access,
+              post_production_access: permPayload.post_production_access,
+              finance_access: permPayload.finance_access,
               updated_at: new Date().toISOString(),
             }, { onConflict: 'owner_id,member_id' });
         } catch (smpErr) {

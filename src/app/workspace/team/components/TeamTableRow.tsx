@@ -73,12 +73,12 @@ export default function TeamTableRow({
   const quotationsAccess = member.quotations_access || member.permissions?.quotations_access;
   const postProductionAccess = member.post_production_access || member.permissions?.post_production_access;
   const financeAccess = member.finance_access || member.permissions?.finance_access;
-  const isAdmin = member.is_admin || member.role === 'admin' || member.role === 'owner' || member.primary_type === 'ADMIN' || member.permissions?.is_admin;
+  const isAdmin = member.is_admin === true || member.role === 'admin' || member.role === 'owner' || member.primary_type === 'ADMIN' || member.permissions?.is_admin === true;
 
   const isGranted = (val: any) => {
     if (!val) return false;
     const s = String(val).trim().toLowerCase();
-    return !['none', 'hidden', 'false', '0', 'undefined', 'null'].includes(s);
+    return !['none', 'hidden', 'false', '0', 'undefined', 'null', '', 'assigned_only_view', 'assigned_only'].includes(s);
   };
 
   const hasAnyAccess = Boolean(

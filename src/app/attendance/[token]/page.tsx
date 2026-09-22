@@ -7,13 +7,28 @@ import {
   Clock, MapPin, Camera, CheckCircle2, AlertCircle, Coffee, 
   LogOut, RefreshCw, ShieldCheck, Sparkles, AlertTriangle, Wifi, WifiOff, X,
   Calendar, Send, ChevronRight, Check, History, Plane, DollarSign, Award,
-  Compass, ArrowUpRight, TrendingUp, Navigation, Pause, Play, Sun
+  Compass, ArrowUpRight, TrendingUp, Navigation, Pause, Play, Sun,
+  Smartphone, Share2
 } from 'lucide-react';
 import type { AttendanceRecord, AttendanceBreak, AttendanceLocation } from '@/types';
 import { validateCoordinatesAgainstGeofences, GeofenceValidationResult, calculateDistance, calculateHaversineDistanceMeters } from '@/lib/attendance/geo-fence';
 import { captureAndCompressVideoFrame } from '@/lib/attendance/image-compression';
 import { saveOfflinePunch, getOfflinePunches, removeOfflinePunch } from '@/lib/attendance/offline-store';
 import { analyzeAttendanceRecordTiming, formatMinutesToHumanReadable } from '@/lib/attendance/time-calculations';
+import PunchDetailsModal from '@/components/attendance/PunchDetailsModal';
+
+const formatShiftTime12h = (timeStr?: string) => {
+  if (!timeStr) return '';
+  const clean = timeStr.trim();
+  const [hStr, mStr] = clean.split(':');
+  let h = parseInt(hStr, 10);
+  const m = parseInt(mStr || '0', 10);
+  if (isNaN(h)) return timeStr;
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12;
+  if (h === 0) h = 12;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
+};
 
 export default function PersonalAttendancePage() {
   const params = useParams();
@@ -31,11 +46,17 @@ export default function PersonalAttendancePage() {
   const [monthlyHistory, setMonthlyHistory] = useState<any[]>([]);
   const [recentLeaves, setRecentLeaves] = useState<any[]>([]);
   const [holidayToday, setHolidayToday] = useState<any>(null);
+  const [companyHolidays, setCompanyHolidays] = useState<any[]>([]);
   const [isWeeklyOff, setIsWeeklyOff] = useState<boolean>(false);
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
   const [isOnline, setIsOnline] = useState<boolean>(true);
   const [offlineQueueCount, setOfflineQueueCount] = useState<number>(0);
   const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().substring(0, 7));
+
+  // Day detail pop-up modal
+  const [selectedDayRecord, setSelectedDayRecord] = useState<any | null>(null);
+  const [showDetailsModal, setShowDetailsModal] = useState<boolean>(false);
+  const [linkCopied, setLinkCopied] = useState<boolean>(false);
 
   // Live Geofence Heartbeat & In-Zone Active State
   const [isInsideGeofence, setIsInsideGeofence] = useState<boolean>(true);
@@ -152,6 +173,7 @@ export default function PersonalAttendancePage() {
         setLocations(data.locations || []);
         setShifts(data.shifts || []);
         setHolidayToday(data.holidayToday || null);
+        setCompanyHolidays(data.companyHolidays || []);
         setIsWeeklyOff(!!data.isWeeklyOff);
         setMonthlyHistory(data.monthlyHistory || []);
         setRecentLeaves(data.recentLeaves || []);
@@ -529,6 +551,21 @@ export default function PersonalAttendancePage() {
     );
   }, [todayRecord, member, shifts]);
 
+  // Live Clocked-In Timer for Today
+  const liveClockedInTimer = useMemo(() => {
+    if (!todayRecord?.check_in_time || todayRecord?.check_out_time) return null;
+    try {
+      const diffMs = currentTime.getTime() - new Date(todayRecord.check_in_time).getTime();
+      if (diffMs <= 0) return '0m';
+      const totalMins = Math.floor(diffMs / 60000);
+      const h = Math.floor(totalMins / 60);
+      const m = totalMins % 60;
+      return `${h}h ${m}m`;
+    } catch (_) {
+      return null;
+    }
+  }, [todayRecord, currentTime]);
+
   // Monthly Report Calculations
   const monthlyStats = useMemo(() => {
     const records = monthlyHistory.filter(r => (r.date || '').startsWith(selectedMonth));
@@ -558,9 +595,12 @@ export default function PersonalAttendancePage() {
         shifts[0]?.end_time || '19:00'
       );
 
-      if (timing.isLate) {
+      const isLateRecord = timing.isLate || r.status === 'late' || (Number(r.late_minutes) > 0);
+      const lateMins = timing.lateMinutes || Number(r.late_minutes) || 0;
+
+      if (isLateRecord) {
         totalLateCount++;
-        totalLateMinutes += timing.lateMinutes;
+        totalLateMinutes += lateMins;
       }
       if (timing.isEarlyArrival) {
         totalEarlyArrivalCount++;
@@ -575,11 +615,30 @@ export default function PersonalAttendancePage() {
         totalOvertimeMinutes += timing.overtimeMinutes;
       }
 
-      totalWorkMinutes += (r.work_duration_minutes || r.total_work_minutes || 0);
+      const isTodayRec = r.date === new Date().toISOString().split('T')[0];
+      let dayMins = 0;
+      if (r.check_in_time && r.check_out_time) {
+        const inMs = new Date(r.check_in_time).getTime();
+        const outMs = new Date(r.check_out_time).getTime();
+        dayMins = Math.max(0, Math.floor((outMs - inMs) / 60000));
+      } else if (r.check_in_time && !r.check_out_time) {
+        const inMs = new Date(r.check_in_time).getTime();
+        const endMs = isTodayRec ? currentTime.getTime() : inMs;
+        dayMins = Math.max(0, Math.floor((endMs - inMs) / 60000));
+      } else {
+        dayMins = Number(r.work_duration_minutes) || Number(r.total_work_minutes) || 0;
+      }
+
+      const breakMins = Number(r.break_duration_minutes) || 0;
+      dayMins = Math.max(0, dayMins - breakMins);
+
+      totalWorkMinutes += dayMins;
 
       return {
         ...r,
-        timing
+        timing,
+        isLateRecord,
+        dayWorkMinutes: dayMins
       };
     });
 
@@ -602,6 +661,113 @@ export default function PersonalAttendancePage() {
       payoutSubtitle = `(${distinctPresentCount} Days Logged)`;
     }
 
+    // Build complete calendar days for selectedMonth without skipping any dates
+    const [yearStr, monthStr] = (selectedMonth || '').split('-');
+    const year = parseInt(yearStr, 10) || new Date().getFullYear();
+    const month = parseInt(monthStr, 10) || (new Date().getMonth() + 1);
+    const totalDaysInMonth = new Date(year, month, 0).getDate();
+    const todayDateStr = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(new Date());
+
+    const calendarDays: any[] = [];
+    for (let d = totalDaysInMonth; d >= 1; d--) {
+      const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      
+      // Do not show upcoming/future dates in monthly report (strictly past days and today only)
+      if (dateStr > todayDateStr) {
+        continue;
+      }
+
+      const dayDate = new Date(dateStr + 'T12:00:00');
+      const dayOfWeekShort = dayDate.toLocaleDateString('en-US', { weekday: 'short' });
+
+      // Check Holiday & Weekly Off definitions for this date
+      const holidayMatch = (companyHolidays || []).find(h => h.holiday_date === dateStr);
+      const isOff = (Array.isArray(member?.weekly_offs) && member.weekly_offs.length > 0)
+        ? member.weekly_offs.includes(dayOfWeekShort)
+        : (dayOfWeekShort === 'Sun');
+
+      // 1. Is there a punch record?
+      const punchRec = analyzedRecords.find(r => r.date === dateStr);
+
+      if (punchRec) {
+        let dutyType = punchRec.isLateRecord ? 'late' : (punchRec.status || 'present');
+        let dutyTitle = punchRec.isLateRecord ? 'Late Arrival' : 'Present & Verified';
+        let isHolidayDuty = false;
+        let isWeekOffDuty = false;
+
+        if (holidayMatch) {
+          dutyType = 'worked_holiday';
+          dutyTitle = `Holiday Duty (${holidayMatch.name || 'Festival'})`;
+          isHolidayDuty = true;
+        } else if (isOff) {
+          dutyType = 'worked_week_off';
+          dutyTitle = 'Week-Off Duty (Worked on Off)';
+          isWeekOffDuty = true;
+        }
+
+        calendarDays.push({
+          date: dateStr,
+          type: dutyType,
+          record: punchRec,
+          timing: punchRec.timing,
+          title: dutyTitle,
+          isHolidayDuty,
+          isWeekOffDuty,
+          holidayName: holidayMatch?.name || null
+        });
+        continue;
+      }
+
+      // 2. Is there a Company Holiday?
+      if (holidayMatch) {
+        calendarDays.push({
+          date: dateStr,
+          type: 'holiday',
+          record: null,
+          title: holidayMatch.name || 'Company Holiday',
+          note: holidayMatch.note
+        });
+        continue;
+      }
+
+      // 3. Is there an approved Leave?
+      const leave = (recentLeaves || []).find(l => dateStr >= l.start_date && dateStr <= l.end_date && l.status !== 'rejected');
+      if (leave) {
+        calendarDays.push({
+          date: dateStr,
+          type: 'leave',
+          record: null,
+          title: `Leave (${leave.leave_type || 'Approved'})`,
+          note: leave.reason
+        });
+        continue;
+      }
+
+      // 4. Is it a Weekly Off?
+      if (isOff) {
+        calendarDays.push({
+          date: dateStr,
+          type: 'weekly_off',
+          record: null,
+          title: 'Weekly Off'
+        });
+        continue;
+      }
+
+      // 5. Unpunched working day
+      calendarDays.push({
+        date: dateStr,
+        type: 'absent',
+        record: null,
+        title: dateStr === todayDateStr ? 'Not Punched In Today' : 'Absent (No Punch Marked)'
+      });
+    }
+
     return {
       totalLoggedDays: records.length,
       presentCount: distinctPresentCount,
@@ -615,6 +781,8 @@ export default function PersonalAttendancePage() {
       overtimeCount: totalOvertimeCount,
       totalOvertimeMinutes,
       totalOvertimeFormatted: formatMinutesToHumanReadable(totalOvertimeMinutes),
+      totalWorkMinutes,
+      totalWorkFormatted: formatMinutesToHumanReadable(totalWorkMinutes),
       totalHours: Math.round((totalWorkMinutes / 60) * 10) / 10,
       totalOTHours: Math.round((totalOvertimeMinutes / 60) * 10) / 10,
       dailyRate,
@@ -622,9 +790,10 @@ export default function PersonalAttendancePage() {
       isMonthly,
       estimatedPayout,
       payoutSubtitle,
-      records: analyzedRecords
+      records: analyzedRecords,
+      calendarDays
     };
-  }, [monthlyHistory, selectedMonth, member, shifts]);
+  }, [monthlyHistory, selectedMonth, member, shifts, currentTime, companyHolidays, recentLeaves]);
 
   if (loading) {
     return (
@@ -751,13 +920,53 @@ export default function PersonalAttendancePage() {
       <main className="flex-1 p-5 flex flex-col justify-between overflow-y-auto">
         {activeTab === 'punch' ? (
           <>
+            {/* 1-Click Mobile Shortcut / Add to Home Screen Banner */}
+            <div className="mb-3 p-3 bg-gradient-to-r from-amber-50 via-amber-100/50 to-amber-50 rounded-2xl border border-amber-200 flex items-center justify-between gap-3 shadow-2xs">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-white border border-amber-300 flex items-center justify-center text-amber-700 shadow-2xs shrink-0">
+                  <Smartphone className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[11.5px] font-bold text-amber-950 truncate">
+                    1-Click Home Screen Punch
+                  </p>
+                  <p className="text-[10px] text-amber-800/80 truncate">
+                    Save to phone home screen for instant access
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof window !== 'undefined') {
+                    navigator.clipboard.writeText(window.location.href);
+                    setLinkCopied(true);
+                    setTimeout(() => setLinkCopied(false), 2500);
+                  }
+                }}
+                className="px-2.5 py-1.5 rounded-xl bg-white border border-amber-300 hover:bg-amber-50 text-amber-900 text-[11px] font-bold shrink-0 transition-all shadow-2xs cursor-pointer flex items-center gap-1"
+              >
+                {linkCopied ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    <span className="text-emerald-700">Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Share2 className="w-3.5 h-3.5 text-amber-700" />
+                    <span>Copy Link</span>
+                  </>
+                )}
+              </button>
+            </div>
+
             {/* Live Clock & Shift Badge (IST) */}
             <div className="text-center my-2">
               <div className="text-[44px] font-black tracking-tight text-[#211B17] font-mono leading-none">
                 {currentTime.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
               </div>
               <p className="text-[12px] text-[#8C847B] font-medium mt-1">
-                {shifts[0]?.name ? `${shifts[0].name} (${shifts[0].start_time.substring(0, 5)} - ${shifts[0].end_time.substring(0, 5)})` : 'Standard Studio Shift (10:00 AM - 07:00 PM)'}
+                {shifts[0]?.name ? `${shifts[0].name} (${formatShiftTime12h(shifts[0].start_time)} - ${formatShiftTime12h(shifts[0].end_time)})` : 'Standard Studio Shift (10:00 AM - 07:00 PM)'}
               </p>
             </div>
 
@@ -962,94 +1171,232 @@ export default function PersonalAttendancePage() {
                   <span className="font-bold text-[#81C784] text-xs">{monthlyStats.presentCount} Days</span>
                 </div>
                 <div>
+                  <span className="text-white/60 text-[10px] block">Total Worked</span>
+                  <span className="font-bold text-white text-xs">{monthlyStats.totalWorkFormatted || '0m'}</span>
+                </div>
+                <div>
                   <span className="text-white/60 text-[10px] block">Late Marks</span>
                   <span className="font-bold text-[#FFB74D] text-xs">{monthlyStats.lateCount} ({monthlyStats.totalLateFormatted})</span>
                 </div>
                 <div>
-                  <span className="text-white/60 text-[10px] block">Left Early</span>
-                  <span className="font-bold text-[#EF9A9A] text-xs">{monthlyStats.earlyDepartureCount} ({monthlyStats.earlyDepartureFormatted})</span>
-                </div>
-                <div>
                   <span className="text-white/60 text-[10px] block">Overtime</span>
-                  <span className="font-bold text-[#4FC3F7] text-xs">+{monthlyStats.totalOTHours}h ({monthlyStats.overtimeCount})</span>
+                  <span className="font-bold text-[#4FC3F7] text-xs">+{monthlyStats.totalOvertimeFormatted} ({monthlyStats.overtimeCount})</span>
                 </div>
               </div>
             </div>
 
             {/* Day by Day Log */}
             <div className="space-y-2">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-[#99928A]">Month Log ({selectedMonth})</h3>
-              {monthlyStats.records.length === 0 ? (
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[#99928A]">Month Calendar Log ({selectedMonth})</h3>
+                <span className="text-[10px] text-zinc-400 font-medium">Tap day to view photo & GPS</span>
+              </div>
+
+              {monthlyStats.calendarDays.length === 0 ? (
                 <div className="bg-white p-8 rounded-2xl border border-dashed border-[#E9DFD2] text-center text-xs text-[#8C847B]">
-                  No punch records logged for {selectedMonth}.
+                  No calendar records for {selectedMonth}.
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {monthlyStats.records.map(rec => (
-                    <div key={rec.id} className="p-3 bg-white rounded-[14px] border border-[#F0E8DC] flex items-center justify-between shadow-2xs">
-                      <div className="flex items-center gap-3">
-                        {rec.check_in_photo_path ? (
-                          <img src={rec.check_in_photo_path} alt="Selfie" className="w-10 h-10 rounded-lg object-cover border border-[#E9DFD2]" />
-                        ) : null}
-                        <div>
-                          <div className="font-bold text-xs text-[#211B17]">
-                            {new Date(rec.date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}
-                          </div>
-                          <div className="text-[10.5px] text-[#746E67] mt-0.5 space-y-0.5">
-                            <div>
-                              <span>In: {rec.check_in_time ? new Date(rec.check_in_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '--'}</span>
-                              {rec.timing?.isLate ? (
-                                <span className="text-rose-600 font-bold ml-1.5">(Late by {rec.timing.lateFormattedText})</span>
-                              ) : rec.timing?.isEarlyArrival ? (
-                                <span className="text-emerald-600 font-bold ml-1.5">({rec.timing.earlyArrivalFormattedText} early)</span>
-                              ) : rec.check_in_time ? (
-                                <span className="text-emerald-600 font-medium ml-1.5">(On-Time)</span>
-                              ) : null}
-                            </div>
-                            {rec.check_out_time ? (
-                              <div>
-                                <span>Out: {new Date(rec.check_out_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })}</span>
-                                {rec.timing?.isEarlyCheckout ? (
-                                  <span className="text-rose-600 font-bold ml-1.5">(Left {rec.timing.earlyCheckoutFormattedText} early)</span>
-                                ) : rec.timing?.isOvertime ? (
-                                  <span className="text-sky-600 font-bold ml-1.5">(+{rec.timing.overtimeFormattedText} OT)</span>
-                                ) : (
-                                  <span className="text-emerald-600 font-medium ml-1.5">(On-Time)</span>
-                                )}
-                              </div>
-                            ) : rec.check_in_time ? (
-                              <div>
-                                <span>Out: </span>
-                                {rec.date === new Date().toISOString().split('T')[0] ? (
-                                  <span className="text-emerald-600 font-bold animate-pulse">In Progress (Active)</span>
-                                ) : (
-                                  <span className="text-rose-600 font-bold">Missed Check-Out</span>
-                                )}
-                              </div>
-                            ) : null}
-                          </div>
-                        </div>
-                      </div>
+                  {monthlyStats.calendarDays.map((day: any) => {
+                    const rec = day.record;
+                    const isPunched = Boolean(rec && (rec.check_in_time || rec.punch_in_time));
+                    const isToday = day.date === new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+                    const isActiveNow = Boolean(rec && rec.check_in_time && !rec.check_out_time && isToday);
 
-                      <div className="text-right">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          rec.status === 'present' ? 'bg-[#E8F5E9] text-[#2E7D32]' :
-                          rec.status === 'late' || rec.timing?.isLate ? 'bg-[#FFF3E0] text-[#E65100]' : 'bg-[#FFEBEE] text-[#C62828]'
-                        }`}>
-                          {(rec.timing?.isLate ? 'LATE' : rec.status).toUpperCase()}
-                        </span>
-                        <div className="text-[10px] font-mono text-[#8C847B] mt-0.5">
-                          {Math.floor((rec.work_duration_minutes || 0) / 60)}h {(rec.work_duration_minutes || 0) % 60}m
+                    // Formatted Date
+                    const dayDateObj = new Date(day.date + 'T12:00:00');
+                    const formattedDay = dayDateObj.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+
+                    const checkInPhoto = rec?.check_in_photo_path || rec?.check_in_selfie || null;
+
+                    return (
+                      <div 
+                        key={day.date}
+                        onClick={() => {
+                          setSelectedDayRecord(day);
+                          setShowDetailsModal(true);
+                        }}
+                        className="p-3 bg-white rounded-[14px] border border-[#F0E8DC] flex items-center justify-between shadow-2xs hover:border-amber-300 transition-all cursor-pointer active:scale-[0.99] touch-manipulation group"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          {isPunched ? (
+                            checkInPhoto ? (
+                              <img src={checkInPhoto} alt="Selfie" className="w-10 h-10 rounded-lg object-cover border border-[#E9DFD2] shrink-0" />
+                            ) : day.type === 'worked_holiday' ? (
+                              <div className="w-10 h-10 rounded-lg bg-amber-100 text-amber-900 flex items-center justify-center text-base shrink-0 border border-amber-300 shadow-2xs">
+                                🌴
+                              </div>
+                            ) : day.type === 'worked_week_off' ? (
+                              <div className="w-10 h-10 rounded-lg bg-indigo-100 text-indigo-900 flex items-center justify-center text-base shrink-0 border border-indigo-300 shadow-2xs">
+                                🛋️
+                              </div>
+                            ) : (
+                              <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-xs shrink-0 border border-emerald-200">
+                                <Camera className="w-4 h-4" />
+                              </div>
+                            )
+                          ) : day.type === 'holiday' ? (
+                            <div className="w-10 h-10 rounded-lg bg-sky-50 text-sky-700 flex items-center justify-center text-base shrink-0 border border-sky-200">
+                              🌴
+                            </div>
+                          ) : day.type === 'weekly_off' ? (
+                            <div className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center text-base shrink-0 border border-indigo-200">
+                              🛋️
+                            </div>
+                          ) : day.type === 'leave' ? (
+                            <div className="w-10 h-10 rounded-lg bg-purple-50 text-purple-700 flex items-center justify-center text-base shrink-0 border border-purple-200">
+                              🏖️
+                            </div>
+                          ) : day.type === 'upcoming' ? (
+                            <div className="w-10 h-10 rounded-lg bg-zinc-100 text-zinc-400 flex items-center justify-center text-xs shrink-0 border border-zinc-200">
+                              <Calendar className="w-4 h-4" />
+                            </div>
+                          ) : (
+                            <div className="w-10 h-10 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center text-xs shrink-0 border border-rose-200">
+                              <AlertCircle className="w-4 h-4" />
+                            </div>
+                          )}
+
+                          <div className="min-w-0">
+                            <div className="font-bold text-xs text-[#211B17] flex items-center gap-1.5">
+                              <span>{formattedDay}</span>
+                              {isToday && (
+                                <span className="text-[9.5px] px-1.5 py-0.2 bg-amber-100 text-amber-800 rounded font-black">
+                                  Today
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="text-[10.5px] text-[#746E67] mt-0.5 space-y-0.5 truncate">
+                              {isPunched ? (
+                                <>
+                                  <div className="truncate">
+                                    <span>In: {rec.check_in_time ? new Date(rec.check_in_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '--'}</span>
+                                    {day.type === 'worked_holiday' ? (
+                                      <span className="text-amber-800 font-bold ml-1.5">(🌴 Holiday Duty: {day.holidayName || 'Festival'})</span>
+                                    ) : day.type === 'worked_week_off' ? (
+                                      <span className="text-indigo-800 font-bold ml-1.5">(🛋️ Scheduled Week-Off Duty)</span>
+                                    ) : rec.timing?.isLate ? (
+                                      <span className="text-rose-600 font-bold ml-1.5">(Late by {rec.timing.lateFormattedText || `${rec.late_minutes || 0}m`})</span>
+                                    ) : rec.timing?.isEarlyArrival ? (
+                                      <span className="text-emerald-600 font-bold ml-1.5">({rec.timing.earlyArrivalFormattedText} early)</span>
+                                    ) : rec.check_in_time ? (
+                                      <span className="text-emerald-600 font-medium ml-1.5">(On-Time)</span>
+                                    ) : null}
+                                  </div>
+                                  <div className="truncate">
+                                    {rec.check_out_time ? (
+                                      <>
+                                        <span>Out: {new Date(rec.check_out_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })}</span>
+                                        {rec.timing?.isEarlyCheckout ? (
+                                          <span className="text-rose-600 font-bold ml-1.5">(Left {rec.timing.earlyCheckoutFormattedText} early)</span>
+                                        ) : rec.timing?.isOvertime ? (
+                                          <span className="text-sky-600 font-bold ml-1.5">(+{rec.timing.overtimeFormattedText} OT)</span>
+                                        ) : (
+                                          <span className="text-emerald-600 font-medium ml-1.5">(On-Time)</span>
+                                        )}
+                                      </>
+                                    ) : rec.check_in_time ? (
+                                      isToday ? (
+                                        <span className="text-emerald-600 font-bold animate-pulse">Out: In Progress (Active)</span>
+                                      ) : (
+                                        <span className="text-rose-600 font-bold">Out: Missed Check-Out</span>
+                                      )
+                                    ) : null}
+                                  </div>
+                                </>
+                              ) : day.type === 'holiday' ? (
+                                <div className="text-sky-700 font-bold truncate">
+                                  🌴 {day.title}
+                                </div>
+                              ) : day.type === 'weekly_off' ? (
+                                <div className="text-indigo-600 font-medium truncate">
+                                  🛋️ Scheduled Weekly Off
+                                </div>
+                              ) : day.type === 'leave' ? (
+                                <div className="text-purple-700 font-medium truncate">
+                                  🏖️ {day.title}
+                                </div>
+                              ) : day.type === 'upcoming' ? (
+                                <div className="text-zinc-400 font-medium truncate">
+                                  Upcoming scheduled shift
+                                </div>
+                              ) : (
+                                <div className="text-rose-600 font-medium truncate">
+                                  ❌ Absent / Attendance Not Marked
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="text-right shrink-0 pl-2">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            day.type === 'worked_holiday' ? 'bg-amber-100 text-amber-900 border border-amber-300 font-black' :
+                            day.type === 'worked_week_off' ? 'bg-indigo-100 text-indigo-900 border border-indigo-300 font-black' :
+                            day.type === 'present' ? 'bg-[#E8F5E9] text-[#2E7D32]' :
+                            day.type === 'late' ? 'bg-[#FFF3E0] text-[#E65100]' :
+                            day.type === 'holiday' ? 'bg-[#E0F2FE] text-[#0369A1]' :
+                            day.type === 'weekly_off' ? 'bg-[#EEF2FF] text-[#4F46E5]' :
+                            day.type === 'leave' ? 'bg-[#F3E8FF] text-[#7E22CE]' :
+                            day.type === 'upcoming' ? 'bg-zinc-100 text-zinc-500' :
+                            'bg-[#FFEBEE] text-[#C62828] font-bold'
+                          }`}>
+                            {day.type === 'worked_holiday' ? '🌴 HOLIDAY DUTY' :
+                             day.type === 'worked_week_off' ? '🛋️ WEEK-OFF DUTY' :
+                             day.type === 'weekly_off' ? 'WEEKLY OFF' :
+                             day.type === 'holiday' ? 'HOLIDAY' :
+                             day.type === 'leave' ? 'LEAVE' :
+                             day.type === 'upcoming' ? 'UPCOMING' :
+                             day.type === 'absent' ? 'ABSENT' :
+                             day.type.toUpperCase()}
+                          </span>
+
+                          <div className="mt-0.5">
+                            {isPunched ? (
+                              isActiveNow ? (
+                                <div className="text-[10px] font-mono text-emerald-600 font-bold animate-pulse">
+                                  ⏱️ {liveClockedInTimer || 'Active'}
+                                </div>
+                              ) : (
+                                <div className="text-[10px] font-mono text-[#8C847B]">
+                                  {Math.floor((rec.dayWorkMinutes || rec.work_duration_minutes || 0) / 60)}h {(rec.dayWorkMinutes || rec.work_duration_minutes || 0) % 60}m worked
+                                </div>
+                              )
+                            ) : day.type === 'weekly_off' ? (
+                              <div className="text-[10px] font-mono text-indigo-400">Off</div>
+                            ) : day.type === 'holiday' ? (
+                              <div className="text-[10px] font-mono text-sky-600">Holiday</div>
+                            ) : day.type === 'leave' ? (
+                              <div className="text-[10px] font-mono text-purple-600">Approved</div>
+                            ) : day.type === 'upcoming' ? (
+                              <div className="text-[10px] font-mono text-zinc-400">--</div>
+                            ) : (
+                              <div className="text-[10px] font-mono text-rose-400">0h 0m</div>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
           </div>
         )}
       </main>
+
+      {/* Day Details Modal (Mobile / Desktop) */}
+      <PunchDetailsModal
+        isOpen={showDetailsModal}
+        onClose={() => {
+          setShowDetailsModal(false);
+          setSelectedDayRecord(null);
+        }}
+        dayData={selectedDayRecord}
+        liveWorkFormatted={liveClockedInTimer || undefined}
+      />
 
       {/* Footer Branding */}
       <footer className="py-2.5 text-center border-t border-[#F0E8DC] bg-white/60 text-[10.5px] text-[#99928A]">

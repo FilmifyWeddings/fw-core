@@ -3,10 +3,14 @@ import { supabase } from '@/lib/supabase';
 export interface LogActivityParams {
   projectId: string;
   subEventId?: string | null;
+  workspaceId?: string | null;
+  projectName?: string | null;
   actionType: string;
   eventTitle?: string | null;
   description?: string;
+  targetMemberId?: string | null;
   targetMemberName?: string | null;
+  targetMemberAvatar?: string | null;
   targetRole?: string | null;
   previousValue?: string | null;
   newValue?: string | null;
@@ -21,6 +25,8 @@ export interface ProjectActivityLog {
   id: string;
   project_id: string;
   sub_event_id?: string | null;
+  workspace_id?: string | null;
+  project_name?: string | null;
   actor_id?: string | null;
   actor_name: string;
   actor_role?: string | null;
@@ -30,7 +36,9 @@ export interface ProjectActivityLog {
   description: string;
   previous_value?: string | null;
   new_value?: string | null;
+  target_member_id?: string | null;
   target_member_name?: string | null;
+  target_member_avatar?: string | null;
   target_role?: string | null;
   metadata?: Record<string, any>;
   created_at: string;
@@ -129,24 +137,51 @@ export async function logProjectActivity(params: LogActivityParams): Promise<voi
     const cleanDescription = params.description || formatStandardDescription(params);
 
     // 3. Insert single lightweight record into Supabase
-    const payload = {
+    const extendedPayload = {
       project_id: params.projectId,
       sub_event_id: params.subEventId || null,
+      workspace_id: params.workspaceId || null,
+      project_name: params.projectName || null,
       actor_id: currentUserId,
       actor_name: displayName,
       actor_role: actorRole,
       actor_avatar: actorAvatar,
       action_type: params.actionType,
       event_title: params.eventTitle || null,
+      target_member_id: params.targetMemberId || null,
+      target_member_name: params.targetMemberName || null,
+      target_member_avatar: params.targetMemberAvatar || null,
+      target_role: params.targetRole || null,
       description: cleanDescription,
       previous_value: params.previousValue || null,
       new_value: params.newValue || null,
+      metadata: params.metadata || null,
       created_at: new Date().toISOString(),
     };
 
-    const { error } = await supabase
+    let { error } = await supabase
       .from('fw_project_activity_logs')
-      .insert([payload]);
+      .insert([extendedPayload]);
+
+    // Fallback if extended columns are not yet present in table (graceful degradation)
+    if (error && (error.code === '42703' || error.message?.includes('column'))) {
+      const basicPayload = {
+        project_id: params.projectId,
+        sub_event_id: params.subEventId || null,
+        actor_id: currentUserId,
+        actor_name: displayName,
+        actor_role: actorRole,
+        actor_avatar: actorAvatar,
+        action_type: params.actionType,
+        event_title: params.eventTitle || null,
+        description: cleanDescription,
+        previous_value: params.previousValue || null,
+        new_value: params.newValue || null,
+        created_at: new Date().toISOString(),
+      };
+      const fallbackRes = await supabase.from('fw_project_activity_logs').insert([basicPayload]);
+      error = fallbackRes.error;
+    }
 
     if (error) {
       console.warn('[projectAuditService] fw_project_activity_logs insert note:', error.message);
@@ -181,6 +216,59 @@ export async function fetchProjectActivityLogs(projectId: string): Promise<Proje
 }
 
 /**
+ * Fetch all activity logs across the entire workspace or specified project IDs,
+ * sorted newest first, with date grouping support.
+ */
+export async function fetchAllTeamManagerActivityLogs({
+  workspaceId,
+  projectIds = [],
+  limit = 200,
+}: {
+  workspaceId?: string;
+  projectIds?: string[];
+  limit?: number;
+}): Promise<ProjectActivityLog[]> {
+  try {
+    let query = supabase
+      .from('fw_project_activity_logs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (workspaceId && workspaceId !== 'all') {
+      if (projectIds.length > 0) {
+        query = query.or(`workspace_id.eq.${workspaceId},project_id.in.(${projectIds.join(',')})`);
+      } else {
+        query = query.eq('workspace_id', workspaceId);
+      }
+    } else if (projectIds.length > 0) {
+      query = query.in('project_id', projectIds);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.warn('[projectAuditService] fetchAllTeamManagerActivityLogs error:', error.message);
+      // Fallback: if workspace_id column or .or query causes issue, try simple project_id.in if available
+      if (projectIds.length > 0) {
+        const fallbackRes = await supabase
+          .from('fw_project_activity_logs')
+          .select('*')
+          .in('project_id', projectIds)
+          .order('created_at', { ascending: false })
+          .limit(limit);
+        return (fallbackRes.data || []) as ProjectActivityLog[];
+      }
+      return [];
+    }
+
+    return (data || []) as ProjectActivityLog[];
+  } catch (err) {
+    console.error('Failed to fetch all team manager activity logs:', err);
+    return [];
+  }
+}
+
+/**
  * ⚡ Unified Crew Assignment & Remuneration Audit Logger
  * Combines member assignment/replacement and agreed fee into a single atomic audit entry,
  * preventing duplicate cards in the activity history ledger.
@@ -188,9 +276,13 @@ export async function fetchProjectActivityLogs(projectId: string): Promise<Proje
 export async function logCrewAssignmentChange({
   projectId,
   subEventId,
+  workspaceId,
+  projectName,
   eventTitle,
   previousMemberName,
   newMemberName,
+  targetMemberId,
+  targetMemberAvatar,
   roleName,
   previousRate,
   newRate,
@@ -198,9 +290,13 @@ export async function logCrewAssignmentChange({
 }: {
   projectId: string;
   subEventId?: string | null;
+  workspaceId?: string | null;
+  projectName?: string | null;
   eventTitle: string;
   previousMemberName?: string | null;
   newMemberName?: string | null;
+  targetMemberId?: string | null;
+  targetMemberAvatar?: string | null;
   roleName: string;
   previousRate?: number | string | null;
   newRate?: number | string | null;
@@ -250,17 +346,22 @@ export async function logCrewAssignmentChange({
   await logProjectActivity({
     projectId,
     subEventId: subEventId || undefined,
+    workspaceId: workspaceId || undefined,
+    projectName: projectName || undefined,
     actionType,
     eventTitle,
     description,
     previousValue: prevVal,
     newValue: newVal,
+    targetMemberId: targetMemberId || undefined,
     targetMemberName: cleanNewName || cleanPrevName,
+    targetMemberAvatar: targetMemberAvatar || undefined,
     targetRole: roleName,
     metadata: {
       previousMemberName: cleanPrevName,
       newMemberName: cleanNewName,
       roleName,
+      targetMemberId: targetMemberId || undefined,
       previousRate: hasValidPrevRate ? Number(previousRate) : undefined,
       newRate: hasValidNewRate ? Number(newRate) : undefined,
       isReplacement,

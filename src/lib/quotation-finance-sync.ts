@@ -114,6 +114,62 @@ export function normalizeToIsoDate(rawDate?: any, fallbackDate?: string | null):
 }
 
 /**
+ * Extracts the primary couple name from any quotation content_json payload (cover page, meta, etc.),
+ * prioritizing the couple name entered on the quotation over raw lead names.
+ */
+export function extractCoupleNameFromQuotation(
+  contentJson: any,
+  fallbackName?: string | null
+): string {
+  if (!contentJson || typeof contentJson !== 'object') {
+    return (fallbackName || 'Wedding Client').trim();
+  }
+
+  const cover = contentJson.cover || {};
+  const meta = contentJson.meta || {};
+
+  // 1. Explicit couple name in cover
+  const coverCoupleName = typeof cover.coupleName === 'string' ? cover.coupleName.trim() : '';
+  if (coverCoupleName && coverCoupleName.toLowerCase() !== 'undefined' && coverCoupleName.toLowerCase() !== 'null') {
+    return coverCoupleName;
+  }
+
+  // 2. Groom & Bride combined from cover
+  const groom = typeof cover.groomName === 'string' ? cover.groomName.trim() : '';
+  const bride = typeof cover.brideName === 'string' ? cover.brideName.trim() : '';
+  if (groom && bride) {
+    return `${groom} & ${bride}`;
+  }
+  if (groom) return groom;
+  if (bride) return bride;
+
+  // 3. Client name in quotation root or meta
+  const rootClient = typeof contentJson.client_name === 'string' ? contentJson.client_name.trim() : '';
+  if (rootClient && rootClient.toLowerCase() !== 'undefined' && rootClient.toLowerCase() !== 'null') {
+    return rootClient;
+  }
+
+  const metaClient = typeof meta.client_name === 'string' ? meta.client_name.trim() : '';
+  if (metaClient && metaClient.toLowerCase() !== 'undefined' && metaClient.toLowerCase() !== 'null') {
+    return metaClient;
+  }
+
+  const metaCouple = typeof meta.couple_name === 'string' ? meta.couple_name.trim() : '';
+  if (metaCouple && metaCouple.toLowerCase() !== 'undefined' && metaCouple.toLowerCase() !== 'null') {
+    return metaCouple;
+  }
+
+  // 4. Project name if it contains wedding couple
+  const metaProj = typeof meta.project_name === 'string' ? meta.project_name.trim() : '';
+  if (metaProj && (metaProj.includes('&') || metaProj.toLowerCase().includes('wedding'))) {
+    const cleaned = metaProj.replace(/\bwedding\b/gi, '').replace(/\bphotography\b/gi, '').replace(/[-–—]/g, '').trim();
+    if (cleaned) return cleaned;
+  }
+
+  return (fallbackName || 'Wedding Client').trim();
+}
+
+/**
  * Extracts and calculates exact financial numbers and payment milestones
  * from any quotation content_json payload (Airy proposal, classic, or custom).
  */
@@ -772,14 +828,15 @@ export async function syncQuotationToTeamManagerEvents(
     const { data: existingProjects } = await projQuery;
 
     const firstSubEventDate = extractedEvents[0]?.event_date || fallbackEventDate || new Date().toISOString().split('T')[0];
-    const firstSubEventVenue = extractedEvents[0]?.venue_name || fallbackVenue || null;
+    const firstSubEventVenue = extractedEvents[0]?.venue_name || fallbackVenue || 'TBD Venue';
 
     if (existingProjects && existingProjects.length > 0) {
       targetProjectId = existingProjects[0].id;
-      // Update main date & venue and link client_id if missing
+      // Update client_name to couple name, main date & venue, and link client_id
       await supabaseClient
         .from('fw_projects')
         .update({
+          client_name: clientName.trim(),
           client_id: clientId || existingProjects[0].client_id || null,
           main_date: firstSubEventDate,
           main_venue: firstSubEventVenue,

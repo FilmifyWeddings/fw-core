@@ -20,6 +20,7 @@ import { fetchWorkspaceTeamMembers, type WorkspaceMemberOption } from '@/lib/tea
 import { fetchWorkspaceEventTypes } from '@/lib/workspace-settings';
 import AddClientModal, { AddClientFormData } from './components/AddClientModal';
 import { handleAssignClientPM } from './components/ClientRow';
+import ClientStatusDropdown from './components/ClientStatusDropdown';
 import type { WorkspaceClient, Lead, ClientFinanceRecord, FinanceMilestoneItem } from '@/types';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import Searchable3DCreamSelect, { Searchable3DCreamSelectOption } from '@/components/ui/Searchable3DCreamSelect';
@@ -43,22 +44,8 @@ let memCachedTeamMembers: WorkspaceMemberOption[] = [];
 
 export default function ClientsPage() {
   const router = useRouter();
-  const [clients, setClients] = useState<WorkspaceClient[]>(() => {
-    if (memCachedClients.length > 0) return memCachedClients;
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = localStorage.getItem('sc_cached_clients');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            memCachedClients = parsed;
-            return parsed;
-          }
-        }
-      } catch (_) {}
-    }
-    return [];
-  });
+  // Lazy cache initialization for instant loading (SSR-safe to avoid Next.js hydration mismatch)
+  const [clients, setClients] = useState<WorkspaceClient[]>(() => memCachedClients);
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string>('');
   const [financeRecordsMap, setFinanceRecordsMap] = useState<Map<string, ClientFinanceRecord>>(() => memCachedFinanceRecordsMap);
   const [isExcelMigrationModalOpen, setIsExcelMigrationModalOpen] = useState(false);
@@ -70,6 +57,37 @@ export default function ClientsPage() {
   const [eventTypeFilter, setEventTypeFilter] = useState<string>('all');
   const [pmFilter, setPmFilter] = useState<string>('all');
   const [quickAssignClient, setQuickAssignClient] = useState<WorkspaceClient | null>(null);
+  const [quickPmSearch, setQuickPmSearch] = useState<string>('');
+
+  // Hydrate local cache safely on client mount without triggering SSR mismatch
+  useEffect(() => {
+    if (memCachedClients.length === 0 && typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_cached_clients');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            memCachedClients = parsed;
+            setClients(parsed);
+          }
+        }
+      } catch (_) {}
+    }
+  }, []);
+
+  // Filter team members strictly to In-House only for Project Manager selection
+  const inHouseTeamMembers = useMemo(() => {
+    return teamMembers.filter((m: any) => {
+      const typeStr = (m.primary_type || m.type || '').toUpperCase();
+      const typesArr = (m.member_types || []).map((t: string) => String(t).toUpperCase());
+      return typeStr === 'IN_HOUSE' || typesArr.includes('IN_HOUSE') || (!typeStr && typesArr.length === 0);
+    });
+  }, [teamMembers]);
+
+  const filteredQuickMembers = useMemo(() => {
+    if (!quickPmSearch.trim()) return inHouseTeamMembers;
+    return inHouseTeamMembers.filter(m => m.name.toLowerCase().includes(quickPmSearch.toLowerCase()));
+  }, [inHouseTeamMembers, quickPmSearch]);
 
   // Consolidated Filter Drawer & Date Scope State
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState<boolean>(false);
@@ -114,6 +132,18 @@ export default function ClientsPage() {
   // Fetch clients, team members & auto-sync booked leads from Supabase
   useEffect(() => {
     fetchClientsAndSyncBookedLeads();
+
+    const handleQuotationFinalized = () => {
+      memCachedClients = [];
+      try {
+        localStorage.removeItem('sc_cached_clients');
+      } catch (_) {}
+      fetchClientsAndSyncBookedLeads();
+    };
+    window.addEventListener('quotation_finalized', handleQuotationFinalized);
+    return () => {
+      window.removeEventListener('quotation_finalized', handleQuotationFinalized);
+    };
   }, []);
 
   const fetchClientsAndSyncBookedLeads = async () => {
@@ -531,6 +561,25 @@ export default function ClientsPage() {
     }
   };
 
+  // Update Active / Completed status directly from directory card dropdown
+  const handleUpdateClientStatus = async (clientId: string, newStatus: 'active' | 'completed') => {
+    // Optimistic local state update
+    setClients(prev => prev.map(c => c.id === clientId ? { ...c, status: newStatus } : c));
+
+    try {
+      const { error } = await supabase
+        .from('workspace_clients')
+        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .eq('id', clientId);
+
+      if (error) {
+        console.error('Error updating client status in Supabase:', error);
+      }
+    } catch (err) {
+      console.error('Error updating client status:', err);
+    }
+  };
+
   // 3D Cream Filter Dropdown Options (Pruned to Active Assigned PMs only)
   const pmFilterOptions: Searchable3DCreamSelectOption[] = useMemo(() => {
     const pmMap = new Map<string, { id: string; name: string }>();
@@ -566,7 +615,7 @@ export default function ClientsPage() {
   const statusFilterOptions: Searchable3DCreamSelectOption[] = useMemo(() => [
     { value: 'all', label: 'All Statuses' },
     { value: 'active', label: 'Active', badge: 'Live' },
-    { value: 'completed', label: 'Completed', badge: 'Done' },
+    { value: 'completed', label: 'Done', badge: 'Done' },
     { value: 'archived', label: 'Archived' },
   ], []);
 
@@ -655,6 +704,8 @@ export default function ClientsPage() {
 
   // Dynamically recalculate top stats cards from filteredClients only
   const totalClientsCount = filteredClients.length;
+  const activeClientsCount = filteredClients.filter(c => c.status !== 'completed').length;
+  const completedClientsCount = filteredClients.filter(c => c.status === 'completed').length;
   const totalInvoicesCount = filteredClients.reduce((sum, c) => sum + (c.total_package_amount || 0), 0);
   const cashRevenueTotal = filteredClients.reduce((sum, c) => sum + (c.paid_amount || 0), 0);
   const pendingBalanceTotal = Math.max(0, totalInvoicesCount - cashRevenueTotal);
@@ -702,15 +753,16 @@ export default function ClientsPage() {
         </div>
 
         {/* ─────────────────────────────────────────────────────────────
-            TOP STATS CARDS
+            TOP STATS CARDS: TOTAL, ACTIVE, COMPLETED
         ───────────────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full">
+          {/* Total Clients */}
           <div className="bg-[#FFFDF9] p-4 sm:p-5 rounded-2xl border border-[#EAE5DA] shadow-xs flex items-center justify-between">
             <div className="space-y-1">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
                 Total Clients
               </span>
-              <h3 className="text-2xl font-black text-slate-900 tracking-tight">
+              <h3 suppressHydrationWarning className="text-2xl font-black text-slate-900 tracking-tight">
                 {totalClientsCount}
               </h3>
             </div>
@@ -719,45 +771,33 @@ export default function ClientsPage() {
             </div>
           </div>
 
+          {/* Active Clients */}
           <div className="bg-[#FFFDF9] p-4 sm:p-5 rounded-2xl border border-[#EAE5DA] shadow-xs flex items-center justify-between">
             <div className="space-y-1">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                Total Invoiced Value
+              <span className="text-[11px] font-bold uppercase tracking-wider text-blue-600">
+                Active Clients
               </span>
-              <h3 className="text-2xl font-black text-slate-900 tracking-tight font-mono">
-                ₹{totalInvoicesCount.toLocaleString('en-IN')}
+              <h3 suppressHydrationWarning className="text-2xl font-black text-slate-900 tracking-tight">
+                {activeClientsCount}
               </h3>
             </div>
-            <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center">
-              <DollarSign className="w-5 h-5" />
+            <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 flex items-center justify-center">
+              <div className="w-3.5 h-3.5 rounded-full bg-blue-500 animate-pulse" />
             </div>
           </div>
 
+          {/* Completed Clients */}
           <div className="bg-[#FFFDF9] p-4 sm:p-5 rounded-2xl border border-[#EAE5DA] shadow-xs flex items-center justify-between">
             <div className="space-y-1">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                Cash Revenue
+              <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-600">
+                Completed Clients
               </span>
-              <h3 className="text-2xl font-black text-emerald-700 tracking-tight font-mono">
-                ₹{cashRevenueTotal.toLocaleString('en-IN')}
+              <h3 suppressHydrationWarning className="text-2xl font-black text-slate-900 tracking-tight">
+                {completedClientsCount}
               </h3>
             </div>
             <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center">
-              <CheckCircle2 className="w-5 h-5" />
-            </div>
-          </div>
-
-          <div className="bg-[#FFFDF9] p-4 sm:p-5 rounded-2xl border border-[#EAE5DA] shadow-xs flex items-center justify-between">
-            <div className="space-y-1">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                Pending Balance
-              </span>
-              <h3 className="text-2xl font-black text-rose-700 tracking-tight font-mono">
-                ₹{pendingBalanceTotal.toLocaleString('en-IN')}
-              </h3>
-            </div>
-            <div className="w-11 h-11 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 flex items-center justify-center">
-              <Clock className="w-5 h-5" />
+              <Check className="w-5 h-5" />
             </div>
           </div>
         </div>
@@ -837,7 +877,7 @@ export default function ClientsPage() {
                       <span>Reset Filters</span>
                     </button>
                   )}
-                  <span className="text-[11px] font-bold text-slate-500">
+                  <span suppressHydrationWarning className="text-[11px] font-bold text-slate-500">
                     {filteredClients.length} of {clients.length} Clients
                   </span>
                 </div>
@@ -1012,22 +1052,19 @@ export default function ClientsPage() {
                   key={client.id}
                   layout
                   onClick={() => router.push(`/workspace/clients/${client.id}`)}
-                  className="bg-[#FFFDF9] hover:bg-[#FFFBF2] rounded-2xl border border-[#EAE5DA] hover:border-amber-400/80 p-4 sm:p-5 shadow-2xs transition-all cursor-pointer flex flex-col lg:flex-row lg:items-center justify-between gap-4 group"
+                  className="bg-[#FFFDF9] hover:bg-[#FFFBF2] rounded-2xl border border-[#EAE5DA] hover:border-amber-400/80 p-4 sm:p-5 shadow-2xs transition-all cursor-pointer grid grid-cols-1 lg:grid-cols-12 gap-4 items-center group"
                 >
-                  {/* Left: Client Initials Avatar + Name + Contacts */}
-                  <div className="flex items-center gap-4 min-w-[280px]">
+                  {/* Left (Col 1-5): Client Initials Avatar + Name + Contacts + Overdue Badge */}
+                  <div className="lg:col-span-5 flex items-center gap-4 min-w-0">
                     <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 flex items-center justify-center font-black text-sm shrink-0 shadow-2xs group-hover:scale-105 transition-transform border border-amber-300">
                       {client.name ? (client.name.replace(/&/g, ' ').trim().split(/\s+/).filter(Boolean).length === 1 ? client.name.slice(0, 2).toUpperCase() : (client.name.replace(/&/g, ' ').trim().split(/\s+/)[0][0] + client.name.replace(/&/g, ' ').trim().split(/\s+/).slice(-1)[0][0]).toUpperCase()) : 'CL'}
                     </div>
 
-                    <div className="space-y-1">
+                    <div className="space-y-1 min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="text-base font-black text-slate-900 group-hover:text-amber-900 transition-colors">
+                        <h3 className="text-base font-black text-slate-900 group-hover:text-amber-900 transition-colors truncate">
                           {client.name}
                         </h3>
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-50 text-amber-800 border border-amber-200">
-                          {ext.client_code}
-                        </span>
 
                         {/* ⏱️ OVERDUE DAYS COUNTER BADGE */}
                         {(() => {
@@ -1052,9 +1089,9 @@ export default function ClientsPage() {
                           }, 0);
 
                           return (
-                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200 animate-pulse flex items-center gap-1 shadow-2xs">
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200 animate-pulse flex items-center gap-1 shadow-2xs whitespace-nowrap">
                               <AlertCircle className="w-3 h-3 text-rose-600 shrink-0" />
-                              <span>⚠️ Due Since <strong>{maxOverdueDays} Days</strong> (₹{totalOverdueAmt.toLocaleString('en-IN')} Overdue)</span>
+                              <span>⚠️ Due Since <strong>{maxOverdueDays} Days</strong> (₹{totalOverdueAmt.toLocaleString('en-IN')})</span>
                             </span>
                           );
                         })()}
@@ -1062,14 +1099,14 @@ export default function ClientsPage() {
 
                       <div className="flex items-center gap-3 text-xs text-slate-500 font-medium">
                         {client.phone && (
-                          <span className="flex items-center gap-1 text-slate-700 font-bold">
+                          <span className="flex items-center gap-1 text-slate-700 font-bold shrink-0">
                             <Phone className="w-3 h-3 text-slate-400" />
                             {client.phone}
                           </span>
                         )}
                         {client.email && (
                           <span className="flex items-center gap-1 text-slate-500 truncate max-w-[180px]">
-                            <Mail className="w-3 h-3 text-slate-400" />
+                            <Mail className="w-3 h-3 text-slate-400 shrink-0" />
                             {client.email}
                           </span>
                         )}
@@ -1077,66 +1114,57 @@ export default function ClientsPage() {
                     </div>
                   </div>
 
-                  {/* Center: Event Type & Date */}
-                  <div className="flex items-center gap-4 text-xs min-w-[180px]">
-                    <div className="space-y-1">
-                      <span className="px-2.5 py-1 rounded-xl text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200 inline-block">
-                        {client.event_type}
-                      </span>
-                      <p className="flex items-center gap-1 text-slate-600 font-semibold text-[11px]">
-                        <Calendar className="w-3 h-3 text-slate-400" />
-                        {client.event_date ? new Date(client.event_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Date not set'}
-                      </p>
-                    </div>
+                  {/* Col 6-7 (Span 2): Event Type Badge (Strict Horizontal Start) */}
+                  <div className="lg:col-span-2 flex items-center">
+                    <span className="px-2.5 py-1 rounded-xl text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200 inline-block truncate max-w-full">
+                      {client.event_type || 'Wedding & Reception'}
+                    </span>
                   </div>
 
-                  {/* Project Manager (PM) Badge / Quick Assign */}
-                  <div
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setQuickAssignClient(client);
-                    }}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-[#EAE5DA] hover:border-indigo-300 bg-white hover:bg-indigo-50/50 transition-all cursor-pointer shadow-2xs group/pm shrink-0"
-                    title="Click to Assign or Change Project Manager"
-                  >
-                    {(() => {
-                      const pmName = client.project_manager_name || ext.project_manager_name;
-                      if (pmName) {
-                        const initials = pmName.split(/\s+/).filter(Boolean).map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
-                        return (
-                          <div className="flex items-center gap-2">
-                            <span className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white text-[10px] font-black flex items-center justify-center shadow-xs">
-                              {initials}
-                            </span>
-                            <div>
-                              <span className="text-[9px] font-extrabold text-indigo-600 uppercase tracking-wider block leading-tight">
-                                PM Assigned
+                  {/* Col 8-9 (Span 2): Project Manager (PM) Badge / Quick Assign (Strict Horizontal Start) */}
+                  <div className="lg:col-span-2 flex items-center">
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setQuickAssignClient(client);
+                      }}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-[#EAE5DA] hover:border-indigo-300 bg-white hover:bg-indigo-50/50 transition-all cursor-pointer shadow-2xs group/pm max-w-full"
+                      title="Click to Assign or Change Project Manager"
+                    >
+                      {(() => {
+                        const pmName = client.project_manager_name || ext.project_manager_name;
+                        if (pmName) {
+                          const initials = pmName.split(/\s+/).filter(Boolean).map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
+                          return (
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white text-[10px] font-black flex items-center justify-center shadow-xs shrink-0">
+                                {initials}
                               </span>
-                              <span className="text-xs font-black text-slate-900 group-hover/pm:text-indigo-700">
+                              <span className="text-xs font-black text-slate-900 group-hover/pm:text-indigo-700 truncate max-w-[110px]">
                                 {pmName}
                               </span>
                             </div>
+                          );
+                        }
+                        return (
+                          <div className="flex items-center gap-1.5 text-slate-400 group-hover/pm:text-indigo-600">
+                            <UserPlus className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                            <span className="text-xs font-bold text-slate-600 group-hover/pm:text-indigo-600 whitespace-nowrap">+ Assign PM</span>
                           </div>
                         );
-                      }
-                      return (
-                        <div className="flex items-center gap-1.5 text-slate-400 group-hover/pm:text-indigo-600">
-                          <UserPlus className="w-3.5 h-3.5 text-indigo-500" />
-                          <span className="text-xs font-bold text-slate-600 group-hover/pm:text-indigo-600">+ Assign PM</span>
-                        </div>
-                      );
-                    })()}
+                      })()}
+                    </div>
                   </div>
 
-                  {/* Right: Billing Summary & Status */}
-                  <div className="flex items-center justify-between lg:justify-end gap-6 ml-auto w-full lg:w-auto pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100">
-                    <div className="text-right space-y-0.5">
+                  {/* Col 10-12 (Span 3): Billing Summary + Status Dropdown + Arrow (Aligned Right) */}
+                  <div className="lg:col-span-3 flex items-center justify-between lg:justify-end gap-3.5 w-full pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100">
+                    <div className="text-left lg:text-right space-y-0.5">
                       <span className="font-mono font-black text-sm text-slate-900 block">
                         ₹{(client.total_package_amount || 0).toLocaleString('en-IN')}
                       </span>
                       <p className="text-[11px] font-bold">
                         {isPaidFull ? (
-                          <span className="text-emerald-600 font-extrabold flex items-center gap-1 justify-end">
+                          <span className="text-emerald-600 font-extrabold flex items-center gap-1 lg:justify-end">
                             <Check className="w-3 h-3" /> Paid in Full
                           </span>
                         ) : (
@@ -1147,17 +1175,15 @@ export default function ClientsPage() {
                       </p>
                     </div>
 
-                    {/* Status Pill */}
-                    <span className={`px-2.5 py-1 rounded-full text-xs font-extrabold border ${
-                      client.status === 'completed'
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                        : 'bg-blue-50 text-blue-700 border-blue-200'
-                    }`}>
-                      {client.status === 'completed' ? 'Completed' : 'Active'}
-                    </span>
+                    {/* Active / Completed Interactive Dropdown */}
+                    <ClientStatusDropdown
+                      status={client.status}
+                      clientId={client.id}
+                      onStatusChange={(newStatus) => handleUpdateClientStatus(client.id, newStatus)}
+                    />
 
                     {/* Open Arrow */}
-                    <div className="w-8 h-8 rounded-xl bg-amber-50 group-hover:bg-amber-400 text-amber-800 group-hover:text-slate-900 flex items-center justify-center transition-all shadow-2xs">
+                    <div className="w-8 h-8 rounded-xl bg-amber-50 group-hover:bg-amber-400 text-amber-800 group-hover:text-slate-900 flex items-center justify-center transition-all shadow-2xs shrink-0">
                       <ChevronRight className="w-4 h-4" />
                     </div>
                   </div>
@@ -1214,7 +1240,10 @@ export default function ClientsPage() {
                   </div>
                 </div>
                 <button
-                  onClick={() => setQuickAssignClient(null)}
+                  onClick={() => {
+                    setQuickAssignClient(null);
+                    setQuickPmSearch('');
+                  }}
                   className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
                 >
                   <X className="w-4 h-4" />
@@ -1223,13 +1252,29 @@ export default function ClientsPage() {
 
               <div className="space-y-3 text-xs">
                 <p className="text-slate-600 font-medium">
-                  Select a team member from your workspace to assign as the Project Manager (PM) for <strong>{quickAssignClient.name}</strong>:
+                  Select an In-House team member to assign as Project Manager (PM) for <strong>{quickAssignClient.name}</strong>:
                 </p>
+
+                {/* Search PM */}
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search In-House PM..."
+                    value={quickPmSearch}
+                    onChange={(e) => setQuickPmSearch(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-medium"
+                    autoFocus
+                  />
+                </div>
 
                 <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
                   {/* Option: Unassign */}
                   <button
-                    onClick={() => handleAssignProjectManager(quickAssignClient, null)}
+                    onClick={() => {
+                      handleAssignProjectManager(quickAssignClient, null);
+                      setQuickPmSearch('');
+                    }}
                     className="w-full p-2.5 rounded-2xl border border-slate-200 hover:border-rose-300 hover:bg-rose-50 text-left flex items-center justify-between transition cursor-pointer"
                   >
                     <span className="font-bold text-slate-600 text-xs">❌ Remove / Unassigned</span>
@@ -1238,43 +1283,50 @@ export default function ClientsPage() {
                     )}
                   </button>
 
-                  {teamMembers.map((member) => {
-                    const isSelected =
-                      quickAssignClient.project_manager_id === member.id ||
-                      parseClientExtended(quickAssignClient).project_manager_id === member.id;
-                    const initials = member.name.split(/\s+/).filter(Boolean).map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
+                  {filteredQuickMembers.length === 0 ? (
+                    <div className="p-4 text-center text-slate-400 text-xs">
+                      No matching In-House PM found
+                    </div>
+                  ) : (
+                    filteredQuickMembers.map((member) => {
+                      const isSelected =
+                        quickAssignClient.project_manager_id === member.id ||
+                        parseClientExtended(quickAssignClient).project_manager_id === member.id;
+                      const initials = member.name.split(/\s+/).filter(Boolean).map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
 
-                    return (
-                      <button
-                        key={member.id}
-                        onClick={() => handleAssignProjectManager(quickAssignClient, member)}
-                        className={`w-full p-2.5 rounded-2xl border text-left flex items-center justify-between transition cursor-pointer ${
-                          isSelected
-                            ? 'bg-indigo-50/90 border-indigo-400 text-indigo-950 font-black shadow-2xs'
-                            : 'bg-white hover:bg-indigo-50/40 border-slate-200 text-slate-800'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <span className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-800 font-black text-xs flex items-center justify-center border border-indigo-200">
-                            {initials}
-                          </span>
-                          <div>
+                      return (
+                        <button
+                          key={member.id}
+                          onClick={() => {
+                            handleAssignProjectManager(quickAssignClient, member);
+                            setQuickPmSearch('');
+                          }}
+                          className={`w-full p-2.5 rounded-2xl border text-left flex items-center justify-between transition cursor-pointer ${
+                            isSelected
+                              ? 'bg-amber-50 border-amber-400 text-amber-950 font-black shadow-2xs'
+                              : 'bg-white hover:bg-amber-50/40 border-slate-200 text-slate-800'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-800 font-black text-xs flex items-center justify-center border border-amber-500/20">
+                              {initials}
+                            </span>
                             <p className="font-bold text-xs text-slate-900">{member.name}</p>
-                            <p className="text-[10px] text-slate-500 font-medium">
-                              {member.role || 'Project Manager'} {member.email ? `• ${member.email}` : ''}
-                            </p>
                           </div>
-                        </div>
-                        {isSelected && <Check className="w-4 h-4 text-indigo-600 shrink-0" />}
-                      </button>
-                    );
-                  })}
+                          {isSelected && <Check className="w-4 h-4 text-amber-600 shrink-0" />}
+                        </button>
+                      );
+                    })
+                  )}
                 </div>
               </div>
 
               <div className="pt-2 border-t border-[#EAE5DA] flex justify-end">
                 <button
-                  onClick={() => setQuickAssignClient(null)}
+                  onClick={() => {
+                    setQuickAssignClient(null);
+                    setQuickPmSearch('');
+                  }}
                   className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
                 >
                   Cancel

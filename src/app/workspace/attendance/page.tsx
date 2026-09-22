@@ -57,43 +57,51 @@ export default function AttendancePage() {
     return () => clearTimeout(timer);
   }, [punchAlert]);
 
-  // Data states
-  const [teamMembers, setTeamMembers] = useState<FWTeamMember[]>(() => {
-    if (memCachedAttendanceMembers.length > 0) return memCachedAttendanceMembers;
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = localStorage.getItem('sc_cached_attendance_members');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            memCachedAttendanceMembers = parsed;
-            return parsed;
-          }
-        }
-      } catch (_) {}
-    }
-    return [];
-  });
-  const [records, setRecords] = useState<AttendanceRecord[]>(() => {
-    if (memCachedAttendanceRecords.length > 0) return memCachedAttendanceRecords;
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = localStorage.getItem('sc_cached_attendance_records');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            memCachedAttendanceRecords = parsed;
-            return parsed;
-          }
-        }
-      } catch (_) {}
-    }
-    return [];
-  });
-  const [locations, setLocations] = useState<AttendanceLocation[]>(() => memCachedAttendanceLocations);
-  const [shifts, setShifts] = useState<AttendanceShift[]>(() => memCachedAttendanceShifts);
+  // Data states (SSR-safe initialization to prevent hydration mismatch)
+  const [isMounted, setIsMounted] = useState(false);
+  const [teamMembers, setTeamMembers] = useState<FWTeamMember[]>([]);
+  const [records, setRecords] = useState<AttendanceRecord[]>([]);
+  const [locations, setLocations] = useState<AttendanceLocation[]>([]);
+  const [shifts, setShifts] = useState<AttendanceShift[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<AttendanceLeaveRequest[]>([]);
   const [memberLinks, setMemberLinks] = useState<AttendanceMemberLink[]>([]);
+
+  // Hydrate client cache & mark mounted after SSR
+  useEffect(() => {
+    setIsMounted(true);
+    if (typeof window !== 'undefined') {
+      try {
+        if (memCachedAttendanceMembers.length > 0) {
+          setTeamMembers(memCachedAttendanceMembers);
+        } else {
+          const storedMem = localStorage.getItem('sc_cached_attendance_members');
+          if (storedMem) {
+            const parsed = JSON.parse(storedMem);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              memCachedAttendanceMembers = parsed;
+              setTeamMembers(parsed);
+            }
+          }
+        }
+
+        if (memCachedAttendanceRecords.length > 0) {
+          setRecords(memCachedAttendanceRecords);
+        } else {
+          const storedRec = localStorage.getItem('sc_cached_attendance_records');
+          if (storedRec) {
+            const parsed = JSON.parse(storedRec);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              memCachedAttendanceRecords = parsed;
+              setRecords(parsed);
+            }
+          }
+        }
+
+        if (memCachedAttendanceLocations.length > 0) setLocations(memCachedAttendanceLocations);
+        if (memCachedAttendanceShifts.length > 0) setShifts(memCachedAttendanceShifts);
+      } catch (_) {}
+    }
+  }, []);
 
   // Filter states
   const [searchQuery, setSearchQuery] = useState('');
@@ -166,44 +174,152 @@ export default function AttendancePage() {
     return false;
   }, []);
 
+  const getStrictInHouseMembers = useCallback(async (targetUserId: string): Promise<FWTeamMember[]> => {
+    // 1. Fetch from workspace_members (Primary multi-tenant source of truth)
+    const { data: wmList } = await supabase
+      .from('workspace_members')
+      .select('*')
+      .eq('workspace_id', targetUserId);
+
+    // 2. Fetch from fw_team_members (Legacy & attendance shifts/geofence settings)
+    const { data: fwList } = await supabase
+      .from('fw_team_members')
+      .select('*')
+      .eq('user_id', targetUserId);
+
+    // Track non-in-house (freelancers/partners) from workspace_members to strictly honor reclassification
+    const nonInHouseWmIds = new Set<string>();
+    const nonInHouseWmEmails = new Set<string>();
+    const nonInHouseWmNames = new Set<string>();
+
+    (wmList || []).forEach((wm: any) => {
+      const rawType = String(wm.type || wm.primary_type || '').toLowerCase().replace(/[-_\s]/g, '');
+      const memTypes = Array.isArray(wm.member_types)
+        ? wm.member_types.map((t: any) => String(t).toLowerCase().replace(/[-_\s]/g, ''))
+        : [];
+      const isInHouse = rawType === 'inhouse' || memTypes.includes('inhouse');
+
+      if (!isInHouse) {
+        if (wm.id) nonInHouseWmIds.add(String(wm.id));
+        if (wm.email) nonInHouseWmEmails.add(wm.email.trim().toLowerCase());
+        if (wm.name) nonInHouseWmNames.add(wm.name.trim().toLowerCase());
+      }
+    });
+
+    const fwMapById = new Map<string, any>();
+    const fwMapByEmail = new Map<string, any>();
+    const fwMapByName = new Map<string, any>();
+
+    (fwList || []).forEach((f: any) => {
+      if (f.id) fwMapById.set(String(f.id), f);
+      if (f.email) fwMapByEmail.set(f.email.trim().toLowerCase(), f);
+      if (f.name) fwMapByName.set(f.name.trim().toLowerCase(), f);
+    });
+
+    const uniqueMembers: FWTeamMember[] = [];
+    const seenIds = new Set<string>();
+    const seenEmails = new Set<string>();
+    const seenNames = new Set<string>();
+
+    // Process In-House workspace_members first
+    (wmList || []).forEach((wm: any) => {
+      if (wm.status === 'INACTIVE') return;
+
+      const rawType = String(wm.type || wm.primary_type || '').toLowerCase().replace(/[-_\s]/g, '');
+      const memTypes = Array.isArray(wm.member_types)
+        ? wm.member_types.map((t: any) => String(t).toLowerCase().replace(/[-_\s]/g, ''))
+        : [];
+      const isInHouse = rawType === 'inhouse' || memTypes.includes('inhouse');
+      if (!isInHouse) return;
+
+      const cleanEmail = (wm.email || '').trim().toLowerCase();
+      const cleanName = (wm.name || '').trim().toLowerCase();
+
+      // Match with fw_team_members for attendance settings
+      const fwMatch = fwMapById.get(String(wm.id)) ||
+        (cleanEmail ? fwMapByEmail.get(cleanEmail) : null) ||
+        (cleanName ? fwMapByName.get(cleanName) : null);
+
+      const aliasIds = new Set<string>([String(wm.id)]);
+      if (fwMatch?.id) aliasIds.add(String(fwMatch.id));
+
+      (fwList || []).forEach((f: any) => {
+        const fEmail = (f.email || '').trim().toLowerCase();
+        const fName = (f.name || '').trim().toLowerCase();
+        if ((cleanEmail && fEmail && cleanEmail === fEmail) || (cleanName && fName && cleanName === fName)) {
+          aliasIds.add(String(f.id));
+        }
+      });
+
+      const memberObj: any = {
+        id: String(wm.id),
+        user_id: targetUserId,
+        workspace_id: targetUserId,
+        name: wm.name,
+        email: wm.email,
+        phone_number: wm.phone || fwMatch?.phone_number || '',
+        primary_role: wm.primary_role || fwMatch?.primary_role || 'Crew',
+        roles: wm.roles || fwMatch?.roles || [wm.primary_role || 'Crew'],
+        primary_type: 'IN_HOUSE',
+        member_types: ['IN_HOUSE'],
+        avatar_url: wm.avatar_url || fwMatch?.avatar_url || null,
+        is_active: true,
+        active_status: true,
+        shift_start: fwMatch?.shift_start || '10:00:00',
+        shift_end: fwMatch?.shift_end || '19:00:00',
+        weekly_offs: fwMatch?.weekly_offs || ['Sun'],
+        latitude: fwMatch?.latitude,
+        longitude: fwMatch?.longitude,
+        radius_meters: fwMatch?.radius_meters || 150,
+        location_name: fwMatch?.location_name || 'Studio Main Office',
+        aliasIds: Array.from(aliasIds)
+      };
+
+      uniqueMembers.push(memberObj);
+      seenIds.add(String(wm.id));
+      if (cleanEmail) seenEmails.add(cleanEmail);
+      if (cleanName) seenNames.add(cleanName);
+    });
+
+    // Also include any fw_team_members marked IN_HOUSE that are not yet in the list and not classified non-inhouse in workspace_members
+    (fwList || []).forEach((f: any) => {
+      const fId = String(f.id);
+      const cleanEmail = (f.email || '').trim().toLowerCase();
+      const cleanName = (f.name || '').trim().toLowerCase();
+
+      if (seenIds.has(fId) || (cleanEmail && seenEmails.has(cleanEmail)) || (cleanName && seenNames.has(cleanName))) return;
+      if (nonInHouseWmIds.has(fId) || (cleanEmail && nonInHouseWmEmails.has(cleanEmail)) || (cleanName && nonInHouseWmNames.has(cleanName))) return;
+
+      const isInactive = (f.is_active === false && f.active_status !== true) || (f.active_status === false && f.is_active !== true);
+      if (isInactive) return;
+
+      const rawType = String(f.type || f.primary_type || '').toLowerCase().replace(/[-_\s]/g, '');
+      const memTypes = Array.isArray(f.member_types)
+        ? f.member_types.map((t: any) => String(t).toLowerCase().replace(/[-_\s]/g, ''))
+        : [];
+      const isInHouse = rawType === 'inhouse' || memTypes.includes('inhouse');
+      if (!isInHouse) return;
+
+      uniqueMembers.push({
+        ...f,
+        id: fId,
+        primary_type: 'IN_HOUSE',
+        member_types: ['IN_HOUSE'],
+        aliasIds: [fId]
+      });
+      seenIds.add(fId);
+      if (cleanEmail) seenEmails.add(cleanEmail);
+      if (cleanName) seenNames.add(cleanName);
+    });
+
+    return uniqueMembers;
+  }, []);
+
   const fetchInHouseStaff = async (workspaceId?: string) => {
-    // 1. Get logged-in admin user ID
     const { data: { user } } = await supabase.auth.getUser();
     const targetUserId = workspaceId || user?.id;
     if (!targetUserId) return [];
-
-    // 2. Fetch in-house staff scoped strictly to this user_id
-    const { data: staffList, error } = await supabase
-      .from('fw_team_members')
-      .select('*')
-      .eq('user_id', targetUserId)
-      .or('primary_type.ilike.%in-house%,primary_type.ilike.%in_house%')
-      .or('is_active.is.null,is_active.eq.true')
-      .order('name', { ascending: true });
-
-    if (error || !staffList) return [];
-
-    // Strict deduplication by name & elimination of any marked as freelancer
-    const seenNames = new Set<string>();
-    const strictInHouse = staffList.filter((member: any) => {
-      if (member.is_active === false || member.active_status === false) return false;
-
-      const rawType = String(member.primary_type || '').toLowerCase().trim();
-      const isFreelancer = rawType.includes('freelance') || 
-        (member.name || '').toLowerCase().includes(' tp') || 
-        (member.name || '').toLowerCase().includes(' ref');
-
-      if (isFreelancer) return false;
-
-      // Deduplicate duplicates in list
-      const cleanName = (member.name || '').toLowerCase().trim();
-      if (!cleanName || seenNames.has(cleanName)) return false;
-      seenNames.add(cleanName);
-
-      return rawType === 'in-house' || rawType === 'in_house';
-    });
-
-    return strictInHouse;
+    return getStrictInHouseMembers(targetUserId);
   };
 
   const fetchAttendanceData = async () => {
@@ -217,61 +333,8 @@ export default function AttendancePage() {
       }
       const workspaceId = user.id;
 
-      // 2. Fetch in-house staff scoped strictly to this user_id
-      const { data: staffList, error } = await supabase
-        .from('fw_team_members')
-        .select('*')
-        .eq('user_id', user.id)
-        .or('primary_type.ilike.%in-house%,primary_type.ilike.%in_house%')
-        .or('is_active.is.null,is_active.eq.true')
-        .order('name', { ascending: true });
-
-      if (error) {
-        console.warn('[attendance] Scoped staffList fetch warning:', error);
-      }
-
-      const rawMembers = staffList || [];
-
-      // Deduplicate members and build Alias Map so updated emails never disconnect historical attendance
-      const uniqueMembers: any[] = [];
-      const memberAliasMap = new Map<string, Set<string>>();
-
-      rawMembers.forEach((m: any) => {
-        const cleanName = m.name ? m.name.trim().toLowerCase() : '';
-        const cleanEmail = m.email ? m.email.trim().toLowerCase() : '';
-        const cleanPhone = m.phone_number ? m.phone_number.replace(/\D/g, '') : '';
-
-        const existing = uniqueMembers.find(u => {
-          if (u.id === m.id) return true;
-          const uEmail = u.email ? u.email.trim().toLowerCase() : '';
-          const uName = u.name ? u.name.trim().toLowerCase() : '';
-          const uPhone = u.phone_number ? u.phone_number.replace(/\D/g, '') : '';
-
-          if (cleanEmail && uEmail && cleanEmail === uEmail) return true;
-          if (cleanPhone && uPhone && cleanPhone.length > 5 && cleanPhone === uPhone) return true;
-          if (cleanName && uName && cleanName === uName) return true;
-          return false;
-        });
-
-        if (existing) {
-          const aliasSet = memberAliasMap.get(existing.id) || new Set([existing.id]);
-          aliasSet.add(m.id);
-          memberAliasMap.set(existing.id, aliasSet);
-
-          if (m.email && !existing.email) existing.email = m.email;
-          if (m.phone_number && !existing.phone_number) existing.phone_number = m.phone_number;
-          if (m.avatar_url && !existing.avatar_url) existing.avatar_url = m.avatar_url;
-        } else {
-          const aliasSet = new Set<string>([m.id]);
-          memberAliasMap.set(m.id, aliasSet);
-          uniqueMembers.push({ ...m });
-        }
-      });
-
-      uniqueMembers.forEach(u => {
-        const aliasSet = memberAliasMap.get(u.id) || new Set([u.id]);
-        u.aliasIds = Array.from(aliasSet);
-      });
+      // 2. Strictly load In-House members matching Team & Partners
+      const uniqueMembers = await getStrictInHouseMembers(workspaceId);
 
       setTeamMembers(uniqueMembers);
       memCachedAttendanceMembers = uniqueMembers;
@@ -281,7 +344,13 @@ export default function AttendancePage() {
         } catch (_) {}
       }
 
-      // 2. Fetch Attendance Records & attendance_logs for selected date strictly scoped to user_id
+      // Build alias reverse lookup map for seamless ID resolution
+      const aliasToPrimaryId = new Map<string, string>();
+      uniqueMembers.forEach(u => {
+        (u.aliasIds || [u.id]).forEach((aid: string) => aliasToPrimaryId.set(String(aid), String(u.id)));
+      });
+
+      // 3. Fetch Attendance Records & attendance_logs for selected date strictly scoped to user_id
       let recQuery = supabase
         .from('attendance_records')
         .select('*, member:fw_team_members(*)')
@@ -293,21 +362,25 @@ export default function AttendancePage() {
       // Also query attendance_logs for selectedDate scoped strictly to member IDs in this workspace
       let logsData: any[] = [];
       if (uniqueMembers.length > 0) {
+        const allMemberIds = Array.from(new Set(uniqueMembers.flatMap(u => u.aliasIds || [u.id])));
         const { data } = await supabase
           .from('attendance_logs')
           .select('*')
           .eq('date', selectedDate)
-          .in('member_id', uniqueMembers.map(u => String(u.id)));
+          .in('member_id', allMemberIds);
         logsData = data || [];
       }
 
       const mergedMap = new Map<string, any>();
       (recordsData || []).forEach((r: any) => {
-        mergedMap.set(String(r.member_id), { ...r });
+        const rawMemId = String(r.member_id);
+        const primaryMemId = aliasToPrimaryId.get(rawMemId) || rawMemId;
+        mergedMap.set(primaryMemId, { ...r, member_id: primaryMemId });
       });
 
       (logsData || []).forEach((log: any) => {
-        const memId = String(log.member_id);
+        const rawMemId = String(log.member_id);
+        const memId = aliasToPrimaryId.get(rawMemId) || rawMemId;
         const existing = mergedMap.get(memId);
         if (existing) {
           existing.log_id = log.id;
@@ -333,7 +406,7 @@ export default function AttendancePage() {
           mergedMap.set(memId, {
             id: log.id,
             log_id: log.id,
-            member_id: log.member_id,
+            member_id: memId,
             user_id: workspaceId,
             workspace_id: workspaceId,
             date: log.date,
@@ -367,6 +440,8 @@ export default function AttendancePage() {
           localStorage.setItem('sc_cached_attendance_records', JSON.stringify(finalRecs));
         } catch (_) {}
       }
+
+
 
       // 3. Fetch Geofence Locations
       // 3. Fetch Geofence Locations via dedicated backend endpoint
@@ -699,7 +774,8 @@ export default function AttendancePage() {
   const strictInHouse = useMemo(() => {
     const seenNames = new Set<string>();
     return teamMembers.filter((member: any) => {
-      if (member.is_active === false || member.active_status === false) return false;
+      const isInactive = (member.is_active === false && member.active_status !== true) || (member.active_status === false && member.is_active !== true);
+      if (isInactive) return false;
 
       const rawType = String(member.primary_type || '').toLowerCase().trim();
       const typesList = Array.isArray(member.member_types)
@@ -1041,7 +1117,7 @@ export default function AttendancePage() {
   const onLeaveCount = leaveRequests.filter(l => l.status === 'approved' && l.start_date <= selectedDate && l.end_date >= selectedDate).length;
   const liveWorkingCount = inHouseStaff.filter(m => records.some(r => isRecordForMember(r, m) && (r.check_in_time || r.punch_in_time) && !(r.check_out_time || r.punch_out_time))).length;
 
-  if (loading && records.length === 0 && teamMembers.length === 0) {
+  if (!isMounted || (loading && records.length === 0 && teamMembers.length === 0)) {
     return <StudioCoreLiquidLoader label="Loading Attendance Roster..." />;
   }
 
@@ -1444,6 +1520,7 @@ export default function AttendancePage() {
             member={showKundaliModal.member}
             records={records}
             shifts={shifts}
+            onAttendanceChanged={() => fetchAttendanceData()}
             onUpdateRecord={async (id, updates) => {
               setRecords(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
               await supabase.from('attendance_records').update(updates).eq('id', id);

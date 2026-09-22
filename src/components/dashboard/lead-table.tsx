@@ -9,7 +9,8 @@ import {
   HelpCircle, Tag, Columns, ChevronDown, Check, MoreHorizontal, MoreVertical, ArrowUpRight,
   Send, PhoneCall, ExternalLink, FileText, Download, Trash2, 
   UserCheck, CheckSquare, Square, AlertCircle, Plus, Edit2, 
-  Trash, ArrowLeft, ArrowRight, LayoutGrid, Clock, User, UserPlus, MessageSquare, MessageCircle, RefreshCw, Users, Database, Globe, FolderOpen, Archive, UserX, Bell
+  Trash, ArrowLeft, ArrowRight, LayoutGrid, Clock, User, UserPlus, MessageSquare, MessageCircle, RefreshCw, Users, Database, Globe, FolderOpen, Archive, UserX, Bell,
+  Flame, CheckCircle2, Sparkles, Target
 } from 'lucide-react';
 import { Lead, LeadStatus, LeadScore } from '@/types';
 import { supabase } from '@/lib/supabase';
@@ -196,6 +197,229 @@ export function getSmartQuestionHeader(raw: string): { key: string; label: strin
   return { key: cleanKey || text, label: cleanLabel || text };
 }
 
+const sanitizeLeadStagesList = (rawStages: any[]): any[] => {
+  if (!Array.isArray(rawStages)) return [];
+  const filtered = rawStages.filter((st: any) => {
+    const id = String(st?.id || (typeof st === 'string' ? st : '')).toLowerCase().trim();
+    const name = String(st?.name || (typeof st === 'string' ? st : '')).toLowerCase().trim();
+    if (id === 'won' || id === 'win') return false;
+    if (name === 'won' || name.startsWith('won ') || name.includes('won 🎉') || name.includes('won /') || name.includes('win')) return false;
+    return true;
+  }).map((st: any, idx: number) => {
+    if (typeof st === 'string') {
+      return { id: `st_${idx}`, name: st, color: '#3b82f6', position: idx };
+    }
+    return {
+      ...st,
+      id: st.id || `st_${idx}`,
+      position: typeof st.position === 'number' ? st.position : idx
+    };
+  });
+
+  const hasBooked = filtered.some((st: any) => {
+    const id = String(st.id || '').toLowerCase().trim();
+    const name = String(st.name || '').toLowerCase().trim();
+    return id === 'booked' || name === 'booked';
+  });
+
+  if (!hasBooked) {
+    const lostIdx = filtered.findIndex((st: any) => {
+      const id = String(st.id || '').toLowerCase();
+      const name = String(st.name || '').toLowerCase();
+      return id === 'lost' || name.includes('lost');
+    });
+    const bookedStage = { id: 'booked', name: 'Booked', color: '#84cc16', position: lostIdx !== -1 ? lostIdx : filtered.length };
+    if (lostIdx !== -1) {
+      filtered.splice(lostIdx, 0, bookedStage);
+    } else {
+      filtered.push(bookedStage);
+    }
+  }
+
+  return filtered.map((st, i) => ({ ...st, position: i }));
+};
+
+function AssignFilterDropdown({
+  value,
+  onChange,
+  teamMembers,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  teamMembers: any[];
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    if (open) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [open]);
+
+  // Whitelist sales persons or unique team members
+  const salesMembers = React.useMemo(() => {
+    const map = new Map<string, any>();
+    teamMembers.forEach((m: any) => {
+      if (m && m.name && !map.has(m.name.toLowerCase())) {
+        map.set(m.name.toLowerCase(), m);
+      }
+    });
+    return Array.from(map.values());
+  }, [teamMembers]);
+
+  const selectedMember = React.useMemo(() => {
+    if (!value || value === 'all' || value === 'Unassigned') return null;
+    return salesMembers.find(m => m.name.toLowerCase() === value.toLowerCase());
+  }, [value, salesMembers]);
+
+  const displayLabel = React.useMemo(() => {
+    if (!value || value === 'all') return 'Assign: All';
+    if (value === 'Unassigned') return 'Assign: Unassigned';
+    return `Assign: ${value}`;
+  }, [value]);
+
+  return (
+    <div ref={containerRef} className="relative inline-block font-sans" onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className={`h-8 px-2.5 text-xs rounded-full border transition-all duration-200 shadow-2xs inline-flex items-center justify-between gap-1.5 select-none cursor-pointer font-bold ${
+          value !== 'all'
+            ? 'bg-amber-50 dark:bg-amber-950/50 border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 ring-1 ring-amber-400/30'
+            : 'bg-white dark:bg-[#121110] border-slate-200/90 dark:border-zinc-800 text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-800'
+        } ${open ? 'ring-2 ring-blue-500/20 border-blue-500' : ''}`}
+      >
+        <div className="flex items-center gap-1.5 truncate max-w-[160px]">
+          {selectedMember?.avatar_url ? (
+            <img
+              src={selectedMember.avatar_url}
+              alt={selectedMember.name}
+              className="w-4 h-4 rounded-full object-cover shrink-0 border border-amber-300"
+            />
+          ) : value !== 'all' && value !== 'Unassigned' ? (
+            <span className="w-4 h-4 rounded-full bg-amber-200 dark:bg-amber-800 text-amber-900 dark:text-amber-100 text-[9px] font-black flex items-center justify-center shrink-0">
+              {value.slice(0, 2).toUpperCase()}
+            </span>
+          ) : (
+            <Users className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+          )}
+          <span className="truncate">{displayLabel}</span>
+        </div>
+        <ChevronDown
+          className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 text-slate-400 ${
+            open ? 'rotate-180 text-blue-600' : ''
+          }`}
+        />
+      </button>
+
+      <AnimatePresenceComponent>
+        {open && (
+          <MotionDiv
+            initial={{ opacity: 0, y: 4, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.97 }}
+            transition={{ duration: 0.12, ease: 'easeOut' }}
+            className="absolute left-0 top-full mt-1.5 min-w-[200px] max-h-72 overflow-y-auto z-[999999] rounded-2xl bg-white dark:bg-[#1A1816] border border-slate-200/90 dark:border-zinc-800 p-1.5 shadow-2xl text-xs space-y-0.5 backdrop-blur-md"
+          >
+            {/* Option: Assign: All */}
+            <button
+              type="button"
+              onClick={() => {
+                onChange('all');
+                setOpen(false);
+              }}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left font-semibold transition cursor-pointer ${
+                value === 'all'
+                  ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 font-bold'
+                  : 'hover:bg-slate-100/80 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-200'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-5 rounded-full bg-slate-100 dark:bg-zinc-800 flex items-center justify-center text-slate-500">
+                  <Users className="w-3 h-3" />
+                </div>
+                <span>Assign: All</span>
+              </div>
+              {value === 'all' && <Check className="w-3.5 h-3.5 text-amber-600" />}
+            </button>
+
+            {/* Option: Unassigned */}
+            <button
+              type="button"
+              onClick={() => {
+                onChange('Unassigned');
+                setOpen(false);
+              }}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left font-semibold transition cursor-pointer ${
+                value === 'Unassigned'
+                  ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-900 dark:text-rose-200 font-bold'
+                  : 'hover:bg-slate-100/80 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-200'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-5 rounded-full bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300 flex items-center justify-center text-[10px] font-bold">
+                  —
+                </div>
+                <span>Unassigned</span>
+              </div>
+              {value === 'Unassigned' && <Check className="w-3.5 h-3.5 text-rose-600" />}
+            </button>
+
+            {salesMembers.length > 0 && (
+              <div className="pt-1 border-t border-slate-100 dark:border-zinc-800/80 mt-1">
+                <div className="px-2.5 py-1 text-[9px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider">
+                  Team Members
+                </div>
+                {salesMembers.map(m => {
+                  const isSelected = value.toLowerCase() === m.name.toLowerCase();
+                  return (
+                    <button
+                      key={m.id || m.name}
+                      type="button"
+                      onClick={() => {
+                        onChange(m.name);
+                        setOpen(false);
+                      }}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left font-semibold transition cursor-pointer ${
+                        isSelected
+                          ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 font-bold border border-amber-200 dark:border-amber-800/60'
+                          : 'hover:bg-slate-100/80 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        {m.avatar_url ? (
+                          <img
+                            src={m.avatar_url}
+                            alt={m.name}
+                            className="w-5 h-5 rounded-full object-cover shrink-0 border border-slate-200 dark:border-zinc-700"
+                          />
+                        ) : (
+                          <div className="w-5 h-5 rounded-full bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 flex items-center justify-center font-bold text-[9px] shrink-0">
+                            {m.name.slice(0, 2).toUpperCase()}
+                          </div>
+                        )}
+                        <span className="truncate text-xs font-semibold">{m.name}</span>
+                      </div>
+                      {isSelected && <Check className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </MotionDiv>
+        )}
+      </AnimatePresenceComponent>
+    </div>
+  );
+}
+
 export function LeadTable({ 
   leads: initialLeads, 
   stages = [],
@@ -219,11 +443,11 @@ export function LeadTable({
   const [headerHeight, setHeaderHeight] = useState(104);
   const headerRef = useRef<HTMLDivElement>(null);
   const [leads, setLeads] = useState<Lead[]>(initialLeads);
-  const [stagesState, setStagesState] = useState<any[]>(stages || []);
+  const [stagesState, setStagesState] = useState<any[]>(() => sanitizeLeadStagesList(stages || []));
 
   useEffect(() => {
     if (stages && stages.length > 0) {
-      setStagesState(stages);
+      setStagesState(sanitizeLeadStagesList(stages));
     }
   }, [stages]);
 
@@ -234,7 +458,7 @@ export function LeadTable({
         try {
           const parsed = JSON.parse(local);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            setStagesState(parsed);
+            setStagesState(sanitizeLeadStagesList(parsed));
             return;
           }
         } catch (_) {}
@@ -251,7 +475,7 @@ export function LeadTable({
         if (res.ok) {
           const data = await res.json();
           if (data.success && Array.isArray(data.settings?.lead_stages) && data.settings.lead_stages.length > 0) {
-            setStagesState(data.settings.lead_stages);
+            setStagesState(sanitizeLeadStagesList(data.settings.lead_stages));
           }
         }
       } catch (_) {}
@@ -330,6 +554,120 @@ export function LeadTable({
   const [sidebarWidth, setSidebarWidth] = useState(0);
   const [rowActionMenuLeadId, setRowActionMenuLeadId] = useState<string | null>(null);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
+
+  // Quotation Status Map: Maps lead.id -> { count, hasFinal, finalVersion, versions }
+  const [quotationSummaryMap, setQuotationSummaryMap] = useState<Record<string, {
+    count: number;
+    hasFinal: boolean;
+    finalVersion?: number;
+    versions: any[];
+  }>>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_quotation_summary_map');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && typeof parsed === 'object') return parsed;
+        }
+      } catch (_) {}
+    }
+    return {};
+  });
+
+  useEffect(() => {
+    let isCancelled = false;
+    const fetchQuotationSummaries = async (force = false) => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        const uid = session?.user?.id;
+        const impId = typeof window !== 'undefined' ? localStorage.getItem('impersonated_tenant_id') : null;
+        const studioParam = searchParams?.get('studio') || searchParams?.get('ws');
+        const targetWs = studioParam || impId || uid;
+        if (!targetWs) return;
+
+        const url = `/api/quotations/lead-summary?workspace_id=${targetWs}${force ? '&refresh=true' : ''}`;
+        const res = await fetch(url, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (!isCancelled && json.success && json.summary) {
+            setQuotationSummaryMap(prev => {
+              const merged = {
+                ...prev,
+                ...json.summary
+              };
+              if (typeof window !== 'undefined') {
+                try {
+                  localStorage.setItem('sc_quotation_summary_map', JSON.stringify(merged));
+                } catch (_) {}
+              }
+              return merged;
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('[LeadTable] Failed to fetch quotation summaries:', err);
+      }
+    };
+
+    fetchQuotationSummaries();
+
+    const handleQuotationFinalized = () => {
+      fetchQuotationSummaries(true);
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('quotation_finalized', handleQuotationFinalized);
+    }
+    return () => {
+      isCancelled = true;
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('quotation_finalized', handleQuotationFinalized);
+      }
+    };
+  }, [searchParams]);
+
+  const handleQuotationChange = React.useCallback((leadId: string, updatedVersions: any[]) => {
+    const versions = [...updatedVersions];
+    const hasFinal = versions.some(v => v.is_final);
+    const finalItem = versions.find(v => v.is_final);
+
+    setQuotationSummaryMap(prev => {
+      const updated = {
+        ...prev,
+        [leadId]: {
+          count: versions.length,
+          hasFinal,
+          finalVersion: finalItem?.version,
+          versions
+        }
+      };
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('sc_quotation_summary_map', JSON.stringify(updated));
+        } catch (_) {}
+      }
+      return updated;
+    });
+
+    // Synchronize lead row directly so lead.final_quotation_id reflects immediately without lag
+    setLeads(prev => prev.map(l => {
+      if (l.id === leadId) {
+        const updatedFinalId = hasFinal ? (finalItem?.template_id || finalItem?.id || 'final') : null;
+        return {
+          ...l,
+          final_quotation_id: updatedFinalId,
+          raw_payload: {
+            ...l.raw_payload,
+            final_quotation_id: updatedFinalId
+          }
+        };
+      }
+      return l;
+    }));
+  }, []);
 
   // Columns & Configurations state
   const [columns, setColumns] = useState<ColumnConfig[]>(INITIAL_COLUMNS);
@@ -1528,16 +1866,45 @@ export function LeadTable({
 
     // Sidebar & Stage Filter logic
     const isLeadLost = lead.stage_id === 'lost' || (lead.status?.toLowerCase() || '').includes('lost');
-    const isLeadArchived = lead.raw_payload?.is_archived === true;
+    const isLeadArchived = lead.raw_payload?.is_archived === true || (lead as any).is_archived === true || (lead.status as string) === 'archived' || lead.stage_id === 'archived';
+    const isLeadBooked = lead.stage_id === 'booked' || (lead.status?.toLowerCase() || '').includes('booked');
 
     let matchesSidebar = true;
-    if (statusFilter === 'archived' || sidebarFilter === 'archive') {
+    if (statusFilter === 'archived' || sidebarFilter === 'archive' || stageParam === 'archived' || stageParam === 'archive') {
       if (!isLeadArchived) matchesSidebar = false;
-    } else if (statusFilter === 'lost' || sidebarFilter === 'lost') {
+    } else if (statusFilter === 'lost' || sidebarFilter === 'lost' || stageParam === 'lost') {
       if (!isLeadLost || isLeadArchived) matchesSidebar = false;
+    } else if (stageParam === 'booked') {
+      if (!isLeadBooked || isLeadArchived) matchesSidebar = false;
+    } else if (stageParam && stageParam !== 'all' && stageParam !== 'overview') {
+      // Stage sub-menu selected (e.g. stage=new, stage=contacted, stage=cool, stage=hot)
+      const target = stageParam.toLowerCase().trim();
+      const leadStage = (lead.stage_id || '').toLowerCase().trim();
+      const leadStatus = (lead.status || '').toLowerCase().trim();
+      
+      const matchingStageObj = stagesState.find(s => 
+        s.id?.toLowerCase() === target || 
+        s.name?.toLowerCase().includes(target)
+      );
+
+      const matchesStage = 
+        leadStage === target || 
+        leadStatus.includes(target) ||
+        (target === 'cool' && (leadStage === 'warm' || leadStatus.includes('warm') || leadStatus.includes('cool'))) ||
+        (matchingStageObj && (
+          leadStage === matchingStageObj.id?.toLowerCase() || 
+          leadStatus === matchingStageObj.name?.toLowerCase() ||
+          leadStatus.includes(matchingStageObj.name?.toLowerCase() || '___none___')
+        ));
+
+      if (!matchesStage || isLeadArchived) {
+        matchesSidebar = false;
+      }
     } else {
-      if (sidebarFilter === 'overview') {
-        if (isLeadLost || isLeadArchived) matchesSidebar = false;
+      // "All Leads": Leads from ALL stages are visible (New, Contacted, Cool, Hot, Booked, Lost, etc.)
+      // Only archived leads are kept out of active views unless specifically viewing Archived
+      if (isLeadArchived) {
+        matchesSidebar = false;
       }
     }
 
@@ -1805,26 +2172,62 @@ export function LeadTable({
         )}
 
         <div ref={headerRef} className="px-3 sm:px-4 md:px-6 pb-2 pt-2">
-          {/* Active View Indicator for Lost or Archived views */}
-          {sidebarFilter !== 'overview' && (
+          {/* Active View Indicator for Stage or Vault views */}
+          {Boolean(stageParam && stageParam !== 'all' && stageParam !== 'overview') && (
             <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100 dark:border-zinc-800/80">
               <div className="flex items-center gap-2">
-                {sidebarFilter === 'lost' ? (
+                {stageParam === 'lost' ? (
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 rounded-full text-xs font-black">
                     <UserX className="w-3.5 h-3.5" />
                     <span>Lost Leads Vault</span>
                     <span className="ml-1 px-1.5 py-0.5 bg-rose-500/20 rounded-full text-[10px]">{filteredLeads.length} Leads</span>
                   </div>
-                ) : (
+                ) : (stageParam === 'archived' || stageParam === 'archive') ? (
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 rounded-full text-xs font-black">
                     <Archive className="w-3.5 h-3.5" />
                     <span>Archived Leads Vault</span>
                     <span className="ml-1 px-1.5 py-0.5 bg-blue-500/20 rounded-full text-[10px]">{filteredLeads.length} Leads</span>
                   </div>
+                ) : stageParam === 'booked' ? (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 rounded-full text-xs font-black">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Booked Leads</span>
+                    <span className="ml-1 px-1.5 py-0.5 bg-emerald-500/20 rounded-full text-[10px]">{filteredLeads.length} Leads</span>
+                  </div>
+                ) : stageParam === 'hot' ? (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 rounded-full text-xs font-black">
+                    <Flame className="w-3.5 h-3.5 text-rose-500" />
+                    <span>Hot Leads</span>
+                    <span className="ml-1 px-1.5 py-0.5 bg-rose-500/20 rounded-full text-[10px]">{filteredLeads.length} Leads</span>
+                  </div>
+                ) : stageParam === 'new' ? (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border border-indigo-500/20 rounded-full text-xs font-black">
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+                    <span>New Leads</span>
+                    <span className="ml-1 px-1.5 py-0.5 bg-indigo-500/20 rounded-full text-[10px]">{filteredLeads.length} Leads</span>
+                  </div>
+                ) : stageParam === 'contacted' ? (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-purple-500/10 text-purple-700 dark:text-purple-400 border border-purple-500/20 rounded-full text-xs font-black">
+                    <PhoneCall className="w-3.5 h-3.5 text-purple-500" />
+                    <span>Contacted Leads</span>
+                    <span className="ml-1 px-1.5 py-0.5 bg-purple-500/20 rounded-full text-[10px]">{filteredLeads.length} Leads</span>
+                  </div>
+                ) : (stageParam === 'cool' || stageParam === 'warm') ? (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-500/20 rounded-full text-xs font-black">
+                    <Clock className="w-3.5 h-3.5 text-cyan-500" />
+                    <span>Cool / Warm Leads</span>
+                    <span className="ml-1 px-1.5 py-0.5 bg-cyan-500/20 rounded-full text-[10px]">{filteredLeads.length} Leads</span>
+                  </div>
+                ) : (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20 rounded-full text-xs font-black capitalize">
+                    <Target className="w-3.5 h-3.5" />
+                    <span>{stageParam} Leads</span>
+                    <span className="ml-1 px-1.5 py-0.5 bg-amber-500/20 rounded-full text-[10px]">{filteredLeads.length} Leads</span>
+                  </div>
                 )}
               </div>
               <Link 
-                href="/leads"
+                href={searchParams?.get('studio') ? `/leads?studio=${searchParams.get('studio')}` : '/leads'}
                 className="text-xs font-bold text-slate-500 hover:text-slate-900 dark:hover:text-white underline flex items-center gap-1 transition-colors"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
@@ -2115,48 +2518,24 @@ export function LeadTable({
                   placeholder="Stages: All"
                   allowCustomAdd={false}
                   options={[
-                    { value: 'all', label: 'Stages: All Active' },
+                    { value: 'all', label: 'Stages: All' },
                     ...stagesState.map(s => ({
                       value: s.id,
                       label: s.name,
                       color: s.color,
                     })),
-                    { value: 'archived', label: '🗄️ Archived Leads Vault', color: '#6366f1' },
-                    { value: 'lost', label: '❌ Lost Leads Vault', color: '#ef4444' }
+                    { value: 'archived', label: '🗄️ Archived Leads', color: '#6366f1' },
                   ]}
                   onChange={(val) => setStatusFilter(val)}
                 />
               </div>
 
-              {/* Source Filter */}
+              {/* Assign Filter */}
               <div className="flex items-center gap-1 font-sans">
-                <CRMDropdown
-                  value={sourceFilter}
-                  placeholder="Sources: All"
-                  allowCustomAdd={false}
-                  options={[
-                    { value: 'all', label: 'Sources: All' },
-                    ...customSources.map(src => {
-                      const val = typeof src === 'object' && src !== null ? (src.name || src.value) : String(src);
-                      const col = typeof src === 'object' && src !== null ? (src.color || '#3b82f6') : '#3b82f6';
-                      return { value: val, label: val, color: col };
-                    })
-                  ]}
-                  onChange={(val) => setSourceFilter(val)}
-                />
-              </div>
-
-              {/* Owner Filter */}
-              <div className="flex items-center gap-1 font-sans">
-                <CRMDropdown
+                <AssignFilterDropdown
                   value={ownerFilter}
-                  placeholder="Owners: All"
-                  allowCustomAdd={false}
-                  options={[
-                    { value: 'all', label: 'Owners: All' },
-                    ...uniqueOwners.map(owner => ({ value: owner, label: owner }))
-                  ]}
                   onChange={(val) => setOwnerFilter(val)}
+                  teamMembers={teamMembers}
                 />
               </div>
 
@@ -2472,13 +2851,16 @@ export function LeadTable({
                       compact={true}
                       className="w-full"
                       customAddTitle="Add Custom Status"
-                      options={stagesState.map(s => ({
-                        value: s.id,
-                        label: s.name,
-                        color: s.color,
-                        isCustom: s.is_custom,
-                        created_at: s.created_at
-                      }))}
+                      options={[
+                        ...stagesState.map(s => ({
+                          value: s.id,
+                          label: s.name,
+                          color: s.color,
+                          isCustom: s.is_custom,
+                          created_at: s.created_at
+                        })),
+                        { value: 'archived', label: '🗄️ Archive Lead', color: '#6366f1' }
+                      ]}
                       onAddCustomOption={async (name, color) => {
                         const newStageObj = {
                           id: name.toLowerCase().replace(/[^a-z0-9]/g, '_'),
@@ -2499,6 +2881,18 @@ export function LeadTable({
                         }
                       }}
                       onChange={(val) => {
+                        if (val === 'archived') {
+                          const updatedRaw = { ...(lead.raw_payload || {}), is_archived: true };
+                          setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, stage_id: 'archived', status: 'archived' as any, raw_payload: updatedRaw } : l));
+                          if (onLeadUpdate) {
+                            onLeadUpdate(lead.id, {
+                              stage_id: 'archived',
+                              status: 'archived' as any,
+                              raw_payload: updatedRaw
+                            } as any);
+                          }
+                          return;
+                        }
                         const foundStage = stagesState.find(s => s.id === val || s.name === val);
                         const targetStageId = foundStage?.id || val;
                         const targetStatus = (foundStage?.name || val) as any;
@@ -2519,54 +2913,85 @@ export function LeadTable({
                       {getBudgetValue(lead)}
                     </span>
 
-                    {/* Real WhatsApp Icon */}
-                    {cleanPhone && (
-                      <a
-                        href={`https://wa.me/${cleanPhone}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="w-7.5 h-7.5 rounded-full bg-[#25D366]/15 hover:bg-[#25D366]/25 text-[#25D366] flex items-center justify-center transition-all active:scale-95 shadow-2xs cursor-pointer"
-                        title="Send WhatsApp Message"
+                    {/* WhatsApp Quick Action */}
+                    {quickActionsConfig.whatsapp !== false && (
+                      <button
+                        type="button"
+                        onClick={() => handleWhatsappWelcomeDispatch(lead)}
+                        className={`w-7.5 h-7.5 rounded-full flex items-center justify-center transition-all active:scale-95 cursor-pointer ${
+                          (lead as any).wa_welcome_sent 
+                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800' 
+                            : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 border border-slate-200 dark:border-zinc-700'
+                        }`}
+                        title="Send WhatsApp Welcome"
                       >
-                        <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
-                          <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91C2.13 13.66 2.59 15.36 3.45 16.86L2.05 22L7.3 20.63C8.75 21.41 10.38 21.83 12.04 21.83C17.5 21.83 21.95 17.38 21.95 11.92C21.95 9.27 20.92 6.78 19.05 4.91C17.18 3.03 14.69 2 12.04 2ZM12.05 20.16C10.57 20.16 9.12 19.76 7.85 19.01L7.55 18.83L4.43 19.65L5.26 16.61L5.06 16.29C4.24 14.98 3.8 13.47 3.8 11.91C3.8 7.37 7.5 3.67 12.05 3.67C14.25 3.67 16.31 4.53 17.87 6.09C19.42 7.65 20.28 9.72 20.28 11.92C20.28 16.46 16.58 20.16 12.05 20.16ZM16.57 14.33C16.32 14.2 15.1 13.6 14.88 13.52C14.65 13.43 14.49 13.39 14.32 13.64C14.16 13.88 13.68 14.46 13.54 14.62C13.39 14.79 13.25 14.81 13 14.68C12.75 14.56 11.95 14.29 11 13.45C10.26 12.79 9.76 11.98 9.61 11.73C9.47 11.49 9.6 11.35 9.72 11.23C9.83 11.12 9.97 10.94 10.1 10.8C10.22 10.65 10.26 10.55 10.35 10.38C10.43 10.22 10.39 10.07 10.33 9.95C10.26 9.82 9.77 8.63 9.57 8.13C9.37 7.65 9.17 7.72 9.02 7.71C8.88 7.7 8.71 7.7 8.55 7.7C8.38 7.7 8.11 7.76 7.89 8.01C7.66 8.25 7.03 8.84 7.03 10.05C7.03 11.26 7.91 12.43 8.03 12.59C8.16 12.76 9.76 15.22 12.21 16.28C12.79 16.53 13.25 16.68 13.6 16.79C14.19 16.98 14.73 16.95 15.15 16.89C15.63 16.82 16.62 16.29 16.82 15.71C17.03 15.14 17.03 14.64 16.97 14.54C16.9 14.44 16.82 14.45 16.57 14.33Z" />
-                        </svg>
-                      </a>
+                        <MessageCircle className="w-3.5 h-3.5" />
+                      </button>
                     )}
 
-                    {/* Call Quick Icon */}
-                    {lead.phone && (
-                      <a
+                    {/* Call Quick Action */}
+                    {quickActionsConfig.call !== false && (
+                      <a 
                         href={`tel:${lead.phone}`}
-                        className="w-7.5 h-7.5 rounded-full bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center transition-all active:scale-95 shadow-2xs cursor-pointer"
-                        title="Call Lead"
+                        className="w-7.5 h-7.5 rounded-full bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center transition-all active:scale-95 border border-blue-200 dark:border-blue-900/50"
+                        title={`Call ${lead.name}`}
                       >
                         <Phone className="w-3.5 h-3.5" />
                       </a>
                     )}
 
-                    {/* Comment Quick Icon */}
+                    {/* Mail Quick Action */}
+                    {quickActionsConfig.email !== false && (
+                      <a 
+                        href={`mailto:${lead.email}`}
+                        className="w-7.5 h-7.5 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 flex items-center justify-center transition-all active:scale-95 border border-slate-200 dark:border-zinc-700"
+                        title={`Email ${lead.name}`}
+                      >
+                        <Mail className="w-3.5 h-3.5" />
+                      </a>
+                    )}
+
+                    {/* Comments & Reminders Quick Action */}
                     <button
                       type="button"
                       onClick={() => {
                         setSelectedLead(lead);
                         setDrawerMode('comments');
                       }}
-                      className="w-7.5 h-7.5 rounded-full bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 flex items-center justify-center transition-all active:scale-95 shadow-2xs cursor-pointer"
+                      className="w-7.5 h-7.5 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 flex items-center justify-center transition-all active:scale-95 border border-slate-200 dark:border-zinc-700"
                       title="Comments & Notes"
                     >
                       <MessageSquare className="w-3.5 h-3.5" />
                     </button>
 
-                    {/* Quotation Quick Icon */}
-                    <button
-                      type="button"
-                      onClick={() => setQuotationModalLead(lead)}
-                      className="w-7.5 h-7.5 rounded-full bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center transition-all active:scale-95 shadow-2xs cursor-pointer"
-                      title="Quotation"
-                    >
-                      <FileText className="w-3.5 h-3.5" />
-                    </button>
+                    {/* Quotation Quick Icon (3-State: Default dark gray, Draft orange, Final green) */}
+                    {(() => {
+                      const qSummary = quotationSummaryMap[lead.id];
+                      const isBooked = (lead.status as string) === 'booked' || lead.status === 'closed' || (lead as any).stage === 'booked';
+                      const isFinal = Boolean(
+                        qSummary?.hasFinal === true ||
+                        lead.raw_payload?.final_quotation_id ||
+                        isBooked
+                      );
+                      const hasQuotes = (qSummary?.count || 0) > 0 || (qSummary?.versions?.length || 0) > 0 || isFinal || Boolean(lead.raw_payload?.final_quotation_id || lead.raw_payload?.quotation_id);
+
+                      const mobileBtnStyle = isFinal
+                        ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-600 dark:text-emerald-400 border border-emerald-300/90 shadow-2xs font-bold'
+                        : hasQuotes
+                          ? 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-400 border border-amber-300/90 shadow-2xs font-bold'
+                          : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 border border-slate-200 dark:border-zinc-700';
+
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => setQuotationModalLead(lead)}
+                          className={`w-7.5 h-7.5 rounded-full flex items-center justify-center transition-all active:scale-95 cursor-pointer ${mobileBtnStyle}`}
+                          title={isFinal ? `Final Quotation (V${qSummary?.finalVersion || 1})` : hasQuotes ? `Quotations (${qSummary?.count})` : 'Create Quotation'}
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                        </button>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
@@ -2782,7 +3207,7 @@ export function LeadTable({
                     </td>
                   </tr>
                 ) : (
-                  paginatedLeads.map((lead) => {
+                  paginatedLeads.map((lead, rowIdx) => {
                     const isSelected = selectedLeadIds.includes(lead.id);
                     const mockOwner = getMockOwner(lead);
                     const mockCompany = getMockCompany(lead);
@@ -2916,13 +3341,16 @@ export function LeadTable({
                                       value={lead.stage_id || lead.status}
                                       placeholder="Select status"
                                       customAddTitle="Add Custom Status"
-                                      options={stagesState.map(s => ({
-                                        value: s.id,
-                                        label: s.name,
-                                        color: s.color,
-                                        isCustom: s.is_custom,
-                                        created_at: s.created_at
-                                      }))}
+                                      options={[
+                                        ...stagesState.map(s => ({
+                                          value: s.id,
+                                          label: s.name,
+                                          color: s.color,
+                                          isCustom: s.is_custom,
+                                          created_at: s.created_at
+                                        })),
+                                        { value: 'archived', label: '🗄️ Archive Lead', color: '#6366f1' }
+                                      ]}
                                       onAddCustomOption={async (name, color) => {
                                         const newStageObj = {
                                           id: name.toLowerCase().replace(/[^a-z0-9]/g, '_'),
@@ -2945,6 +3373,18 @@ export function LeadTable({
                                         }
                                       }}
                                       onChange={(val) => {
+                                        if (val === 'archived') {
+                                          const updatedRaw = { ...(lead.raw_payload || {}), is_archived: true };
+                                          setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, stage_id: 'archived', status: 'archived' as any, raw_payload: updatedRaw } : l));
+                                          if (onLeadUpdate) {
+                                            onLeadUpdate(lead.id, {
+                                              stage_id: 'archived',
+                                              status: 'archived' as any,
+                                              raw_payload: updatedRaw
+                                            } as any);
+                                          }
+                                          return;
+                                        }
                                         const foundStage = stagesState.find(s => s.id === val || s.name === val);
                                         const targetStageId = foundStage?.id || val;
                                         const targetStatus = (foundStage?.name || val) as any;
@@ -3390,21 +3830,45 @@ export function LeadTable({
                         >
                           <div className="flex items-center justify-end gap-1 w-full">
                             
-                            {/* Lead Quotations Management Action */}
-                            {quickActionsConfig.quotation !== false && (
-                              <PremiumTooltip content="Quotations">
-                                <MotionButton 
-                                  whileHover={{ scale: 1.1 }}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setQuotationModalLead(lead);
-                                  }}
-                                  className="p-1.5 rounded-lg border border-amber-300/80 dark:border-amber-700/60 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-400 transition-all cursor-pointer shadow-2xs"
-                                >
-                                  <FileText className="w-3.5 h-3.5" />
-                                </MotionButton>
-                              </PremiumTooltip>
-                            )}
+                            {/* Lead Quotations Management Action (3-State: Default dark gray, Draft orange, Final green) */}
+                            {quickActionsConfig.quotation !== false && (() => {
+                              const qSummary = quotationSummaryMap[lead.id];
+                              const isBooked = (lead.status as string) === 'booked' || lead.status === 'closed' || (lead as any).stage === 'booked';
+                              const isFinal = Boolean(
+                                qSummary?.hasFinal === true ||
+                                lead.final_quotation_id ||
+                                lead.raw_payload?.final_quotation_id ||
+                                isBooked
+                              );
+                              const hasQuotes = (qSummary?.count || 0) > 0 || (qSummary?.versions?.length || 0) > 0 || isFinal || Boolean(lead.final_quotation_id || lead.raw_payload?.final_quotation_id);
+
+                              const btnClass = isFinal
+                                ? 'border-emerald-300/80 dark:border-emerald-700/60 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400 shadow-2xs font-bold'
+                                : hasQuotes
+                                  ? 'border-amber-300/80 dark:border-amber-700/60 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 text-amber-600 dark:text-amber-400 shadow-2xs font-bold'
+                                  : 'border-slate-200 dark:border-zinc-700 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300';
+
+                              const tooltipText = isFinal
+                                ? `Final Quotation (V${qSummary?.finalVersion || 1})`
+                                : hasQuotes
+                                  ? `Quotations (${qSummary?.count || qSummary?.versions?.length || 1} versions)`
+                                  : 'Create Quotation';
+
+                              return (
+                                <PremiumTooltip content={tooltipText}>
+                                  <MotionButton 
+                                    whileHover={{ scale: 1.1 }}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setQuotationModalLead(lead);
+                                    }}
+                                    className={`p-1.5 rounded-lg border transition-all cursor-pointer ${btnClass}`}
+                                  >
+                                    <FileText className="w-3.5 h-3.5" />
+                                  </MotionButton>
+                                </PremiumTooltip>
+                              );
+                            })()}
 
                             {/* WA Welcome Msg Quick Action */}
                             {quickActionsConfig.whatsapp !== false && (
@@ -3572,7 +4036,7 @@ export function LeadTable({
                                 </MotionButton>
                               </PremiumTooltip>
                               {rowActionMenuLeadId === lead.id && (
-                                <div className="absolute right-0 bottom-8 mt-2 w-48 bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl p-1.5 shadow-2xl flex flex-col gap-1 z-50 text-left">
+                                <div className={`absolute right-0 ${rowIdx >= paginatedLeads.length - 2 ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} w-44 bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl p-1.5 shadow-2xl flex flex-col gap-1 z-[99999] text-left backdrop-blur-md`}>
                                   <button 
                                     onClick={() => {
                                       setRowActionMenuLeadId(null);
@@ -3582,17 +4046,7 @@ export function LeadTable({
                                     className="w-full flex items-center gap-2 p-2 hover:bg-[#FAF8F5] dark:hover:bg-[#2C2926] rounded-md text-xs font-semibold text-zinc-700 dark:text-zinc-350 hover:text-[#1A1A1A] dark:hover:text-white transition-colors"
                                   >
                                     <Info className="w-3.5 h-3.5 text-blue-500" />
-                                    Full Kundali Details
-                                  </button>
-                                  <button 
-                                    onClick={() => {
-                                      setRowActionMenuLeadId(null);
-                                      setTimelineLead(lead);
-                                    }}
-                                    className="w-full flex items-center gap-2 p-2 hover:bg-[#FAF8F5] dark:hover:bg-[#2C2926] rounded-md text-xs font-semibold text-zinc-700 dark:text-zinc-350 hover:text-[#1A1A1A] dark:hover:text-white transition-colors"
-                                  >
-                                    <Clock className="w-3.5 h-3.5 text-amber-500" />
-                                    Followups Timeline
+                                    Details
                                   </button>
                                   {lead.raw_payload?.is_archived ? (
                                     <button 
@@ -4215,6 +4669,8 @@ export function LeadTable({
             customSources={customSources}
             userEmail={userEmail}
             commentsOnlyMode={drawerMode === 'comments'}
+            initialQuotations={selectedLead ? (quotationSummaryMap[selectedLead.id]?.versions || []) : []}
+            onQuotationChange={handleQuotationChange}
           />
         )}
       </AnimatePresenceComponent>
@@ -4349,7 +4805,7 @@ export function LeadTable({
                   <label className="text-[10px] uppercase font-bold text-slate-400">Status Name</label>
                   <input 
                     type="text"
-                    placeholder="e.g. Hot Lead 🔥, VIP Won 🎉"
+                    placeholder="e.g. Hot Lead 🔥, Follow-up 📞"
                     value={newStatusName}
                     onChange={(e) => setNewStatusName(e.target.value)}
                     className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-2.5 rounded-xl font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-500"
@@ -4428,6 +4884,8 @@ export function LeadTable({
         isOpen={!!quotationModalLead} 
         onClose={() => setQuotationModalLead(null)} 
         lead={quotationModalLead} 
+        initialQuotations={quotationModalLead ? (quotationSummaryMap[quotationModalLead.id]?.versions || []) : []}
+        onQuotationChange={handleQuotationChange}
       />
     </div>
   );

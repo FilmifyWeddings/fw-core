@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabase, supabaseAdmin } from '@/lib/supabase';
 import { GLOBAL_SYSTEM_TEMPLATE_ID } from '@/lib/quotation-template-resolver';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
-import { extractFinancialsFromQuotation, syncQuotationToTeamManagerEvents } from '@/lib/quotation-finance-sync';
+import { extractFinancialsFromQuotation, extractCoupleNameFromQuotation, syncQuotationToTeamManagerEvents } from '@/lib/quotation-finance-sync';
 
 /**
  * Authoritative Single Template & Lead Quotation Document Route (GET, PUT, PATCH, DELETE)
@@ -343,7 +343,7 @@ async function handleUpdate(
 
         if (isLeadFinal && targetLeadOrClientId) {
           const financials = extractFinancialsFromQuotation(document);
-          const clientName = document?.cover?.coupleName || document?.meta?.client_name || 'Valued Client';
+          const clientName = extractCoupleNameFromQuotation(document);
           const eventDate = financials.event_date || document?.meta?.event_date || null;
           const venue = document?.meta?.venue || document?.cover?.venue || null;
 

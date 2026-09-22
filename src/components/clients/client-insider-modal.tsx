@@ -29,6 +29,14 @@ export interface ClientEventItem {
   expected_deliverables?: string;
 }
 
+export interface StudioCommentItem {
+  id: string;
+  text: string;
+  created_at: string;
+  author_name?: string;
+  is_ai?: boolean;
+}
+
 export interface ClientExtendedData {
   client_code: string;
   whatsapp_group_link: string;
@@ -42,6 +50,7 @@ export interface ClientExtendedData {
   project_manager_phone?: string;
   events: ClientEventItem[];
   plain_notes: string;
+  studio_comments?: StudioCommentItem[];
 }
 
 interface ClientInsiderModalProps {
@@ -68,20 +77,9 @@ export function parseClientExtended(client: WorkspaceClient): ClientExtendedData
   let project_manager_email = client.project_manager_email || '';
   let project_manager_phone = client.project_manager_phone || '';
 
-  let events: ClientEventItem[] = [
-    {
-      id: 'ev_1',
-      name: client.event_type || 'Main Wedding Ceremony',
-      date: client.event_date || new Date().toISOString().split('T')[0],
-      time_start: '04:00 PM',
-      time_end: '11:00 PM',
-      venue: 'Main Grand Banquet Hall',
-      city: 'Mumbai',
-      assigned_crew: '2 Photographers, 2 Cinematographers, 1 Drone Pilot',
-      expected_deliverables: 'Raw Photos, Cinematic Film, Highlights Teaser'
-    }
-  ];
+  let events: ClientEventItem[] = [];
   let plain_notes = client.notes || '';
+  let studio_comments: StudioCommentItem[] = [];
 
   if (client.notes && client.notes.startsWith('{') && client.notes.endsWith('}')) {
     try {
@@ -98,7 +96,24 @@ export function parseClientExtended(client: WorkspaceClient): ClientExtendedData
       if (parsed.project_manager_phone) project_manager_phone = parsed.project_manager_phone;
       if (Array.isArray(parsed.events) && parsed.events.length > 0) events = parsed.events;
       if (parsed.notes !== undefined) plain_notes = parsed.notes;
+      if (Array.isArray(parsed.studio_comments)) {
+        studio_comments = parsed.studio_comments;
+      } else if (plain_notes && typeof plain_notes === 'string' && plain_notes.trim()) {
+        studio_comments = [{
+          id: `note_${Date.now()}`,
+          text: plain_notes.trim(),
+          created_at: client.created_at || new Date().toISOString(),
+          author_name: 'Studio Team'
+        }];
+      }
     } catch (_) {}
+  } else if (client.notes && typeof client.notes === 'string' && client.notes.trim()) {
+    studio_comments = [{
+      id: `note_${Date.now()}`,
+      text: client.notes.trim(),
+      created_at: client.created_at || new Date().toISOString(),
+      author_name: 'Studio Team'
+    }];
   }
 
   return {
@@ -113,7 +128,8 @@ export function parseClientExtended(client: WorkspaceClient): ClientExtendedData
     project_manager_email,
     project_manager_phone,
     events,
-    plain_notes
+    plain_notes,
+    studio_comments
   };
 }
 
@@ -130,7 +146,8 @@ export function serializeClientExtended(data: Partial<ClientExtendedData>): stri
     project_manager_name: data.project_manager_name,
     project_manager_email: data.project_manager_email,
     project_manager_phone: data.project_manager_phone,
-    events: data.events || []
+    events: data.events || [],
+    studio_comments: data.studio_comments || []
   });
 }
 
@@ -730,7 +747,7 @@ export function ClientInsiderModal({
                   </h3>
                   <AiMicButton
                     size="sm"
-                    buttonText="Voice AI Note"
+                    buttonText="AI Voice"
                     onInsertComment={(text) => {
                       setExtended(prev => ({
                         ...prev,
