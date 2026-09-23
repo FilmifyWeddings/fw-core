@@ -2,15 +2,13 @@
 -- VENDOR & ALBUM DESIGNER DELIVERABLES, STATEMENTS & PORTAL SCHEMA
 -- ==============================================================================
 -- Run this script in your Supabase SQL Editor (Dashboard -> SQL Editor -> New Query).
--- It creates or upgrades the tables, constraints, indexes, and RLS policies for:
--- 1. partner_album_orders (Enhanced tracking for Album Designers & Printing Labs)
--- 2. vendor_statements (Itemized statements and invoices for vendors)
+-- 100% Idempotent: Works whether tables are fresh or were previously created.
 -- ==============================================================================
 
--- 1. Ensure partner_album_orders table exists with all required operational fields
+-- 1. Create table if it does not exist at all
 CREATE TABLE IF NOT EXISTS public.partner_album_orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    workspace_id TEXT NOT NULL,
+    workspace_id TEXT,
     partner_id TEXT NOT NULL,
     partner_name TEXT NOT NULL,
     partner_email TEXT,
@@ -39,50 +37,34 @@ CREATE TABLE IF NOT EXISTS public.partner_album_orders (
     updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Upgrade existing columns if partner_album_orders already existed previously
-DO $$ 
+-- 2. Add all newer columns if table already existed without them
+ALTER TABLE public.partner_album_orders ADD COLUMN IF NOT EXISTS partner_email TEXT;
+ALTER TABLE public.partner_album_orders ADD COLUMN IF NOT EXISTS client_id TEXT;
+ALTER TABLE public.partner_album_orders ADD COLUMN IF NOT EXISTS deliverable_id TEXT;
+ALTER TABLE public.partner_album_orders ADD COLUMN IF NOT EXISTS page_count INT DEFAULT 60;
+ALTER TABLE public.partner_album_orders ADD COLUMN IF NOT EXISTS rate_per_page NUMERIC(10, 2) DEFAULT 0;
+ALTER TABLE public.partner_album_orders ADD COLUMN IF NOT EXISTS due_date TEXT;
+ALTER TABLE public.partner_album_orders ADD COLUMN IF NOT EXISTS pdf_proof_url TEXT;
+ALTER TABLE public.partner_album_orders ADD COLUMN IF NOT EXISTS drive_folder_url TEXT;
+ALTER TABLE public.partner_album_orders ADD COLUMN IF NOT EXISTS comments JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.partner_album_orders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+
+-- 3. Drop legacy restrictive check constraints (so new statuses like 'In Design', 'Client Review', etc. are accepted)
+ALTER TABLE public.partner_album_orders DROP CONSTRAINT IF EXISTS partner_album_orders_order_status_check;
+ALTER TABLE public.partner_album_orders DROP CONSTRAINT IF EXISTS partner_album_orders_payment_status_check;
+
+-- 4. Ensure workspace_id constraint is relaxed (allows text workspace ids)
+DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'partner_album_orders' AND column_name = 'partner_email') THEN
-        ALTER TABLE public.partner_album_orders ADD COLUMN partner_email TEXT;
-    END IF;
-
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'partner_album_orders' AND column_name = 'client_id') THEN
-        ALTER TABLE public.partner_album_orders ADD COLUMN client_id TEXT;
-    END IF;
-
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'partner_album_orders' AND column_name = 'deliverable_id') THEN
-        ALTER TABLE public.partner_album_orders ADD COLUMN deliverable_id TEXT;
-    END IF;
-
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'partner_album_orders' AND column_name = 'page_count') THEN
-        ALTER TABLE public.partner_album_orders ADD COLUMN page_count INT NOT NULL DEFAULT 60;
-    END IF;
-
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'partner_album_orders' AND column_name = 'rate_per_page') THEN
-        ALTER TABLE public.partner_album_orders ADD COLUMN rate_per_page NUMERIC(10, 2) NOT NULL DEFAULT 0;
-    END IF;
-
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'partner_album_orders' AND column_name = 'due_date') THEN
-        ALTER TABLE public.partner_album_orders ADD COLUMN due_date TEXT;
-    END IF;
-
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'partner_album_orders' AND column_name = 'pdf_proof_url') THEN
-        ALTER TABLE public.partner_album_orders ADD COLUMN pdf_proof_url TEXT;
-    END IF;
-
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'partner_album_orders' AND column_name = 'drive_folder_url') THEN
-        ALTER TABLE public.partner_album_orders ADD COLUMN drive_folder_url TEXT;
-    END IF;
-
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'partner_album_orders' AND column_name = 'comments') THEN
-        ALTER TABLE public.partner_album_orders ADD COLUMN comments JSONB DEFAULT '[]'::jsonb;
-    END IF;
+    ALTER TABLE public.partner_album_orders ALTER COLUMN workspace_id DROP NOT NULL;
+EXCEPTION
+    WHEN others THEN NULL;
 END $$;
 
--- 2. Vendor Consolidated Statements & Invoices Table
+-- 5. Vendor Consolidated Statements & Invoices Table
 CREATE TABLE IF NOT EXISTS public.vendor_statements (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    workspace_id TEXT NOT NULL,
+    workspace_id TEXT,
     vendor_id TEXT NOT NULL,
     vendor_name TEXT NOT NULL,
     vendor_email TEXT,
@@ -102,24 +84,25 @@ CREATE TABLE IF NOT EXISTS public.vendor_statements (
     updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 3. High-Performance Indexes
+-- Ensure newer columns for vendor_statements if previously created
+ALTER TABLE public.vendor_statements ADD COLUMN IF NOT EXISTS vendor_email TEXT;
+ALTER TABLE public.vendor_statements ADD COLUMN IF NOT EXISTS order_ids JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.vendor_statements ADD COLUMN IF NOT EXISTS items_json JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.vendor_statements ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+
+-- 6. High-Performance Indexes (safe now that columns guaranteed to exist)
 CREATE INDEX IF NOT EXISTS idx_pao_ws_partner ON public.partner_album_orders(workspace_id, partner_id);
 CREATE INDEX IF NOT EXISTS idx_pao_partner_email ON public.partner_album_orders(partner_email);
 CREATE INDEX IF NOT EXISTS idx_pao_deliverable ON public.partner_album_orders(deliverable_id);
 CREATE INDEX IF NOT EXISTS idx_pao_status ON public.partner_album_orders(order_status, payment_status);
 CREATE INDEX IF NOT EXISTS idx_vendor_statements_ws_vendor ON public.vendor_statements(workspace_id, vendor_id);
 
--- 4. Multi-Tenant Row Level Security (RLS)
+-- 7. Multi-Tenant Row Level Security (RLS)
 ALTER TABLE public.partner_album_orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.vendor_statements ENABLE ROW LEVEL SECURITY;
 
-DO $$ 
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'partner_album_orders' AND policyname = 'partner_album_orders_all_access') THEN
-        CREATE POLICY "partner_album_orders_all_access" ON public.partner_album_orders FOR ALL USING (true) WITH CHECK (true);
-    END IF;
+DROP POLICY IF EXISTS "partner_album_orders_all_access" ON public.partner_album_orders;
+CREATE POLICY "partner_album_orders_all_access" ON public.partner_album_orders FOR ALL USING (true) WITH CHECK (true);
 
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'vendor_statements' AND policyname = 'vendor_statements_all_access') THEN
-        CREATE POLICY "vendor_statements_all_access" ON public.vendor_statements FOR ALL USING (true) WITH CHECK (true);
-    END IF;
-END $$;
+DROP POLICY IF EXISTS "vendor_statements_all_access" ON public.vendor_statements;
+CREATE POLICY "vendor_statements_all_access" ON public.vendor_statements FOR ALL USING (true) WITH CHECK (true);
