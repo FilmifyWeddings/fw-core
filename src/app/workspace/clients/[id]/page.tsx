@@ -20,6 +20,10 @@ import { InvoiceModalDialog } from '@/components/finance/invoice-modal-dialog';
 import Searchable3DCreamSelect, { Searchable3DCreamSelectOption } from '@/components/ui/Searchable3DCreamSelect';
 import { fetchWorkspaceEventTypes, DEFAULT_EVENT_TYPES } from '@/lib/workspace-settings';
 import { ClientFinanceCard } from '@/app/workspace/finance/components/ClientFinanceCard';
+import PricingEditModal from '@/app/workspace/finance/components/PricingEditModal';
+import { extractFinanceMembers, isPlaceholderName } from '@/app/workspace/finance/components/HandledByMultiSelect';
+import { useWorkspaceData } from '@/context/WorkspaceDataContext';
+import { useWorkspace } from '@/lib/context/BhamstraContext';
 import PostProductionCard, { PostProductionProjectData } from '@/app/workspace/post-production/components/PostProductionCard';
 import DeliverableCommentDrawer from '@/app/workspace/post-production/components/DeliverableCommentDrawer';
 import { PostProductionDeliverable } from '@/app/workspace/post-production/components/DeliverableCategorySection';
@@ -73,6 +77,9 @@ export default function ClientWorkspaceDetailPage() {
   const [client, setClient] = useState<WorkspaceClient | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [teamMembers, setTeamMembers] = useState<WorkspaceMemberOption[]>([]);
+
+  const { workspaceMembers } = useWorkspaceData();
+  const { userName, isOwner, userEmail, workspaceId: currentWsId } = useWorkspace();
 
   // Active Tab
   const [activeTab, setActiveTab] = useState<'overview' | 'quotations' | 'events' | 'post_production' | 'finance' | 'moodboard' | 'tasks'>('overview');
@@ -144,6 +151,10 @@ export default function ClientWorkspaceDetailPage() {
   const [loadingFinance, setLoadingFinance] = useState(false);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showPricingEditModal, setShowPricingEditModal] = useState<{
+    open: boolean;
+    record: ClientFinanceRecord | null;
+  }>({ open: false, record: null });
   const [payAmount, setPayAmount] = useState('');
   const [payMode, setPayMode] = useState('UPI');
   const [payRef, setPayRef] = useState('');
@@ -214,6 +225,29 @@ export default function ClientWorkspaceDetailPage() {
 
     return opts;
   }, [inHouseTeamMembers]);
+
+  // 👥 Filter Studio Owner + team members with Finance Access strictly matching finance page
+  const financeTeamMembers = useMemo(() => {
+    const members = extractFinanceMembers(
+      workspaceMembers && workspaceMembers.length > 0 ? workspaceMembers : teamMembers,
+      userName,
+      userEmail,
+      isOwner,
+      client?.workspace_id || currentWsId
+    );
+    teamMembers.forEach(tm => {
+      if (tm.name && !isPlaceholderName(tm.name) && !members.some(m => m.name.toLowerCase().trim() === tm.name.toLowerCase().trim())) {
+        members.push({
+          id: tm.id,
+          name: tm.name.trim(),
+          email: tm.email,
+          role: tm.role || 'member',
+          primary_role: tm.role || 'Team Member'
+        });
+      }
+    });
+    return members;
+  }, [workspaceMembers, teamMembers, userName, userEmail, isOwner, client?.workspace_id, currentWsId]);
 
   // ── Event Types 3D Options ──
   const eventTypeOptions: Searchable3DCreamSelectOption[] = useMemo(() => {
@@ -311,6 +345,21 @@ export default function ClientWorkspaceDetailPage() {
     const received = Math.max(0, Math.round(Number(existing.received_amount) || Number(client?.paid_amount) || 0));
     const pending = Math.max(0, finalTotal - received);
 
+    // Resolve handled_by matching finance page rules (never placeholder defaults like 'Studio PM'!)
+    const resolvedHandledBy = (() => {
+      let h = (client as any)?.handled_by || (existing as any)?.handled_by;
+      if (!h && (existing as any)?.custom_data?.handled_by) h = (existing as any).custom_data.handled_by;
+      if (!h && (client as any)?.custom_data?.handled_by) h = (client as any).custom_data.handled_by;
+      if (!h && client?.notes && typeof client.notes === 'string') {
+        const match = client.notes.match(/handled_by:\s*([^\n\r,]+)/i);
+        if (match && match[1]) h = match[1].trim();
+      }
+      if (!h && projectManagerName && !isPlaceholderName(projectManagerName)) {
+        h = projectManagerName;
+      }
+      return (h && !isPlaceholderName(h)) ? h : 'Unassigned';
+    })();
+
     return {
       ...existing,
       id: existing.id || `fin_${client?.id || 'temp'}`,
@@ -321,7 +370,7 @@ export default function ClientWorkspaceDetailPage() {
         name: client?.name || name,
         event_type: client?.event_type || eventType,
         event_date: client?.event_date || eventDate,
-        handled_by: projectManagerName || (client as any)?.handled_by || 'Studio PM',
+        handled_by: resolvedHandledBy,
         phone: client?.phone || phone,
         email: client?.email || email
       } as any,
@@ -873,6 +922,180 @@ export default function ClientWorkspaceDetailPage() {
     }
 
     setShowCompletePaymentModal({ open: false, recordId: '', clientName: '', milestone: null });
+  };
+
+  // ─────────────────────────────────────────────────────────────
+  // 👥 FINANCE TEAM ATTRIBUTION: HANDLE ASSIGN MEMBER TO CLIENT
+  // ─────────────────────────────────────────────────────────────
+  const handleAssignFinanceTeamMember = async (clientId: string, memberName: string) => {
+    if (!clientId) return;
+
+    const cleanMemberName = isPlaceholderName(memberName) ? 'Unassigned' : memberName.trim();
+
+    // 1. Optimistically update local financeRecord & client
+    setFinanceRecord(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        handled_by: cleanMemberName,
+        client: {
+          ...(prev.client || {}),
+          handled_by: cleanMemberName
+        } as any
+      };
+    });
+
+    setClient(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        handled_by: cleanMemberName,
+        custom_data: {
+          ...((prev as any).custom_data || {}),
+          handled_by: cleanMemberName
+        }
+      } as any;
+    });
+
+    try {
+      // 2. Fetch current client to preserve notes and custom_data
+      const { data: currentClient } = await supabase
+        .from('workspace_clients')
+        .select('notes, custom_data')
+        .eq('id', clientId)
+        .maybeSingle();
+
+      const existingNotes = currentClient?.notes || '';
+      let newNotes = existingNotes;
+      if (newNotes.includes('handled_by:')) {
+        newNotes = newNotes.replace(/handled_by:\s*[^\n\r,]+/i, `handled_by: ${cleanMemberName}`);
+      } else {
+        newNotes = newNotes ? `${newNotes}\nhandled_by: ${cleanMemberName}` : `handled_by: ${cleanMemberName}`;
+      }
+
+      const existingCustom = (currentClient?.custom_data as any) || {};
+      const updatedCustom = { ...existingCustom, handled_by: cleanMemberName };
+
+      // 3. Update workspace_clients
+      await supabase
+        .from('workspace_clients')
+        .update({
+          handled_by: cleanMemberName,
+          custom_data: updatedCustom,
+          notes: newNotes,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', clientId);
+
+      // 4. Update client_finance_records
+      await supabase
+        .from('client_finance_records')
+        .update({
+          handled_by: cleanMemberName,
+          updated_at: new Date().toISOString()
+        })
+        .eq('client_id', clientId);
+
+      // 5. Broadcast finance_updated
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('finance_updated', Date.now().toString());
+        window.dispatchEvent(new CustomEvent('finance_updated', { detail: { clientId } }));
+      }
+    } catch (err) {
+      console.warn('Error saving team member assignment in client directory:', err);
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────
+  // ✏️ FINANCE PRICING BREAKDOWN SAVE HANDLER (100% FINANCE MIRROR)
+  // ─────────────────────────────────────────────────────────────
+  const handleSavePricingEdit = async (updatedValues: {
+    base_package_price: number;
+    discount_amount: number;
+    accommodation_charges: number;
+    travel_charges: number;
+    additional_charges: number;
+    gst_rate: number;
+  }) => {
+    if (!client) return;
+
+    const base = Math.max(0, Math.round(Number(updatedValues.base_package_price) || 0));
+    const discount = Math.max(0, Math.round(Number(updatedValues.discount_amount) || 0));
+    const accom = Math.max(0, Math.round(Number(updatedValues.accommodation_charges) || 0));
+    const travel = Math.max(0, Math.round(Number(updatedValues.travel_charges) || 0));
+    const addl = Math.max(0, Math.round(Number(updatedValues.additional_charges) || 0));
+    const gstRate = Math.max(0, Number(updatedValues.gst_rate || 0));
+
+    const subtotal = Math.max(0, base - discount + accom + travel + addl);
+    const gstAmount = Math.round((subtotal * gstRate) / 100);
+    const finalTotal = subtotal + gstAmount;
+
+    const currentReceived = Math.max(0, Math.round(
+      financeRecord?.milestones && financeRecord.milestones.length > 0
+        ? financeRecord.milestones
+            .filter(m => m && (m.status === 'completed' || m.status === 'paid' || (m as any).status === 'Completed' || (m as any).status === 'PAID'))
+            .reduce((sum, m) => sum + (Math.round(Number(m.amount)) || 0), 0)
+        : Number(financeRecord?.received_amount || client.paid_amount || 0)
+    ));
+    const pending = Math.max(0, finalTotal - currentReceived);
+    const paymentStatus = pending === 0 && finalTotal > 0 ? 'paid' : (currentReceived > 0 ? 'partially_paid' : 'pending');
+
+    const updatedRec: ClientFinanceRecord = {
+      ...(financeRecord || {} as any),
+      id: financeRecord?.id || `fin_${client.id}`,
+      client_id: client.id,
+      workspace_id: client.workspace_id,
+      base_package_price: base,
+      discount_amount: discount,
+      accommodation_charges: accom,
+      travel_charges: travel,
+      additional_charges: addl,
+      subtotal_amount: subtotal,
+      gst_rate: gstRate,
+      gst_amount: gstAmount,
+      final_total_amount: finalTotal,
+      received_amount: currentReceived,
+      pending_amount: pending,
+      payment_status: paymentStatus as any,
+      updated_at: new Date().toISOString()
+    };
+
+    setFinanceRecord(updatedRec);
+    setClient(prev => prev ? ({ ...prev, total_package_amount: finalTotal }) : null);
+    setShowPricingEditModal({ open: false, record: null });
+
+    try {
+      await supabase.from('client_finance_records').upsert({
+        id: updatedRec.id,
+        client_id: client.id,
+        workspace_id: client.workspace_id,
+        base_package_price: base,
+        discount_amount: discount,
+        accommodation_charges: accom,
+        travel_charges: travel,
+        additional_charges: addl,
+        subtotal_amount: subtotal,
+        gst_rate: gstRate,
+        gst_amount: gstAmount,
+        final_total_amount: finalTotal,
+        received_amount: currentReceived,
+        pending_amount: pending,
+        payment_status: paymentStatus,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'client_id' });
+
+      await supabase.from('workspace_clients').update({
+        total_package_amount: finalTotal,
+        updated_at: new Date().toISOString()
+      }).eq('id', client.id);
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('finance_updated', Date.now().toString());
+        window.dispatchEvent(new CustomEvent('finance_updated', { detail: { clientId: client.id } }));
+      }
+    } catch (err) {
+      console.error('Error saving pricing edit in client directory:', err);
+    }
   };
 
   // Post-Production Project Update Handler
@@ -3436,18 +3659,17 @@ export default function ClientWorkspaceDetailPage() {
                 onToggle={() => setIsFinanceExpanded(prev => !prev)}
                 todayStr={new Date().toISOString().split('T')[0]}
                 teamMembersList={inHouseTeamMembers.map(m => m.name)}
-                financeTeamMembers={teamMembers.map(m => ({ id: m.id, name: m.name, role: m.role }))}
+                financeTeamMembers={financeTeamMembers}
                 paymentMilestoneTemplates={[
                   'Standard 3-Step (20-60-20)',
                   'Advance + Delivery (50-50)',
                   'Equal 4-Part Schedule'
                 ]}
                 onAssignTeamMember={(cId, memberName) => {
-                  const m = teamMembers.find(mem => mem.name === memberName);
-                  if (m) handleQuickAssignPM(m.id);
+                  handleAssignFinanceTeamMember(cId || client?.id || '', memberName);
                 }}
                 onAddNewTeamMember={() => {}}
-                onOpenPricingEditModal={() => setShowPaymentModal(true)}
+                onOpenPricingEditModal={(rec) => setShowPricingEditModal({ open: true, record: rec })}
                 onOpenRecordPayment={() => setShowPaymentModal(true)}
                 onOpenInvoiceModal={() => setShowInvoiceModal(true)}
                 onOpenCompletePaymentModal={(rec, milestone) => {
@@ -5284,6 +5506,15 @@ export default function ClientWorkspaceDetailPage() {
           totalPackage={financeRecord?.final_total_amount || client.total_package_amount || 0}
           paidAmount={financeRecord?.received_amount || client.paid_amount || 0}
           studioSettings={null}
+        />
+      )}
+
+      {showPricingEditModal.open && showPricingEditModal.record && (
+        <PricingEditModal
+          isOpen={showPricingEditModal.open}
+          onClose={() => setShowPricingEditModal({ open: false, record: null })}
+          record={showPricingEditModal.record}
+          onSave={handleSavePricingEdit}
         />
       )}
 
