@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { WorkspaceClient } from '@/types';
 import { type WorkspaceMemberOption } from '@/lib/team-helpers';
 import { parseClientExtended, serializeClientExtended } from '@/components/clients/client-insider-modal';
-import { Calendar, UserPlus, Check, ChevronRight } from 'lucide-react';
+import { Calendar, UserPlus, Check, ChevronRight, Trash2, RefreshCw } from 'lucide-react';
 import ClientStatusDropdown from './ClientStatusDropdown';
 
 /**
@@ -111,6 +111,8 @@ export interface ClientRowProps {
   onOpenQuickAssign?: (client: WorkspaceClient) => void;
   onToggleStatus?: (client: WorkspaceClient) => void;
   onStatusChange?: (client: WorkspaceClient, newStatus: 'active' | 'completed') => void;
+  onDeleteClient?: (client: WorkspaceClient) => void;
+  onRestoreClient?: (client: WorkspaceClient) => void;
 }
 
 export const ClientRow: React.FC<ClientRowProps> = ({
@@ -119,6 +121,8 @@ export const ClientRow: React.FC<ClientRowProps> = ({
   onOpenQuickAssign,
   onToggleStatus,
   onStatusChange,
+  onDeleteClient,
+  onRestoreClient,
 }) => {
   const ext = parseClientExtended(client);
   const totalPkg = client.total_package_amount || 0;
@@ -211,6 +215,34 @@ export const ClientRow: React.FC<ClientRowProps> = ({
             }
           }}
         />
+
+        {/* Soft Delete / Restore Action */}
+        {(client.status as string) === 'trash' || (client as any).status === 'trashed' || (client as any).is_deleted === true || (client.notes && typeof client.notes === 'string' && client.notes.includes('[status:trash]')) ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRestoreClient?.(client);
+            }}
+            className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-extrabold text-[11px] border border-emerald-200 transition cursor-pointer flex items-center gap-1 shadow-2xs shrink-0"
+            title="Restore Client"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Restore</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDeleteClient?.(client);
+            }}
+            className="w-8 h-8 rounded-xl bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-200 text-slate-400 hover:text-rose-600 flex items-center justify-center transition cursor-pointer shadow-2xs shrink-0"
+            title="Move to Trash"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
 
         <div className="w-8 h-8 rounded-xl bg-amber-50 group-hover:bg-amber-400 text-amber-800 group-hover:text-slate-900 flex items-center justify-center transition-all shadow-2xs shrink-0">
           <ChevronRight className="w-4 h-4" />

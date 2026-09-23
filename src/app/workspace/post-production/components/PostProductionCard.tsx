@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  ChevronDown, Calendar, Layers, FileCheck, Plus, Sparkles, UserCheck, Search, X, RefreshCw
+  ChevronDown, Calendar, Layers, FileCheck, Plus, Sparkles, UserCheck, Search, X, RefreshCw, Trash2
 } from 'lucide-react';
 import { PostProductionDeliverable } from './DeliverableCategorySection';
 import SegmentContainer from './SegmentContainer';
@@ -43,6 +43,7 @@ interface PostProductionCardProps {
   onOpenComments: (itemId: string, title: string) => void;
   onOpenDrive: (itemId: string, currentLink: string) => void;
   onResyncQuotation?: () => void;
+  onDeleteProject?: (projectId: string) => void;
 }
 
 export default function PostProductionCard({
@@ -57,11 +58,13 @@ export default function PostProductionCard({
   onOpenComments,
   onOpenDrive,
   onResyncQuotation,
+  onDeleteProject,
 }: PostProductionCardProps) {
   const [activeSegmentTab, setActiveSegmentTab] = useState<string>('All');
   const [isAddingSegment, setIsAddingSegment] = useState(false);
   const [segmentSearchQuery, setSegmentSearchQuery] = useState('');
   const [segmentToDelete, setSegmentToDelete] = useState<string | null>(null);
+  const [showDeleteProjectModal, setShowDeleteProjectModal] = useState(false);
   const [localPM, setLocalPM] = useState<string | null>(project.project_manager_name || null);
 
   useEffect(() => {
@@ -414,6 +417,19 @@ export default function PostProductionCard({
           >
             <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
           </button>
+
+          {/* Delete Project to Trash Button */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowDeleteProjectModal(true);
+            }}
+            className="p-2.5 rounded-xl bg-white dark:bg-stone-800 border border-[#EAE5DA] dark:border-stone-700 text-slate-400 hover:text-rose-600 hover:border-rose-300 dark:hover:border-rose-800 transition cursor-pointer shadow-2xs"
+            title="Move Project to Trash"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
@@ -699,6 +715,24 @@ export default function PostProductionCard({
         title={`Remove "${segmentToDelete}" Segment?`}
         message={`Are you sure you want to remove the "${segmentToDelete}" segment and its deliverable(s) for this client? You can re-enable this segment anytime from "+ Add Custom Segment".`}
         confirmText="Remove Segment"
+      />
+
+      {/* Project Deletion to Trash 3D Confirmation Modal */}
+      <PostProductionConfirmModal
+        isOpen={showDeleteProjectModal}
+        onClose={() => setShowDeleteProjectModal(false)}
+        onConfirm={() => {
+          setShowDeleteProjectModal(false);
+          if (onDeleteProject) {
+            onDeleteProject(project.id);
+          } else {
+            onUpdateProject(project.id, { overall_status: 'trash' as any });
+          }
+        }}
+        title={`Move "${project.client_name}" to Trash?`}
+        message={`Are you sure you want to move this project to trash? It will be removed from the active post-production pipeline.`}
+        confirmText="Yes, Move to Trash"
+        cancelText="Cancel"
       />
     </div>
   );

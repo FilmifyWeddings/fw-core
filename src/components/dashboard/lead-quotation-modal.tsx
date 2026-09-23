@@ -274,7 +274,7 @@ export function LeadQuotationModal({
       onFinalSet({ ...q, is_final: true });
     }
 
-    // ⚡ Update sc_quotation_summary_map immediately so the table row turns green in 0ms!
+    // ⚡ Update sc_quotation_summary_map & sc_cached_leads immediately so the table row turns green in 0ms and stays green on refresh!
     if (typeof window !== 'undefined') {
       try {
         const stored = localStorage.getItem('sc_quotation_summary_map');
@@ -286,6 +286,29 @@ export function LeadQuotationModal({
           versions: updated
         };
         localStorage.setItem('sc_quotation_summary_map', JSON.stringify(map));
+
+        const cachedLeadsStr = localStorage.getItem('sc_cached_leads');
+        if (cachedLeadsStr) {
+          const cachedLeads = JSON.parse(cachedLeadsStr);
+          if (Array.isArray(cachedLeads)) {
+            const updatedLeads = cachedLeads.map((l: any) => {
+              if (l.id === lead.id) {
+                return {
+                  ...l,
+                  status: unmark ? 'in_progress' : 'booked',
+                  stage: unmark ? 'in_progress' : 'booked',
+                  final_quotation_id: unmark ? null : q.template_id,
+                  raw_payload: {
+                    ...(l.raw_payload || {}),
+                    final_quotation_id: unmark ? null : q.template_id
+                  }
+                };
+              }
+              return l;
+            });
+            localStorage.setItem('sc_cached_leads', JSON.stringify(updatedLeads));
+          }
+        }
       } catch (_) {}
     }
     try {

@@ -71,26 +71,30 @@ export async function POST(req: NextRequest) {
     const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
     const quotationId = `FW-Q-${leadShortId}-V${nextVersion}-${randomSuffix}`;
 
-    // Deep clone document JSON and set unique page IDs
-    const clonedDoc = JSON.parse(JSON.stringify(templateDoc || DEFAULT_AIRY_PROPOSAL));
+    // Deep clone document JSON (using initialDocument if passed from AI generator, else templateDoc)
+    const baseSourceDoc = body.initialDocument || templateDoc || DEFAULT_AIRY_PROPOSAL;
+    const clonedDoc = JSON.parse(JSON.stringify(baseSourceDoc));
     clonedDoc.lead_id = leadId;
     clonedDoc.lead_version = nextVersion;
 
     if (!clonedDoc.cover) clonedDoc.cover = {};
-    clonedDoc.cover.coupleName = leadName;
-    clonedDoc.cover.groomName = groomName || clonedDoc.cover.groomName || 'Rahul';
-    clonedDoc.cover.brideName = brideName || clonedDoc.cover.brideName || 'Neha';
+    if (!clonedDoc.cover.coupleName) clonedDoc.cover.coupleName = leadName;
+    if (!clonedDoc.cover.groomName) clonedDoc.cover.groomName = groomName || 'Rahul';
+    if (!clonedDoc.cover.brideName) clonedDoc.cover.brideName = brideName || 'Neha';
 
     if (effectiveLead.raw_payload?.venue || effectiveLead.raw_payload?.location || effectiveLead.location) {
-      clonedDoc.cover.locationName = effectiveLead.raw_payload?.venue || effectiveLead.raw_payload?.location || effectiveLead.location;
+      if (!clonedDoc.cover.locationName) {
+        clonedDoc.cover.locationName = effectiveLead.raw_payload?.venue || effectiveLead.raw_payload?.location || effectiveLead.location;
+      }
     }
 
     const eventType = clonedDoc.cover?.eventType || 'Wedding';
-    const quotationTitle = `${leadName} - ${eventType} Quotation`;
-    clonedDoc.designName = quotationTitle;
-    clonedDoc.title = quotationTitle;
+    const coupleTitle = clonedDoc.cover?.coupleName || leadName;
+    const quotationTitle = `${coupleTitle} - ${eventType} Quotation`;
+    if (!clonedDoc.designName || clonedDoc.designName.startsWith('FW-')) clonedDoc.designName = quotationTitle;
+    if (!clonedDoc.title || clonedDoc.title.startsWith('FW-')) clonedDoc.title = quotationTitle;
 
-    // Ensure all payment term steps strictly start as 'Pending' with ₹0 received for new lead quotations
+    // Ensure all payment term steps start clean
     if (clonedDoc.paymentTermsPage?.steps && Array.isArray(clonedDoc.paymentTermsPage.steps)) {
       const totalPricing = clonedDoc.pricingPage?.basePrice || 0;
       clonedDoc.paymentTermsPage.steps = clonedDoc.paymentTermsPage.steps.map((s: any, idx: number) => ({
@@ -98,11 +102,15 @@ export async function POST(req: NextRequest) {
         id: s.id || `pt_${Date.now()}_${idx}_${Math.random().toString(36).substring(7)}`,
         stepName: s.stepName || s.name || `Installment #${idx + 1}`,
         name: s.name || s.stepName || `Installment #${idx + 1}`,
-        status: 'Pending',
-        paid_date: null
+        status: s.status || 'Pending',
+        paid_date: s.status === 'Completed' || s.status === 'paid' ? (s.paid_date || new Date().toISOString().split('T')[0]) : null
       }));
-      clonedDoc.paymentTermsPage.receivedAmount = 0;
-      clonedDoc.paymentTermsPage.pendingAmount = clonedDoc.paymentTermsPage.fixedAmount || totalPricing;
+      if (clonedDoc.paymentTermsPage.receivedAmount === undefined) {
+        clonedDoc.paymentTermsPage.receivedAmount = 0;
+      }
+      if (clonedDoc.paymentTermsPage.pendingAmount === undefined) {
+        clonedDoc.paymentTermsPage.pendingAmount = clonedDoc.paymentTermsPage.fixedAmount || totalPricing;
+      }
     }
 
     if (Array.isArray(clonedDoc.pages)) {

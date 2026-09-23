@@ -13,7 +13,9 @@ import {
   UserCheck,
   Check,
   X,
-  CreditCard
+  CreditCard,
+  AlertTriangle,
+  Trash2
 } from 'lucide-react';
 import { MilestoneSchedule } from './MilestoneSchedule';
 import { HandledByMultiSelect, FinanceTeamMember, isPlaceholderName } from './HandledByMultiSelect';
@@ -38,6 +40,7 @@ interface ClientFinanceCardProps {
   onMilestoneChange: (recordId: string, milestoneId: string, field: string, value: any) => void;
   onAddMilestoneStep: (recordId: string) => void;
   onSaveNewTemplate?: (name: string) => void;
+  onDeleteRecord?: (record: ClientFinanceRecord) => void;
   statusFilter?: string;
   startDate?: string;
   endDate?: string;
@@ -103,6 +106,7 @@ export function ClientFinanceCard({
   onMilestoneChange,
   onAddMilestoneStep,
   onSaveNewTemplate,
+  onDeleteRecord,
   statusFilter,
   startDate,
   endDate,
@@ -136,8 +140,22 @@ export function ClientFinanceCard({
   const client = record.client;
   const milestones = record.milestones || [];
   const finalTotal = Number(record.final_total_amount) || 0;
-  const recAmt = Number(record.received_amount) || 0;
-  const pendAmt = Number(record.pending_amount) || Math.max(0, finalTotal - recAmt);
+
+  // ⚡ DYNAMIC RECALCULATION FROM MILESTONES (STRICT ZERO STATS LAG)
+  const milestoneSum = useMemo(() => {
+    return (milestones || []).reduce((sum, m) => sum + (Math.round(Number(m.amount)) || 0), 0);
+  }, [milestones]);
+
+  const dynamicReceived = useMemo(() => {
+    if (!milestones || milestones.length === 0) return Number(record.received_amount) || 0;
+    return milestones
+      .filter(m => m && (m.status === 'completed' || m.status === 'paid' || (m as any).status === 'Completed' || (m as any).status === 'PAID'))
+      .reduce((sum, m) => sum + (Math.round(Number(m.amount)) || 0), 0);
+  }, [milestones, record.received_amount]);
+
+  const recAmt = dynamicReceived;
+  const pendAmt = Math.max(0, finalTotal - recAmt);
+  const milestoneGap = finalTotal - milestoneSum;
 
   const rawHandled = (client as any)?.assigned_team_member || (client as any)?.handled_by || 'Unassigned';
   const handledBy = isPlaceholderName(rawHandled) ? 'Unassigned' : rawHandled;
@@ -398,6 +416,20 @@ export function ClientFinanceCard({
                       <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
                       <span>Client Profile</span>
                     </a>
+                  )}
+
+                  {onDeleteRecord && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOpenMenu(false);
+                        onDeleteRecord(record);
+                      }}
+                      className="w-full px-3 py-2 text-left text-rose-600 hover:bg-rose-50 flex items-center gap-2 cursor-pointer border-t border-slate-100 font-bold"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                      <span>Move to Trash</span>
+                    </button>
                   )}
                 </motion.div>
               )}

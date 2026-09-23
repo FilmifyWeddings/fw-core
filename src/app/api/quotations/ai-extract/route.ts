@@ -280,15 +280,20 @@ async function performAiExtraction(contextData: any, baseDoc: any) {
     }
   }
 
-  const openAiKey = process.env.OPENAI_API_KEY;
-  const geminiKey = process.env.GEMINI_API_KEY;
+  const leanPromptContext = {
+    lead_info: contextData.lead_info,
+    raw_form_fields: contextData.raw_form_fields,
+    meta_fields: contextData.meta_fields,
+    notes_and_comments: contextData.notes_and_comments,
+    additional_user_notes: contextData.additional_user_notes
+  };
 
   const promptText = `
 You are StudioCore AI — an intelligent quotation data extraction assistant for professional wedding photographers.
 
 Analyze the following lead and quotation context:
 
-${JSON.stringify(contextData, null, 2)}
+${JSON.stringify(leanPromptContext, null, 2)}
 
 PAGE-BY-PAGE RULES & MAPPING:
 1. COVER (cover):
@@ -367,6 +372,8 @@ Return ONLY a valid JSON object matching:
 `;
 
   let aiRawOutput: any = null;
+  const openAiKey = process.env.OPENAI_API_KEY || '';
+  const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || '';
 
   // Try OpenAI API
   if (openAiKey) {
@@ -381,7 +388,8 @@ Return ONLY a valid JSON object matching:
           model: 'gpt-4o-mini',
           messages: [{ role: 'system', content: promptText }],
           response_format: { type: 'json_object' },
-          temperature: 0.2
+          temperature: 0.1,
+          max_tokens: 1200
         })
       });
       if (res.ok) {

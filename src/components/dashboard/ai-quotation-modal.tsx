@@ -281,7 +281,8 @@ LEAD & CLIENT CONTEXT:
           body: JSON.stringify({
             leadId: effectiveLead.id,
             clientName: effectiveLead.name,
-            explicitTemplateId: selectedTemplateId || undefined
+            explicitTemplateId: selectedTemplateId || undefined,
+            initialDocument: extractedDoc
           })
         });
         const createText = await createRes.text();
@@ -295,8 +296,11 @@ LEAD & CLIENT CONTEXT:
         targetQId = createJson.quotationId || createJson.templateId;
       }
 
-      // Apply extracted document directly to current draft if targetQId exists
-      if (targetQId && targetQId !== 'draft') {
+      // Apply extracted document directly only if targetQId was an existing quotation
+      const isNewCreation = !quotationId && Boolean(effectiveLead.id && effectiveLead.id !== 'draft');
+      let finalDoc = extractedDoc;
+
+      if (!isNewCreation && targetQId && targetQId !== 'draft') {
         const applyRes = await fetch('/api/quotations/ai-apply', {
           method: 'POST',
           headers: {
@@ -317,11 +321,14 @@ LEAD & CLIENT CONTEXT:
         if (!applyRes.ok || !applyJson.success) {
           throw new Error(applyJson.error || 'Failed to apply AI data to quotation');
         }
+        if (applyJson.document) finalDoc = applyJson.document;
+      }
 
-        // Prime local indexedDB and sessionStorage cache for instant builder hydration
+      // Prime local indexedDB and sessionStorage cache for instant builder hydration
+      if (targetQId && targetQId !== 'draft') {
         try {
           const { cacheDocumentLocal } = await import('@/lib/indexeddb-cache');
-          cacheDocumentLocal(targetQId, applyJson.document || extractedDoc, 1);
+          cacheDocumentLocal(targetQId, finalDoc, 1);
           if (effectiveLead.id && effectiveLead.id !== 'draft') {
             sessionStorage.removeItem(`lead_quotes_cache_${effectiveLead.id}`);
 

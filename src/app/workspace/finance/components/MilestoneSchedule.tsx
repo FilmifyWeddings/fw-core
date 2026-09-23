@@ -8,7 +8,8 @@ import {
   Pencil,
   MoreVertical,
   MessageSquare,
-  X
+  X,
+  AlertTriangle
 } from 'lucide-react';
 import MilestoneStepDropdown from '@/components/finance/MilestoneStepDropdown';
 import type { ClientFinanceRecord, FinanceMilestoneItem } from '@/types';
@@ -59,6 +60,9 @@ export function MilestoneSchedule({
   }, [openActionMenuId]);
 
   const milestones = record.milestones || [];
+  const finalTotal = Number(record.final_total_amount) || 0;
+  const milestoneSum = milestones.reduce((sum, m) => sum + (Math.round(Number(m.amount)) || 0), 0);
+  const milestoneGap = finalTotal - milestoneSum;
 
   return (
     <div className="space-y-3">
@@ -79,6 +83,21 @@ export function MilestoneSchedule({
           <Plus className="w-3.5 h-3.5 text-emerald-700" /> Add Step
         </button>
       </div>
+
+      {/* Prominent Gap Warning Alert if milestone steps don't match total package */}
+      {milestones.length > 0 && Math.abs(milestoneGap) > 0 && (
+        <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2 text-amber-900 font-bold">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>
+              Milestone steps total (₹{milestoneSum.toLocaleString('en-IN')}) does not match package total (₹{finalTotal.toLocaleString('en-IN')}).
+            </span>
+          </div>
+          <span className="shrink-0 font-mono text-[11px] font-black px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-900">
+            Gap: ₹{Math.abs(milestoneGap).toLocaleString('en-IN')} {milestoneGap > 0 ? 'unallocated' : 'excess'}
+          </span>
+        </div>
+      )}
 
       {/* Milestone Schedule List */}
       {milestones.length === 0 ? (

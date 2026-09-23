@@ -158,17 +158,14 @@ export default function SegmentContainer({
     };
   }, [segmentName]);
 
-  // Compute active categories for this segment (Canonical, Case-Insensitive, No Duplication)
+  const [manuallyAddedCategories, setManuallyAddedCategories] = useState<string[]>([]);
+
+  // Compute active categories for this segment (Dynamic: strictly show only categories that have deliverables, or were explicitly added)
   const activeCategories = useMemo(() => {
     const disabledLower = new Set(disabledCategories.map(c => c.toLowerCase()));
     const discovered = new Set<string>();
 
-    DEFAULT_CATEGORIES.forEach(c => {
-      if (!disabledLower.has(c.toLowerCase())) {
-        discovered.add(c);
-      }
-    });
-
+    // 1. Discover all categories from actual deliverables
     deliverables.forEach(d => {
       if (d.category || d.title) {
         const norm = normalizeCategoryName(d.category, d.title || (d as any).name);
@@ -178,8 +175,16 @@ export default function SegmentContainer({
       }
     });
 
+    // 2. Add any manually added categories for this session
+    manuallyAddedCategories.forEach(c => {
+      const norm = normalizeCategoryName(c);
+      if (!disabledLower.has(norm.toLowerCase())) {
+        discovered.add(norm);
+      }
+    });
+
     return Array.from(discovered);
-  }, [deliverables, disabledCategories]);
+  }, [deliverables, disabledCategories, manuallyAddedCategories]);
 
   // Categories configured in settings that are not yet active in this segment
   const availableToAdd = useMemo(() => {
@@ -192,6 +197,7 @@ export default function SegmentContainer({
     e.preventDefault();
     const trimmed = customCatInput.trim();
     if (!trimmed) return;
+    setManuallyAddedCategories(prev => [...prev, trimmed]);
     onAddCategory(segmentName, trimmed);
     setCustomCatInput('');
     setIsAddingCustomCat(false);
@@ -283,7 +289,10 @@ export default function SegmentContainer({
               <button
                 key={cat}
                 type="button"
-                onClick={() => onAddCategory(segmentName, cat)}
+                onClick={() => {
+                  setManuallyAddedCategories(prev => [...prev, cat]);
+                  onAddCategory(segmentName, cat);
+                }}
                 className="px-3 py-1 text-xs font-bold text-amber-900 dark:text-amber-200 bg-amber-50 hover:bg-amber-100 border border-amber-300 dark:border-amber-800 rounded-xl transition cursor-pointer"
               >
                 + Add {cat}
@@ -313,7 +322,10 @@ export default function SegmentContainer({
                 onUpdateItemFields={onUpdateItemFields}
                 onDeleteItem={onDeleteItem}
                 onAddItem={onAddItem}
-                onRemoveCategory={onRemoveCategory}
+                onRemoveCategory={(seg, c) => {
+                  setManuallyAddedCategories(prev => prev.filter(x => x.toLowerCase() !== c.toLowerCase()));
+                  onRemoveCategory(seg, c);
+                }}
                 onOpenComments={onOpenComments}
                 onOpenDrive={onOpenDrive}
               />
@@ -353,6 +365,7 @@ export default function SegmentContainer({
                           key={cat}
                           type="button"
                           onClick={() => {
+                            setManuallyAddedCategories(prev => [...prev, cat]);
                             onAddCategory(segmentName, cat);
                             setShowAddCatPopover(false);
                           }}

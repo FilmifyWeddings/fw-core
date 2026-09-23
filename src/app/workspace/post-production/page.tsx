@@ -355,7 +355,26 @@ export default function PostProductionPage() {
       const cards: PostProductionProjectData[] = [];
 
       for (const client of clientList) {
+        if (
+          client.status === 'trash' || 
+          client.status === 'trashed' ||
+          (client as any).is_deleted === true || 
+          (client.notes && typeof client.notes === 'string' && client.notes.includes('[status:trash]'))
+        ) {
+          continue;
+        }
+
         const ppp = pppMap.get(client.id) || (client.lead_id ? pppMap.get(client.lead_id) : null);
+        if (
+          ppp && (
+            ppp.overall_status === 'trash' ||
+            (ppp as any).is_deleted === true ||
+            (ppp.notes && typeof ppp.notes === 'string' && ppp.notes.includes('[status:trash]'))
+          )
+        ) {
+          continue;
+        }
+
         const matchedFwProject = (fwProjects || []).find(
           fp => fp.client_name?.toLowerCase() === client.name?.toLowerCase() || fp.id === client.id
         );
@@ -638,6 +657,50 @@ export default function PostProductionPage() {
 
   // Persist Project Deliverable Updates Decoupled
   const handleUpdateProject = async (projectId: string, updated: Partial<PostProductionProjectData>) => {
+    // 0. Handle Trashing / Soft Delete
+    if ((updated as any).overall_status === 'trash' || (updated as any).is_deleted === true) {
+      memCachedPostProdProjects = memCachedPostProdProjects.filter(p => p.id !== projectId);
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('sc_cached_pp_projects', JSON.stringify(memCachedPostProdProjects));
+        } catch (_) {}
+      }
+      const targetProj = projects.find(p => p.id === projectId);
+      setProjects(prev => prev.filter(p => p.id !== projectId));
+
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const workspaceId = session?.user?.id || 'ws_demo';
+        if (workspaceId !== 'ws_demo' && targetProj) {
+          const clientId = targetProj.client_id;
+          await supabase
+            .from('post_production_projects')
+            .update({
+              overall_status: 'trash',
+              notes: `[status:trash]`,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', projectId);
+
+          if (clientId) {
+            await supabase
+              .from('workspace_clients')
+              .update({
+                status: 'trash',
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', clientId);
+          }
+        }
+      } catch (err) {
+        console.error('Error soft-deleting post-production project:', err);
+      }
+
+      window.dispatchEvent(new CustomEvent('post_production_updated'));
+      window.dispatchEvent(new CustomEvent('client_updated'));
+      return;
+    }
+
     // 1. Synchronously update in-memory cache and localStorage for instant 0ms transitions
     memCachedPostProdProjects = memCachedPostProdProjects.map(p => {
       if (p.id === projectId) {
@@ -1403,6 +1466,7 @@ export default function PostProductionPage() {
                 onOpenComments={handleOpenComments}
                 onOpenDrive={handleOpenDrive}
                 onResyncQuotation={() => handleResyncQuotation(project.id, project.client_id)}
+                onDeleteProject={(id) => handleUpdateProject(id, { overall_status: 'trash' as any })}
               />
             ))}
           </div>

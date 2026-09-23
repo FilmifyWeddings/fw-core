@@ -5,9 +5,12 @@ import { extractCoupleNameFromQuotation } from '@/lib/quotation-finance-sync';
 
 export const runtime = 'nodejs';
 
-// Fast server-side memory cache with 15-second TTL
-const summaryCache = new Map<string, { timestamp: number; data: any }>();
-const CACHE_TTL_MS = 15 * 1000;
+import { 
+  getLeadSummaryCache, 
+  setLeadSummaryCache, 
+  deleteLeadSummaryCache, 
+  CACHE_TTL_MS 
+} from '@/lib/quotation-summary-cache';
 
 export async function GET(req: NextRequest) {
   try {
@@ -25,9 +28,9 @@ export async function GET(req: NextRequest) {
     // Check memory cache
     const cacheKey = `lead_quote_summary_${workspaceId}`;
     if (forceRefresh) {
-      summaryCache.delete(cacheKey);
+      deleteLeadSummaryCache(cacheKey);
     } else {
-      const cached = summaryCache.get(cacheKey);
+      const cached = getLeadSummaryCache(cacheKey);
       if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
         return NextResponse.json({ success: true, summary: cached.data, cached: true });
       }
@@ -72,7 +75,7 @@ export async function GET(req: NextRequest) {
         finalId,
         isBooked
       });
-      if (finalId) {
+      if (finalId || isBooked) {
         summary[l.id] = { count: 0, hasFinal: true, versions: [] };
       }
     });
@@ -246,7 +249,7 @@ export async function GET(req: NextRequest) {
     });
 
     // Save to server memory cache
-    summaryCache.set(cacheKey, { timestamp: Date.now(), data: summary });
+    setLeadSummaryCache(cacheKey, summary);
 
     return NextResponse.json({
       success: true,

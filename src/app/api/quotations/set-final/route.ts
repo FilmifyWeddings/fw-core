@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
 import { extractCoupleNameFromQuotation, syncBookedLeadOrFinalQuotation } from '@/lib/quotation-finance-sync';
+import { clearLeadSummaryCache } from '@/lib/quotation-summary-cache';
 
 export const runtime = 'nodejs';
 
@@ -172,6 +173,8 @@ export async function POST(req: NextRequest) {
       })()
     ]);
 
+    clearLeadSummaryCache();
+
     if (shouldUnmark) {
       return NextResponse.json({
         success: true,
@@ -192,6 +195,8 @@ export async function POST(req: NextRequest) {
     } catch (syncErr) {
       console.error('[Set-Final] Sync exception:', syncErr);
     }
+
+    clearLeadSummaryCache();
 
     return NextResponse.json({
       success: true,

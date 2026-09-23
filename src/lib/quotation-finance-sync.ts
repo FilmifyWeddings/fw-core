@@ -719,11 +719,11 @@ export function extractSubEventsFromQuotation(
     }
   }
 
-  // 2. Shoot Details Page (Pre-Wedding Shoot) - ONLY if shootDetails is explicitly included in pageSequence and enabled!
-  const hasShootInSequence = Array.isArray(contentJson.pageSequence) && contentJson.pageSequence.some((p: any) => p?.type === 'shootDetails' || p?.id === 'shootDetails');
-  const isShootEnabled = hasShootInSequence && contentJson.shootDetails?.enabled !== false;
+  // 2. Shoot Details Page (Pre-Wedding Shoot) - if shootDetails exists and is enabled
+  const hasShootInSequence = !Array.isArray(contentJson.pageSequence) || contentJson.pageSequence.length === 0 || contentJson.pageSequence.some((p: any) => p?.type === 'shootDetails' || p?.id === 'shootDetails');
+  const isShootEnabled = hasShootInSequence && contentJson.shootDetails?.enabled !== false && contentJson.shootDetails?.visible !== false;
 
-  if (isShootEnabled && contentJson.shootDetails && (contentJson.shootDetails.heading || contentJson.shootDetails.daysText)) {
+  if (isShootEnabled && contentJson.shootDetails && (contentJson.shootDetails.heading || contentJson.shootDetails.daysText || contentJson.shootDetails.date || contentJson.shootDetails.location || contentJson.shootDetails.crewText)) {
     const shoot = contentJson.shootDetails;
     const shootTitle = String(shoot.heading || 'Pre-Wedding Shoot').trim();
     const alreadyExists = subEvents.some(s => s.event_title.toLowerCase() === shootTitle.toLowerCase());

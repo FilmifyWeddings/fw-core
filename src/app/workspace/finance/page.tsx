@@ -338,6 +338,10 @@ export default function FinancePage() {
   // Action dropdown state for milestones
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
 
+  // Soft Delete / Move to Trash Modal state
+  const [recordToDelete, setRecordToDelete] = useState<ClientFinanceRecord | null>(null);
+  const [isDeletingRecord, setIsDeletingRecord] = useState(false);
+
   // ─────────────────────────────────────────────────────────────
   // 💸 TEAM PAYOUTS & EXPENSES EDIT & CREATE MODALS
   // ─────────────────────────────────────────────────────────────
@@ -795,7 +799,25 @@ export default function FinancePage() {
       const finalRecords: ClientFinanceRecord[] = [];
 
       for (const c of clientList) {
+        if (
+          c.status === 'trash' || 
+          c.status === 'trashed' ||
+          (c as any).is_deleted === true || 
+          (c.notes && typeof c.notes === 'string' && c.notes.includes('[status:trash]'))
+        ) {
+          continue;
+        }
         const existing = financeMap.get(c.id);
+        if (
+          existing && (
+            (existing as any).status === 'trash' ||
+            (existing as any).status === 'trashed' ||
+            (existing as any).is_deleted === true ||
+            (existing.notes && typeof existing.notes === 'string' && existing.notes.includes('[status:trash]'))
+          )
+        ) {
+          continue;
+        }
         const availableQuotes = (c.lead_id ? allLeadQuotesMap.get(c.lead_id) : []) || [];
         const leadObj = c.lead_id ? leadMap.get(c.lead_id) : null;
         const linkedFinalQuote = availableQuotes.find(q => q.is_final || (leadObj?.final_quotation_id && q.template_id === leadObj.final_quotation_id));
@@ -1636,6 +1658,62 @@ export default function FinancePage() {
     });
   };
 
+  const handleConfirmDeleteRecord = async () => {
+    if (!recordToDelete) return;
+    setIsDeletingRecord(true);
+    try {
+      const clientId = recordToDelete.client_id;
+      const { data: { session } } = await supabase.auth.getSession();
+      const workspaceId = session?.user?.id || currentWorkspaceId || 'ws_demo';
+
+      if (workspaceId !== 'ws_demo') {
+        const trashedNotes = (recordToDelete.notes || '') + ' [status:trash]';
+        await supabase
+          .from('client_finance_records')
+          .update({
+            notes: trashedNotes,
+            status: 'trash',
+            updated_at: new Date().toISOString()
+          })
+          .eq('client_id', clientId);
+
+        await supabase
+          .from('workspace_clients')
+          .update({
+            status: 'trash',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', clientId);
+      }
+
+      setFinanceRecords(prev => prev.filter(r => r.id !== recordToDelete.id && r.client_id !== clientId));
+      memCachedFinanceRecords = memCachedFinanceRecords.filter(r => r.id !== recordToDelete.id && r.client_id !== clientId);
+      try {
+        localStorage.setItem('sc_cached_finance_records', JSON.stringify(memCachedFinanceRecords));
+      } catch (_) {}
+
+      setClients(prev => prev.filter(c => c.id !== clientId));
+
+      window.dispatchEvent(new CustomEvent('finance_updated'));
+      window.dispatchEvent(new CustomEvent('client_updated'));
+
+      logAudit(
+        'ADJUSTMENT',
+        0,
+        `Moved finance record for "${recordToDelete.client?.name || 'Client'}" to trash`,
+        recordToDelete.client_id,
+        recordToDelete.client?.name
+      );
+
+      setRecordToDelete(null);
+    } catch (err) {
+      console.error('Error soft-deleting finance record:', err);
+      alert('Failed to delete finance record. Please try again.');
+    } finally {
+      setIsDeletingRecord(false);
+    }
+  };
+
   // ─────────────────────────────────────────────────────────────
   // 💸 EXPENSES & TEAM PAYOUTS MANAGEMENT
   // ─────────────────────────────────────────────────────────────
@@ -1890,6 +1968,19 @@ export default function FinancePage() {
 
   const filteredRecords = useMemo(() => {
     return financeRecords.filter(rec => {
+      // Exclude soft-deleted / trashed records
+      if (
+        (rec as any).status === 'trash' ||
+        (rec as any).status === 'trashed' ||
+        (rec as any).is_deleted === true ||
+        (rec as any).deleted_at ||
+        (rec.client?.status as string) === 'trash' ||
+        (rec.client as any)?.is_deleted === true ||
+        (rec.notes && typeof rec.notes === 'string' && rec.notes.includes('[status:trash]'))
+      ) {
+        return false;
+      }
+
       const client = rec.client;
       const clientName = client?.name?.toLowerCase() || '';
       const eventType = client?.event_type || '';
@@ -2854,6 +2945,7 @@ export default function FinancePage() {
                   endDate={endDate}
                   revenueTypeFilter={revenueTypeFilter}
                   isDateActive={isDateActive}
+                  onDeleteRecord={setRecordToDelete}
                 />
               ))
             )}
@@ -3953,6 +4045,67 @@ export default function FinancePage() {
             await fetchFinanceData();
           }}
         />
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          DELETE / MOVE TO TRASH CONFIRMATION MODAL
+      ───────────────────────────────────────────────────────────── */}
+      {recordToDelete && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900">Move to Trash?</h3>
+                <p className="text-xs text-slate-500">
+                  {recordToDelete.client?.name || 'This client'} finance record will be moved to trash and removed from revenue totals.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200/80 text-xs text-amber-800 space-y-1">
+              <div className="flex justify-between font-bold">
+                <span>Contract Total:</span>
+                <span>₹{(Number(recordToDelete.final_total_amount) || 0).toLocaleString('en-IN')}</span>
+              </div>
+              <div className="flex justify-between font-medium text-amber-700">
+                <span>Received:</span>
+                <span>₹{(Number(recordToDelete.received_amount) || 0).toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setRecordToDelete(null)}
+                disabled={isDeletingRecord}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteRecord}
+                disabled={isDeletingRecord}
+                className="px-5 py-2 text-xs font-black text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-md transition cursor-pointer flex items-center gap-2"
+              >
+                {isDeletingRecord ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Moving to Trash...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Yes, Move to Trash</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

@@ -54,7 +54,9 @@ export default function ClientsPage() {
   const [teamMembers, setTeamMembers] = useState<WorkspaceMemberOption[]>(() => memCachedTeamMembers);
   const [loading, setLoading] = useState(() => memCachedClients.length === 0);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'completed' | 'archived'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'completed' | 'archived' | 'trash'>('all');
+  const [clientToDelete, setClientToDelete] = useState<WorkspaceClient | null>(null);
+  const [isDeletingClient, setIsDeletingClient] = useState(false);
   const [eventTypeFilter, setEventTypeFilter] = useState<string>('all');
   const [pmFilter, setPmFilter] = useState<string>('all');
   const [quickAssignClient, setQuickAssignClient] = useState<WorkspaceClient | null>(null);
@@ -581,6 +583,149 @@ export default function ClientsPage() {
     }
   };
 
+  const handleConfirmDeleteClient = async () => {
+    if (!clientToDelete) return;
+    setIsDeletingClient(true);
+    try {
+      const clientId = clientToDelete.id;
+      const { data: { session } } = await supabase.auth.getSession();
+      const workspaceId = session?.user?.id || currentWorkspaceId || 'ws_demo';
+
+      if (workspaceId !== 'ws_demo') {
+        const trashedNotes = (clientToDelete.notes || '') + ' [status:trash]';
+        await supabase
+          .from('workspace_clients')
+          .update({
+            status: 'trash',
+            notes: trashedNotes,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', clientId);
+
+        await supabase
+          .from('client_finance_records')
+          .update({
+            status: 'trash',
+            updated_at: new Date().toISOString()
+          })
+          .eq('client_id', clientId);
+
+        await supabase
+          .from('post_production_projects')
+          .update({
+            overall_status: 'trash',
+            notes: `[status:trash]`,
+            updated_at: new Date().toISOString()
+          })
+          .eq('client_id', clientId);
+      }
+
+      setClients(prev => prev.map(c => {
+        if (c.id === clientId) {
+          return {
+            ...c,
+            status: 'trash' as any,
+            notes: (c.notes || '') + ' [status:trash]'
+          };
+        }
+        return c;
+      }));
+
+      memCachedClients = memCachedClients.map(c => {
+        if (c.id === clientId) {
+          return {
+            ...c,
+            status: 'trash' as any,
+            notes: (c.notes || '') + ' [status:trash]'
+          };
+        }
+        return c;
+      });
+      try {
+        localStorage.setItem('sc_cached_clients', JSON.stringify(memCachedClients));
+      } catch (_) {}
+
+      window.dispatchEvent(new CustomEvent('client_updated'));
+      window.dispatchEvent(new CustomEvent('finance_updated'));
+      window.dispatchEvent(new CustomEvent('post_production_updated'));
+
+      setClientToDelete(null);
+    } catch (err) {
+      console.error('Error soft-deleting client:', err);
+      alert('Failed to move client to trash.');
+    } finally {
+      setIsDeletingClient(false);
+    }
+  };
+
+  const handleRestoreClient = async (client: WorkspaceClient) => {
+    try {
+      const clientId = client.id;
+      const cleanNotes = (client.notes || '').replace(/\[status:trash\]/g, '').trim();
+      const { data: { session } } = await supabase.auth.getSession();
+      const workspaceId = session?.user?.id || currentWorkspaceId || 'ws_demo';
+
+      if (workspaceId !== 'ws_demo') {
+        await supabase
+          .from('workspace_clients')
+          .update({
+            status: 'active',
+            notes: cleanNotes,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', clientId);
+
+        await supabase
+          .from('client_finance_records')
+          .update({
+            status: 'active',
+            updated_at: new Date().toISOString()
+          })
+          .eq('client_id', clientId);
+
+        await supabase
+          .from('post_production_projects')
+          .update({
+            overall_status: 'active',
+            updated_at: new Date().toISOString()
+          })
+          .eq('client_id', clientId);
+      }
+
+      setClients(prev => prev.map(c => {
+        if (c.id === clientId) {
+          return {
+            ...c,
+            status: 'active' as any,
+            notes: cleanNotes
+          };
+        }
+        return c;
+      }));
+
+      memCachedClients = memCachedClients.map(c => {
+        if (c.id === clientId) {
+          return {
+            ...c,
+            status: 'active' as any,
+            notes: cleanNotes
+          };
+        }
+        return c;
+      });
+      try {
+        localStorage.setItem('sc_cached_clients', JSON.stringify(memCachedClients));
+      } catch (_) {}
+
+      window.dispatchEvent(new CustomEvent('client_updated'));
+      window.dispatchEvent(new CustomEvent('finance_updated'));
+      window.dispatchEvent(new CustomEvent('post_production_updated'));
+    } catch (err) {
+      console.error('Error restoring client:', err);
+      alert('Failed to restore client.');
+    }
+  };
+
   // 3D Cream Filter Dropdown Options (Pruned to Active Assigned PMs only)
   const pmFilterOptions: Searchable3DCreamSelectOption[] = useMemo(() => {
     const pmMap = new Map<string, { id: string; name: string }>();
@@ -618,6 +763,7 @@ export default function ClientsPage() {
     { value: 'active', label: 'Active', badge: 'Live' },
     { value: 'completed', label: 'Done', badge: 'Done' },
     { value: 'archived', label: 'Archived' },
+    { value: 'trash', label: 'Trash 🗑️', badge: 'Trash' },
   ], []);
 
   const eventTypeFilterOptions: Searchable3DCreamSelectOption[] = useMemo(() => {
@@ -645,7 +791,20 @@ export default function ClientsPage() {
         ext.client_code?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         pmName.toLowerCase().includes(searchQuery.toLowerCase());
 
-      const matchesStatus = statusFilter === 'all' || client.status === statusFilter;
+      const isClientTrashed = Boolean(
+        (client.status as string) === 'trash' || 
+        (client as any).status === 'trashed' || 
+        (client as any).is_deleted === true || 
+        (client.notes && typeof client.notes === 'string' && client.notes.includes('[status:trash]'))
+      );
+
+      let matchesStatus = true;
+      if (statusFilter === 'trash') {
+        matchesStatus = isClientTrashed;
+      } else {
+        if (isClientTrashed) matchesStatus = false;
+        else if (statusFilter !== 'all') matchesStatus = (client.status as any) === statusFilter;
+      }
       const matchesEventType = eventTypeFilter === 'all' || client.event_type === eventTypeFilter;
 
       const matchesPm =
@@ -1186,6 +1345,34 @@ export default function ClientsPage() {
                       onStatusChange={(newStatus) => handleUpdateClientStatus(client.id, newStatus)}
                     />
 
+                    {/* Soft Delete / Restore Action */}
+                    {(client.status as string) === 'trash' || (client as any).status === 'trashed' || (client as any).is_deleted === true || (client.notes && typeof client.notes === 'string' && client.notes.includes('[status:trash]')) ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRestoreClient(client);
+                        }}
+                        className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-extrabold text-[11px] border border-emerald-200 transition cursor-pointer flex items-center gap-1 shadow-2xs shrink-0"
+                        title="Restore Client"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Restore</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setClientToDelete(client);
+                        }}
+                        className="w-8 h-8 rounded-xl bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-200 text-slate-400 hover:text-rose-600 flex items-center justify-center transition cursor-pointer shadow-2xs shrink-0"
+                        title="Move to Trash"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+
                     {/* Open Arrow */}
                     <div className="w-8 h-8 rounded-xl bg-amber-50 group-hover:bg-amber-400 text-amber-800 group-hover:text-slate-900 flex items-center justify-center transition-all shadow-2xs shrink-0">
                       <ChevronRight className="w-4 h-4" />
@@ -1340,6 +1527,66 @@ export default function ClientsPage() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* ─────────────────────────────────────────────────────────────
+          CLIENT DELETE TO TRASH CONFIRMATION MODAL
+      ───────────────────────────────────────────────────────────── */}
+      {clientToDelete && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900">Move Client to Trash?</h3>
+                <p className="text-xs text-slate-500">
+                  Are you sure you want to move <strong>{clientToDelete.name}</strong> to trash?
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200/80 text-xs text-amber-800 space-y-1">
+              <div className="flex justify-between font-bold">
+                <span>Total Package:</span>
+                <span>₹{(Number(clientToDelete.total_package_amount) || 0).toLocaleString('en-IN')}</span>
+              </div>
+              <p className="text-[11px] text-amber-700">
+                This client will be hidden from active lists and finance revenue stats. You can restore them anytime from the Trash tab.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setClientToDelete(null)}
+                disabled={isDeletingClient}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteClient}
+                disabled={isDeletingClient}
+                className="px-5 py-2 text-xs font-black text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-md transition cursor-pointer flex items-center gap-2"
+              >
+                {isDeletingClient ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Moving to Trash...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Yes, Move to Trash</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

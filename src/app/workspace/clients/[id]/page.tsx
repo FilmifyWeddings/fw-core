@@ -236,25 +236,56 @@ export default function ClientWorkspaceDetailPage() {
 
   // ── Synced Multi-Day Events from Quotation / Extended ──
   const displayedEvents = useMemo(() => {
+    const quoteEvents: any[] = [];
+
+    // 1. Check functionsPage items
     const quoteItems = finalQuotationDoc?.content_json?.functionsPage?.items;
     if (Array.isArray(quoteItems) && quoteItems.length > 0) {
-      return quoteItems.map((item: any, idx: number) => ({
-        id: item.id || `quote_event_${idx}`,
-        name: item.name || `Ceremony ${idx + 1}`,
-        date: item.date || '',
-        time_start: item.startTime || '',
-        time_end: item.endTime || '',
-        duration: item.durationSlot || '',
-        venue: item.location || '',
-        requirements: Array.isArray(item.requirements) ? item.requirements : [],
-        notes: item.notes || '',
-        source: 'quotation' as const,
-      }));
+      quoteItems.forEach((item: any, idx: number) => {
+        quoteEvents.push({
+          id: item.id || `quote_event_${idx}`,
+          name: item.name || `Ceremony ${idx + 1}`,
+          date: item.date || 'Date TBD',
+          time_start: item.startTime || '',
+          time_end: item.endTime || '',
+          duration: item.durationSlot || '',
+          venue: item.location || '',
+          requirements: Array.isArray(item.requirements) ? item.requirements : [],
+          notes: item.notes || '',
+          source: 'quotation' as const,
+        });
+      });
     }
+
+    // 2. Check shootDetails (Pre-Wedding Shoot)
+    const shoot = finalQuotationDoc?.content_json?.shootDetails;
+    if (shoot && shoot.enabled !== false && shoot.visible !== false && (shoot.heading || shoot.daysText || shoot.location || shoot.crewText)) {
+      const shootTitle = shoot.heading || 'Pre-Wedding Shoot';
+      const alreadyHasShoot = quoteEvents.some(e => e.name.toLowerCase() === shootTitle.toLowerCase());
+      if (!alreadyHasShoot) {
+        quoteEvents.unshift({
+          id: 'quote_shootDetails',
+          name: shootTitle,
+          date: shoot.date || shoot.eventDate || shoot.shootDate || 'Date TBD',
+          time_start: '09:00 AM',
+          time_end: '06:00 PM',
+          duration: shoot.daysText || '1 Day Shoot',
+          venue: shoot.location || shoot.venue || '',
+          requirements: shoot.crewText ? [{ name: shoot.crewText, qty: 1 }] : [],
+          notes: shoot.notes || shoot.description || '',
+          source: 'quotation' as const,
+        });
+      }
+    }
+
+    if (quoteEvents.length > 0) {
+      return quoteEvents;
+    }
+
     return (extended.events || []).map((e: any) => ({
       id: e.id,
       name: e.name,
-      date: e.date,
+      date: e.date || 'Date TBD',
       time_start: e.time_start,
       time_end: e.time_end,
       duration: '',
@@ -311,8 +342,8 @@ export default function ClientWorkspaceDetailPage() {
       overall_status: (postProductionProject?.overall_status as any) || 'active',
       deliverables: clientDelivs.map((d: any) => ({
         ...d,
-        segment: d.segment || 'Wedding',
-        category: d.category || 'photos',
+        segment: d.segment ? d.segment.trim() : 'Wedding',
+        category: d.category ? (d.category.trim().charAt(0).toUpperCase() + d.category.trim().slice(1)) : 'Photos',
         title: d.title || d.name || 'Deliverable',
         specs: d.specs || d.count || '',
         status: d.status || 'Upcoming'
@@ -819,6 +850,23 @@ export default function ClientWorkspaceDetailPage() {
     window.addEventListener('workspace_event_types_updated', handleEventTypesUpdated);
     return () => window.removeEventListener('workspace_event_types_updated', handleEventTypesUpdated);
   }, [client?.workspace_id]);
+
+  // Listen for global sync events (Post-Production, Finance, Quotations)
+  useEffect(() => {
+    const handleGlobalSync = () => {
+      fetchClientFullData();
+    };
+    window.addEventListener('post_production_updated', handleGlobalSync);
+    window.addEventListener('finance_updated', handleGlobalSync);
+    window.addEventListener('quotation_finalized', handleGlobalSync);
+    window.addEventListener('client_updated', handleGlobalSync);
+    return () => {
+      window.removeEventListener('post_production_updated', handleGlobalSync);
+      window.removeEventListener('finance_updated', handleGlobalSync);
+      window.removeEventListener('quotation_finalized', handleGlobalSync);
+      window.removeEventListener('client_updated', handleGlobalSync);
+    };
+  }, [clientIdOrCode]);
 
   // Load client data by ID or Code
   useEffect(() => {
