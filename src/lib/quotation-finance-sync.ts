@@ -1473,26 +1473,69 @@ export async function syncBookedLeadOrFinalQuotation({
         console.error('[syncBookedLeadOrFinalQuotation] Error syncing post production:', ppErr);
       }
 
-      // 8. Update Lead Record with client_id, couple_name, and stage/status
+      // 8. Update Lead Record with client_id, couple_name, stage_id, and status
       try {
+        let bookedStageId: string | null = null;
+        if (forceBookedStatus) {
+          try {
+            const targetWs = lead.workspace_id || workspaceId;
+            const { data: wsStages } = await supabaseClient
+              .from('crm_stages')
+              .select('id, name')
+              .or(`workspace_id.eq.${targetWs},workspace_id.eq.${workspaceId}`);
+
+            const matchedStage = (wsStages || []).find((s: any) =>
+              s.id === 'booked' || String(s.name || '').toLowerCase().includes('book')
+            );
+            if (matchedStage?.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(matchedStage.id)) {
+              bookedStageId = matchedStage.id;
+            }
+          } catch (_) {}
+        }
+
         const updatedPayload = {
           ...(lead.raw_payload || {}),
           couple_name: coupleName.trim(),
           couple_names: coupleName.trim(),
           client_id: workspaceClientId,
-          ...(quotationId ? { final_quotation_id: quotationId } : {})
+          ...(quotationId ? { final_quotation_id: quotationId } : {}),
+          ...(forceBookedStatus ? { stage: 'booked', ...(bookedStageId ? { stage_id: bookedStageId } : {}) } : {})
         };
+
+        const updatePayload: any = {
+          client_id: workspaceClientId,
+          ...(quotationId ? { final_quotation_id: quotationId } : {}),
+          raw_payload: updatedPayload,
+          updated_at: now
+        };
+
+        if (forceBookedStatus) {
+          updatePayload.status = 'closed';
+          if (bookedStageId) {
+            updatePayload.stage_id = bookedStageId;
+          }
+        }
 
         await supabaseClient
           .from('leads')
-          .update({
-            client_id: workspaceClientId,
-            ...(forceBookedStatus ? { status: 'closed', stage: 'booked' } : {}),
-            ...(quotationId ? { final_quotation_id: quotationId } : {}),
-            raw_payload: updatedPayload,
-            updated_at: now
-          })
+          .update(updatePayload)
           .eq('id', leadId);
+
+        // Also ensure quotations table is flagged is_final = true
+        if (quotationId) {
+          try {
+            await supabaseClient
+              .from('quotations')
+              .update({
+                is_final: true,
+                status: 'accepted',
+                updated_at: now
+              })
+              .or(`quotation_number.eq.${quotationId},id.eq.${quotationId}`);
+          } catch (qErr) {
+            console.warn('[syncBookedLeadOrFinalQuotation] quotations sync notice:', qErr);
+          }
+        }
       } catch (leadUpErr) {
         console.error('[syncBookedLeadOrFinalQuotation] Error updating lead payload:', leadUpErr);
       }

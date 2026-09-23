@@ -941,15 +941,22 @@ export default function LeadsPage() {
     if (!isDemoMode) {
       try {
         const sanitizedFields: any = { ...updatedFields, updated_at: new Date().toISOString() };
+        delete sanitizedFields.stage;
+        delete sanitizedFields.client_name;
         
-        // Ensure stage_id is either a valid UUID or set to null if invalid syntax
-        if ('stage_id' in sanitizedFields) {
+        // Ensure stage_id is either a valid UUID or mapped to stages
+        if ('stage_id' in sanitizedFields && sanitizedFields.stage_id) {
           if (!isValidUUID(sanitizedFields.stage_id)) {
-            const matched = stages.find(s => s.id === sanitizedFields.stage_id || s.name === sanitizedFields.stage_id || s.name === sanitizedFields.status);
+            const matched = stages.find(s => 
+              s.id === sanitizedFields.stage_id || 
+              s.name === sanitizedFields.stage_id || 
+              s.name === sanitizedFields.status ||
+              (sanitizedFields.stage_id === 'booked' && s.name?.toLowerCase().includes('book'))
+            );
             if (matched && isValidUUID(matched.id)) {
               sanitizedFields.stage_id = matched.id;
             } else {
-              sanitizedFields.stage_id = null;
+              delete sanitizedFields.stage_id;
             }
           }
         }

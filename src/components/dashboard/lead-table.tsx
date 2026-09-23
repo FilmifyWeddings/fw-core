@@ -720,7 +720,6 @@ export function LeadTable({
     if (hasFinal && onLeadUpdate) {
       onLeadUpdate(leadId, {
         stage_id: bookedStageId,
-        stage: 'booked',
         status: 'closed' as any,
         final_quotation_id: updatedFinalId
       });
@@ -739,13 +738,14 @@ export function LeadTable({
       if (match) return match.id;
     }
     // 2. If lead has final quotation or is booked/closed
+    const leadQuoteSum = quotationSummaryMap[lead.id];
     const isBooked = Boolean(
       lead.final_quotation_id || 
       lead.raw_payload?.final_quotation_id ||
+      leadQuoteSum?.hasFinal ||
       lead.status === 'closed' || 
       (lead.status as string)?.toLowerCase() === 'booked' ||
-      (lead as any).stage === 'booked' ||
-      (typeof lead.stage_id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(lead.stage_id))
+      (lead.raw_payload?.stage === 'booked')
     );
     if (isBooked) {
       const bookedStage = stagesState.find(s => 
@@ -766,7 +766,7 @@ export function LeadTable({
       if (match) return match.id;
     }
     return lead.stage_id || lead.status || '';
-  }, [stagesState]);
+  }, [stagesState, quotationSummaryMap]);
 
   // Columns & Configurations state
   const [columns, setColumns] = useState<ColumnConfig[]>(INITIAL_COLUMNS);

@@ -246,14 +246,14 @@ export async function GET(
     // 1. Fetch lead details to verify lead existence & access
     const { data: lead } = await supabaseAdmin
       .from('leads')
-      .select('id, workspace_id, name, client_name, email, phone, final_quotation_id, raw_payload')
+      .select('id, workspace_id, name, full_name, email, phone, final_quotation_id, raw_payload')
       .eq('id', leadId)
       .maybeSingle();
 
     const effectiveLead = lead || {
       id: leadId,
       name: 'Client',
-      client_name: 'Client',
+      full_name: 'Client',
       email: '',
       phone: '',
       final_quotation_id: null,
@@ -326,8 +326,8 @@ export async function GET(
         effectiveLead.raw_payload?.couple_name ||
         effectiveLead.raw_payload?.couple_names ||
         (effectiveLead as any).couple_names ||
-        (effectiveLead.name && !['client', 'valued client', 'lead'].includes(effectiveLead.name.toLowerCase().trim()) ? effectiveLead.name : '') ||
-        (effectiveLead.client_name && !['client', 'valued client', 'lead'].includes(effectiveLead.client_name.toLowerCase().trim()) ? effectiveLead.client_name : '');
+        ((effectiveLead as any).full_name && !['client', 'valued client', 'lead'].includes((effectiveLead as any).full_name.toLowerCase().trim()) ? (effectiveLead as any).full_name : '') ||
+        (effectiveLead.name && !['client', 'valued client', 'lead'].includes(effectiveLead.name.toLowerCase().trim()) ? effectiveLead.name : '');
 
       const coverCouple = cover.coupleName 
         || (cover.groomName && cover.brideName ? `${cover.groomName} & ${cover.brideName}` : (cover.groomName || cover.brideName || ''));
@@ -383,7 +383,7 @@ export async function GET(
           (doc.template_id && (finalTargetId.includes(doc.template_id) || doc.template_id.includes(finalTargetId)))
         )) ||
         content.is_final === true || 
-        doc.is_final === true || 
+        doc.content_json?.is_final === true || 
         (matchingQuote as any)?.is_final === true || 
         matchingQuote?.status === 'accepted'
       );

@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     const [{ data: lead }, { data: profile }, { data: existingDocs }] = await Promise.all([
       supabaseAdmin
         .from('leads')
-        .select('id, name, client_name, location, raw_payload')
+        .select('id, name, full_name, location, raw_payload')
         .eq('id', leadId)
         .maybeSingle(),
       supabaseAdmin
@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
     const effectiveLead = lead || {
       id: leadId,
       name: clientNameInput,
-      client_name: clientNameInput,
+      full_name: clientNameInput,
       location: 'Mumbai',
       raw_payload: {}
     };
@@ -73,8 +73,8 @@ export async function POST(req: NextRequest) {
       effectiveLead.raw_payload?.couple_name ||
       effectiveLead.raw_payload?.couple_names ||
       (effectiveLead as any).couple_names ||
+      ((effectiveLead as any).full_name && !['client', 'valued client', 'lead'].includes((effectiveLead as any).full_name.toLowerCase().trim()) ? (effectiveLead as any).full_name : '') ||
       (effectiveLead.name && !['client', 'valued client', 'lead'].includes(effectiveLead.name.toLowerCase().trim()) ? effectiveLead.name : '') ||
-      (effectiveLead.client_name && !['client', 'valued client', 'lead'].includes(effectiveLead.client_name.toLowerCase().trim()) ? effectiveLead.client_name : '') ||
       clientNameInput ||
       'Valued Client';
 

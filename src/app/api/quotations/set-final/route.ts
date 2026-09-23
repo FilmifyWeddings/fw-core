@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
     // Fetch current lead details
     const { data: currentLead } = await supabaseAdmin
       .from('leads')
-      .select('id, name, client_name, raw_payload, status, stage_id, workspace_id')
+      .select('id, name, full_name, raw_payload, status, stage_id, workspace_id')
       .eq('id', leadId)
       .maybeSingle();
 
@@ -107,8 +107,8 @@ export async function POST(req: NextRequest) {
       currentLead?.raw_payload?.couple_name ||
       currentLead?.raw_payload?.couple_names ||
       (currentLead as any)?.couple_names ||
-      (currentLead?.name && !['client', 'valued client', 'lead'].includes(currentLead.name.toLowerCase().trim()) ? currentLead.name : '') ||
-      (currentLead?.client_name && !['client', 'valued client', 'lead'].includes(currentLead.client_name.toLowerCase().trim()) ? currentLead.client_name : '');
+      ((currentLead as any)?.full_name && !['client', 'valued client', 'lead'].includes((currentLead as any).full_name.toLowerCase().trim()) ? (currentLead as any).full_name : '') ||
+      (currentLead?.name && !['client', 'valued client', 'lead'].includes(currentLead.name.toLowerCase().trim()) ? currentLead.name : '');
 
     const clientName = finalDoc?.content_json 
       ? extractCoupleNameFromQuotation(finalDoc.content_json, rawLeadCouple)
@@ -118,10 +118,11 @@ export async function POST(req: NextRequest) {
     let bookedStageId: string | null = null;
     let bookedStageName = 'Booked';
     try {
+      const targetWs = currentLead?.workspace_id || userId;
       const { data: wsStages } = await supabaseAdmin
         .from('crm_stages')
         .select('id, name')
-        .eq('workspace_id', currentLead?.workspace_id || userId);
+        .or(`workspace_id.eq.${targetWs},workspace_id.eq.${userId}`);
 
       const matchedStage = (wsStages || []).find((s: any) =>
         s.id === 'booked' || String(s.name || '').toLowerCase().includes('book')
@@ -139,12 +140,12 @@ export async function POST(req: NextRequest) {
           if (shouldUnmark) {
             await supabaseAdmin
               .from('quotations')
-              .update({ status: 'draft', is_final: false, is_finalized: false, updated_at: now })
+              .update({ status: 'draft', is_final: false, updated_at: now })
               .eq('client_id', leadId);
           } else {
             await supabaseAdmin
               .from('quotations')
-              .update({ status: 'draft', is_final: false, is_finalized: false, updated_at: now })
+              .update({ status: 'draft', is_final: false, updated_at: now })
               .eq('client_id', leadId);
 
             const quoteTitle = clientName ? `${clientName} - Final Quotation` : 'Final Quotation';
@@ -167,7 +168,6 @@ export async function POST(req: NextRequest) {
                   couple_names: clientName || undefined,
                   status: 'accepted',
                   is_final: true,
-                  is_finalized: true,
                   updated_at: now
                 })
                 .eq('id', existingQ.id);
@@ -192,7 +192,6 @@ export async function POST(req: NextRequest) {
                   couple_names: clientName || undefined,
                   status: 'accepted',
                   is_final: true,
-                  is_finalized: true,
                   created_at: now,
                   updated_at: now
                 });
@@ -224,7 +223,6 @@ export async function POST(req: NextRequest) {
             if (bookedStageId) {
               updateLeadPayload.stage_id = bookedStageId;
             }
-            // Safely set 'closed' which is 100% compliant with PostgreSQL check constraints ('new', 'contacted', 'warm', 'hot', 'closed', 'lost')
             updateLeadPayload.status = 'closed';
           }
 

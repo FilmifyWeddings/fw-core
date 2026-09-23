@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
         .select('id, client_id, quotation_number, title, couple_names, client_name, status, is_final, public_token, workspace_id, created_at, updated_at'),
       supabaseAdmin
         .from('leads')
-        .select('id, name, client_name, status, stage, stage_id, final_quotation_id, quotation_id, raw_payload')
+        .select('id, name, full_name, status, stage_id, final_quotation_id, quotation_id, raw_payload')
         .or(`workspace_id.eq.${workspaceId},tenant_id.eq.${workspaceId}`)
     ]);
 
@@ -67,10 +67,10 @@ export async function GET(req: NextRequest) {
       const finalId = l.final_quotation_id || l.raw_payload?.final_quotation_id || null;
       const isBooked = (l.status || '').toLowerCase() === 'booked' || 
                        (l.status || '').toLowerCase() === 'closed' ||
-                       (l.stage || '').toLowerCase() === 'booked' ||
+                       (l.raw_payload?.stage || '').toLowerCase() === 'booked' ||
                        (l.stage_id && String(l.stage_id).toLowerCase().includes('book')) ||
                        Boolean(finalId);
-      const coupleName = l.raw_payload?.couple_name || l.raw_payload?.couple_names || (l as any).couple_names || l.client_name || l.name || 'Client';
+      const coupleName = l.raw_payload?.couple_name || l.raw_payload?.couple_names || (l as any).couple_names || (l as any).full_name || l.name || 'Client';
 
       leadMap.set(l.id, {
         name: l.name || 'Client',

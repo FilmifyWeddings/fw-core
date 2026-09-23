@@ -630,6 +630,8 @@ export default function ClientsPage() {
           .from('workspace_clients')
           .update({
             status: 'trash',
+            is_deleted: true,
+            deleted_at: new Date().toISOString(),
             notes: trashedNotes,
             updated_at: new Date().toISOString()
           })
@@ -658,6 +660,7 @@ export default function ClientsPage() {
           return {
             ...c,
             status: 'trash' as any,
+            is_deleted: true,
             notes: (c.notes || '') + ' [status:trash]'
           };
         }
@@ -669,6 +672,7 @@ export default function ClientsPage() {
           return {
             ...c,
             status: 'trash' as any,
+            is_deleted: true,
             notes: (c.notes || '') + ' [status:trash]'
           };
         }
@@ -703,6 +707,8 @@ export default function ClientsPage() {
           .from('workspace_clients')
           .update({
             status: 'active',
+            is_deleted: false,
+            deleted_at: null,
             notes: cleanNotes,
             updated_at: new Date().toISOString()
           })
@@ -720,9 +726,17 @@ export default function ClientsPage() {
           .from('post_production_projects')
           .update({
             overall_status: 'active',
+            notes: cleanNotes,
             updated_at: new Date().toISOString()
           })
           .eq('client_id', clientId);
+
+        try {
+          await supabase
+            .from('fw_projects')
+            .update({ status: 'active', updated_at: new Date().toISOString() })
+            .or(`client_id.eq.${clientId},client_name.ilike.%${client.name.trim()}%`);
+        } catch (_) {}
       }
 
       setClients(prev => prev.map(c => {
@@ -730,6 +744,7 @@ export default function ClientsPage() {
           return {
             ...c,
             status: 'active' as any,
+            is_deleted: false,
             notes: cleanNotes
           };
         }
@@ -741,6 +756,7 @@ export default function ClientsPage() {
           return {
             ...c,
             status: 'active' as any,
+            is_deleted: false,
             notes: cleanNotes
           };
         }
@@ -895,10 +911,30 @@ export default function ClientsPage() {
     setDateScopeEndDate('');
   };
 
+  // Trashed Clients count
+  const trashedClientsCount = useMemo(() => {
+    return clients.filter(c => 
+      (c.status as string) === 'trash' || 
+      (c as any).status === 'trashed' || 
+      (c as any).is_deleted === true || 
+      (c.notes && typeof c.notes === 'string' && c.notes.includes('[status:trash]'))
+    ).length;
+  }, [clients]);
+
+  // Non-trashed clients
+  const nonTrashedClients = useMemo(() => {
+    return clients.filter(c => !(
+      (c.status as string) === 'trash' || 
+      (c as any).status === 'trashed' || 
+      (c as any).is_deleted === true || 
+      (c.notes && typeof c.notes === 'string' && c.notes.includes('[status:trash]'))
+    ));
+  }, [clients]);
+
   // Dynamically recalculate top stats cards from filteredClients only
-  const totalClientsCount = filteredClients.length;
-  const activeClientsCount = filteredClients.filter(c => c.status !== 'completed').length;
-  const completedClientsCount = filteredClients.filter(c => c.status === 'completed').length;
+  const totalClientsCount = nonTrashedClients.length;
+  const activeClientsCount = nonTrashedClients.filter(c => c.status !== 'completed').length;
+  const completedClientsCount = nonTrashedClients.filter(c => c.status === 'completed').length;
   const totalInvoicesCount = filteredClients.reduce((sum, c) => sum + (c.total_package_amount || 0), 0);
   const cashRevenueTotal = filteredClients.reduce((sum, c) => sum + (c.paid_amount || 0), 0);
   const pendingBalanceTotal = Math.max(0, totalInvoicesCount - cashRevenueTotal);
@@ -946,11 +982,16 @@ export default function ClientsPage() {
         </div>
 
         {/* ─────────────────────────────────────────────────────────────
-            TOP STATS CARDS: TOTAL, ACTIVE, COMPLETED
+            TOP STATS CARDS: TOTAL, ACTIVE, COMPLETED, TRASH
         ───────────────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
           {/* Total Clients */}
-          <div className="bg-[#FFFDF9] p-4 sm:p-5 rounded-2xl border border-[#EAE5DA] shadow-xs flex items-center justify-between">
+          <div 
+            onClick={() => setStatusFilter('all')}
+            className={`p-4 sm:p-5 rounded-2xl border shadow-xs flex items-center justify-between cursor-pointer transition ${
+              statusFilter === 'all' ? 'bg-amber-50/50 border-amber-300 ring-2 ring-amber-400/20' : 'bg-[#FFFDF9] hover:bg-slate-50/80 border-[#EAE5DA]'
+            }`}
+          >
             <div className="space-y-1">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
                 Total Clients
@@ -965,7 +1006,12 @@ export default function ClientsPage() {
           </div>
 
           {/* Active Clients */}
-          <div className="bg-[#FFFDF9] p-4 sm:p-5 rounded-2xl border border-[#EAE5DA] shadow-xs flex items-center justify-between">
+          <div 
+            onClick={() => setStatusFilter('active')}
+            className={`p-4 sm:p-5 rounded-2xl border shadow-xs flex items-center justify-between cursor-pointer transition ${
+              statusFilter === 'active' ? 'bg-blue-50/50 border-blue-300 ring-2 ring-blue-400/20' : 'bg-[#FFFDF9] hover:bg-slate-50/80 border-[#EAE5DA]'
+            }`}
+          >
             <div className="space-y-1">
               <span className="text-[11px] font-bold uppercase tracking-wider text-blue-600">
                 Active Clients
@@ -980,7 +1026,12 @@ export default function ClientsPage() {
           </div>
 
           {/* Completed Clients */}
-          <div className="bg-[#FFFDF9] p-4 sm:p-5 rounded-2xl border border-[#EAE5DA] shadow-xs flex items-center justify-between">
+          <div 
+            onClick={() => setStatusFilter('completed')}
+            className={`p-4 sm:p-5 rounded-2xl border shadow-xs flex items-center justify-between cursor-pointer transition ${
+              statusFilter === 'completed' ? 'bg-emerald-50/50 border-emerald-300 ring-2 ring-emerald-400/20' : 'bg-[#FFFDF9] hover:bg-slate-50/80 border-[#EAE5DA]'
+            }`}
+          >
             <div className="space-y-1">
               <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-600">
                 Completed Clients
@@ -993,7 +1044,147 @@ export default function ClientsPage() {
               <Check className="w-5 h-5" />
             </div>
           </div>
+
+          {/* Trashed Clients */}
+          <div 
+            onClick={() => setStatusFilter(statusFilter === 'trash' ? 'all' : 'trash')}
+            className={`p-4 sm:p-5 rounded-2xl border shadow-xs flex items-center justify-between cursor-pointer transition ${
+              statusFilter === 'trash' 
+                ? 'bg-rose-50 border-rose-300 ring-2 ring-rose-400/20' 
+                : trashedClientsCount > 0 
+                  ? 'bg-rose-50/40 hover:bg-rose-50/80 border-rose-200' 
+                  : 'bg-[#FFFDF9] hover:bg-slate-50/80 border-[#EAE5DA]'
+            }`}
+          >
+            <div className="space-y-1">
+              <span className={`text-[11px] font-bold uppercase tracking-wider ${trashedClientsCount > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                Trash Directory
+              </span>
+              <h3 suppressHydrationWarning className={`text-2xl font-black tracking-tight ${trashedClientsCount > 0 ? 'text-rose-700' : 'text-slate-500'}`}>
+                {trashedClientsCount}
+              </h3>
+            </div>
+            <div className={`w-11 h-11 rounded-xl border flex items-center justify-center ${
+              trashedClientsCount > 0 ? 'bg-rose-100 text-rose-700 border-rose-200' : 'bg-slate-100 text-slate-400 border-slate-200'
+            }`}>
+              <Trash2 className="w-5 h-5" />
+            </div>
+          </div>
         </div>
+
+        {/* ─────────────────────────────────────────────────────────────
+            VIEW TABS (ACTIVE, COMPLETED, ALL, TRASH)
+        ───────────────────────────────────────────────────────────── */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#EAE5DA] pb-2">
+          <div className="flex items-center gap-2 overflow-x-auto py-1">
+            <button
+              type="button"
+              onClick={() => setStatusFilter('active')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
+                statusFilter === 'active'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-white hover:bg-slate-100 text-slate-700 border border-[#EAE5DA]'
+              }`}
+            >
+              <span>Active Clients</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                statusFilter === 'active' ? 'bg-blue-700 text-white' : 'bg-slate-100 text-slate-600'
+              }`}>
+                {activeClientsCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStatusFilter('completed')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
+                statusFilter === 'completed'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'bg-white hover:bg-slate-100 text-slate-700 border border-[#EAE5DA]'
+              }`}
+            >
+              <span>Completed</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                statusFilter === 'completed' ? 'bg-emerald-700 text-white' : 'bg-slate-100 text-slate-600'
+              }`}>
+                {completedClientsCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStatusFilter('all')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
+                statusFilter === 'all'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-white hover:bg-slate-100 text-slate-700 border border-[#EAE5DA]'
+              }`}
+            >
+              <span>All Clients</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                statusFilter === 'all' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'
+              }`}>
+                {totalClientsCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStatusFilter('trash')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
+                statusFilter === 'trash'
+                  ? 'bg-rose-600 text-white shadow-xs'
+                  : trashedClientsCount > 0
+                    ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300'
+                    : 'bg-white hover:bg-slate-100 text-slate-500 border border-[#EAE5DA]'
+              }`}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Trash</span>
+              {trashedClientsCount > 0 && (
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                  statusFilter === 'trash' ? 'bg-rose-700 text-white' : 'bg-rose-200 text-rose-800'
+                }`}>
+                  {trashedClientsCount}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* ── TRASH BANNER ── */}
+        {statusFilter === 'trash' && (
+          <div className="bg-rose-50/90 border border-rose-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-xs font-black text-rose-900 uppercase tracking-wider">
+                  Trash Directory ({trashedClientsCount} {trashedClientsCount === 1 ? 'client' : 'clients'})
+                </h4>
+                <p className="text-xs text-rose-700 font-medium">
+                  Deleted clients are safely kept here. Click &quot;Restore Client&quot; on any card below to recover it back to the active directory!
+                </p>
+              </div>
+            </div>
+            {trashedClientsCount > 0 && (
+              <button
+                type="button"
+                onClick={async () => {
+                  const trashed = clients.filter(c => (c.status as string) === 'trash' || (c.notes && c.notes.includes('[status:trash]')) || (c as any).is_deleted);
+                  for (const cl of trashed) {
+                    await handleRestoreClient(cl);
+                  }
+                }}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition cursor-pointer shadow-xs shrink-0 self-start sm:self-auto"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Restore All ({trashedClientsCount})</span>
+              </button>
+            )}
+          </div>
+        )}
 
         {/* ─────────────────────────────────────────────────────────────
             SEARCH & UNIFIED FILTERS TRIGGER
@@ -1242,13 +1433,18 @@ export default function ClientsPage() {
               const paidAmt = fin?.received_amount ?? client.paid_amount ?? 0;
               const dueAmount = fin?.pending_amount ?? Math.max(0, totalPkg - paidAmt);
               const isPaidFull = paidAmt >= totalPkg && totalPkg > 0;
+              const isClientTrashed = (client.status as string) === 'trash' || (client as any).status === 'trashed' || (client as any).is_deleted === true || (client.notes && typeof client.notes === 'string' && client.notes.includes('[status:trash]'));
 
               return (
                 <motion.div
                   key={client.id}
                   layout
                   onClick={() => router.push(`/workspace/clients/${client.id}`)}
-                  className="bg-[#FFFDF9] hover:bg-[#FFFBF2] rounded-2xl border border-[#EAE5DA] hover:border-amber-400/80 p-4 sm:p-5 shadow-2xs transition-all cursor-pointer grid grid-cols-1 lg:grid-cols-12 gap-4 items-center group"
+                  className={`rounded-2xl border p-4 sm:p-5 shadow-2xs transition-all cursor-pointer grid grid-cols-1 lg:grid-cols-12 gap-4 items-center group ${
+                    isClientTrashed
+                      ? 'bg-rose-50/20 hover:bg-rose-50/40 border-rose-200 hover:border-rose-300'
+                      : 'bg-[#FFFDF9] hover:bg-[#FFFBF2] border-[#EAE5DA] hover:border-amber-400/80'
+                  }`}
                 >
                   {/* Left (Col 1-5): Client Initials Avatar + Name + Contacts + Overdue Badge */}
                   <div className="lg:col-span-5 flex items-center gap-4 min-w-0">
@@ -1371,26 +1567,33 @@ export default function ClientsPage() {
                       </p>
                     </div>
 
-                    {/* Active / Completed Interactive Dropdown */}
-                    <ClientStatusDropdown
-                      status={client.status}
-                      clientId={client.id}
-                      onStatusChange={(newStatus) => handleUpdateClientStatus(client.id, newStatus)}
-                    />
+                    {/* Trashed Badge or Active/Completed Interactive Dropdown */}
+                    {isClientTrashed ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black bg-rose-50 text-rose-700 border border-rose-200 shrink-0">
+                        <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                        Trash
+                      </span>
+                    ) : (
+                      <ClientStatusDropdown
+                        status={client.status}
+                        clientId={client.id}
+                        onStatusChange={(newStatus) => handleUpdateClientStatus(client.id, newStatus)}
+                      />
+                    )}
 
                     {/* Soft Delete / Restore Action */}
-                    {(client.status as string) === 'trash' || (client as any).status === 'trashed' || (client as any).is_deleted === true || (client.notes && typeof client.notes === 'string' && client.notes.includes('[status:trash]')) ? (
+                    {isClientTrashed ? (
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           handleRestoreClient(client);
                         }}
-                        className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-extrabold text-[11px] border border-emerald-200 transition cursor-pointer flex items-center gap-1 shadow-2xs shrink-0"
-                        title="Restore Client"
+                        className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black text-xs border border-emerald-500 transition-all cursor-pointer flex items-center gap-1.5 shadow-xs shrink-0"
+                        title="Restore Client back to Active Directory"
                       >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                        <span>Restore</span>
+                        <RefreshCw className="w-3.5 h-3.5 text-white" />
+                        <span>Restore Client</span>
                       </button>
                     ) : (
                       <button
