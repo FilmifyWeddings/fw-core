@@ -245,6 +245,81 @@ export async function fetchVendorAlbumOrders(
       console.warn('[vendorDeliverablesService] Deliverables auto-sync error:', syncErr);
     }
 
+    // AUTO-SYNC 1.2: Also check post_production_projects JSON deliverables
+    try {
+      const { data: allProjects } = await supabaseAdmin
+        .from('post_production_projects')
+        .select('id, client_id, deliverables');
+
+      if (allProjects && allProjects.length > 0) {
+        const clientIds = [...new Set(allProjects.map((p: any) => p.client_id).filter(Boolean))];
+        const { data: clients } = await supabaseAdmin
+          .from('workspace_clients')
+          .select('id, name')
+          .in('id', clientIds);
+        const cMap = new Map<string, string>();
+        (clients || []).forEach((c: any) => cMap.set(c.id, c.name));
+
+        for (const proj of allProjects) {
+          const clientName = cMap.get(proj.client_id) || 'Valued Couple';
+          const delivList = Array.isArray(proj.deliverables) ? proj.deliverables : [];
+          for (const d of delivList) {
+            const matchesMember = 
+              (d.assigned_member_id && d.assigned_member_id === vendorId) ||
+              (d.assigned_to && vendorName && d.assigned_to.toLowerCase().includes(vendorName.toLowerCase()));
+
+            if (matchesMember) {
+              const cat = detectDeliverableCategory(d.category, d.title);
+              const exists = orderList.some(
+                o => o.deliverable_id === d.id || (d.id && o.id === `order_${String(d.id).replace('deliv_', '')}`)
+              );
+              if (!exists) {
+                const rawSpecs = String(d.specs || d.count || '');
+                const sheetCount = parseInt(rawSpecs.replace(/\D/g, '')) || (cat === 'album_design' || cat === 'album_printing' ? 30 : 1);
+                let defaultRate = 2500;
+                if (cat === 'video_editing') defaultRate = 4500;
+                else if (cat === 'photo_editing') defaultRate = 3000;
+                else if (cat === 'album_design') defaultRate = sheetCount * 150;
+                else if (cat === 'album_printing') defaultRate = sheetCount * 220;
+
+                const newOrder: VendorAlbumOrder = {
+                  id: `order_${String(d.id || Math.random().toString(36).substring(7)).replace('deliv_', '')}`,
+                  workspace_id: workspaceId || 'ws_default',
+                  partner_id: vendorId,
+                  partner_name: d.assigned_to || vendorName || 'Team Specialist',
+                  partner_email: vendorEmail || '',
+                  client_name: clientName,
+                  project_id: proj.id,
+                  deliverable_id: d.id,
+                  category: cat,
+                  item_title: d.title || 'Deliverable Task',
+                  specs: rawSpecs || `${sheetCount} Sheets`,
+                  service_type: cat === 'video_editing' ? 'Video Editing' : cat === 'photo_editing' ? 'Photo Editing' : cat === 'album_printing' ? 'Album Printing' : 'Album Designing',
+                  album_type: d.title || (cat === 'video_editing' ? 'Wedding Film Edit' : cat === 'photo_editing' ? 'Photo Retouching' : 'Signature Photobook'),
+                  sheet_count: sheetCount,
+                  page_count: sheetCount * 2,
+                  rate_per_sheet: cat === 'album_design' ? 150 : 0,
+                  total_amount: defaultRate,
+                  paid_amount: 0,
+                  balance_amount: defaultRate,
+                  order_status: normalizeVendorOrderStatus(d.status),
+                  payment_status: 'PENDING',
+                  order_date: new Date().toISOString().split('T')[0],
+                  due_date: d.due_date ? new Date(d.due_date).toISOString().split('T')[0] : '',
+                  notes: d.notes || '',
+                  comments: [],
+                  created_at: d.created_at || new Date().toISOString()
+                };
+                orderList.push(newOrder);
+              }
+            }
+          }
+        }
+      }
+    } catch (jsonErr) {
+      console.warn('[vendorDeliverablesService] JSON deliverables sync error:', jsonErr);
+    }
+
     // AUTO-SYNC 2: Check fw_assignments and crew_assignments_finance for Shoots assigned to this member
     try {
       const { data: assignments } = await supabaseAdmin
@@ -294,6 +369,56 @@ export async function fetchVendorAlbumOrders(
       }
     } catch (shootErr) {
       console.warn('[vendorDeliverablesService] Shoot assignments sync error:', shootErr);
+    }
+
+    // AUTO-SYNC 3: Check team_event_payouts for any shoot payouts recorded for this member
+    try {
+      const { data: payouts } = await supabaseAdmin
+        .from('team_event_payouts')
+        .select('*')
+        .eq('member_id', vendorId);
+
+      if (payouts && payouts.length > 0) {
+        for (const p of payouts) {
+          const shootId = `shoot_payout_${p.id}`;
+          const exists = orderList.some(o => o.id === shootId || (o.category === 'shoot' && o.client_name === p.client_name && o.item_title === (p.event_name || p.role)));
+          if (!exists) {
+            const agreed = Number(p.agreed_amount || 0);
+            const paid = Number(p.paid_amount || 0);
+            const balance = Number(p.balance_amount || Math.max(0, agreed - paid));
+            const shootOrder: VendorAlbumOrder = {
+              id: shootId,
+              workspace_id: workspaceId || p.workspace_id || 'ws_default',
+              partner_id: vendorId,
+              partner_name: vendorName || p.member_name || 'Freelance Specialist',
+              partner_email: vendorEmail || '',
+              client_name: p.client_name || 'Client Wedding',
+              project_id: p.project_id || '',
+              category: 'shoot',
+              item_title: p.event_name ? `${p.event_name} (${p.role || 'Shoot'})` : (p.role || 'Wedding Shoot'),
+              specs: p.event_date ? `Shoot Date: ${p.event_date}` : 'Full Day Shoot',
+              service_type: p.role || 'Freelance Shoot',
+              album_type: p.event_name || 'Wedding Shoot',
+              sheet_count: 1,
+              page_count: 1,
+              rate_per_sheet: 0,
+              total_amount: agreed,
+              paid_amount: paid,
+              balance_amount: balance,
+              order_status: p.status === 'PAID' || balance === 0 ? 'Completed' : 'In Progress',
+              payment_status: balance === 0 && agreed > 0 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'PENDING',
+              order_date: p.event_date || p.created_at || new Date().toISOString().split('T')[0],
+              due_date: p.event_date || '',
+              notes: p.notes || '',
+              comments: [],
+              created_at: p.created_at || new Date().toISOString()
+            };
+            orderList.push(shootOrder);
+          }
+        }
+      }
+    } catch (payoutErr) {
+      console.warn('[vendorDeliverablesService] team_event_payouts sync error:', payoutErr);
     }
 
     if (orderList.length > 0 && typeof window !== 'undefined') {

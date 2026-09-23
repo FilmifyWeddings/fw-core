@@ -43,15 +43,14 @@ interface VendorAlbumDeliverablesModalProps {
   onOpenSalaryDrawer?: (member: any) => void;
 }
 
-export type HubCategoryTab = 'all' | 'shoot' | 'video_editing' | 'photo_editing' | 'album_design' | 'album_printing';
+export type HubCategoryTab = 'shoot' | 'video_editing' | 'photo_editing' | 'album_design' | 'album_printing';
 
-const CATEGORY_TABS: Array<{ id: HubCategoryTab; label: string; icon: string; badgeColor: string }> = [
-  { id: 'all', label: 'All Tasks', icon: '⚡', badgeColor: 'bg-stone-100 text-stone-800 border-stone-200' },
-  { id: 'shoot', label: 'Shoots', icon: '📸', badgeColor: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
-  { id: 'video_editing', label: 'Video Editing', icon: '🎬', badgeColor: 'bg-sky-50 text-sky-800 border-sky-200' },
-  { id: 'photo_editing', label: 'Photo Editing', icon: '✨', badgeColor: 'bg-purple-50 text-purple-800 border-purple-200' },
-  { id: 'album_design', label: 'Album Designing', icon: '🎨', badgeColor: 'bg-amber-50 text-amber-800 border-amber-200' },
-  { id: 'album_printing', label: 'Album Printing', icon: '📖', badgeColor: 'bg-indigo-50 text-indigo-800 border-indigo-200' },
+const CATEGORY_TABS_CONFIG: Array<{ id: HubCategoryTab; label: string; icon: string }> = [
+  { id: 'shoot', label: 'Shoots', icon: '📸' },
+  { id: 'video_editing', label: 'Video Editing', icon: '🎬' },
+  { id: 'photo_editing', label: 'Photo Editing', icon: '✨' },
+  { id: 'album_design', label: 'Album Designing', icon: '🎨' },
+  { id: 'album_printing', label: 'Album Printing', icon: '📖' },
 ];
 
 const STATUS_COLOR_MAP: Record<string, { bg: string; text: string; border: string; dot: string }> = {
@@ -89,8 +88,8 @@ export default function VendorAlbumDeliverablesModal({
   const [endDate, setEndDate] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
 
-  // Active Category Tab
-  const [activeCategoryTab, setActiveCategoryTab] = useState<HubCategoryTab>('all');
+  // Active Category Tab (NO "all" tab)
+  const [activeCategoryTab, setActiveCategoryTab] = useState<HubCategoryTab>('shoot');
 
   // Selected orders for bulk invoice/statement generation
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
@@ -101,12 +100,12 @@ export default function VendorAlbumDeliverablesModal({
 
   // Add / Edit Job Modal States
   const [isAddJobOpen, setIsAddJobOpen] = useState(false);
-  const [newCategory, setNewCategory] = useState<HubCategoryTab>('album_design');
+  const [newCategory, setNewCategory] = useState<HubCategoryTab>('shoot');
   const [newClientName, setNewClientName] = useState('');
-  const [newAlbumType, setNewAlbumType] = useState('Signature Photobook');
-  const [newSpecs, setNewSpecs] = useState('30 Sheets (60 Pages)');
+  const [newAlbumType, setNewAlbumType] = useState('Wedding Shoot');
+  const [newSpecs, setNewSpecs] = useState('Full Day Shoot');
   const [newSheets, setNewSheets] = useState('30');
-  const [newFee, setNewFee] = useState('4500');
+  const [newFee, setNewFee] = useState('5000');
   const [newDueDate, setNewDueDate] = useState('');
   const [newPdfUrl, setNewPdfUrl] = useState('');
   const [newNotes, setNewNotes] = useState('');
@@ -129,26 +128,6 @@ export default function VendorAlbumDeliverablesModal({
   const isFreelancer = vendor?.primary_type === 'FREELANCER' || (vendor?.member_types || []).includes('FREELANCER');
   const isInHouse = vendor?.primary_type === 'IN_HOUSE' || (vendor?.member_types || []).includes('IN_HOUSE');
   const isPartner = vendor?.primary_type === 'PARTNER' || (vendor?.member_types || []).includes('PARTNER') || vendor?.type === 'partner';
-
-  // Smart Adaptive Tab Selection on modal open
-  useEffect(() => {
-    if (isOpen && vendor) {
-      const roleStr = `${vendor.primary_role || ''} ${(vendor.roles || []).join(' ')}`.toLowerCase();
-      if (roleStr.includes('video editor') || roleStr.includes('editor') && !roleStr.includes('photo')) {
-        setActiveCategoryTab('video_editing');
-      } else if (roleStr.includes('photo editor') || roleStr.includes('retouch')) {
-        setActiveCategoryTab('photo_editing');
-      } else if (roleStr.includes('album design')) {
-        setActiveCategoryTab('album_design');
-      } else if (roleStr.includes('print') || roleStr.includes('lab')) {
-        setActiveCategoryTab('album_printing');
-      } else if (isFreelancer && !isPartner) {
-        setActiveCategoryTab('shoot');
-      } else {
-        setActiveCategoryTab('all');
-      }
-    }
-  }, [isOpen, vendor, isFreelancer, isPartner]);
 
   // Load orders on open
   const loadOrders = useCallback(async () => {
@@ -176,7 +155,6 @@ export default function VendorAlbumDeliverablesModal({
   // Live Category Counts
   const categoryCounts = useMemo(() => {
     return {
-      all: orders.length,
       shoot: orders.filter(o => o.category === 'shoot').length,
       video_editing: orders.filter(o => o.category === 'video_editing').length,
       photo_editing: orders.filter(o => o.category === 'photo_editing').length,
@@ -184,6 +162,60 @@ export default function VendorAlbumDeliverablesModal({
       album_printing: orders.filter(o => o.category === 'album_printing' || o.service_type?.includes('Print')).length,
     };
   }, [orders]);
+
+  // ── DYNAMIC VISIBLE TABS (Hide tabs with 0 tasks, except Shoot/Printing if applicable) ──
+  const visibleTabs = useMemo(() => {
+    const tabs: Array<{ id: HubCategoryTab; label: string; icon: string; count: number }> = [];
+
+    // 1. Shoots: Show if has shoots OR if member role/type is photographer, cinematographer, freelancer, in-house
+    const shootCount = categoryCounts.shoot;
+    const isShootRole = /photo|cinema|drone|traditional|camera|shoot/i.test(vendor.primary_role || '') || isFreelancer || isInHouse;
+    if (shootCount > 0 || isShootRole) {
+      tabs.push({ id: 'shoot', label: 'Shoots', icon: '📸', count: shootCount });
+    }
+
+    // 2. Video Editing: Show ONLY if member has video editing tasks OR role is Video Editor!
+    const videoCount = categoryCounts.video_editing;
+    if (videoCount > 0 || /video\s*editor/i.test(vendor.primary_role || '')) {
+      tabs.push({ id: 'video_editing', label: 'Video Editing', icon: '🎬', count: videoCount });
+    }
+
+    // 3. Photo Editing: Show ONLY if member has photo editing tasks OR role is Photo Editor!
+    const photoCount = categoryCounts.photo_editing;
+    if (photoCount > 0 || /photo\s*editor|retouch/i.test(vendor.primary_role || '')) {
+      tabs.push({ id: 'photo_editing', label: 'Photo Editing', icon: '✨', count: photoCount });
+    }
+
+    // 4. Album Designing: Show ONLY if member has album designing tasks OR role is Album Designer!
+    const albumCount = categoryCounts.album_design;
+    if (albumCount > 0 || /album\s*design/i.test(vendor.primary_role || '')) {
+      tabs.push({ id: 'album_design', label: 'Album Designing', icon: '🎨', count: albumCount });
+    }
+
+    // 5. Album Printing: Always visible or show if has printing orders / printing lab / partner
+    const printCount = categoryCounts.album_printing;
+    if (printCount > 0 || /print|lab|binding/i.test(vendor.primary_role || '') || isPartner) {
+      tabs.push({ id: 'album_printing', label: 'Album Printing', icon: '📖', count: printCount });
+    }
+
+    // Safety fallback
+    if (tabs.length === 0) {
+      tabs.push({ id: 'shoot', label: 'Shoots', icon: '📸', count: shootCount });
+      tabs.push({ id: 'album_printing', label: 'Album Printing', icon: '📖', count: printCount });
+    }
+
+    return tabs;
+  }, [categoryCounts, vendor.primary_role, isFreelancer, isInHouse, isPartner]);
+
+  // Ensure activeCategoryTab is always a visible tab with items
+  useEffect(() => {
+    if (isOpen && visibleTabs.length > 0) {
+      if (!visibleTabs.some(t => t.id === activeCategoryTab)) {
+        const firstWithItems = visibleTabs.find(t => t.count > 0) || visibleTabs[0];
+        setActiveCategoryTab(firstWithItems.id);
+      }
+    }
+  }, [isOpen, visibleTabs, activeCategoryTab]);
 
   // Compute Deadlines & Overdue Status
   const getDeadlineBadge = (dueDateStr?: string, status?: string) => {
@@ -229,14 +261,12 @@ export default function VendorAlbumDeliverablesModal({
     );
   };
 
-  // Filtered Orders for Current Tab & Search
+  // Filtered Orders for Current Tab
   const filteredOrders = useMemo(() => {
     return orders.filter(o => {
-      // 1. Category Tab Filter
-      if (activeCategoryTab !== 'all') {
-        const itemCat = o.category || detectDeliverableCategory(undefined, o.album_type || o.item_title);
-        if (itemCat !== activeCategoryTab) return false;
-      }
+      // 1. Strict Category Match
+      const itemCat = o.category || detectDeliverableCategory(undefined, o.album_type || o.item_title);
+      if (itemCat !== activeCategoryTab) return false;
 
       // 2. Search Query
       if (searchQuery) {
@@ -247,8 +277,8 @@ export default function VendorAlbumDeliverablesModal({
         if (!matchesClient && !matchesAlbum && !matchesSpecs) return false;
       }
 
-      // 3. Status Filter
-      if (statusFilter !== 'All' && o.order_status !== statusFilter) {
+      // 3. Status Filter (Deliverables only)
+      if (activeCategoryTab !== 'shoot' && statusFilter !== 'All' && o.order_status !== statusFilter) {
         return false;
       }
 
@@ -297,7 +327,7 @@ export default function VendorAlbumDeliverablesModal({
     }
   };
 
-  // Change Status Handler with Immediate Bi-Directional Post-Production Sync
+  // Change Status Handler with Immediate Bi-Directional Post-Production Sync (for non-shoots)
   const handleStatusChange = async (order: VendorAlbumOrder, nextStatus: string) => {
     const updated = { ...order, order_status: nextStatus };
     setOrders(prev => prev.map(o => o.id === order.id ? updated : o));
@@ -312,8 +342,8 @@ export default function VendorAlbumDeliverablesModal({
   // Add / Save New Assignment
   const handleSaveNewJob = async () => {
     if (!newClientName.trim()) return;
-    const sheetNum = parseInt(newSheets, 10) || 30;
-    const totalFeeNum = Number(newFee) || (newCategory === 'album_design' ? sheetNum * 150 : 4500);
+    const sheetNum = parseInt(newSheets, 10) || (newCategory === 'album_design' || newCategory === 'album_printing' ? 30 : 1);
+    const totalFeeNum = Number(newFee) || (newCategory === 'album_design' ? sheetNum * 150 : 5000);
 
     const payload: Partial<VendorAlbumOrder> = {
       workspace_id: workspaceId,
@@ -321,17 +351,17 @@ export default function VendorAlbumDeliverablesModal({
       partner_name: vendor.name,
       partner_email: vendor.email || '',
       client_name: newClientName.trim(),
-      category: newCategory === 'all' ? 'album_design' : newCategory,
-      item_title: newAlbumType || 'Creative Deliverable',
-      album_type: newAlbumType || 'Creative Deliverable',
-      specs: newSpecs.trim() || `${sheetNum} Sheets (${sheetNum * 2} Pages)`,
+      category: newCategory,
+      item_title: newAlbumType || (newCategory === 'shoot' ? 'Wedding Shoot' : 'Creative Task'),
+      album_type: newAlbumType || (newCategory === 'shoot' ? 'Wedding Shoot' : 'Creative Task'),
+      specs: newSpecs.trim() || (newCategory === 'shoot' ? 'Full Day Shoot' : `${sheetNum} Sheets`),
       sheet_count: sheetNum,
       page_count: sheetNum * 2,
       rate_per_sheet: newCategory === 'album_design' ? Math.round(totalFeeNum / sheetNum) : 0,
       total_amount: totalFeeNum,
       paid_amount: 0,
       balance_amount: totalFeeNum,
-      order_status: 'Pending Design',
+      order_status: newCategory === 'shoot' ? 'In Progress' : 'Pending Design',
       payment_status: 'PENDING',
       due_date: newDueDate || '',
       pdf_proof_url: newPdfUrl.trim() || '',
@@ -346,6 +376,7 @@ export default function VendorAlbumDeliverablesModal({
     const json = await res.json();
     if (json.success && json.order) {
       setOrders(prev => [json.order, ...prev]);
+      setActiveCategoryTab(newCategory);
       setIsAddJobOpen(false);
       setNewClientName('');
       setNewDueDate('');
@@ -367,6 +398,9 @@ export default function VendorAlbumDeliverablesModal({
       if (data.success && data.order) {
         setOrders(prev => prev.map(o => o.id === data.order.id ? data.order : o));
         setEditingOrder(null);
+      } else {
+        setOrders(prev => prev.map(o => o.id === editingOrder.id ? editingOrder : o));
+        setEditingOrder(null);
       }
     } catch (err) {
       console.warn('Edit save error:', err);
@@ -377,7 +411,6 @@ export default function VendorAlbumDeliverablesModal({
   const handleDeleteOrder = async (orderId: string) => {
     if (!confirm('Are you sure you want to remove this assignment?')) return;
     setOrders(prev => prev.filter(o => o.id !== orderId));
-    // Optional backend delete call
   };
 
   // Record Payment Submit
@@ -408,12 +441,13 @@ export default function VendorAlbumDeliverablesModal({
         setPayAmount('');
         setPayRef('');
       } else {
-        // Fallback update locally
+        const newPaid = (paymentTarget.paid_amount || 0) + amountNum;
+        const newBal = Math.max(0, paymentTarget.total_amount - newPaid);
         const updated = {
           ...paymentTarget,
-          paid_amount: (paymentTarget.paid_amount || 0) + amountNum,
-          balance_amount: Math.max(0, paymentTarget.total_amount - ((paymentTarget.paid_amount || 0) + amountNum)),
-          payment_status: ((paymentTarget.paid_amount || 0) + amountNum >= paymentTarget.total_amount ? 'PAID' : 'PARTIAL') as any
+          paid_amount: newPaid,
+          balance_amount: newBal,
+          payment_status: (newBal === 0 ? 'PAID' : 'PARTIAL') as any
         };
         setOrders(prev => prev.map(o => o.id === paymentTarget.id ? updated : o));
         setPaymentTarget(null);
@@ -460,7 +494,7 @@ export default function VendorAlbumDeliverablesModal({
       order_id: o.id,
       client_name: o.client_name,
       album_type: o.item_title || o.album_type,
-      category: o.category || 'album_design',
+      category: o.category || 'shoot',
       specs: o.specs || `${o.sheet_count} Sheets`,
       sheet_count: o.sheet_count,
       page_count: o.page_count,
@@ -590,7 +624,10 @@ export default function VendorAlbumDeliverablesModal({
 
               <button
                 type="button"
-                onClick={() => setIsAddJobOpen(!isAddJobOpen)}
+                onClick={() => {
+                  setNewCategory(activeCategoryTab);
+                  setIsAddJobOpen(!isAddJobOpen);
+                }}
                 className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-black transition flex items-center gap-1.5 cursor-pointer shadow-xs"
               >
                 <Plus className="w-3.5 h-3.5 stroke-[3]" />
@@ -607,17 +644,16 @@ export default function VendorAlbumDeliverablesModal({
             </div>
           </div>
 
-          {/* Categorized Segregated Navigation Menu / Tabs */}
+          {/* Categorized Segregated Navigation Menu / Tabs (DYNAMIC: Hides 0-count unassigned tabs!) */}
           <div className="px-4 py-2.5 bg-[#FAF8F5] border-b border-amber-200/80 flex items-center gap-1.5 overflow-x-auto scrollbar-none">
-            {CATEGORY_TABS.map(tab => {
-              const count = categoryCounts[tab.id];
+            {visibleTabs.map(tab => {
               const isActive = activeCategoryTab === tab.id;
               return (
                 <button
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveCategoryTab(tab.id)}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition flex items-center gap-2 whitespace-nowrap cursor-pointer shadow-2xs ${
+                  className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 whitespace-nowrap cursor-pointer shadow-2xs ${
                     isActive
                       ? 'bg-amber-500 text-white shadow-xs'
                       : 'bg-white hover:bg-amber-50 text-stone-700 border border-stone-200/80'
@@ -625,10 +661,10 @@ export default function VendorAlbumDeliverablesModal({
                 >
                   <span>{tab.icon}</span>
                   <span>{tab.label}</span>
-                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                  <span className={`px-2 py-0.2 rounded-full text-[10px] font-black ${
                     isActive ? 'bg-amber-700/60 text-white' : 'bg-stone-100 text-stone-600'
                   }`}>
-                    {count}
+                    {tab.count}
                   </span>
                 </button>
               );
@@ -636,38 +672,28 @@ export default function VendorAlbumDeliverablesModal({
           </div>
 
           {/* Top 3D Creamy KPI Overview Strip for Active View */}
-          <div className="p-3 sm:p-4 grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-2.5 bg-amber-50/70 border-b border-amber-200/80">
+          <div className="p-3 sm:p-4 grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-2.5 bg-amber-50/70 border-b border-amber-200/80">
             {/* 1. Total Jobs */}
             <div className="p-2.5 rounded-2xl bg-white border border-amber-200/90 shadow-2xs">
               <span className="text-[9px] font-black uppercase tracking-wider text-stone-400 block">
-                Total Jobs ({activeCategoryTab === 'all' ? 'All' : activeCategoryTab})
+                Total {visibleTabs.find(t => t.id === activeCategoryTab)?.label || 'Assignments'}
               </span>
               <span className="text-sm sm:text-base font-black text-amber-950 font-mono mt-0.5 block">
-                {tabTotalCount}
+                {tabTotalCount} Jobs
               </span>
             </div>
 
-            {/* 2. Overdue / Due Alert */}
-            <div className={`p-2.5 rounded-2xl bg-white border shadow-2xs ${tabOverdueCount > 0 ? 'border-rose-300 bg-rose-50/30' : 'border-amber-200/90'}`}>
-              <span className={`text-[9px] font-black uppercase tracking-wider block ${tabOverdueCount > 0 ? 'text-rose-600' : 'text-stone-400'}`}>
-                Overdue Tasks
-              </span>
-              <span className={`text-sm sm:text-base font-black font-mono mt-0.5 block ${tabOverdueCount > 0 ? 'text-rose-700 animate-pulse' : 'text-stone-700'}`}>
-                {tabOverdueCount} Overdue
-              </span>
-            </div>
-
-            {/* 3. Total Fee */}
+            {/* 2. Done Price / Total Agreed */}
             <div className="p-2.5 rounded-2xl bg-white border border-amber-200/90 shadow-2xs">
               <span className="text-[9px] font-black uppercase tracking-wider text-stone-400 block">
-                Agreed Commercials
+                Agreed Done Price
               </span>
               <span className="text-sm sm:text-base font-black text-stone-900 font-mono mt-0.5 block">
                 ₹{tabFeeSum.toLocaleString('en-IN')}
               </span>
             </div>
 
-            {/* 4. Total Paid */}
+            {/* 3. Total Paid */}
             <div className="p-2.5 rounded-2xl bg-white border border-emerald-200/90 shadow-2xs">
               <span className="text-[9px] font-black uppercase tracking-wider text-emerald-700 block">
                 Total Paid
@@ -677,8 +703,8 @@ export default function VendorAlbumDeliverablesModal({
               </span>
             </div>
 
-            {/* 5. Balance Due */}
-            <div className={`p-2.5 rounded-2xl bg-white border shadow-2xs col-span-2 sm:col-span-1 ${tabBalanceDue > 0 ? 'border-rose-300 bg-rose-50/20' : 'border-emerald-200/90'}`}>
+            {/* 4. Balance Due */}
+            <div className={`p-2.5 rounded-2xl bg-white border shadow-2xs ${tabBalanceDue > 0 ? 'border-rose-300 bg-rose-50/20' : 'border-emerald-200/90'}`}>
               <span className={`text-[9px] font-black uppercase tracking-wider block ${tabBalanceDue > 0 ? 'text-rose-700' : 'text-stone-400'}`}>
                 Pending Balance
               </span>
@@ -713,7 +739,26 @@ export default function VendorAlbumDeliverablesModal({
                     <label className="text-[10px] font-bold text-stone-500 block mb-1">Category</label>
                     <select
                       value={newCategory}
-                      onChange={(e) => setNewCategory(e.target.value as any)}
+                      onChange={(e) => {
+                        const cat = e.target.value as any;
+                        setNewCategory(cat);
+                        if (cat === 'shoot') {
+                          setNewAlbumType('Wedding Shoot');
+                          setNewSpecs('Full Day Shoot');
+                        } else if (cat === 'album_design') {
+                          setNewAlbumType('Signature Photobook');
+                          setNewSpecs('30 Sheets (60 Pages)');
+                        } else if (cat === 'video_editing') {
+                          setNewAlbumType('Cinematic Wedding Film');
+                          setNewSpecs('25-30 Mins');
+                        } else if (cat === 'photo_editing') {
+                          setNewAlbumType('Master Photo Retouching');
+                          setNewSpecs('500 Photos');
+                        } else if (cat === 'album_printing') {
+                          setNewAlbumType('Flush Mount Print Order');
+                          setNewSpecs('30 Sheets Flush Mount');
+                        }
+                      }}
                       className="w-full p-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs cursor-pointer"
                     >
                       <option value="shoot">📸 Shoot Assignment</option>
@@ -725,10 +770,10 @@ export default function VendorAlbumDeliverablesModal({
                   </div>
 
                   <div>
-                    <label className="text-[10px] font-bold text-stone-500 block mb-1">Client / Couple Name</label>
+                    <label className="text-[10px] font-bold text-stone-500 block mb-1">Couple / Client Name</label>
                     <input
                       type="text"
-                      placeholder="e.g. Dinesh & Aishwarya"
+                      placeholder="e.g. Rahul & Pooja"
                       value={newClientName}
                       onChange={(e) => setNewClientName(e.target.value)}
                       className="w-full p-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
@@ -736,10 +781,12 @@ export default function VendorAlbumDeliverablesModal({
                   </div>
 
                   <div>
-                    <label className="text-[10px] font-bold text-stone-500 block mb-1">Deliverable / Task Title</label>
+                    <label className="text-[10px] font-bold text-stone-500 block mb-1">
+                      {newCategory === 'shoot' ? 'Event Name / Title' : 'Deliverable Title'}
+                    </label>
                     <input
                       type="text"
-                      placeholder="e.g. Cinematic Teaser / Signature Photobook"
+                      placeholder={newCategory === 'shoot' ? 'e.g. Wedding Shoot / Reception' : 'e.g. Cinematic Teaser'}
                       value={newAlbumType}
                       onChange={(e) => setNewAlbumType(e.target.value)}
                       className="w-full p-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
@@ -747,10 +794,10 @@ export default function VendorAlbumDeliverablesModal({
                   </div>
 
                   <div>
-                    <label className="text-[10px] font-bold text-stone-500 block mb-1">Specs / Pages / Duration</label>
+                    <label className="text-[10px] font-bold text-stone-500 block mb-1">Specs / Pages / Details</label>
                     <input
                       type="text"
-                      placeholder="e.g. 35 Sheets (70 Pages) or 25 Mins"
+                      placeholder={newCategory === 'shoot' ? 'e.g. Full Day Candid' : 'e.g. 35 Sheets (70 Pages)'}
                       value={newSpecs}
                       onChange={(e) => setNewSpecs(e.target.value)}
                       className="w-full p-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
@@ -759,7 +806,7 @@ export default function VendorAlbumDeliverablesModal({
 
                   <div className="flex items-center gap-2">
                     <div className="flex-1">
-                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Agreed Fee (₹)</label>
+                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Done Price (₹)</label>
                       <input
                         type="number"
                         placeholder="₹"
@@ -769,7 +816,9 @@ export default function VendorAlbumDeliverablesModal({
                       />
                     </div>
                     <div className="flex-1">
-                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Deadline</label>
+                      <label className="text-[10px] font-bold text-stone-500 block mb-1">
+                        {newCategory === 'shoot' ? 'Shoot Date' : 'Deadline'}
+                      </label>
                       <input
                         type="date"
                         value={newDueDate}
@@ -827,16 +876,18 @@ export default function VendorAlbumDeliverablesModal({
                 ))}
               </select>
 
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="h-8 px-2 bg-stone-50 border border-stone-200 rounded-xl text-[11px] font-bold text-stone-800 cursor-pointer shadow-2xs"
-              >
-                <option value="All">All Statuses</option>
-                {DEFAULT_STATUS_LIST.map(st => (
-                  <option key={st} value={st}>{st}</option>
-                ))}
-              </select>
+              {activeCategoryTab !== 'shoot' && (
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="h-8 px-2 bg-stone-50 border border-stone-200 rounded-xl text-[11px] font-bold text-stone-800 cursor-pointer shadow-2xs"
+                >
+                  <option value="All">All Statuses</option>
+                  {DEFAULT_STATUS_LIST.map(st => (
+                    <option key={st} value={st}>{st}</option>
+                  ))}
+                </select>
+              )}
 
               <div className="flex items-center gap-1 text-[11px] text-stone-500 font-bold bg-stone-50 border border-stone-200 rounded-xl px-2 py-1 shadow-2xs">
                 <span>Range:</span>
@@ -885,18 +936,37 @@ export default function VendorAlbumDeliverablesModal({
           {/* Deliverables & Assignments List (3D Creamy Cards) */}
           <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-3 bg-[#FAF8F2]">
             {filteredOrders.length === 0 ? (
-              <div className="p-12 text-center bg-white rounded-3xl border border-stone-200 text-stone-400 space-y-2">
+              <div className="p-12 text-center bg-white rounded-3xl border border-stone-200 text-stone-400 space-y-3">
                 <BookOpen className="w-10 h-10 text-stone-300 mx-auto" />
-                <h4 className="text-sm font-black text-stone-700">No Assignments Found in This Category</h4>
+                <h4 className="text-sm font-black text-stone-700">
+                  No {visibleTabs.find(t => t.id === activeCategoryTab)?.label || 'Assignments'} Found
+                </h4>
                 <p className="text-xs text-stone-400 max-w-sm mx-auto">
-                  Click &ldquo;+ Add Assignment&rdquo; above to assign tasks or assign deliverables in Post-Production &amp; Bookings.
+                  {activeCategoryTab === 'album_printing'
+                    ? 'Manually add your album printing orders here.'
+                    : 'Assign tasks from Post-Production or Bookings, or click "+ Add Assignment" above.'}
                 </p>
+                {activeCategoryTab === 'album_printing' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewCategory('album_printing');
+                      setNewAlbumType('Flush Mount Print Order');
+                      setNewSpecs('30 Sheets Flush Mount');
+                      setIsAddJobOpen(true);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-black shadow-xs transition"
+                  >
+                    + Add Album Printing Order
+                  </button>
+                )}
               </div>
             ) : (
               filteredOrders.map(order => {
                 const isSelected = selectedOrderIds.has(order.id);
+                const isPaid = order.payment_status === 'PAID' || Number(order.balance_amount || 0) === 0;
+                const isShoot = order.category === 'shoot';
                 const statusStyle = STATUS_COLOR_MAP[order.order_status] || STATUS_COLOR_MAP['Pending Design'];
-                const isPaid = order.payment_status === 'PAID';
 
                 return (
                   <div
@@ -905,7 +975,7 @@ export default function VendorAlbumDeliverablesModal({
                       isSelected ? 'border-amber-500 bg-amber-50/20' : 'border-stone-200/90'
                     }`}
                   >
-                    {/* Top Row: Checkbox, Client, Category Pill, Title, Deadline & 3D Status */}
+                    {/* Top Row: Checkbox, Couple Name, Category/Event Tag, Title, (Status dropdown ONLY if NOT shoot) */}
                     <div className="flex items-start justify-between flex-wrap gap-2.5">
                       <div className="flex items-start gap-3">
                         <button
@@ -926,45 +996,56 @@ export default function VendorAlbumDeliverablesModal({
                               {order.client_name}
                             </h3>
                             {getCategoryBadge(order.category)}
-                            {getDeadlineBadge(order.due_date, order.order_status)}
+                            {!isShoot && getDeadlineBadge(order.due_date, order.order_status)}
                           </div>
-                          <p className="text-xs text-stone-600 font-semibold mt-0.5">
-                            <span className="font-bold text-amber-950">{order.item_title || order.album_type}</span>
+                          
+                          {/* Event / Deliverable Details */}
+                          <div className="flex items-center gap-2 mt-1 text-xs text-stone-600 font-medium flex-wrap">
+                            <span className="font-bold text-amber-950">
+                              {order.item_title || order.album_type}
+                            </span>
                             {order.specs && (
-                              <span className="ml-2 font-mono text-stone-800 font-bold bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200/50">
+                              <span className="font-mono text-stone-700 bg-stone-100 px-2 py-0.5 rounded-md border border-stone-200/60 font-bold">
                                 {order.specs}
                               </span>
                             )}
-                          </p>
+                            {order.due_date && isShoot && (
+                              <span className="font-mono text-stone-500 text-[11px]">
+                                Date: {order.due_date}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
 
-                      {/* 3D Creamy Status Dropdown */}
-                      <div className="flex items-center gap-2">
-                        <select
-                          value={order.order_status}
-                          onChange={(e) => handleStatusChange(order, e.target.value)}
-                          className={`px-3 py-1 rounded-full text-xs font-black border cursor-pointer outline-none shadow-2xs transition ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border}`}
-                        >
-                          {DEFAULT_STATUS_LIST.map(st => (
-                            <option key={st} value={st} className="bg-white text-stone-900 font-bold">
-                              {st}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                      {/* 3D Creamy Status Dropdown: ONLY for Video, Photo, Album Designing, Printing (STRICTLY HIDDEN FOR SHOOTS!) */}
+                      {!isShoot && (
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={order.order_status}
+                            onChange={(e) => handleStatusChange(order, e.target.value)}
+                            className={`px-3 py-1 rounded-full text-xs font-black border cursor-pointer outline-none shadow-2xs transition ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border}`}
+                          >
+                            {DEFAULT_STATUS_LIST.map(st => (
+                              <option key={st} value={st} className="bg-white text-stone-900 font-bold">
+                                {st}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                     </div>
 
-                    {/* Middle Row: Financials, Proof Link, and Comments Bar */}
+                    {/* Bottom Row: Commercials (Done Price, Paid, Balance) & Actions */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-3 rounded-2xl bg-[#FAF8F5] border border-amber-200/60 items-center">
                       {/* Financials Strip */}
                       <div>
                         <span className="text-[9px] font-black uppercase tracking-wider text-stone-400 block">
-                          Agreed Commercials
+                          Agreed Done Price &amp; Balance
                         </span>
                         <div className="flex items-center gap-2 text-xs font-bold mt-0.5 flex-wrap">
                           <span className="font-mono font-black text-stone-900">
-                            ₹{Number(order.total_amount).toLocaleString('en-IN')}
+                            Done: ₹{Number(order.total_amount).toLocaleString('en-IN')}
                           </span>
                           <span className="text-stone-300">•</span>
                           <span className="font-mono text-emerald-700">
@@ -977,34 +1058,42 @@ export default function VendorAlbumDeliverablesModal({
                         </div>
                       </div>
 
-                      {/* PDF Proof / Drive Link */}
+                      {/* PDF Proof / Drive Link (if applicable) */}
                       <div className="sm:text-center">
-                        <span className="text-[9px] font-black uppercase tracking-wider text-stone-400 block">
-                          Drive Folder / Proof
-                        </span>
-                        {order.pdf_proof_url || order.drive_folder_url ? (
-                          <a
-                            href={order.pdf_proof_url || order.drive_folder_url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-700 hover:text-amber-900 hover:underline mt-0.5 truncate max-w-[200px]"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-                            <span className="truncate">Open Drive / Proof</span>
-                          </a>
+                        {!isShoot ? (
+                          <>
+                            <span className="text-[9px] font-black uppercase tracking-wider text-stone-400 block">
+                              Drive Folder / Proof
+                            </span>
+                            {order.pdf_proof_url || order.drive_folder_url ? (
+                              <a
+                                href={order.pdf_proof_url || order.drive_folder_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-700 hover:text-amber-900 hover:underline mt-0.5 truncate max-w-[200px]"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                                <span className="truncate">Open Link</span>
+                              </a>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const url = prompt('Enter Google Drive or Canva Link:');
+                                  if (url) {
+                                    handleStatusChange({ ...order, pdf_proof_url: url.trim() }, order.order_status);
+                                  }
+                                }}
+                                className="text-[11px] font-bold text-amber-600 hover:underline mt-0.5 cursor-pointer"
+                              >
+                                + Attach Link
+                              </button>
+                            )}
+                          </>
                         ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const url = prompt('Enter Google Drive or Canva Link:');
-                              if (url) {
-                                handleStatusChange({ ...order, pdf_proof_url: url.trim() }, order.order_status);
-                              }
-                            }}
-                            className="text-[11px] font-bold text-amber-600 hover:underline mt-0.5 cursor-pointer"
-                          >
-                            + Attach Link
-                          </button>
+                          <div className="text-[11px] text-stone-400 font-medium">
+                            Shoot Event Commercials
+                          </div>
                         )}
                       </div>
 
@@ -1030,7 +1119,7 @@ export default function VendorAlbumDeliverablesModal({
                           type="button"
                           onClick={() => setEditingOrder(order)}
                           className="px-2.5 py-1 rounded-xl border border-stone-200 bg-white hover:bg-stone-50 text-[11px] font-bold text-stone-700 flex items-center gap-1 transition cursor-pointer shadow-2xs"
-                          title="Edit Task Details"
+                          title="Edit Pricing & Details"
                         >
                           <Edit3 className="w-3 h-3 text-stone-400" />
                           <span>Edit</span>
@@ -1075,7 +1164,7 @@ export default function VendorAlbumDeliverablesModal({
                   <div className="flex items-center justify-between border-b border-stone-100 pb-2">
                     <h4 className="text-xs font-black text-amber-950 flex items-center gap-1.5">
                       <Edit3 className="w-3.5 h-3.5 text-amber-600" />
-                      <span>Edit Assignment • {editingOrder.client_name}</span>
+                      <span>Edit Commercials &amp; Details • {editingOrder.client_name}</span>
                     </h4>
                     <button type="button" onClick={() => setEditingOrder(null)} className="text-stone-400 hover:text-stone-700">
                       <X className="w-4 h-4" />
@@ -1084,7 +1173,7 @@ export default function VendorAlbumDeliverablesModal({
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     <div>
-                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Client Name</label>
+                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Couple / Client Name</label>
                       <input
                         type="text"
                         value={editingOrder.client_name}
@@ -1093,7 +1182,9 @@ export default function VendorAlbumDeliverablesModal({
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Deliverable / Task Title</label>
+                      <label className="text-[10px] font-bold text-stone-500 block mb-1">
+                        {editingOrder.category === 'shoot' ? 'Event Name' : 'Deliverable Title'}
+                      </label>
                       <input
                         type="text"
                         value={editingOrder.item_title || editingOrder.album_type}
@@ -1105,25 +1196,7 @@ export default function VendorAlbumDeliverablesModal({
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                     <div>
-                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Specs / Pages</label>
-                      <input
-                        type="text"
-                        value={editingOrder.specs || ''}
-                        onChange={(e) => setEditingOrder({ ...editingOrder, specs: e.target.value })}
-                        className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Deadline / Due Date</label>
-                      <input
-                        type="date"
-                        value={editingOrder.due_date ? editingOrder.due_date.split('T')[0] : ''}
-                        onChange={(e) => setEditingOrder({ ...editingOrder, due_date: e.target.value })}
-                        className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Agreed Fee (₹)</label>
+                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Done Price (₹)</label>
                       <input
                         type="number"
                         value={editingOrder.total_amount}
@@ -1136,6 +1209,59 @@ export default function VendorAlbumDeliverablesModal({
                           });
                         }}
                         className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Paid Amount (₹)</label>
+                      <input
+                        type="number"
+                        value={editingOrder.paid_amount || 0}
+                        onChange={(e) => {
+                          const paid = Number(e.target.value) || 0;
+                          setEditingOrder({
+                            ...editingOrder,
+                            paid_amount: paid,
+                            balance_amount: Math.max(0, (editingOrder.total_amount || 0) - paid),
+                            payment_status: (editingOrder.total_amount - paid === 0 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'PENDING') as any
+                          });
+                        }}
+                        className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Balance Due (₹)</label>
+                      <input
+                        type="number"
+                        value={editingOrder.balance_amount || 0}
+                        onChange={(e) => {
+                          const bal = Number(e.target.value) || 0;
+                          setEditingOrder({
+                            ...editingOrder,
+                            balance_amount: bal
+                          });
+                        }}
+                        className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold font-mono text-rose-700"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Specs / Pages / Details</label>
+                      <input
+                        type="text"
+                        value={editingOrder.specs || ''}
+                        onChange={(e) => setEditingOrder({ ...editingOrder, specs: e.target.value })}
+                        className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Deadline / Date</label>
+                      <input
+                        type="date"
+                        value={editingOrder.due_date ? editingOrder.due_date.split('T')[0] : ''}
+                        onChange={(e) => setEditingOrder({ ...editingOrder, due_date: e.target.value })}
+                        className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold"
                       />
                     </div>
                   </div>
