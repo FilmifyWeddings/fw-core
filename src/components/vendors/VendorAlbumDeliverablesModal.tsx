@@ -8,7 +8,7 @@ import {
   FileText, MessageSquare, ChevronDown, Check, Download, 
   Printer, ArrowUpRight, ShieldCheck, User, Phone, Mail,
   RefreshCw, CheckSquare, Square, Layers, Edit3, Trash2,
-  Film, Camera, Palette, Video, Layers as LayersIcon
+  Film, Camera, Palette, Video, Layers as LayersIcon, Bell
 } from 'lucide-react';
 import { 
   VendorAlbumOrder, 
@@ -98,6 +98,35 @@ export default function VendorAlbumDeliverablesModal({
   // Statement PDF Template Modal State
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
   const [invoiceItems, setInvoiceItems] = useState<VendorInvoiceItem[]>([]);
+
+  // Studio Profile Information Sync
+  const [studioProfile, setStudioProfile] = useState<{
+    name: string;
+    phone: string;
+    email: string;
+    address: string;
+  }>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem(`studio_settings_${workspaceId}`) || localStorage.getItem('sc_studio_settings');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          return {
+            name: parsed.studio_name || parsed.studioName || studioName,
+            phone: parsed.phone || parsed.studioPhone || '+91 98765 43210',
+            email: parsed.email || parsed.studioEmail || 'accounts@filmifyweddings.com',
+            address: parsed.address || parsed.studioAddress || 'StudioCore Hub, Creative District, Mumbai'
+          };
+        }
+      } catch (_) {}
+    }
+    return {
+      name: studioName,
+      phone: '+91 98765 43210',
+      email: 'accounts@filmifyweddings.com',
+      address: 'StudioCore Hub, Creative District, Mumbai'
+    };
+  });
 
   // Add / Edit Job Modal States
   const [isAddJobOpen, setIsAddJobOpen] = useState(false);
@@ -266,6 +295,31 @@ export default function VendorAlbumDeliverablesModal({
         ⏳ {diffDays}d left
       </span>
     );
+  };
+
+  // Format Shoot Date helper (e.g., 28 NOV 2026 or 18 MAR 2026)
+  const formatShootDate = (rawDate?: string): string => {
+    if (!rawDate) return 'Date Scheduled';
+    try {
+      const match = rawDate.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (match) {
+        const [, y, m, d] = match;
+        const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+        const monthName = months[parseInt(m, 10) - 1] || m;
+        return `${d} ${monthName} ${y}`;
+      }
+      const d = new Date(rawDate);
+      if (!isNaN(d.getTime())) {
+        const day = String(d.getDate()).padStart(2, '0');
+        const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+        const monthName = months[d.getMonth()];
+        const year = d.getFullYear();
+        return `${day} ${monthName} ${year}`;
+      }
+      return rawDate;
+    } catch (_) {
+      return rawDate;
+    }
   };
 
   // Filtered Orders for Current Tab
@@ -549,7 +603,11 @@ export default function VendorAlbumDeliverablesModal({
     const mapped: VendorInvoiceItem[] = effectiveOrders.map(o => ({
       order_id: o.id,
       client_name: o.client_name,
-      album_type: o.item_title || o.album_type,
+      album_type: o.event_name || o.item_title || o.album_type || 'Shoot Task',
+      event_name: o.event_name,
+      event_date: o.event_date || o.order_date,
+      event_time: o.event_time,
+      role: o.role || o.service_type,
       category: o.category || 'shoot',
       specs: o.specs || `${o.sheet_count} Sheets`,
       sheet_count: o.sheet_count,
@@ -1050,27 +1108,9 @@ export default function VendorAlbumDeliverablesModal({
                           {isShoot ? (
                             /* ── SHOOTS HEADER & DETAILS: STRICTLY NO 📸 Shoot, NO Full Day Shoot! ── */
                             <div className="space-y-1">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <h3 className="text-base sm:text-lg font-black text-stone-900 tracking-tight">
-                                  {order.client_name}
-                                </h3>
-
-                                {/* Synchronized Payment Status Pill */}
-                                {isPaid ? (
-                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1 shadow-2xs">
-                                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                    SETTLED
-                                  </span>
-                                ) : (Number(order.paid_amount || 0) > 0) ? (
-                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1 shadow-2xs">
-                                    PARTIALLY PAID
-                                  </span>
-                                ) : (
-                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-300 flex items-center gap-1 shadow-2xs">
-                                    UNPAID
-                                  </span>
-                                )}
-                              </div>
+                              <h3 className="text-base sm:text-lg font-black text-stone-900 tracking-tight">
+                                {order.client_name}
+                              </h3>
 
                               {/* Event Name, Date & Timing, Category / Role */}
                               <div className="flex items-center gap-2 text-xs text-stone-700 font-medium flex-wrap pt-0.5">
@@ -1084,7 +1124,7 @@ export default function VendorAlbumDeliverablesModal({
                                 {/* Date & Timing */}
                                 <span className="inline-flex items-center gap-1.5 text-stone-700 font-semibold bg-stone-100 px-2.5 py-0.5 rounded-md border border-stone-200/80 font-mono text-[11px]">
                                   <Calendar className="w-3 h-3 text-amber-600" />
-                                  <span>{order.event_date || order.due_date || 'Date Scheduled'}</span>
+                                  <span>{formatShootDate(order.event_date || order.due_date)}</span>
                                   {order.event_time && (
                                     <>
                                       <span className="text-stone-300">|</span>
@@ -1133,8 +1173,44 @@ export default function VendorAlbumDeliverablesModal({
                         </div>
                       </div>
 
-                      {/* 3D Creamy Status Dropdown: ONLY for Video, Photo, Album Designing, Printing (STRICTLY HIDDEN FOR SHOOTS!) */}
-                      {!isShoot && (
+                      {/* Top-Right Status: For Shoots: Synchronized Status Pill! For Deliverables: Dropdown */}
+                      {isShoot ? (
+                        <div className="flex items-center gap-2 shrink-0">
+                          {(() => {
+                            const tot = Number(order.total_amount || 0);
+                            const paid = Number(order.paid_amount || 0);
+                            const bal = Number(order.balance_amount || 0);
+
+                            if (tot === 0 && paid === 0 && bal === 0) {
+                              return (
+                                <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-stone-100 text-stone-600 border border-stone-300 shadow-2xs uppercase tracking-wider">
+                                  UNSETTLED
+                                </span>
+                              );
+                            }
+                            if (tot > 0 && bal === 0 && paid >= tot) {
+                              return (
+                                <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1 shadow-2xs uppercase tracking-wider">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                  FULL PAID
+                                </span>
+                              );
+                            }
+                            if (paid > 0 && bal > 0) {
+                              return (
+                                <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1 shadow-2xs uppercase tracking-wider">
+                                  PARTIALLY PAID
+                                </span>
+                              );
+                            }
+                            return (
+                              <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-300 flex items-center gap-1 shadow-2xs uppercase tracking-wider">
+                                UNPAID
+                              </span>
+                            );
+                          })()}
+                        </div>
+                      ) : (
                         <div className="flex items-center gap-2">
                           <select
                             value={order.order_status}
@@ -1151,16 +1227,16 @@ export default function VendorAlbumDeliverablesModal({
                       )}
                     </div>
 
-                    {/* Bottom Row: Commercials (Done Price, Paid, Balance in RED) & Actions */}
+                    {/* Bottom Row: Commercials (Agreed, Paid, Balance in RED) & Actions */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-3 rounded-2xl bg-[#FAF8F5] border border-amber-200/60 items-center">
                       {/* Financials Strip */}
                       <div>
                         <span className="text-[9px] font-black uppercase tracking-wider text-stone-400 block">
-                          Agreed Done Price &amp; Balance
+                          Agreed Commercials &amp; Balance
                         </span>
                         <div className="flex items-center gap-2 text-xs font-bold mt-0.5 flex-wrap">
                           <span className="font-mono font-black text-stone-900">
-                            Done: ₹{Number(order.total_amount || 0).toLocaleString('en-IN')}
+                            Agreed: ₹{Number(order.total_amount || 0).toLocaleString('en-IN')}
                           </span>
                           <span className="text-stone-300">•</span>
                           <span className="font-mono text-emerald-700 font-bold">
@@ -1168,12 +1244,12 @@ export default function VendorAlbumDeliverablesModal({
                           </span>
                           <span className="text-stone-300">•</span>
                           <span className={`font-mono font-black ${(order.balance_amount || 0) > 0 ? 'text-rose-700 font-black' : 'text-stone-500'}`}>
-                            Bal: ₹{Number(order.balance_amount || 0).toLocaleString('en-IN')}
+                            Balance: ₹{Number(order.balance_amount || 0).toLocaleString('en-IN')}
                           </span>
                         </div>
                       </div>
 
-                      {/* PDF Proof / Drive Link for deliverables or quick shoot info */}
+                      {/* PDF Proof / Drive Link for deliverables (Strictly removed 'Shoot Event Commercials' for shoots) */}
                       <div className="sm:text-center">
                         {!isShoot ? (
                           <>
@@ -1205,11 +1281,7 @@ export default function VendorAlbumDeliverablesModal({
                               </button>
                             )}
                           </>
-                        ) : (
-                          <div className="text-[11px] text-stone-500 font-medium">
-                            <span className="font-semibold text-stone-700">Shoot Event Commercials</span>
-                          </div>
-                        )}
+                        ) : null}
                       </div>
 
                       {/* Action Buttons */}
@@ -1224,17 +1296,16 @@ export default function VendorAlbumDeliverablesModal({
                           }`}
                         >
                           <IndianRupee className="w-3 h-3" />
-                          <span>{isPaid ? 'Settled' : 'Record Pay'}</span>
+                          <span>{isPaid ? 'Full Paid' : 'Record Pay'}</span>
                         </button>
 
                         <button
                           type="button"
                           onClick={() => setEditingOrder(order)}
-                          className="px-2.5 py-1 rounded-xl border border-stone-200 bg-white hover:bg-stone-50 text-[11px] font-bold text-stone-700 flex items-center gap-1 transition cursor-pointer shadow-2xs"
-                          title="Edit Pricing & Details"
+                          className="p-1.5 rounded-xl border border-stone-200 bg-white hover:bg-stone-100 text-stone-700 flex items-center justify-center transition cursor-pointer shadow-2xs"
+                          title="Edit Couple & Event Name"
                         >
-                          <Edit3 className="w-3 h-3 text-stone-400" />
-                          <span>Edit</span>
+                          <Edit3 className="w-3.5 h-3.5 text-stone-500" />
                         </button>
 
                         <button
@@ -1276,133 +1347,34 @@ export default function VendorAlbumDeliverablesModal({
                   <div className="flex items-center justify-between border-b border-stone-100 pb-2">
                     <h4 className="text-xs font-black text-amber-950 flex items-center gap-1.5">
                       <Edit3 className="w-3.5 h-3.5 text-amber-600" />
-                      <span>Edit Commercials &amp; Details • {editingOrder.client_name}</span>
+                      <span>Edit Details • {editingOrder.client_name}</span>
                     </h4>
                     <button type="button" onClick={() => setEditingOrder(null)} className="text-stone-400 hover:text-stone-700">
                       <X className="w-4 h-4" />
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div className="space-y-3 py-1">
                     <div>
                       <label className="text-[10px] font-bold text-stone-500 block mb-1">Couple / Client Name</label>
                       <input
                         type="text"
                         value={editingOrder.client_name}
                         onChange={(e) => setEditingOrder({ ...editingOrder, client_name: e.target.value })}
-                        className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold"
+                        className="w-full p-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
                       />
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-stone-500 block mb-1">
-                        {editingOrder.category === 'shoot' ? 'Event Name (e.g. Wedding, Reception)' : 'Deliverable Title'}
+                        {editingOrder.category === 'shoot' ? 'Event Name (e.g. Wedding, Reception)' : 'Event / Task Title'}
                       </label>
                       <input
                         type="text"
                         value={editingOrder.event_name || editingOrder.item_title || editingOrder.album_type}
                         onChange={(e) => setEditingOrder({ ...editingOrder, event_name: e.target.value, item_title: e.target.value, album_type: e.target.value })}
-                        className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold"
+                        className="w-full p-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
                       />
                     </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                    <div>
-                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Done Price (₹)</label>
-                      <input
-                        type="number"
-                        value={editingOrder.total_amount}
-                        onChange={(e) => {
-                          const tot = Number(e.target.value) || 0;
-                          setEditingOrder({
-                            ...editingOrder,
-                            total_amount: tot,
-                            balance_amount: Math.max(0, tot - (editingOrder.paid_amount || 0))
-                          });
-                        }}
-                        className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold font-mono"
-                      />
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="text-[10px] font-bold text-stone-500 block">Paid Amount (₹)</label>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const tot = Number(editingOrder.total_amount) || 0;
-                            setEditingOrder({
-                              ...editingOrder,
-                              paid_amount: tot,
-                              balance_amount: 0,
-                              payment_status: 'PAID'
-                            });
-                          }}
-                          className="text-[9px] font-black uppercase text-emerald-700 bg-emerald-100 hover:bg-emerald-200 px-1.5 py-0.5 rounded-md cursor-pointer transition shadow-2xs"
-                        >
-                          ⚡ Full Paid
-                        </button>
-                      </div>
-                      <input
-                        type="number"
-                        value={editingOrder.paid_amount || 0}
-                        onChange={(e) => {
-                          const paid = Number(e.target.value) || 0;
-                          setEditingOrder({
-                            ...editingOrder,
-                            paid_amount: paid,
-                            balance_amount: Math.max(0, (editingOrder.total_amount || 0) - paid),
-                            payment_status: ((editingOrder.total_amount || 0) - paid === 0 && (editingOrder.total_amount || 0) > 0 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'PENDING') as any
-                          });
-                        }}
-                        className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold font-mono text-emerald-700"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Balance Due (₹)</label>
-                      <input
-                        type="number"
-                        value={editingOrder.balance_amount || 0}
-                        onChange={(e) => {
-                          const bal = Number(e.target.value) || 0;
-                          setEditingOrder({
-                            ...editingOrder,
-                            balance_amount: bal
-                          });
-                        }}
-                        className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold font-mono text-rose-700 font-black"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    <div>
-                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Specs / Pages / Details</label>
-                      <input
-                        type="text"
-                        value={editingOrder.specs || ''}
-                        onChange={(e) => setEditingOrder({ ...editingOrder, specs: e.target.value })}
-                        className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Deadline / Date</label>
-                      <input
-                        type="date"
-                        value={editingOrder.due_date ? editingOrder.due_date.split('T')[0] : ''}
-                        onChange={(e) => setEditingOrder({ ...editingOrder, due_date: e.target.value })}
-                        className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-bold text-stone-500 block mb-1">Drive / Proof URL</label>
-                    <input
-                      type="url"
-                      value={editingOrder.pdf_proof_url || editingOrder.drive_folder_url || ''}
-                      onChange={(e) => setEditingOrder({ ...editingOrder, pdf_proof_url: e.target.value, drive_folder_url: e.target.value })}
-                      className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold font-mono"
-                    />
                   </div>
 
                   <div className="flex items-center justify-between pt-2">
@@ -1730,17 +1702,33 @@ export default function VendorAlbumDeliverablesModal({
                     )}
                   </AnimatePresence>
 
-                  {/* Input Box with AI Voice Integration */}
+                  {/* Input Box with AI Voice & Reminder Integration */}
                   <div className="space-y-2.5 pt-2 border-t border-amber-200/80">
                     <div className="relative">
                       <textarea
-                        rows={2}
+                        rows={3}
                         value={commentInput}
                         onChange={(e) => setCommentInput(e.target.value)}
                         placeholder="Type note or click mic for AI Voice transcription..."
-                        className="w-full p-3 bg-white border border-stone-200 rounded-2xl text-xs font-medium text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs pr-14 resize-none"
+                        className="w-full p-3 pb-11 bg-white border border-stone-200 rounded-2xl text-xs font-medium text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs resize-none"
                       />
-                      <div className="absolute right-2.5 top-2.5">
+                      <div className="absolute right-2.5 bottom-2.5 flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setShowReminderPicker(prev => !prev)}
+                          className={`px-2.5 py-1 rounded-xl border text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-2xs ${
+                            commentReminder
+                              ? 'bg-purple-600 text-white border-purple-700 shadow-xs ring-2 ring-purple-300'
+                              : showReminderPicker
+                              ? 'bg-purple-100 text-purple-900 border-purple-300'
+                              : 'bg-white text-stone-700 border-stone-200 hover:bg-purple-50 hover:text-purple-900'
+                          }`}
+                          title="Schedule Reminder Alert"
+                        >
+                          <Bell className="w-3.5 h-3.5 text-purple-600" />
+                          <span>Reminder</span>
+                        </button>
+
                         <AiMicButton
                           size="sm"
                           onInsertComment={(transcript) => {
@@ -1750,24 +1738,7 @@ export default function VendorAlbumDeliverablesModal({
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between gap-2">
-                      {/* Reminder Icon Button (⏰ Remind Me) */}
-                      <button
-                        type="button"
-                        onClick={() => setShowReminderPicker(prev => !prev)}
-                        className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs ${
-                          commentReminder
-                            ? 'bg-purple-600 text-white border-purple-700 shadow-xs ring-2 ring-purple-300'
-                            : showReminderPicker
-                            ? 'bg-purple-100 text-purple-900 border-purple-300'
-                            : 'bg-white text-stone-700 border-stone-200 hover:bg-purple-50 hover:text-purple-900'
-                        }`}
-                        title="Set Reminder Alert"
-                      >
-                        <Clock className="w-3.5 h-3.5" />
-                        <span>{commentReminder ? '⏰ Reminder Set' : '⏰ Remind Me'}</span>
-                      </button>
-
+                    <div className="flex items-center justify-end">
                       <button
                         type="button"
                         disabled={isSubmittingComment || !commentInput.trim()}
@@ -1789,7 +1760,10 @@ export default function VendorAlbumDeliverablesModal({
           isOpen={isInvoiceModalOpen}
           onClose={() => setIsInvoiceModalOpen(false)}
           vendor={vendor}
-          studioName={studioName}
+          studioName={studioProfile.name || studioName}
+          studioPhone={studioProfile.phone}
+          studioEmail={studioProfile.email}
+          studioAddress={studioProfile.address}
           items={invoiceItems}
         />
       </div>

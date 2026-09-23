@@ -8,6 +8,10 @@ export interface VendorInvoiceItem {
   order_id?: string;
   client_name: string;
   album_type: string;
+  event_name?: string;
+  event_date?: string;
+  event_time?: string;
+  role?: string;
   category?: string;
   specs?: string;
   sheet_count: number;
@@ -45,6 +49,28 @@ export interface VendorStatementInvoicePdfTemplateProps {
   notes?: string;
 }
 
+const formatStatementDate = (rawDate?: string): string => {
+  if (!rawDate) return '';
+  try {
+    const match = rawDate.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+      const [, y, m, d] = match;
+      const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+      const monthName = months[parseInt(m, 10) - 1] || m;
+      return `${d} ${monthName} ${y}`;
+    }
+    const d = new Date(rawDate);
+    if (!isNaN(d.getTime())) {
+      const day = String(d.getDate()).padStart(2, '0');
+      const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+      return `${day} ${months[d.getMonth()]} ${d.getFullYear()}`;
+    }
+    return rawDate;
+  } catch (_) {
+    return rawDate;
+  }
+};
+
 export default function VendorStatementInvoicePdfTemplate({
   isOpen,
   onClose,
@@ -56,13 +82,14 @@ export default function VendorStatementInvoicePdfTemplate({
   studioEmail = 'accounts@filmifyweddings.com',
   studioAddress = 'StudioCore Hub, Creative District, Mumbai',
   items,
-  notes = 'Thank you for your creative partnership and excellence in album craftsmanship.'
+  notes = 'Thank you for your creative partnership and excellence in craftsmanship.'
 }: VendorStatementInvoicePdfTemplateProps) {
   const [isDownloading, setIsDownloading] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
 
   if (!isOpen) return null;
 
+  const isAllShoots = items.length > 0 && items.every(i => i.category === 'shoot');
   const invoiceNo = statementNumber || `INV-${Date.now().toString().slice(-6)}`;
   const displayDate = statementDate || new Date().toLocaleDateString('en-IN', {
     day: '2-digit',
@@ -87,13 +114,14 @@ export default function VendorStatementInvoicePdfTemplate({
       const { jsPDF } = await import('jspdf');
 
       const canvas = await html2canvas(printRef.current, {
-        scale: 2,
+        scale: 3, // Ultra-sharp HD 3x DPI
         useCORS: true,
         backgroundColor: '#FFFFFF',
-        logging: false
+        logging: false,
+        windowWidth: 1000
       });
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      const imgData = canvas.toDataURL('image/jpeg', 0.98);
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
@@ -107,7 +135,6 @@ export default function VendorStatementInvoicePdfTemplate({
       pdf.save(`Vendor_Invoice_${vendor.name.replace(/\s+/g, '_')}_${invoiceNo}.pdf`);
     } catch (err) {
       console.error('[Vendor Invoice PDF] Download error:', err);
-      // Fallback to browser print if canvas fails
       window.print();
     } finally {
       setIsDownloading(false);
@@ -144,7 +171,7 @@ export default function VendorStatementInvoicePdfTemplate({
                   Vendor Tax Statement &amp; Invoice
                 </h3>
                 <p className="text-[10px] text-amber-200/70 font-medium">
-                  {invoiceNo} • {vendor.name} ({items.length} {items.length === 1 ? 'Job' : 'Jobs'})
+                  {invoiceNo} • {vendor.name} ({items.length} {isAllShoots ? (items.length === 1 ? 'Shoot' : 'Shoots') : (items.length === 1 ? 'Job' : 'Jobs')})
                 </p>
               </div>
             </div>
@@ -192,7 +219,7 @@ export default function VendorStatementInvoicePdfTemplate({
           <div className="p-4 sm:p-8 overflow-y-auto flex-1 bg-[#FAF8F5]">
             <div
               ref={printRef}
-              className="bg-white p-6 sm:p-10 rounded-2xl shadow-sm border border-stone-200/90 text-stone-900 max-w-[780px] mx-auto space-y-6 print:m-0 print:p-0 print:shadow-none print:border-none"
+              className="bg-white p-6 sm:p-10 rounded-2xl shadow-sm border border-stone-200/90 text-stone-900 max-w-[780px] mx-auto space-y-6 print:m-0 print:p-0 print:shadow-none print:border-none font-sans"
             >
               {/* Header: Studio Brand & Invoice Meta */}
               <div className="flex items-start justify-between border-b-2 border-amber-900/10 pb-6 flex-wrap gap-4">
@@ -234,7 +261,7 @@ export default function VendorStatementInvoicePdfTemplate({
                     {vendor.name}
                   </h3>
                   <p className="text-xs text-stone-600 font-medium">
-                    Specialization: <span className="font-bold text-amber-950">{vendor.role || 'Album Designer & Print Partner'}</span>
+                    Specialization: <span className="font-bold text-amber-950">{vendor.role || 'Shoot & Deliverables Partner'}</span>
                   </p>
                   {vendor.phone && <p className="text-xs text-stone-500">Phone: {vendor.phone}</p>}
                   {vendor.email && <p className="text-xs text-stone-500">Email: {vendor.email}</p>}
@@ -245,17 +272,20 @@ export default function VendorStatementInvoicePdfTemplate({
                     Statement Summary
                   </span>
                   <p className="text-xs text-stone-700 font-semibold mt-0.5">
-                    Total Assigned Tasks: <span className="font-bold text-stone-900 font-mono">{items.length} Jobs</span>
+                    Total Assigned Tasks:{' '}
+                    <span className="font-bold text-stone-900 font-mono">
+                      {items.length} {isAllShoots ? (items.length === 1 ? 'Shoot' : 'Shoots') : (items.length === 1 ? 'Job' : 'Jobs')}
+                    </span>
                   </p>
-                  {totalSheets > 0 && (
+                  {!isAllShoots && totalSheets > 0 && (
                     <p className="text-xs text-stone-700 font-semibold">
                       Total Output Specs: <span className="font-bold text-stone-900 font-mono">{totalSheets} Sheets / Units</span>
                     </p>
                   )}
                   <p className="text-xs text-stone-700 font-semibold">
                     Payment Status:{' '}
-                    <span className={`font-bold font-mono ${balanceDue === 0 ? 'text-emerald-700' : totalPaid > 0 ? 'text-amber-700' : 'text-rose-700'}`}>
-                      {balanceDue === 0 ? 'SETTLED IN FULL' : totalPaid > 0 ? 'PARTIALLY SETTLED' : 'PAYMENT PENDING'}
+                    <span className={`font-bold font-mono ${subtotal === 0 && totalPaid === 0 ? 'text-stone-600' : balanceDue === 0 ? 'text-emerald-700' : totalPaid > 0 ? 'text-amber-700' : 'text-rose-700'}`}>
+                      {subtotal === 0 && totalPaid === 0 ? 'UNSETTLED' : balanceDue === 0 ? 'FULL PAID' : totalPaid > 0 ? 'PARTIALLY SETTLED' : 'PAYMENT PENDING'}
                     </span>
                   </p>
                 </div>
@@ -273,7 +303,7 @@ export default function VendorStatementInvoicePdfTemplate({
                       <th className="py-2.5 px-2 text-right">Agreed Fee</th>
                       <th className="py-2.5 px-2 text-right">Paid</th>
                       <th className="py-2.5 px-2 text-right">Balance</th>
-                      <th className="py-2.5 px-2 text-center">Status</th>
+                      {!isAllShoots && <th className="py-2.5 px-2 text-center">Status</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-100">
@@ -282,14 +312,24 @@ export default function VendorStatementInvoicePdfTemplate({
                         <td className="py-2.5 px-2 font-mono text-stone-400 font-bold">{idx + 1}</td>
                         <td className="py-2.5 px-3 font-bold text-stone-900">{item.client_name}</td>
                         <td className="py-2.5 px-3">
-                          <span className="font-bold text-stone-800 block">{item.album_type}</span>
-                          <span className="text-[10px] text-stone-500 block font-medium">
-                            {item.specs || (item.sheet_count > 1 ? `${item.sheet_count} Sheets` : '')}
-                            {item.due_date ? ` • Due: ${item.due_date}` : ''}
+                          <span className="font-bold text-stone-800 block">
+                            {item.event_name || item.album_type}
                           </span>
+                          {item.category === 'shoot' ? (
+                            <span className="text-[10px] text-stone-500 block font-mono font-medium">
+                              {item.event_date ? formatStatementDate(item.event_date) : item.due_date ? `Due: ${formatStatementDate(item.due_date)}` : ''}
+                              {item.event_time ? ` • ${item.event_time}` : ''}
+                              {item.role ? ` • ${item.role}` : ''}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-stone-500 block font-medium">
+                              {item.specs || (item.sheet_count > 1 ? `${item.sheet_count} Sheets` : '')}
+                              {item.due_date ? ` • Due: ${formatStatementDate(item.due_date)}` : ''}
+                            </span>
+                          )}
                         </td>
                         <td className="py-2.5 px-2 text-center">
-                          <span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-amber-50 text-amber-900 border border-amber-200/60">
+                          <span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-amber-50 text-amber-900 border border-amber-200/60 font-mono">
                             {item.category === 'shoot' ? 'Shoot' :
                              item.category === 'video_editing' ? 'Video Edit' :
                              item.category === 'photo_editing' ? 'Photo Edit' :
@@ -305,17 +345,19 @@ export default function VendorStatementInvoicePdfTemplate({
                         <td className="py-2.5 px-2 text-right font-mono font-black text-rose-700">
                           ₹{Number(item.balance_amount || 0).toLocaleString('en-IN')}
                         </td>
-                        <td className="py-2.5 px-2 text-center">
-                          <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
-                            item.payment_status === 'PAID'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : item.paid_amount > 0
-                              ? 'bg-amber-100 text-amber-800'
-                              : 'bg-stone-100 text-stone-700'
-                          }`}>
-                            {item.order_status || item.payment_status}
-                          </span>
-                        </td>
+                        {!isAllShoots && (
+                          <td className="py-2.5 px-2 text-center">
+                            <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
+                              item.payment_status === 'PAID'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : item.paid_amount > 0
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-stone-100 text-stone-700'
+                            }`}>
+                              {item.order_status || item.payment_status}
+                            </span>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -326,7 +368,7 @@ export default function VendorStatementInvoicePdfTemplate({
               <div className="flex justify-end pt-2">
                 <div className="w-full sm:w-64 space-y-2 border-t-2 border-amber-900/10 pt-3">
                   <div className="flex justify-between text-xs text-stone-600 font-medium">
-                    <span>Subtotal ({items.length} Tasks):</span>
+                    <span>Subtotal ({items.length} {isAllShoots ? (items.length === 1 ? 'Shoot' : 'Shoots') : 'Tasks'}):</span>
                     <span className="font-mono font-bold text-stone-900">₹{subtotal.toLocaleString('en-IN')}</span>
                   </div>
                   <div className="flex justify-between text-xs text-emerald-700 font-semibold">
@@ -340,24 +382,14 @@ export default function VendorStatementInvoicePdfTemplate({
                 </div>
               </div>
 
-              {/* Settlement Bank Details & Signatures */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-stone-200">
-                <div className="text-xs text-stone-600 space-y-1">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-amber-800 block">
-                    Remittance &amp; Banking Info
-                  </span>
-                  <p className="font-medium">
-                    Beneficiary: <span className="font-bold text-stone-900">{vendor.name}</span>
-                  </p>
-                  {vendor.bank_name && <p>Bank: {vendor.bank_name}</p>}
-                  {vendor.account_no && <p className="font-mono">A/C: {vendor.account_no}</p>}
-                  {vendor.ifsc && <p className="font-mono">IFSC: {vendor.ifsc}</p>}
-                  {vendor.upi_id && <p className="font-mono font-bold text-amber-950">UPI ID: {vendor.upi_id}</p>}
-                  <p className="text-[10px] text-stone-400 italic pt-1">{notes}</p>
+              {/* Signatures & Verification (Banking info removed per request) */}
+              <div className="flex items-center justify-between pt-6 border-t border-stone-200">
+                <div className="text-xs text-stone-500 italic max-w-sm">
+                  {notes}
                 </div>
 
-                <div className="flex flex-col justify-end items-end text-right pt-6 sm:pt-0">
-                  <div className="w-40 border-b border-stone-400 mb-1"></div>
+                <div className="flex flex-col justify-end items-end text-right">
+                  <div className="w-44 border-b border-stone-400 mb-1"></div>
                   <span className="text-[10px] font-black uppercase text-stone-800 tracking-wider">
                     Authorized Studio Signatory
                   </span>

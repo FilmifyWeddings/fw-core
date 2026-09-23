@@ -9,7 +9,7 @@ import {
   ExternalLink, Sparkles, AlertCircle, Building2, Briefcase,
   Target, FileText, IndianRupee, Layers, Check, Activity,
   Clock, Calendar, UserCheck, ShieldAlert,
-  Eye, Pencil, Users, DollarSign
+  Eye, Pencil, Users, DollarSign, Bell
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
@@ -19,6 +19,7 @@ import TeamTableRow from './components/TeamTableRow';
 import TeamMemberFinanceDrawer from './components/TeamMemberFinanceDrawer';
 import DeleteMemberWarningModal from './components/DeleteMemberWarningModal';
 import VendorAlbumDeliverablesModal from '@/components/vendors/VendorAlbumDeliverablesModal';
+import TeamRemindersDrawer from '@/components/team/TeamRemindersDrawer';
 import { 
   batchFetchWorkspaceTeamFinancials,
   fetchMemberFinancialSummary, 
@@ -81,25 +82,11 @@ let memCachedLogs: ActivityLog[] = [];
 
 export default function WorkspaceTeamPage() {
   const { workspaceId, workspaceName, isOwner, userEmail, userName } = useWorkspace();
+  const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<'directory' | 'activity_logs'>('directory');
-  const [members, setMembers] = useState<TeamMember[]>(() => {
-    if (memCachedTeamMembers.length > 0) return memCachedTeamMembers;
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = localStorage.getItem('sc_cached_team_members');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            memCachedTeamMembers = parsed;
-            return parsed;
-          }
-        }
-      } catch (_) {}
-    }
-    return [];
-  });
+  const [members, setMembers] = useState<TeamMember[]>([]);
   const [logs, setLogs] = useState<ActivityLog[]>(() => memCachedLogs);
-  const [loading, setLoading] = useState(() => memCachedTeamMembers.length === 0);
+  const [loading, setLoading] = useState(true);
   const [logsLoading, setLogsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('All');
@@ -107,6 +94,10 @@ export default function WorkspaceTeamPage() {
   const selectedRoleFilter = selectedRole;
   const setSelectedRoleFilter = setSelectedRole;
   const [selectedLogModule, setSelectedLogModule] = useState('ALL');
+
+  // Reminders Notification Drawer States
+  const [isRemindersDrawerOpen, setIsRemindersDrawerOpen] = useState(false);
+  const [pendingRemindersCount, setPendingRemindersCount] = useState(0);
   
   // Modal states
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -122,6 +113,48 @@ export default function WorkspaceTeamPage() {
   // Vendor Album Deliverables Hub Modal States
   const [selectedVendorDeliverablesMember, setSelectedVendorDeliverablesMember] = useState<TeamMember | null>(null);
   const [isVendorDeliverablesModalOpen, setIsVendorDeliverablesModalOpen] = useState(false);
+
+  // Hydration sync: initialize cache on client mount
+  useEffect(() => {
+    setMounted(true);
+    if (memCachedTeamMembers.length > 0) {
+      setMembers(memCachedTeamMembers);
+      setLoading(false);
+    } else {
+      try {
+        const stored = localStorage.getItem('sc_cached_team_members');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            memCachedTeamMembers = parsed;
+            setMembers(parsed);
+            setLoading(false);
+          }
+        }
+      } catch (_) {}
+    }
+  }, []);
+
+  // Fetch reminders count
+  const fetchPendingReminders = useCallback(async () => {
+    try {
+      const url = workspaceId ? `/api/team/reminders?workspaceId=${workspaceId}` : '/api/team/reminders';
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.reminders)) {
+        setPendingRemindersCount(data.reminders.length);
+      }
+    } catch (_) {}
+  }, [workspaceId]);
+
+  useEffect(() => {
+    if (mounted) {
+      fetchPendingReminders();
+    }
+    const handleNewReminder = () => fetchPendingReminders();
+    window.addEventListener('studio_reminder_created', handleNewReminder);
+    return () => window.removeEventListener('studio_reminder_created', handleNewReminder);
+  }, [mounted, fetchPendingReminders]);
 
 
   // Instant O(1) Batch Financial Summaries for all members in 1 single pass
@@ -816,7 +849,7 @@ export default function WorkspaceTeamPage() {
     }
   };
 
-  if (loading && members.length === 0) {
+  if (!mounted || (loading && members.length === 0)) {
     return <StudioCoreLiquidLoader label="Loading Team & Partners..." />;
   }
 
@@ -871,7 +904,23 @@ export default function WorkspaceTeamPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-2.5 shrink-0">
+          {/* Reminders Bell Notification Button */}
+          <button
+            type="button"
+            onClick={() => setIsRemindersDrawerOpen(true)}
+            className="h-9 px-3 rounded-xl bg-white border border-stone-200 hover:bg-amber-50 text-stone-700 transition cursor-pointer shadow-2xs flex items-center gap-1.5"
+            title="Team & Shoot Reminders"
+          >
+            <Bell className="w-4 h-4 text-amber-600" />
+            <span className="text-xs font-bold hidden sm:inline">Reminders</span>
+            {pendingRemindersCount > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-rose-600 text-white animate-pulse">
+                {pendingRemindersCount}
+              </span>
+            )}
+          </button>
+
           <button
             onClick={() => {
               setMemberToEdit(null);
@@ -1213,6 +1262,14 @@ export default function WorkspaceTeamPage() {
         onConfirm={() => { if (memberToDelete) executeDeleteMember(memberToDelete.id); }}
         member={memberToDelete}
         isDeleting={Boolean(deletingId)}
+      />
+
+      {/* Team & Shoot Reminders Notification Drawer */}
+      <TeamRemindersDrawer
+        isOpen={isRemindersDrawerOpen}
+        onClose={() => setIsRemindersDrawerOpen(false)}
+        workspaceId={workspaceId || ''}
+        onCountChange={setPendingRemindersCount}
       />
     </div>
   );
