@@ -26,35 +26,37 @@ export async function GET(req: NextRequest) {
     const from = page * pageSize;
     const to = from + pageSize - 1;
 
+    const candidateSet = new Set<string>();
+    if (workspaceId) candidateSet.add(workspaceId);
+    if (authResult.workspaceId) candidateSet.add(authResult.workspaceId);
+    if (authResult.userId) candidateSet.add(authResult.userId);
+    if (requestedWorkspaceId) candidateSet.add(requestedWorkspaceId);
+    const candidates = Array.from(candidateSet);
+
     // Fetch leads using supabaseAdmin (bypasses RLS issues)
     let dbLeads: any[] = [];
 
-    // 1. Try querying by workspace_id
+    // 1. Query by workspace_id or tenant_id across all valid candidates
+    const orConditions = candidates.flatMap(c => [`workspace_id.eq.${c}`, `tenant_id.eq.${c}`]).join(',');
     const res = await supabaseAdmin
       .from('leads')
       .select('*')
-      .eq('workspace_id', workspaceId)
+      .or(orConditions)
       .order('created_at', { ascending: false })
       .range(from, to);
 
     if (res.error) {
       console.warn('[API /leads Workspace Query Warning]:', res.error.message);
-    } else {
-      dbLeads = res.data || [];
-    }
-
-    // 2. If 0 leads found by workspace_id, try tenant_id
-    if (dbLeads.length === 0) {
-      const tenantRes = await supabaseAdmin
+      // Fallback: single eq query
+      const fallbackRes = await supabaseAdmin
         .from('leads')
         .select('*')
-        .eq('tenant_id', workspaceId)
+        .eq('workspace_id', workspaceId)
         .order('created_at', { ascending: false })
         .range(from, to);
-
-      if (!tenantRes.error && tenantRes.data && tenantRes.data.length > 0) {
-        dbLeads = tenantRes.data;
-      }
+      dbLeads = fallbackRes.data || [];
+    } else {
+      dbLeads = res.data || [];
     }
 
     // 3. Sanitize lead data

@@ -525,13 +525,18 @@ export default function LeadsPage() {
       }
 
       if (pageNum === 0) {
-        setLeads(sanitizedLeads);
-        memCachedLeads = sanitizedLeads;
-        if (typeof window !== 'undefined') {
-          try {
-            localStorage.setItem('sc_cached_leads', JSON.stringify(sanitizedLeads));
-          } catch (_) {}
-        }
+        setLeads(prev => {
+          const serverIds = new Set(sanitizedLeads.map(l => l.id));
+          const recentLocals = prev.filter(l => !serverIds.has(l.id));
+          const merged = [...recentLocals, ...sanitizedLeads];
+          memCachedLeads = merged;
+          if (typeof window !== 'undefined') {
+            try {
+              localStorage.setItem('sc_cached_leads', JSON.stringify(merged));
+            } catch (_) {}
+          }
+          return merged;
+        });
       } else {
         setLeads(prev => {
           const existingIds = new Set(prev.map(l => l.id));
@@ -936,7 +941,16 @@ export default function LeadsPage() {
     }
 
     // Optimistic UI Update
-    setLeads(prev => prev.map(l => l.id === leadId ? { ...l, ...updatedFields, updated_at: new Date().toISOString() } : l));
+    setLeads(prev => {
+      const updated = prev.map(l => l.id === leadId ? { ...l, ...updatedFields, updated_at: new Date().toISOString() } : l);
+      memCachedLeads = updated;
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('sc_cached_leads', JSON.stringify(updated));
+        } catch (_) {}
+      }
+      return updated;
+    });
 
     if (!isDemoMode) {
       try {
@@ -1089,10 +1103,11 @@ export default function LeadsPage() {
       }
     } else {
       try {
+        const targetWorkspace = workspaceId || userId;
         const { data, error } = await supabase
           .from('leads')
           .insert([{
-            workspace_id: userId,
+            workspace_id: targetWorkspace,
             name: newLead.name,
             email: newLead.email,
             phone: newLead.phone,
@@ -1112,7 +1127,16 @@ export default function LeadsPage() {
 
         if (!error && data && data.length > 0) {
           const savedLead = data[0] as Lead;
-          setLeads(prev => [savedLead, ...prev]);
+          setLeads(prev => {
+            const updated = [savedLead, ...prev.filter(l => l.id !== savedLead.id)];
+            memCachedLeads = updated;
+            if (typeof window !== 'undefined') {
+              try {
+                localStorage.setItem('sc_cached_leads', JSON.stringify(updated));
+              } catch (_) {}
+            }
+            return updated;
+          });
 
           // Trigger real database automation endpoint
           fetch('/api/whatsapp/trigger-automation', {

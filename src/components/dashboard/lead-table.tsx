@@ -597,14 +597,36 @@ export function LeadTable({
               const merged = { ...prev };
               for (const [lId, sum] of Object.entries(json.summary as Record<string, any>)) {
                 const prevItem = prev[lId];
-                if (prevItem?.hasFinal && !sum.hasFinal) {
+                const shouldHaveFinal = Boolean(prevItem?.hasFinal || sum.hasFinal);
+                const finalVer = prevItem?.finalVersion || sum.finalVersion;
+                const prevFinalItem = prevItem?.versions?.find((v: any) => v.is_final);
+
+                // Preserve is_final flag on versions so an optimistic or saved final version is NEVER demoted!
+                const preservedVersions = (sum.versions || []).map((v: any) => {
+                  const matchesPrevFinal = prevFinalItem && (
+                    v.id === prevFinalItem.id ||
+                    v.template_id === prevFinalItem.template_id ||
+                    (v.template_id && prevFinalItem.template_id && (v.template_id.includes(prevFinalItem.template_id) || prevFinalItem.template_id.includes(v.template_id))) ||
+                    (finalVer !== undefined && v.version === finalVer)
+                  );
+                  return {
+                    ...v,
+                    is_final: Boolean(v.is_final || matchesPrevFinal)
+                  };
+                });
+
+                if (shouldHaveFinal) {
                   merged[lId] = {
                     ...sum,
                     hasFinal: true,
-                    finalVersion: prevItem.finalVersion || sum.finalVersion
+                    finalVersion: finalVer,
+                    versions: preservedVersions.length > 0 ? preservedVersions : (prevItem?.versions || sum.versions)
                   };
                 } else {
-                  merged[lId] = sum;
+                  merged[lId] = {
+                    ...sum,
+                    versions: preservedVersions
+                  };
                 }
               }
               if (typeof window !== 'undefined') {
@@ -696,25 +718,35 @@ export function LeadTable({
     const updatedFinalId = hasFinal ? (finalItem?.template_id || finalItem?.id || 'final') : null;
 
     // Synchronize lead row directly so lead.final_quotation_id, stage_id, and status reflect immediately in 0ms without lag
-    setLeads(prev => prev.map(l => {
-      if (l.id === leadId) {
-        return {
-          ...l,
-          stage_id: hasFinal ? bookedStageId : l.stage_id,
-          stage: hasFinal ? 'booked' : (l.stage === 'booked' ? 'warm' : l.stage),
-          status: hasFinal ? (bookedStageName as any) : ((l.status as string) === 'booked' || l.status === 'closed' ? 'warm' : l.status),
-          final_quotation_id: updatedFinalId,
-          raw_payload: {
-            ...l.raw_payload,
-            stage_id: hasFinal ? bookedStageId : l.raw_payload?.stage_id,
-            stage: hasFinal ? 'booked' : (l.raw_payload?.stage === 'booked' ? 'warm' : l.raw_payload?.stage),
-            status: hasFinal ? bookedStageName : l.raw_payload?.status,
-            final_quotation_id: updatedFinalId
-          }
-        };
+    setLeads(prev => {
+      const updated = prev.map(l => {
+        if (l.id === leadId) {
+          return {
+            ...l,
+            stage_id: hasFinal ? bookedStageId : l.stage_id,
+            stage: hasFinal ? 'booked' : (l.stage === 'booked' ? 'warm' : l.stage),
+            status: hasFinal ? (bookedStageName as any) : ((l.status as string) === 'booked' || l.status === 'closed' ? 'warm' : l.status),
+            final_quotation_id: updatedFinalId,
+            raw_payload: {
+              ...l.raw_payload,
+              stage_id: hasFinal ? bookedStageId : l.raw_payload?.stage_id,
+              stage: hasFinal ? 'booked' : (l.raw_payload?.stage === 'booked' ? 'warm' : l.raw_payload?.stage),
+              status: hasFinal ? bookedStageName : l.raw_payload?.status,
+              final_quotation_id: updatedFinalId
+            }
+          };
+        }
+        return l;
+      });
+
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('sc_cached_leads', JSON.stringify(updated));
+        } catch (_) {}
       }
-      return l;
-    }));
+
+      return updated;
+    });
 
     // Trigger onLeadUpdate so the background database update executes immediately
     if (hasFinal && onLeadUpdate) {

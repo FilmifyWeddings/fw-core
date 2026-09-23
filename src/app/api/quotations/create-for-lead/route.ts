@@ -4,6 +4,7 @@ import { resolveUserDefaultQuotationTemplate, GLOBAL_SYSTEM_TEMPLATE_ID } from '
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
 import { DEFAULT_AIRY_PROPOSAL, normalizeQuotationData } from '@/lib/quotation-defaults';
 import { isPlaceholderCoupleName } from '@/lib/quotation-finance-sync';
+import { fallbackHeuristicExtractor, mapAiOutputToQuotationDocument } from '@/lib/ai-quotation-extractor';
 
 /**
  * Authoritative Fast Backend Route for Lead Quotation Creation (<100ms Response)
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest) {
     const [{ data: lead }, { data: profile }, { data: existingDocs }] = await Promise.all([
       supabaseAdmin
         .from('leads')
-        .select('id, name, full_name, location, raw_payload')
+        .select('id, name, full_name, location, raw_payload, phone, email')
         .eq('id', leadId)
         .maybeSingle(),
       supabaseAdmin
@@ -92,8 +93,31 @@ export async function POST(req: NextRequest) {
     const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
     const quotationId = `FW-Q-${leadShortId}-V${nextVersion}-${randomSuffix}`;
 
-    // Deep clone document JSON (using initialDocument if passed from AI generator, else templateDoc)
-    const baseSourceDoc = body.initialDocument || templateDoc || DEFAULT_AIRY_PROPOSAL;
+    // Deep clone document JSON (using initialDocument if passed, or extract from additionalNotes, else templateDoc)
+    let initialDoc = body.initialDocument;
+    if (!initialDoc && body.additionalNotes) {
+      try {
+        const contextData = {
+          lead_info: {
+            lead_id: effectiveLead.id,
+            name: effectiveLead.name || '',
+            phone: (effectiveLead as any).phone || '',
+            email: (effectiveLead as any).email || ''
+          },
+          raw_form_fields: effectiveLead.raw_payload || {},
+          meta_fields: {},
+          notes_and_comments: '',
+          additional_user_notes: body.additionalNotes
+        };
+        const extracted = fallbackHeuristicExtractor(contextData);
+        const mapped = mapAiOutputToQuotationDocument(extracted, templateDoc, contextData);
+        initialDoc = mapped.document || extracted;
+      } catch (err) {
+        console.warn('[create-for-lead] Error extracting additionalNotes:', err);
+      }
+    }
+
+    const baseSourceDoc = initialDoc || templateDoc || DEFAULT_AIRY_PROPOSAL;
     const clonedDoc = JSON.parse(JSON.stringify(baseSourceDoc));
     clonedDoc.lead_id = leadId;
     clonedDoc.lead_version = nextVersion;

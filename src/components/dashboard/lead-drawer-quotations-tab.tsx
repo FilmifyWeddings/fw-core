@@ -76,10 +76,42 @@ export function LeadDrawerQuotationsTab({
   useEffect(() => {
     if (!lead?.id) return;
     const cacheKey = `lead_quotes_cache_${lead.id}`;
-    const targetFinalId = lead.final_quotation_id || (lead as any).raw_payload?.final_quotation_id;
-    const cached = (initialQuotations && initialQuotations.length > 0)
-      ? initialQuotations
-      : safeSessionGet(cacheKey);
+    let targetFinalId = lead.final_quotation_id || (lead as any).raw_payload?.final_quotation_id;
+    let summaryFinalVersion: number | undefined = undefined;
+
+    if (typeof window !== 'undefined') {
+      try {
+        const summaryMapStr = localStorage.getItem('sc_quotation_summary_map');
+        if (summaryMapStr) {
+          const summaryMap = JSON.parse(summaryMapStr);
+          if (summaryMap[lead.id]?.hasFinal) {
+            summaryFinalVersion = summaryMap[lead.id]?.finalVersion;
+            if (!targetFinalId && summaryMap[lead.id]?.versions?.length > 0) {
+              const fv = summaryMap[lead.id].versions.find((v: any) => v.is_final);
+              if (fv?.template_id) targetFinalId = fv.template_id;
+            }
+          }
+        }
+      } catch (_) {}
+
+      if (!targetFinalId) {
+        try {
+          const cachedLeadsStr = localStorage.getItem('sc_cached_leads');
+          if (cachedLeadsStr) {
+            const cachedLeads = JSON.parse(cachedLeadsStr);
+            const found = Array.isArray(cachedLeads) ? cachedLeads.find((l: any) => l.id === lead.id) : null;
+            if (found?.final_quotation_id) targetFinalId = found.final_quotation_id;
+          }
+        } catch (_) {}
+      }
+    }
+
+    const sessionCache = safeSessionGet(cacheKey);
+    const sessionHasFinal = Array.isArray(sessionCache) && sessionCache.some((item: any) => item.is_final);
+
+    const cached = sessionHasFinal
+      ? sessionCache
+      : (initialQuotations && initialQuotations.length > 0 ? initialQuotations : sessionCache);
 
     if (cached && Array.isArray(cached) && cached.length > 0) {
       const reconciled = cached.map((item: QuotationVersionItem) => ({
@@ -90,6 +122,7 @@ export function LeadDrawerQuotationsTab({
             item.id === targetFinalId || 
             (item.template_id && (targetFinalId.includes(item.template_id) || item.template_id.includes(targetFinalId)))
           )) ||
+          (summaryFinalVersion !== undefined && item.version === summaryFinalVersion) ||
           item.is_final
         )
       }));
@@ -107,7 +140,35 @@ export function LeadDrawerQuotationsTab({
     if (!lead?.id) return;
     setErrorMsg(null);
     const cacheKey = `lead_quotes_cache_${lead.id}`;
-    const targetFinalId = lead.final_quotation_id || (lead as any).raw_payload?.final_quotation_id;
+    let targetFinalId = lead.final_quotation_id || (lead as any).raw_payload?.final_quotation_id;
+    let summaryFinalVersion: number | undefined = undefined;
+
+    if (typeof window !== 'undefined') {
+      try {
+        const summaryMapStr = localStorage.getItem('sc_quotation_summary_map');
+        if (summaryMapStr) {
+          const summaryMap = JSON.parse(summaryMapStr);
+          if (summaryMap[lead.id]?.hasFinal) {
+            summaryFinalVersion = summaryMap[lead.id]?.finalVersion;
+            if (!targetFinalId && summaryMap[lead.id]?.versions?.length > 0) {
+              const fv = summaryMap[lead.id].versions.find((v: any) => v.is_final);
+              if (fv?.template_id) targetFinalId = fv.template_id;
+            }
+          }
+        }
+      } catch (_) {}
+
+      if (!targetFinalId) {
+        try {
+          const cachedLeadsStr = localStorage.getItem('sc_cached_leads');
+          if (cachedLeadsStr) {
+            const cachedLeads = JSON.parse(cachedLeadsStr);
+            const found = Array.isArray(cachedLeads) ? cachedLeads.find((l: any) => l.id === lead.id) : null;
+            if (found?.final_quotation_id) targetFinalId = found.final_quotation_id;
+          }
+        } catch (_) {}
+      }
+    }
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -127,6 +188,7 @@ export function LeadDrawerQuotationsTab({
               item.id === targetFinalId || 
               (item.template_id && (targetFinalId.includes(item.template_id) || item.template_id.includes(targetFinalId)))
             )) ||
+            (summaryFinalVersion !== undefined && item.version === summaryFinalVersion) ||
             item.is_final
           )
         }));

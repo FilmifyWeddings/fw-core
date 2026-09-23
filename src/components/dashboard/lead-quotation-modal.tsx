@@ -117,12 +117,59 @@ export function LeadQuotationModal({
   useEffect(() => {
     if (isOpen && lead?.id) {
       const cacheKey = `lead_quotes_cache_${lead.id}`;
-      const cached = (initialQuotations && initialQuotations.length > 0)
-        ? initialQuotations
-        : safeSessionGet(cacheKey);
+
+      let targetFinalId = lead.final_quotation_id || (lead as any).raw_payload?.final_quotation_id;
+      let summaryFinalVersion: number | undefined = undefined;
+
+      if (typeof window !== 'undefined') {
+        try {
+          const summaryMapStr = localStorage.getItem('sc_quotation_summary_map');
+          if (summaryMapStr) {
+            const summaryMap = JSON.parse(summaryMapStr);
+            if (summaryMap[lead.id]?.hasFinal) {
+              summaryFinalVersion = summaryMap[lead.id]?.finalVersion;
+              if (!targetFinalId && summaryMap[lead.id]?.versions?.length > 0) {
+                const fv = summaryMap[lead.id].versions.find((v: any) => v.is_final);
+                if (fv?.template_id) targetFinalId = fv.template_id;
+              }
+            }
+          }
+        } catch (_) {}
+
+        if (!targetFinalId) {
+          try {
+            const cachedLeadsStr = localStorage.getItem('sc_cached_leads');
+            if (cachedLeadsStr) {
+              const cachedLeads = JSON.parse(cachedLeadsStr);
+              const found = Array.isArray(cachedLeads) ? cachedLeads.find((l: any) => l.id === lead.id) : null;
+              if (found?.final_quotation_id) targetFinalId = found.final_quotation_id;
+            }
+          } catch (_) {}
+        }
+      }
+
+      // Check session cache first for any freshly set final quotations
+      const sessionCache = safeSessionGet(cacheKey);
+      const sessionHasFinal = Array.isArray(sessionCache) && sessionCache.some((item: any) => item.is_final);
+
+      const cached = sessionHasFinal
+        ? sessionCache
+        : (initialQuotations && initialQuotations.length > 0 ? initialQuotations : sessionCache);
 
       if (cached && Array.isArray(cached) && cached.length > 0) {
-        setQuotations(cached);
+        const reconciled = cached.map((item: QuotationVersionItem) => ({
+          ...item,
+          is_final: Boolean(
+            (targetFinalId && (
+              item.template_id === targetFinalId || 
+              item.id === targetFinalId || 
+              (item.template_id && (targetFinalId.includes(item.template_id) || item.template_id.includes(targetFinalId)))
+            )) ||
+            (summaryFinalVersion !== undefined && item.version === summaryFinalVersion) ||
+            item.is_final
+          )
+        }));
+        setQuotations(reconciled);
         setLoading(false);
       } else {
         setQuotations([]);
@@ -201,7 +248,35 @@ export function LeadQuotationModal({
     setErrorMsg(null);
 
     const cacheKey = `lead_quotes_cache_${lead.id}`;
-    const targetFinalId = lead.final_quotation_id || (lead as any).raw_payload?.final_quotation_id;
+    let targetFinalId = lead.final_quotation_id || (lead as any).raw_payload?.final_quotation_id;
+    let summaryFinalVersion: number | undefined = undefined;
+
+    if (typeof window !== 'undefined') {
+      try {
+        const summaryMapStr = localStorage.getItem('sc_quotation_summary_map');
+        if (summaryMapStr) {
+          const summaryMap = JSON.parse(summaryMapStr);
+          if (summaryMap[lead.id]?.hasFinal) {
+            summaryFinalVersion = summaryMap[lead.id]?.finalVersion;
+            if (!targetFinalId && summaryMap[lead.id]?.versions?.length > 0) {
+              const fv = summaryMap[lead.id].versions.find((v: any) => v.is_final);
+              if (fv?.template_id) targetFinalId = fv.template_id;
+            }
+          }
+        }
+      } catch (_) {}
+
+      if (!targetFinalId) {
+        try {
+          const cachedLeadsStr = localStorage.getItem('sc_cached_leads');
+          if (cachedLeadsStr) {
+            const cachedLeads = JSON.parse(cachedLeadsStr);
+            const found = Array.isArray(cachedLeads) ? cachedLeads.find((l: any) => l.id === lead.id) : null;
+            if (found?.final_quotation_id) targetFinalId = found.final_quotation_id;
+          }
+        } catch (_) {}
+      }
+    }
 
     if (!silent) {
       const cachedData = safeSessionGet(cacheKey);
@@ -214,6 +289,7 @@ export function LeadQuotationModal({
               item.id === targetFinalId || 
               (item.template_id && (targetFinalId.includes(item.template_id) || item.template_id.includes(targetFinalId)))
             )) ||
+            (summaryFinalVersion !== undefined && item.version === summaryFinalVersion) ||
             item.is_final
           )
         }));
@@ -251,6 +327,7 @@ export function LeadQuotationModal({
               item.id === targetFinalId || 
               (item.template_id && (targetFinalId.includes(item.template_id) || item.template_id.includes(targetFinalId)))
             )) ||
+            (summaryFinalVersion !== undefined && item.version === summaryFinalVersion) ||
             item.is_final
           )
         }));

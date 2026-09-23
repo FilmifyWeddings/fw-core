@@ -36,6 +36,14 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    const candidateSet = new Set<string>();
+    if (workspaceId) candidateSet.add(workspaceId);
+    if (authResult.workspaceId) candidateSet.add(authResult.workspaceId);
+    if (authResult.userId) candidateSet.add(authResult.userId);
+    if (requestedWorkspaceId) candidateSet.add(requestedWorkspaceId);
+    const candidates = Array.from(candidateSet);
+    const orConditions = candidates.flatMap(c => [`workspace_id.eq.${c}`, `tenant_id.eq.${c}`]).join(',');
+
     // Parallel fetch: quotation_documents (metadata only), quotations, and leads
     const [docsRes, quotesRes, leadsRes] = await Promise.all([
       supabaseAdmin
@@ -47,7 +55,7 @@ export async function GET(req: NextRequest) {
       supabaseAdmin
         .from('leads')
         .select('id, name, full_name, status, stage_id, final_quotation_id, quotation_id, raw_payload')
-        .or(`workspace_id.eq.${workspaceId},tenant_id.eq.${workspaceId}`)
+        .or(orConditions)
     ]);
 
     const allDocs = docsRes.data || [];
@@ -84,13 +92,14 @@ export async function GET(req: NextRequest) {
     });
 
     // Filter docs to those belonging to this workspace or matching leads
+    const candidateSetRef = new Set(candidates);
     const docs = allDocs.filter((d: any) => 
-      d.workspace_id === workspaceId || !d.workspace_id || leadMap.has(d.lead_id)
+      candidateSetRef.has(d.workspace_id) || !d.workspace_id || leadMap.has(d.lead_id)
     );
 
     // Filter quotes to those belonging to this workspace or matching leads
     const quotes = allQuotes.filter((q: any) =>
-      q.workspace_id === workspaceId || !q.workspace_id || (q.client_id && leadMap.has(q.client_id))
+      candidateSetRef.has(q.workspace_id) || !q.workspace_id || (q.client_id && leadMap.has(q.client_id))
     );
 
     const quoteByNum = new Map<string, any>();
@@ -139,7 +148,11 @@ export async function GET(req: NextRequest) {
         isDocFinal ||
         matchedQ?.is_final === true ||
         matchedQ?.status === 'accepted' ||
-        (leadInfo?.finalId && (leadInfo.finalId === d.template_id || leadInfo.finalId === d.id))
+        (leadInfo?.finalId && (
+          leadInfo.finalId === d.template_id || 
+          leadInfo.finalId === d.id || 
+          (d.template_id && (leadInfo.finalId.includes(d.template_id) || d.template_id.includes(leadInfo.finalId)))
+        ))
       );
 
       if (isFinal) {

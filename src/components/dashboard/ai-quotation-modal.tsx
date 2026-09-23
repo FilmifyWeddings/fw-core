@@ -20,6 +20,29 @@ interface AiQuotationModalProps {
   onApplied?: (updatedDoc: any, targetQuotationId: string) => void;
 }
 
+function tryParsePastedAiJson(rawText: string): any | null {
+  if (!rawText || !rawText.trim()) return null;
+  let text = rawText.trim();
+  if (text.includes('```')) {
+    text = text.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
+  }
+  const startIdx = text.indexOf('{');
+  const endIdx = text.lastIndexOf('}');
+  if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+    try {
+      const candidate = text.substring(startIdx, endIdx + 1);
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === 'object') {
+        const root = parsed.quotation || parsed;
+        if (root.cover || root.functionsPage || root.pricingPage || root.pages || root.shootDetails) {
+          return root;
+        }
+      }
+    } catch (_) {}
+  }
+  return null;
+}
+
 export function AiQuotationModal({
   isOpen,
   onClose,
@@ -386,6 +409,98 @@ LEAD & CLIENT CONTEXT:
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
 
+      const notes = additionalNotes.trim();
+      const clientParsedDoc = tryParsePastedAiJson(notes);
+
+      // FAST PATH 1: If user pasted valid JSON directly from ChatGPT, map and apply in 0ms!
+      if (clientParsedDoc) {
+        setExtractedDoc(clientParsedDoc);
+        await applyDocAndNavigate(clientParsedDoc);
+        return;
+      }
+
+      // FAST PATH 2: If creating for a new lead and have plain notes, call create-for-lead directly with additionalNotes
+      if (!quotationId && effectiveLead.id && effectiveLead.id !== 'draft') {
+        const createRes = await fetch('/api/quotations/create-for-lead', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            leadId: effectiveLead.id,
+            clientName: effectiveLead.name,
+            explicitTemplateId: selectedTemplateId || undefined,
+            additionalNotes: notes || undefined
+          })
+        });
+
+        const createText = await createRes.text();
+        let createJson: any = {};
+        try {
+          createJson = createText ? JSON.parse(createText) : {};
+        } catch (_) {}
+
+        if (!createRes.ok || !createJson.success) {
+          throw new Error(createJson.error || 'Failed to initialize quotation for lead');
+        }
+
+        const targetQId = createJson.quotationId || createJson.templateId;
+        const finalDoc = createJson.document;
+
+        if (targetQId && targetQId !== 'draft') {
+          try {
+            const { cacheDocumentLocal } = await import('@/lib/indexeddb-cache');
+            cacheDocumentLocal(targetQId, finalDoc, 1);
+            sessionStorage.removeItem(`lead_quotes_cache_${effectiveLead.id}`);
+
+            // Ensure effectiveLead is preserved in sc_cached_leads before navigating
+            const cachedLeadsStr = localStorage.getItem('sc_cached_leads');
+            if (cachedLeadsStr) {
+              const cachedLeads = JSON.parse(cachedLeadsStr);
+              if (Array.isArray(cachedLeads) && !cachedLeads.some((l: any) => l.id === effectiveLead.id)) {
+                cachedLeads.unshift(effectiveLead);
+                localStorage.setItem('sc_cached_leads', JSON.stringify(cachedLeads));
+              }
+            }
+
+            const lId = effectiveLead.id;
+            const coupleName = finalDoc?.cover?.coupleName || effectiveLead.name || 'Quotation';
+            const stored = localStorage.getItem('sc_quotation_summary_map');
+            const map = stored ? JSON.parse(stored) : {};
+            const prev = map[lId] || { count: 0, hasFinal: false, versions: [] };
+            const newVer = {
+              id: targetQId,
+              template_id: targetQId,
+              version: 1,
+              version_label: 'V1',
+              title: `${coupleName} - Quotation V1`,
+              couple_name: coupleName,
+              is_final: false
+            };
+            map[lId] = {
+              count: Math.max(prev.count || 0, 1),
+              hasFinal: prev.hasFinal || false,
+              finalVersion: prev.finalVersion,
+              versions: prev.versions?.length ? [newVer, ...prev.versions.filter((v: any) => v.template_id !== targetQId)] : [newVer]
+            };
+            localStorage.setItem('sc_quotation_summary_map', JSON.stringify(map));
+            window.dispatchEvent(new CustomEvent('quotation_created', { detail: { leadId: lId, quotationId: targetQId } }));
+          } catch (e) {}
+        }
+
+        if (onApplied) {
+          onApplied(finalDoc, targetQId);
+        } else if (targetQId && targetQId !== 'draft') {
+          router.push(`/workspace/quotations/builder/templet/${targetQId}`);
+          onClose();
+        } else {
+          onClose();
+        }
+        return;
+      }
+
+      // FALLBACK PATH: Existing quotation version update
       const res = await fetch('/api/quotations/ai-extract', {
         method: 'POST',
         headers: {
@@ -397,7 +512,7 @@ LEAD & CLIENT CONTEXT:
           quotationId: quotationId || null,
           explicitTemplateId: selectedTemplateId || null,
           currentDocument: currentDocumentData || null,
-          additionalNotes: additionalNotes.trim()
+          additionalNotes: notes
         })
       });
 
@@ -649,18 +764,9 @@ LEAD & CLIENT CONTEXT:
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={handleGenerate}
-                    disabled={generating || applying}
-                    className="px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-bold text-xs transition-all cursor-pointer disabled:opacity-50"
-                  >
-                    {generating ? 'Analyzing...' : 'Preview Details'}
-                  </button>
-
-                  <button
-                    type="button"
                     onClick={handleQuickCreateAndOpen}
                     disabled={generating || applying}
-                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-600 text-white font-black text-xs shadow-lg shadow-amber-500/25 active:scale-98 transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                    className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-600 text-white font-black text-xs shadow-lg shadow-amber-500/25 active:scale-98 transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer"
                   >
                     {generating || applying ? (
                       <>
@@ -670,7 +776,7 @@ LEAD & CLIENT CONTEXT:
                     ) : (
                       <>
                         <Sparkles className="w-4 h-4 text-white" />
-                        <span>⚡ Create & Open Design</span>
+                        <span>⚡ Create Quotation</span>
                         <ArrowRight className="w-3.5 h-3.5" />
                       </>
                     )}
