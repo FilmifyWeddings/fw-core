@@ -373,7 +373,7 @@ const DEFAULT_PAGE_SEQUENCE: PageSequenceItem[] = STANDARD_PAGE_DEFINITIONS.map(
 
 // StudioCore Presets & Full Dynamic State
 const DEFAULT_AIRY_PROPOSAL = {
-  designName: 'Wedding - Design 1',
+  designName: 'Personalised Wedding Quotation',
   eventGroup: 'Wedding',
   look: 'Cyprus & Sand Dune',
   primaryFont: "'Cormorant Garamond', serif",
@@ -383,16 +383,16 @@ const DEFAULT_AIRY_PROPOSAL = {
 
   // 1. Cover Page State
   cover: {
-    groomName: 'Rahul',
-    brideName: 'Neha',
-    coupleName: 'Rahul & Neha',
+    groomName: 'Client',
+    brideName: 'Partner',
+    coupleName: 'Valued Client',
     eventType: 'Wedding',
     sideOption: 'Both Sides',
-    locationName: 'MUMBAI',
-    brandName: 'FILMIFY WEDDINGS',
+    locationName: '',
+    brandName: '',
     brandLogoUrl: '',
     brandLogoSize: 64,
-    photoUrl: 'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&q=80',
+    photoUrl: '',
     photoHeight: 450,
     photoWidth: 75,
     photoFocalY: 50,
@@ -405,9 +405,9 @@ const DEFAULT_AIRY_PROPOSAL = {
   aboutUs: {
     kicker: 'INTRODUCTION',
     heading: 'ABOUT US',
-    text: 'Glowwed films strive to capture your love story in the most gracious way possible. All the memories of your event will be hand-picked with precision and made into films & photographs that you can cherish forever',
-    signature: 'FOUNDER & DIRECTOR, AS',
-    bottomBannerPhoto: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=1200&q=80',
+    text: 'We strive to capture your love story in the most gracious way possible. All the memories of your event will be hand-picked with precision and made into films & photographs that you can cherish forever.',
+    signature: 'DIRECTOR & CREW',
+    bottomBannerPhoto: '',
     bottomBannerHeight: 380,
     frameShape: 'full-width' as 'arch' | 'rounded' | 'rectangle' | 'full-width' | 'background',
     photoFocalY: 50,
@@ -424,7 +424,7 @@ const DEFAULT_AIRY_PROPOSAL = {
     crewText: 'Candid Photography\nCinematography\nPortable Changing Room',
     deliverablesHeading: 'Deliverables',
     deliverablesText: 'Full Ultra HD Super-Fine Raw Photos\nApprox. 50 High Resolution Edited Images\n3 Save The Dates Photos\n1 count Down Reel\n1 video Reel',
-    photo: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=800&q=80',
+    photo: '',
     photoHeight: 380,
     photoWidth: 75,
     photoFocalY: 50,
@@ -439,7 +439,7 @@ const DEFAULT_AIRY_PROPOSAL = {
   functionsPage: {
     kicker: 'EVENT SCHEDULE',
     heading: 'Functions & Coverage',
-    photo: 'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&q=80',
+    photo: '',
     photoHeight: 380,
     photoWidth: 75,
     photoFocalY: 50,
@@ -2212,6 +2212,13 @@ function StudioCoreAiryBuilderContent() {
             }
           }
         }
+        const activeRaw = sessionStorage.getItem('current_active_quotation_doc');
+        if (activeRaw) {
+          const active = JSON.parse(activeRaw);
+          if (active?.document && (!tid || active.id === tid || tid.includes(active.id) || active.id.includes(tid))) {
+            return normalizeQuotationData(active.document);
+          }
+        }
       } catch (_) {}
     }
     return DEFAULT_AIRY_PROPOSAL;
@@ -2224,6 +2231,13 @@ function StudioCoreAiryBuilderContent() {
         if (tid) {
           const sess = sessionStorage.getItem(`current_quotation_doc_${tid}`);
           if (sess) return true;
+        }
+        const activeRaw = sessionStorage.getItem('current_active_quotation_doc');
+        if (activeRaw) {
+          const active = JSON.parse(activeRaw);
+          if (active?.document && (!tid || active.id === tid || tid.includes(active.id) || active.id.includes(tid))) {
+            return true;
+          }
         }
       } catch (_) {}
     }
@@ -3085,6 +3099,32 @@ function StudioCoreAiryBuilderContent() {
 
         const routeId = params?.id ? String(params.id) : 'FW-2WT85Y0';
 
+        // 0. SYNCHRONOUS IMMEDIATE SESSION STORAGE PRE-HYDRATION (0ms)
+        if (typeof window !== 'undefined') {
+          try {
+            let sessDocJson: any = null;
+            const direct = sessionStorage.getItem(`current_quotation_doc_${routeId}`);
+            if (direct) {
+              sessDocJson = JSON.parse(direct);
+            } else {
+              const activeRaw = sessionStorage.getItem('current_active_quotation_doc');
+              if (activeRaw) {
+                const active = JSON.parse(activeRaw);
+                if (active?.document && (!routeId || active.id === routeId || routeId.includes(active.id) || active.id.includes(routeId))) {
+                  sessDocJson = active.document;
+                }
+              }
+            }
+            if (sessDocJson && typeof sessDocJson === 'object') {
+              const localNormalized = normalizeQuotationData(sessDocJson);
+              if (localNormalized.primaryFont) preloadActiveFont(localNormalized.primaryFont);
+              if (localNormalized.secondaryFont) preloadActiveFont(localNormalized.secondaryFont);
+              setRawData(localNormalized);
+              setIsDataReady(true);
+            }
+          } catch (_) {}
+        }
+
         // 1. INSTANT LOCAL CACHE HYDRATION (<5ms First Contentful Render)
         const cachedLocal = await getCachedDocumentLocal(routeId);
         if (cachedLocal?.documentJson) {
@@ -3144,6 +3184,7 @@ function StudioCoreAiryBuilderContent() {
 
         isRemoteUpdateRef.current = true;
         setRawData(loadedData);
+        setIsDataReady(true);
 
         // Fetch connected Lead data if lead_id is present
         const leadIdToFetch = loadedData.lead_id || json.document?.lead_id;
@@ -5323,12 +5364,23 @@ function StudioCoreAiryBuilderContent() {
     </div>
   );
 
-  // Render Guard: Never show default proposal on refresh while loading saved quotation
-  if (!isDataReady) {
+  // Render Guard: Strictly NEVER flash default or demo proposal while loading a lead quotation
+  const isQuotationRoute = Boolean(routeId && (routeId.startsWith('FW-Q-') || routeId.startsWith('FW-L-') || routeId.length > 15));
+  const isDemoDoc = !data || !data.lead_id || data.cover?.coupleName === 'Rahul & Neha' || data.designName === 'Wedding - Design 1';
+
+  if (!isDataReady || (isQuotationRoute && isDemoDoc)) {
     return (
-      <div className="h-screen w-screen bg-[#EBECEF] flex flex-col items-center justify-center space-y-4 select-none">
-        <div className="w-10 h-10 border-4 border-amber-500 border-t-transparent rounded-full animate-spin" />
-        <p className="text-xs font-extrabold tracking-widest text-zinc-600 uppercase">Loading Saved Quotation...</p>
+      <div className="h-screen w-screen bg-[#FDFBF7] flex flex-col items-center justify-center space-y-4 select-none">
+        <div className="relative">
+          <div className="w-12 h-12 border-3 border-amber-500/20 border-t-amber-600 rounded-full animate-spin" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Sparkles className="w-5 h-5 text-amber-600 animate-pulse" />
+          </div>
+        </div>
+        <div className="text-center space-y-1">
+          <p className="text-sm font-black tracking-wider text-amber-950 uppercase">Opening Quotation...</p>
+          <p className="text-xs font-semibold text-amber-800/60">Applying your selected studio template design</p>
+        </div>
       </div>
     );
   }

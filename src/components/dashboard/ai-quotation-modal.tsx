@@ -361,6 +361,7 @@ LEAD & CLIENT CONTEXT:
         try {
           if (finalDoc) {
             sessionStorage.setItem(`current_quotation_doc_${targetQId}`, JSON.stringify(finalDoc));
+            sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: targetQId, document: finalDoc }));
           }
           const { cacheDocumentLocal } = await import('@/lib/indexeddb-cache');
           await cacheDocumentLocal(targetQId, finalDoc, 1);
@@ -474,6 +475,7 @@ LEAD & CLIENT CONTEXT:
           try {
             if (finalDoc) {
               sessionStorage.setItem(`current_quotation_doc_${targetQId}`, JSON.stringify(finalDoc));
+              sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: targetQId, document: finalDoc }));
             }
             const { cacheDocumentLocal } = await import('@/lib/indexeddb-cache');
             await cacheDocumentLocal(targetQId, finalDoc, 1);

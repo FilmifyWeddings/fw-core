@@ -563,6 +563,7 @@ export function LeadQuotationModal({
         if (json.document) {
           try {
             sessionStorage.setItem(`current_quotation_doc_${qId}`, JSON.stringify(json.document));
+            sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: qId, document: json.document }));
             const { cacheDocumentLocal } = await import('@/lib/indexeddb-cache');
             await cacheDocumentLocal(qId, json.document, json.version || 1);
           } catch (e) {}
@@ -1161,6 +1162,7 @@ export function LeadQuotationModal({
           if (updatedDoc) {
             try {
               sessionStorage.setItem(`current_quotation_doc_${targetQId}`, JSON.stringify(updatedDoc));
+              sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: targetQId, document: updatedDoc }));
             } catch (_) {}
           }
           router.push(`/workspace/quotations/builder/templet/${targetQId}`);
