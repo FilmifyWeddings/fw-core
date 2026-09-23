@@ -63,6 +63,12 @@ ALTER TABLE public.partner_album_orders ADD COLUMN IF NOT EXISTS due_date TEXT;
 ALTER TABLE public.partner_album_orders ADD COLUMN IF NOT EXISTS pdf_proof_url TEXT;
 ALTER TABLE public.partner_album_orders ADD COLUMN IF NOT EXISTS drive_folder_url TEXT;
 ALTER TABLE public.partner_album_orders ADD COLUMN IF NOT EXISTS comments JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.partner_album_orders ADD COLUMN IF NOT EXISTS event_name TEXT;
+ALTER TABLE public.partner_album_orders ADD COLUMN IF NOT EXISTS event_date TEXT;
+ALTER TABLE public.partner_album_orders ADD COLUMN IF NOT EXISTS event_time TEXT;
+ALTER TABLE public.partner_album_orders ADD COLUMN IF NOT EXISTS role TEXT;
+ALTER TABLE public.partner_album_orders ADD COLUMN IF NOT EXISTS assignment_id TEXT;
+ALTER TABLE public.partner_album_orders ADD COLUMN IF NOT EXISTS payout_id TEXT;
 ALTER TABLE public.partner_album_orders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
 
 -- 4. Drop legacy restrictive check constraints

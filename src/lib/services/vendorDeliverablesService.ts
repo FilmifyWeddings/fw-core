@@ -18,7 +18,13 @@ export interface VendorAlbumOrder {
   client_name: string;
   project_id?: string;
   deliverable_id?: string;
+  assignment_id?: string;
+  payout_id?: string;
   category?: AssignmentCategory; // 'shoot', 'video_editing', 'photo_editing', 'album_design', 'album_printing'
+  event_name?: string; // e.g. "Wedding", "Reception", "Engagement", "Sangeet", "Haldi"
+  event_date?: string; // e.g. "2026-10-15"
+  event_time?: string; // e.g. "09:00 AM - 02:00 PM"
+  role?: string; // e.g. "Candid Photography", "Cinematography", "Traditional Video", "Drone Pilot"
   item_title?: string;
   specs?: string;
   service_type?: string;
@@ -43,11 +49,35 @@ export interface VendorAlbumOrder {
     author: string;
     text: string;
     time: string;
+    formatted_time?: string;
     reminder_at?: string;
     is_voice?: boolean;
   }>;
   created_at?: string;
   updated_at?: string;
+}
+
+/**
+ * Formats note date and time cleanly: e.g. "24 Sep 2026, 04:20 AM"
+ */
+export function formatNoteDateTime(dateInput?: string | Date): string {
+  if (!dateInput) return '';
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return String(dateInput);
+
+  const day = d.getDate();
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const month = months[d.getMonth()];
+  const year = d.getFullYear();
+
+  let hours = d.getHours();
+  const minutes = d.getMinutes().toString().padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  hours = hours ? hours : 12;
+  const formattedHours = hours.toString().padStart(2, '0');
+
+  return `${day} ${month} ${year}, ${formattedHours}:${minutes} ${ampm}`;
 }
 
 export type VendorAssignmentOrder = VendorAlbumOrder;
@@ -328,27 +358,94 @@ export async function fetchVendorAlbumOrders(
         .eq('assigned_member_id', vendorId);
 
       if (assignments && assignments.length > 0) {
-        for (const assign of assignments) {
-          const shootId = `shoot_${assign.id || assign.sub_event_id || Math.random().toString(36).substring(7)}`;
-          const exists = orderList.some(o => o.id === shootId || (o.category === 'shoot' && o.client_name === assign.client_name && o.item_title === assign.role));
-          if (!exists) {
-            const agreed = Number(assign.agreed_amount || assign.rate || 0) || 5000;
-            const paid = Number(assign.paid_amount || assign.advance_amount || 0);
-            const balance = Math.max(0, agreed - paid);
+        const isStrictUuid = (val: any): boolean => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val.trim());
+        const subEventIds = [...new Set(assignments.map((a: any) => a.sub_event_id).filter(isStrictUuid))];
+        const projectIds = [...new Set(assignments.map((a: any) => a.project_id || a.event_id).filter(isStrictUuid))];
 
+        const [subEventsRes, projectsRes] = await Promise.all([
+          subEventIds.length > 0
+            ? supabaseAdmin.from('fw_sub_events').select('id, project_id, event_title, event_date, venue_name, start_time_12h, end_time_12h, start_time, end_time').in('id', subEventIds)
+            : Promise.resolve({ data: [] }),
+          projectIds.length > 0
+            ? supabaseAdmin.from('fw_projects').select('id, client_name, main_date, main_venue').in('id', projectIds)
+            : Promise.resolve({ data: [] })
+        ]);
+
+        const subEventsMap = new Map<string, any>();
+        (subEventsRes.data || []).forEach((se: any) => subEventsMap.set(se.id, se));
+
+        const projectsMap = new Map<string, any>();
+        (projectsRes.data || []).forEach((p: any) => projectsMap.set(p.id, p));
+
+        for (const assign of assignments) {
+          const se = assign.sub_event_id ? subEventsMap.get(assign.sub_event_id) : null;
+          const proj = (assign.project_id ? projectsMap.get(assign.project_id) : null) || (se?.project_id ? projectsMap.get(se.project_id) : null);
+
+          const clientName = proj?.client_name || assign.client_name || 'Valued Couple';
+          const eventName = se?.event_title || assign.sub_event_name || 'Wedding Event';
+          const eventDate = se?.event_date || assign.event_date || assign.sub_event_date || proj?.main_date || '';
+
+          // Timing calculation
+          let eventTime = '';
+          if (se?.start_time_12h) {
+            eventTime = se.end_time_12h ? `${se.start_time_12h} - ${se.end_time_12h}` : se.start_time_12h;
+          } else if (se?.start_time) {
+            eventTime = se.end_time ? `${se.start_time} - ${se.end_time}` : se.start_time;
+          } else if (assign.start_time) {
+            eventTime = assign.end_time ? `${assign.start_time} - ${assign.end_time}` : assign.start_time;
+          }
+
+          const role = assign.required_role || assign.role || 'Photographer';
+          const agreed = Number(assign.agreed_amount ?? assign.rate ?? 0); // ₹0 if not set!
+          const paid = Number(assign.advance_amount ?? assign.paid_amount ?? 0);
+          const balance = Math.max(0, agreed - paid);
+
+          const shootId = `shoot_assign_${assign.id}`;
+
+          const existingIdx = orderList.findIndex(
+            o => o.id === shootId || 
+                 o.assignment_id === assign.id || 
+                 (o.category === 'shoot' && o.client_name === clientName && (o.event_name === eventName || o.album_type === eventName))
+          );
+
+          if (existingIdx >= 0) {
+            const existing = orderList[existingIdx];
+            const updatedShoot: VendorAlbumOrder = {
+              ...existing,
+              assignment_id: assign.id,
+              client_name: clientName,
+              event_name: eventName,
+              event_date: eventDate,
+              event_time: eventTime,
+              role: role,
+              item_title: eventName,
+              album_type: eventName,
+              service_type: role,
+              total_amount: existing.total_amount !== undefined && existing.total_amount !== 5000 ? existing.total_amount : agreed,
+              paid_amount: existing.paid_amount || paid,
+              balance_amount: Math.max(0, (existing.total_amount !== undefined && existing.total_amount !== 5000 ? existing.total_amount : agreed) - (existing.paid_amount || paid)),
+              payment_status: (Math.max(0, (existing.total_amount || agreed) - (existing.paid_amount || paid)) === 0 && (existing.total_amount || agreed) > 0) ? 'PAID' : (existing.paid_amount || paid) > 0 ? 'PARTIAL' : 'PENDING'
+            };
+            orderList[existingIdx] = updatedShoot;
+          } else {
             const shootOrder: VendorAlbumOrder = {
               id: shootId,
               workspace_id: workspaceId || assign.workspace_id || 'ws_default',
               partner_id: vendorId,
               partner_name: vendorName || 'Freelance Specialist',
               partner_email: vendorEmail || '',
-              client_name: assign.client_name || 'Client Wedding',
-              project_id: assign.project_id || '',
+              client_name: clientName,
+              project_id: assign.project_id || se?.project_id || '',
+              assignment_id: assign.id,
               category: 'shoot',
-              item_title: assign.role || 'Wedding Shoot',
-              specs: assign.event_date ? `Shoot Date: ${assign.event_date}` : 'Full Day Shoot',
-              service_type: 'Freelance Shoot',
-              album_type: assign.role ? `${assign.role} Shoot` : 'Wedding Event Shoot',
+              event_name: eventName,
+              event_date: eventDate,
+              event_time: eventTime,
+              role: role,
+              item_title: eventName,
+              specs: eventTime ? `${eventDate} • ${eventTime}` : eventDate || 'Scheduled Shoot',
+              service_type: role,
+              album_type: eventName,
               sheet_count: 1,
               page_count: 1,
               rate_per_sheet: 0,
@@ -357,12 +454,19 @@ export async function fetchVendorAlbumOrders(
               balance_amount: balance,
               order_status: assign.status === 'completed' ? 'Completed' : 'In Progress',
               payment_status: balance === 0 && agreed > 0 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'PENDING',
-              order_date: assign.event_date || assign.created_at || new Date().toISOString().split('T')[0],
-              due_date: assign.event_date || '',
+              order_date: eventDate || assign.created_at || new Date().toISOString().split('T')[0],
+              due_date: eventDate || '',
               notes: assign.notes || '',
               comments: [],
               created_at: assign.created_at || new Date().toISOString()
             };
+
+            try {
+              await supabaseAdmin.from('partner_album_orders').upsert(shootOrder);
+            } catch (err) {
+              console.warn('[vendorDeliverablesService] Upsert shoot error:', err);
+            }
+
             orderList.push(shootOrder);
           }
         }
@@ -380,25 +484,59 @@ export async function fetchVendorAlbumOrders(
 
       if (payouts && payouts.length > 0) {
         for (const p of payouts) {
+          const clientName = p.client_name || 'Valued Couple';
+          const eventName = p.event_name || 'Wedding Event';
+          const eventDate = p.event_date || '';
+          const eventTime = p.start_time ? (p.end_time ? `${p.start_time} - ${p.end_time}` : p.start_time) : '';
+          const role = p.role || 'Freelance Specialist';
+          const agreed = Number(p.agreed_amount || 0);
+          const paid = Number(p.paid_amount || 0);
+          const balance = Number(p.balance_amount !== undefined ? p.balance_amount : Math.max(0, agreed - paid));
           const shootId = `shoot_payout_${p.id}`;
-          const exists = orderList.some(o => o.id === shootId || (o.category === 'shoot' && o.client_name === p.client_name && o.item_title === (p.event_name || p.role)));
-          if (!exists) {
-            const agreed = Number(p.agreed_amount || 0);
-            const paid = Number(p.paid_amount || 0);
-            const balance = Number(p.balance_amount || Math.max(0, agreed - paid));
+
+          const existingIdx = orderList.findIndex(
+            o => o.id === shootId || 
+                 o.payout_id === p.id ||
+                 (o.category === 'shoot' && o.client_name === clientName && (o.event_name === eventName || o.album_type === eventName))
+          );
+
+          if (existingIdx >= 0) {
+            const existing = orderList[existingIdx];
+            orderList[existingIdx] = {
+              ...existing,
+              payout_id: p.id,
+              client_name: clientName,
+              event_name: eventName,
+              event_date: eventDate,
+              event_time: eventTime,
+              role: role,
+              item_title: eventName,
+              album_type: eventName,
+              service_type: role,
+              total_amount: existing.total_amount !== undefined && existing.total_amount !== 5000 ? existing.total_amount : agreed,
+              paid_amount: existing.paid_amount || paid,
+              balance_amount: Math.max(0, (existing.total_amount !== undefined && existing.total_amount !== 5000 ? existing.total_amount : agreed) - (existing.paid_amount || paid)),
+              payment_status: (Math.max(0, (existing.total_amount || agreed) - (existing.paid_amount || paid)) === 0 && (existing.total_amount || agreed) > 0) ? 'PAID' : (existing.paid_amount || paid) > 0 ? 'PARTIAL' : 'PENDING'
+            };
+          } else {
             const shootOrder: VendorAlbumOrder = {
               id: shootId,
               workspace_id: workspaceId || p.workspace_id || 'ws_default',
               partner_id: vendorId,
               partner_name: vendorName || p.member_name || 'Freelance Specialist',
               partner_email: vendorEmail || '',
-              client_name: p.client_name || 'Client Wedding',
+              client_name: clientName,
               project_id: p.project_id || '',
+              payout_id: p.id,
               category: 'shoot',
-              item_title: p.event_name ? `${p.event_name} (${p.role || 'Shoot'})` : (p.role || 'Wedding Shoot'),
-              specs: p.event_date ? `Shoot Date: ${p.event_date}` : 'Full Day Shoot',
-              service_type: p.role || 'Freelance Shoot',
-              album_type: p.event_name || 'Wedding Shoot',
+              event_name: eventName,
+              event_date: eventDate,
+              event_time: eventTime,
+              role: role,
+              item_title: eventName,
+              specs: eventTime ? `${eventDate} • ${eventTime}` : eventDate || 'Scheduled Shoot',
+              service_type: role,
+              album_type: eventName,
               sheet_count: 1,
               page_count: 1,
               rate_per_sheet: 0,
@@ -407,12 +545,19 @@ export async function fetchVendorAlbumOrders(
               balance_amount: balance,
               order_status: p.status === 'PAID' || balance === 0 ? 'Completed' : 'In Progress',
               payment_status: balance === 0 && agreed > 0 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'PENDING',
-              order_date: p.event_date || p.created_at || new Date().toISOString().split('T')[0],
-              due_date: p.event_date || '',
+              order_date: eventDate || p.created_at || new Date().toISOString().split('T')[0],
+              due_date: eventDate || '',
               notes: p.notes || '',
               comments: [],
               created_at: p.created_at || new Date().toISOString()
             };
+
+            try {
+              await supabaseAdmin.from('partner_album_orders').upsert(shootOrder);
+            } catch (err) {
+              console.warn('[vendorDeliverablesService] Upsert shoot payout error:', err);
+            }
+
             orderList.push(shootOrder);
           }
         }
@@ -467,7 +612,13 @@ export async function saveVendorAlbumOrder(
     client_name: order.client_name,
     project_id: order.project_id || '',
     deliverable_id: order.deliverable_id || '',
+    assignment_id: order.assignment_id || '',
+    payout_id: order.payout_id || '',
     category: cat,
+    event_name: order.event_name || order.item_title || order.album_type || 'Event',
+    event_date: order.event_date || order.due_date || '',
+    event_time: order.event_time || '',
+    role: order.role || order.service_type || '',
     item_title: order.item_title || order.album_type || 'Creative Task',
     specs: order.specs || (cat === 'album_design' || cat === 'album_printing' ? `${sheetCount} Sheets (${pageCount} Pages)` : `${sheetCount} Qty`),
     service_type: order.service_type || (cat === 'video_editing' ? 'Video Editing' : cat === 'photo_editing' ? 'Photo Editing' : cat === 'album_printing' ? 'Album Printing' : cat === 'shoot' ? 'Freelance Shoot' : 'Album Designing'),
@@ -482,7 +633,7 @@ export async function saveVendorAlbumOrder(
     order_status: normalizeVendorOrderStatus(order.order_status),
     payment_status: paymentStatus,
     order_date: order.order_date || new Date().toISOString().split('T')[0],
-    due_date: order.due_date || '',
+    due_date: order.due_date || order.event_date || '',
     delivery_date: order.delivery_date || '',
     pdf_proof_url: order.pdf_proof_url || '',
     drive_folder_url: order.drive_folder_url || '',
@@ -494,7 +645,7 @@ export async function saveVendorAlbumOrder(
   try {
     await supabaseAdmin.from('partner_album_orders').upsert(payload);
 
-    // BI-DIRECTIONAL SYNC: If deliverable_id exists, sync status, specs, due_date and notes back to post_production_deliverables
+    // BI-DIRECTIONAL SYNC: If deliverable_id exists, sync back to post_production_deliverables
     if (payload.deliverable_id) {
       await supabaseAdmin
         .from('post_production_deliverables')
@@ -506,6 +657,37 @@ export async function saveVendorAlbumOrder(
           updated_at: new Date().toISOString()
         })
         .eq('id', payload.deliverable_id);
+    }
+
+    // BI-DIRECTIONAL SYNC: If assignment_id exists, sync amounts to fw_assignments
+    if (payload.assignment_id) {
+      await supabaseAdmin
+        .from('fw_assignments')
+        .update({
+          agreed_amount: payload.total_amount,
+          paid_amount: payload.paid_amount,
+          advance_amount: payload.paid_amount,
+          balance_amount: payload.balance_amount,
+          payment_status: payload.payment_status === 'PAID' ? 'completed' : payload.payment_status === 'PARTIAL' ? 'partial' : 'pending',
+          notes: payload.notes || undefined,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', payload.assignment_id);
+    }
+
+    // BI-DIRECTIONAL SYNC: If payout_id exists, sync amounts to team_event_payouts
+    if (payload.payout_id) {
+      await supabaseAdmin
+        .from('team_event_payouts')
+        .update({
+          agreed_amount: payload.total_amount,
+          paid_amount: payload.paid_amount,
+          balance_amount: payload.balance_amount,
+          status: payload.payment_status === 'PAID' ? 'PAID' : payload.payment_status === 'PARTIAL' ? 'PARTIAL' : 'PENDING',
+          notes: payload.notes || undefined,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', payload.payout_id);
     }
   } catch (err) {
     console.warn('[vendorDeliverablesService] DB save error:', err);
@@ -539,20 +721,46 @@ export async function addVendorOrderComment(
   }
 ): Promise<VendorAlbumOrder | null> {
   try {
-    const { data: order } = await supabaseAdmin
+    let { data: order } = await supabaseAdmin
       .from('partner_album_orders')
       .select('*')
       .eq('id', orderId)
       .maybeSingle();
 
+    if (!order) {
+      // Create a fallback order if not already in table
+      const placeholder: Partial<VendorAlbumOrder> = {
+        id: orderId,
+        partner_id: 'unknown',
+        partner_name: 'Team Specialist',
+        client_name: 'Valued Couple',
+        album_type: 'Assignment Note',
+        total_amount: 0,
+        paid_amount: 0,
+        balance_amount: 0,
+        order_status: 'In Progress',
+        payment_status: 'PENDING',
+        order_date: new Date().toISOString().split('T')[0],
+        comments: []
+      };
+      const { data: inserted } = await supabaseAdmin
+        .from('partner_album_orders')
+        .insert(placeholder)
+        .select()
+        .single();
+      order = inserted;
+    }
+
     if (!order) return null;
 
     const existingComments = Array.isArray(order.comments) ? order.comments : [];
+    const now = new Date();
     const newComment = {
       id: `comm_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       author: comment.author || 'Studio Lead',
       text: comment.text,
-      time: new Date().toISOString(),
+      time: now.toISOString(),
+      formatted_time: formatNoteDateTime(now),
       reminder_at: comment.reminder_at || undefined,
       is_voice: Boolean(comment.is_voice)
     };
@@ -570,6 +778,21 @@ export async function addVendorOrderComment(
       .single();
 
     if (error) throw error;
+
+    // If reminder_at is set, schedule in post_production_reminders
+    if (comment.reminder_at) {
+      try {
+        await supabaseAdmin.from('post_production_reminders').insert([{
+          workspace_id: order.workspace_id || 'ws_default',
+          deliverable_id: order.deliverable_id || order.id,
+          project_id: order.project_id || null,
+          reminder_text: `Reminder for ${order.client_name} (${order.event_name || order.album_type || 'Shoot'}): ${comment.text}`,
+          reminder_at: new Date(comment.reminder_at).toISOString(),
+          status: 'PENDING'
+        }]);
+      } catch (_) {}
+    }
+
     return updated as VendorAlbumOrder;
   } catch (err) {
     console.error('[vendorDeliverablesService] addVendorOrderComment error:', err);

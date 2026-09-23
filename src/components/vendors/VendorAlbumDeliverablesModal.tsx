@@ -15,7 +15,8 @@ import {
   AssignmentCategory,
   fetchVendorAlbumOrders, 
   saveVendorAlbumOrder,
-  detectDeliverableCategory
+  detectDeliverableCategory,
+  formatNoteDateTime
 } from '@/lib/services/vendorDeliverablesService';
 import AiMicButton from '@/components/AiMicButton';
 import VendorStatementInvoicePdfTemplate, { VendorInvoiceItem } from './VendorStatementInvoicePdfTemplate';
@@ -113,16 +114,22 @@ export default function VendorAlbumDeliverablesModal({
   // Inline Edit Item State
   const [editingOrder, setEditingOrder] = useState<VendorAlbumOrder | null>(null);
 
-  // Payment Recording Modal State
+  // Payment & Commercials Modal State
   const [paymentTarget, setPaymentTarget] = useState<VendorAlbumOrder | null>(null);
-  const [payAmount, setPayAmount] = useState('');
+  const [payDonePrice, setPayDonePrice] = useState('0');
+  const [payPaidAmount, setPayPaidAmount] = useState('0');
+  const [payDate, setPayDate] = useState(new Date().toISOString().split('T')[0]);
   const [payMode, setPayMode] = useState<'UPI' | 'Bank Transfer' | 'Cash'>('UPI');
   const [payRef, setPayRef] = useState('');
+  const [payNotes, setPayNotes] = useState('');
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
 
   // Comment Drawer State for a specific order
   const [commentTarget, setCommentTarget] = useState<VendorAlbumOrder | null>(null);
   const [commentInput, setCommentInput] = useState('');
   const [commentReminder, setCommentReminder] = useState('');
+  const [showReminderPicker, setShowReminderPicker] = useState(false);
+  const [isSubmittingComment, setIsSubmittingComment] = useState(false);
 
   // Check member types and roles
   const isFreelancer = vendor?.primary_type === 'FREELANCER' || (vendor?.member_types || []).includes('FREELANCER');
@@ -413,11 +420,24 @@ export default function VendorAlbumDeliverablesModal({
     setOrders(prev => prev.filter(o => o.id !== orderId));
   };
 
-  // Record Payment Submit
+  // Open Payment & Commercials Modal
+  const handleOpenRecordPayment = (order: VendorAlbumOrder) => {
+    setPaymentTarget(order);
+    setPayDonePrice(String(order.total_amount || 0));
+    setPayPaidAmount(String(order.paid_amount || 0));
+    setPayDate(new Date().toISOString().split('T')[0]);
+    setPayMode('UPI');
+    setPayRef('');
+    setPayNotes(order.notes || '');
+  };
+
+  // Record Payment Submit with Commercials Persistence
   const handleRecordPayment = async () => {
-    if (!paymentTarget || !payAmount) return;
-    const amountNum = Number(payAmount);
-    if (isNaN(amountNum) || amountNum <= 0) return;
+    if (!paymentTarget) return;
+    const doneNum = Number(payDonePrice) || 0;
+    const paidNum = Number(payPaidAmount) || 0;
+    const isFull = doneNum > 0 && paidNum >= doneNum;
+    setIsSubmittingPayment(true);
 
     try {
       const res = await fetch('/api/vendors/payments', {
@@ -428,9 +448,13 @@ export default function VendorAlbumDeliverablesModal({
           workspaceId,
           partnerId: vendor.id,
           partnerName: vendor.name,
-          amount: amountNum,
+          totalAmount: doneNum,
+          paidAmount: isFull ? doneNum : paidNum,
+          isFullPaid: isFull,
           paymentMode: payMode,
+          paymentDate: payDate,
           referenceNo: payRef,
+          notes: payNotes,
           autoSyncExpense: true
         })
       });
@@ -438,28 +462,47 @@ export default function VendorAlbumDeliverablesModal({
       if (data.success && data.order) {
         setOrders(prev => prev.map(o => o.id === data.order.id ? data.order : o));
         setPaymentTarget(null);
-        setPayAmount('');
-        setPayRef('');
       } else {
-        const newPaid = (paymentTarget.paid_amount || 0) + amountNum;
-        const newBal = Math.max(0, paymentTarget.total_amount - newPaid);
-        const updated = {
+        const bal = Math.max(0, doneNum - paidNum);
+        const updated: VendorAlbumOrder = {
           ...paymentTarget,
-          paid_amount: newPaid,
-          balance_amount: newBal,
-          payment_status: (newBal === 0 ? 'PAID' : 'PARTIAL') as any
+          total_amount: doneNum,
+          paid_amount: paidNum,
+          balance_amount: bal,
+          payment_status: bal === 0 && doneNum > 0 ? 'PAID' : paidNum > 0 ? 'PARTIAL' : 'PENDING'
         };
         setOrders(prev => prev.map(o => o.id === paymentTarget.id ? updated : o));
         setPaymentTarget(null);
       }
     } catch (err) {
       console.warn('Payment submit error:', err);
+    } finally {
+      setIsSubmittingPayment(false);
     }
   };
 
-  // Add Comment Submit
+  // Quick Preset Helper for Notes Reminder
+  const setQuickReminderPreset = (preset: 'tomorrow_morning' | 'in_2_days' | 'in_3_days') => {
+    const d = new Date();
+    if (preset === 'tomorrow_morning') {
+      d.setDate(d.getDate() + 1);
+      d.setHours(10, 0, 0, 0);
+    } else if (preset === 'in_2_days') {
+      d.setDate(d.getDate() + 2);
+      d.setHours(10, 0, 0, 0);
+    } else if (preset === 'in_3_days') {
+      d.setDate(d.getDate() + 3);
+      d.setHours(10, 0, 0, 0);
+    }
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const dtStr = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    setCommentReminder(dtStr);
+  };
+
+  // Add Comment Submit with Date-Time Preservation and Reminder Alert Dispatch
   const handleAddComment = async (isVoice: boolean = false) => {
     if (!commentTarget || !commentInput.trim()) return;
+    setIsSubmittingComment(true);
     try {
       const res = await fetch('/api/vendors/comments', {
         method: 'POST',
@@ -478,9 +521,22 @@ export default function VendorAlbumDeliverablesModal({
         setCommentTarget(data.order);
         setCommentInput('');
         setCommentReminder('');
+        setShowReminderPicker(false);
+
+        if (commentReminder) {
+          window.dispatchEvent(new CustomEvent('studio_reminder_created', {
+            detail: {
+              deliverable_id: commentTarget.id,
+              reminder_at: commentReminder,
+              text: commentInput.trim()
+            }
+          }));
+        }
       }
     } catch (err) {
       console.warn('Comment submit error:', err);
+    } finally {
+      setIsSubmittingComment(false);
     }
   };
 
@@ -514,7 +570,7 @@ export default function VendorAlbumDeliverablesModal({
   const getCategoryBadge = (cat?: string) => {
     switch (cat) {
       case 'shoot':
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-800 border border-emerald-200">📸 Shoot</span>;
+        return null;
       case 'video_editing':
         return <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-sky-50 text-sky-800 border border-sky-200">🎬 Video Edit</span>;
       case 'photo_editing':
@@ -975,7 +1031,7 @@ export default function VendorAlbumDeliverablesModal({
                       isSelected ? 'border-amber-500 bg-amber-50/20' : 'border-stone-200/90'
                     }`}
                   >
-                    {/* Top Row: Checkbox, Couple Name, Category/Event Tag, Title, (Status dropdown ONLY if NOT shoot) */}
+                    {/* Top Row: Checkbox, Couple Name, Category/Event Details, Status */}
                     <div className="flex items-start justify-between flex-wrap gap-2.5">
                       <div className="flex items-start gap-3">
                         <button
@@ -991,30 +1047,89 @@ export default function VendorAlbumDeliverablesModal({
                         </button>
 
                         <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h3 className="text-sm sm:text-base font-black text-stone-900 tracking-tight">
-                              {order.client_name}
-                            </h3>
-                            {getCategoryBadge(order.category)}
-                            {!isShoot && getDeadlineBadge(order.due_date, order.order_status)}
-                          </div>
-                          
-                          {/* Event / Deliverable Details */}
-                          <div className="flex items-center gap-2 mt-1 text-xs text-stone-600 font-medium flex-wrap">
-                            <span className="font-bold text-amber-950">
-                              {order.item_title || order.album_type}
-                            </span>
-                            {order.specs && (
-                              <span className="font-mono text-stone-700 bg-stone-100 px-2 py-0.5 rounded-md border border-stone-200/60 font-bold">
-                                {order.specs}
-                              </span>
-                            )}
-                            {order.due_date && isShoot && (
-                              <span className="font-mono text-stone-500 text-[11px]">
-                                Date: {order.due_date}
-                              </span>
-                            )}
-                          </div>
+                          {isShoot ? (
+                            /* ── SHOOTS HEADER & DETAILS: STRICTLY NO 📸 Shoot, NO Full Day Shoot! ── */
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h3 className="text-base sm:text-lg font-black text-stone-900 tracking-tight">
+                                  {order.client_name}
+                                </h3>
+
+                                {/* Synchronized Payment Status Pill */}
+                                {isPaid ? (
+                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1 shadow-2xs">
+                                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                    SETTLED
+                                  </span>
+                                ) : (Number(order.paid_amount || 0) > 0) ? (
+                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1 shadow-2xs">
+                                    PARTIALLY PAID
+                                  </span>
+                                ) : (
+                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-300 flex items-center gap-1 shadow-2xs">
+                                    UNPAID
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Event Name, Date & Timing, Category / Role */}
+                              <div className="flex items-center gap-2 text-xs text-stone-700 font-medium flex-wrap pt-0.5">
+                                {/* Event Name (e.g. Wedding, Reception, Engagement) */}
+                                <span className="font-extrabold text-amber-950 text-xs sm:text-sm">
+                                  {order.event_name || order.item_title || order.album_type || 'Wedding Event'}
+                                </span>
+
+                                <span className="text-stone-300">•</span>
+
+                                {/* Date & Timing */}
+                                <span className="inline-flex items-center gap-1.5 text-stone-700 font-semibold bg-stone-100 px-2.5 py-0.5 rounded-md border border-stone-200/80 font-mono text-[11px]">
+                                  <Calendar className="w-3 h-3 text-amber-600" />
+                                  <span>{order.event_date || order.due_date || 'Date Scheduled'}</span>
+                                  {order.event_time && (
+                                    <>
+                                      <span className="text-stone-300">|</span>
+                                      <Clock className="w-3 h-3 text-amber-600" />
+                                      <span>{order.event_time}</span>
+                                    </>
+                                  )}
+                                </span>
+
+                                <span className="text-stone-300">•</span>
+
+                                {/* Category / Role */}
+                                <span className="px-2.5 py-0.5 rounded-md text-[11px] font-black bg-amber-50 text-amber-900 border border-amber-300/60 shadow-2xs">
+                                  {order.role || order.service_type || 'Shoot Specialist'}
+                                </span>
+                              </div>
+                            </div>
+                          ) : (
+                            /* ── DELIVERABLES HEADER (Video, Photo, Album Design, Printing) ── */
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h3 className="text-sm sm:text-base font-black text-stone-900 tracking-tight">
+                                  {order.client_name}
+                                </h3>
+                                {getCategoryBadge(order.category)}
+                                {getDeadlineBadge(order.due_date, order.order_status)}
+                              </div>
+                              
+                              <div className="flex items-center gap-2 mt-1 text-xs text-stone-600 font-medium flex-wrap">
+                                <span className="font-bold text-amber-950">
+                                  {order.item_title || order.album_type}
+                                </span>
+                                {order.specs && (
+                                  <span className="font-mono text-stone-700 bg-stone-100 px-2 py-0.5 rounded-md border border-stone-200/60 font-bold">
+                                    {order.specs}
+                                  </span>
+                                )}
+                                {order.due_date && (
+                                  <span className="font-mono text-stone-500 text-[11px]">
+                                    Due: {order.due_date}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -1036,7 +1151,7 @@ export default function VendorAlbumDeliverablesModal({
                       )}
                     </div>
 
-                    {/* Bottom Row: Commercials (Done Price, Paid, Balance) & Actions */}
+                    {/* Bottom Row: Commercials (Done Price, Paid, Balance in RED) & Actions */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-3 rounded-2xl bg-[#FAF8F5] border border-amber-200/60 items-center">
                       {/* Financials Strip */}
                       <div>
@@ -1045,20 +1160,20 @@ export default function VendorAlbumDeliverablesModal({
                         </span>
                         <div className="flex items-center gap-2 text-xs font-bold mt-0.5 flex-wrap">
                           <span className="font-mono font-black text-stone-900">
-                            Done: ₹{Number(order.total_amount).toLocaleString('en-IN')}
+                            Done: ₹{Number(order.total_amount || 0).toLocaleString('en-IN')}
                           </span>
                           <span className="text-stone-300">•</span>
-                          <span className="font-mono text-emerald-700">
+                          <span className="font-mono text-emerald-700 font-bold">
                             Paid: ₹{Number(order.paid_amount || 0).toLocaleString('en-IN')}
                           </span>
                           <span className="text-stone-300">•</span>
-                          <span className={`font-mono font-black ${order.balance_amount > 0 ? 'text-rose-700' : 'text-stone-500'}`}>
+                          <span className={`font-mono font-black ${(order.balance_amount || 0) > 0 ? 'text-rose-700 font-black' : 'text-stone-500'}`}>
                             Bal: ₹{Number(order.balance_amount || 0).toLocaleString('en-IN')}
                           </span>
                         </div>
                       </div>
 
-                      {/* PDF Proof / Drive Link (if applicable) */}
+                      {/* PDF Proof / Drive Link for deliverables or quick shoot info */}
                       <div className="sm:text-center">
                         {!isShoot ? (
                           <>
@@ -1091,8 +1206,8 @@ export default function VendorAlbumDeliverablesModal({
                             )}
                           </>
                         ) : (
-                          <div className="text-[11px] text-stone-400 font-medium">
-                            Shoot Event Commercials
+                          <div className="text-[11px] text-stone-500 font-medium">
+                            <span className="font-semibold text-stone-700">Shoot Event Commercials</span>
                           </div>
                         )}
                       </div>
@@ -1101,10 +1216,7 @@ export default function VendorAlbumDeliverablesModal({
                       <div className="flex items-center justify-end gap-1.5 flex-wrap">
                         <button
                           type="button"
-                          onClick={() => {
-                            setPaymentTarget(order);
-                            setPayAmount(String(order.balance_amount || ''));
-                          }}
+                          onClick={() => handleOpenRecordPayment(order)}
                           className={`px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-2xs ${
                             isPaid
                               ? 'bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100'
@@ -1183,12 +1295,12 @@ export default function VendorAlbumDeliverablesModal({
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-stone-500 block mb-1">
-                        {editingOrder.category === 'shoot' ? 'Event Name' : 'Deliverable Title'}
+                        {editingOrder.category === 'shoot' ? 'Event Name (e.g. Wedding, Reception)' : 'Deliverable Title'}
                       </label>
                       <input
                         type="text"
-                        value={editingOrder.item_title || editingOrder.album_type}
-                        onChange={(e) => setEditingOrder({ ...editingOrder, item_title: e.target.value, album_type: e.target.value })}
+                        value={editingOrder.event_name || editingOrder.item_title || editingOrder.album_type}
+                        onChange={(e) => setEditingOrder({ ...editingOrder, event_name: e.target.value, item_title: e.target.value, album_type: e.target.value })}
                         className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold"
                       />
                     </div>
@@ -1212,7 +1324,24 @@ export default function VendorAlbumDeliverablesModal({
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Paid Amount (₹)</label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[10px] font-bold text-stone-500 block">Paid Amount (₹)</label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const tot = Number(editingOrder.total_amount) || 0;
+                            setEditingOrder({
+                              ...editingOrder,
+                              paid_amount: tot,
+                              balance_amount: 0,
+                              payment_status: 'PAID'
+                            });
+                          }}
+                          className="text-[9px] font-black uppercase text-emerald-700 bg-emerald-100 hover:bg-emerald-200 px-1.5 py-0.5 rounded-md cursor-pointer transition shadow-2xs"
+                        >
+                          ⚡ Full Paid
+                        </button>
+                      </div>
                       <input
                         type="number"
                         value={editingOrder.paid_amount || 0}
@@ -1222,10 +1351,10 @@ export default function VendorAlbumDeliverablesModal({
                             ...editingOrder,
                             paid_amount: paid,
                             balance_amount: Math.max(0, (editingOrder.total_amount || 0) - paid),
-                            payment_status: (editingOrder.total_amount - paid === 0 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'PENDING') as any
+                            payment_status: ((editingOrder.total_amount || 0) - paid === 0 && (editingOrder.total_amount || 0) > 0 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'PENDING') as any
                           });
                         }}
-                        className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold font-mono"
+                        className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold font-mono text-emerald-700"
                       />
                     </div>
                     <div>
@@ -1240,7 +1369,7 @@ export default function VendorAlbumDeliverablesModal({
                             balance_amount: bal
                           });
                         }}
-                        className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold font-mono text-rose-700"
+                        className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold font-mono text-rose-700 font-black"
                       />
                     </div>
                   </div>
@@ -1309,64 +1438,165 @@ export default function VendorAlbumDeliverablesModal({
             )}
           </AnimatePresence>
 
-          {/* Record Payment Inline Modal */}
+          {/* Enhanced Record Pay & Commercials Modal */}
           <AnimatePresence>
             {paymentTarget && (
-              <div className="fixed inset-0 z-[150] flex items-center justify-center p-3 bg-black/50 backdrop-blur-2xs">
+              <div className="fixed inset-0 z-[150] flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs">
                 <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  className="bg-white p-5 rounded-3xl shadow-xl border-2 border-amber-300 max-w-sm w-full space-y-3.5 text-stone-900"
+                  initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                  className="bg-white p-5 sm:p-6 rounded-3xl shadow-2xl border-2 border-amber-300 max-w-md w-full space-y-4 text-stone-900"
                 >
-                  <div className="flex items-center justify-between border-b border-stone-100 pb-2">
-                    <h4 className="text-xs font-black text-amber-950">Record Payment for {paymentTarget.client_name}</h4>
-                    <button type="button" onClick={() => setPaymentTarget(null)} className="text-stone-400 hover:text-stone-700">
+                  <div className="flex items-start justify-between border-b border-stone-100 pb-3">
+                    <div>
+                      <h4 className="text-sm font-black text-amber-950 flex items-center gap-1.5">
+                        <IndianRupee className="w-4 h-4 text-amber-600" />
+                        <span>Record Pay &amp; Commercials</span>
+                      </h4>
+                      <p className="text-xs text-stone-500 font-semibold mt-0.5">
+                        {paymentTarget.client_name} • {paymentTarget.event_name || paymentTarget.item_title || paymentTarget.album_type}
+                      </p>
+                    </div>
+                    <button 
+                      type="button" 
+                      onClick={() => setPaymentTarget(null)} 
+                      className="text-stone-400 hover:text-stone-700 w-7 h-7 rounded-lg hover:bg-stone-100 flex items-center justify-center transition cursor-pointer"
+                    >
                       <X className="w-4 h-4" />
                     </button>
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase text-stone-400 block">Amount to Pay (₹)</label>
-                    <input
-                      type="number"
-                      value={payAmount}
-                      onChange={(e) => setPayAmount(e.target.value)}
-                      className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-black font-mono focus:outline-none focus:border-amber-500"
-                    />
+                  {/* Commercials Inputs: Done Price & Paid Amount + Full Paid Shortcut */}
+                  <div className="space-y-3 bg-[#FAF8F5] p-3.5 rounded-2xl border border-amber-200/80">
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="text-[10px] font-black uppercase text-stone-500 block mb-1">
+                          Agreed Done Price (₹)
+                        </label>
+                        <input
+                          type="number"
+                          value={payDonePrice}
+                          onChange={(e) => setPayDonePrice(e.target.value)}
+                          className="w-full p-2 bg-white border border-stone-200 rounded-xl text-xs font-black font-mono focus:outline-none focus:border-amber-500 shadow-2xs"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[10px] font-black uppercase text-stone-500 block">
+                            Paid Amount (₹)
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setPayPaidAmount(payDonePrice)}
+                            className="text-[9px] font-black uppercase text-emerald-700 bg-emerald-100 hover:bg-emerald-200 px-1.5 py-0.5 rounded-md cursor-pointer transition shadow-2xs"
+                            title="Set Paid Amount equal to Done Price"
+                          >
+                            ⚡ Full Paid
+                          </button>
+                        </div>
+                        <input
+                          type="number"
+                          value={payPaidAmount}
+                          onChange={(e) => setPayPaidAmount(e.target.value)}
+                          className="w-full p-2 bg-white border border-stone-200 rounded-xl text-xs font-black font-mono focus:outline-none focus:border-amber-500 shadow-2xs text-emerald-700"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Live Balance Due Banner */}
+                    {(() => {
+                      const doneNum = Number(payDonePrice) || 0;
+                      const paidNum = Number(payPaidAmount) || 0;
+                      const liveBal = Math.max(0, doneNum - paidNum);
+                      const isSettled = liveBal === 0 && doneNum > 0;
+                      return (
+                        <div className={`p-2.5 rounded-xl border flex items-center justify-between ${
+                          isSettled 
+                            ? 'bg-emerald-50 border-emerald-300 text-emerald-900' 
+                            : liveBal > 0 
+                            ? 'bg-rose-50 border-rose-300 text-rose-900' 
+                            : 'bg-stone-50 border-stone-200 text-stone-700'
+                        }`}>
+                          <span className="text-[11px] font-bold">
+                            {isSettled ? '✓ Fully Settled' : 'Pending Balance Due:'}
+                          </span>
+                          <span className={`text-xs font-mono font-black ${liveBal > 0 ? 'text-rose-700 font-black' : 'text-emerald-700 font-bold'}`}>
+                            ₹{liveBal.toLocaleString('en-IN')}
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase text-stone-400 block">Payment Mode</label>
-                    <select
-                      value={payMode}
-                      onChange={(e) => setPayMode(e.target.value as any)}
-                      className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold focus:outline-none"
+                  {/* Payment Details: Date, Mode, Reference, Notes */}
+                  <div className="space-y-2.5">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] font-bold text-stone-500 block mb-1">Payment Date</label>
+                        <input
+                          type="date"
+                          value={payDate}
+                          onChange={(e) => setPayDate(e.target.value)}
+                          className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:outline-none focus:border-amber-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-bold text-stone-500 block mb-1">Payment Mode</label>
+                        <select
+                          value={payMode}
+                          onChange={(e) => setPayMode(e.target.value as any)}
+                          className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:outline-none focus:border-amber-500 cursor-pointer"
+                        >
+                          <option value="UPI">UPI (Google Pay, PhonePe)</option>
+                          <option value="Bank Transfer">Bank Transfer (IMPS/NEFT)</option>
+                          <option value="Cash">Cash</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Reference / UTR (Optional)</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. UTR294018204"
+                        value={payRef}
+                        onChange={(e) => setPayRef(e.target.value)}
+                        className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-medium focus:outline-none focus:border-amber-500 font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Payment Notes / Remarks (Optional)</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Advance paid on shoot day"
+                        value={payNotes}
+                        onChange={(e) => setPayNotes(e.target.value)}
+                        className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-medium focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentTarget(null)}
+                      className="px-4 py-2 border border-stone-200 text-stone-600 text-xs font-bold rounded-xl hover:bg-stone-50 transition cursor-pointer"
                     >
-                      <option value="UPI">UPI (Google Pay, PhonePe)</option>
-                      <option value="Bank Transfer">Bank Transfer (IMPS/NEFT)</option>
-                      <option value="Cash">Cash</option>
-                    </select>
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isSubmittingPayment}
+                      onClick={handleRecordPayment}
+                      className="px-5 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-black text-xs rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
+                    >
+                      {isSubmittingPayment ? 'Saving...' : 'Confirm & Save Commercials'}
+                    </button>
                   </div>
-
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase text-stone-400 block">Reference / UTR</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. UTR1849202"
-                      value={payRef}
-                      onChange={(e) => setPayRef(e.target.value)}
-                      className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-semibold focus:outline-none"
-                    />
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleRecordPayment}
-                    className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-white font-black text-xs rounded-xl shadow-xs transition cursor-pointer"
-                  >
-                    Confirm &amp; Record Payment
-                  </button>
                 </motion.div>
               </div>
             )}
@@ -1375,58 +1605,142 @@ export default function VendorAlbumDeliverablesModal({
           {/* Comments & AI Voice Notes Drawer */}
           <AnimatePresence>
             {commentTarget && (
-              <div className="fixed inset-0 z-[150] flex items-center justify-center p-3 bg-black/50 backdrop-blur-2xs">
+              <div className="fixed inset-0 z-[150] flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs">
                 <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  className="bg-[#FAF8F5] p-5 rounded-3xl shadow-xl border-2 border-amber-300 max-w-lg w-full space-y-3.5 text-stone-900"
+                  initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                  className="bg-[#FAF8F5] p-5 sm:p-6 rounded-3xl shadow-2xl border-2 border-amber-300 max-w-lg w-full space-y-4 text-stone-900"
                 >
-                  <div className="flex items-center justify-between border-b border-amber-200/80 pb-2">
+                  <div className="flex items-start justify-between border-b border-amber-200/80 pb-3">
                     <div>
-                      <h4 className="text-xs font-black text-amber-950">
-                        Discussion &amp; AI Voice Notes • {commentTarget.client_name}
+                      <h4 className="text-sm font-black text-amber-950 flex items-center gap-1.5">
+                        <MessageSquare className="w-4 h-4 text-amber-600" />
+                        <span>Discussion &amp; AI Voice Notes</span>
                       </h4>
-                      <p className="text-[10px] text-stone-500 font-medium">{commentTarget.album_type}</p>
+                      <p className="text-xs text-stone-500 font-semibold mt-0.5">
+                        {commentTarget.client_name} • {commentTarget.event_name || commentTarget.item_title || commentTarget.album_type}
+                      </p>
                     </div>
-                    <button type="button" onClick={() => setCommentTarget(null)} className="text-stone-400 hover:text-stone-700">
+                    <button 
+                      type="button" 
+                      onClick={() => {
+                        setCommentTarget(null);
+                        setShowReminderPicker(false);
+                      }} 
+                      className="text-stone-400 hover:text-stone-700 w-7 h-7 rounded-lg hover:bg-stone-200/50 flex items-center justify-center transition cursor-pointer"
+                    >
                       <X className="w-4 h-4" />
                     </button>
                   </div>
 
-                  {/* Previous Comments */}
-                  <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+                  {/* Previous Comments List */}
+                  <div className="max-h-56 overflow-y-auto space-y-2.5 pr-1">
                     {(commentTarget.comments || []).length === 0 ? (
-                      <p className="text-xs text-stone-400 italic text-center py-4">No comments recorded yet.</p>
+                      <div className="py-6 text-center text-xs text-stone-400 italic">
+                        No notes or comments recorded yet. Add the first instruction or reminder below.
+                      </div>
                     ) : (
                       commentTarget.comments?.map(c => (
-                        <div key={c.id} className="p-2.5 rounded-xl bg-white border border-stone-200/80 shadow-2xs space-y-1">
-                          <div className="flex items-center justify-between text-[10px] text-stone-400 font-bold">
-                            <span className="text-amber-900">{c.author}</span>
-                            <span>{new Date(c.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                          </div>
-                          <p className="text-xs text-stone-800 font-medium">{c.text}</p>
-                          {c.reminder_at && (
-                            <span className="inline-block text-[9px] font-black text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200">
-                              ⏰ Reminder: {new Date(c.reminder_at).toLocaleDateString()}
+                        <div key={c.id} className="p-3 rounded-2xl bg-white border border-stone-200/90 shadow-2xs space-y-1.5">
+                          <div className="flex items-center justify-between text-[11px] text-stone-400 font-bold flex-wrap gap-1">
+                            <span className="text-amber-950 font-black">{c.author || 'Studio Lead'}</span>
+                            <span className="font-mono text-stone-500 text-[10px]">
+                              {c.formatted_time || formatNoteDateTime(c.time)}
                             </span>
-                          )}
+                          </div>
+                          <p className="text-xs text-stone-800 font-medium whitespace-pre-wrap leading-relaxed">
+                            {c.text}
+                          </p>
+                          <div className="flex items-center gap-2 pt-0.5 flex-wrap">
+                            {c.reminder_at && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-black text-purple-700 bg-purple-50 px-2.5 py-0.5 rounded-full border border-purple-200 shadow-2xs">
+                                ⏰ Reminder: {formatNoteDateTime(c.reminder_at)}
+                              </span>
+                            )}
+                            {c.is_voice && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                                🎙️ Voice Note
+                              </span>
+                            )}
+                          </div>
                         </div>
                       ))
                     )}
                   </div>
 
+                  {/* Reminder Alert Date & Time Pop-Up / Section */}
+                  <AnimatePresence>
+                    {showReminderPicker && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="p-3 bg-purple-50/80 border border-purple-200 rounded-2xl space-y-2"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-black text-purple-900 flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-purple-600" />
+                            <span>Schedule Reminder Alert:</span>
+                          </span>
+                          {commentReminder && (
+                            <button
+                              type="button"
+                              onClick={() => setCommentReminder('')}
+                              className="text-[10px] font-bold text-rose-600 hover:underline cursor-pointer"
+                            >
+                              Clear
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Quick Presets */}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => setQuickReminderPreset('tomorrow_morning')}
+                            className="px-2.5 py-1 rounded-lg bg-white border border-purple-200 text-[10px] font-bold text-purple-900 hover:bg-purple-100 transition shadow-2xs cursor-pointer"
+                          >
+                            Tomorrow 10 AM
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setQuickReminderPreset('in_2_days')}
+                            className="px-2.5 py-1 rounded-lg bg-white border border-purple-200 text-[10px] font-bold text-purple-900 hover:bg-purple-100 transition shadow-2xs cursor-pointer"
+                          >
+                            In 2 Days
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setQuickReminderPreset('in_3_days')}
+                            className="px-2.5 py-1 rounded-lg bg-white border border-purple-200 text-[10px] font-bold text-purple-900 hover:bg-purple-100 transition shadow-2xs cursor-pointer"
+                          >
+                            In 3 Days
+                          </button>
+                        </div>
+
+                        {/* DateTime Picker Input */}
+                        <input
+                          type="datetime-local"
+                          value={commentReminder}
+                          onChange={(e) => setCommentReminder(e.target.value)}
+                          className="w-full px-2.5 py-1.5 bg-white border border-purple-300 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-purple-500 shadow-2xs font-mono"
+                        />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
                   {/* Input Box with AI Voice Integration */}
-                  <div className="space-y-2 pt-2 border-t border-amber-200/80">
+                  <div className="space-y-2.5 pt-2 border-t border-amber-200/80">
                     <div className="relative">
                       <textarea
                         rows={2}
                         value={commentInput}
                         onChange={(e) => setCommentInput(e.target.value)}
-                        placeholder="Type note or use AI Voice mic..."
-                        className="w-full p-2.5 bg-white border border-stone-200 rounded-xl text-xs font-medium text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs pr-24"
+                        placeholder="Type note or click mic for AI Voice transcription..."
+                        className="w-full p-3 bg-white border border-stone-200 rounded-2xl text-xs font-medium text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs pr-14 resize-none"
                       />
-                      <div className="absolute right-2 top-2">
+                      <div className="absolute right-2.5 top-2.5">
                         <AiMicButton
                           size="sm"
                           onInsertComment={(transcript) => {
@@ -1437,22 +1751,30 @@ export default function VendorAlbumDeliverablesModal({
                     </div>
 
                     <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5 text-xs text-stone-500">
-                        <span className="text-[10px] font-bold">Reminder:</span>
-                        <input
-                          type="datetime-local"
-                          value={commentReminder}
-                          onChange={(e) => setCommentReminder(e.target.value)}
-                          className="bg-white border border-stone-200 rounded-lg text-[10px] p-1 shadow-2xs"
-                        />
-                      </div>
+                      {/* Reminder Icon Button (⏰ Remind Me) */}
+                      <button
+                        type="button"
+                        onClick={() => setShowReminderPicker(prev => !prev)}
+                        className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs ${
+                          commentReminder
+                            ? 'bg-purple-600 text-white border-purple-700 shadow-xs ring-2 ring-purple-300'
+                            : showReminderPicker
+                            ? 'bg-purple-100 text-purple-900 border-purple-300'
+                            : 'bg-white text-stone-700 border-stone-200 hover:bg-purple-50 hover:text-purple-900'
+                        }`}
+                        title="Set Reminder Alert"
+                      >
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>{commentReminder ? '⏰ Reminder Set' : '⏰ Remind Me'}</span>
+                      </button>
 
                       <button
                         type="button"
+                        disabled={isSubmittingComment || !commentInput.trim()}
                         onClick={() => handleAddComment(false)}
-                        className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white font-black text-xs rounded-xl shadow-xs transition cursor-pointer"
+                        className="px-5 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-black text-xs rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
                       >
-                        Save Note
+                        {isSubmittingComment ? 'Saving...' : 'Save Note'}
                       </button>
                     </div>
                   </div>

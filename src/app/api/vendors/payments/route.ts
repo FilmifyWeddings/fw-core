@@ -13,44 +13,85 @@ export async function POST(req: NextRequest) {
       orderId,
       workspaceId = userId,
       partnerId,
-      partnerName = 'Album Designer',
+      partnerName = 'Team Specialist',
+      totalAmount,
+      paidAmount,
       amount,
+      isFullPaid,
       paymentMode = 'UPI',
+      paymentDate = new Date().toISOString().split('T')[0],
       referenceNo = '',
       notes = '',
       autoSyncExpense = true
     } = body;
 
-    if (!orderId || amount === undefined || amount === null) {
-      return NextResponse.json({ error: 'orderId and amount are required' }, { status: 400 });
+    if (!orderId) {
+      return NextResponse.json({ error: 'orderId is required' }, { status: 400 });
     }
 
-    const payAmount = Number(amount) || 0;
-
-    // Fetch existing order
-    const { data: order, error: fetchErr } = await supabaseAdmin
+    // Fetch existing order or create placeholder
+    let { data: order, error: fetchErr } = await supabaseAdmin
       .from('partner_album_orders')
       .select('*')
       .eq('id', orderId)
       .maybeSingle();
 
-    if (fetchErr || !order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+    if (!order) {
+      const placeholder = {
+        id: orderId,
+        workspace_id: workspaceId,
+        partner_id: partnerId || 'unknown',
+        partner_name: partnerName,
+        client_name: 'Valued Couple',
+        album_type: 'Assignment Order',
+        category: orderId.startsWith('shoot_') ? 'shoot' : 'album_design',
+        total_amount: Number(totalAmount) || 0,
+        paid_amount: 0,
+        balance_amount: Number(totalAmount) || 0,
+        order_status: 'In Progress',
+        payment_status: 'PENDING',
+        order_date: new Date().toISOString().split('T')[0],
+        comments: []
+      };
+      const { data: created } = await supabaseAdmin
+        .from('partner_album_orders')
+        .insert(placeholder)
+        .select()
+        .single();
+      order = created;
     }
 
-    const totalAmount = Number(order.total_amount) || 0;
-    const currentPaid = Number(order.paid_amount) || 0;
-    const newPaid = Math.min(totalAmount, currentPaid + payAmount);
-    const newBalance = Math.max(0, totalAmount - newPaid);
+    if (!order) {
+      return NextResponse.json({ error: 'Order not found and could not be initialized' }, { status: 404 });
+    }
+
+    // Determine target agreed Done Price
+    const donePrice = totalAmount !== undefined ? Number(totalAmount) : (Number(order.total_amount) || 0);
+
+    let newPaid = 0;
+    if (isFullPaid) {
+      newPaid = donePrice;
+    } else if (paidAmount !== undefined) {
+      newPaid = Math.max(0, Number(paidAmount));
+    } else if (amount !== undefined) {
+      const currentPaid = Number(order.paid_amount) || 0;
+      newPaid = Math.max(0, currentPaid + Number(amount));
+    } else {
+      newPaid = Number(order.paid_amount) || 0;
+    }
+
+    const newBalance = Math.max(0, donePrice - newPaid);
     const paymentStatus: 'PENDING' | 'PARTIAL' | 'PAID' = 
-      newBalance === 0 && totalAmount > 0 ? 'PAID' : newPaid > 0 ? 'PARTIAL' : 'PENDING';
+      newBalance === 0 && donePrice > 0 ? 'PAID' : newPaid > 0 ? 'PARTIAL' : 'PENDING';
 
     const { data: updatedOrder, error: updateErr } = await supabaseAdmin
       .from('partner_album_orders')
       .update({
+        total_amount: donePrice,
         paid_amount: newPaid,
         balance_amount: newBalance,
         payment_status: paymentStatus,
+        notes: notes || order.notes || undefined,
         updated_at: new Date().toISOString()
       })
       .eq('id', orderId)
@@ -59,18 +100,59 @@ export async function POST(req: NextRequest) {
 
     if (updateErr) throw updateErr;
 
+    // Bi-Directional Sync: fw_assignments
+    const assignId = order.assignment_id || (orderId.startsWith('shoot_assign_') ? orderId.replace('shoot_assign_', '') : (orderId.startsWith('shoot_') && !orderId.includes('payout') ? orderId.replace('shoot_', '') : ''));
+    if (assignId) {
+      try {
+        await supabaseAdmin.from('fw_assignments').update({
+          agreed_amount: donePrice,
+          paid_amount: newPaid,
+          advance_amount: newPaid,
+          balance_amount: newBalance,
+          payment_status: paymentStatus === 'PAID' ? 'completed' : paymentStatus === 'PARTIAL' ? 'partial' : 'pending',
+          payment_method: paymentMode,
+          payment_date: paymentDate,
+          notes: notes || undefined,
+          updated_at: new Date().toISOString()
+        }).eq('id', assignId);
+      } catch (assignSyncErr) {
+        console.warn('[Payments API] fw_assignments sync error:', assignSyncErr);
+      }
+    }
+
+    // Bi-Directional Sync: team_event_payouts
+    const payoutId = order.payout_id || (orderId.startsWith('shoot_payout_') ? orderId.replace('shoot_payout_', '') : '');
+    if (payoutId) {
+      try {
+        await supabaseAdmin.from('team_event_payouts').update({
+          agreed_amount: donePrice,
+          paid_amount: newPaid,
+          balance_amount: newBalance,
+          status: paymentStatus === 'PAID' ? 'PAID' : paymentStatus === 'PARTIAL' ? 'PARTIAL' : 'PENDING',
+          payment_method: paymentMode,
+          payment_date: paymentDate,
+          notes: notes || undefined,
+          updated_at: new Date().toISOString()
+        }).eq('id', payoutId);
+      } catch (payoutSyncErr) {
+        console.warn('[Payments API] team_event_payouts sync error:', payoutSyncErr);
+      }
+    }
+
     // Optional Expense Sync
-    if (autoSyncExpense && payAmount > 0) {
+    if (autoSyncExpense && newPaid > 0) {
+      const priorPaid = Number(order.paid_amount) || 0;
+      const logAmount = (newPaid > priorPaid) ? (newPaid - priorPaid) : newPaid;
       await syncTeamPaymentToExpensesAndAnalytics(workspaceId, {
-        paymentType: 'Vendor Album Fee',
-        memberName: partnerName,
+        paymentType: order.category === 'shoot' ? 'Freelance Shoot Payout' : 'Vendor Album Fee',
+        memberName: partnerName || order.partner_name,
         memberId: partnerId || order.partner_id,
-        memberType: 'PARTNER',
-        paidAmount: payAmount,
-        paymentDate: new Date().toISOString().split('T')[0],
+        memberType: order.category === 'shoot' ? 'FREELANCER' : 'PARTNER',
+        paidAmount: logAmount,
+        paymentDate: paymentDate,
         paymentMethod: paymentMode,
         safeAssignmentId: orderId,
-        notes: notes || `Album Design / Printing payment for ${order.client_name} (${order.album_type})`
+        notes: notes || `Payment for ${order.client_name} (${order.event_name || order.album_type || 'Shoot'})`
       }).catch((e) => console.warn('[Vendor Payment] Expense sync warning:', e));
     }
 
