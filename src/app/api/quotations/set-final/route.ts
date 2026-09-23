@@ -183,20 +183,22 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 4. Synchronous reliable sync across Client Directory, Booking Events, Post Production, and Finance
-    try {
-      await syncBookedLeadOrFinalQuotation({
-        leadId,
-        quotationId,
-        workspaceId: userId,
-        forceBookedStatus: true,
-        supabaseClient: supabaseAdmin
-      });
-    } catch (syncErr) {
-      console.error('[Set-Final] Sync exception:', syncErr);
-    }
-
-    clearLeadSummaryCache();
+    // 4. Background asynchronous sync across Client Directory, Booking Events, Post Production, and Finance
+    // Runs in the background so the HTTP response returns to the user in sub-second / milliseconds!
+    (async () => {
+      try {
+        await syncBookedLeadOrFinalQuotation({
+          leadId,
+          quotationId,
+          workspaceId: userId,
+          forceBookedStatus: true,
+          supabaseClient: supabaseAdmin
+        });
+        clearLeadSummaryCache();
+      } catch (syncErr) {
+        console.error('[Set-Final] Background sync exception:', syncErr);
+      }
+    })();
 
     return NextResponse.json({
       success: true,

@@ -62,12 +62,12 @@ async function handleGet(
       supabaseAdmin
         .from('quotation_documents')
         .select('*')
-        .eq('template_id', id)
+        .or(`template_id.eq.${id},id.eq.${id}`)
         .maybeSingle(),
       supabaseAdmin
         .from('quotations')
         .select('*')
-        .or(`id.eq.${id},quotation_number.eq.${id}`)
+        .or(`id.eq.${id},quotation_number.eq.${id},public_token.eq.${id}`)
         .maybeSingle()
     ]);
 

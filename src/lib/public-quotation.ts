@@ -86,7 +86,7 @@ export async function resolvePublicQuotation(token: string): Promise<PublicQuota
     const { data: docData } = await supabaseAdmin
       .from('quotation_documents')
       .select('template_id, content_json, lead_id, workspace_id, user_id')
-      .or(`template_id.eq.${token},template_id.eq.${targetIdCandidate}`)
+      .or(`template_id.eq.${token},template_id.eq.${targetIdCandidate},id.eq.${token},id.eq.${targetIdCandidate}`)
       .order('updated_at', { ascending: false })
       .limit(1)
       .maybeSingle();

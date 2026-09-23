@@ -334,19 +334,8 @@ export async function GET(
         || content.eventGroup 
         || 'Wedding';
 
-      let title = '';
-      if (content.designName && content.designName !== 'Wedding - Design 1' && content.designName !== 'Design 1' && !content.designName.startsWith('FW-')) {
-        title = content.designName;
-      } else if (content.title && content.title !== 'Wedding - Design 1' && content.title !== 'Design 1' && !content.title.startsWith('FW-')) {
-        title = content.title;
-      } else {
-        const cleanEventType = eventType.replace(/quotation/i, '').trim();
-        title = `${coupleName} - ${cleanEventType} Quotation`;
-      }
-
-      if (!title || title.trim() === '' || title === 'Wedding - Design 1') {
-        title = `${coupleName} - Wedding Quotation`;
-      }
+      const cleanEventType = eventType.replace(/quotation/i, '').trim() || 'Wedding';
+      let title = `${coupleName} - ${cleanEventType} Quotation`;
 
       const matchingQuote = allQuotes.find((q: any) =>
         q.id === doc.template_id || q.quotation_number === doc.template_id
@@ -391,7 +380,7 @@ export async function GET(
         (effectiveLead as any).raw_payload?.final_quotation_id === doc.id
       );
 
-      const displayTitle = isFinal && !title.includes('Final')
+      const displayTitle = isFinal
         ? `${coupleName || 'Client'} - Final Quotation`
         : title;
 

@@ -260,9 +260,16 @@ export function LeadQuotationModal({
 
     // ⚡ INSTANT 0ms OPTIMISTIC UPDATE
     const previousQuotations = [...quotations];
+    const isTargetItem = (item: QuotationVersionItem) => {
+      if (q.template_id && item.template_id && item.template_id === q.template_id) return true;
+      if (q.id && item.id && item.id === q.id) return true;
+      if (q.version !== undefined && item.version !== undefined && item.version === q.version) return true;
+      return false;
+    };
+
     const updated = quotations.map(item => ({
       ...item,
-      is_final: unmark ? false : item.template_id === q.template_id
+      is_final: unmark ? false : isTargetItem(item)
     }));
     setQuotations(updated);
     const cacheKey = `lead_quotes_cache_${lead.id}`;
@@ -477,13 +484,21 @@ export function LeadQuotationModal({
     }, 150);
   };
 
+  const getQuotationClientUrl = (q: QuotationVersionItem): string => {
+    const origin = typeof window !== 'undefined' && window.location.origin.includes('localhost')
+      ? window.location.origin
+      : 'https://studiocore.in';
+    const targetToken = q.public_token || q.template_id || q.id;
+    if (q.public_token) {
+      return `${origin}/p/quotation/${q.public_token}`;
+    }
+    return `${origin}/workspace/quotations/builder/templet/${q.template_id || q.id}?preview=public&token=${targetToken}`;
+  };
+
   const handleSendLink = async (q: QuotationVersionItem) => {
     setGeneratingLink(q.template_id);
     try {
-      const origin = typeof window !== 'undefined' && window.location.origin.includes('localhost')
-        ? window.location.origin
-        : 'https://studiocore.in';
-      const previewUrl = `${origin}/workspace/quotations/builder/templet/${q.template_id}?preview=public&token=${q.template_id}`;
+      const previewUrl = getQuotationClientUrl(q);
       setActiveShareModal({ quotationId: q.template_id, url: previewUrl });
     } catch (err) {
       console.error('Error generating send link:', err);
@@ -699,9 +714,6 @@ export function LeadQuotationModal({
                         >
                           {(() => {
                             const displayTitle = (() => {
-                              if (q.title && !q.title.startsWith('FW-') && q.title !== 'Wedding - Design 1') {
-                                return q.title;
-                              }
                               const content = q.content_json || {};
                               const cover = content.cover || {};
                               const coupleFromCover = cover.coupleName 
@@ -717,13 +729,13 @@ export function LeadQuotationModal({
                                 || lead?.name
                                 || 'Couple';
 
-                              const eventType = (cover.eventType || (q as any).event_type || content.eventGroup || (lead as any)?.event_type || 'Wedding').replace(/quotation/i, '').trim();
+                              const cleanEventType = (cover.eventType || (q as any).event_type || content.eventGroup || (lead as any)?.event_type || 'Wedding').replace(/quotation/i, '').trim() || 'Wedding';
 
                               if (q.is_final) {
                                 return `${coupleName} - Final Quotation`;
                               }
 
-                              return `${coupleName} - ${eventType} Quotation`;
+                              return `${coupleName} - ${cleanEventType} Quotation`;
                             })();
 
                             return (
@@ -807,7 +819,7 @@ export function LeadQuotationModal({
                               <button
                                 type="button"
                                 onClick={() => {
-                                  const clientUrl = `/workspace/quotations/builder/templet/${q.template_id}?preview=public&token=${q.template_id}`;
+                                  const clientUrl = getQuotationClientUrl(q);
                                   window.open(clientUrl, '_blank');
                                 }}
                                 className="p-2 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 border border-zinc-200/80 dark:border-zinc-700 transition-all cursor-pointer flex items-center justify-center hover:scale-105"

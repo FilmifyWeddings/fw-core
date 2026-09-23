@@ -34,7 +34,7 @@ import type {
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import ClientStatusDropdown from '@/app/workspace/clients/components/ClientStatusDropdown';
 import { compressMoodboardImage } from '@/lib/compressor';
-import { parseQuotationDeliverables, isDemoDeliverables } from '@/lib/services/postProductionSyncService';
+import { parseQuotationDeliverables, isDemoDeliverables, persistDeliverablesDecoupled } from '@/lib/services/postProductionSyncService';
 
 // Helper to compute initials from client name
 function getClientInitials(name: string): string {
@@ -296,21 +296,26 @@ export default function ClientWorkspaceDetailPage() {
     }));
   }, [finalQuotationDoc, extended.events]);
 
-  // ── Effective ClientFinanceRecord for ClientFinanceCard ──
+  // ── Effective ClientFinanceRecord for ClientFinanceCard (100% Master Copy) ──
   const effectiveFinanceRecord: ClientFinanceRecord = useMemo(() => {
-    const totalPkg = financeRecord?.final_total_amount ?? client?.total_package_amount ?? 0;
-    const paid = financeRecord?.received_amount ?? client?.paid_amount ?? 0;
-    const pending = financeRecord?.pending_amount ?? Math.max(0, totalPkg - paid);
+    const existing = (financeRecord || {}) as any;
+    const rawBase = Math.max(0, Math.round(Number(existing.base_package_price) || Number(client?.total_package_amount) || 0));
+    const discount = Math.max(0, Math.round(Number(existing.discount_amount) || 0));
+    const accommodation = Math.max(0, Math.round(Number(existing.accommodation_charges) || 0));
+    const travel = Math.max(0, Math.round(Number(existing.travel_charges) || 0));
+    const additional = Math.max(0, Math.round(Number(existing.additional_charges) || 0));
+    const subtotal = Math.max(0, rawBase - discount + accommodation + travel + additional);
+    const gstRate = Number(existing.gst_rate) || 0;
+    const gstAmount = Math.round((subtotal * gstRate) / 100);
+    const finalTotal = existing.final_total_amount ? Number(existing.final_total_amount) : (subtotal + gstAmount);
+    const received = Math.max(0, Math.round(Number(existing.received_amount) || Number(client?.paid_amount) || 0));
+    const pending = Math.max(0, finalTotal - received);
 
     return {
-      id: financeRecord?.id || `fin_${client?.id || 'temp'}`,
+      ...existing,
+      id: existing.id || `fin_${client?.id || 'temp'}`,
       client_id: client?.id || '',
       workspace_id: client?.workspace_id || '',
-      final_total_amount: totalPkg,
-      received_amount: paid,
-      pending_amount: pending,
-      payment_status: (financeRecord?.payment_status as any) || (paid >= totalPkg && totalPkg > 0 ? 'paid' : paid > 0 ? 'partially_paid' : 'unpaid'),
-      milestones: financeRecord?.milestones || [],
       client: {
         id: client?.id,
         name: client?.name || name,
@@ -320,14 +325,51 @@ export default function ClientWorkspaceDetailPage() {
         phone: client?.phone || phone,
         email: client?.email || email
       } as any,
-      created_at: financeRecord?.created_at || client?.created_at || new Date().toISOString(),
-      updated_at: financeRecord?.updated_at || new Date().toISOString()
+      has_final_quotation: Boolean(finalQuotationDoc || existing.has_final_quotation),
+      final_quotation_version: finalQuotationDoc?.version || existing.final_quotation_version,
+      final_quotation_id: finalQuotationDoc?.template_id || existing.final_quotation_id,
+      available_quotations: quotationDocs,
+      base_package_price: rawBase,
+      discount_amount: discount,
+      accommodation_charges: accommodation,
+      travel_charges: travel,
+      additional_charges: additional,
+      subtotal_amount: subtotal,
+      gst_rate: gstRate,
+      gst_amount: gstAmount,
+      final_total_amount: finalTotal,
+      received_amount: received,
+      pending_amount: pending,
+      payment_status: existing.payment_status || (received >= finalTotal && finalTotal > 0 ? 'paid' : received > 0 ? 'partially_paid' : 'unpaid'),
+      milestones: existing.milestones || [],
+      created_at: existing.created_at || client?.created_at || new Date().toISOString(),
+      updated_at: existing.updated_at || new Date().toISOString()
     } as any;
-  }, [financeRecord, client, projectManagerName, name, eventType, eventDate, phone, email]);
+  }, [financeRecord, client, projectManagerName, name, eventType, eventDate, phone, email, finalQuotationDoc, quotationDocs]);
 
   // ── Effective PostProductionProjectData for PostProductionCard ──
   const postProdProjectData: PostProductionProjectData = useMemo(() => {
     const clientDelivs = Array.isArray(postProductionProject?.deliverables) ? postProductionProject.deliverables : [];
+    const normalizedDelivs = clientDelivs.map((d: any) => ({
+      ...d,
+      segment: d.segment ? d.segment.trim() : 'Wedding',
+      category: d.category ? (d.category.trim().charAt(0).toUpperCase() + d.category.trim().slice(1)) : 'Photos',
+      title: d.title || d.name || 'Deliverable',
+      specs: d.specs || d.count || '',
+      status: d.status || 'Upcoming'
+    }));
+
+    const segmentsSet = new Set<string>();
+    if (Array.isArray((postProductionProject as any)?.enabled_segments)) {
+      (postProductionProject as any).enabled_segments.forEach((s: string) => {
+        if (s) segmentsSet.add(s.trim());
+      });
+    }
+    if (segmentsSet.size === 0) segmentsSet.add('Wedding');
+    normalizedDelivs.forEach(d => {
+      if (d.segment) segmentsSet.add(d.segment);
+    });
+
     return {
       id: postProductionProject?.id || `pp_${client?.id || 'temp'}`,
       project_id: (postProductionProject as any)?.project_id,
@@ -340,17 +382,10 @@ export default function ClientWorkspaceDetailPage() {
       project_manager_id: projectManagerId || null,
       project_manager_name: projectManagerName || null,
       overall_status: (postProductionProject?.overall_status as any) || 'active',
-      deliverables: clientDelivs.map((d: any) => ({
-        ...d,
-        segment: d.segment ? d.segment.trim() : 'Wedding',
-        category: d.category ? (d.category.trim().charAt(0).toUpperCase() + d.category.trim().slice(1)) : 'Photos',
-        title: d.title || d.name || 'Deliverable',
-        specs: d.specs || d.count || '',
-        status: d.status || 'Upcoming'
-      })),
+      deliverables: normalizedDelivs,
       quotation_id: finalQuotationDoc?.template_id || null,
       quotation_title: finalQuotationDoc?.title || null,
-      enabled_segments: (postProductionProject as any)?.enabled_segments || ['Wedding'],
+      enabled_segments: Array.from(segmentsSet),
       disabled_categories: (postProductionProject as any)?.disabled_categories
     };
   }, [client, postProductionProject, projectManagerId, projectManagerName, finalQuotationDoc, name, eventDate, eventType]);
@@ -649,6 +684,16 @@ export default function ClientWorkspaceDetailPage() {
         payment_status: newPaymentStatus,
         updated_at: new Date().toISOString()
       }).eq('client_id', client.id);
+
+      await supabase.from('workspace_clients').update({
+        paid_amount: totalReceived,
+        updated_at: new Date().toISOString()
+      }).eq('id', client.id);
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('finance_updated', Date.now().toString());
+        window.dispatchEvent(new CustomEvent('finance_updated', { detail: { clientId: client.id } }));
+      }
     } catch (err) {
       console.error('Error updating milestone:', err);
     }
@@ -682,6 +727,16 @@ export default function ClientWorkspaceDetailPage() {
         payment_status: newPaymentStatus,
         updated_at: new Date().toISOString()
       }).eq('client_id', client.id);
+
+      await supabase.from('workspace_clients').update({
+        paid_amount: totalReceived,
+        updated_at: new Date().toISOString()
+      }).eq('id', client.id);
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('finance_updated', Date.now().toString());
+        window.dispatchEvent(new CustomEvent('finance_updated', { detail: { clientId: client.id } }));
+      }
     } catch (err) {
       console.error('Error deleting milestone:', err);
     }
@@ -706,6 +761,11 @@ export default function ClientWorkspaceDetailPage() {
         milestones: updatedMilestones,
         updated_at: new Date().toISOString()
       }).eq('client_id', client.id);
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('finance_updated', Date.now().toString());
+        window.dispatchEvent(new CustomEvent('finance_updated', { detail: { clientId: client.id } }));
+      }
     } catch (err) {
       console.error('Error adding milestone step:', err);
     }
@@ -801,6 +861,11 @@ export default function ClientWorkspaceDetailPage() {
               updated_at: new Date().toISOString()
             }).eq('id', client.id);
           }
+
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('finance_updated', Date.now().toString());
+            window.dispatchEvent(new CustomEvent('finance_updated', { detail: { clientId: client?.id } }));
+          }
         } catch (err) {
           console.error('Error updating payment completion in DB:', err);
         }
@@ -833,6 +898,38 @@ export default function ClientWorkspaceDetailPage() {
           disabled_categories: updated.disabled_categories ?? (postProductionProject as any)?.disabled_categories,
           updated_at: new Date().toISOString()
         }, { onConflict: 'client_id' });
+
+      // Persist deliverables to post_production_deliverables table
+      if (updated.deliverables) {
+        persistDeliverablesDecoupled({
+          workspaceId,
+          clientId: client.id,
+          projectId: (postProductionProject as any)?.project_id || client.id,
+          deliverables: updated.deliverables,
+          projectManagerId: updated.project_manager_id ?? projectManagerId,
+          projectManagerName: updated.project_manager_name ?? projectManagerName,
+          overallStatus: updated.overall_status ?? postProductionProject?.overall_status ?? 'active',
+        });
+      }
+
+      // Persist enabled_segments configuration
+      if (updated.enabled_segments) {
+        const configIds = [client.id, client.lead_id, (postProductionProject as any)?.project_id].filter(Boolean) as string[];
+        for (const pid of configIds) {
+          await supabase
+            .from('post_production_project_config')
+            .upsert({
+              project_id: pid,
+              enabled_segments: updated.enabled_segments,
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'project_id' });
+        }
+      }
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('post_production_updated', Date.now().toString());
+        window.dispatchEvent(new CustomEvent('post_production_updated', { detail: { clientId: client.id } }));
+      }
     } catch (err) {
       console.error('Error saving post production project:', err);
     }
@@ -1164,7 +1261,7 @@ export default function ClientWorkspaceDetailPage() {
       }
 
       // 3. Fetch post_production_project_config for enabled_segments
-      const configIds = [c.id, targetProjectId, (pppData as any)?.id].filter(Boolean) as string[];
+      const configIds = [c.id, c.lead_id, targetProjectId, (pppData as any)?.id, (pppData as any)?.project_id].filter(Boolean) as string[];
       let enabledSegments: string[] = ['Wedding'];
       if (configIds.length > 0) {
         const { data: cfg } = await supabase
@@ -1190,23 +1287,41 @@ export default function ClientWorkspaceDetailPage() {
         }
       }
 
-      // 5. If no deliverables or stale demo, auto-sync from final quotation
-      if (!pppData || deliverables.length === 0 || isDemoDeliverables(deliverables)) {
-        const targetLeadId = c.lead_id || c.id;
-        const leadShort = targetLeadId ? targetLeadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8) : '';
-        const { data: quoteDocs } = await supabase
-          .from('quotation_documents')
-          .select('*')
-          .or(`lead_id.eq.${targetLeadId},client_id.eq.${c.id},template_id.ilike.%${leadShort}%`)
-          .order('created_at', { ascending: false });
+      // 5. Auto-sync deliverables from quotation if missing, empty, or missing Pre-Wedding shoot
+      const targetLeadId = c.lead_id || c.id;
+      const leadShort = targetLeadId ? targetLeadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8) : '';
+      const { data: quoteDocs } = await supabase
+        .from('quotation_documents')
+        .select('*')
+        .or(`lead_id.eq.${targetLeadId},client_id.eq.${c.id},template_id.ilike.%${leadShort}%`)
+        .order('created_at', { ascending: false });
 
-        const finalQuote = quoteDocs?.find((q: any) => q.is_final === true || q.content_json?.is_final === true) || quoteDocs?.[0];
-        if (finalQuote) {
-          const parsed = parseQuotationDeliverables(finalQuote);
+      const finalQuote = quoteDocs?.find((q: any) => q.is_final === true || q.content_json?.is_final === true) || quoteDocs?.[0];
+      if (finalQuote) {
+        const parsed = parseQuotationDeliverables(finalQuote);
+        if (!pppData || deliverables.length === 0 || isDemoDeliverables(deliverables)) {
           deliverables = parsed.deliverables;
           enabledSegments = parsed.enabledSegments;
+        } else {
+          // If quotation has Pre-Wedding shoot deliverables, make sure they are present in deliverables!
+          const hasPreWeddingInDelivs = deliverables.some((d: any) => (d.segment || '').toLowerCase().includes('pre-wedding'));
+          const hasPreWeddingInQuote = parsed.enabledSegments.some((s: string) => s.toLowerCase().includes('pre-wedding'));
+          if (!hasPreWeddingInDelivs && hasPreWeddingInQuote) {
+            const preWedItems = parsed.deliverables.filter((d: any) => (d.segment || '').toLowerCase().includes('pre-wedding'));
+            deliverables = [...preWedItems, ...deliverables];
+            if (!enabledSegments.includes('Pre-Wedding')) {
+              enabledSegments.push('Pre-Wedding');
+            }
+          }
         }
       }
+
+      // Ensure every segment found in deliverables is in enabledSegments
+      deliverables.forEach((d: any) => {
+        if (d.segment && !enabledSegments.includes(d.segment)) {
+          enabledSegments.push(d.segment);
+        }
+      });
 
       setPostProductionProject({
         ...(pppData || {}),

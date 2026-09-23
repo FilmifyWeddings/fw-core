@@ -91,8 +91,8 @@ export async function POST(req: NextRequest) {
     const eventType = clonedDoc.cover?.eventType || 'Wedding';
     const coupleTitle = clonedDoc.cover?.coupleName || leadName;
     const quotationTitle = `${coupleTitle} - ${eventType} Quotation`;
-    if (!clonedDoc.designName || clonedDoc.designName.startsWith('FW-')) clonedDoc.designName = quotationTitle;
-    if (!clonedDoc.title || clonedDoc.title.startsWith('FW-')) clonedDoc.title = quotationTitle;
+    clonedDoc.designName = quotationTitle;
+    clonedDoc.title = quotationTitle;
 
     // Ensure all payment term steps start clean
     if (clonedDoc.paymentTermsPage?.steps && Array.isArray(clonedDoc.paymentTermsPage.steps)) {

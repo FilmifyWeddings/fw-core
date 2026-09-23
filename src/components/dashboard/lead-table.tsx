@@ -687,15 +687,19 @@ export function LeadTable({
       return updated;
     });
 
-    // Synchronize lead row directly so lead.final_quotation_id reflects immediately without lag
+    // Synchronize lead row directly so lead.final_quotation_id and status reflect immediately in 0ms without lag
     setLeads(prev => prev.map(l => {
       if (l.id === leadId) {
         const updatedFinalId = hasFinal ? (finalItem?.template_id || finalItem?.id || 'final') : null;
         return {
           ...l,
+          status: (hasFinal ? 'closed' : (l.status === 'closed' ? 'warm' : l.status)) as LeadStatus,
+          stage: hasFinal ? 'booked' : (l.stage === 'booked' ? 'warm' : l.stage),
           final_quotation_id: updatedFinalId,
           raw_payload: {
             ...l.raw_payload,
+            status: hasFinal ? 'closed' : l.raw_payload?.status,
+            stage: hasFinal ? 'booked' : (l.raw_payload?.stage === 'booked' ? 'warm' : l.raw_payload?.stage),
             final_quotation_id: updatedFinalId
           }
         };
@@ -4930,7 +4934,19 @@ export function LeadTable({
         onQuotationChange={handleQuotationChange}
         onFinalSet={(q) => {
           if (quotationModalLead) {
-            handleQuotationChange(quotationModalLead.id, [{ ...q, is_final: true }]);
+            const currentVersions = quotationSummaryMap[quotationModalLead.id]?.versions || [];
+            const isTarget = (item: any) =>
+              (q.template_id && item.template_id === q.template_id) ||
+              (q.id && item.id === q.id) ||
+              (q.version !== undefined && item.version === q.version);
+            const updated = currentVersions.map((item: any) => ({
+              ...item,
+              is_final: isTarget(item)
+            }));
+            if (!updated.some((item: any) => item.is_final)) {
+              updated.push({ ...q, is_final: true });
+            }
+            handleQuotationChange(quotationModalLead.id, updated);
           }
         }}
       />

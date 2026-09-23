@@ -77,22 +77,25 @@ export default function PostProductionCard({
   // If explicitly specified in project, use it.
   // Otherwise, automatically derive from deliverables or default to ['Wedding']
   const enabledSegments = useMemo(() => {
-    if (project.enabled_segments && project.enabled_segments.length > 0) {
-      return project.enabled_segments;
-    }
-
     const discovered = new Set<string>();
-    // Default Wedding
-    discovered.add('Wedding');
 
-    // Add Pre-Wedding ONLY if there are Pre-Wedding deliverables present
-    if (deliverables.some(d => d.segment === 'Pre-Wedding')) {
-      discovered.add('Pre-Wedding');
+    if (Array.isArray(project.enabled_segments) && project.enabled_segments.length > 0) {
+      project.enabled_segments.forEach(s => {
+        if (s && typeof s === 'string') discovered.add(s.trim());
+      });
     }
 
-    // Add any other segments found in deliverables
+    // Default Wedding if empty
+    if (discovered.size === 0) {
+      discovered.add('Wedding');
+    }
+
+    // ALWAYS include any segments that have actual deliverables!
+    // (This guarantees Pre-Wedding is NEVER omitted if Pre-Wedding deliverables exist)
     deliverables.forEach(d => {
-      if (d.segment) discovered.add(d.segment);
+      if (d.segment && typeof d.segment === 'string') {
+        discovered.add(d.segment.trim());
+      }
     });
 
     return Array.from(discovered);
