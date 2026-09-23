@@ -9,6 +9,11 @@ function PortalRedirectContent() {
   const searchParams = useSearchParams();
 
   useEffect(() => {
+    const type = searchParams?.get('type') || '';
+    if (type === 'vendor') {
+      router.replace('/vendor-portal');
+      return;
+    }
     const studio = searchParams?.get('studio') || searchParams?.get('ws') || '';
     const query = studio ? `?studio=${encodeURIComponent(studio)}` : '';
     router.replace(`/workspace/partner-portal${query}`);

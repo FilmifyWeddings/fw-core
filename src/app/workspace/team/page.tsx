@@ -18,6 +18,7 @@ import TeamMemberCard from './components/TeamMemberCard';
 import TeamTableRow from './components/TeamTableRow';
 import TeamMemberFinanceDrawer from './components/TeamMemberFinanceDrawer';
 import DeleteMemberWarningModal from './components/DeleteMemberWarningModal';
+import VendorAlbumDeliverablesModal from '@/components/vendors/VendorAlbumDeliverablesModal';
 import { 
   batchFetchWorkspaceTeamFinancials,
   fetchMemberFinancialSummary, 
@@ -117,6 +118,10 @@ export default function WorkspaceTeamPage() {
   const [memberFinancials, setMemberFinancials] = useState<Record<string, TeamFinancialSummary>>({});
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [memberToDelete, setMemberToDelete] = useState<TeamMember | null>(null);
+
+  // Vendor Album Deliverables Hub Modal States
+  const [selectedVendorDeliverablesMember, setSelectedVendorDeliverablesMember] = useState<TeamMember | null>(null);
+  const [isVendorDeliverablesModalOpen, setIsVendorDeliverablesModalOpen] = useState(false);
 
 
   // Instant O(1) Batch Financial Summaries for all members in 1 single pass
@@ -650,8 +655,24 @@ export default function WorkspaceTeamPage() {
 
   // Direct Member Action Handlers
   const handleOpenDetails = (member: TeamMember) => {
-    setSelectedFinanceMember(member);
-    setIsFinanceDrawerOpen(true);
+    const isVendorOrAlbumDesigner = 
+      member.primary_type === 'PARTNER' || 
+      member.type === 'partner' || 
+      (member.member_types || []).includes('PARTNER') ||
+      /album|lab|print/i.test(member.primary_role || '');
+
+    if (isVendorOrAlbumDesigner) {
+      setSelectedVendorDeliverablesMember(member);
+      setIsVendorDeliverablesModalOpen(true);
+    } else {
+      setSelectedFinanceMember(member);
+      setIsFinanceDrawerOpen(true);
+    }
+  };
+
+  const handleOpenVendorDeliverables = (member: TeamMember) => {
+    setSelectedVendorDeliverablesMember(member);
+    setIsVendorDeliverablesModalOpen(true);
   };
 
   const handleEditMember = (member: TeamMember) => {
@@ -989,6 +1010,7 @@ export default function WorkspaceTeamPage() {
                       paid={fin?.total_paid}
                       balance={fin?.total_balance}
                       handleOpenDetails={handleOpenDetails}
+                      handleOpenVendorDeliverables={handleOpenVendorDeliverables}
                       handleEditMember={handleEditMember}
                       handleDeleteMember={handleDeleteMember}
                     />
@@ -1015,6 +1037,7 @@ export default function WorkspaceTeamPage() {
                       member={member}
                       fin={memberFinancials[member.id]}
                       handleOpenDetails={handleOpenDetails}
+                      handleOpenVendorDeliverables={handleOpenVendorDeliverables}
                       handleEditMember={handleEditMember}
                       handleDeleteMember={handleDeleteMember}
                     />
@@ -1174,6 +1197,21 @@ export default function WorkspaceTeamPage() {
           loadMembers();
         }}
       />
+
+      {/* 3D Creamy Vendor Album Deliverables, Operations & Invoicing Modal */}
+      {selectedVendorDeliverablesMember && (
+        <VendorAlbumDeliverablesModal
+          isOpen={isVendorDeliverablesModalOpen}
+          onClose={() => {
+            setIsVendorDeliverablesModalOpen(false);
+            setSelectedVendorDeliverablesMember(null);
+            loadMembers();
+          }}
+          workspaceId={workspaceId || ''}
+          vendor={selectedVendorDeliverablesMember}
+          studioName={workspaceName || 'StudioCore Partner Studio'}
+        />
+      )}
 
       {/* Luxury Red Delete Warning Modal */}
       <DeleteMemberWarningModal

@@ -90,6 +90,27 @@ export default function DeliverableCategorySection({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  // Smart Role-Based Filtering:
+  // - Albums category: Only show members who have roles like Album Designer, Printing Lab, or in-house managers
+  // - Photos / Videos category: Exclude external vendors whose sole role is Album Designer or Printing Lab
+  const filteredTeamMembers = useMemo(() => {
+    const isAlbumCategory = /album|book|print/i.test(category || '');
+    return teamMembers.filter(m => {
+      const role = (m.role || '').toLowerCase();
+      const isAlbumSpecialist = role.includes('album') || role.includes('printing lab') || role.includes('lab') || role.includes('book');
+      if (isAlbumCategory) {
+        // Show album specialists OR in-house team/managers
+        return isAlbumSpecialist || (m as any).isInHouse || /lead|owner|manager|admin/i.test(role);
+      } else {
+        // In Photos/Videos, hide external album specialists so dropdown stays uncluttered
+        if (isAlbumSpecialist && !(m as any).isInHouse && !/lead|owner|manager|admin/i.test(role)) {
+          return false;
+        }
+        return true;
+      }
+    });
+  }, [teamMembers, category]);
+
   // Auto-focus search input when opening dropdown
   useEffect(() => {
     if (isAddingItem) {
@@ -631,7 +652,7 @@ export default function DeliverableCategorySection({
             <DeliverableRowItem
               key={item.id}
               item={item}
-              teamMembers={teamMembers}
+              teamMembers={filteredTeamMembers}
               onUpdateItem={onUpdateItem}
               onUpdateItemFields={onUpdateItemFields}
               onDeleteItem={onDeleteItem}
