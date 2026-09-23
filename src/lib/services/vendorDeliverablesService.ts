@@ -782,13 +782,15 @@ export async function addVendorOrderComment(
     // If reminder_at is set, schedule in post_production_reminders
     if (comment.reminder_at) {
       try {
+        const remTitle = `Reminder for ${order.client_name} (${order.event_name || order.album_type || 'Shoot'}): ${comment.text}`;
         await supabaseAdmin.from('post_production_reminders').insert([{
           workspace_id: order.workspace_id || 'ws_default',
           deliverable_id: order.deliverable_id || order.id,
           project_id: order.project_id || null,
-          reminder_text: `Reminder for ${order.client_name} (${order.event_name || order.album_type || 'Shoot'}): ${comment.text}`,
+          title: remTitle,
+          reminder_text: remTitle,
           reminder_at: new Date(comment.reminder_at).toISOString(),
-          status: 'PENDING'
+          status: 'pending'
         }]);
       } catch (_) {}
     }
