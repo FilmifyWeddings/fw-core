@@ -2566,7 +2566,33 @@ function StudioCoreAiryBuilderContent() {
       isStandard: true,
     };
 
-    const newSeq = [...pageSequence, newItem];
+    // Canonical standard order insertion: Find closest preceding standard page currently in pageSequence
+    const targetCanonicalIdx = STANDARD_PAGE_DEFINITIONS.findIndex(s => s.type === stdType);
+    let insertAfterIdx = -1;
+
+    for (let i = 0; i < pageSequence.length; i++) {
+      const p = pageSequence[i];
+      const pCanonicalIdx = STANDARD_PAGE_DEFINITIONS.findIndex(s => s.type === p.type);
+      if (pCanonicalIdx !== -1 && pCanonicalIdx < targetCanonicalIdx) {
+        insertAfterIdx = i;
+      }
+    }
+
+    const newSeq = [...pageSequence];
+    if (insertAfterIdx !== -1) {
+      newSeq.splice(insertAfterIdx + 1, 0, newItem);
+    } else {
+      const firstFollowingIdx = newSeq.findIndex(p => {
+        const cIdx = STANDARD_PAGE_DEFINITIONS.findIndex(s => s.type === p.type);
+        return cIdx !== -1 && cIdx > targetCanonicalIdx;
+      });
+      if (firstFollowingIdx !== -1) {
+        newSeq.splice(firstFollowingIdx, 0, newItem);
+      } else {
+        newSeq.unshift(newItem);
+      }
+    }
+
     updatePageSequence(newSeq);
     setOpenCard(stdDef.type);
     setAddPageModalOpen(false);
@@ -3099,7 +3125,32 @@ function StudioCoreAiryBuilderContent() {
               .select('*')
               .eq('id', leadIdToFetch)
               .maybeSingle();
-            if (matchedLead) setLeadData(matchedLead);
+            if (matchedLead) {
+              setLeadData(matchedLead);
+              try {
+                const stored = localStorage.getItem('sc_quotation_summary_map');
+                const map = stored ? JSON.parse(stored) : {};
+                const prev = map[leadIdToFetch] || { count: 0, hasFinal: false, versions: [] };
+                if ((prev.count || 0) === 0) {
+                  const coupleName = loadedData?.cover?.coupleName || matchedLead.name || 'Quotation';
+                  map[leadIdToFetch] = {
+                    count: 1,
+                    hasFinal: prev.hasFinal || false,
+                    finalVersion: prev.finalVersion,
+                    versions: prev.versions?.length ? prev.versions : [{
+                      id: routeId,
+                      template_id: routeId,
+                      version: loadedData?.lead_version || 1,
+                      version_label: `V${loadedData?.lead_version || 1}`,
+                      title: `${coupleName} - Quotation`,
+                      couple_name: coupleName,
+                      is_final: false
+                    }]
+                  };
+                  localStorage.setItem('sc_quotation_summary_map', JSON.stringify(map));
+                }
+              } catch (_) {}
+            }
           } catch (e) {}
         }
       } catch (err) {

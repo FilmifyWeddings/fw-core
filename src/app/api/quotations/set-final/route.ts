@@ -180,21 +180,18 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 4. Non-blocking asynchronous sync across Client Directory, Booking Events, Post Production, and Finance
-    // Triggered in background so the client receives a fast <100ms response with zero UI lag or timeout!
-    (async () => {
-      try {
-        await syncBookedLeadOrFinalQuotation({
-          leadId,
-          quotationId,
-          workspaceId: userId,
-          forceBookedStatus: true,
-          supabaseClient: supabaseAdmin
-        });
-      } catch (syncErr) {
-        console.error('[Set-Final] Background sync exception:', syncErr);
-      }
-    })();
+    // 4. Synchronous reliable sync across Client Directory, Booking Events, Post Production, and Finance
+    try {
+      await syncBookedLeadOrFinalQuotation({
+        leadId,
+        quotationId,
+        workspaceId: userId,
+        forceBookedStatus: true,
+        supabaseClient: supabaseAdmin
+      });
+    } catch (syncErr) {
+      console.error('[Set-Final] Sync exception:', syncErr);
+    }
 
     return NextResponse.json({
       success: true,

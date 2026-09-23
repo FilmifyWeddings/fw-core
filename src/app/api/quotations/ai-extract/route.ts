@@ -335,6 +335,7 @@ PAGE-BY-PAGE RULES & MAPPING:
 
 8. PAYMENT TERMS & SCHEDULE (paymentTermsPage):
 - steps: Array of [{ name: string, pct: string, amount: number, status: "Pending" }]. Calculate amounts based on percentage breakdown if given.
+- CRITICAL STATUS RULE: All steps MUST strictly have status "Pending". NEVER default step 1 or any milestone to "Completed" unless the user's prompt or notes explicitly states that the advance or milestone was already received or paid!
 
 OUTPUT FORMAT:
 Return ONLY a valid JSON object matching:
@@ -760,9 +761,31 @@ function fallbackHeuristicExtractor(contextData: any) {
 function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, contextData: any) {
   const rootObj = aiData.quotation || aiData;
 
+  // Check if user's notes or prompt explicitly confirmed any payment/advance was already received
+  const allUserNotes = [
+    contextData?.additionalNotes,
+    contextData?.leadNotes,
+    contextData?.notes,
+    aiData?.notes
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  const hasExplicitPaymentReceived = /\b(advance received|advance paid|already paid|already received|payment received|token received|token paid|amount received|amount paid)\b/i.test(allUserNotes);
+
   // Check if rootObj is ALREADY a structured StudioCore Quotation JSON document
   if (rootObj.cover || rootObj.functionsPage || rootObj.pricingPage || rootObj.pages) {
     const normDoc = normalizeQuotationData(rootObj, baseSchema);
+
+    // Strictly ensure payment milestones default to Pending unless explicitly paid
+    if (normDoc.paymentTermsPage?.steps && Array.isArray(normDoc.paymentTermsPage.steps)) {
+      normDoc.paymentTermsPage.steps = normDoc.paymentTermsPage.steps.map((s: any) => {
+        const stepStatusLower = String(s.status || '').toLowerCase().trim();
+        const isPaid = (stepStatusLower === 'completed' || stepStatusLower === 'paid') && hasExplicitPaymentReceived;
+        return {
+          ...s,
+          status: isPaid ? 'Completed' : 'Pending'
+        };
+      });
+    }
 
     // Normalize crew role names across all functions in the document
     if (normDoc.functionsPage?.items && Array.isArray(normDoc.functionsPage.items)) {
@@ -913,12 +936,16 @@ function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, contextDat
   if (!doc.paymentTermsPage) doc.paymentTermsPage = {};
   const rawSteps = paymentTermsPage.steps || (Array.isArray(paymentTermsPage) ? paymentTermsPage : aiData.payment_schedule) || [];
   if (Array.isArray(rawSteps) && rawSteps.length > 0) {
-    doc.paymentTermsPage.steps = rawSteps.map((step: any) => ({
-      name: step.name || 'Payment Milestone',
-      pct: step.pct || '30%',
-      amount: Number(step.amount || 0),
-      status: step.status || 'Pending'
-    }));
+    doc.paymentTermsPage.steps = rawSteps.map((step: any) => {
+      const stepStatusLower = String(step.status || '').toLowerCase().trim();
+      const isPaid = (stepStatusLower === 'completed' || stepStatusLower === 'paid') && hasExplicitPaymentReceived;
+      return {
+        name: step.name || 'Payment Milestone',
+        pct: step.pct || '30%',
+        amount: Number(step.amount || 0),
+        status: isPaid ? 'Completed' : 'Pending'
+      };
+    });
   }
 
   // Calculate Summary

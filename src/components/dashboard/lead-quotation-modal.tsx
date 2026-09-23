@@ -324,6 +324,12 @@ export function LeadQuotationModal({
           window.dispatchEvent(new CustomEvent('quotation_finalized', { 
             detail: { leadId: lead.id, quotationId: q.template_id || q.id, unmark } 
           }));
+          window.dispatchEvent(new CustomEvent('finance_updated', {
+            detail: { leadId: lead.id, quotationId: q.template_id || q.id }
+          }));
+          window.dispatchEvent(new CustomEvent('client_created', {
+            detail: { leadId: lead.id }
+          }));
         }
       } else {
         // Rollback on server error
@@ -391,8 +397,34 @@ export function LeadQuotationModal({
           } catch (e) {}
         }
 
+        // ⚡ Update sc_quotation_summary_map immediately so the CRM table icon turns orange in 0ms!
+        if (typeof window !== 'undefined') {
+          try {
+            const stored = localStorage.getItem('sc_quotation_summary_map');
+            const map = stored ? JSON.parse(stored) : {};
+            const prev = map[lead.id] || { count: 0, hasFinal: false, versions: [] };
+            const newVer = {
+              id: qId,
+              template_id: qId,
+              version: json.version || 1,
+              version_label: `V${json.version || 1}`,
+              title: `${openingCouple} - Quotation V${json.version || 1}`,
+              couple_name: openingCouple,
+              is_final: false
+            };
+            map[lead.id] = {
+              count: (prev.count || 0) + 1,
+              hasFinal: prev.hasFinal || false,
+              finalVersion: prev.finalVersion,
+              versions: [newVer, ...(prev.versions || [])]
+            };
+            localStorage.setItem('sc_quotation_summary_map', JSON.stringify(map));
+            window.dispatchEvent(new CustomEvent('quotation_created', { detail: { leadId: lead.id, quotationId: qId } }));
+          } catch (_) {}
+        }
+
         router.push(`/workspace/quotations/builder/templet/${qId}`);
-        setTimeout(() => onClose(), 600);
+        // Keep opening overlay active until Next.js unmounts page - no flash of CRM table!
       } else {
         setErrorMsg(json.error || 'Failed to create new quotation for lead.');
         setOpeningQuotation(null);
@@ -418,7 +450,7 @@ export function LeadQuotationModal({
 
     setTimeout(() => {
       router.push(`/workspace/quotations/builder/templet/${templateId}`);
-      setTimeout(() => onClose(), 600);
+      // Keep opening overlay active until Next.js unmounts page - no flash of CRM table!
     }, 150);
   };
 
@@ -539,7 +571,7 @@ export function LeadQuotationModal({
 
               {/* Opening Quotation Screen Overlay Skeleton */}
               {openingQuotation && (
-                <div className="absolute inset-0 z-50 bg-white/95 dark:bg-[#1C1A18]/95 backdrop-blur-md flex flex-col items-center justify-center p-6 space-y-5 animate-in fade-in duration-150">
+                <div className="fixed inset-0 z-[100003] bg-white/95 dark:bg-[#1C1A18]/95 backdrop-blur-md flex flex-col items-center justify-center p-6 space-y-5 animate-in fade-in duration-150">
                   <div className="relative flex items-center justify-center">
                     <div className="absolute w-20 h-20 rounded-full bg-amber-500/20 animate-ping" />
                     <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-500 flex items-center justify-center text-white shadow-xl z-10">
@@ -644,6 +676,9 @@ export function LeadQuotationModal({
                         >
                           {(() => {
                             const displayTitle = (() => {
+                              if (q.title && !q.title.startsWith('FW-') && q.title !== 'Wedding - Design 1') {
+                                return q.title;
+                              }
                               const content = q.content_json || {};
                               const cover = content.cover || {};
                               const coupleFromCover = cover.coupleName 
@@ -909,13 +944,14 @@ export function LeadQuotationModal({
         selectedTemplateId={selectedTemplateId}
         onApplied={(updatedDoc, targetQId) => {
           setAiModalOpen(false);
+          const openingCouple = updatedDoc?.cover?.coupleName || lead?.raw_payload?.couple_name || lead?.client_name || lead?.name || 'Quotation';
           setOpeningQuotation({
             id: targetQId,
-            title: `Quotation Document`,
+            title: `${openingCouple} - Quotation Document`,
             step: 'Opening AI Generated Quotation in Builder...'
           });
           router.push(`/workspace/quotations/builder/templet/${targetQId}`);
-          setTimeout(() => onClose(), 600);
+          // Keep opening overlay active until Next.js unmounts page - no flash of CRM table!
         }}
       />
 

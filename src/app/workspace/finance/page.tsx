@@ -563,10 +563,14 @@ export default function FinancePage() {
     window.addEventListener('finance_expenses_updated', handleExpensesUpdated);
     window.addEventListener('team_finance_updated', handleExpensesUpdated);
     window.addEventListener('quotation_finalized', handleQuotationFinalized);
+    window.addEventListener('finance_updated', handleQuotationFinalized);
+    window.addEventListener('client_created', handleQuotationFinalized);
     return () => {
       window.removeEventListener('finance_expenses_updated', handleExpensesUpdated);
       window.removeEventListener('team_finance_updated', handleExpensesUpdated);
       window.removeEventListener('quotation_finalized', handleQuotationFinalized);
+      window.removeEventListener('finance_updated', handleQuotationFinalized);
+      window.removeEventListener('client_created', handleQuotationFinalized);
     };
   }, [isPinVerified, isCheckingPinStatus, currentWorkspaceId]);
 
@@ -604,6 +608,48 @@ export default function FinancePage() {
 
       const { data: clientData } = await clientQuery;
       let clientList = clientData ? [...clientData] : [];
+
+      // Also fetch leads that have final_quotation_id or booked/accepted status to guarantee immediate card appearance
+      try {
+        let leadsQuery = supabase
+          .from('leads')
+          .select('*')
+          .or('final_quotation_id.not.is.null,status.in.(booked,accepted,closed,converted)')
+          .order('created_at', { ascending: false });
+
+        if (workspaceId && workspaceId !== 'ws_demo') {
+          leadsQuery = leadsQuery.or(`workspace_id.eq.${workspaceId},created_by_user_id.eq.${workspaceId}`);
+        }
+
+        const { data: leadsData } = await leadsQuery;
+        if (leadsData) {
+          for (const lead of leadsData) {
+            const coupleName = lead.raw_payload?.couple_name || (lead as any).couple_names || lead.client_name || lead.name || 'Untitled Client';
+            const exists = clientList.some(
+              c => c.id === lead.id || c.lead_id === lead.id || (c.name && coupleName && c.name.toLowerCase().trim() === coupleName.toLowerCase().trim())
+            );
+            if (!exists) {
+              clientList.push({
+                id: lead.id,
+                lead_id: lead.id,
+                name: coupleName,
+                phone: lead.phone,
+                email: lead.email,
+                event_date: lead.event_date || lead.created_at,
+                event_type: lead.event_type || 'Wedding',
+                status: lead.status || 'booked',
+                created_at: lead.created_at,
+                notes: lead.notes,
+                final_quotation_id: lead.final_quotation_id,
+                total_package_amount: lead.raw_payload?.total_amount || 0,
+                paid_amount: 0
+              } as any);
+            }
+          }
+        }
+      } catch (leadErr) {
+        console.warn('Error fetching booked leads for finance fallback:', leadErr);
+      }
 
       // 2. Fetch Client Finance Records
       let financeQuery = supabase

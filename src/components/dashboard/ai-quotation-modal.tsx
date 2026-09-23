@@ -131,6 +131,7 @@ Analyze the client requirements, notes, or conversation below and convert them i
       { "name": "On Final Delivery", "pct": "20%", "amount": 30000, "status": "Pending" }
     ]
   - If user mentions specific ratio (e.g. 50%/50% or 30%/50%/20% or 20%/40%/40%), calculate accordingly.
+  - CRITICAL STATUS RULE: Every step status MUST strictly be "Pending". NEVER output "Completed" unless the user's prompt or notes explicitly states that the advance or milestone has already been paid/received.
 
 ==================================================
 OUTPUT FORMAT:
@@ -323,6 +324,30 @@ LEAD & CLIENT CONTEXT:
           cacheDocumentLocal(targetQId, applyJson.document || extractedDoc, 1);
           if (effectiveLead.id && effectiveLead.id !== 'draft') {
             sessionStorage.removeItem(`lead_quotes_cache_${effectiveLead.id}`);
+
+            // ⚡ Instant 0ms CRM icon update in localStorage
+            const lId = effectiveLead.id;
+            const coupleName = extractedDoc?.cover?.coupleName || effectiveLead.name || 'Quotation';
+            const stored = localStorage.getItem('sc_quotation_summary_map');
+            const map = stored ? JSON.parse(stored) : {};
+            const prev = map[lId] || { count: 0, hasFinal: false, versions: [] };
+            const newVer = {
+              id: targetQId,
+              template_id: targetQId,
+              version: 1,
+              version_label: 'V1',
+              title: `${coupleName} - Quotation V1`,
+              couple_name: coupleName,
+              is_final: false
+            };
+            map[lId] = {
+              count: Math.max(prev.count || 0, 1),
+              hasFinal: prev.hasFinal || false,
+              finalVersion: prev.finalVersion,
+              versions: prev.versions?.length ? [newVer, ...prev.versions.filter((v: any) => v.template_id !== targetQId)] : [newVer]
+            };
+            localStorage.setItem('sc_quotation_summary_map', JSON.stringify(map));
+            window.dispatchEvent(new CustomEvent('quotation_created', { detail: { leadId: lId, quotationId: targetQId } }));
           }
         } catch (e) {}
       }

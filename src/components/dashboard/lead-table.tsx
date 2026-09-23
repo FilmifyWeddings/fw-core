@@ -627,13 +627,39 @@ export function LeadTable({
       fetchQuotationSummaries(true);
     };
 
+    const handleQuotationCreated = (e: any) => {
+      const detail = e?.detail;
+      if (detail?.leadId) {
+        setQuotationSummaryMap(prev => {
+          const prevItem = prev[detail.leadId] || { count: 0, hasFinal: false, versions: [] };
+          const updated = {
+            ...prev,
+            [detail.leadId]: {
+              ...prevItem,
+              count: Math.max(prevItem.count || 0, 1),
+              versions: prevItem.versions?.length > 0 ? prevItem.versions : [{ id: detail.quotationId, version: 1 }]
+            }
+          };
+          if (typeof window !== 'undefined') {
+            try {
+              localStorage.setItem('sc_quotation_summary_map', JSON.stringify(updated));
+            } catch (_) {}
+          }
+          return updated;
+        });
+      }
+      fetchQuotationSummaries(true);
+    };
+
     if (typeof window !== 'undefined') {
       window.addEventListener('quotation_finalized', handleQuotationFinalized);
+      window.addEventListener('quotation_created', handleQuotationCreated);
     }
     return () => {
       isCancelled = true;
       if (typeof window !== 'undefined') {
         window.removeEventListener('quotation_finalized', handleQuotationFinalized);
+        window.removeEventListener('quotation_created', handleQuotationCreated);
       }
     };
   }, [searchParams]);
@@ -2984,7 +3010,9 @@ export function LeadTable({
                         lead.raw_payload?.final_quotation_id ||
                         isBooked
                       );
-                      const hasQuotes = (qSummary?.count || 0) > 0 || (qSummary?.versions?.length || 0) > 0 || isFinal || Boolean(lead.raw_payload?.final_quotation_id || lead.raw_payload?.quotation_id);
+                      const cachedLeadQuotes = typeof window !== 'undefined' ? sessionStorage.getItem(`lead_quotes_cache_${lead.id}`) : null;
+                      const hasCachedQuotes = Boolean(cachedLeadQuotes && cachedLeadQuotes !== '[]' && cachedLeadQuotes !== 'null');
+                      const hasQuotes = (qSummary?.count || 0) > 0 || (qSummary?.versions?.length || 0) > 0 || isFinal || hasCachedQuotes || Boolean(lead.final_quotation_id || lead.raw_payload?.final_quotation_id || lead.raw_payload?.quotation_id || (lead as any).quotation_id);
 
                       const mobileBtnStyle = isFinal
                         ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-600 dark:text-emerald-400 border border-emerald-300/90 shadow-2xs font-bold'
@@ -3852,7 +3880,9 @@ export function LeadTable({
                                 lead.raw_payload?.final_quotation_id ||
                                 isBooked
                               );
-                              const hasQuotes = (qSummary?.count || 0) > 0 || (qSummary?.versions?.length || 0) > 0 || isFinal || Boolean(lead.final_quotation_id || lead.raw_payload?.final_quotation_id);
+                              const cachedLeadQuotes = typeof window !== 'undefined' ? sessionStorage.getItem(`lead_quotes_cache_${lead.id}`) : null;
+                              const hasCachedQuotes = Boolean(cachedLeadQuotes && cachedLeadQuotes !== '[]' && cachedLeadQuotes !== 'null');
+                              const hasQuotes = (qSummary?.count || 0) > 0 || (qSummary?.versions?.length || 0) > 0 || isFinal || hasCachedQuotes || Boolean(lead.final_quotation_id || lead.raw_payload?.final_quotation_id || lead.raw_payload?.quotation_id || (lead as any).quotation_id);
 
                               const btnClass = isFinal
                                 ? 'border-emerald-300/80 dark:border-emerald-700/60 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400 shadow-2xs font-bold'

@@ -132,8 +132,27 @@ export async function GET(req: NextRequest) {
       }
 
       const verNum = Number(d.lead_version || d.version || 1);
-      const coupleName = matchedQ?.couple_names || matchedQ?.client_name || leadInfo?.coupleName || leadInfo?.name || 'Client';
-      const quoteTitle = matchedQ?.title || `${coupleName} - Quotation V${verNum}`;
+      const content = d.content_json || {};
+      const cover = content.cover || {};
+      const coupleFromCover = cover.coupleName 
+        || (cover.groomName && cover.brideName ? `${cover.groomName} & ${cover.brideName}` : (cover.groomName || cover.brideName || ''));
+
+      const coupleName = coupleFromCover
+        || matchedQ?.couple_names 
+        || matchedQ?.client_name 
+        || leadInfo?.coupleName 
+        || leadInfo?.name 
+        || 'Client';
+
+      const eventType = (cover.eventType || content.eventGroup || 'Wedding').replace(/quotation/i, '').trim();
+      const rawTitle = content.designName || content.title || matchedQ?.title;
+      const cleanTitle = (rawTitle && !rawTitle.startsWith('FW-') && rawTitle !== 'Wedding - Design 1')
+        ? rawTitle
+        : `${coupleName} - ${eventType} Quotation`;
+
+      const quoteTitle = isFinal && !cleanTitle.includes('Final') 
+        ? `${coupleName} - Final Quotation` 
+        : cleanTitle;
 
       summary[leadId].versions.push({
         id: d.id,
@@ -141,8 +160,9 @@ export async function GET(req: NextRequest) {
         lead_id: leadId,
         version: verNum,
         version_label: `V${verNum}`,
-        title: isFinal && !quoteTitle.includes('Final') ? `${coupleName} - Final Quotation` : quoteTitle,
+        title: quoteTitle,
         couple_name: coupleName,
+        content_json: { cover },
         is_final: isFinal,
         public_token: matchedQ?.public_token || null,
         created_at: d.created_at,
@@ -178,7 +198,7 @@ export async function GET(req: NextRequest) {
 
       if (existingDoc) {
         if (isFinal) existingDoc.is_final = true;
-        if (q.title) existingDoc.title = q.title;
+        if (q.title && !q.title.startsWith('FW-') && q.title !== 'Wedding - Design 1') existingDoc.title = q.title;
         if (q.public_token) existingDoc.public_token = q.public_token;
         if (!existingDoc.couple_name && coupleName) existingDoc.couple_name = coupleName;
       } else {

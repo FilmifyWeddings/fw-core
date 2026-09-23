@@ -2232,7 +2232,33 @@ function StudioCoreAiryBuilderContent() {
       isStandard: true,
     };
 
-    const newSeq = [...pageSequence, newItem];
+    // Canonical standard order insertion: Find closest preceding standard page currently in pageSequence
+    const targetCanonicalIdx = STANDARD_PAGE_DEFINITIONS.findIndex(s => s.type === stdType);
+    let insertAfterIdx = -1;
+
+    for (let i = 0; i < pageSequence.length; i++) {
+      const p = pageSequence[i];
+      const pCanonicalIdx = STANDARD_PAGE_DEFINITIONS.findIndex(s => s.type === p.type);
+      if (pCanonicalIdx !== -1 && pCanonicalIdx < targetCanonicalIdx) {
+        insertAfterIdx = i;
+      }
+    }
+
+    const newSeq = [...pageSequence];
+    if (insertAfterIdx !== -1) {
+      newSeq.splice(insertAfterIdx + 1, 0, newItem);
+    } else {
+      const firstFollowingIdx = newSeq.findIndex(p => {
+        const cIdx = STANDARD_PAGE_DEFINITIONS.findIndex(s => s.type === p.type);
+        return cIdx !== -1 && cIdx > targetCanonicalIdx;
+      });
+      if (firstFollowingIdx !== -1) {
+        newSeq.splice(firstFollowingIdx, 0, newItem);
+      } else {
+        newSeq.unshift(newItem);
+      }
+    }
+
     updatePageSequence(newSeq);
     setOpenCard(stdDef.type);
     setAddPageModalOpen(false);
