@@ -283,7 +283,7 @@ export async function GET(
         .eq('lead_id', leadId),
       supabaseAdmin
         .from('quotations')
-        .select('id, quotation_number, title, status, client_name, client_notes, content_json, public_token, created_at, updated_at')
+        .select('id, quotation_number, title, status, client_name, client_notes, content_json, public_token, is_final, created_at, updated_at')
         .eq('client_id', leadId)
     ]);
 
@@ -344,7 +344,10 @@ export async function GET(
       let title = `${coupleName} - ${cleanEventType} Quotation`;
 
       const matchingQuote = allQuotes.find((q: any) =>
-        q.id === doc.template_id || q.quotation_number === doc.template_id
+        q.id === doc.template_id || 
+        q.quotation_number === doc.template_id ||
+        q.id === doc.id ||
+        (q.quotation_number && doc.template_id && (q.quotation_number.includes(doc.template_id) || doc.template_id.includes(q.quotation_number)))
       );
 
       // Determine response badges for this version
@@ -380,6 +383,7 @@ export async function GET(
         (finalTargetId && (
           finalTargetId === doc.template_id || 
           finalTargetId === doc.id || 
+          (matchingQuote && (matchingQuote.id === finalTargetId || matchingQuote.quotation_number === finalTargetId)) ||
           (doc.template_id && (finalTargetId.includes(doc.template_id) || doc.template_id.includes(finalTargetId)))
         )) ||
         content.is_final === true || 

@@ -201,10 +201,23 @@ export function LeadQuotationModal({
     setErrorMsg(null);
 
     const cacheKey = `lead_quotes_cache_${lead.id}`;
+    const targetFinalId = lead.final_quotation_id || (lead as any).raw_payload?.final_quotation_id;
+
     if (!silent) {
       const cachedData = safeSessionGet(cacheKey);
       if (cachedData && Array.isArray(cachedData) && cachedData.length > 0) {
-        setQuotations(cachedData);
+        const reconciled = cachedData.map((item: QuotationVersionItem) => ({
+          ...item,
+          is_final: Boolean(
+            (targetFinalId && (
+              item.template_id === targetFinalId || 
+              item.id === targetFinalId || 
+              (item.template_id && (targetFinalId.includes(item.template_id) || item.template_id.includes(targetFinalId)))
+            )) ||
+            item.is_final
+          )
+        }));
+        setQuotations(reconciled);
         setLoading(false);
       } else {
         setLoading(true);
@@ -230,11 +243,22 @@ export function LeadQuotationModal({
       }
 
       if (json.success && Array.isArray(json.quotations)) {
-        setQuotations(json.quotations);
-        safeSessionSet(cacheKey, json.quotations);
+        const finalizedList = json.quotations.map((item: QuotationVersionItem) => ({
+          ...item,
+          is_final: Boolean(
+            (targetFinalId && (
+              item.template_id === targetFinalId || 
+              item.id === targetFinalId || 
+              (item.template_id && (targetFinalId.includes(item.template_id) || item.template_id.includes(targetFinalId)))
+            )) ||
+            item.is_final
+          )
+        }));
+        setQuotations(finalizedList);
+        safeSessionSet(cacheKey, finalizedList);
         if (onQuotationChange) {
           queueMicrotask(() => {
-            onQuotationChange(lead.id, json.quotations);
+            onQuotationChange(lead.id, finalizedList);
           });
         }
 

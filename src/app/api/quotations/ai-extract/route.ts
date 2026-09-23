@@ -375,7 +375,7 @@ Return ONLY a valid JSON object matching:
   const openAiKey = process.env.OPENAI_API_KEY || '';
   const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || '';
 
-  // Try OpenAI API
+  // Try OpenAI API with strict 3-second timeout
   if (openAiKey) {
     try {
       const res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -390,7 +390,8 @@ Return ONLY a valid JSON object matching:
           response_format: { type: 'json_object' },
           temperature: 0.1,
           max_tokens: 1200
-        })
+        }),
+        signal: AbortSignal.timeout(3000)
       });
       if (res.ok) {
         const json = await res.json();
@@ -398,19 +399,21 @@ Return ONLY a valid JSON object matching:
         if (content) aiRawOutput = JSON.parse(content);
       }
     } catch (e) {
-      console.warn('[OpenAI Call Warning]:', e);
+      console.warn('[OpenAI Call Warning/Timeout]:', e);
     }
   }
 
-  // Try Gemini API if OpenAI failed or key absent
+  // Try Gemini API if OpenAI failed or key absent with strict 3-second timeout
   if (!aiRawOutput && geminiKey) {
     try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`, {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${geminiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: promptText + "\nRespond strictly in valid JSON." }] }]
-        })
+          contents: [{ parts: [{ text: promptText + "\nRespond strictly in valid JSON." }] }],
+          generationConfig: { responseMimeType: 'application/json' }
+        }),
+        signal: AbortSignal.timeout(3000)
       });
       if (res.ok) {
         const json = await res.json();
@@ -421,7 +424,7 @@ Return ONLY a valid JSON object matching:
         }
       }
     } catch (e) {
-      console.warn('[Gemini Call Warning]:', e);
+      console.warn('[Gemini Call Warning/Timeout]:', e);
     }
   }
 

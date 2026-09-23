@@ -261,8 +261,8 @@ LEAD & CLIENT CONTEXT:
     }
   };
 
-  const handleApply = async () => {
-    if (!extractedDoc) return;
+  const applyDocAndNavigate = async (docToApply: any) => {
+    if (!docToApply) return;
     setApplying(true);
     setErrorMsg(null);
     try {
@@ -280,9 +280,9 @@ LEAD & CLIENT CONTEXT:
           },
           body: JSON.stringify({
             leadId: effectiveLead.id,
-            clientName: extractedDoc?.cover?.coupleName || effectiveLead.name,
+            clientName: docToApply?.cover?.coupleName || effectiveLead.name,
             explicitTemplateId: selectedTemplateId || undefined,
-            initialDocument: extractedDoc
+            initialDocument: docToApply
           })
         });
         const createText = await createRes.text();
@@ -298,7 +298,7 @@ LEAD & CLIENT CONTEXT:
 
       // Apply extracted document directly only if targetQId was an existing quotation
       const isNewCreation = !quotationId && Boolean(effectiveLead.id && effectiveLead.id !== 'draft');
-      let finalDoc = extractedDoc;
+      let finalDoc = docToApply;
 
       if (!isNewCreation && targetQId && targetQId !== 'draft') {
         const applyRes = await fetch('/api/quotations/ai-apply', {
@@ -309,7 +309,7 @@ LEAD & CLIENT CONTEXT:
           },
           body: JSON.stringify({
             quotationId: targetQId,
-            document: extractedDoc
+            document: docToApply
           })
         });
 
@@ -334,7 +334,7 @@ LEAD & CLIENT CONTEXT:
 
             // ⚡ Instant 0ms CRM icon update in localStorage
             const lId = effectiveLead.id;
-            const coupleName = extractedDoc?.cover?.coupleName || effectiveLead.name || 'Quotation';
+            const coupleName = docToApply?.cover?.coupleName || effectiveLead.name || 'Quotation';
             const stored = localStorage.getItem('sc_quotation_summary_map');
             const map = stored ? JSON.parse(stored) : {};
             const prev = map[lId] || { count: 0, hasFinal: false, versions: [] };
@@ -360,7 +360,7 @@ LEAD & CLIENT CONTEXT:
       }
 
       if (onApplied) {
-        onApplied(extractedDoc, targetQId || quotationId || 'draft');
+        onApplied(docToApply, targetQId || quotationId || 'draft');
       } else if (targetQId && targetQId !== 'draft') {
         router.push(`/workspace/quotations/builder/templet/${targetQId}`);
         onClose();
@@ -372,6 +372,54 @@ LEAD & CLIENT CONTEXT:
       setErrorMsg(err.message || 'Failed to apply quotation changes.');
     } finally {
       setApplying(false);
+    }
+  };
+
+  const handleApply = async () => {
+    await applyDocAndNavigate(extractedDoc);
+  };
+
+  const handleQuickCreateAndOpen = async () => {
+    setGenerating(true);
+    setErrorMsg(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+
+      const res = await fetch('/api/quotations/ai-extract', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          leadId: effectiveLead.id,
+          quotationId: quotationId || null,
+          explicitTemplateId: selectedTemplateId || null,
+          currentDocument: currentDocumentData || null,
+          additionalNotes: additionalNotes.trim()
+        })
+      });
+
+      const text = await res.text();
+      let json: any = {};
+      try {
+        json = text ? JSON.parse(text) : {};
+      } catch (parseErr) {
+        throw new Error('AI Quotation server is initializing. Please try again.');
+      }
+
+      if (!res.ok || !json.success || !json.extractedDocument) {
+        throw new Error(json.error || 'AI could not generate quotation.');
+      }
+
+      setExtractedDoc(json.extractedDocument);
+      await applyDocAndNavigate(json.extractedDocument);
+    } catch (err: any) {
+      console.error('[AI Modal Quick Create Error]:', err);
+      setErrorMsg(err.message || "Could not create quotation. Please try again.");
+    } finally {
+      setGenerating(false);
     }
   };
 
@@ -598,24 +646,36 @@ LEAD & CLIENT CONTEXT:
                   </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleGenerate}
-                  disabled={generating}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white font-extrabold text-xs shadow-lg shadow-amber-500/20 hover:brightness-105 active:scale-98 transition-all flex items-center gap-2 disabled:opacity-50"
-                >
-                  {generating ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Analyzing Context...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-4 h-4" />
-                      <span>Generate Quotation</span>
-                    </>
-                  )}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleGenerate}
+                    disabled={generating || applying}
+                    className="px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-bold text-xs transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    {generating ? 'Analyzing...' : 'Preview Details'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleQuickCreateAndOpen}
+                    disabled={generating || applying}
+                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-600 text-white font-black text-xs shadow-lg shadow-amber-500/25 active:scale-98 transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                  >
+                    {generating || applying ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin text-white" />
+                        <span>Opening Design...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4 text-white" />
+                        <span>⚡ Create & Open Design</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </>
+                    )}
+                  </button>
+                </div>
               </>
             ) : (
               <>

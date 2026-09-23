@@ -76,12 +76,24 @@ export function LeadDrawerQuotationsTab({
   useEffect(() => {
     if (!lead?.id) return;
     const cacheKey = `lead_quotes_cache_${lead.id}`;
+    const targetFinalId = lead.final_quotation_id || (lead as any).raw_payload?.final_quotation_id;
     const cached = (initialQuotations && initialQuotations.length > 0)
       ? initialQuotations
       : safeSessionGet(cacheKey);
 
     if (cached && Array.isArray(cached) && cached.length > 0) {
-      setQuotations(cached);
+      const reconciled = cached.map((item: QuotationVersionItem) => ({
+        ...item,
+        is_final: Boolean(
+          (targetFinalId && (
+            item.template_id === targetFinalId || 
+            item.id === targetFinalId || 
+            (item.template_id && (targetFinalId.includes(item.template_id) || item.template_id.includes(targetFinalId)))
+          )) ||
+          item.is_final
+        )
+      }));
+      setQuotations(reconciled);
       setLoading(false);
     } else {
       setQuotations([]);
@@ -95,6 +107,7 @@ export function LeadDrawerQuotationsTab({
     if (!lead?.id) return;
     setErrorMsg(null);
     const cacheKey = `lead_quotes_cache_${lead.id}`;
+    const targetFinalId = lead.final_quotation_id || (lead as any).raw_payload?.final_quotation_id;
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -106,12 +119,23 @@ export function LeadDrawerQuotationsTab({
       const json = await res.json().catch(() => ({}));
 
       if (json.success && Array.isArray(json.quotations)) {
-        setQuotations(json.quotations);
-        safeSessionSet(cacheKey, json.quotations);
+        const finalizedList = json.quotations.map((item: QuotationVersionItem) => ({
+          ...item,
+          is_final: Boolean(
+            (targetFinalId && (
+              item.template_id === targetFinalId || 
+              item.id === targetFinalId || 
+              (item.template_id && (targetFinalId.includes(item.template_id) || item.template_id.includes(targetFinalId)))
+            )) ||
+            item.is_final
+          )
+        }));
+        setQuotations(finalizedList);
+        safeSessionSet(cacheKey, finalizedList);
 
         if (onQuotationChange) {
           queueMicrotask(() => {
-            onQuotationChange(lead.id, json.quotations);
+            onQuotationChange(lead.id, finalizedList);
           });
         }
       } else if (!silent) {
@@ -131,9 +155,15 @@ export function LeadDrawerQuotationsTab({
 
     // ⚡ INSTANT 0ms OPTIMISTIC UPDATE
     const previousQuotations = [...quotations];
+    const isTargetItem = (item: QuotationVersionItem) => {
+      if (q.template_id && item.template_id && item.template_id === q.template_id) return true;
+      if (q.id && item.id && item.id === q.id) return true;
+      if (q.version !== undefined && item.version !== undefined && item.version === q.version) return true;
+      return false;
+    };
     const optimisticUpdated = quotations.map(item => ({
       ...item,
-      is_final: unmark ? false : item.template_id === q.template_id
+      is_final: unmark ? false : isTargetItem(item)
     }));
     setQuotations(optimisticUpdated);
     safeSessionSet(`lead_quotes_cache_${lead.id}`, optimisticUpdated);

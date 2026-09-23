@@ -61,7 +61,9 @@ export async function POST(req: NextRequest) {
 
     if (allDocs && allDocs.length > 0) {
       await Promise.all(allDocs.map(async (doc: any) => {
-        const isTarget = doc.template_id === quotationId || (isQuotationUUID && doc.id === quotationId);
+        const isTarget = doc.template_id === quotationId || 
+          (isQuotationUUID && doc.id === quotationId) ||
+          (doc.template_id && quotationId && (doc.template_id.includes(quotationId) || quotationId.includes(doc.template_id)));
         const updatedContent = { ...(doc.content_json || {}) };
         
         if (shouldUnmark) {
@@ -150,15 +152,17 @@ export async function POST(req: NextRequest) {
 
             const quoteTitle = clientName ? `${clientName} - Final Quotation` : 'Final Quotation';
 
-            let existingQuery = supabaseAdmin.from('quotations').select('id');
-            if (isQuotationUUID) {
-              existingQuery = existingQuery.or(`id.eq.${quotationId},quotation_number.eq.${quotationId}`);
-            } else {
-              existingQuery = existingQuery.eq('quotation_number', quotationId);
-            }
-            const { data: existingQ } = await existingQuery.maybeSingle();
+            const matchFilter = isQuotationUUID
+              ? `id.eq.${quotationId},quotation_number.eq.${quotationId}`
+              : `quotation_number.eq.${quotationId}`;
 
-            if (existingQ) {
+            const { data: existingRows } = await supabaseAdmin
+              .from('quotations')
+              .select('id, quotation_number')
+              .or(matchFilter);
+
+            if (existingRows && existingRows.length > 0) {
+              const primaryId = existingRows[0].id;
               await supabaseAdmin
                 .from('quotations')
                 .update({
@@ -170,15 +174,15 @@ export async function POST(req: NextRequest) {
                   is_final: true,
                   updated_at: now
                 })
-                .eq('id', existingQ.id);
+                .or(matchFilter);
 
-              // Clean up any stale duplicate quotations with the same quotation_number so lead-summary never gets confused
+              // Clean up any stale duplicate quotations with the same quotation_number
               try {
                 await supabaseAdmin
                   .from('quotations')
                   .delete()
                   .eq('quotation_number', quotationId)
-                  .neq('id', existingQ.id);
+                  .neq('id', primaryId);
               } catch (_) {}
             } else {
               await supabaseAdmin
