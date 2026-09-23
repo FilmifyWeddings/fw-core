@@ -134,13 +134,13 @@ export default function ClientWorkspaceDetailPage() {
 
   // Tab 3: Events & Bookings
   const [showAddEventModal, setShowAddEventModal] = useState(false);
-  const [newEventName, setNewEventName] = useState('Sangeet & Cocktail');
+  const [newEventName, setNewEventName] = useState('');
   const [newEventDate, setNewEventDate] = useState('');
-  const [newEventTimeStart, setNewEventTimeStart] = useState('06:00 PM');
-  const [newEventTimeEnd, setNewEventTimeEnd] = useState('11:00 PM');
+  const [newEventTimeStart, setNewEventTimeStart] = useState('');
+  const [newEventTimeEnd, setNewEventTimeEnd] = useState('');
   const [newEventVenue, setNewEventVenue] = useState('');
   const [newEventCity, setNewEventCity] = useState('');
-  const [newEventCrew, setNewEventCrew] = useState('2 Photographers, 2 Cinematographers, 1 Drone Pilot');
+  const [newEventCrew, setNewEventCrew] = useState('');
 
   // Tab 4: Post-Production
   const [postProductionProject, setPostProductionProject] = useState<PostProductionProject | null>(null);
@@ -1537,6 +1537,11 @@ export default function ClientWorkspaceDetailPage() {
             }
           }
         }
+      } else {
+        // If NO quotation exists for this client, purge any demo deliverables so client remains 100% clean
+        if (isDemoDeliverables(deliverables)) {
+          deliverables = [];
+        }
       }
 
       // Ensure every segment found in deliverables is in enabledSegments
@@ -1578,7 +1583,7 @@ export default function ClientWorkspaceDetailPage() {
         .eq('client_id', c.id)
         .maybeSingle();
 
-      const totalPkg = Number(c.total_package_amount) || 150000;
+      const totalPkg = Number(c.total_package_amount) || 0;
       const totalPaid = Number(c.paid_amount) || 0;
 
       // If no finance record exists or milestones empty, check quotation documents first!
@@ -1645,56 +1650,21 @@ export default function ClientWorkspaceDetailPage() {
             finRow = newRec as any;
           }
         } else {
-          const tokenAmt = Math.round(totalPkg * 0.15);
-          const advAmt = Math.round(totalPkg * 0.35);
-          const eventAmt = Math.round(totalPkg * 0.35);
-          const finalAmt = Math.max(0, totalPkg - (tokenAmt + advAmt + eventAmt));
-
-          const baseDate = c.event_date ? new Date(c.event_date) : new Date();
-          const tokenDate = new Date().toISOString().split('T')[0];
-          const preEventDate = new Date(baseDate.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-          const weddingDate = baseDate.toISOString().split('T')[0];
-          const deliveryDate = new Date(baseDate.getTime() + 45 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-
-          // Cumulative milestone calculation
-          const milestones = [
-            {
+          // If no quotation document, do NOT invent 150000 or fake percentages!
+          // Only create an initial milestone if client actually has advance/paid amount recorded
+          const milestones: any[] = [];
+          if (totalPaid > 0) {
+            const payDate = c.event_date ? new Date(c.event_date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+            milestones.push({
               id: `m_1_${c.id.slice(0, 6)}`,
-              step_name: 'Token Booking Amount (15%)',
-              amount: tokenAmt,
-              due_date: tokenDate,
-              status: totalPaid >= tokenAmt && totalPaid > 0 ? 'completed' : 'pending',
+              step_name: totalPaid >= totalPkg && totalPkg > 0 ? 'Full Payment' : 'Token / Advance Payment',
+              amount: totalPaid,
+              due_date: payDate,
+              status: 'completed',
               payment_mode: 'UPI',
-              paid_date: totalPaid >= tokenAmt && totalPaid > 0 ? tokenDate : null
-            },
-            {
-              id: `m_2_${c.id.slice(0, 6)}`,
-              step_name: 'Advance Amount - Pre-Event (35%)',
-              amount: advAmt,
-              due_date: preEventDate,
-              status: totalPaid >= (tokenAmt + advAmt) && totalPaid > 0 ? 'completed' : 'pending',
-              payment_mode: 'Bank Transfer',
-              paid_date: totalPaid >= (tokenAmt + advAmt) && totalPaid > 0 ? preEventDate : null
-            },
-            {
-              id: `m_3_${c.id.slice(0, 6)}`,
-              step_name: 'On Wedding Day (35%)',
-              amount: eventAmt,
-              due_date: weddingDate,
-              status: totalPaid >= (tokenAmt + advAmt + eventAmt) && totalPaid > 0 ? 'completed' : 'pending',
-              payment_mode: 'UPI',
-              paid_date: totalPaid >= (tokenAmt + advAmt + eventAmt) && totalPaid > 0 ? weddingDate : null
-            },
-            {
-              id: `m_4_${c.id.slice(0, 6)}`,
-              step_name: 'Final Delivery & Album Handover (15%)',
-              amount: finalAmt,
-              due_date: deliveryDate,
-              status: totalPaid >= totalPkg && totalPkg > 0 && totalPaid > 0 ? 'completed' : 'pending',
-              payment_mode: 'Bank Transfer',
-              paid_date: totalPaid >= totalPkg && totalPkg > 0 && totalPaid > 0 ? deliveryDate : null
-            }
-          ];
+              paid_date: payDate
+            });
+          }
 
           const newRec = {
             user_id: workspaceId,
@@ -2157,8 +2127,8 @@ export default function ClientWorkspaceDetailPage() {
       date: newEventDate || eventDate || new Date().toISOString().split('T')[0],
       time_start: newEventTimeStart,
       time_end: newEventTimeEnd,
-      venue: newEventVenue.trim() || 'Main Venue',
-      city: newEventCity.trim() || 'Mumbai',
+      venue: newEventVenue.trim(),
+      city: newEventCity.trim(),
       assigned_crew: newEventCrew.trim()
     };
 

@@ -714,17 +714,19 @@ export function LeadQuotationModal({
                         >
                           {(() => {
                             const displayTitle = (() => {
+                              // 1. If q.title is already well-formed and not a placeholder/ID, use it directly to prevent flicker!
+                              if (q.title && !q.title.startsWith('FW-') && q.title !== 'Wedding - Design 1') {
+                                if (q.is_final) {
+                                  if (q.title.includes('Final Quotation')) return q.title;
+                                  return q.title.replace(/quotation/i, 'Final Quotation');
+                                }
+                                return q.title;
+                              }
+
                               const content = q.content_json || {};
                               const cover = content.cover || {};
                               const coupleFromCover = cover.coupleName 
                                 || (cover.groomName && cover.brideName ? `${cover.groomName} & ${cover.brideName}` : (cover.groomName || cover.brideName || ''));
-
-                              const leadCouple = 
-                                lead?.raw_payload?.couple_name ||
-                                lead?.raw_payload?.couple_names ||
-                                (lead as any)?.couple_names ||
-                                (lead?.name && !['client', 'valued client', 'lead'].includes(lead.name.toLowerCase().trim()) ? lead.name : '') ||
-                                (lead?.client_name && !['client', 'valued client', 'lead'].includes(lead.client_name.toLowerCase().trim()) ? lead.client_name : '');
 
                               const isPlaceholder = !coupleFromCover || [
                                 'yash & twinkle', 'yash and twinkle', 'twinkle & yash',
@@ -732,9 +734,19 @@ export function LeadQuotationModal({
                                 'valued client', 'wedding client', 'couple', 'demo', 'sample'
                               ].includes(coupleFromCover.toLowerCase().trim());
 
+                              const leadCouple = 
+                                (q as any).couple_name ||
+                                (q as any).couple_names ||
+                                (!isPlaceholder && coupleFromCover ? coupleFromCover : null) ||
+                                lead?.raw_payload?.couple_name ||
+                                lead?.raw_payload?.couple_names ||
+                                (lead as any)?.couple_names ||
+                                (lead?.name && !['client', 'valued client', 'lead'].includes(lead.name.toLowerCase().trim()) ? lead.name : '') ||
+                                (lead?.client_name && !['client', 'valued client', 'lead'].includes(lead.client_name.toLowerCase().trim()) ? lead.client_name : '');
+
                               const coupleName = (!isPlaceholder && coupleFromCover)
                                 ? coupleFromCover
-                                : (leadCouple || (q as any).couple_name || (q as any).couple_names || coupleFromCover || 'Couple');
+                                : (leadCouple || 'Couple');
 
                               const cleanEventType = (cover.eventType || (q as any).event_type || content.eventGroup || (lead as any)?.event_type || 'Wedding').replace(/quotation/i, '').trim() || 'Wedding';
 

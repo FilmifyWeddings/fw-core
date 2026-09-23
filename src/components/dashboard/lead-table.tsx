@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { motion as motionImport, AnimatePresence as AnimatePresenceImport } from 'framer-motion';
@@ -721,7 +721,7 @@ export function LeadTable({
       onLeadUpdate(leadId, {
         stage_id: bookedStageId,
         stage: 'booked',
-        status: bookedStageName as any,
+        status: 'closed' as any,
         final_quotation_id: updatedFinalId
       });
     } else if (!hasFinal && onLeadUpdate) {
@@ -730,6 +730,43 @@ export function LeadTable({
       });
     }
   }, [stagesState, onLeadUpdate]);
+
+  // Helper to map lead.stage_id (even UUIDs) and lead.status to stagesState option id
+  const resolveLeadStageValue = useCallback((lead: Lead) => {
+    // 1. Direct match by stage_id
+    if (lead.stage_id) {
+      const match = stagesState.find(s => s.id === lead.stage_id);
+      if (match) return match.id;
+    }
+    // 2. If lead has final quotation or is booked/closed
+    const isBooked = Boolean(
+      lead.final_quotation_id || 
+      lead.raw_payload?.final_quotation_id ||
+      lead.status === 'closed' || 
+      (lead.status as string)?.toLowerCase() === 'booked' ||
+      (lead as any).stage === 'booked' ||
+      (typeof lead.stage_id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(lead.stage_id))
+    );
+    if (isBooked) {
+      const bookedStage = stagesState.find(s => 
+        s.id === 'booked' || 
+        s.name?.toLowerCase().includes('book') || 
+        s.id?.toLowerCase().includes('book') ||
+        s.name?.toLowerCase().includes('closed') ||
+        s.id?.toLowerCase().includes('closed')
+      );
+      if (bookedStage) return bookedStage.id;
+    }
+    // 3. Match by status string
+    if (lead.status) {
+      const match = stagesState.find(s => 
+        s.id === lead.status || 
+        s.name?.toLowerCase() === (lead.status as string).toLowerCase()
+      );
+      if (match) return match.id;
+    }
+    return lead.stage_id || lead.status || '';
+  }, [stagesState]);
 
   // Columns & Configurations state
   const [columns, setColumns] = useState<ColumnConfig[]>(INITIAL_COLUMNS);
@@ -2908,7 +2945,7 @@ export function LeadTable({
                   {/* Status Dropdown Pill */}
                   <div className="min-w-0 flex-1 max-w-[130px]">
                     <CRMDropdown
-                      value={lead.stage_id || lead.status}
+                      value={resolveLeadStageValue(lead)}
                       placeholder="Select status"
                       compact={true}
                       className="w-full"
@@ -3404,7 +3441,7 @@ export function LeadTable({
                                 return (
                                   <MotionTd key={col.id} className="py-2.5 px-3.5 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
                                     <CRMDropdown
-                                      value={lead.stage_id || lead.status}
+                                      value={resolveLeadStageValue(lead)}
                                       placeholder="Select status"
                                       customAddTitle="Add Custom Status"
                                       options={[

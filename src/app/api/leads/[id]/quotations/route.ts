@@ -376,11 +376,16 @@ export async function GET(
       const responseBadge = versionResponses[0] || null;
 
       const finalTargetId = (effectiveLead as any).final_quotation_id || (effectiveLead as any).raw_payload?.final_quotation_id;
-      const isFinal = !!(
-        (finalTargetId && (finalTargetId === doc.template_id || finalTargetId === doc.id)) ||
+      const isFinal = Boolean(
+        (finalTargetId && (
+          finalTargetId === doc.template_id || 
+          finalTargetId === doc.id || 
+          (doc.template_id && (finalTargetId.includes(doc.template_id) || doc.template_id.includes(finalTargetId)))
+        )) ||
         content.is_final === true || 
         doc.is_final === true || 
-        (!finalTargetId && ((matchingQuote as any)?.is_final === true || matchingQuote?.status === 'accepted'))
+        (matchingQuote as any)?.is_final === true || 
+        matchingQuote?.status === 'accepted'
       );
 
       const displayTitle = isFinal

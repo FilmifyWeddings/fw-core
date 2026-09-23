@@ -206,11 +206,20 @@ export default function ClientsPage() {
       });
 
       const existingLeadIds = new Set(existingClientList.map(c => c.lead_id).filter(Boolean));
-      const existingClientPhones = new Set(existingClientList.map(c => c.phone?.replace(/\D/g, '')).filter(Boolean));
+      const existingClientIds = new Set(existingClientList.map(c => c.id).filter(Boolean));
+      const existingClientPhones = new Set(existingClientList.map(c => c.phone ? c.phone.replace(/\D/g, '').slice(-10) : '').filter(Boolean));
+      const existingClientNames = new Set(existingClientList.map(c => c.name ? c.name.toLowerCase().trim() : '').filter(Boolean));
 
       for (const bookedLead of bookedLeads) {
-        const leadPhoneDigits = bookedLead.phone?.replace(/\D/g, '') || '';
-        const alreadyLinked = existingLeadIds.has(bookedLead.id) || (leadPhoneDigits && existingClientPhones.has(leadPhoneDigits));
+        const leadPhoneDigits = bookedLead.phone ? bookedLead.phone.replace(/\D/g, '').slice(-10) : '';
+        const clientName = bookedLead.raw_payload?.couple_name || (bookedLead as any).couple_names || bookedLead.client_name || bookedLead.name || 'Booked Client';
+        const nameClean = clientName.toLowerCase().trim();
+
+        const alreadyLinked = 
+          existingLeadIds.has(bookedLead.id) || 
+          existingClientIds.has(bookedLead.id) ||
+          (leadPhoneDigits && existingClientPhones.has(leadPhoneDigits)) ||
+          (nameClean && existingClientNames.has(nameClean));
 
         if (!alreadyLinked && bookedLead.name) {
           // Parse amount safely from lead raw payload
@@ -221,8 +230,6 @@ export default function ClientsPage() {
             packageAmt = safeParseCurrencyOrBudget(raw.package_amount || raw.amount || raw.budget || 0);
             paidAmt = safeParseCurrencyOrBudget(raw.paid_amount || raw.advance || raw.token || 0);
           }
-
-          const clientName = bookedLead.raw_payload?.couple_name || (bookedLead as any).couple_names || bookedLead.client_name || bookedLead.name || 'Booked Client';
 
           const newClientPayload = {
             user_id: workspaceId,
@@ -242,18 +249,18 @@ export default function ClientsPage() {
               portal_token: `tok_${Date.now()}_${Math.random().toString(36).substring(5)}`,
               portal_pin: '123456',
               plain_notes: `Auto-synced from Booked CRM Lead (${clientName})`,
-              events: [
+              events: bookedLead.event_date ? [
                 {
                   id: `ev_${Date.now()}`,
                   name: bookedLead.event_type || 'Wedding Event',
-                  date: bookedLead.event_date || new Date().toISOString().split('T')[0],
-                  time_start: '05:00 PM',
-                  time_end: '11:00 PM',
-                  venue: (bookedLead as any).venue || (bookedLead as any).location || 'Main Venue',
-                  city: (bookedLead as any).city || 'Mumbai',
-                  assigned_crew: '2 Photographers, 2 Cinematographers'
+                  date: bookedLead.event_date,
+                  time_start: '',
+                  time_end: '',
+                  venue: (bookedLead as any).venue || (bookedLead as any).location || '',
+                  city: (bookedLead as any).city || '',
+                  assigned_crew: ''
                 }
-              ]
+              ] : []
             })
           };
 
@@ -267,12 +274,38 @@ export default function ClientsPage() {
             if (!insertErr && createdClient) {
               existingClientList = [createdClient, ...existingClientList];
               existingLeadIds.add(bookedLead.id);
+              existingClientIds.add(createdClient.id);
+              if (leadPhoneDigits) existingClientPhones.add(leadPhoneDigits);
+              if (nameClean) existingClientNames.add(nameClean);
             }
           } catch (autoSyncErr) {
             console.warn('Auto-sync client insert notice:', autoSyncErr);
           }
         }
       }
+
+      // Deduplicate clients list before saving state
+      const seenClientKeys = new Set<string>();
+      const dedupedClients: WorkspaceClient[] = [];
+      for (const cl of existingClientList) {
+        const cPhone = cl.phone ? cl.phone.replace(/\D/g, '').slice(-10) : '';
+        const idKey = cl.id ? `id:${cl.id}` : null;
+        const leadKey = cl.lead_id ? `lead:${cl.lead_id}` : null;
+        const phoneKey = cPhone && cPhone.length >= 7 ? `phone:${cPhone}` : null;
+
+        if (
+          (idKey && seenClientKeys.has(idKey)) ||
+          (leadKey && seenClientKeys.has(leadKey)) ||
+          (phoneKey && seenClientKeys.has(phoneKey))
+        ) {
+          continue;
+        }
+        if (idKey) seenClientKeys.add(idKey);
+        if (leadKey) seenClientKeys.add(leadKey);
+        if (phoneKey) seenClientKeys.add(phoneKey);
+        dedupedClients.push(cl);
+      }
+      existingClientList = dedupedClients;
 
       // Fetch team members for PM assignment
       try {
@@ -477,18 +510,18 @@ export default function ClientsPage() {
         project_manager_name: assignedPm ? assignedPm.name : undefined,
         project_manager_email: assignedPm ? assignedPm.email : undefined,
         project_manager_phone: assignedPm ? assignedPm.phone : undefined,
-        events: [
+        events: dataToUse.event_date ? [
           {
             id: `ev_${Date.now()}`,
-            name: dataToUse.event_type,
-            date: dataToUse.event_date || new Date().toISOString().split('T')[0],
-            time_start: '05:00 PM',
-            time_end: '11:00 PM',
-            venue: 'Main Venue',
-            city: 'Mumbai',
-            assigned_crew: '2 Photographers, 2 Cinematographers'
+            name: dataToUse.event_type || 'Wedding',
+            date: dataToUse.event_date,
+            time_start: '',
+            time_end: '',
+            venue: '',
+            city: '',
+            assigned_crew: ''
           }
-        ]
+        ] : []
       });
 
       const clientPayload: any = {

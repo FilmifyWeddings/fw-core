@@ -1130,7 +1130,17 @@ export async function syncBookedLeadOrFinalQuotation({
         .or(`lead_id.eq.${leadId},id.eq.${leadId}`)
         .order('created_at', { ascending: true });
 
-      const existingWsClient = existingWsClients?.[0];
+      let existingWsClient = existingWsClients?.[0];
+
+      if (!existingWsClient && coupleName) {
+        const { data: clientByName } = await supabaseClient
+          .from('workspace_clients')
+          .select('id, name')
+          .eq('workspace_id', workspaceId)
+          .ilike('name', coupleName.trim())
+          .maybeSingle();
+        if (clientByName) existingWsClient = clientByName;
+      }
 
       const extendedNotesPayload = JSON.stringify({
         client_code: `CL-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -1141,18 +1151,18 @@ export async function syncBookedLeadOrFinalQuotation({
         portal_enabled: true,
         plain_notes: `Auto-synced from Booked CRM Lead (${coupleName})`,
         notes: `Auto-synced from Booked CRM Lead (${coupleName})`,
-        events: [
+        events: eventDate ? [
           {
             id: `ev_${Date.now()}`,
             name: eventType,
-            date: eventDate || now.split('T')[0],
-            time_start: '05:00 PM',
-            time_end: '11:00 PM',
-            venue: mainVenue,
-            city: lead.city || 'Mumbai',
-            assigned_crew: '2 Photographers, 2 Cinematographers'
+            date: eventDate,
+            time_start: '',
+            time_end: '',
+            venue: (mainVenue && mainVenue !== 'TBD Venue') ? mainVenue : '',
+            city: lead.city || '',
+            assigned_crew: ''
           }
-        ]
+        ] : []
       });
 
       const wsClientPayload = {
@@ -1477,7 +1487,7 @@ export async function syncBookedLeadOrFinalQuotation({
           .from('leads')
           .update({
             client_id: workspaceClientId,
-            ...(forceBookedStatus ? { status: 'booked', stage: 'booked' } : {}),
+            ...(forceBookedStatus ? { status: 'closed', stage: 'booked' } : {}),
             ...(quotationId ? { final_quotation_id: quotationId } : {}),
             raw_payload: updatedPayload,
             updated_at: now

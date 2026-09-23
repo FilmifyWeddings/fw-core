@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { resolveUserDefaultQuotationTemplate, GLOBAL_SYSTEM_TEMPLATE_ID } from '@/lib/quotation-template-resolver';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
 import { DEFAULT_AIRY_PROPOSAL, normalizeQuotationData } from '@/lib/quotation-defaults';
+import { isPlaceholderCoupleName } from '@/lib/quotation-finance-sync';
 
 /**
  * Authoritative Fast Backend Route for Lead Quotation Creation (<100ms Response)
@@ -62,9 +63,13 @@ export async function POST(req: NextRequest) {
       const v = d.lead_version || d.content_json?.lead_version || d.version || 0;
       if (v > maxVersion) maxVersion = v;
     });
-
     const nextVersion = maxVersion + 1;
+
+    const docCoupleName = (body.initialDocument?.cover?.coupleName || (body.initialDocument as any)?.coupleName || '').trim();
+    const hasValidDocCouple = docCoupleName && !isPlaceholderCoupleName(docCoupleName);
+
     const rawLeadCouple = 
+      (hasValidDocCouple ? docCoupleName : null) ||
       effectiveLead.raw_payload?.couple_name ||
       effectiveLead.raw_payload?.couple_names ||
       (effectiveLead as any).couple_names ||
@@ -73,9 +78,16 @@ export async function POST(req: NextRequest) {
       clientNameInput ||
       'Valued Client';
 
-    const leadName = rawLeadCouple;
-    const groomName = rawLeadCouple.includes('&') ? rawLeadCouple.split('&')[0].trim() : rawLeadCouple;
-    const brideName = rawLeadCouple.includes('&') ? rawLeadCouple.split('&')[1].trim() : 'Partner';
+    const effectiveCoupleName = hasValidDocCouple ? docCoupleName : rawLeadCouple;
+    const leadName = effectiveCoupleName;
+
+    const groomName = (body.initialDocument?.cover?.groomName && !isPlaceholderCoupleName(body.initialDocument.cover.groomName))
+      ? body.initialDocument.cover.groomName.trim()
+      : (effectiveCoupleName.includes('&') ? effectiveCoupleName.split('&')[0].trim() : effectiveCoupleName);
+
+    const brideName = (body.initialDocument?.cover?.brideName && !isPlaceholderCoupleName(body.initialDocument.cover.brideName))
+      ? body.initialDocument.cover.brideName.trim()
+      : (effectiveCoupleName.includes('&') ? effectiveCoupleName.split('&')[1].trim() : 'Partner');
 
     const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
     const quotationId = `FW-Q-${leadShortId}-V${nextVersion}-${randomSuffix}`;
@@ -87,7 +99,7 @@ export async function POST(req: NextRequest) {
     clonedDoc.lead_version = nextVersion;
 
     if (!clonedDoc.cover) clonedDoc.cover = {};
-    clonedDoc.cover.coupleName = rawLeadCouple;
+    clonedDoc.cover.coupleName = effectiveCoupleName;
     clonedDoc.cover.groomName = groomName;
     clonedDoc.cover.brideName = brideName;
 
@@ -98,7 +110,7 @@ export async function POST(req: NextRequest) {
     }
 
     const eventType = clonedDoc.cover?.eventType || 'Wedding';
-    const quotationTitle = `${rawLeadCouple} - ${eventType} Quotation`;
+    const quotationTitle = `${effectiveCoupleName} - ${eventType} Quotation`;
     clonedDoc.designName = quotationTitle;
     clonedDoc.title = quotationTitle;
 

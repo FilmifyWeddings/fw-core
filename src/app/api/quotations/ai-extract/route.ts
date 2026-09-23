@@ -465,6 +465,23 @@ function fallbackHeuristicExtractor(contextData: any) {
   if (noteNameMatch) {
     leadName = noteNameMatch[1].split('\n')[0].trim();
   }
+
+  // Check for "Quotation for X & Y" or "quote for X & Y"
+  if (!leadName) {
+    const forMatch = userNotes.match(/(?:quotation\s+for|quote\s+for|proposal\s+for|for)\s+([A-Za-z0-9\s&]+?)(?:\s+(?:wedding|reception|event|pre-wedding|haldi|sangeet|on|date|budget|\d)|$)/i);
+    if (forMatch && forMatch[1].trim()) {
+      leadName = forMatch[1].trim();
+    }
+  }
+
+  // Check for standalone couple name pattern e.g. "Sagar & Vruddhi" or "Sagar weds Vruddhi"
+  if (!leadName) {
+    const couplePatternMatch = userNotes.match(/\b([A-Za-z]{2,25}\s*(?:&|weds|and|\+)\s*[A-Za-z]{2,25})\b/i);
+    if (couplePatternMatch && couplePatternMatch[1].trim()) {
+      leadName = couplePatternMatch[1].trim();
+    }
+  }
+
   if (!leadName) {
     leadName = leadInfo.name || raw.name || raw.client_name || raw.full_name || '';
   }

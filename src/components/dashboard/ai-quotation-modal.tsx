@@ -280,7 +280,7 @@ LEAD & CLIENT CONTEXT:
           },
           body: JSON.stringify({
             leadId: effectiveLead.id,
-            clientName: effectiveLead.name,
+            clientName: extractedDoc?.cover?.coupleName || effectiveLead.name,
             explicitTemplateId: selectedTemplateId || undefined,
             initialDocument: extractedDoc
           })

@@ -671,16 +671,28 @@ export default function LeadsPage() {
         }
       }
 
-      // 3. Check if client already exists for this lead
+      // 3. Check if client already exists for this lead (by lead_id, or direct id match, or couple name match)
       const { data: existingClients } = await supabase
         .from('workspace_clients')
-        .select('id')
-        .eq('lead_id', leadId);
+        .select('id, name')
+        .or(`lead_id.eq.${leadId},id.eq.${leadId}`);
+
+      let matchedClient = existingClients?.[0];
+
+      if (!matchedClient && clientName) {
+        const { data: clientByName } = await supabase
+          .from('workspace_clients')
+          .select('id, name')
+          .eq('workspace_id', currentWorkspaceId)
+          .ilike('name', clientName.trim())
+          .maybeSingle();
+        if (clientByName) matchedClient = clientByName;
+      }
 
       let targetClientId: string | null = null;
 
-      if (existingClients && existingClients.length > 0) {
-        targetClientId = existingClients[0].id;
+      if (matchedClient?.id) {
+        targetClientId = matchedClient.id;
         console.log('[LeadToClient] Client already exists for lead:', leadId, 'Updating with latest quotation...');
         await supabase
           .from('workspace_clients')
@@ -961,7 +973,11 @@ export default function LeadsPage() {
 
         // AUTO-CONVERT TO CLIENT WHEN STAGE IS "BOOKED"
         if (isNowBooked && currentLead) {
-          await autoSyncBookedLeadToClient(leadId, currentLead, updatedFields);
+          // If this update was triggered by set-final quotation, the backend API route handles full workspace sync.
+          // Do NOT run autoSyncBookedLeadToClient concurrently to prevent race condition duplicate card inserts!
+          if (!updatedFields.final_quotation_id) {
+            await autoSyncBookedLeadToClient(leadId, currentLead, updatedFields);
+          }
         }
       } catch (err) {
         console.error("Database update error:", err);

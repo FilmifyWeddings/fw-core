@@ -629,9 +629,17 @@ export default function FinancePage() {
         if (leadsData) {
           for (const lead of leadsData) {
             const coupleName = lead.raw_payload?.couple_name || (lead as any).couple_names || lead.client_name || lead.name || 'Untitled Client';
-            const exists = clientList.some(
-              c => c.id === lead.id || c.lead_id === lead.id || (c.name && coupleName && c.name.toLowerCase().trim() === coupleName.toLowerCase().trim())
-            );
+            const leadPhone = lead.phone ? lead.phone.replace(/\D/g, '').slice(-10) : '';
+            const exists = clientList.some(c => {
+              const cPhone = c.phone ? c.phone.replace(/\D/g, '').slice(-10) : '';
+              return (
+                c.id === lead.id || 
+                c.lead_id === lead.id || 
+                (leadPhone && cPhone && leadPhone === cPhone) ||
+                (c.final_quotation_id && lead.final_quotation_id && c.final_quotation_id === lead.final_quotation_id) ||
+                (c.name && coupleName && c.name.toLowerCase().trim() === coupleName.toLowerCase().trim())
+              );
+            });
             if (!exists) {
               clientList.push({
                 id: lead.id,
@@ -904,10 +912,44 @@ export default function FinancePage() {
         }
       }
 
-      setFinanceRecords(finalRecords);
-      memCachedFinanceRecords = finalRecords;
-      if (finalRecords.length > 0) {
-        setExpandedCards(new Set([finalRecords[0].id]));
+      // Deduplicate finalRecords so no duplicate client or lead card is ever shown in Finance
+      const seenCardKeys = new Set<string>();
+      const deduplicatedRecords: ClientFinanceRecord[] = [];
+
+      for (const rec of finalRecords) {
+        const c = rec.client;
+        const cId = c?.id || rec.client_id;
+        const lId = c?.lead_id;
+        const qId = rec.final_quotation_id || (c as any)?.final_quotation_id;
+        const phone = c?.phone ? c.phone.replace(/\D/g, '').slice(-10) : '';
+
+        const idKey = cId ? `id:${cId}` : null;
+        const leadKey = lId ? `lead:${lId}` : null;
+        const quoteKey = qId ? `quote:${qId}` : null;
+        const phoneKey = phone && phone.length >= 7 ? `phone:${phone}` : null;
+
+        const isDuplicate = 
+          (idKey && seenCardKeys.has(idKey)) ||
+          (leadKey && seenCardKeys.has(leadKey)) ||
+          (quoteKey && seenCardKeys.has(quoteKey)) ||
+          (phoneKey && seenCardKeys.has(phoneKey));
+
+        if (isDuplicate) {
+          continue;
+        }
+
+        if (idKey) seenCardKeys.add(idKey);
+        if (leadKey) seenCardKeys.add(leadKey);
+        if (quoteKey) seenCardKeys.add(quoteKey);
+        if (phoneKey) seenCardKeys.add(phoneKey);
+
+        deduplicatedRecords.push(rec);
+      }
+
+      setFinanceRecords(deduplicatedRecords);
+      memCachedFinanceRecords = deduplicatedRecords;
+      if (deduplicatedRecords.length > 0) {
+        setExpandedCards(new Set([deduplicatedRecords[0].id]));
       }
 
       // 6. Fetch Studio Expenses & Crew Payouts (Strict Studio Owner Isolation)

@@ -152,16 +152,31 @@ export function CRMDropdown({
   // Selected Option Object
   const selectedOpt = useMemo(() => {
     if (!value) return undefined;
-    return sortedOptions.find(o => 
+    // 1. Exact or case-insensitive match by value or label
+    let found = sortedOptions.find(o => 
       o.value === value || 
       o.label === value || 
       (typeof o.value === 'string' && typeof value === 'string' && o.value.toLowerCase() === value.toLowerCase()) || 
       (typeof o.label === 'string' && typeof value === 'string' && o.label.toLowerCase() === value.toLowerCase())
     );
+    if (found) return found;
+
+    // 2. If value is a UUID or contains 'book' or 'close', find matching booked/closed stage option
+    const isUuid = typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim());
+    if (isUuid || (typeof value === 'string' && (value.toLowerCase().includes('book') || value.toLowerCase().includes('close')))) {
+      found = sortedOptions.find(o => 
+        (typeof o.value === 'string' && (o.value.toLowerCase().includes('book') || o.value.toLowerCase().includes('close'))) ||
+        (typeof o.label === 'string' && (o.label.toLowerCase().includes('book') || o.label.toLowerCase().includes('close')))
+      );
+      if (found) return found;
+    }
+
+    return undefined;
   }, [sortedOptions, value]);
 
-  const displayLabel = selectedOpt?.label || value || placeholder;
-  const themeStyle = getDynamicBadgeStyle(selectedOpt?.color);
+  const isRawUuid = typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim());
+  const displayLabel = selectedOpt?.label || (isRawUuid ? 'Booked' : (value || placeholder));
+  const themeStyle = getDynamicBadgeStyle(selectedOpt?.color || (isRawUuid ? '#10b981' : undefined));
 
   // Preset Colors for Add Custom Modal
   const PRESET_COLORS = [

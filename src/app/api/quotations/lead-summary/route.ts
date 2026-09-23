@@ -40,14 +40,13 @@ export async function GET(req: NextRequest) {
     const [docsRes, quotesRes, leadsRes] = await Promise.all([
       supabaseAdmin
         .from('quotation_documents')
-        .select('id, template_id, lead_id, workspace_id, version, lead_version, content_json, created_at, updated_at')
-        .not('lead_id', 'is', null),
+        .select('id, template_id, lead_id, workspace_id, version, lead_version, content_json, created_at, updated_at'),
       supabaseAdmin
         .from('quotations')
         .select('id, client_id, quotation_number, title, couple_names, client_name, status, is_final, public_token, workspace_id, created_at, updated_at'),
       supabaseAdmin
         .from('leads')
-        .select('id, name, client_name, status, final_quotation_id, quotation_id, raw_payload')
+        .select('id, name, client_name, status, stage, stage_id, final_quotation_id, quotation_id, raw_payload')
         .or(`workspace_id.eq.${workspaceId},tenant_id.eq.${workspaceId}`)
     ]);
 
@@ -66,7 +65,11 @@ export async function GET(req: NextRequest) {
     leads.forEach((l: any) => {
       // Check final quotation id strictly (do NOT treat draft quotation_id as final!)
       const finalId = l.final_quotation_id || l.raw_payload?.final_quotation_id || null;
-      const isBooked = (l.status || '').toLowerCase() === 'booked' || (l.status || '').toLowerCase() === 'closed';
+      const isBooked = (l.status || '').toLowerCase() === 'booked' || 
+                       (l.status || '').toLowerCase() === 'closed' ||
+                       (l.stage || '').toLowerCase() === 'booked' ||
+                       (l.stage_id && String(l.stage_id).toLowerCase().includes('book')) ||
+                       Boolean(finalId);
       const coupleName = l.raw_payload?.couple_name || l.raw_payload?.couple_names || (l as any).couple_names || l.client_name || l.name || 'Client';
 
       leadMap.set(l.id, {
@@ -113,7 +116,16 @@ export async function GET(req: NextRequest) {
 
     // 1. Process quotation_documents
     docs.forEach((d: any) => {
-      const leadId = d.lead_id;
+      let leadId = d.lead_id || d.content_json?.lead_id || d.content_json?.client_id;
+      if (!leadId && d.template_id) {
+        for (const [lId] of leadMap.entries()) {
+          const lShort = lId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
+          if (d.template_id.includes(lId) || (lShort && d.template_id.includes(lShort))) {
+            leadId = lId;
+            break;
+          }
+        }
+      }
       if (!leadId) return;
 
       if (!summary[leadId]) {
@@ -204,7 +216,13 @@ export async function GET(req: NextRequest) {
 
       if (existingDoc) {
         if (isFinal) existingDoc.is_final = true;
-        if (q.title && !q.title.startsWith('FW-') && q.title !== 'Wedding - Design 1') existingDoc.title = q.title;
+        if (q.title && !q.title.startsWith('FW-') && q.title !== 'Wedding - Design 1') {
+          if (existingDoc.is_final && !q.title.toLowerCase().includes('final')) {
+            existingDoc.title = `${coupleName} - Final Quotation`;
+          } else {
+            existingDoc.title = q.title;
+          }
+        }
         if (q.public_token) existingDoc.public_token = q.public_token;
         if (!existingDoc.couple_name && coupleName) existingDoc.couple_name = coupleName;
       } else {
@@ -238,13 +256,32 @@ export async function GET(req: NextRequest) {
         item.hasFinal = true;
         item.finalVersion = finalVerItem.version;
       } else if (leadFinalId) {
-        const matched = item.versions.find((v: any) => v.template_id === leadFinalId || v.id === leadFinalId);
+        const leadShort = leadFinalId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
+        const matched = item.versions.find((v: any) => 
+          v.template_id === leadFinalId || 
+          v.id === leadFinalId ||
+          (leadShort && v.template_id && v.template_id.includes(leadShort))
+        );
         if (matched) {
           matched.is_final = true;
           item.hasFinal = true;
           item.finalVersion = matched.version;
+          if (!matched.title.toLowerCase().includes('final')) {
+            matched.title = `${matched.couple_name || 'Client'} - Final Quotation`;
+          }
         } else {
-          item.hasFinal = false;
+          item.hasFinal = true;
+          if (item.versions[0]) {
+            item.versions[0].is_final = true;
+            item.finalVersion = item.versions[0].version;
+          }
+        }
+      } else if (leadInfo?.isBooked && item.versions.length > 0) {
+        item.hasFinal = true;
+        item.finalVersion = item.versions[0]?.version || 1;
+        if (item.versions[0] && !item.versions[0].title.toLowerCase().includes('final')) {
+          item.versions[0].is_final = true;
+          item.versions[0].title = `${item.versions[0].couple_name || 'Client'} - Final Quotation`;
         }
       } else {
         item.hasFinal = false;
