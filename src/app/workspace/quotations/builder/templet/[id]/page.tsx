@@ -2190,7 +2190,6 @@ function syncPaymentTermsWithPricing(pricingPage: any, currentPaymentTerms: any)
 }
 
 function StudioCoreAiryBuilderContent() {
-  const [isDataReady, setIsDataReady] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const params = useParams();
@@ -2199,8 +2198,37 @@ function StudioCoreAiryBuilderContent() {
 
   const mainContainerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
-  
-  const [data, rawSetData] = useState<any>(DEFAULT_AIRY_PROPOSAL);
+
+  const [data, rawSetData] = useState<any>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const tid = templateId || window.location.pathname.split('/').filter(Boolean).pop() || '';
+        if (tid) {
+          const sess = sessionStorage.getItem(`current_quotation_doc_${tid}`);
+          if (sess) {
+            const parsed = JSON.parse(sess);
+            if (parsed && typeof parsed === 'object') {
+              return normalizeQuotationData(parsed);
+            }
+          }
+        }
+      } catch (_) {}
+    }
+    return DEFAULT_AIRY_PROPOSAL;
+  });
+
+  const [isDataReady, setIsDataReady] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const tid = templateId || window.location.pathname.split('/').filter(Boolean).pop() || '';
+        if (tid) {
+          const sess = sessionStorage.getItem(`current_quotation_doc_${tid}`);
+          if (sess) return true;
+        }
+      } catch (_) {}
+    }
+    return false;
+  });
   const [userId, setUserId] = useState<string>('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -3110,6 +3138,7 @@ function StudioCoreAiryBuilderContent() {
         // Cache canonical state locally and hydrate editor
         cacheDocumentLocal(routeId, loadedData, currentVersionRef.current);
         try {
+          sessionStorage.setItem(`current_quotation_doc_${routeId}`, JSON.stringify(loadedData));
           localStorage.setItem(`wg_proposal_draft_${currentUserId}`, JSON.stringify(loadedData));
         } catch (e) {}
 

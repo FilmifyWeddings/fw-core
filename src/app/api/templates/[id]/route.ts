@@ -58,6 +58,8 @@ async function handleGet(
       });
     }
 
+    const isIdUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
     // 2. Fetch Template, Document Snapshot, and Quotation Record in parallel (3x Faster!)
     const [tmplRes, docRes, quoteRecRes] = await Promise.all([
       supabaseAdmin
@@ -65,20 +67,36 @@ async function handleGet(
         .select('*')
         .eq('id', id)
         .maybeSingle(),
-      supabaseAdmin
-        .from('quotation_documents')
-        .select('*')
-        .or(`template_id.eq.${id},id.eq.${id}`)
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      supabaseAdmin
-        .from('quotations')
-        .select('*')
-        .or(`id.eq.${id},quotation_number.eq.${id},public_token.eq.${id}`)
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
+      isIdUuid
+        ? supabaseAdmin
+            .from('quotation_documents')
+            .select('*')
+            .or(`template_id.eq.${id},id.eq.${id}`)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+        : supabaseAdmin
+            .from('quotation_documents')
+            .select('*')
+            .eq('template_id', id)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+      isIdUuid
+        ? supabaseAdmin
+            .from('quotations')
+            .select('*')
+            .or(`id.eq.${id},quotation_number.eq.${id},public_token.eq.${id}`)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+        : supabaseAdmin
+            .from('quotations')
+            .select('*')
+            .or(`quotation_number.eq.${id},public_token.eq.${id}`)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
     ]);
 
     const tmpl = tmplRes.data;

@@ -359,17 +359,14 @@ LEAD & CLIENT CONTEXT:
       // Prime local indexedDB and sessionStorage cache for instant builder hydration
       if (targetQId && targetQId !== 'draft') {
         try {
+          if (finalDoc) {
+            sessionStorage.setItem(`current_quotation_doc_${targetQId}`, JSON.stringify(finalDoc));
+          }
           const { cacheDocumentLocal } = await import('@/lib/indexeddb-cache');
-          cacheDocumentLocal(targetQId, finalDoc, 1);
+          await cacheDocumentLocal(targetQId, finalDoc, 1);
           if (effectiveLead.id && effectiveLead.id !== 'draft') {
-            sessionStorage.removeItem(`lead_quotes_cache_${effectiveLead.id}`);
-
-            // ⚡ Instant 0ms CRM icon update in localStorage
             const lId = effectiveLead.id;
             const coupleName = docToApply?.cover?.coupleName || effectiveLead.name || 'Quotation';
-            const stored = localStorage.getItem('sc_quotation_summary_map');
-            const map = stored ? JSON.parse(stored) : {};
-            const prev = map[lId] || { count: 0, hasFinal: false, versions: [] };
             const newVer = {
               id: targetQId,
               template_id: targetQId,
@@ -377,13 +374,29 @@ LEAD & CLIENT CONTEXT:
               version_label: 'V1',
               title: `${coupleName} - Quotation V1`,
               couple_name: coupleName,
-              is_final: false
+              is_final: false,
+              created_at: new Date().toISOString()
             };
+
+            // Update lead_quotes_cache in both sessionStorage & localStorage
+            let existingCache: any[] = [];
+            try {
+              const scRaw = sessionStorage.getItem(`lead_quotes_cache_${lId}`) || localStorage.getItem(`lead_quotes_cache_${lId}`);
+              if (scRaw) existingCache = JSON.parse(scRaw);
+            } catch (_) {}
+            const updatedCache = [newVer, ...existingCache.filter((v: any) => v.id !== targetQId && v.template_id !== targetQId)];
+            sessionStorage.setItem(`lead_quotes_cache_${lId}`, JSON.stringify(updatedCache));
+            localStorage.setItem(`lead_quotes_cache_${lId}`, JSON.stringify(updatedCache));
+
+            // ⚡ Instant 0ms CRM icon update in localStorage
+            const stored = localStorage.getItem('sc_quotation_summary_map');
+            const map = stored ? JSON.parse(stored) : {};
+            const prev = map[lId] || { count: 0, hasFinal: false, versions: [] };
             map[lId] = {
               count: Math.max(prev.count || 0, 1),
               hasFinal: prev.hasFinal || false,
               finalVersion: prev.finalVersion,
-              versions: prev.versions?.length ? [newVer, ...prev.versions.filter((v: any) => v.template_id !== targetQId)] : [newVer]
+              versions: [newVer, ...(prev.versions || []).filter((v: any) => v.template_id !== targetQId && v.id !== targetQId)]
             };
             localStorage.setItem('sc_quotation_summary_map', JSON.stringify(map));
             window.dispatchEvent(new CustomEvent('quotation_created', { detail: { leadId: lId, quotationId: targetQId } }));
@@ -459,9 +472,11 @@ LEAD & CLIENT CONTEXT:
 
         if (targetQId && targetQId !== 'draft') {
           try {
+            if (finalDoc) {
+              sessionStorage.setItem(`current_quotation_doc_${targetQId}`, JSON.stringify(finalDoc));
+            }
             const { cacheDocumentLocal } = await import('@/lib/indexeddb-cache');
-            cacheDocumentLocal(targetQId, finalDoc, 1);
-            sessionStorage.removeItem(`lead_quotes_cache_${effectiveLead.id}`);
+            await cacheDocumentLocal(targetQId, finalDoc, 1);
 
             // Ensure effectiveLead is preserved in sc_cached_leads before navigating
             const cachedLeadsStr = localStorage.getItem('sc_cached_leads');
@@ -475,9 +490,6 @@ LEAD & CLIENT CONTEXT:
 
             const lId = effectiveLead.id;
             const coupleName = finalDoc?.cover?.coupleName || effectiveLead.name || 'Quotation';
-            const stored = localStorage.getItem('sc_quotation_summary_map');
-            const map = stored ? JSON.parse(stored) : {};
-            const prev = map[lId] || { count: 0, hasFinal: false, versions: [] };
             const newVer = {
               id: targetQId,
               template_id: targetQId,
@@ -485,13 +497,29 @@ LEAD & CLIENT CONTEXT:
               version_label: 'V1',
               title: `${coupleName} - Quotation V1`,
               couple_name: coupleName,
-              is_final: false
+              is_final: false,
+              created_at: new Date().toISOString()
             };
+
+            // Update lead_quotes_cache in both sessionStorage & localStorage
+            let existingCache: any[] = [];
+            try {
+              const scRaw = sessionStorage.getItem(`lead_quotes_cache_${lId}`) || localStorage.getItem(`lead_quotes_cache_${lId}`);
+              if (scRaw) existingCache = JSON.parse(scRaw);
+            } catch (_) {}
+            const updatedCache = [newVer, ...existingCache.filter((v: any) => v.id !== targetQId && v.template_id !== targetQId)];
+            sessionStorage.setItem(`lead_quotes_cache_${lId}`, JSON.stringify(updatedCache));
+            localStorage.setItem(`lead_quotes_cache_${lId}`, JSON.stringify(updatedCache));
+
+            // ⚡ Instant 0ms CRM icon update in localStorage
+            const stored = localStorage.getItem('sc_quotation_summary_map');
+            const map = stored ? JSON.parse(stored) : {};
+            const prev = map[lId] || { count: 0, hasFinal: false, versions: [] };
             map[lId] = {
               count: Math.max(prev.count || 0, 1),
               hasFinal: prev.hasFinal || false,
               finalVersion: prev.finalVersion,
-              versions: prev.versions?.length ? [newVer, ...prev.versions.filter((v: any) => v.template_id !== targetQId)] : [newVer]
+              versions: [newVer, ...(prev.versions || []).filter((v: any) => v.template_id !== targetQId && v.id !== targetQId)]
             };
             localStorage.setItem('sc_quotation_summary_map', JSON.stringify(map));
             window.dispatchEvent(new CustomEvent('quotation_created', { detail: { leadId: lId, quotationId: targetQId } }));

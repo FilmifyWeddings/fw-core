@@ -148,17 +148,47 @@ export function LeadQuotationModal({
         }
       }
 
-      // Check session cache first for any freshly set final quotations
+      // Gather all potential sources of cached versions for instant 0ms render
+      let localSummaryVersions: any[] = [];
+      try {
+        const smStr = localStorage.getItem('sc_quotation_summary_map');
+        if (smStr) {
+          const parsedSm = JSON.parse(smStr);
+          if (parsedSm[lead.id]?.versions && Array.isArray(parsedSm[lead.id].versions)) {
+            localSummaryVersions = parsedSm[lead.id].versions;
+          }
+        }
+      } catch (_) {}
+
+      let localQuotesCache: any[] = [];
+      try {
+        const lqcStr = localStorage.getItem(cacheKey);
+        if (lqcStr) {
+          const parsedLqc = JSON.parse(lqcStr);
+          if (Array.isArray(parsedLqc)) localQuotesCache = parsedLqc;
+        }
+      } catch (_) {}
+
       const sessionCache = safeSessionGet(cacheKey);
       const sessionHasFinal = Array.isArray(sessionCache) && sessionCache.some((item: any) => item.is_final);
 
-      const cached = sessionHasFinal
-        ? sessionCache
-        : (initialQuotations && initialQuotations.length > 0 ? initialQuotations : sessionCache);
+      // Best candidate for instant display
+      const candidateVersions = 
+        sessionHasFinal ? sessionCache :
+        (Array.isArray(sessionCache) && sessionCache.length > 0) ? sessionCache :
+        (Array.isArray(localQuotesCache) && localQuotesCache.length > 0) ? localQuotesCache :
+        (Array.isArray(initialQuotations) && initialQuotations.length > 0) ? initialQuotations :
+        (Array.isArray(localSummaryVersions) && localSummaryVersions.length > 0) ? localSummaryVersions :
+        [];
 
-      if (cached && Array.isArray(cached) && cached.length > 0) {
-        const reconciled = cached.map((item: QuotationVersionItem) => ({
+      if (candidateVersions.length > 0) {
+        const reconciled = candidateVersions.map((item: any) => ({
           ...item,
+          template_id: item.template_id || item.id,
+          id: item.id || item.template_id,
+          version: item.version || 1,
+          version_label: item.version_label || `V${item.version || 1}`,
+          title: item.title || `${item.couple_name || lead.name || 'Quotation'} - Quotation V${item.version || 1}`,
           is_final: Boolean(
             (targetFinalId && (
               item.template_id === targetFinalId || 
@@ -177,7 +207,7 @@ export function LeadQuotationModal({
       }
 
       // Silent background refresh to fetch public tokens and update badges
-      loadQuotations(Boolean(cached && cached.length > 0));
+      loadQuotations(candidateVersions.length > 0);
       loadAvailableTemplates();
     } else {
       setQuotations([]);
@@ -338,6 +368,9 @@ export function LeadQuotationModal({
         }));
         setQuotations(finalizedList);
         safeSessionSet(cacheKey, finalizedList);
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify(finalizedList));
+        } catch (_) {}
         if (onQuotationChange) {
           queueMicrotask(() => {
             onQuotationChange(lead.id, finalizedList);
@@ -529,17 +562,15 @@ export function LeadQuotationModal({
 
         if (json.document) {
           try {
+            sessionStorage.setItem(`current_quotation_doc_${qId}`, JSON.stringify(json.document));
             const { cacheDocumentLocal } = await import('@/lib/indexeddb-cache');
-            cacheDocumentLocal(qId, json.document, json.version || 1);
+            await cacheDocumentLocal(qId, json.document, json.version || 1);
           } catch (e) {}
         }
 
-        // ⚡ Update sc_quotation_summary_map immediately so the CRM table icon turns orange in 0ms!
+        // ⚡ Update sc_quotation_summary_map and lead_quotes_cache immediately so the CRM table icon turns orange in 0ms!
         if (typeof window !== 'undefined') {
           try {
-            const stored = localStorage.getItem('sc_quotation_summary_map');
-            const map = stored ? JSON.parse(stored) : {};
-            const prev = map[lead.id] || { count: 0, hasFinal: false, versions: [] };
             const newVer = {
               id: qId,
               template_id: qId,
@@ -547,8 +578,23 @@ export function LeadQuotationModal({
               version_label: `V${json.version || 1}`,
               title: `${openingCouple} - Quotation V${json.version || 1}`,
               couple_name: openingCouple,
-              is_final: false
+              is_final: false,
+              created_at: new Date().toISOString()
             };
+
+            // Update lead_quotes_cache in both sessionStorage & localStorage
+            let existingCache: any[] = [];
+            try {
+              const scRaw = sessionStorage.getItem(`lead_quotes_cache_${lead.id}`) || localStorage.getItem(`lead_quotes_cache_${lead.id}`);
+              if (scRaw) existingCache = JSON.parse(scRaw);
+            } catch (_) {}
+            const updatedCache = [newVer, ...existingCache.filter((v: any) => v.id !== qId && v.template_id !== qId)];
+            sessionStorage.setItem(`lead_quotes_cache_${lead.id}`, JSON.stringify(updatedCache));
+            localStorage.setItem(`lead_quotes_cache_${lead.id}`, JSON.stringify(updatedCache));
+
+            const stored = localStorage.getItem('sc_quotation_summary_map');
+            const map = stored ? JSON.parse(stored) : {};
+            const prev = map[lead.id] || { count: 0, hasFinal: false, versions: [] };
             map[lead.id] = {
               count: (prev.count || 0) + 1,
               hasFinal: prev.hasFinal || false,
@@ -1112,6 +1158,11 @@ export function LeadQuotationModal({
             title: `${openingCouple} - Quotation Document`,
             step: 'Opening AI Generated Quotation in Builder...'
           });
+          if (updatedDoc) {
+            try {
+              sessionStorage.setItem(`current_quotation_doc_${targetQId}`, JSON.stringify(updatedDoc));
+            } catch (_) {}
+          }
           router.push(`/workspace/quotations/builder/templet/${targetQId}`);
           // Keep opening overlay active until Next.js unmounts page - no flash of CRM table!
         }}

@@ -28,12 +28,12 @@ export async function POST(req: NextRequest) {
     const [{ data: lead }, { data: profile }, { data: existingDocs }] = await Promise.all([
       supabaseAdmin
         .from('leads')
-        .select('id, name, full_name, location, raw_payload, phone, email')
+        .select('id, name, full_name, location, raw_payload, phone, email, workspace_id')
         .eq('id', leadId)
         .maybeSingle(),
       supabaseAdmin
         .from('profiles')
-        .select('id')
+        .select('id, workspace_id, workspace_name')
         .eq('id', userId)
         .maybeSingle(),
       supabaseAdmin
@@ -51,7 +51,13 @@ export async function POST(req: NextRequest) {
       raw_payload: {}
     };
 
-    if (profile?.id) workspaceId = profile.id;
+    if (lead?.workspace_id) {
+      workspaceId = lead.workspace_id;
+    } else if (profile?.workspace_id) {
+      workspaceId = profile.workspace_id;
+    } else if (profile?.id) {
+      workspaceId = profile.id;
+    }
 
     // 2. Resolve template (explicitly chosen template or user default fallback)
     const resolved = await resolveUserDefaultQuotationTemplate(workspaceId, userId, explicitTemplateId);

@@ -31,7 +31,7 @@ export async function resolveUserDefaultQuotationTemplate(
   // Rule A: If explicit requestedTemplateId is provided
   if (requestedTemplateId && requestedTemplateId !== 'GLOBAL_DEFAULT') {
     try {
-      // 1. Check quotation_templates by id or title
+      const isReqUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestedTemplateId);
       const { data: tmpl } = await supabaseAdmin
         .from('quotation_templates')
         .select('*')
@@ -40,15 +40,24 @@ export async function resolveUserDefaultQuotationTemplate(
         .maybeSingle();
 
       const lookupId = tmpl?.id || requestedTemplateId;
+      const isLookupUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(lookupId);
 
       // 2. Fetch document from quotation_documents by template_id or id
-      const { data: doc } = await supabaseAdmin
-        .from('quotation_documents')
-        .select('*')
-        .or(`template_id.eq.${lookupId},id.eq.${lookupId}`)
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const { data: doc } = isLookupUuid
+        ? await supabaseAdmin
+            .from('quotation_documents')
+            .select('*')
+            .or(`template_id.eq.${lookupId},id.eq.${lookupId}`)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+        : await supabaseAdmin
+            .from('quotation_documents')
+            .select('*')
+            .eq('template_id', lookupId)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
       let docJson = doc?.content_json || doc?.document_json || null;
 
@@ -70,13 +79,21 @@ export async function resolveUserDefaultQuotationTemplate(
 
       // 3. Fallback to quotations table
       if (!docJson) {
-        const { data: qRec } = await supabaseAdmin
-          .from('quotations')
-          .select('content_json, canvas_data')
-          .or(`id.eq.${lookupId},quotation_number.eq.${lookupId}`)
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        const { data: qRec } = isLookupUuid
+          ? await supabaseAdmin
+              .from('quotations')
+              .select('content_json, canvas_data')
+              .or(`id.eq.${lookupId},quotation_number.eq.${lookupId}`)
+              .order('updated_at', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+          : await supabaseAdmin
+              .from('quotations')
+              .select('content_json, canvas_data')
+              .eq('quotation_number', lookupId)
+              .order('updated_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
 
         let qJson = qRec?.content_json || qRec?.canvas_data || null;
         if (typeof qJson === 'string') {
@@ -175,13 +192,22 @@ export async function resolveUserDefaultQuotationTemplate(
     }
 
     if (personalDefaultId) {
-      const { data: doc } = await supabaseAdmin
-        .from('quotation_documents')
-        .select('*')
-        .or(`template_id.eq.${personalDefaultId},id.eq.${personalDefaultId}`)
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const isDefUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(personalDefaultId);
+      const { data: doc } = isDefUuid
+        ? await supabaseAdmin
+            .from('quotation_documents')
+            .select('*')
+            .or(`template_id.eq.${personalDefaultId},id.eq.${personalDefaultId}`)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+        : await supabaseAdmin
+            .from('quotation_documents')
+            .select('*')
+            .eq('template_id', personalDefaultId)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
       let docJson = doc?.content_json || doc?.document_json;
       if (typeof docJson === 'string') {
@@ -189,13 +215,21 @@ export async function resolveUserDefaultQuotationTemplate(
       }
 
       if (!docJson) {
-        const { data: qRec } = await supabaseAdmin
-          .from('quotations')
-          .select('content_json, canvas_data')
-          .or(`id.eq.${personalDefaultId},quotation_number.eq.${personalDefaultId}`)
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        const { data: qRec } = isDefUuid
+          ? await supabaseAdmin
+              .from('quotations')
+              .select('content_json, canvas_data')
+              .or(`id.eq.${personalDefaultId},quotation_number.eq.${personalDefaultId}`)
+              .order('updated_at', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+          : await supabaseAdmin
+              .from('quotations')
+              .select('content_json, canvas_data')
+              .eq('quotation_number', personalDefaultId)
+              .order('updated_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
         docJson = qRec?.content_json || qRec?.canvas_data;
         if (typeof docJson === 'string') {
           try { docJson = JSON.parse(docJson); } catch (_) {}
