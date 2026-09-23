@@ -140,18 +140,18 @@ export default function TeamMemberCard({
 
         {/* Top Right Direct Actions */}
         <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-          {(isPartner || /album|lab|print/i.test(member.primary_role || '')) && (
+          {(isPartner || /album|lab|print|editor|video|photo/i.test(member.primary_role || '')) && (
             <button
               type="button"
-              title="Album Deliverables & Invoicing Hub"
+              title="Assignments & Invoicing Hub"
               onClick={() => {
                 if (handleOpenVendorDeliverables) handleOpenVendorDeliverables(member);
                 else handleOpenDetails(member);
               }}
               className="px-2 py-1 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-[10px] font-black flex items-center gap-1 shadow-2xs transition cursor-pointer mr-0.5"
             >
-              <span>🎨</span>
-              <span>Albums</span>
+              <span>⚡</span>
+              <span>Tasks</span>
             </button>
           )}
           <button

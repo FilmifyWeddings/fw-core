@@ -655,19 +655,8 @@ export default function WorkspaceTeamPage() {
 
   // Direct Member Action Handlers
   const handleOpenDetails = (member: TeamMember) => {
-    const isVendorOrAlbumDesigner = 
-      member.primary_type === 'PARTNER' || 
-      member.type === 'partner' || 
-      (member.member_types || []).includes('PARTNER') ||
-      /album|lab|print/i.test(member.primary_role || '');
-
-    if (isVendorOrAlbumDesigner) {
-      setSelectedVendorDeliverablesMember(member);
-      setIsVendorDeliverablesModalOpen(true);
-    } else {
-      setSelectedFinanceMember(member);
-      setIsFinanceDrawerOpen(true);
-    }
+    setSelectedVendorDeliverablesMember(member);
+    setIsVendorDeliverablesModalOpen(true);
   };
 
   const handleOpenVendorDeliverables = (member: TeamMember) => {
@@ -1198,7 +1187,7 @@ export default function WorkspaceTeamPage() {
         }}
       />
 
-      {/* 3D Creamy Vendor Album Deliverables, Operations & Invoicing Modal */}
+      {/* 3D Creamy Vendor & Team Assignments, Operations & Invoicing Modal */}
       {selectedVendorDeliverablesMember && (
         <VendorAlbumDeliverablesModal
           isOpen={isVendorDeliverablesModalOpen}
@@ -1210,6 +1199,10 @@ export default function WorkspaceTeamPage() {
           workspaceId={workspaceId || ''}
           vendor={selectedVendorDeliverablesMember}
           studioName={workspaceName || 'StudioCore Partner Studio'}
+          onOpenSalaryDrawer={(m) => {
+            setSelectedFinanceMember(m);
+            setIsFinanceDrawerOpen(true);
+          }}
         />
       )}
 

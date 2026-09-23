@@ -7,12 +7,15 @@ import {
   CheckCircle2, AlertCircle, Plus, Search, ExternalLink, 
   FileText, MessageSquare, ChevronDown, Check, Download, 
   Printer, ArrowUpRight, ShieldCheck, User, Phone, Mail,
-  RefreshCw, CheckSquare, Square, Layers, Edit3, Trash2
+  RefreshCw, CheckSquare, Square, Layers, Edit3, Trash2,
+  Film, Camera, Palette, Video, Layers as LayersIcon
 } from 'lucide-react';
 import { 
   VendorAlbumOrder, 
+  AssignmentCategory,
   fetchVendorAlbumOrders, 
-  saveVendorAlbumOrder 
+  saveVendorAlbumOrder,
+  detectDeliverableCategory
 } from '@/lib/services/vendorDeliverablesService';
 import AiMicButton from '@/components/AiMicButton';
 import VendorStatementInvoicePdfTemplate, { VendorInvoiceItem } from './VendorStatementInvoicePdfTemplate';
@@ -31,13 +34,30 @@ interface VendorAlbumDeliverablesModalProps {
     avatar_url?: string;
     daily_rate?: number;
     default_daily_rate?: number;
+    roles?: string[];
+    member_types?: string[];
+    monthly_salary?: number;
+    [key: string]: any;
   };
   studioName?: string;
+  onOpenSalaryDrawer?: (member: any) => void;
 }
+
+export type HubCategoryTab = 'all' | 'shoot' | 'video_editing' | 'photo_editing' | 'album_design' | 'album_printing';
+
+const CATEGORY_TABS: Array<{ id: HubCategoryTab; label: string; icon: string; badgeColor: string }> = [
+  { id: 'all', label: 'All Tasks', icon: '⚡', badgeColor: 'bg-stone-100 text-stone-800 border-stone-200' },
+  { id: 'shoot', label: 'Shoots', icon: '📸', badgeColor: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
+  { id: 'video_editing', label: 'Video Editing', icon: '🎬', badgeColor: 'bg-sky-50 text-sky-800 border-sky-200' },
+  { id: 'photo_editing', label: 'Photo Editing', icon: '✨', badgeColor: 'bg-purple-50 text-purple-800 border-purple-200' },
+  { id: 'album_design', label: 'Album Designing', icon: '🎨', badgeColor: 'bg-amber-50 text-amber-800 border-amber-200' },
+  { id: 'album_printing', label: 'Album Printing', icon: '📖', badgeColor: 'bg-indigo-50 text-indigo-800 border-indigo-200' },
+];
 
 const STATUS_COLOR_MAP: Record<string, { bg: string; text: string; border: string; dot: string }> = {
   'Pending Design': { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-300', dot: 'bg-amber-500' },
   'In Design': { bg: 'bg-sky-50', text: 'text-sky-800', border: 'border-sky-300', dot: 'bg-sky-500' },
+  'In Progress': { bg: 'bg-sky-50', text: 'text-sky-800', border: 'border-sky-300', dot: 'bg-sky-500' },
   'Client Review': { bg: 'bg-purple-50', text: 'text-purple-800', border: 'border-purple-300', dot: 'bg-purple-500' },
   'Changes Requested': { bg: 'bg-orange-50', text: 'text-orange-800', border: 'border-orange-300', dot: 'bg-orange-500' },
   'Sent for Printing': { bg: 'bg-indigo-50', text: 'text-indigo-800', border: 'border-indigo-300', dot: 'bg-indigo-500' },
@@ -46,7 +66,7 @@ const STATUS_COLOR_MAP: Record<string, { bg: string; text: string; border: strin
 
 const DEFAULT_STATUS_LIST = [
   'Pending Design',
-  'In Design',
+  'In Progress',
   'Client Review',
   'Changes Requested',
   'Sent for Printing',
@@ -58,7 +78,8 @@ export default function VendorAlbumDeliverablesModal({
   onClose,
   workspaceId,
   vendor,
-  studioName = 'StudioCore Partner Studio'
+  studioName = 'StudioCore Partner Studio',
+  onOpenSalaryDrawer,
 }: VendorAlbumDeliverablesModalProps) {
   const [orders, setOrders] = useState<VendorAlbumOrder[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -68,6 +89,9 @@ export default function VendorAlbumDeliverablesModal({
   const [endDate, setEndDate] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
 
+  // Active Category Tab
+  const [activeCategoryTab, setActiveCategoryTab] = useState<HubCategoryTab>('all');
+
   // Selected orders for bulk invoice/statement generation
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
 
@@ -75,14 +99,20 @@ export default function VendorAlbumDeliverablesModal({
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
   const [invoiceItems, setInvoiceItems] = useState<VendorInvoiceItem[]>([]);
 
-  // Add / Edit Job Inline Form
+  // Add / Edit Job Modal States
   const [isAddJobOpen, setIsAddJobOpen] = useState(false);
+  const [newCategory, setNewCategory] = useState<HubCategoryTab>('album_design');
   const [newClientName, setNewClientName] = useState('');
   const [newAlbumType, setNewAlbumType] = useState('Signature Photobook');
+  const [newSpecs, setNewSpecs] = useState('30 Sheets (60 Pages)');
   const [newSheets, setNewSheets] = useState('30');
   const [newFee, setNewFee] = useState('4500');
   const [newDueDate, setNewDueDate] = useState('');
   const [newPdfUrl, setNewPdfUrl] = useState('');
+  const [newNotes, setNewNotes] = useState('');
+
+  // Inline Edit Item State
+  const [editingOrder, setEditingOrder] = useState<VendorAlbumOrder | null>(null);
 
   // Payment Recording Modal State
   const [paymentTarget, setPaymentTarget] = useState<VendorAlbumOrder | null>(null);
@@ -95,18 +125,43 @@ export default function VendorAlbumDeliverablesModal({
   const [commentInput, setCommentInput] = useState('');
   const [commentReminder, setCommentReminder] = useState('');
 
+  // Check member types and roles
+  const isFreelancer = vendor?.primary_type === 'FREELANCER' || (vendor?.member_types || []).includes('FREELANCER');
+  const isInHouse = vendor?.primary_type === 'IN_HOUSE' || (vendor?.member_types || []).includes('IN_HOUSE');
+  const isPartner = vendor?.primary_type === 'PARTNER' || (vendor?.member_types || []).includes('PARTNER') || vendor?.type === 'partner';
+
+  // Smart Adaptive Tab Selection on modal open
+  useEffect(() => {
+    if (isOpen && vendor) {
+      const roleStr = `${vendor.primary_role || ''} ${(vendor.roles || []).join(' ')}`.toLowerCase();
+      if (roleStr.includes('video editor') || roleStr.includes('editor') && !roleStr.includes('photo')) {
+        setActiveCategoryTab('video_editing');
+      } else if (roleStr.includes('photo editor') || roleStr.includes('retouch')) {
+        setActiveCategoryTab('photo_editing');
+      } else if (roleStr.includes('album design')) {
+        setActiveCategoryTab('album_design');
+      } else if (roleStr.includes('print') || roleStr.includes('lab')) {
+        setActiveCategoryTab('album_printing');
+      } else if (isFreelancer && !isPartner) {
+        setActiveCategoryTab('shoot');
+      } else {
+        setActiveCategoryTab('all');
+      }
+    }
+  }, [isOpen, vendor, isFreelancer, isPartner]);
+
   // Load orders on open
   const loadOrders = useCallback(async () => {
     if (!vendor?.id) return;
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/vendors/albums?workspace_id=${workspaceId}&vendor_id=${vendor.id}&vendor_email=${encodeURIComponent(vendor.email || '')}`);
+      const res = await fetch(`/api/vendors/albums?workspace_id=${workspaceId}&vendor_id=${vendor.id}&vendor_email=${encodeURIComponent(vendor.email || '')}&vendor_name=${encodeURIComponent(vendor.name || '')}`);
       const data = await res.json();
       if (data.success && Array.isArray(data.orders)) {
         setOrders(data.orders);
       }
     } catch (err) {
-      console.warn('[VendorAlbumDeliverablesModal] Load error:', err);
+      console.warn('[VendorDeliverablesHubModal] Load error:', err);
     } finally {
       setIsLoading(false);
     }
@@ -118,13 +173,25 @@ export default function VendorAlbumDeliverablesModal({
     }
   }, [isOpen, loadOrders]);
 
+  // Live Category Counts
+  const categoryCounts = useMemo(() => {
+    return {
+      all: orders.length,
+      shoot: orders.filter(o => o.category === 'shoot').length,
+      video_editing: orders.filter(o => o.category === 'video_editing').length,
+      photo_editing: orders.filter(o => o.category === 'photo_editing').length,
+      album_design: orders.filter(o => o.category === 'album_design' || (!o.category && !o.service_type?.includes('Print'))).length,
+      album_printing: orders.filter(o => o.category === 'album_printing' || o.service_type?.includes('Print')).length,
+    };
+  }, [orders]);
+
   // Compute Deadlines & Overdue Status
   const getDeadlineBadge = (dueDateStr?: string, status?: string) => {
     if (!dueDateStr) return null;
     const due = new Date(dueDateStr);
     if (isNaN(due.getTime())) return null;
 
-    const isDone = (status || '').toLowerCase().includes('complete') || (status || '').toLowerCase().includes('done');
+    const isDone = (status || '').toLowerCase().includes('complete') || (status || '').toLowerCase().includes('done') || (status || '').toLowerCase().includes('delivered');
     if (isDone) {
       return (
         <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -141,7 +208,7 @@ export default function VendorAlbumDeliverablesModal({
 
     if (diffDays < 0) {
       return (
-        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-300 animate-pulse flex items-center gap-1 shadow-2xs">
+        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-300 animate-pulse flex items-center gap-1 shadow-2xs">
           ⚠️ Overdue {Math.abs(diffDays)}d
         </span>
       );
@@ -149,56 +216,63 @@ export default function VendorAlbumDeliverablesModal({
 
     if (diffDays === 0) {
       return (
-        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1 shadow-2xs">
+        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1 shadow-2xs">
           ⏰ Due Today
         </span>
       );
     }
 
     return (
-      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-stone-100 text-stone-700 border border-stone-200">
+      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-stone-100 text-stone-700 border border-stone-200">
         ⏳ {diffDays}d left
       </span>
     );
   };
 
-  // Filtered Orders
+  // Filtered Orders for Current Tab & Search
   const filteredOrders = useMemo(() => {
     return orders.filter(o => {
-      // 1. Search Query
+      // 1. Category Tab Filter
+      if (activeCategoryTab !== 'all') {
+        const itemCat = o.category || detectDeliverableCategory(undefined, o.album_type || o.item_title);
+        if (itemCat !== activeCategoryTab) return false;
+      }
+
+      // 2. Search Query
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
         const matchesClient = o.client_name.toLowerCase().includes(q);
-        const matchesAlbum = (o.album_type || '').toLowerCase().includes(q);
-        if (!matchesClient && !matchesAlbum) return false;
+        const matchesAlbum = (o.album_type || o.item_title || '').toLowerCase().includes(q);
+        const matchesSpecs = (o.specs || '').toLowerCase().includes(q);
+        if (!matchesClient && !matchesAlbum && !matchesSpecs) return false;
       }
 
-      // 2. Status Filter
+      // 3. Status Filter
       if (statusFilter !== 'All' && o.order_status !== statusFilter) {
         return false;
       }
 
-      // 3. Month Filter
+      // 4. Month Filter
       if (selectedMonth !== 'All' && o.order_date) {
         const orderMonth = new Date(o.order_date).getMonth() + 1;
         if (orderMonth !== parseInt(selectedMonth, 10)) return false;
       }
 
-      // 4. Custom Date Range
+      // 5. Custom Date Range
       if (startDate && o.order_date && o.order_date < startDate) return false;
       if (endDate && o.order_date && o.order_date > endDate) return false;
 
       return true;
     });
-  }, [orders, searchQuery, statusFilter, selectedMonth, startDate, endDate]);
+  }, [orders, activeCategoryTab, searchQuery, statusFilter, selectedMonth, startDate, endDate]);
 
-  // KPI Metrics Calculation
-  const totalAlbumsCount = orders.length;
-  const totalFeeSum = orders.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
-  const totalPaidSum = orders.reduce((sum, o) => sum + (Number(o.paid_amount) || 0), 0);
-  const totalBalanceDue = Math.max(0, totalFeeSum - totalPaidSum);
-  const overdueCount = orders.filter(o => {
-    if (!o.due_date || (o.order_status || '').toLowerCase().includes('complete')) return false;
+  // Tab Metrics Calculation
+  const tabTotalCount = filteredOrders.length;
+  const tabFeeSum = filteredOrders.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
+  const tabPaidSum = filteredOrders.reduce((sum, o) => sum + (Number(o.paid_amount) || 0), 0);
+  const tabBalanceDue = Math.max(0, tabFeeSum - tabPaidSum);
+  const tabOverdueCount = filteredOrders.filter(o => {
+    if (!o.due_date || (o.order_status || '').toLowerCase().includes('complete') || (o.order_status || '').toLowerCase().includes('done')) return false;
     const due = new Date(o.due_date);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -216,14 +290,14 @@ export default function VendorAlbumDeliverablesModal({
   };
 
   const handleSelectAll = () => {
-    if (selectedOrderIds.size === filteredOrders.length) {
+    if (selectedOrderIds.size === filteredOrders.length && filteredOrders.length > 0) {
       setSelectedOrderIds(new Set());
     } else {
       setSelectedOrderIds(new Set(filteredOrders.map(o => o.id)));
     }
   };
 
-  // Change Status Handler
+  // Change Status Handler with Immediate Bi-Directional Post-Production Sync
   const handleStatusChange = async (order: VendorAlbumOrder, nextStatus: string) => {
     const updated = { ...order, order_status: nextStatus };
     setOrders(prev => prev.map(o => o.id === order.id ? updated : o));
@@ -235,11 +309,11 @@ export default function VendorAlbumDeliverablesModal({
     }).catch(() => {});
   };
 
-  // Add / Save New Album Job
+  // Add / Save New Assignment
   const handleSaveNewJob = async () => {
     if (!newClientName.trim()) return;
     const sheetNum = parseInt(newSheets, 10) || 30;
-    const totalFeeNum = Number(newFee) || sheetNum * 150;
+    const totalFeeNum = Number(newFee) || (newCategory === 'album_design' ? sheetNum * 150 : 4500);
 
     const payload: Partial<VendorAlbumOrder> = {
       workspace_id: workspaceId,
@@ -247,10 +321,13 @@ export default function VendorAlbumDeliverablesModal({
       partner_name: vendor.name,
       partner_email: vendor.email || '',
       client_name: newClientName.trim(),
-      album_type: newAlbumType || 'Signature Photobook',
+      category: newCategory === 'all' ? 'album_design' : newCategory,
+      item_title: newAlbumType || 'Creative Deliverable',
+      album_type: newAlbumType || 'Creative Deliverable',
+      specs: newSpecs.trim() || `${sheetNum} Sheets (${sheetNum * 2} Pages)`,
       sheet_count: sheetNum,
       page_count: sheetNum * 2,
-      rate_per_sheet: Math.round(totalFeeNum / sheetNum),
+      rate_per_sheet: newCategory === 'album_design' ? Math.round(totalFeeNum / sheetNum) : 0,
       total_amount: totalFeeNum,
       paid_amount: 0,
       balance_amount: totalFeeNum,
@@ -258,7 +335,7 @@ export default function VendorAlbumDeliverablesModal({
       payment_status: 'PENDING',
       due_date: newDueDate || '',
       pdf_proof_url: newPdfUrl.trim() || '',
-      notes: ''
+      notes: newNotes.trim() || ''
     };
 
     const res = await fetch('/api/vendors/albums', {
@@ -273,7 +350,34 @@ export default function VendorAlbumDeliverablesModal({
       setNewClientName('');
       setNewDueDate('');
       setNewPdfUrl('');
+      setNewNotes('');
     }
+  };
+
+  // Save Inline Edit Modal
+  const handleSaveEditOrder = async () => {
+    if (!editingOrder) return;
+    try {
+      const res = await fetch('/api/vendors/albums', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editingOrder)
+      });
+      const data = await res.json();
+      if (data.success && data.order) {
+        setOrders(prev => prev.map(o => o.id === data.order.id ? data.order : o));
+        setEditingOrder(null);
+      }
+    } catch (err) {
+      console.warn('Edit save error:', err);
+    }
+  };
+
+  // Delete Order Handler
+  const handleDeleteOrder = async (orderId: string) => {
+    if (!confirm('Are you sure you want to remove this assignment?')) return;
+    setOrders(prev => prev.filter(o => o.id !== orderId));
+    // Optional backend delete call
   };
 
   // Record Payment Submit
@@ -303,6 +407,16 @@ export default function VendorAlbumDeliverablesModal({
         setPaymentTarget(null);
         setPayAmount('');
         setPayRef('');
+      } else {
+        // Fallback update locally
+        const updated = {
+          ...paymentTarget,
+          paid_amount: (paymentTarget.paid_amount || 0) + amountNum,
+          balance_amount: Math.max(0, paymentTarget.total_amount - ((paymentTarget.paid_amount || 0) + amountNum)),
+          payment_status: ((paymentTarget.paid_amount || 0) + amountNum >= paymentTarget.total_amount ? 'PAID' : 'PARTIAL') as any
+        };
+        setOrders(prev => prev.map(o => o.id === paymentTarget.id ? updated : o));
+        setPaymentTarget(null);
       }
     } catch (err) {
       console.warn('Payment submit error:', err);
@@ -338,13 +452,16 @@ export default function VendorAlbumDeliverablesModal({
 
   // Open Invoicing Template for single or multiple jobs
   const handleOpenInvoice = (singleOrder?: VendorAlbumOrder) => {
-    const targetOrders = singleOrder ? [singleOrder] : orders.filter(o => selectedOrderIds.has(o.id));
-    if (targetOrders.length === 0) return;
+    const targetOrders = singleOrder ? [singleOrder] : filteredOrders.filter(o => selectedOrderIds.has(o.id));
+    const effectiveOrders = targetOrders.length > 0 ? targetOrders : filteredOrders;
+    if (effectiveOrders.length === 0) return;
 
-    const mapped: VendorInvoiceItem[] = targetOrders.map(o => ({
+    const mapped: VendorInvoiceItem[] = effectiveOrders.map(o => ({
       order_id: o.id,
       client_name: o.client_name,
-      album_type: o.album_type,
+      album_type: o.item_title || o.album_type,
+      category: o.category || 'album_design',
+      specs: o.specs || `${o.sheet_count} Sheets`,
       sheet_count: o.sheet_count,
       page_count: o.page_count,
       rate_per_sheet: o.rate_per_sheet,
@@ -358,6 +475,21 @@ export default function VendorAlbumDeliverablesModal({
 
     setInvoiceItems(mapped);
     setIsInvoiceModalOpen(true);
+  };
+
+  const getCategoryBadge = (cat?: string) => {
+    switch (cat) {
+      case 'shoot':
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-800 border border-emerald-200">📸 Shoot</span>;
+      case 'video_editing':
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-sky-50 text-sky-800 border border-sky-200">🎬 Video Edit</span>;
+      case 'photo_editing':
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-50 text-purple-800 border border-purple-200">✨ Photo Edit</span>;
+      case 'album_printing':
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-50 text-indigo-800 border border-indigo-200">📖 Printing</span>;
+      default:
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-50 text-amber-800 border border-amber-200">🎨 Album</span>;
+    }
   };
 
   if (!isOpen) return null;
@@ -379,52 +511,90 @@ export default function VendorAlbumDeliverablesModal({
           initial={{ opacity: 0, scale: 0.95, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 15 }}
-          className="relative w-full max-w-5xl max-h-[92vh] flex flex-col bg-[#FAF8F2] rounded-3xl shadow-2xl border-2 border-amber-200/90 overflow-hidden z-10 text-stone-900"
+          className="relative w-full max-w-5xl max-h-[94vh] flex flex-col bg-[#FAF8F2] rounded-3xl shadow-2xl border-2 border-amber-200/90 overflow-hidden z-10 text-stone-900"
         >
           {/* Header Bar */}
           <div className="p-4 sm:p-5 bg-gradient-to-r from-[#2B231D] via-[#3A3027] to-[#2B231D] text-amber-50 flex items-center justify-between border-b border-amber-900/40 flex-wrap gap-3">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-amber-500/20 border-2 border-amber-400/40 text-amber-300 flex items-center justify-center shadow-xs font-black text-sm">
-                🎨
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-amber-500/20 border-2 border-amber-400/40 text-amber-300 flex items-center justify-center shadow-xs font-black text-lg overflow-hidden shrink-0">
+                {vendor.avatar_url ? (
+                  <img src={vendor.avatar_url} alt={vendor.name} className="w-full h-full object-cover" />
+                ) : (
+                  <span>{vendor.name ? vendor.name.slice(0, 2).toUpperCase() : 'TM'}</span>
+                )}
               </div>
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <h2 className="text-base sm:text-lg font-black tracking-tight text-white">
                     {vendor.name}
                   </h2>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500/20 text-amber-300 border border-amber-400/30 uppercase tracking-wider">
-                    {vendor.primary_role || 'Album Designer'}
-                  </span>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/10 text-stone-300 border border-white/10">
-                    Partner / Vendor
-                  </span>
+                  {/* Primary Type Badges */}
+                  {isFreelancer && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 uppercase tracking-wider">
+                      📸 Freelancer
+                    </span>
+                  )}
+                  {isInHouse && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-sky-500/20 text-sky-300 border border-sky-400/30 uppercase tracking-wider">
+                      🏢 In-House Staff
+                    </span>
+                  )}
+                  {isPartner && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500/20 text-amber-300 border border-amber-400/30 uppercase tracking-wider">
+                      🤝 Partner / Vendor
+                    </span>
+                  )}
+                  {vendor.primary_role && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/10 text-stone-300 border border-white/10">
+                      {vendor.primary_role}
+                    </span>
+                  )}
                 </div>
-                <div className="flex items-center gap-3 text-xs text-amber-200/70 mt-0.5 flex-wrap">
-                  {vendor.phone && <span className="flex items-center gap-1 font-mono">📞 {vendor.phone}</span>}
-                  {vendor.email && <span className="flex items-center gap-1 font-mono">✉️ {vendor.email}</span>}
+                <div className="flex items-center gap-3 text-xs text-amber-200/70 mt-1 flex-wrap font-mono">
+                  {vendor.phone && <span className="flex items-center gap-1">📞 {vendor.phone}</span>}
+                  {vendor.email && <span className="flex items-center gap-1">✉️ {vendor.email}</span>}
+                  {(vendor.daily_rate || vendor.default_daily_rate) ? (
+                    <span className="text-amber-300 font-bold">₹{vendor.daily_rate || vendor.default_daily_rate}/day</span>
+                  ) : null}
                 </div>
               </div>
             </div>
 
             <div className="flex items-center gap-2">
-              <a
-                href="/vendor-portal"
-                target="_blank"
-                rel="noreferrer"
-                className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-amber-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs border border-amber-300/20"
-                title="Open Dedicated Vendor External Portal"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Vendor Portal</span>
-              </a>
+              {isInHouse && onOpenSalaryDrawer && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenSalaryDrawer(vendor);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-200 border border-emerald-400/30 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <IndianRupee className="w-3.5 h-3.5" />
+                  <span>Salary Slips</span>
+                </button>
+              )}
+
+              {isPartner && (
+                <a
+                  href="/vendor-portal"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-amber-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs border border-amber-300/20"
+                  title="Open Dedicated Vendor External Portal"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Portal</span>
+                </a>
+              )}
 
               <button
                 type="button"
                 onClick={() => setIsAddJobOpen(!isAddJobOpen)}
-                className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-black transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-black transition flex items-center gap-1.5 cursor-pointer shadow-xs"
               >
                 <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                <span>+ New Album Job</span>
+                <span>+ Add Assignment</span>
               </button>
 
               <button
@@ -437,35 +607,63 @@ export default function VendorAlbumDeliverablesModal({
             </div>
           </div>
 
-          {/* Top 3D Creamy KPI Overview Strip */}
+          {/* Categorized Segregated Navigation Menu / Tabs */}
+          <div className="px-4 py-2.5 bg-[#FAF8F5] border-b border-amber-200/80 flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+            {CATEGORY_TABS.map(tab => {
+              const count = categoryCounts[tab.id];
+              const isActive = activeCategoryTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveCategoryTab(tab.id)}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition flex items-center gap-2 whitespace-nowrap cursor-pointer shadow-2xs ${
+                    isActive
+                      ? 'bg-amber-500 text-white shadow-xs'
+                      : 'bg-white hover:bg-amber-50 text-stone-700 border border-stone-200/80'
+                  }`}
+                >
+                  <span>{tab.icon}</span>
+                  <span>{tab.label}</span>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                    isActive ? 'bg-amber-700/60 text-white' : 'bg-stone-100 text-stone-600'
+                  }`}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Top 3D Creamy KPI Overview Strip for Active View */}
           <div className="p-3 sm:p-4 grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-2.5 bg-amber-50/70 border-b border-amber-200/80">
-            {/* 1. Total Albums */}
+            {/* 1. Total Jobs */}
             <div className="p-2.5 rounded-2xl bg-white border border-amber-200/90 shadow-2xs">
               <span className="text-[9px] font-black uppercase tracking-wider text-stone-400 block">
-                Total Albums
+                Total Jobs ({activeCategoryTab === 'all' ? 'All' : activeCategoryTab})
               </span>
               <span className="text-sm sm:text-base font-black text-amber-950 font-mono mt-0.5 block">
-                {totalAlbumsCount}
+                {tabTotalCount}
               </span>
             </div>
 
             {/* 2. Overdue / Due Alert */}
-            <div className={`p-2.5 rounded-2xl bg-white border shadow-2xs ${overdueCount > 0 ? 'border-rose-300 bg-rose-50/30' : 'border-amber-200/90'}`}>
-              <span className={`text-[9px] font-black uppercase tracking-wider block ${overdueCount > 0 ? 'text-rose-600' : 'text-stone-400'}`}>
-                Overdue Albums
+            <div className={`p-2.5 rounded-2xl bg-white border shadow-2xs ${tabOverdueCount > 0 ? 'border-rose-300 bg-rose-50/30' : 'border-amber-200/90'}`}>
+              <span className={`text-[9px] font-black uppercase tracking-wider block ${tabOverdueCount > 0 ? 'text-rose-600' : 'text-stone-400'}`}>
+                Overdue Tasks
               </span>
-              <span className={`text-sm sm:text-base font-black font-mono mt-0.5 block ${overdueCount > 0 ? 'text-rose-700 animate-pulse' : 'text-stone-700'}`}>
-                {overdueCount} Overdue
+              <span className={`text-sm sm:text-base font-black font-mono mt-0.5 block ${tabOverdueCount > 0 ? 'text-rose-700 animate-pulse' : 'text-stone-700'}`}>
+                {tabOverdueCount} Overdue
               </span>
             </div>
 
             {/* 3. Total Fee */}
             <div className="p-2.5 rounded-2xl bg-white border border-amber-200/90 shadow-2xs">
               <span className="text-[9px] font-black uppercase tracking-wider text-stone-400 block">
-                Total Agreed Fee
+                Agreed Commercials
               </span>
               <span className="text-sm sm:text-base font-black text-stone-900 font-mono mt-0.5 block">
-                ₹{totalFeeSum.toLocaleString('en-IN')}
+                ₹{tabFeeSum.toLocaleString('en-IN')}
               </span>
             </div>
 
@@ -475,83 +673,117 @@ export default function VendorAlbumDeliverablesModal({
                 Total Paid
               </span>
               <span className="text-sm sm:text-base font-black text-emerald-800 font-mono mt-0.5 block">
-                ₹{totalPaidSum.toLocaleString('en-IN')}
+                ₹{tabPaidSum.toLocaleString('en-IN')}
               </span>
             </div>
 
             {/* 5. Balance Due */}
-            <div className={`p-2.5 rounded-2xl bg-white border shadow-2xs col-span-2 sm:col-span-1 ${totalBalanceDue > 0 ? 'border-rose-300 bg-rose-50/20' : 'border-emerald-200/90'}`}>
-              <span className={`text-[9px] font-black uppercase tracking-wider block ${totalBalanceDue > 0 ? 'text-rose-700' : 'text-stone-400'}`}>
+            <div className={`p-2.5 rounded-2xl bg-white border shadow-2xs col-span-2 sm:col-span-1 ${tabBalanceDue > 0 ? 'border-rose-300 bg-rose-50/20' : 'border-emerald-200/90'}`}>
+              <span className={`text-[9px] font-black uppercase tracking-wider block ${tabBalanceDue > 0 ? 'text-rose-700' : 'text-stone-400'}`}>
                 Pending Balance
               </span>
-              <span className={`text-sm sm:text-base font-black font-mono mt-0.5 block ${totalBalanceDue > 0 ? 'text-rose-700' : 'text-stone-700'}`}>
-                ₹{totalBalanceDue.toLocaleString('en-IN')}
+              <span className={`text-sm sm:text-base font-black font-mono mt-0.5 block ${tabBalanceDue > 0 ? 'text-rose-700' : 'text-stone-700'}`}>
+                ₹{tabBalanceDue.toLocaleString('en-IN')}
               </span>
             </div>
           </div>
 
-          {/* Add Job Inline Form */}
+          {/* Add Assignment Inline Form */}
           <AnimatePresence>
             {isAddJobOpen && (
               <motion.div
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
                 exit={{ opacity: 0, height: 0 }}
-                className="p-4 bg-amber-100/60 border-b border-amber-300 space-y-3"
+                className="p-4 bg-amber-100/70 border-b border-amber-300 space-y-3"
               >
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-black text-amber-950 flex items-center gap-1.5">
                     <Plus className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Assign New Album Project</span>
+                    <span>Create &amp; Assign New Assignment</span>
                   </h4>
                   <button type="button" onClick={() => setIsAddJobOpen(false)} className="text-stone-400 hover:text-stone-700">
                     <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
-                  <input
-                    type="text"
-                    placeholder="Client / Couple Name (e.g. Rahul & Pooja)"
-                    value={newClientName}
-                    onChange={(e) => setNewClientName(e.target.value)}
-                    className="p-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Album Type (e.g. Signature Photobook)"
-                    value={newAlbumType}
-                    onChange={(e) => setNewAlbumType(e.target.value)}
-                    className="p-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
-                  />
-                  <div className="flex items-center gap-1.5">
+                <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
+                  {/* Category Selector */}
+                  <div>
+                    <label className="text-[10px] font-bold text-stone-500 block mb-1">Category</label>
+                    <select
+                      value={newCategory}
+                      onChange={(e) => setNewCategory(e.target.value as any)}
+                      className="w-full p-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs cursor-pointer"
+                    >
+                      <option value="shoot">📸 Shoot Assignment</option>
+                      <option value="video_editing">🎬 Video Editing</option>
+                      <option value="photo_editing">✨ Photo Editing</option>
+                      <option value="album_design">🎨 Album Designing</option>
+                      <option value="album_printing">📖 Album Printing</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-stone-500 block mb-1">Client / Couple Name</label>
                     <input
-                      type="number"
-                      placeholder="Sheets"
-                      value={newSheets}
-                      onChange={(e) => setNewSheets(e.target.value)}
-                      className="w-1/2 p-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 font-mono shadow-2xs"
-                    />
-                    <input
-                      type="number"
-                      placeholder="Agreed Fee (₹)"
-                      value={newFee}
-                      onChange={(e) => setNewFee(e.target.value)}
-                      className="w-1/2 p-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 font-mono shadow-2xs"
+                      type="text"
+                      placeholder="e.g. Dinesh & Aishwarya"
+                      value={newClientName}
+                      onChange={(e) => setNewClientName(e.target.value)}
+                      className="w-full p-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
                     />
                   </div>
-                  <input
-                    type="date"
-                    value={newDueDate}
-                    onChange={(e) => setNewDueDate(e.target.value)}
-                    className="p-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
-                  />
+
+                  <div>
+                    <label className="text-[10px] font-bold text-stone-500 block mb-1">Deliverable / Task Title</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Cinematic Teaser / Signature Photobook"
+                      value={newAlbumType}
+                      onChange={(e) => setNewAlbumType(e.target.value)}
+                      className="w-full p-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-stone-500 block mb-1">Specs / Pages / Duration</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 35 Sheets (70 Pages) or 25 Mins"
+                      value={newSpecs}
+                      onChange={(e) => setNewSpecs(e.target.value)}
+                      className="w-full p-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1">
+                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Agreed Fee (₹)</label>
+                      <input
+                        type="number"
+                        placeholder="₹"
+                        value={newFee}
+                        onChange={(e) => setNewFee(e.target.value)}
+                        className="w-full p-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 font-mono shadow-2xs"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Deadline</label>
+                      <input
+                        type="date"
+                        value={newDueDate}
+                        onChange={(e) => setNewDueDate(e.target.value)}
+                        className="w-full p-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-2">
                   <input
                     type="url"
-                    placeholder="Optional PDF Proof / Canva / Google Drive Link"
+                    placeholder="Optional Drive Folder URL or Proof Link"
                     value={newPdfUrl}
                     onChange={(e) => setNewPdfUrl(e.target.value)}
                     className="flex-1 p-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs font-mono"
@@ -559,9 +791,9 @@ export default function VendorAlbumDeliverablesModal({
                   <button
                     type="button"
                     onClick={handleSaveNewJob}
-                    className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-black text-xs rounded-xl shadow-xs transition cursor-pointer"
+                    className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white font-black text-xs rounded-xl shadow-xs transition cursor-pointer shrink-0"
                   >
-                    Save &amp; Assign Job
+                    Save &amp; Assign Task
                   </button>
                 </div>
               </motion.div>
@@ -577,7 +809,7 @@ export default function VendorAlbumDeliverablesModal({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search couple or album title..."
+                placeholder="Search couple, deliverable, specs..."
                 className="w-full pl-8 pr-3 py-1.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-medium text-stone-800 placeholder-stone-400 outline-none focus:border-amber-500 shadow-2xs"
               />
             </div>
@@ -642,23 +874,22 @@ export default function VendorAlbumDeliverablesModal({
               <button
                 type="button"
                 onClick={() => handleOpenInvoice()}
-                disabled={selectedOrderIds.size === 0}
-                className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-[11px] font-black flex items-center gap-1.5 shadow-xs transition cursor-pointer disabled:opacity-40"
+                className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-[11px] font-black flex items-center gap-1.5 shadow-xs transition cursor-pointer"
               >
                 <FileText className="w-3.5 h-3.5" />
-                <span>Generate Statement ({selectedOrderIds.size})</span>
+                <span>Download Statement {selectedOrderIds.size > 0 ? `(${selectedOrderIds.size})` : ''}</span>
               </button>
             </div>
           </div>
 
-          {/* Deliverables List (3D Creamy Cards) */}
+          {/* Deliverables & Assignments List (3D Creamy Cards) */}
           <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-3 bg-[#FAF8F2]">
             {filteredOrders.length === 0 ? (
               <div className="p-12 text-center bg-white rounded-3xl border border-stone-200 text-stone-400 space-y-2">
                 <BookOpen className="w-10 h-10 text-stone-300 mx-auto" />
-                <h4 className="text-sm font-black text-stone-700">No Album Deliverables Found</h4>
+                <h4 className="text-sm font-black text-stone-700">No Assignments Found in This Category</h4>
                 <p className="text-xs text-stone-400 max-w-sm mx-auto">
-                  Click &ldquo;+ New Album Job&rdquo; above to assign the first album project, or assign deliverables in Post-Production.
+                  Click &ldquo;+ Add Assignment&rdquo; above to assign tasks or assign deliverables in Post-Production &amp; Bookings.
                 </p>
               </div>
             ) : (
@@ -674,7 +905,7 @@ export default function VendorAlbumDeliverablesModal({
                       isSelected ? 'border-amber-500 bg-amber-50/20' : 'border-stone-200/90'
                     }`}
                   >
-                    {/* Top Row: Checkbox, Client, Album Title, Deadline & 3D Status */}
+                    {/* Top Row: Checkbox, Client, Category Pill, Title, Deadline & 3D Status */}
                     <div className="flex items-start justify-between flex-wrap gap-2.5">
                       <div className="flex items-start gap-3">
                         <button
@@ -694,10 +925,16 @@ export default function VendorAlbumDeliverablesModal({
                             <h3 className="text-sm sm:text-base font-black text-stone-900 tracking-tight">
                               {order.client_name}
                             </h3>
+                            {getCategoryBadge(order.category)}
                             {getDeadlineBadge(order.due_date, order.order_status)}
                           </div>
-                          <p className="text-xs text-stone-500 font-semibold mt-0.5">
-                            {order.album_type} • <span className="font-mono text-stone-800 font-bold">{order.sheet_count} Sheets</span> ({order.page_count || order.sheet_count * 2} Pages)
+                          <p className="text-xs text-stone-600 font-semibold mt-0.5">
+                            <span className="font-bold text-amber-950">{order.item_title || order.album_type}</span>
+                            {order.specs && (
+                              <span className="ml-2 font-mono text-stone-800 font-bold bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200/50">
+                                {order.specs}
+                              </span>
+                            )}
                           </p>
                         </div>
                       </div>
@@ -723,7 +960,7 @@ export default function VendorAlbumDeliverablesModal({
                       {/* Financials Strip */}
                       <div>
                         <span className="text-[9px] font-black uppercase tracking-wider text-stone-400 block">
-                          Commercials &amp; Payment
+                          Agreed Commercials
                         </span>
                         <div className="flex items-center gap-2 text-xs font-bold mt-0.5 flex-wrap">
                           <span className="font-mono font-black text-stone-900">
@@ -740,33 +977,33 @@ export default function VendorAlbumDeliverablesModal({
                         </div>
                       </div>
 
-                      {/* PDF Proof Link */}
+                      {/* PDF Proof / Drive Link */}
                       <div className="sm:text-center">
                         <span className="text-[9px] font-black uppercase tracking-wider text-stone-400 block">
-                          Design Proof PDF
+                          Drive Folder / Proof
                         </span>
-                        {order.pdf_proof_url ? (
+                        {order.pdf_proof_url || order.drive_folder_url ? (
                           <a
-                            href={order.pdf_proof_url}
+                            href={order.pdf_proof_url || order.drive_folder_url}
                             target="_blank"
                             rel="noreferrer"
                             className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-700 hover:text-amber-900 hover:underline mt-0.5 truncate max-w-[200px]"
                           >
                             <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-                            <span className="truncate">View Album Proof</span>
+                            <span className="truncate">Open Drive / Proof</span>
                           </a>
                         ) : (
                           <button
                             type="button"
                             onClick={() => {
-                              const url = prompt('Enter Google Drive or Canva PDF Proof Link:');
+                              const url = prompt('Enter Google Drive or Canva Link:');
                               if (url) {
                                 handleStatusChange({ ...order, pdf_proof_url: url.trim() }, order.order_status);
                               }
                             }}
                             className="text-[11px] font-bold text-amber-600 hover:underline mt-0.5 cursor-pointer"
                           >
-                            + Attach Proof Link
+                            + Attach Link
                           </button>
                         )}
                       </div>
@@ -787,6 +1024,16 @@ export default function VendorAlbumDeliverablesModal({
                         >
                           <IndianRupee className="w-3 h-3" />
                           <span>{isPaid ? 'Settled' : 'Record Pay'}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setEditingOrder(order)}
+                          className="px-2.5 py-1 rounded-xl border border-stone-200 bg-white hover:bg-stone-50 text-[11px] font-bold text-stone-700 flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                          title="Edit Task Details"
+                        >
+                          <Edit3 className="w-3 h-3 text-stone-400" />
+                          <span>Edit</span>
                         </button>
 
                         <button
@@ -814,6 +1061,127 @@ export default function VendorAlbumDeliverablesModal({
               })
             )}
           </div>
+
+          {/* Edit Assignment Modal */}
+          <AnimatePresence>
+            {editingOrder && (
+              <div className="fixed inset-0 z-[150] flex items-center justify-center p-3 bg-black/50 backdrop-blur-2xs">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  className="bg-white p-5 rounded-3xl shadow-xl border-2 border-amber-300 max-w-lg w-full space-y-3.5 text-stone-900"
+                >
+                  <div className="flex items-center justify-between border-b border-stone-100 pb-2">
+                    <h4 className="text-xs font-black text-amber-950 flex items-center gap-1.5">
+                      <Edit3 className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Edit Assignment • {editingOrder.client_name}</span>
+                    </h4>
+                    <button type="button" onClick={() => setEditingOrder(null)} className="text-stone-400 hover:text-stone-700">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Client Name</label>
+                      <input
+                        type="text"
+                        value={editingOrder.client_name}
+                        onChange={(e) => setEditingOrder({ ...editingOrder, client_name: e.target.value })}
+                        className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Deliverable / Task Title</label>
+                      <input
+                        type="text"
+                        value={editingOrder.item_title || editingOrder.album_type}
+                        onChange={(e) => setEditingOrder({ ...editingOrder, item_title: e.target.value, album_type: e.target.value })}
+                        className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <div>
+                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Specs / Pages</label>
+                      <input
+                        type="text"
+                        value={editingOrder.specs || ''}
+                        onChange={(e) => setEditingOrder({ ...editingOrder, specs: e.target.value })}
+                        className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Deadline / Due Date</label>
+                      <input
+                        type="date"
+                        value={editingOrder.due_date ? editingOrder.due_date.split('T')[0] : ''}
+                        onChange={(e) => setEditingOrder({ ...editingOrder, due_date: e.target.value })}
+                        className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Agreed Fee (₹)</label>
+                      <input
+                        type="number"
+                        value={editingOrder.total_amount}
+                        onChange={(e) => {
+                          const tot = Number(e.target.value) || 0;
+                          setEditingOrder({
+                            ...editingOrder,
+                            total_amount: tot,
+                            balance_amount: Math.max(0, tot - (editingOrder.paid_amount || 0))
+                          });
+                        }}
+                        className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-stone-500 block mb-1">Drive / Proof URL</label>
+                    <input
+                      type="url"
+                      value={editingOrder.pdf_proof_url || editingOrder.drive_folder_url || ''}
+                      onChange={(e) => setEditingOrder({ ...editingOrder, pdf_proof_url: e.target.value, drive_folder_url: e.target.value })}
+                      className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold font-mono"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleDeleteOrder(editingOrder.id);
+                        setEditingOrder(null);
+                      }}
+                      className="text-xs text-rose-600 font-bold hover:underline"
+                    >
+                      Delete Assignment
+                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setEditingOrder(null)}
+                        className="px-3 py-1.5 border border-stone-200 text-stone-600 text-xs font-bold rounded-xl"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSaveEditOrder}
+                        className="px-4 py-1.5 bg-amber-500 hover:bg-amber-600 text-white font-black text-xs rounded-xl shadow-xs transition"
+                      >
+                        Save Changes
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              </div>
+            )}
+          </AnimatePresence>
 
           {/* Record Payment Inline Modal */}
           <AnimatePresence>

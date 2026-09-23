@@ -13,13 +13,14 @@ export async function GET(req: NextRequest) {
     const searchParams = req.nextUrl.searchParams;
     const vendorId = searchParams.get('vendor_id') || '';
     const vendorEmail = searchParams.get('vendor_email') || '';
+    const vendorName = searchParams.get('vendor_name') || '';
     const workspaceId = searchParams.get('workspace_id') || userId;
 
-    if (!vendorId && !vendorEmail) {
+    if (!vendorId && !vendorEmail && !vendorName) {
       return NextResponse.json({ error: 'vendor_id or vendor_email is required' }, { status: 400 });
     }
 
-    const orders = await fetchVendorAlbumOrders(workspaceId, vendorId, vendorEmail);
+    const orders = await fetchVendorAlbumOrders(workspaceId, vendorId, vendorEmail, vendorName);
 
     return NextResponse.json({
       success: true,

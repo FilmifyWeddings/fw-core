@@ -1,5 +1,13 @@
 import { supabase, supabaseAdmin } from '@/lib/supabase';
 
+export type AssignmentCategory = 
+  | 'all' 
+  | 'shoot' 
+  | 'video_editing' 
+  | 'photo_editing' 
+  | 'album_design' 
+  | 'album_printing';
+
 export interface VendorAlbumOrder {
   id: string;
   workspace_id: string;
@@ -10,7 +18,11 @@ export interface VendorAlbumOrder {
   client_name: string;
   project_id?: string;
   deliverable_id?: string;
-  album_type: string;
+  category?: AssignmentCategory; // 'shoot', 'video_editing', 'photo_editing', 'album_design', 'album_printing'
+  item_title?: string;
+  specs?: string;
+  service_type?: string;
+  album_type: string; // Used as deliverable / task title
   sheet_count: number;
   page_count: number;
   rate_per_sheet: number;
@@ -18,7 +30,7 @@ export interface VendorAlbumOrder {
   total_amount: number;
   paid_amount: number;
   balance_amount: number;
-  order_status: string; // 'Pending Design', 'In Design', 'Client Review', 'Changes Requested', 'Sent for Printing', 'Completed'
+  order_status: string; // 'Pending / Upcoming', 'In Progress / In Design', 'Client Review', 'Changes Requested', 'Sent for Printing', 'Completed'
   payment_status: 'PENDING' | 'PARTIAL' | 'PAID';
   order_date: string;
   due_date?: string;
@@ -38,6 +50,8 @@ export interface VendorAlbumOrder {
   updated_at?: string;
 }
 
+export type VendorAssignmentOrder = VendorAlbumOrder;
+
 export interface VendorStatement {
   id: string;
   workspace_id: string;
@@ -53,6 +67,8 @@ export interface VendorStatement {
     order_id: string;
     client_name: string;
     album_type: string;
+    category?: string;
+    specs?: string;
     sheet_count: number;
     page_count: number;
     total_amount: number;
@@ -75,26 +91,41 @@ export interface VendorStatement {
 const LOCAL_STORAGE_KEY_PREFIX = 'sc_vendor_album_orders_';
 
 /**
- * Normalizes status strings into standard readable status
+ * Normalizes status strings into standard readable status with 3D color styling
  */
 export function normalizeVendorOrderStatus(raw?: string): string {
   if (!raw) return 'Pending Design';
   const s = raw.toLowerCase().trim();
   if (s.includes('sent') || s.includes('print')) return 'Sent for Printing';
-  if (s.includes('review')) return 'Client Review';
-  if (s.includes('change') || s.includes('revision')) return 'Changes Requested';
-  if (s.includes('progress') || s.includes('designing') || s.includes('in design')) return 'In Design';
+  if (s.includes('review') || s.includes('under review')) return 'Client Review';
+  if (s.includes('change') || s.includes('revision') || s.includes('modifi')) return 'Changes Requested';
+  if (s.includes('progress') || s.includes('design') || s.includes('editing')) return 'In Progress';
   if (s.includes('done') || s.includes('completed') || s.includes('delivered')) return 'Completed';
-  return 'Pending Design';
+  if (s.includes('upcoming') || s.includes('pending') || s.includes('todo')) return 'Pending Design';
+  return raw;
 }
 
 /**
- * Fetch Album Orders for a vendor with bi-directional Post-Production sync
+ * Detects assignment category from deliverable data
+ */
+export function detectDeliverableCategory(category?: string, title?: string, role?: string): AssignmentCategory {
+  const combined = `${category || ''} ${title || ''} ${role || ''}`.toLowerCase();
+  if (combined.includes('print') || combined.includes('lab') || combined.includes('binding')) return 'album_printing';
+  if (combined.includes('album') || combined.includes('book') || combined.includes('sheet') || combined.includes('flush mount')) return 'album_design';
+  if (combined.includes('video') || combined.includes('film') || combined.includes('teaser') || combined.includes('trailer') || combined.includes('reel') || combined.includes('cinemat') || combined.includes('editor')) return 'video_editing';
+  if (combined.includes('photo') || combined.includes('stills') || combined.includes('retouch') || combined.includes('color grade')) return 'photo_editing';
+  if (combined.includes('shoot') || combined.includes('candid') || combined.includes('drone') || combined.includes('traditional') || combined.includes('photographer') || combined.includes('cinematographer')) return 'shoot';
+  return 'album_design';
+}
+
+/**
+ * Fetch All Orders / Deliverables / Shoots for a vendor / team member with bi-directional Post-Production sync
  */
 export async function fetchVendorAlbumOrders(
   workspaceId: string,
   vendorId: string,
-  vendorEmail?: string
+  vendorEmail?: string,
+  vendorName?: string
 ): Promise<VendorAlbumOrder[]> {
   try {
     let query = supabaseAdmin
@@ -102,7 +133,8 @@ export async function fetchVendorAlbumOrders(
       .select('*');
 
     if (vendorId) {
-      query = query.or(`partner_id.eq.${vendorId},partner_email.ilike.%${vendorEmail || vendorId}%`);
+      const emailFilter = vendorEmail ? `,partner_email.ilike.%${vendorEmail}%` : '';
+      query = query.or(`partner_id.eq.${vendorId}${emailFilter}`);
     }
 
     if (workspaceId && workspaceId !== 'all') {
@@ -113,22 +145,22 @@ export async function fetchVendorAlbumOrders(
 
     const orderList: VendorAlbumOrder[] = Array.isArray(dbOrders) ? [...dbOrders] : [];
 
-    // AUTO-SYNC: Also check post_production_deliverables for albums assigned to this vendor
+    // AUTO-SYNC 1: Check post_production_deliverables for ALL categories (Videos, Photos, Albums, Printing)
     try {
       let delivQuery = supabaseAdmin
         .from('post_production_deliverables')
         .select('*');
 
       if (vendorId) {
-        delivQuery = delivQuery.or(`assigned_member_id.eq.${vendorId},assigned_to.ilike.%${vendorId}%`);
+        const nameFilter = vendorName ? `,assigned_to.ilike.%${vendorName}%` : '';
+        delivQuery = delivQuery.or(`assigned_member_id.eq.${vendorId}${nameFilter}`);
       }
 
       const { data: deliverables } = await delivQuery;
 
       if (deliverables && deliverables.length > 0) {
-        // Fetch project and client details for project_ids
         const projectIds = [...new Set(deliverables.map((d: any) => d.project_id).filter(Boolean))];
-        let projectClientMap = new Map<string, string>();
+        const projectClientMap = new Map<string, string>();
 
         if (projectIds.length > 0) {
           const { data: projects } = await supabaseAdmin
@@ -154,34 +186,44 @@ export async function fetchVendorAlbumOrders(
           }
         }
 
-        // Bridge missing album deliverables into partner_album_orders
+        // Bridge deliverables across all categories into orderList
         for (const deliv of deliverables) {
-          const isAlbum = /album|book/i.test(deliv.category || '') || /album|book/i.test(deliv.title || '');
-          if (!isAlbum) continue;
-
+          const cat = detectDeliverableCategory(deliv.category, deliv.title);
           const exists = orderList.some(
-            o => o.deliverable_id === deliv.id || (o.client_name && o.client_name === projectClientMap.get(deliv.project_id))
+            o => o.deliverable_id === deliv.id || (deliv.id && o.id === `order_${deliv.id.replace('deliv_', '')}`)
           );
 
           if (!exists) {
             const clientName = projectClientMap.get(deliv.project_id) || 'Valued Couple';
-            const sheetCount = parseInt(String(deliv.specs || deliv.count || '30').replace(/\D/g, '')) || 30;
+            const rawSpecs = String(deliv.specs || deliv.count || '');
+            const sheetCount = parseInt(rawSpecs.replace(/\D/g, '')) || (cat === 'album_design' || cat === 'album_printing' ? 30 : 1);
+            
+            let defaultRate = 2500;
+            if (cat === 'video_editing') defaultRate = 4500;
+            else if (cat === 'photo_editing') defaultRate = 3000;
+            else if (cat === 'album_design') defaultRate = sheetCount * 150;
+            else if (cat === 'album_printing') defaultRate = sheetCount * 220;
+
             const newOrder: VendorAlbumOrder = {
-              id: `album_${deliv.id.replace('deliv_', '')}`,
+              id: `order_${deliv.id.replace('deliv_', '')}`,
               workspace_id: workspaceId || deliv.workspace_id || 'ws_default',
               partner_id: vendorId,
-              partner_name: deliv.assigned_to || 'Album Designer',
+              partner_name: deliv.assigned_to || vendorName || 'Team Specialist',
               partner_email: vendorEmail || '',
               client_name: clientName,
               project_id: deliv.project_id,
               deliverable_id: deliv.id,
-              album_type: deliv.title || 'Signature Photobook',
+              category: cat,
+              item_title: deliv.title || 'Deliverable Task',
+              specs: rawSpecs || `${sheetCount} Sheets`,
+              service_type: cat === 'video_editing' ? 'Video Editing' : cat === 'photo_editing' ? 'Photo Editing' : cat === 'album_printing' ? 'Album Printing' : 'Album Designing',
+              album_type: deliv.title || (cat === 'video_editing' ? 'Wedding Film Edit' : cat === 'photo_editing' ? 'Photo Retouching' : 'Signature Photobook'),
               sheet_count: sheetCount,
               page_count: sheetCount * 2,
-              rate_per_sheet: 150,
-              total_amount: sheetCount * 150,
+              rate_per_sheet: cat === 'album_design' ? 150 : 0,
+              total_amount: defaultRate,
               paid_amount: 0,
-              balance_amount: sheetCount * 150,
+              balance_amount: defaultRate,
               order_status: normalizeVendorOrderStatus(deliv.status),
               payment_status: 'PENDING',
               order_date: new Date().toISOString().split('T')[0],
@@ -191,7 +233,7 @@ export async function fetchVendorAlbumOrders(
               created_at: deliv.created_at || new Date().toISOString()
             };
 
-            // Save to DB and add to list
+            // Attempt save to DB in background
             try {
               await supabaseAdmin.from('partner_album_orders').upsert(newOrder);
             } catch (_) {}
@@ -201,6 +243,57 @@ export async function fetchVendorAlbumOrders(
       }
     } catch (syncErr) {
       console.warn('[vendorDeliverablesService] Deliverables auto-sync error:', syncErr);
+    }
+
+    // AUTO-SYNC 2: Check fw_assignments and crew_assignments_finance for Shoots assigned to this member
+    try {
+      const { data: assignments } = await supabaseAdmin
+        .from('fw_assignments')
+        .select('*')
+        .eq('assigned_member_id', vendorId);
+
+      if (assignments && assignments.length > 0) {
+        for (const assign of assignments) {
+          const shootId = `shoot_${assign.id || assign.sub_event_id || Math.random().toString(36).substring(7)}`;
+          const exists = orderList.some(o => o.id === shootId || (o.category === 'shoot' && o.client_name === assign.client_name && o.item_title === assign.role));
+          if (!exists) {
+            const agreed = Number(assign.agreed_amount || assign.rate || 0) || 5000;
+            const paid = Number(assign.paid_amount || assign.advance_amount || 0);
+            const balance = Math.max(0, agreed - paid);
+
+            const shootOrder: VendorAlbumOrder = {
+              id: shootId,
+              workspace_id: workspaceId || assign.workspace_id || 'ws_default',
+              partner_id: vendorId,
+              partner_name: vendorName || 'Freelance Specialist',
+              partner_email: vendorEmail || '',
+              client_name: assign.client_name || 'Client Wedding',
+              project_id: assign.project_id || '',
+              category: 'shoot',
+              item_title: assign.role || 'Wedding Shoot',
+              specs: assign.event_date ? `Shoot Date: ${assign.event_date}` : 'Full Day Shoot',
+              service_type: 'Freelance Shoot',
+              album_type: assign.role ? `${assign.role} Shoot` : 'Wedding Event Shoot',
+              sheet_count: 1,
+              page_count: 1,
+              rate_per_sheet: 0,
+              total_amount: agreed,
+              paid_amount: paid,
+              balance_amount: balance,
+              order_status: assign.status === 'completed' ? 'Completed' : 'In Progress',
+              payment_status: balance === 0 && agreed > 0 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'PENDING',
+              order_date: assign.event_date || assign.created_at || new Date().toISOString().split('T')[0],
+              due_date: assign.event_date || '',
+              notes: assign.notes || '',
+              comments: [],
+              created_at: assign.created_at || new Date().toISOString()
+            };
+            orderList.push(shootOrder);
+          }
+        }
+      }
+    } catch (shootErr) {
+      console.warn('[vendorDeliverablesService] Shoot assignments sync error:', shootErr);
     }
 
     if (orderList.length > 0 && typeof window !== 'undefined') {
@@ -221,13 +314,14 @@ export async function fetchVendorAlbumOrders(
 }
 
 /**
- * Save or Update an Album Order
+ * Save or Update an Assignment / Deliverable / Album Order with Bi-Directional Post-Production Sync
  */
 export async function saveVendorAlbumOrder(
   workspaceId: string,
   order: Partial<VendorAlbumOrder> & { partner_id: string; client_name: string }
 ): Promise<VendorAlbumOrder> {
-  const sheetCount = Number(order.sheet_count) || 30;
+  const cat = order.category || detectDeliverableCategory(undefined, order.album_type || order.item_title);
+  const sheetCount = Number(order.sheet_count) || (cat === 'album_design' || cat === 'album_printing' ? 30 : 1);
   const pageCount = Number(order.page_count) || sheetCount * 2;
   const ratePerSheet = Number(order.rate_per_sheet) || 0;
   const totalAmount = order.total_amount !== undefined 
@@ -239,16 +333,20 @@ export async function saveVendorAlbumOrder(
     balanceAmount === 0 && totalAmount > 0 ? 'PAID' : paidAmount > 0 ? 'PARTIAL' : 'PENDING';
 
   const payload: VendorAlbumOrder = {
-    id: order.id || `album_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    id: order.id || `order_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
     workspace_id: workspaceId,
     partner_id: order.partner_id,
-    partner_name: order.partner_name || 'Album Designer',
+    partner_name: order.partner_name || 'Team Specialist',
     partner_email: order.partner_email || '',
     client_id: order.client_id || '',
     client_name: order.client_name,
     project_id: order.project_id || '',
     deliverable_id: order.deliverable_id || '',
-    album_type: order.album_type || 'Signature Photobook',
+    category: cat,
+    item_title: order.item_title || order.album_type || 'Creative Task',
+    specs: order.specs || (cat === 'album_design' || cat === 'album_printing' ? `${sheetCount} Sheets (${pageCount} Pages)` : `${sheetCount} Qty`),
+    service_type: order.service_type || (cat === 'video_editing' ? 'Video Editing' : cat === 'photo_editing' ? 'Photo Editing' : cat === 'album_printing' ? 'Album Printing' : cat === 'shoot' ? 'Freelance Shoot' : 'Album Designing'),
+    album_type: order.album_type || order.item_title || 'Creative Task',
     sheet_count: sheetCount,
     page_count: pageCount,
     rate_per_sheet: ratePerSheet,
@@ -271,13 +369,13 @@ export async function saveVendorAlbumOrder(
   try {
     await supabaseAdmin.from('partner_album_orders').upsert(payload);
 
-    // If deliverable_id exists, sync status back to post_production_deliverables
+    // BI-DIRECTIONAL SYNC: If deliverable_id exists, sync status, specs, due_date and notes back to post_production_deliverables
     if (payload.deliverable_id) {
       await supabaseAdmin
         .from('post_production_deliverables')
         .update({
           status: payload.order_status,
-          specs: `${payload.sheet_count} Sheets (${payload.page_count} Pages)`,
+          specs: payload.specs || `${payload.sheet_count} Sheets`,
           due_date: payload.due_date ? new Date(payload.due_date).toISOString() : null,
           notes: payload.notes,
           updated_at: new Date().toISOString()
@@ -304,7 +402,7 @@ export async function saveVendorAlbumOrder(
 }
 
 /**
- * Add Comment & AI Voice Note to an Album Order
+ * Add Comment & AI Voice Note to an Assignment / Order
  */
 export async function addVendorOrderComment(
   orderId: string,

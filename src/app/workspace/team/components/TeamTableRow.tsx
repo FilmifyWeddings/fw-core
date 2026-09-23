@@ -233,19 +233,19 @@ export default function TeamTableRow({
 
       {/* 5. Direct Action Icons */}
       <div className="col-span-1 flex items-center justify-end gap-1.5 w-full md:w-auto">
-        {(isPartner || /album|lab|print/i.test(member.primary_role || '')) && (
+        {(isPartner || /album|lab|print|editor|video|photo/i.test(member.primary_role || '')) && (
           <button
             type="button"
-            title="Album Deliverables & Invoicing Hub"
+            title="Assignments & Invoicing Hub"
             onClick={(e) => {
               e.stopPropagation();
               if (handleOpenVendorDeliverables) handleOpenVendorDeliverables(member);
               else handleOpenDetails(member);
             }}
-            className="h-8 px-2 flex items-center gap-1 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-[10px] font-black shadow-2xs transition cursor-pointer shrink-0"
+            className="h-8 px-2.5 flex items-center gap-1 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-[10px] font-black shadow-2xs transition cursor-pointer shrink-0"
           >
-            <span>🎨</span>
-            <span>Albums</span>
+            <span>⚡</span>
+            <span>Tasks</span>
           </button>
         )}
         <button

@@ -8,6 +8,8 @@ export interface VendorInvoiceItem {
   order_id?: string;
   client_name: string;
   album_type: string;
+  category?: string;
+  specs?: string;
   sheet_count: number;
   page_count?: number;
   rate_per_sheet?: number;
@@ -243,11 +245,13 @@ export default function VendorStatementInvoicePdfTemplate({
                     Statement Summary
                   </span>
                   <p className="text-xs text-stone-700 font-semibold mt-0.5">
-                    Total Album Jobs: <span className="font-bold text-stone-900 font-mono">{items.length}</span>
+                    Total Assigned Tasks: <span className="font-bold text-stone-900 font-mono">{items.length} Jobs</span>
                   </p>
-                  <p className="text-xs text-stone-700 font-semibold">
-                    Total Craft Sheets: <span className="font-bold text-stone-900 font-mono">{totalSheets} Sheets</span>
-                  </p>
+                  {totalSheets > 0 && (
+                    <p className="text-xs text-stone-700 font-semibold">
+                      Total Output Specs: <span className="font-bold text-stone-900 font-mono">{totalSheets} Sheets / Units</span>
+                    </p>
+                  )}
                   <p className="text-xs text-stone-700 font-semibold">
                     Payment Status:{' '}
                     <span className={`font-bold font-mono ${balanceDue === 0 ? 'text-emerald-700' : totalPaid > 0 ? 'text-amber-700' : 'text-rose-700'}`}>
@@ -263,9 +267,9 @@ export default function VendorStatementInvoicePdfTemplate({
                   <thead>
                     <tr className="border-b-2 border-stone-200 text-[10px] font-black uppercase tracking-wider text-stone-500">
                       <th className="py-2.5 px-2">#</th>
-                      <th className="py-2.5 px-3">Client Couple</th>
-                      <th className="py-2.5 px-3">Album Title &amp; Specs</th>
-                      <th className="py-2.5 px-2 text-center">Sheets</th>
+                      <th className="py-2.5 px-3">Client / Project</th>
+                      <th className="py-2.5 px-3">Deliverable / Task &amp; Specs</th>
+                      <th className="py-2.5 px-2 text-center">Category</th>
                       <th className="py-2.5 px-2 text-right">Agreed Fee</th>
                       <th className="py-2.5 px-2 text-right">Paid</th>
                       <th className="py-2.5 px-2 text-right">Balance</th>
@@ -279,12 +283,18 @@ export default function VendorStatementInvoicePdfTemplate({
                         <td className="py-2.5 px-3 font-bold text-stone-900">{item.client_name}</td>
                         <td className="py-2.5 px-3">
                           <span className="font-bold text-stone-800 block">{item.album_type}</span>
-                          {item.due_date && (
-                            <span className="text-[10px] text-stone-400 block font-medium">Due: {item.due_date}</span>
-                          )}
+                          <span className="text-[10px] text-stone-500 block font-medium">
+                            {item.specs || (item.sheet_count > 1 ? `${item.sheet_count} Sheets` : '')}
+                            {item.due_date ? ` • Due: ${item.due_date}` : ''}
+                          </span>
                         </td>
-                        <td className="py-2.5 px-2 text-center font-mono font-bold text-stone-700">
-                          {item.sheet_count}
+                        <td className="py-2.5 px-2 text-center">
+                          <span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-amber-50 text-amber-900 border border-amber-200/60">
+                            {item.category === 'shoot' ? 'Shoot' :
+                             item.category === 'video_editing' ? 'Video Edit' :
+                             item.category === 'photo_editing' ? 'Photo Edit' :
+                             item.category === 'album_printing' ? 'Printing' : 'Album'}
+                          </span>
                         </td>
                         <td className="py-2.5 px-2 text-right font-mono font-bold text-stone-900">
                           ₹{Number(item.total_amount).toLocaleString('en-IN')}
@@ -316,7 +326,7 @@ export default function VendorStatementInvoicePdfTemplate({
               <div className="flex justify-end pt-2">
                 <div className="w-full sm:w-64 space-y-2 border-t-2 border-amber-900/10 pt-3">
                   <div className="flex justify-between text-xs text-stone-600 font-medium">
-                    <span>Subtotal ({items.length} Albums):</span>
+                    <span>Subtotal ({items.length} Tasks):</span>
                     <span className="font-mono font-bold text-stone-900">₹{subtotal.toLocaleString('en-IN')}</span>
                   </div>
                   <div className="flex justify-between text-xs text-emerald-700 font-semibold">
