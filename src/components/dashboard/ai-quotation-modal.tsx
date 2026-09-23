@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -16,6 +16,7 @@ interface AiQuotationModalProps {
   lead?: Lead | null;
   quotationId?: string | null;
   selectedTemplateId?: string | null;
+  availableTemplates?: { id: string; title: string; is_default?: boolean; category?: string }[];
   currentDocumentData?: any;
   onApplied?: (updatedDoc: any, targetQuotationId: string) => void;
 }
@@ -49,6 +50,7 @@ export function AiQuotationModal({
   lead,
   quotationId,
   selectedTemplateId,
+  availableTemplates,
   currentDocumentData,
   onApplied
 }: AiQuotationModalProps) {
@@ -59,6 +61,13 @@ export function AiQuotationModal({
   const [applying, setApplying] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [promptCopied, setPromptCopied] = useState(false);
+  const [activeTemplateId, setActiveTemplateId] = useState<string>(selectedTemplateId || '');
+
+  useEffect(() => {
+    if (selectedTemplateId) {
+      setActiveTemplateId(selectedTemplateId);
+    }
+  }, [selectedTemplateId]);
 
   // Extracted Result State
   const [extractedDoc, setExtractedDoc] = useState<any>(null);
@@ -253,7 +262,7 @@ LEAD & CLIENT CONTEXT:
         body: JSON.stringify({
           leadId: effectiveLead.id,
           quotationId: quotationId || null,
-          explicitTemplateId: selectedTemplateId || null,
+          explicitTemplateId: activeTemplateId || selectedTemplateId || null,
           currentDocument: currentDocumentData || null,
           additionalNotes: additionalNotes.trim()
         })
@@ -304,7 +313,7 @@ LEAD & CLIENT CONTEXT:
           body: JSON.stringify({
             leadId: effectiveLead.id,
             clientName: docToApply?.cover?.coupleName || effectiveLead.name,
-            explicitTemplateId: selectedTemplateId || undefined,
+            explicitTemplateId: activeTemplateId || selectedTemplateId || undefined,
             initialDocument: docToApply
           })
         });
@@ -430,7 +439,7 @@ LEAD & CLIENT CONTEXT:
           body: JSON.stringify({
             leadId: effectiveLead.id,
             clientName: effectiveLead.name,
-            explicitTemplateId: selectedTemplateId || undefined,
+            explicitTemplateId: activeTemplateId || selectedTemplateId || undefined,
             additionalNotes: notes || undefined
           })
         });
@@ -510,7 +519,7 @@ LEAD & CLIENT CONTEXT:
         body: JSON.stringify({
           leadId: effectiveLead.id,
           quotationId: quotationId || null,
-          explicitTemplateId: selectedTemplateId || null,
+          explicitTemplateId: activeTemplateId || selectedTemplateId || null,
           currentDocument: currentDocumentData || null,
           additionalNotes: notes
         })
@@ -619,6 +628,34 @@ LEAD & CLIENT CONTEXT:
                     </div>
                   </div>
                 </div>
+
+                {/* Selected Studio Template Design */}
+                {availableTemplates && availableTemplates.length > 0 && !quotationId && (
+                  <div className="flex items-center justify-between p-3 rounded-2xl bg-amber-500/5 dark:bg-zinc-900/60 border border-amber-500/20 dark:border-zinc-800">
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-amber-500 shrink-0" />
+                      <div>
+                        <div className="text-[10px] font-black uppercase tracking-wider text-amber-700 dark:text-amber-400">
+                          Template Design
+                        </div>
+                        <div className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">
+                          Applied to new quotation
+                        </div>
+                      </div>
+                    </div>
+                    <select
+                      value={activeTemplateId || selectedTemplateId || availableTemplates[0]?.id}
+                      onChange={(e) => setActiveTemplateId(e.target.value)}
+                      className="text-xs font-bold bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white px-3 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 outline-none focus:ring-1 focus:ring-amber-500 shadow-xs cursor-pointer max-w-[190px] truncate"
+                    >
+                      {availableTemplates.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.title} {t.is_default ? '★' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 {/* Optional Additional Notes Input */}
                 <div className="space-y-1.5">

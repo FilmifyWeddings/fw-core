@@ -478,8 +478,11 @@ export async function POST(
     const newTemplateId = `FW-L-${leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8)}-V${nextLeadVersion}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
     const now = new Date().toISOString();
 
+    const body = await req.json().catch(() => ({}));
+    const explicitTemplateId = body.explicitTemplateId || body.templateId;
+
     // 3. Authoritative Default Template Resolution from Supabase
-    const resolvedDefault = await resolveUserDefaultQuotationTemplate(currentUserId, currentUserId);
+    const resolvedDefault = await resolveUserDefaultQuotationTemplate(currentUserId, currentUserId, explicitTemplateId);
     const sourceTemplateId = resolvedDefault.templateId;
     let sourceJson = resolvedDefault.document || DEFAULT_AIRY_PROPOSAL;
 
@@ -487,6 +490,15 @@ export async function POST(
     const newQuotationJson = typeof structuredClone === 'function' 
       ? structuredClone(sourceJson) 
       : JSON.parse(JSON.stringify(sourceJson));
+
+    // Explicitly guarantee chosen template design tokens are preserved
+    newQuotationJson.look = sourceJson.look || newQuotationJson.look || 'cyprus-sand-dune';
+    newQuotationJson.theme = sourceJson.theme || sourceJson.look || newQuotationJson.theme || newQuotationJson.look;
+    newQuotationJson.primaryFont = sourceJson.primaryFont || newQuotationJson.primaryFont || 'Cormorant Garamond';
+    newQuotationJson.secondaryFont = sourceJson.secondaryFont || newQuotationJson.secondaryFont || 'Plus Jakarta Sans';
+    if (sourceJson.colorPalette && !newQuotationJson.colorPalette) {
+      newQuotationJson.colorPalette = sourceJson.colorPalette;
+    }
 
     const rawLeadCouple = 
       lead.raw_payload?.couple_name ||

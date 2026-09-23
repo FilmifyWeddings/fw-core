@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase, supabaseAdmin } from '@/lib/supabase';
 import { GLOBAL_SYSTEM_TEMPLATE_ID } from '@/lib/quotation-template-resolver';
+import { DEFAULT_AIRY_PROPOSAL } from '@/lib/quotation-defaults';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
 import { extractCoupleNameFromQuotation, syncBookedLeadOrFinalQuotation } from '@/lib/quotation-finance-sync';
 
@@ -37,9 +38,14 @@ async function handleGet(
         .from('quotation_documents')
         .select('*')
         .eq('template_id', GLOBAL_SYSTEM_TEMPLATE_ID)
+        .order('updated_at', { ascending: false })
+        .limit(1)
         .maybeSingle();
 
-      const docJson = sysDoc?.document_json || sysDoc?.content_json || { meta: { title: 'System Default Wedding Template', currency: 'INR' }, pages: [] };
+      let docJson = sysDoc?.document_json || sysDoc?.content_json;
+      if (!docJson || (typeof docJson === 'object' && !docJson.cover && !docJson.pages?.length)) {
+        docJson = DEFAULT_AIRY_PROPOSAL;
+      }
 
       return NextResponse.json({
         template: sysTmpl || { id: GLOBAL_SYSTEM_TEMPLATE_ID, title: 'System Default Wedding Template', is_system_template: true, is_default: false },
@@ -63,11 +69,15 @@ async function handleGet(
         .from('quotation_documents')
         .select('*')
         .or(`template_id.eq.${id},id.eq.${id}`)
+        .order('updated_at', { ascending: false })
+        .limit(1)
         .maybeSingle(),
       supabaseAdmin
         .from('quotations')
         .select('*')
         .or(`id.eq.${id},quotation_number.eq.${id},public_token.eq.${id}`)
+        .order('updated_at', { ascending: false })
+        .limit(1)
         .maybeSingle()
     ]);
 
@@ -75,7 +85,19 @@ async function handleGet(
     const doc = docRes.data;
     const quoteRec = quoteRecRes.data;
 
-    const docJson = doc?.document_json || doc?.content_json || quoteRec?.canvas_data || quoteRec?.content_json || null;
+    let rawDocJson = doc?.document_json || doc?.content_json || quoteRec?.canvas_data || quoteRec?.content_json || null;
+    let docJson: any = rawDocJson;
+    if (typeof rawDocJson === 'string') {
+      try {
+        docJson = JSON.parse(rawDocJson);
+      } catch (_) {
+        docJson = rawDocJson;
+      }
+    }
+    if (docJson && typeof docJson === 'object') {
+      if (docJson.quotation && typeof docJson.quotation === 'object') docJson = { ...docJson, ...docJson.quotation };
+      if (docJson.content_json && typeof docJson.content_json === 'object') docJson = { ...docJson, ...docJson.content_json };
+    }
 
     if (!tmpl && !docJson && !quoteRec) {
       return NextResponse.json({ error: 'Quotation template or document not found' }, { status: 404 });
@@ -97,6 +119,8 @@ async function handleGet(
       return NextResponse.json({ error: 'Access Denied: You do not have permission to view this quotation document.' }, { status: 403 });
     }
 
+    const finalDoc = docJson || DEFAULT_AIRY_PROPOSAL;
+
     return NextResponse.json({
       template: tmpl || {
         id,
@@ -107,8 +131,8 @@ async function handleGet(
       document: {
         template_id: id,
         version: doc?.version || 1,
-        content_json: docJson || { meta: {}, pages: [] },
-        document_json: docJson || { meta: {}, pages: [] }
+        content_json: finalDoc,
+        document_json: finalDoc
       }
     });
   } catch (error: any) {

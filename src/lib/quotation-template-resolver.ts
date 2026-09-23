@@ -29,36 +29,68 @@ export async function resolveUserDefaultQuotationTemplate(
   const targetUser = userId || workspaceId || 'demo_user';
 
   // Rule A: If explicit requestedTemplateId is provided
-  if (requestedTemplateId) {
+  if (requestedTemplateId && requestedTemplateId !== 'GLOBAL_DEFAULT') {
     try {
+      // 1. Check quotation_templates by id or title
       const { data: tmpl } = await supabaseAdmin
         .from('quotation_templates')
         .select('*')
-        .eq('id', requestedTemplateId)
+        .or(`id.eq.${requestedTemplateId},title.eq.${requestedTemplateId}`)
+        .limit(1)
         .maybeSingle();
 
+      const lookupId = tmpl?.id || requestedTemplateId;
+
+      // 2. Fetch document from quotation_documents by template_id or id
       const { data: doc } = await supabaseAdmin
         .from('quotation_documents')
         .select('*')
-        .eq('template_id', requestedTemplateId)
+        .or(`template_id.eq.${lookupId},id.eq.${lookupId}`)
+        .order('updated_at', { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       let docJson = doc?.content_json || doc?.document_json || null;
 
+      // Parse stringified JSON if stored as string
+      if (typeof docJson === 'string') {
+        try {
+          docJson = JSON.parse(docJson);
+        } catch (_) {}
+      }
+
+      // Unwrap if wrapped under { quotation: ... } or { document: ... }
+      if (docJson && typeof docJson === 'object') {
+        if (docJson.quotation && typeof docJson.quotation === 'object') {
+          docJson = docJson.quotation;
+        } else if (docJson.document && typeof docJson.document === 'object' && !docJson.cover && !docJson.pages) {
+          docJson = docJson.document;
+        }
+      }
+
+      // 3. Fallback to quotations table
       if (!docJson) {
         const { data: qRec } = await supabaseAdmin
           .from('quotations')
           .select('content_json, canvas_data')
-          .or(`id.eq.${requestedTemplateId},quotation_number.eq.${requestedTemplateId}`)
+          .or(`id.eq.${lookupId},quotation_number.eq.${lookupId}`)
+          .order('updated_at', { ascending: false })
+          .limit(1)
           .maybeSingle();
 
-        docJson = qRec?.content_json || qRec?.canvas_data || null;
+        let qJson = qRec?.content_json || qRec?.canvas_data || null;
+        if (typeof qJson === 'string') {
+          try { qJson = JSON.parse(qJson); } catch (_) {}
+        }
+        if (qJson && typeof qJson === 'object') {
+          docJson = qJson;
+        }
       }
 
       if (tmpl || docJson) {
         return {
-          templateId: requestedTemplateId,
-          template: tmpl || { id: requestedTemplateId, title: 'Quotation Template', is_system_template: false, is_default: false },
+          templateId: lookupId,
+          template: tmpl || { id: lookupId, title: 'Quotation Template', is_system_template: false, is_default: false },
           document: docJson || DEFAULT_AIRY_PROPOSAL,
           isSystemTemplate: !!tmpl?.is_system_template,
           isDefault: !!tmpl?.is_default,
@@ -70,9 +102,13 @@ export async function resolveUserDefaultQuotationTemplate(
     }
   }
 
-  // REQUIREMENT 5 & 6: STEP 1 — Find current user's personal default directly using identity without querying all defaults.
+  // REQUIREMENT 5 & 6: STEP 1 — Find current user's personal default directly using identity.
   try {
-    const { data: personalDefault } = await supabaseAdmin
+    let personalDefaultId: string | null = null;
+    let personalDefault: any = null;
+
+    // 1A. Check quotation_templates marked is_default = true
+    const { data: markedDefault } = await supabaseAdmin
       .from('quotation_templates')
       .select('*')
       .or(`workspace_id.eq.${targetWorkspace},user_id.eq.${targetUser}`)
@@ -82,30 +118,104 @@ export async function resolveUserDefaultQuotationTemplate(
       .limit(1)
       .maybeSingle();
 
-    if (personalDefault?.id) {
+    if (markedDefault?.id) {
+      personalDefault = markedDefault;
+      personalDefaultId = markedDefault.id;
+    }
+
+    // 1B. Check user_metadata or profiles table for default_template_id
+    if (!personalDefaultId && targetUser && targetUser !== 'demo_user') {
+      try {
+        const { data: userRec } = await supabaseAdmin.auth.admin.getUserById(targetUser);
+        if (userRec?.user?.user_metadata?.default_template_id) {
+          personalDefaultId = userRec.user.user_metadata.default_template_id;
+        }
+      } catch (_) {}
+
+      if (!personalDefaultId) {
+        try {
+          const { data: profile } = await supabaseAdmin
+            .from('profiles')
+            .select('default_template_id')
+            .eq('id', targetUser)
+            .maybeSingle();
+          if (profile?.default_template_id) {
+            personalDefaultId = profile.default_template_id;
+          }
+        } catch (_) {}
+      }
+
+      if (personalDefaultId) {
+        const { data: tmpl } = await supabaseAdmin
+          .from('quotation_templates')
+          .select('*')
+          .eq('id', personalDefaultId)
+          .maybeSingle();
+        if (tmpl) personalDefault = tmpl;
+      }
+    }
+
+    // 1C. If no default marked yet, fallback to user's latest customized studio template!
+    if (!personalDefaultId) {
+      const { data: latestUserTmpl } = await supabaseAdmin
+        .from('quotation_templates')
+        .select('*')
+        .or(`workspace_id.eq.${targetWorkspace},user_id.eq.${targetUser}`)
+        .eq('is_system_template', false)
+        .not('id', 'ilike', 'FW-Q-%')
+        .not('id', 'ilike', 'FW-L-%')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (latestUserTmpl?.id) {
+        personalDefault = latestUserTmpl;
+        personalDefaultId = latestUserTmpl.id;
+      }
+    }
+
+    if (personalDefaultId) {
       const { data: doc } = await supabaseAdmin
         .from('quotation_documents')
         .select('*')
-        .eq('template_id', personalDefault.id)
+        .or(`template_id.eq.${personalDefaultId},id.eq.${personalDefaultId}`)
+        .order('updated_at', { ascending: false })
+        .limit(1)
         .maybeSingle();
 
-      const docJson = doc?.content_json || doc?.document_json || DEFAULT_AIRY_PROPOSAL;
+      let docJson = doc?.content_json || doc?.document_json;
+      if (typeof docJson === 'string') {
+        try { docJson = JSON.parse(docJson); } catch (_) {}
+      }
 
-      // REQUIREMENT 10: Temporary Runtime Debug Logging
+      if (!docJson) {
+        const { data: qRec } = await supabaseAdmin
+          .from('quotations')
+          .select('content_json, canvas_data')
+          .or(`id.eq.${personalDefaultId},quotation_number.eq.${personalDefaultId}`)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        docJson = qRec?.content_json || qRec?.canvas_data;
+        if (typeof docJson === 'string') {
+          try { docJson = JSON.parse(docJson); } catch (_) {}
+        }
+      }
+
+      const finalDoc = docJson || DEFAULT_AIRY_PROPOSAL;
+
       console.log('[LEAD DEFAULT RESOLUTION]', {
         userId: targetUser,
         workspaceId: targetWorkspace,
-        personalDefaultTemplateId: personalDefault.id,
-        personalDefaultTemplateUserId: personalDefault.user_id,
-        personalDefaultTemplateWorkspaceId: personalDefault.workspace_id,
+        personalDefaultTemplateId: personalDefaultId,
         isSystemTemplate: false,
         resolutionReason: 'PERSONAL_WORKSPACE_DEFAULT'
       });
 
       return {
-        templateId: personalDefault.id,
-        template: personalDefault,
-        document: docJson,
+        templateId: personalDefaultId,
+        template: personalDefault || { id: personalDefaultId, title: 'Default Template', is_system_template: false, is_default: true },
+        document: finalDoc,
         isSystemTemplate: false,
         isDefault: true,
         resolutionReason: 'PERSONAL_WORKSPACE_DEFAULT',
@@ -117,11 +227,12 @@ export async function resolveUserDefaultQuotationTemplate(
 
   // REQUIREMENT 7: STEP 2 — System Fallback ONLY when personal default does NOT exist.
   try {
-    // Attempt 1: Fetch marked active global system default template
     const { data: sysCandidates } = await supabaseAdmin
       .from('quotation_templates')
       .select('*')
       .eq('is_system_template', true)
+      .not('id', 'ilike', 'FW-Q-%')
+      .not('id', 'ilike', 'FW-L-%')
       .order('is_default', { ascending: false })
       .order('updated_at', { ascending: false });
 
@@ -131,17 +242,22 @@ export async function resolveUserDefaultQuotationTemplate(
     const { data: sysDoc } = await supabaseAdmin
       .from('quotation_documents')
       .select('*')
-      .eq('template_id', sysId)
+      .or(`template_id.eq.${sysId},id.eq.${sysId}`)
+      .order('updated_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
 
-    const docJson = sysDoc?.content_json || sysDoc?.document_json || DEFAULT_AIRY_PROPOSAL;
+    let docJson = sysDoc?.content_json || sysDoc?.document_json;
+    if (typeof docJson === 'string') {
+      try { docJson = JSON.parse(docJson); } catch (_) {}
+    }
+
+    const finalSysDoc = docJson || DEFAULT_AIRY_PROPOSAL;
 
     console.log('[LEAD DEFAULT RESOLUTION]', {
       userId: targetUser,
       workspaceId: targetWorkspace,
-      personalDefaultTemplateId: null,
-      personalDefaultTemplateUserId: null,
-      personalDefaultTemplateWorkspaceId: null,
+      systemTemplateId: sysId,
       isSystemTemplate: true,
       resolutionReason: 'GLOBAL_SYSTEM_FALLBACK'
     });
@@ -154,7 +270,7 @@ export async function resolveUserDefaultQuotationTemplate(
         is_system_template: true,
         is_default: false,
       },
-      document: docJson,
+      document: finalSysDoc,
       isSystemTemplate: true,
       isDefault: false,
       resolutionReason: 'GLOBAL_SYSTEM_FALLBACK',

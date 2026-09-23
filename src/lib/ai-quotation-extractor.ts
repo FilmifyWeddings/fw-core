@@ -684,6 +684,16 @@ export function mapAiOutputToQuotationDocument(aiData: any, baseSchema: any, con
 
   const normalizedFinalDoc = normalizeQuotationData(doc, baseSchema);
 
+  // Strictly preserve template design and typography tokens from baseSchema
+  if (baseSchema) {
+    if (baseSchema.look) normalizedFinalDoc.look = baseSchema.look;
+    if (baseSchema.theme || baseSchema.look) normalizedFinalDoc.theme = baseSchema.theme || baseSchema.look;
+    if (baseSchema.primaryFont) normalizedFinalDoc.primaryFont = baseSchema.primaryFont;
+    if (baseSchema.secondaryFont) normalizedFinalDoc.secondaryFont = baseSchema.secondaryFont;
+    if (baseSchema.colorPalette && !normalizedFinalDoc.colorPalette) normalizedFinalDoc.colorPalette = baseSchema.colorPalette;
+    if (baseSchema.designName && !normalizedFinalDoc.designName) normalizedFinalDoc.designName = baseSchema.designName;
+  }
+
   return {
     document: normalizedFinalDoc,
     summary,

@@ -58,12 +58,13 @@ export async function POST(req: NextRequest) {
 
     // 2. Fetch Existing Quotation Document or use currentDocument
     let existingDoc: any = currentDocument || null;
-    const targetQId = quotationId || body.templateId;
-    if (!existingDoc && targetQId) {
+    if (!existingDoc && quotationId) {
       const { data: qDoc } = await supabaseAdmin
         .from('quotation_documents')
         .select('content_json')
-        .eq('template_id', targetQId)
+        .or(`template_id.eq.${quotationId},id.eq.${quotationId}`)
+        .order('updated_at', { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (qDoc?.content_json) {
@@ -72,7 +73,7 @@ export async function POST(req: NextRequest) {
         const { data: qRecord } = await supabaseAdmin
           .from('quotations')
           .select('content_json')
-          .eq('id', targetQId)
+          .eq('id', quotationId)
           .maybeSingle();
         if (qRecord?.content_json) existingDoc = qRecord.content_json;
       }
@@ -80,10 +81,11 @@ export async function POST(req: NextRequest) {
 
     // STRICT GUARANTEE: If no document exists, resolve the explicitly selected template (or user default template)
     if (!existingDoc) {
+      const templateToUse = explicitTemplateId || selectedTemplateId || body.templateId;
       const resolvedDefault = await resolveUserDefaultQuotationTemplate(
         workspaceId, 
         userId, 
-        explicitTemplateId || selectedTemplateId
+        templateToUse
       );
       existingDoc = resolvedDefault.document || DEFAULT_AIRY_PROPOSAL;
     }
@@ -113,7 +115,7 @@ export async function POST(req: NextRequest) {
     console.log('[AI EXTRACTION REQUEST]', {
       leadId,
       workspaceId,
-      targetQId: targetQId || 'NEW',
+      targetQId: quotationId || 'NEW',
       hasAdditionalNotes: !!additionalNotes
     });
 

@@ -117,10 +117,19 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const baseSourceDoc = initialDoc || templateDoc || DEFAULT_AIRY_PROPOSAL;
-    const clonedDoc = JSON.parse(JSON.stringify(baseSourceDoc));
+    const baseSourceDoc = initialDoc ? normalizeQuotationData(initialDoc, templateDoc) : templateDoc;
+    const clonedDoc = JSON.parse(JSON.stringify(baseSourceDoc || DEFAULT_AIRY_PROPOSAL));
     clonedDoc.lead_id = leadId;
     clonedDoc.lead_version = nextVersion;
+
+    // Explicitly guarantee chosen template design tokens are preserved
+    clonedDoc.look = templateDoc.look || clonedDoc.look || 'cyprus-sand-dune';
+    clonedDoc.theme = templateDoc.theme || templateDoc.look || clonedDoc.theme || clonedDoc.look;
+    clonedDoc.primaryFont = templateDoc.primaryFont || clonedDoc.primaryFont || 'Cormorant Garamond';
+    clonedDoc.secondaryFont = templateDoc.secondaryFont || clonedDoc.secondaryFont || 'Plus Jakarta Sans';
+    if (templateDoc.colorPalette && !clonedDoc.colorPalette) {
+      clonedDoc.colorPalette = templateDoc.colorPalette;
+    }
 
     if (!clonedDoc.cover) clonedDoc.cover = {};
     clonedDoc.cover.coupleName = effectiveCoupleName;
@@ -201,6 +210,8 @@ export async function POST(req: NextRequest) {
           total_amount: clonedDoc.pricingPage?.basePrice || 0,
           status: 'draft',
           is_final: false,
+          content_json: clonedDoc,
+          canvas_data: clonedDoc,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         });

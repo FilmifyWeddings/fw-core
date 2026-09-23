@@ -200,7 +200,9 @@ export function LeadQuotationModal({
       if (cached && Array.isArray(cached) && cached.length > 0) {
         setAvailableTemplates(cached);
         const activeDefault = cached.find((t: StudioTemplateItem) => t.is_default) || cached[0];
-        if (activeDefault) setSelectedTemplateId(activeDefault.id);
+        if (activeDefault) {
+          setSelectedTemplateId(prev => prev || activeDefault.id);
+        }
       }
 
       const headers: Record<string, string> = {};
@@ -220,16 +222,19 @@ export function LeadQuotationModal({
         setAvailableTemplates(json.templates);
         safeSessionSet(cacheKey, json.templates);
 
-        const activeDefault = json.templates.find((t: StudioTemplateItem) => t.is_default) || json.templates[0];
-        if (activeDefault) {
-          setSelectedTemplateId(activeDefault.id);
-        }
+        setSelectedTemplateId(prev => {
+          if (prev && json.templates.some((t: StudioTemplateItem) => t.id === prev)) {
+            return prev; // Strictly preserve current user selection!
+          }
+          const activeDefault = json.templates.find((t: StudioTemplateItem) => t.is_default) || json.templates[0];
+          return activeDefault ? activeDefault.id : prev;
+        });
       } else if (availableTemplates.length === 0) {
         const defaultTemplates: StudioTemplateItem[] = [
           { id: 'FW-2WT85Y0', title: 'Wedding - Design 1', is_default: true, category: 'Wedding' }
         ];
         setAvailableTemplates(defaultTemplates);
-        setSelectedTemplateId(defaultTemplates[0].id);
+        setSelectedTemplateId(prev => prev || defaultTemplates[0].id);
       }
     } catch (e) {
       console.warn('[LeadQuotationModal] Templates fetch warning:', e);
@@ -238,7 +243,7 @@ export function LeadQuotationModal({
           { id: 'FW-2WT85Y0', title: 'Wedding - Design 1', is_default: true, category: 'Wedding' }
         ];
         setAvailableTemplates(defaultTemplates);
-        setSelectedTemplateId(defaultTemplates[0].id);
+        setSelectedTemplateId(prev => prev || defaultTemplates[0].id);
       }
     }
   };
@@ -494,6 +499,7 @@ export function LeadQuotationModal({
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
+      const chosenTemplateId = selectedTemplateId || (availableTemplates.length > 0 ? availableTemplates[0]?.id : 'FW-2WT85Y0');
 
       const res = await fetch('/api/quotations/create-for-lead', {
         method: 'POST',
@@ -504,7 +510,7 @@ export function LeadQuotationModal({
         body: JSON.stringify({
           leadId: lead.id,
           clientName: lead.name,
-          explicitTemplateId: selectedTemplateId || undefined
+          explicitTemplateId: chosenTemplateId
         })
       });
 
@@ -659,7 +665,7 @@ export function LeadQuotationModal({
   if (!isOpen || !lead) return null;
 
   const fallbackTemplates: StudioTemplateItem[] = [
-    { id: 'GLOBAL_DEFAULT', title: 'Wedding - Design 1', is_default: true, category: 'Wedding' }
+    { id: 'FW-2WT85Y0', title: 'Wedding - Design 1', is_default: true, category: 'Wedding' }
   ];
   const effectiveTemplateList = availableTemplates.length > 0 ? availableTemplates : fallbackTemplates;
   const currentSelectedTemplate = effectiveTemplateList.find(t => t.id === selectedTemplateId) || effectiveTemplateList[0];
@@ -1096,7 +1102,8 @@ export function LeadQuotationModal({
         onClose={() => setAiModalOpen(false)}
         lead={lead}
         quotationId={aiTargetQuotationId}
-        selectedTemplateId={selectedTemplateId}
+        selectedTemplateId={selectedTemplateId || currentSelectedTemplate?.id}
+        availableTemplates={effectiveTemplateList}
         onApplied={(updatedDoc, targetQId) => {
           setAiModalOpen(false);
           const openingCouple = updatedDoc?.cover?.coupleName || lead?.raw_payload?.couple_name || lead?.client_name || lead?.name || 'Quotation';
