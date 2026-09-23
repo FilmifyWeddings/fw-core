@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { resolveUserDefaultQuotationTemplate } from '@/lib/quotation-template-resolver';
-import { extractFinancialsFromQuotation, extractCoupleNameFromQuotation, syncQuotationToTeamManagerEvents } from '@/lib/quotation-finance-sync';
+import { extractFinancialsFromQuotation, extractCoupleNameFromQuotation, syncQuotationToTeamManagerEvents, isPlaceholderCoupleName } from '@/lib/quotation-finance-sync';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -267,10 +267,11 @@ export async function GET(
       .eq('lead_id', leadId);
 
     if (!matchedDocs || matchedDocs.length === 0) {
+      const leadShortId = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
       const { data: fallbackDocs } = await supabaseAdmin
         .from('quotation_documents')
         .select('id, template_id, lead_id, version, lead_version, content_json, created_at, updated_at')
-        .or(`template_id.eq.FW-L-${leadId},template_id.eq.FW-Q-${leadId}`);
+        .or(`lead_id.eq.${leadId},template_id.ilike.%${leadShortId}%`);
       matchedDocs = fallbackDocs || [];
     }
 
@@ -321,14 +322,19 @@ export async function GET(
         : (idx + 1);
 
       const cover = content.cover || {};
-      const coupleName = cover.coupleName 
-        || (cover.groomName && cover.brideName ? `${cover.groomName} & ${cover.brideName}` : (cover.groomName || cover.brideName || ''))
-        || effectiveLead.raw_payload?.couple_name
-        || effectiveLead.raw_payload?.couple_names
-        || (effectiveLead as any).couple_names
-        || effectiveLead.client_name
-        || effectiveLead.name 
-        || 'Couple';
+      const rawLeadCouple = 
+        effectiveLead.raw_payload?.couple_name ||
+        effectiveLead.raw_payload?.couple_names ||
+        (effectiveLead as any).couple_names ||
+        (effectiveLead.name && !['client', 'valued client', 'lead'].includes(effectiveLead.name.toLowerCase().trim()) ? effectiveLead.name : '') ||
+        (effectiveLead.client_name && !['client', 'valued client', 'lead'].includes(effectiveLead.client_name.toLowerCase().trim()) ? effectiveLead.client_name : '');
+
+      const coverCouple = cover.coupleName 
+        || (cover.groomName && cover.brideName ? `${cover.groomName} & ${cover.brideName}` : (cover.groomName || cover.brideName || ''));
+
+      const coupleName = (!isPlaceholderCoupleName(coverCouple) && coverCouple)
+        ? coverCouple
+        : (rawLeadCouple || coverCouple || 'Couple');
 
       const eventType = cover.eventType 
         || content.eventGroup 
@@ -369,15 +375,12 @@ export async function GET(
 
       const responseBadge = versionResponses[0] || null;
 
+      const finalTargetId = (effectiveLead as any).final_quotation_id || (effectiveLead as any).raw_payload?.final_quotation_id;
       const isFinal = !!(
+        (finalTargetId && (finalTargetId === doc.template_id || finalTargetId === doc.id)) ||
         content.is_final === true || 
         doc.is_final === true || 
-        (matchingQuote as any)?.is_final === true ||
-        matchingQuote?.status === 'accepted' ||
-        (effectiveLead as any).final_quotation_id === doc.template_id ||
-        (effectiveLead as any).final_quotation_id === doc.id ||
-        (effectiveLead as any).raw_payload?.final_quotation_id === doc.template_id ||
-        (effectiveLead as any).raw_payload?.final_quotation_id === doc.id
+        (!finalTargetId && ((matchingQuote as any)?.is_final === true || matchingQuote?.status === 'accepted'))
       );
 
       const displayTitle = isFinal
@@ -476,24 +479,33 @@ export async function POST(
       ? structuredClone(sourceJson) 
       : JSON.parse(JSON.stringify(sourceJson));
 
-    const leadName = lead.name || 'Valued Client';
-    const groomName = leadName.includes('&') ? leadName.split('&')[0].trim() : leadName;
-    const brideName = leadName.includes('&') ? leadName.split('&')[1].trim() : 'Partner';
+    const rawLeadCouple = 
+      lead.raw_payload?.couple_name ||
+      lead.raw_payload?.couple_names ||
+      (lead as any).couple_names ||
+      (lead.name && !['client', 'valued client', 'lead'].includes(lead.name.toLowerCase().trim()) ? lead.name : '') ||
+      (lead.client_name && !['client', 'valued client', 'lead'].includes(lead.client_name.toLowerCase().trim()) ? lead.client_name : '') ||
+      lead.name ||
+      'Valued Client';
+
+    const leadName = rawLeadCouple;
+    const groomName = rawLeadCouple.includes('&') ? rawLeadCouple.split('&')[0].trim() : rawLeadCouple;
+    const brideName = rawLeadCouple.includes('&') ? rawLeadCouple.split('&')[1].trim() : 'Partner';
 
     newQuotationJson.lead_id = leadId;
     newQuotationJson.lead_version = nextLeadVersion;
 
     if (!newQuotationJson.cover) newQuotationJson.cover = {};
-    newQuotationJson.cover.coupleName = leadName;
-    newQuotationJson.cover.groomName = groomName || newQuotationJson.cover.groomName || 'Rahul';
-    newQuotationJson.cover.brideName = brideName || newQuotationJson.cover.brideName || 'Neha';
+    newQuotationJson.cover.coupleName = rawLeadCouple;
+    newQuotationJson.cover.groomName = groomName;
+    newQuotationJson.cover.brideName = brideName;
 
     if (lead.raw_payload?.venue || lead.raw_payload?.location) {
       newQuotationJson.cover.locationName = lead.raw_payload.venue || lead.raw_payload.location;
     }
 
     const eventType = newQuotationJson.cover?.eventType || 'Wedding';
-    const quotationTitle = `${leadName} - ${eventType} Quotation`;
+    const quotationTitle = `${rawLeadCouple} - ${eventType} Quotation`;
     newQuotationJson.designName = quotationTitle;
     newQuotationJson.title = quotationTitle;
 

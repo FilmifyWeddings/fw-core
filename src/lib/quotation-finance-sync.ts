@@ -116,60 +116,98 @@ export function normalizeToIsoDate(rawDate?: any, fallbackDate?: string | null):
   return fallback;
 }
 
+export const TEMPLATE_PLACEHOLDER_NAMES = new Set([
+  'yash & twinkle',
+  'yash and twinkle',
+  'twinkle & yash',
+  'rahul & neha',
+  'rahul and neha',
+  'neha & rahul',
+  'valued client',
+  'wedding client',
+  'couple',
+  'demo',
+  'sample',
+  'bride & groom',
+  'groom & bride',
+  'client',
+  'default client'
+]);
+
+export function isPlaceholderCoupleName(name?: string | null): boolean {
+  if (!name) return true;
+  const clean = name.toLowerCase().trim();
+  if (!clean || clean === 'undefined' || clean === 'null') return true;
+  return TEMPLATE_PLACEHOLDER_NAMES.has(clean);
+}
+
 /**
  * Extracts the primary couple name from any quotation content_json payload (cover page, meta, etc.),
- * prioritizing the couple name entered on the quotation over raw lead names.
+ * prioritizing the couple name entered on the quotation over raw lead names,
+ * while strictly ignoring template dummy placeholder names like 'YASH & TWINKLE' or 'Rahul & Neha'.
  */
 export function extractCoupleNameFromQuotation(
   contentJson: any,
   fallbackName?: string | null
 ): string {
+  const safeFallback = (fallbackName && !isPlaceholderCoupleName(fallbackName)) ? fallbackName.trim() : '';
+
   if (!contentJson || typeof contentJson !== 'object') {
-    return (fallbackName || 'Wedding Client').trim();
+    return safeFallback || 'Wedding Client';
   }
 
   const cover = contentJson.cover || {};
   const meta = contentJson.meta || {};
 
-  // 1. Explicit couple name in cover
+  // 1. Explicit couple name in cover (if not a placeholder)
   const coverCoupleName = typeof cover.coupleName === 'string' ? cover.coupleName.trim() : '';
-  if (coverCoupleName && coverCoupleName.toLowerCase() !== 'undefined' && coverCoupleName.toLowerCase() !== 'null') {
+  if (coverCoupleName && !isPlaceholderCoupleName(coverCoupleName)) {
     return coverCoupleName;
   }
 
-  // 2. Groom & Bride combined from cover
+  // 2. Groom & Bride combined from cover (if not a placeholder)
   const groom = typeof cover.groomName === 'string' ? cover.groomName.trim() : '';
   const bride = typeof cover.brideName === 'string' ? cover.brideName.trim() : '';
   if (groom && bride) {
-    return `${groom} & ${bride}`;
+    const combined = `${groom} & ${bride}`;
+    if (!isPlaceholderCoupleName(combined)) {
+      return combined;
+    }
   }
-  if (groom) return groom;
-  if (bride) return bride;
+  if (groom && !isPlaceholderCoupleName(groom)) return groom;
+  if (bride && !isPlaceholderCoupleName(bride)) return bride;
 
-  // 3. Client name in quotation root or meta
+  // 3. Fallback lead couple name if available
+  if (safeFallback) {
+    return safeFallback;
+  }
+
+  // 4. Client name in quotation root or meta
   const rootClient = typeof contentJson.client_name === 'string' ? contentJson.client_name.trim() : '';
-  if (rootClient && rootClient.toLowerCase() !== 'undefined' && rootClient.toLowerCase() !== 'null') {
+  if (rootClient && !isPlaceholderCoupleName(rootClient)) {
     return rootClient;
   }
 
   const metaClient = typeof meta.client_name === 'string' ? meta.client_name.trim() : '';
-  if (metaClient && metaClient.toLowerCase() !== 'undefined' && metaClient.toLowerCase() !== 'null') {
+  if (metaClient && !isPlaceholderCoupleName(metaClient)) {
     return metaClient;
   }
 
   const metaCouple = typeof meta.couple_name === 'string' ? meta.couple_name.trim() : '';
-  if (metaCouple && metaCouple.toLowerCase() !== 'undefined' && metaCouple.toLowerCase() !== 'null') {
+  if (metaCouple && !isPlaceholderCoupleName(metaCouple)) {
     return metaCouple;
   }
 
-  // 4. Project name if it contains wedding couple
+  // 5. Project name if it contains wedding couple
   const metaProj = typeof meta.project_name === 'string' ? meta.project_name.trim() : '';
   if (metaProj && (metaProj.includes('&') || metaProj.toLowerCase().includes('wedding'))) {
     const cleaned = metaProj.replace(/\bwedding\b/gi, '').replace(/\bphotography\b/gi, '').replace(/[-–—]/g, '').trim();
-    if (cleaned) return cleaned;
+    if (cleaned && !isPlaceholderCoupleName(cleaned)) return cleaned;
   }
 
-  return (fallbackName || 'Wedding Client').trim();
+  return (coverCoupleName && !isPlaceholderCoupleName(coverCoupleName)) 
+    ? coverCoupleName 
+    : (safeFallback || fallbackName || 'Wedding Client').trim();
 }
 
 /**
@@ -309,10 +347,11 @@ export async function findFinalQuotationForLead(supabaseClient: any, leadId: str
   if (!leadId) return null;
 
   try {
+    const leadShortId = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
     const { data: docs, error: docErr } = await supabaseClient
       .from('quotation_documents')
       .select('id, template_id, lead_id, version, lead_version, content_json, created_at, updated_at')
-      .or(`lead_id.eq.${leadId},template_id.eq.FW-L-${leadId},template_id.eq.FW-Q-${leadId}`)
+      .or(`lead_id.eq.${leadId},template_id.ilike.%${leadShortId}%`)
       .order('created_at', { ascending: false });
 
     if (!docErr && docs && docs.length > 0) {
@@ -345,17 +384,18 @@ export async function findAllQuotationsForLead(supabaseClient: any, leadId: stri
   if (!leadId) return [];
 
   try {
+    const leadShortId = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
     const { data: docs, error: docErr } = await supabaseClient
       .from('quotation_documents')
       .select('id, template_id, lead_id, version, lead_version, content_json, created_at, updated_at')
-      .or(`lead_id.eq.${leadId},template_id.eq.FW-L-${leadId},template_id.eq.FW-Q-${leadId}`)
+      .or(`lead_id.eq.${leadId},template_id.ilike.%${leadShortId}%`)
       .order('created_at', { ascending: false });
 
     if (!docErr && docs && docs.length > 0) {
       return docs.map((d: any) => {
         const v = Number(d.lead_version || d.version || 1);
         const financials = d.content_json ? extractFinancialsFromQuotation(d.content_json) : null;
-        const couple = d.content_json?.cover?.coupleName || d.content_json?.cover?.groomName || '';
+        const couple = extractCoupleNameFromQuotation(d.content_json, '');
         return {
           id: d.id,
           template_id: d.template_id,

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { verifyMetaAuth } from '@/lib/meta-auth';
-import { extractCoupleNameFromQuotation } from '@/lib/quotation-finance-sync';
+import { extractCoupleNameFromQuotation, isPlaceholderCoupleName } from '@/lib/quotation-finance-sync';
 
 export const runtime = 'nodejs';
 
@@ -140,12 +140,15 @@ export async function GET(req: NextRequest) {
       const coupleFromCover = cover.coupleName 
         || (cover.groomName && cover.brideName ? `${cover.groomName} & ${cover.brideName}` : (cover.groomName || cover.brideName || ''));
 
-      const coupleName = coupleFromCover
-        || matchedQ?.couple_names 
+      const isPlaceholder = !coupleFromCover || isPlaceholderCoupleName(coupleFromCover);
+
+      const coupleName = (!isPlaceholder && coupleFromCover)
+        ? coupleFromCover
+        : (matchedQ?.couple_names 
         || matchedQ?.client_name 
         || leadInfo?.coupleName 
         || leadInfo?.name 
-        || 'Client';
+        || 'Client');
 
       const eventType = (cover.eventType || content.eventGroup || 'Wedding').replace(/quotation/i, '').trim();
       const rawTitle = content.designName || content.title || matchedQ?.title;

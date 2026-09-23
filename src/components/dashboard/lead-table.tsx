@@ -687,26 +687,49 @@ export function LeadTable({
       return updated;
     });
 
-    // Synchronize lead row directly so lead.final_quotation_id and status reflect immediately in 0ms without lag
+    // Find the Booked stage from stagesState
+    const bookedStage = stagesState.find((s: any) => 
+      s.id === 'booked' || String(s.name || '').toLowerCase() === 'booked'
+    );
+    const bookedStageId = bookedStage?.id || 'booked';
+    const bookedStageName = bookedStage?.name || 'Booked';
+    const updatedFinalId = hasFinal ? (finalItem?.template_id || finalItem?.id || 'final') : null;
+
+    // Synchronize lead row directly so lead.final_quotation_id, stage_id, and status reflect immediately in 0ms without lag
     setLeads(prev => prev.map(l => {
       if (l.id === leadId) {
-        const updatedFinalId = hasFinal ? (finalItem?.template_id || finalItem?.id || 'final') : null;
         return {
           ...l,
-          status: (hasFinal ? 'closed' : (l.status === 'closed' ? 'warm' : l.status)) as LeadStatus,
+          stage_id: hasFinal ? bookedStageId : l.stage_id,
           stage: hasFinal ? 'booked' : (l.stage === 'booked' ? 'warm' : l.stage),
+          status: hasFinal ? (bookedStageName as any) : ((l.status as string) === 'booked' || l.status === 'closed' ? 'warm' : l.status),
           final_quotation_id: updatedFinalId,
           raw_payload: {
             ...l.raw_payload,
-            status: hasFinal ? 'closed' : l.raw_payload?.status,
+            stage_id: hasFinal ? bookedStageId : l.raw_payload?.stage_id,
             stage: hasFinal ? 'booked' : (l.raw_payload?.stage === 'booked' ? 'warm' : l.raw_payload?.stage),
+            status: hasFinal ? bookedStageName : l.raw_payload?.status,
             final_quotation_id: updatedFinalId
           }
         };
       }
       return l;
     }));
-  }, []);
+
+    // Trigger onLeadUpdate so the background database update executes immediately
+    if (hasFinal && onLeadUpdate) {
+      onLeadUpdate(leadId, {
+        stage_id: bookedStageId,
+        stage: 'booked',
+        status: bookedStageName as any,
+        final_quotation_id: updatedFinalId
+      });
+    } else if (!hasFinal && onLeadUpdate) {
+      onLeadUpdate(leadId, {
+        final_quotation_id: null
+      });
+    }
+  }, [stagesState, onLeadUpdate]);
 
   // Columns & Configurations state
   const [columns, setColumns] = useState<ColumnConfig[]>(INITIAL_COLUMNS);

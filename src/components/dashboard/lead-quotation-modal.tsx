@@ -719,15 +719,22 @@ export function LeadQuotationModal({
                               const coupleFromCover = cover.coupleName 
                                 || (cover.groomName && cover.brideName ? `${cover.groomName} & ${cover.brideName}` : (cover.groomName || cover.brideName || ''));
 
-                              const coupleName = coupleFromCover
-                                || (q as any).couple_name
-                                || (q as any).couple_names
-                                || lead?.raw_payload?.couple_name
-                                || lead?.raw_payload?.couple_names
-                                || (lead as any)?.couple_names
-                                || lead?.client_name
-                                || lead?.name
-                                || 'Couple';
+                              const leadCouple = 
+                                lead?.raw_payload?.couple_name ||
+                                lead?.raw_payload?.couple_names ||
+                                (lead as any)?.couple_names ||
+                                (lead?.name && !['client', 'valued client', 'lead'].includes(lead.name.toLowerCase().trim()) ? lead.name : '') ||
+                                (lead?.client_name && !['client', 'valued client', 'lead'].includes(lead.client_name.toLowerCase().trim()) ? lead.client_name : '');
+
+                              const isPlaceholder = !coupleFromCover || [
+                                'yash & twinkle', 'yash and twinkle', 'twinkle & yash',
+                                'rahul & neha', 'rahul and neha', 'neha & rahul',
+                                'valued client', 'wedding client', 'couple', 'demo', 'sample'
+                              ].includes(coupleFromCover.toLowerCase().trim());
+
+                              const coupleName = (!isPlaceholder && coupleFromCover)
+                                ? coupleFromCover
+                                : (leadCouple || (q as any).couple_name || (q as any).couple_names || coupleFromCover || 'Couple');
 
                               const cleanEventType = (cover.eventType || (q as any).event_type || content.eventGroup || (lead as any)?.event_type || 'Wedding').replace(/quotation/i, '').trim() || 'Wedding';
 
