@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, Clock, Calendar, CheckCircle2, X, AlertCircle, Check, Loader2 } from 'lucide-react';
+import { Bell, Clock, Calendar, CheckCircle2, X, AlertCircle, Check, Loader2, User, Sparkles } from 'lucide-react';
 
 export interface StudioReminder {
   id: string;
@@ -25,6 +25,70 @@ interface TeamRemindersDrawerProps {
   onCountChange?: (count: number) => void;
 }
 
+interface ParsedReminder {
+  category: 'shoot' | 'album';
+  categoryLabel: string;
+  categoryIcon: string;
+  personName: string;
+  coupleName: string;
+  eventName: string;
+  noteText: string;
+}
+
+function parseReminder(rem: StudioReminder): ParsedReminder {
+  const fullText = (rem.reminder_text || rem.title || '').trim();
+  let category: 'shoot' | 'album' = 'shoot';
+  let coupleName = '';
+  let eventName = '';
+  let noteText = fullText;
+
+  const lower = fullText.toLowerCase();
+  if (
+    lower.includes('album') || 
+    lower.includes('photobook') || 
+    lower.includes('printing') || 
+    lower.includes('video edit') || 
+    lower.includes('photo edit') || 
+    lower.includes('color grade') ||
+    lower.includes('teaser')
+  ) {
+    category = 'album';
+  } else {
+    category = 'shoot';
+  }
+
+  // Check pattern: "Reminder for [Couple / Item]: [Note]"
+  const matchColon = fullText.match(/^reminder\s*(?:for)?\s*([^:]+):\s*(.+)$/i);
+  if (matchColon) {
+    const header = matchColon[1].trim();
+    noteText = matchColon[2].trim();
+
+    if (header.includes('-')) {
+      const parts = header.split('-');
+      coupleName = parts[0].trim();
+      eventName = parts.slice(1).join('-').trim();
+    } else {
+      coupleName = header;
+    }
+  } else if (fullText.includes(' - ')) {
+    const parts = fullText.split(' - ');
+    if (parts.length >= 2) {
+      coupleName = parts[0].replace(/^reminder\s*:/i, '').trim();
+      noteText = parts.slice(1).join(' - ').trim();
+    }
+  }
+
+  return {
+    category,
+    categoryLabel: category === 'shoot' ? 'Shoot' : 'Album / Post-Prod',
+    categoryIcon: category === 'shoot' ? '📸' : '🎨',
+    personName: rem.recipient_name || '',
+    coupleName,
+    eventName,
+    noteText: noteText || fullText,
+  };
+}
+
 export default function TeamRemindersDrawer({
   isOpen,
   onClose,
@@ -36,6 +100,19 @@ export default function TeamRemindersDrawer({
   const [confirmTarget, setConfirmTarget] = useState<StudioReminder | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
+  // Keep ref to onCountChange to prevent calling it during render or causing dependency cycles
+  const onCountChangeRef = useRef(onCountChange);
+  useEffect(() => {
+    onCountChangeRef.current = onCountChange;
+  }, [onCountChange]);
+
+  const notifyCount = useCallback((count: number) => {
+    // Schedule outside current render pass to prevent "Cannot update a component while rendering a different component"
+    setTimeout(() => {
+      onCountChangeRef.current?.(count);
+    }, 0);
+  }, []);
+
   const fetchReminders = useCallback(async () => {
     setLoading(true);
     try {
@@ -44,14 +121,14 @@ export default function TeamRemindersDrawer({
       const data = await res.json();
       if (data.success && Array.isArray(data.reminders)) {
         setReminders(data.reminders);
-        onCountChange?.(data.reminders.length);
+        notifyCount(data.reminders.length);
       }
     } catch (err) {
       console.warn('[TeamRemindersDrawer] fetch error:', err);
     } finally {
       setLoading(false);
     }
-  }, [workspaceId, onCountChange]);
+  }, [workspaceId, notifyCount]);
 
   useEffect(() => {
     if (isOpen) {
@@ -80,11 +157,9 @@ export default function TeamRemindersDrawer({
       });
       const data = await res.json();
       if (data.success) {
-        setReminders(prev => {
-          const updated = prev.filter(r => r.id !== reminder.id);
-          onCountChange?.(updated.length);
-          return updated;
-        });
+        const nextReminders = reminders.filter(r => r.id !== reminder.id);
+        setReminders(nextReminders);
+        notifyCount(nextReminders.length);
         setConfirmTarget(null);
       }
     } catch (err) {
@@ -138,7 +213,7 @@ export default function TeamRemindersDrawer({
           {/* Header */}
           <div className="p-4 sm:p-5 bg-white border-b border-stone-200 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-2xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-900">
+              <div className="w-9 h-9 rounded-2xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-900 shadow-2xs">
                 <Bell className="w-5 h-5 text-amber-700" />
               </div>
               <div>
@@ -184,7 +259,7 @@ export default function TeamRemindersDrawer({
             ) : (
               reminders.map((rem) => {
                 const overdue = isOverdue(rem.reminder_at);
-                const titleText = rem.reminder_text || rem.title || 'Shoot Task Follow-up';
+                const parsed = parseReminder(rem);
 
                 return (
                   <motion.div
@@ -193,14 +268,26 @@ export default function TeamRemindersDrawer({
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95 }}
-                    className="p-3.5 bg-white rounded-2xl border border-stone-200 shadow-2xs hover:shadow-xs transition space-y-2.5"
+                    className="p-3.5 bg-white rounded-2xl border-2 border-stone-200/90 shadow-2xs hover:shadow-xs transition space-y-2.5"
                   >
-                    <div className="flex items-start justify-between gap-2">
+                    {/* Top Row: Category Badge + Status Pill + Time + Done Action */}
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase flex items-center gap-1 font-mono ${
+                        {/* Category Badge */}
+                        <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-2xs ${
+                          parsed.category === 'shoot'
+                            ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                            : 'bg-indigo-100 text-indigo-900 border border-indigo-300'
+                        }`}>
+                          <span>{parsed.categoryIcon}</span>
+                          <span>{parsed.categoryLabel}</span>
+                        </span>
+
+                        {/* Scheduled / Overdue Pill */}
+                        <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase flex items-center gap-1 font-mono shadow-2xs ${
                           overdue
-                            ? 'bg-rose-100 text-rose-800 border border-rose-300'
-                            : 'bg-amber-100 text-amber-900 border border-amber-300'
+                            ? 'bg-rose-100 text-rose-800 border border-rose-300 animate-pulse'
+                            : 'bg-emerald-50 text-emerald-800 border border-emerald-300'
                         }`}>
                           <Clock className="w-3 h-3" />
                           <span>{overdue ? '⚠️ Overdue' : '⏰ Scheduled'}</span>
@@ -215,7 +302,7 @@ export default function TeamRemindersDrawer({
                       <button
                         type="button"
                         onClick={() => setConfirmTarget(rem)}
-                        className="px-2.5 py-1 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-[11px] font-black flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                        className="px-2.5 py-1 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-[11px] font-black flex items-center gap-1 transition cursor-pointer shadow-2xs shrink-0"
                         title="Mark reminder as completed"
                       >
                         <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
@@ -223,15 +310,28 @@ export default function TeamRemindersDrawer({
                       </button>
                     </div>
 
-                    <p className="text-xs font-semibold text-stone-800 leading-relaxed">
-                      {titleText}
-                    </p>
+                    {/* Person / Assignee & Couple/Event Information */}
+                    <div className="space-y-1">
+                      {parsed.personName && (
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-stone-700">
+                          <User className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                          <span>Assignee: <strong className="text-stone-900 font-black">{parsed.personName}</strong></span>
+                        </div>
+                      )}
 
-                    {rem.recipient_name && (
-                      <div className="text-[11px] text-stone-500 font-medium">
-                        Assignee: <span className="font-bold text-stone-700">{rem.recipient_name}</span>
-                      </div>
-                    )}
+                      {(parsed.coupleName || parsed.eventName) && (
+                        <div className="text-xs font-extrabold text-amber-950 flex items-center gap-1.5 flex-wrap">
+                          {parsed.coupleName && <span>{parsed.coupleName}</span>}
+                          {parsed.coupleName && parsed.eventName && <span className="text-stone-300">•</span>}
+                          {parsed.eventName && <span className="text-stone-600 font-semibold">{parsed.eventName}</span>}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Note Box */}
+                    <div className="p-2.5 rounded-xl bg-[#FAF8F5] border border-amber-200/70 text-xs font-medium text-stone-800 leading-relaxed italic">
+                      "{parsed.noteText}"
+                    </div>
                   </motion.div>
                 );
               })
