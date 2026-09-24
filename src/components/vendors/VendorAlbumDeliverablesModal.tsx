@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, Sparkles, BookOpen, Calendar, Clock, IndianRupee, 
-  CheckCircle2, AlertCircle, Plus, Search, ExternalLink, 
+  CheckCircle2, AlertCircle, AlertTriangle, Plus, Search, ExternalLink, 
   FileText, MessageSquare, ChevronDown, Check, Download, 
   Printer, ArrowUpRight, ShieldCheck, User, Phone, Mail,
   RefreshCw, CheckSquare, Square, Layers, Edit3, Trash2,
@@ -15,6 +15,7 @@ import {
   VendorAlbumOrder, 
   AssignmentCategory, 
   detectDeliverableCategory,
+  detectDeliverableSegment,
   formatNoteDateTime,
   saveVendorAlbumOrder
 } from '@/lib/services/vendorDeliverablesService';
@@ -164,6 +165,198 @@ export function getSegmentConfig(segmentName: string) {
     headerText: 'text-[#292524]',
     badgeBg: 'bg-stone-100 text-stone-700 border-stone-200',
   };
+}
+
+export const ALL_SEGMENT_EVENT_TYPES = [
+  'Wedding',
+  'Pre-Wedding',
+  'Engagement',
+  'Reception',
+  'Sangeet',
+  'Haldi',
+  'Mehndi',
+  'Ring Ceremony',
+  'Cocktail',
+  'Roka',
+  'Post-Wedding',
+  'Anniversary',
+  'Baby Shower',
+  'Maternity',
+  'Birthday',
+  'Corporate Event',
+];
+
+export function getRemainingDaysBadge(dueDateStr?: string) {
+  if (!dueDateStr) return null;
+  const match = dueDateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  let due: Date;
+  if (match) {
+    due = new Date(parseInt(match[1], 10), parseInt(match[2], 10) - 1, parseInt(match[3], 10));
+  } else {
+    due = new Date(dueDateStr);
+  }
+  if (isNaN(due.getTime())) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  due.setHours(0, 0, 0, 0);
+
+  const diffDays = Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) {
+    return {
+      label: `Overdue (${Math.abs(diffDays)}d)`,
+      className: 'bg-rose-100 text-rose-700 border-rose-300 font-black animate-pulse',
+    };
+  }
+  if (diffDays === 0) {
+    return {
+      label: 'Due Today',
+      className: 'bg-amber-100 text-amber-800 border-amber-300 font-black',
+    };
+  }
+  if (diffDays === 1) {
+    return {
+      label: 'Tomorrow (1d)',
+      className: 'bg-sky-100 text-sky-800 border-sky-300 font-bold',
+    };
+  }
+  return {
+    label: `${diffDays}d left`,
+    className: 'bg-stone-100 text-stone-700 border-stone-200 font-bold',
+  };
+}
+
+export function ThreeDSegmentSelect({
+  value,
+  onChange,
+  className = '',
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  className?: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [customInput, setCustomInput] = useState('');
+  const [isCustomMode, setIsCustomMode] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+        setIsCustomMode(false);
+      }
+    }
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen]);
+
+  const currentConfig = getSegmentConfig(value || 'Wedding');
+
+  return (
+    <div ref={containerRef} className={`relative inline-block ${className}`}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(prev => !prev)}
+        className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl bg-white border-2 border-amber-300/80 hover:border-amber-500 shadow-2xs hover:shadow-xs transition text-xs font-black text-stone-900 cursor-pointer min-w-[160px] active:translate-y-0.5"
+      >
+        <div className="flex items-center gap-1.5 truncate">
+          <span className="text-sm">{currentConfig.emoji}</span>
+          <span className="truncate">{value || 'Select Segment'}</span>
+        </div>
+        <ChevronDown className={`w-3.5 h-3.5 text-stone-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute left-0 top-full mt-1.5 z-[200] w-64 bg-white rounded-2xl border-2 border-amber-300 shadow-xl overflow-hidden p-2 space-y-1.5 text-stone-900">
+          <div className="text-[10px] font-black uppercase tracking-wider text-stone-400 px-2 pt-1 pb-0.5">
+            Select Event Segment
+          </div>
+
+          <div className="max-h-56 overflow-y-auto space-y-1 pr-1">
+            {ALL_SEGMENT_EVENT_TYPES.map(eventType => {
+              const cfg = getSegmentConfig(eventType);
+              const isSelected = (value || '').toLowerCase() === eventType.toLowerCase();
+              return (
+                <button
+                  key={eventType}
+                  type="button"
+                  onClick={() => {
+                    onChange(eventType);
+                    setIsOpen(false);
+                    setIsCustomMode(false);
+                  }}
+                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer text-left ${
+                    isSelected
+                      ? 'bg-amber-100/80 text-amber-950 font-black border border-amber-300'
+                      : 'hover:bg-amber-50/60 text-stone-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">{cfg.emoji}</span>
+                    <span>{eventType}</span>
+                  </div>
+                  {isSelected && <Check className="w-3.5 h-3.5 text-amber-600 stroke-[3]" />}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="pt-1.5 border-t border-stone-100">
+            {isCustomMode ? (
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="text"
+                  autoFocus
+                  value={customInput}
+                  onChange={(e) => setCustomInput(e.target.value)}
+                  placeholder="Enter custom segment..."
+                  className="flex-1 px-2 py-1 text-xs border border-amber-400 rounded-lg focus:outline-none font-bold"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && customInput.trim()) {
+                      onChange(customInput.trim());
+                      setIsOpen(false);
+                      setIsCustomMode(false);
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  disabled={!customInput.trim()}
+                  onClick={() => {
+                    if (customInput.trim()) {
+                      onChange(customInput.trim());
+                      setIsOpen(false);
+                      setIsCustomMode(false);
+                    }
+                  }}
+                  className="px-2 py-1 bg-amber-500 text-white rounded-lg text-xs font-bold disabled:opacity-50 cursor-pointer"
+                >
+                  Set
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCustomMode(true);
+                  setCustomInput(value);
+                }}
+                className="w-full text-center px-2 py-1 text-[11px] font-bold text-amber-800 hover:bg-amber-50 rounded-lg transition cursor-pointer"
+              >
+                + Custom Segment Name
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function VendorAlbumDeliverablesModal({
@@ -366,6 +559,42 @@ export default function VendorAlbumDeliverablesModal({
     }
   ]);
   const [isSavingAssignment, setIsSavingAssignment] = useState(false);
+
+  // Add Segment directly to Client Card State
+  const [cardAddSegmentClient, setCardAddSegmentClient] = useState<string | null>(null);
+  const [cardNewSegmentName, setCardNewSegmentName] = useState('Pre-Wedding');
+  const [cardNewDeliverables, setCardNewDeliverables] = useState<Array<{
+    id: string;
+    title: string;
+    specs: string;
+    dueDate: string;
+    agreedFee: string;
+    paidAmount: string;
+  }>>([
+    {
+      id: 'del_1',
+      title: 'Cinematic Teaser',
+      specs: '1-2 Mins',
+      dueDate: '',
+      agreedFee: '0',
+      paidAmount: '0',
+    }
+  ]);
+  const [isSavingCardSegment, setIsSavingCardSegment] = useState(false);
+
+  // Single Deliverable directly to Segment State
+  const [addDeliverableTarget, setAddDeliverableTarget] = useState<{ clientName: string; segmentName: string } | null>(null);
+  const [targetDelivTitle, setTargetDelivTitle] = useState('Cinematic Teaser');
+  const [targetDelivSpecs, setTargetDelivSpecs] = useState('1-2 Mins');
+  const [targetDelivDueDate, setTargetDelivDueDate] = useState('');
+  const [targetDelivFee, setTargetDelivFee] = useState('0');
+  const [targetDelivPaid, setTargetDelivPaid] = useState('0');
+  const [isSavingSingleDeliverable, setIsSavingSingleDeliverable] = useState(false);
+
+  // Delete Confirmation States
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<VendorAlbumOrder | null>(null);
+  const [deleteSegmentConfirmTarget, setDeleteSegmentConfirmTarget] = useState<{ clientName: string; segmentName: string; orders: VendorAlbumOrder[] } | null>(null);
+  const [isDeletingTarget, setIsDeletingTarget] = useState(false);
 
   // Video Deliverables Presets (Synced from Post-Production Settings)
   const [ppVideoPresets, setPpVideoPresets] = useState<Array<{ title: string; specs: string }>>([
@@ -576,7 +805,7 @@ export default function VendorAlbumDeliverablesModal({
     });
 
     targetOrders.forEach(o => {
-      const seg = o.segment || 'Wedding';
+      const seg = detectDeliverableSegment(o.segment, o.item_title || o.album_type, o.event_name);
       if (seg && typeof seg === 'string') {
         const clean = seg.trim();
         if (clean) set.add(clean);
@@ -740,7 +969,7 @@ export default function VendorAlbumDeliverablesModal({
 
       // 5b. Segments Multi-Select Filter (For Non-Shoots: Pre-Wedding, Wedding, Reception, Haldi, etc.)
       if (activeCategoryTab !== 'shoot' && filters.segments && filters.segments.length > 0) {
-        const orderSeg = (o.segment || 'Wedding').toLowerCase();
+        const orderSeg = detectDeliverableSegment(o.segment, o.item_title || o.album_type, o.event_name).toLowerCase();
         const matchesSeg = filters.segments.some(seg => seg.toLowerCase() === orderSeg);
         if (!matchesSeg) return false;
       }
@@ -1310,10 +1539,229 @@ export default function VendorAlbumDeliverablesModal({
     }
   };
 
-  // Delete Order Handler
-  const handleDeleteOrder = async (orderId: string) => {
-    if (!confirm('Are you sure you want to remove this assignment?')) return;
-    setOrders(prev => prev.filter(o => o.id !== orderId));
+  // Delete Order Handler (Trigger 3D Modal instead of native window.confirm)
+  const handleDeleteOrder = (orderId: string) => {
+    const target = orders.find(o => o.id === orderId);
+    if (target) {
+      setDeleteConfirmTarget(target);
+    }
+  };
+
+  // Single Deliverable Deletion with DB Persistence
+  const handleConfirmDeleteDeliverable = async () => {
+    if (!deleteConfirmTarget) return;
+    setIsDeletingTarget(true);
+    try {
+      const res = await fetch('/api/vendors/albums', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_id: deleteConfirmTarget.id })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setOrders(prev => {
+          const updated = prev.filter(o => o.id !== deleteConfirmTarget.id);
+          memCachedVendorOrders.set(vendor.id, updated);
+          try {
+            localStorage.setItem(`sc_vendor_album_orders_${workspaceId}_${vendor.id}`, JSON.stringify(updated));
+            localStorage.setItem(`vendor_orders_${vendor.id}`, JSON.stringify(updated));
+          } catch (_) {}
+          return updated;
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to delete deliverable:', err);
+    } finally {
+      setIsDeletingTarget(false);
+      setDeleteConfirmTarget(null);
+    }
+  };
+
+  // Entire Segment Deletion with DB Persistence
+  const handleConfirmDeleteSegment = async () => {
+    if (!deleteSegmentConfirmTarget) return;
+    setIsDeletingTarget(true);
+    const orderIdsToDelete = deleteSegmentConfirmTarget.orders.map(o => o.id);
+    try {
+      await Promise.all(
+        orderIdsToDelete.map(orderId =>
+          fetch('/api/vendors/albums', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ order_id: orderId })
+          })
+        )
+      );
+      setOrders(prev => {
+        const updated = prev.filter(o => !orderIdsToDelete.includes(o.id));
+        memCachedVendorOrders.set(vendor.id, updated);
+        try {
+          localStorage.setItem(`sc_vendor_album_orders_${workspaceId}_${vendor.id}`, JSON.stringify(updated));
+          localStorage.setItem(`vendor_orders_${vendor.id}`, JSON.stringify(updated));
+        } catch (_) {}
+        return updated;
+      });
+    } catch (err) {
+      console.warn('Failed to delete segment:', err);
+    } finally {
+      setIsDeletingTarget(false);
+      setDeleteSegmentConfirmTarget(null);
+    }
+  };
+
+  // Handler for adding a deliverable under a specific segment
+  const handleSaveSingleDeliverable = async () => {
+    if (!addDeliverableTarget || !targetDelivTitle.trim()) return;
+    setIsSavingSingleDeliverable(true);
+    const targetCategory = activeCategoryTab === 'shoot' ? 'video_editing' : activeCategoryTab;
+    const agreedNum = Number(targetDelivFee) || 0;
+    const paidNum = Number(targetDelivPaid) || 0;
+    const balNum = Math.max(0, agreedNum - paidNum);
+    const isFull = agreedNum > 0 && paidNum >= agreedNum;
+
+    const payload: Partial<VendorAlbumOrder> = {
+      workspace_id: workspaceId,
+      partner_id: vendor.id,
+      partner_name: vendor.name,
+      partner_email: vendor.email || '',
+      client_name: addDeliverableTarget.clientName,
+      category: targetCategory,
+      segment: detectDeliverableSegment(addDeliverableTarget.segmentName, targetDelivTitle.trim()),
+      item_title: targetDelivTitle.trim(),
+      album_type: targetDelivTitle.trim(),
+      event_name: addDeliverableTarget.segmentName,
+      specs: targetDelivSpecs.trim(),
+      sheet_count: 0,
+      page_count: 0,
+      rate_per_sheet: 0,
+      total_amount: agreedNum,
+      paid_amount: paidNum,
+      balance_amount: balNum,
+      order_status: '',
+      payment_status: isFull ? 'PAID' : paidNum > 0 ? 'PARTIAL' : 'PENDING',
+      order_date: new Date().toISOString().split('T')[0],
+      due_date: targetDelivDueDate || '',
+      notes: '',
+    };
+
+    try {
+      const res = await fetch('/api/vendors/albums', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const json = await res.json();
+      if (json.success && json.order) {
+        const savedOrder: VendorAlbumOrder = json.order;
+        setOrders(prev => {
+          const updated = [savedOrder, ...prev];
+          memCachedVendorOrders.set(vendor.id, updated);
+          try {
+            localStorage.setItem(`sc_vendor_album_orders_${workspaceId}_${vendor.id}`, JSON.stringify(updated));
+            localStorage.setItem(`vendor_orders_${vendor.id}`, JSON.stringify(updated));
+          } catch (_) {}
+          return updated;
+        });
+
+        if (paidNum > 0) {
+          await fetch('/api/vendors/payments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              orderId: savedOrder.id,
+              workspaceId,
+              partnerId: vendor.id,
+              partnerName: vendor.name,
+              totalAmount: agreedNum,
+              paidAmount: paidNum,
+              isFullPaid: isFull,
+              paymentMode: 'Bank Transfer',
+              paymentDate: new Date().toISOString().split('T')[0],
+              notes: `Initial advance recorded for ${targetDelivTitle}`,
+              autoSyncExpense: true
+            })
+          }).catch(() => {});
+        }
+
+        setAddDeliverableTarget(null);
+      }
+    } catch (err) {
+      console.warn('Failed to save deliverable:', err);
+    } finally {
+      setIsSavingSingleDeliverable(false);
+    }
+  };
+
+  // Handler for adding a new segment with deliverables to a client
+  const handleSaveCardSegment = async () => {
+    if (!cardAddSegmentClient || !cardNewSegmentName.trim()) return;
+    setIsSavingCardSegment(true);
+    const targetCategory = activeCategoryTab === 'shoot' ? 'video_editing' : activeCategoryTab;
+    const isAlbum = targetCategory === 'album_design' || targetCategory === 'album_printing';
+    const createdOrders: VendorAlbumOrder[] = [];
+
+    try {
+      const segName = detectDeliverableSegment(cardNewSegmentName.trim());
+      for (const del of cardNewDeliverables) {
+        if (!del.title.trim()) continue;
+        const agreedNum = Number(del.agreedFee) || 0;
+        const paidNum = Number(del.paidAmount) || 0;
+        const balNum = Math.max(0, agreedNum - paidNum);
+        const isFull = agreedNum > 0 && paidNum >= agreedNum;
+
+        const payload: Partial<VendorAlbumOrder> = {
+          workspace_id: workspaceId,
+          partner_id: vendor.id,
+          partner_name: vendor.name,
+          partner_email: vendor.email || '',
+          client_name: cardAddSegmentClient,
+          category: targetCategory,
+          segment: segName,
+          item_title: del.title.trim(),
+          album_type: del.title.trim(),
+          event_name: segName,
+          specs: del.specs.trim(),
+          sheet_count: isAlbum ? 30 : 0,
+          page_count: isAlbum ? 60 : 0,
+          rate_per_sheet: 0,
+          total_amount: agreedNum,
+          paid_amount: paidNum,
+          balance_amount: balNum,
+          order_status: '',
+          payment_status: isFull ? 'PAID' : paidNum > 0 ? 'PARTIAL' : 'PENDING',
+          order_date: new Date().toISOString().split('T')[0],
+          due_date: del.dueDate || '',
+          notes: '',
+        };
+
+        const res = await fetch('/api/vendors/albums', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const json = await res.json();
+        if (json.success && json.order) {
+          createdOrders.push(json.order);
+        }
+      }
+
+      if (createdOrders.length > 0) {
+        setOrders(prev => {
+          const updated = [...createdOrders, ...prev];
+          memCachedVendorOrders.set(vendor.id, updated);
+          try {
+            localStorage.setItem(`sc_vendor_album_orders_${workspaceId}_${vendor.id}`, JSON.stringify(updated));
+            localStorage.setItem(`vendor_orders_${vendor.id}`, JSON.stringify(updated));
+          } catch (_) {}
+          return updated;
+        });
+        setCardAddSegmentClient(null);
+      }
+    } catch (err) {
+      console.warn('Failed to add segment to client:', err);
+    } finally {
+      setIsSavingCardSegment(false);
+    }
   };
 
   // Open Payment & Commercials Modal
@@ -2091,6 +2539,28 @@ export default function VendorAlbumDeliverablesModal({
                             </span>
                           )}
 
+                          {/* + SEGMENT BUTTON FOR THIS COUPLE */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCardAddSegmentClient(grp.clientName);
+                              setCardNewSegmentName('Pre-Wedding');
+                              setCardNewDeliverables([{
+                                id: `del_${Date.now()}`,
+                                title: ppVideoPresets[0]?.title || 'Cinematic Teaser',
+                                specs: ppVideoPresets[0]?.specs || '',
+                                dueDate: '',
+                                agreedFee: '0',
+                                paidAmount: '0',
+                              }]);
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-xs font-black flex items-center gap-1.5 transition cursor-pointer shadow-2xs active:translate-y-0.5"
+                            title={`Add new segment to ${grp.clientName}`}
+                          >
+                            <Plus className="w-3.5 h-3.5 stroke-[3] text-amber-700" />
+                            <span>+ Segment</span>
+                          </button>
+
                           {/* SINGLE COUPLE INVOICE BUTTON (Entire Couple Level) */}
                           <button
                             type="button"
@@ -2126,7 +2596,7 @@ export default function VendorAlbumDeliverablesModal({
                       {(() => {
                         const segMap = new Map<string, VendorAlbumOrder[]>();
                         grp.orders.forEach(order => {
-                          const seg = (order.segment && order.segment.trim()) || 'Wedding';
+                          const seg = detectDeliverableSegment(order.segment, order.item_title || order.album_type, order.event_name);
                           if (!segMap.has(seg)) segMap.set(seg, []);
                           segMap.get(seg)!.push(order);
                         });
@@ -2139,16 +2609,44 @@ export default function VendorAlbumDeliverablesModal({
                               return (
                                 <div key={segment} className="space-y-2">
                                   {/* Distinct Bold Color-Coded Segment Header */}
-                                  <div className={`px-3.5 py-1.5 rounded-xl border flex items-center justify-between shadow-2xs ${segConfig.containerBg} ${segConfig.containerBorder}`}>
+                                  <div className={`px-3.5 py-1.5 rounded-xl border flex items-center justify-between shadow-2xs flex-wrap gap-2 ${segConfig.containerBg} ${segConfig.containerBorder}`}>
                                     <div className="flex items-center gap-2">
                                       <span className="text-sm">{segConfig.emoji}</span>
                                       <span className={`text-xs font-black uppercase tracking-wider ${segConfig.headerText}`}>
                                         {segment}
                                       </span>
                                     </div>
-                                    <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border shadow-2xs ${segConfig.badgeBg}`}>
-                                      {segOrders.length} {segOrders.length === 1 ? 'Deliverable' : 'Deliverables'}
-                                    </span>
+                                    <div className="flex items-center gap-2">
+                                      <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border shadow-2xs ${segConfig.badgeBg}`}>
+                                        {segOrders.length} {segOrders.length === 1 ? 'Deliverable' : 'Deliverables'}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setAddDeliverableTarget({ clientName: grp.clientName, segmentName: segment });
+                                          setTargetDelivTitle(ppVideoPresets[0]?.title || 'Cinematic Teaser');
+                                          setTargetDelivSpecs(ppVideoPresets[0]?.specs || '');
+                                          setTargetDelivDueDate('');
+                                          setTargetDelivFee('0');
+                                          setTargetDelivPaid('0');
+                                        }}
+                                        className="px-2.5 py-1 rounded-lg bg-white/95 hover:bg-white text-stone-800 hover:text-amber-900 border border-stone-200 text-[10px] font-bold flex items-center gap-1 shadow-2xs transition cursor-pointer active:translate-y-0.5"
+                                        title={`Add deliverable directly to ${segment}`}
+                                      >
+                                        <Plus className="w-2.5 h-2.5 stroke-[3] text-amber-600" />
+                                        <span>+ Deliverable</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setDeleteSegmentConfirmTarget({ clientName: grp.clientName, segmentName: segment, orders: segOrders });
+                                        }}
+                                        className="p-1 rounded-lg text-stone-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                                        title={`Delete ${segment} segment and its ${segOrders.length} deliverables`}
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
                                   </div>
 
                                   {/* Segment Deliverables Rows */}
@@ -2342,6 +2840,16 @@ export default function VendorAlbumDeliverablesModal({
                                                 title="Edit Deliverable Title, Specs & Due Date"
                                               >
                                                 <Edit3 className="w-3 h-3" />
+                                              </button>
+
+                                              {/* Delete Deliverable Modal Trigger */}
+                                              <button
+                                                type="button"
+                                                onClick={() => setDeleteConfirmTarget(order)}
+                                                className="p-1.5 rounded-xl border border-stone-200 bg-white hover:bg-rose-50 hover:border-rose-300 text-stone-400 hover:text-rose-600 transition cursor-pointer shadow-2xs"
+                                                title="Delete Deliverable"
+                                              >
+                                                <Trash2 className="w-3 h-3" />
                                               </button>
                                             </div>
                                           </div>
@@ -2680,32 +3188,12 @@ export default function VendorAlbumDeliverablesModal({
                         <div key={segment.id} className="p-4 bg-white rounded-2xl border-2 border-amber-200/90 shadow-2xs space-y-3">
                           {/* Segment Top Bar */}
                           <div className="flex items-center justify-between gap-2 border-b border-amber-100 pb-2.5 flex-wrap">
-                            <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+                            <div className="flex items-center gap-2 flex-1 min-w-[220px]">
                               <span className="text-xs font-black text-amber-800">❖ Segment:</span>
-                              <input
-                                type="text"
+                              <ThreeDSegmentSelect
                                 value={segment.name}
-                                onChange={(e) => handleUpdateSegmentName(segment.id, e.target.value)}
-                                placeholder="e.g. Wedding, Pre-Wedding, Reception"
-                                className="px-2.5 py-1 bg-amber-50/70 border border-amber-300 rounded-lg text-xs font-black text-stone-900 focus:outline-none focus:border-amber-600"
+                                onChange={(val) => handleUpdateSegmentName(segment.id, val)}
                               />
-                              {/* Quick Segment Presets */}
-                              <div className="hidden sm:flex items-center gap-1 overflow-x-auto">
-                                {SEGMENT_PRESETS.slice(0, 4).map(preset => (
-                                  <button
-                                    key={preset}
-                                    type="button"
-                                    onClick={() => handleUpdateSegmentName(segment.id, preset)}
-                                    className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition cursor-pointer ${
-                                      segment.name === preset
-                                        ? 'bg-amber-500 text-white border-amber-600'
-                                        : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'
-                                    }`}
-                                  >
-                                    {preset}
-                                  </button>
-                                ))}
-                              </div>
                             </div>
 
                             <div className="flex items-center gap-2">
@@ -2787,9 +3275,20 @@ export default function VendorAlbumDeliverablesModal({
 
                                   {/* Due Date */}
                                   <div className="sm:col-span-3 space-y-1">
-                                    <label className="text-[9px] font-black uppercase tracking-wider text-stone-500 block">
-                                      Deadline
-                                    </label>
+                                    <div className="flex items-center justify-between">
+                                      <label className="text-[9px] font-black uppercase tracking-wider text-stone-500 block">
+                                        Deadline
+                                      </label>
+                                      {(() => {
+                                        const badge = getRemainingDaysBadge(del.dueDate);
+                                        if (!badge) return null;
+                                        return (
+                                          <span className={`px-1.5 py-0.5 rounded text-[9px] border shadow-2xs font-mono font-bold ${badge.className}`}>
+                                            {badge.label}
+                                          </span>
+                                        );
+                                      })()}
+                                    </div>
                                     <input
                                       type="date"
                                       value={del.dueDate}
@@ -2956,6 +3455,17 @@ export default function VendorAlbumDeliverablesModal({
                           />
                         </div>
 
+                        {/* Event Segment */}
+                        <div>
+                          <label className="text-[10px] font-black uppercase tracking-wider text-stone-600 block mb-1">
+                            Event Segment
+                          </label>
+                          <ThreeDSegmentSelect
+                            value={editingOrder.segment || detectDeliverableSegment(undefined, editingOrder.item_title || editingOrder.album_type, editingOrder.event_name)}
+                            onChange={(val) => setEditingOrder({ ...editingOrder, segment: val, event_name: val })}
+                          />
+                        </div>
+
                         {/* Specs / Duration / Subtitle */}
                         <div>
                           <label className="text-[10px] font-black uppercase tracking-wider text-stone-600 block mb-1">
@@ -2973,9 +3483,20 @@ export default function VendorAlbumDeliverablesModal({
                         {/* Due Date & Client Name */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div>
-                            <label className="text-[10px] font-black uppercase tracking-wider text-stone-600 block mb-1">
-                              Due Date
-                            </label>
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="text-[10px] font-black uppercase tracking-wider text-stone-600 block">
+                                Due Date
+                              </label>
+                              {(() => {
+                                const badge = getRemainingDaysBadge(editingOrder.due_date || editingOrder.event_date);
+                                if (!badge) return null;
+                                return (
+                                  <span className={`px-1.5 py-0.5 rounded text-[9px] border shadow-2xs font-mono font-bold ${badge.className}`}>
+                                    {badge.label}
+                                  </span>
+                                );
+                              })()}
+                            </div>
                             <input
                               type="date"
                               value={editingOrder.due_date || editingOrder.event_date || ''}
@@ -3367,6 +3888,508 @@ export default function VendorAlbumDeliverablesModal({
                         className="px-5 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-black text-xs rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
                       >
                         {isSubmittingComment ? 'Saving...' : 'Save Note'}
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              </div>
+            )}
+          </AnimatePresence>
+
+          {/* 3D Delete Single Deliverable Confirmation Modal */}
+          <AnimatePresence>
+            {deleteConfirmTarget && (
+              <div className="fixed inset-0 z-[160] flex items-center justify-center p-4 bg-black/65 backdrop-blur-xs">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.92, y: 15 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.92, y: 15 }}
+                  className="bg-white rounded-3xl shadow-2xl border-2 border-rose-300 max-w-md w-full overflow-hidden text-stone-900"
+                >
+                  <div className="p-5 bg-gradient-to-r from-rose-900 via-stone-900 to-rose-900 text-white flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-2xl bg-rose-500/20 border border-rose-400/40 flex items-center justify-center shadow-inner">
+                        <AlertTriangle className="w-5 h-5 text-rose-400 stroke-[2.5]" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-black tracking-tight">Delete Deliverable?</h4>
+                        <p className="text-[11px] text-rose-200/80 font-medium">This will permanently remove this item</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setDeleteConfirmTarget(null)}
+                      className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center cursor-pointer transition shadow-2xs"
+                    >
+                      <X className="w-4 h-4 stroke-[2.5]" />
+                    </button>
+                  </div>
+
+                  <div className="p-5 space-y-4 bg-[#FFFDFB]">
+                    <div className="p-3.5 rounded-2xl bg-rose-50/70 border border-rose-200 space-y-1.5 text-xs">
+                      <div className="text-[10px] font-black uppercase text-rose-700 tracking-wider">
+                        {deleteConfirmTarget.client_name}
+                      </div>
+                      <div className="text-sm font-black text-stone-900">
+                        {deleteConfirmTarget.item_title || deleteConfirmTarget.album_type || 'Deliverable'}
+                      </div>
+                      {deleteConfirmTarget.specs && (
+                        <div className="text-[11px] font-mono text-stone-600 font-bold">
+                          Specs: {deleteConfirmTarget.specs}
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2 pt-1 font-mono text-[11px] text-stone-700 font-bold">
+                        <span>Fee: ₹{Number(deleteConfirmTarget.total_amount || 0).toLocaleString('en-IN')}</span>
+                        <span>•</span>
+                        <span>Paid: ₹{Number(deleteConfirmTarget.paid_amount || 0).toLocaleString('en-IN')}</span>
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-stone-600 leading-relaxed font-medium">
+                      Are you sure you want to remove this deliverable from <span className="font-bold text-stone-900">{deleteConfirmTarget.client_name}</span>? This action cannot be undone.
+                    </p>
+
+                    <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-stone-100">
+                      <button
+                        type="button"
+                        disabled={isDeletingTarget}
+                        onClick={() => setDeleteConfirmTarget(null)}
+                        className="px-4 py-2 border border-stone-200 text-stone-700 text-xs font-bold rounded-xl hover:bg-stone-50 transition cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isDeletingTarget}
+                        onClick={handleConfirmDeleteDeliverable}
+                        className="px-5 py-2 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-700 hover:to-rose-800 text-white font-black text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>{isDeletingTarget ? 'Deleting...' : 'Delete Deliverable'}</span>
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              </div>
+            )}
+          </AnimatePresence>
+
+          {/* 3D Delete Entire Segment Confirmation Modal */}
+          <AnimatePresence>
+            {deleteSegmentConfirmTarget && (
+              <div className="fixed inset-0 z-[160] flex items-center justify-center p-4 bg-black/65 backdrop-blur-xs">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.92, y: 15 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.92, y: 15 }}
+                  className="bg-white rounded-3xl shadow-2xl border-2 border-rose-300 max-w-md w-full overflow-hidden text-stone-900"
+                >
+                  <div className="p-5 bg-gradient-to-r from-rose-900 via-stone-900 to-rose-900 text-white flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-2xl bg-rose-500/20 border border-rose-400/40 flex items-center justify-center shadow-inner">
+                        <AlertTriangle className="w-5 h-5 text-rose-400 stroke-[2.5]" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-black tracking-tight">Delete Segment?</h4>
+                        <p className="text-[11px] text-rose-200/80 font-medium">
+                          {deleteSegmentConfirmTarget.orders.length} {deleteSegmentConfirmTarget.orders.length === 1 ? 'deliverable' : 'deliverables'} will be deleted
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setDeleteSegmentConfirmTarget(null)}
+                      className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center cursor-pointer transition shadow-2xs"
+                    >
+                      <X className="w-4 h-4 stroke-[2.5]" />
+                    </button>
+                  </div>
+
+                  <div className="p-5 space-y-4 bg-[#FFFDFB]">
+                    <div className="p-3.5 rounded-2xl bg-rose-50/70 border border-rose-200 space-y-1.5 text-xs">
+                      <div className="text-[10px] font-black uppercase text-rose-700 tracking-wider">
+                        {deleteSegmentConfirmTarget.clientName}
+                      </div>
+                      <div className="text-sm font-black text-stone-900">
+                        Segment: {deleteSegmentConfirmTarget.segmentName}
+                      </div>
+                      <div className="text-[11px] text-stone-600 font-bold">
+                        Includes: {deleteSegmentConfirmTarget.orders.map(o => o.item_title || o.album_type).join(', ')}
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-stone-600 leading-relaxed font-medium">
+                      Are you sure you want to delete the <span className="font-bold text-stone-900">{deleteSegmentConfirmTarget.segmentName}</span> segment and all <span className="font-bold text-rose-700">{deleteSegmentConfirmTarget.orders.length} deliverables</span> under it?
+                    </p>
+
+                    <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-stone-100">
+                      <button
+                        type="button"
+                        disabled={isDeletingTarget}
+                        onClick={() => setDeleteSegmentConfirmTarget(null)}
+                        className="px-4 py-2 border border-stone-200 text-stone-700 text-xs font-bold rounded-xl hover:bg-stone-50 transition cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isDeletingTarget}
+                        onClick={handleConfirmDeleteSegment}
+                        className="px-5 py-2 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-700 hover:to-rose-800 text-white font-black text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>{isDeletingTarget ? 'Deleting...' : `Delete All (${deleteSegmentConfirmTarget.orders.length})`}</span>
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              </div>
+            )}
+          </AnimatePresence>
+
+          {/* 3D Add Segment to Client Modal */}
+          <AnimatePresence>
+            {cardAddSegmentClient && (
+              <div className="fixed inset-0 z-[150] flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                  className="bg-[#FAF8F5] rounded-3xl shadow-2xl border-2 border-amber-300 max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden text-stone-900"
+                >
+                  <div className="p-4 sm:p-5 bg-gradient-to-r from-[#2B231D] via-[#3A3027] to-[#2B231D] text-amber-50 flex items-center justify-between border-b border-amber-900/40">
+                    <div>
+                      <h4 className="text-sm sm:text-base font-black flex items-center gap-2">
+                        <Plus className="w-4 h-4 text-amber-400 stroke-[3]" />
+                        <span>+ Add Segment • {cardAddSegmentClient}</span>
+                      </h4>
+                      <p className="text-xs text-amber-200/70 font-semibold mt-0.5">
+                        Add a new event segment and deliverables to {cardAddSegmentClient}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCardAddSegmentClient(null)}
+                      className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center cursor-pointer transition shadow-xs"
+                    >
+                      <X className="w-4 h-4 stroke-[2.5]" />
+                    </button>
+                  </div>
+
+                  <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4">
+                    {/* Segment Selector with ThreeDSegmentSelect */}
+                    <div className="bg-white p-3.5 rounded-2xl border border-amber-200/80 shadow-2xs space-y-2">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-stone-500 block">
+                        Event Segment
+                      </label>
+                      <ThreeDSegmentSelect
+                        value={cardNewSegmentName}
+                        onChange={setCardNewSegmentName}
+                      />
+                    </div>
+
+                    {/* Deliverables in this Segment */}
+                    <div className="space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <h5 className="text-xs font-black uppercase tracking-wider text-stone-600">
+                          Segment Deliverables ({cardNewDeliverables.length})
+                        </h5>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const defaultDel = ppVideoPresets[0] || { title: 'Cinematic Teaser', specs: '1-2 Mins' };
+                            setCardNewDeliverables(prev => [
+                              ...prev,
+                              {
+                                id: `del_${Date.now()}`,
+                                title: defaultDel.title,
+                                specs: defaultDel.specs,
+                                dueDate: '',
+                                agreedFee: '0',
+                                paidAmount: '0',
+                              }
+                            ]);
+                          }}
+                          className="px-2.5 py-1 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[11px] font-bold flex items-center gap-1 border border-emerald-300 transition cursor-pointer"
+                        >
+                          <Plus className="w-3 h-3 stroke-[3]" />
+                          <span>+ Add Deliverable</span>
+                        </button>
+                      </div>
+
+                      {cardNewDeliverables.map((del) => (
+                        <div key={del.id} className="p-3 bg-white rounded-2xl border border-stone-200 shadow-2xs space-y-2.5">
+                          <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+                            <div className="sm:col-span-5 space-y-1">
+                              <div className="flex items-center justify-between">
+                                <label className="text-[9px] font-black uppercase tracking-wider text-stone-500">
+                                  Deliverable Title
+                                </label>
+                                {ppVideoPresets.length > 0 && (
+                                  <select
+                                    onChange={(e) => {
+                                      const found = ppVideoPresets.find(p => p.title === e.target.value);
+                                      if (found) {
+                                        setCardNewDeliverables(prev => prev.map(d => d.id === del.id ? { ...d, title: found.title, specs: found.specs || d.specs } : d));
+                                      }
+                                    }}
+                                    value=""
+                                    className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 cursor-pointer"
+                                  >
+                                    <option value="" disabled>⚡ Pick Preset</option>
+                                    {ppVideoPresets.map(p => (
+                                      <option key={p.title} value={p.title}>{p.title}</option>
+                                    ))}
+                                  </select>
+                                )}
+                              </div>
+                              <input
+                                type="text"
+                                value={del.title}
+                                onChange={(e) => setCardNewDeliverables(prev => prev.map(d => d.id === del.id ? { ...d, title: e.target.value } : d))}
+                                placeholder="e.g. Cinematic Teaser"
+                                className="w-full p-1.5 bg-stone-50 border border-stone-200 rounded-lg text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500"
+                              />
+                            </div>
+
+                            <div className="sm:col-span-3 space-y-1">
+                              <label className="text-[9px] font-black uppercase tracking-wider text-stone-500 block">
+                                Specs / Duration
+                              </label>
+                              <input
+                                type="text"
+                                value={del.specs}
+                                onChange={(e) => setCardNewDeliverables(prev => prev.map(d => d.id === del.id ? { ...d, specs: e.target.value } : d))}
+                                placeholder="e.g. 1-2 Mins"
+                                className="w-full p-1.5 bg-stone-50 border border-stone-200 rounded-lg text-xs font-medium text-stone-800 focus:outline-none focus:border-amber-500"
+                              />
+                            </div>
+
+                            <div className="sm:col-span-3 space-y-1">
+                              <div className="flex items-center justify-between">
+                                <label className="text-[9px] font-black uppercase tracking-wider text-stone-500 block">
+                                  Deadline
+                                </label>
+                                {(() => {
+                                  const badge = getRemainingDaysBadge(del.dueDate);
+                                  if (!badge) return null;
+                                  return (
+                                    <span className={`px-1.5 py-0.5 rounded text-[9px] border shadow-2xs font-mono font-bold ${badge.className}`}>
+                                      {badge.label}
+                                    </span>
+                                  );
+                                })()}
+                              </div>
+                              <input
+                                type="date"
+                                value={del.dueDate}
+                                onChange={(e) => setCardNewDeliverables(prev => prev.map(d => d.id === del.id ? { ...d, dueDate: e.target.value } : d))}
+                                className="w-full p-1.5 bg-stone-50 border border-stone-200 rounded-lg text-xs font-bold font-mono text-stone-800 focus:outline-none focus:border-amber-500"
+                              />
+                            </div>
+
+                            <div className="sm:col-span-1 flex items-end justify-center pt-2 sm:pt-4">
+                              {cardNewDeliverables.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setCardNewDeliverables(prev => prev.filter(d => d.id !== del.id))}
+                                  className="p-1 rounded text-stone-400 hover:text-rose-600 transition cursor-pointer"
+                                  title="Delete Deliverable"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 pt-1 border-t border-stone-100">
+                            <div>
+                              <label className="text-[9px] font-bold text-stone-500 block">Agreed Fee (₹)</label>
+                              <input
+                                type="number"
+                                value={del.agreedFee}
+                                onChange={(e) => setCardNewDeliverables(prev => prev.map(d => d.id === del.id ? { ...d, agreedFee: e.target.value } : d))}
+                                className="w-full p-1 bg-stone-50 border border-stone-200 rounded-lg text-xs font-mono font-bold text-stone-900"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[9px] font-bold text-emerald-700 block">Paid Amount (₹)</label>
+                              <input
+                                type="number"
+                                value={del.paidAmount}
+                                onChange={(e) => setCardNewDeliverables(prev => prev.map(d => d.id === del.id ? { ...d, paidAmount: e.target.value } : d))}
+                                className="w-full p-1 bg-stone-50 border border-stone-200 rounded-lg text-xs font-mono font-bold text-emerald-700"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-amber-50/70 border-t border-amber-200/90 flex items-center justify-end gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setCardAddSegmentClient(null)}
+                      className="px-4 py-2 border border-stone-200 text-stone-600 text-xs font-bold rounded-xl hover:bg-stone-50 transition cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isSavingCardSegment || !cardNewSegmentName.trim()}
+                      onClick={handleSaveCardSegment}
+                      className="px-5 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-black text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      <Check className="w-3.5 h-3.5 stroke-[3]" />
+                      <span>{isSavingCardSegment ? 'Adding Segment...' : 'Save & Add Segment'}</span>
+                    </button>
+                  </div>
+                </motion.div>
+              </div>
+            )}
+          </AnimatePresence>
+
+          {/* 3D Add Single Deliverable to Segment Modal */}
+          <AnimatePresence>
+            {addDeliverableTarget && (
+              <div className="fixed inset-0 z-[150] flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                  className="bg-white rounded-3xl shadow-2xl border-2 border-amber-300 max-w-md w-full overflow-hidden text-stone-900"
+                >
+                  <div className="p-4 sm:p-5 bg-gradient-to-r from-[#2B231D] via-[#3A3027] to-[#2B231D] text-amber-50 flex items-center justify-between border-b border-amber-900/40">
+                    <div>
+                      <h4 className="text-sm sm:text-base font-black flex items-center gap-2">
+                        <Plus className="w-4 h-4 text-amber-400 stroke-[3]" />
+                        <span>+ Add Deliverable</span>
+                      </h4>
+                      <p className="text-xs text-amber-200/70 font-semibold mt-0.5">
+                        {addDeliverableTarget.clientName} • {addDeliverableTarget.segmentName}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAddDeliverableTarget(null)}
+                      className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center cursor-pointer transition shadow-xs"
+                    >
+                      <X className="w-4 h-4 stroke-[2.5]" />
+                    </button>
+                  </div>
+
+                  <div className="p-5 space-y-3.5 bg-[#FFFDFB]">
+                    {/* Deliverable Title & Preset Picker */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-black uppercase tracking-wider text-stone-600">
+                          Deliverable Title *
+                        </label>
+                        {ppVideoPresets.length > 0 && (
+                          <select
+                            onChange={(e) => {
+                              const found = ppVideoPresets.find(p => p.title === e.target.value);
+                              if (found) {
+                                setTargetDelivTitle(found.title);
+                                if (found.specs) setTargetDelivSpecs(found.specs);
+                              }
+                            }}
+                            value=""
+                            className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 cursor-pointer"
+                          >
+                            <option value="" disabled>⚡ Pick Preset</option>
+                            {ppVideoPresets.map(p => (
+                              <option key={p.title} value={p.title}>{p.title}</option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        value={targetDelivTitle}
+                        onChange={(e) => setTargetDelivTitle(e.target.value)}
+                        placeholder="e.g. Cinematic Teaser"
+                        className="w-full p-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
+                      />
+                    </div>
+
+                    {/* Specs / Duration */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-stone-600 block">
+                        Specs / Duration
+                      </label>
+                      <input
+                        type="text"
+                        value={targetDelivSpecs}
+                        onChange={(e) => setTargetDelivSpecs(e.target.value)}
+                        placeholder="e.g. 1-2 Mins"
+                        className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-medium text-stone-800 focus:outline-none focus:border-amber-500 shadow-2xs"
+                      />
+                    </div>
+
+                    {/* Deadline */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-black uppercase tracking-wider text-stone-600 block">
+                          Deadline
+                        </label>
+                        {(() => {
+                          const badge = getRemainingDaysBadge(targetDelivDueDate);
+                          if (!badge) return null;
+                          return (
+                            <span className={`px-1.5 py-0.5 rounded text-[9px] border shadow-2xs font-mono font-bold ${badge.className}`}>
+                              {badge.label}
+                            </span>
+                          );
+                        })()}
+                      </div>
+                      <input
+                        type="date"
+                        value={targetDelivDueDate}
+                        onChange={(e) => setTargetDelivDueDate(e.target.value)}
+                        className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-mono font-bold text-stone-800 focus:outline-none focus:border-amber-500 shadow-2xs"
+                      />
+                    </div>
+
+                    {/* Commercials */}
+                    <div className="grid grid-cols-2 gap-2.5 pt-1">
+                      <div>
+                        <label className="text-[10px] font-bold text-stone-600 block mb-1">Agreed Fee (₹)</label>
+                        <input
+                          type="number"
+                          value={targetDelivFee}
+                          onChange={(e) => setTargetDelivFee(e.target.value)}
+                          className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-mono font-bold text-stone-900"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-emerald-700 block mb-1">Paid Amount (₹)</label>
+                        <input
+                          type="number"
+                          value={targetDelivPaid}
+                          onChange={(e) => setTargetDelivPaid(e.target.value)}
+                          className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-mono font-bold text-emerald-700"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
+                      <button
+                        type="button"
+                        onClick={() => setAddDeliverableTarget(null)}
+                        className="px-4 py-2 border border-stone-200 text-stone-600 text-xs font-bold rounded-xl hover:bg-stone-50 transition cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isSavingSingleDeliverable || !targetDelivTitle.trim()}
+                        onClick={handleSaveSingleDeliverable}
+                        className="px-5 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-black text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                        <span>{isSavingSingleDeliverable ? 'Saving...' : 'Add Deliverable'}</span>
                       </button>
                     </div>
                   </div>

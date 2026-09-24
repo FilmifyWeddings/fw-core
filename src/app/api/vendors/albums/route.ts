@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
 import { 
   fetchVendorAlbumOrders, 
-  saveVendorAlbumOrder 
+  saveVendorAlbumOrder,
+  deleteVendorAlbumOrder
 } from '@/lib/services/vendorDeliverablesService';
 
 export const dynamic = 'force-dynamic';
@@ -51,5 +52,21 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error('[API /vendors/albums POST error]:', error);
     return NextResponse.json({ error: error.message || 'Failed to save vendor album order' }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const searchParams = req.nextUrl.searchParams;
+    const orderId = searchParams.get('id');
+    if (!orderId) {
+      return NextResponse.json({ error: 'Order ID is required' }, { status: 400 });
+    }
+
+    const success = await deleteVendorAlbumOrder(orderId);
+    return NextResponse.json({ success });
+  } catch (error: any) {
+    console.error('[API /vendors/albums DELETE error]:', error);
+    return NextResponse.json({ error: error.message || 'Failed to delete order' }, { status: 500 });
   }
 }

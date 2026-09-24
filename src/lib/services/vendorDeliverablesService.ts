@@ -151,6 +151,24 @@ export function detectDeliverableCategory(category?: string, title?: string, rol
 }
 
 /**
+ * Detects deliverable segment (Pre-Wedding, Wedding, Reception, Haldi, Sangeet, etc.)
+ */
+export function detectDeliverableSegment(segment?: string, title?: string, eventName?: string): string {
+  if (segment && segment.trim() && segment.trim().toLowerCase() !== 'wedding') {
+    return segment.trim();
+  }
+  const str = `${title || ''} ${eventName || ''}`.toLowerCase();
+  if (str.includes('pre-wedding') || str.includes('pre wedding') || str.includes('prewedding')) return 'Pre-Wedding';
+  if (str.includes('reception')) return 'Reception';
+  if (str.includes('engagement') || str.includes('ring ceremony') || str.includes('roka')) return 'Engagement';
+  if (str.includes('sangeet')) return 'Sangeet';
+  if (str.includes('haldi')) return 'Haldi';
+  if (str.includes('mehndi') || str.includes('mehendi')) return 'Mehndi';
+  if (str.includes('cocktail')) return 'Cocktail';
+  return (segment && segment.trim()) || 'Wedding';
+}
+
+/**
  * Fetch All Orders / Deliverables / Shoots for a vendor / team member with bi-directional Post-Production sync
  */
 export async function fetchVendorAlbumOrders(
@@ -175,7 +193,10 @@ export async function fetchVendorAlbumOrders(
 
     const { data: dbOrders, error } = await query.order('created_at', { ascending: false });
 
-    const orderList: VendorAlbumOrder[] = Array.isArray(dbOrders) ? [...dbOrders] : [];
+    const orderList: VendorAlbumOrder[] = Array.isArray(dbOrders) ? dbOrders.map(o => ({
+      ...o,
+      segment: detectDeliverableSegment(o.segment, o.item_title || o.album_type, o.event_name),
+    })) : [];
 
     // AUTO-SYNC 1: Check post_production_deliverables for ALL categories (Videos, Photos, Albums, Printing)
     try {
@@ -221,11 +242,16 @@ export async function fetchVendorAlbumOrders(
         // Bridge deliverables across all categories into orderList
         for (const deliv of deliverables) {
           const cat = detectDeliverableCategory(deliv.category, deliv.title);
-          const exists = orderList.some(
+          const delivSegment = detectDeliverableSegment(deliv.segment, deliv.title);
+          const existing = orderList.find(
             o => o.deliverable_id === deliv.id || (deliv.id && o.id === `order_${deliv.id.replace('deliv_', '')}`)
           );
 
-          if (!exists) {
+          if (existing) {
+            if (delivSegment !== 'Wedding' && existing.segment === 'Wedding') {
+              existing.segment = delivSegment;
+            }
+          } else {
             const clientName = projectClientMap.get(deliv.project_id) || 'Valued Couple';
             const rawSpecs = String(deliv.specs || deliv.count || '').trim();
             const sheetCount = parseInt(rawSpecs.replace(/\D/g, '')) || (cat === 'album_design' || cat === 'album_printing' ? 30 : 0);
@@ -246,7 +272,7 @@ export async function fetchVendorAlbumOrders(
               project_id: deliv.project_id,
               deliverable_id: deliv.id,
               category: cat,
-              segment: deliv.segment || 'Wedding',
+              segment: delivSegment,
               item_title: deliv.title || 'Deliverable Task',
               specs: rawSpecs,
               service_type: cat === 'video_editing' ? 'Video Editing' : cat === 'photo_editing' ? 'Photo Editing' : cat === 'album_printing' ? 'Album Printing' : 'Album Designing',
@@ -305,12 +331,17 @@ export async function fetchVendorAlbumOrders(
 
             if (matchesMember) {
               const cat = detectDeliverableCategory(d.category, d.title);
-              const exists = orderList.some(
+              const delivSegment = detectDeliverableSegment(d.segment, d.title);
+              const existing = orderList.find(
                 o => o.deliverable_id === d.id || (d.id && o.id === `order_${String(d.id).replace('deliv_', '')}`)
               );
-              if (!exists) {
+              if (existing) {
+                if (delivSegment !== 'Wedding' && existing.segment === 'Wedding') {
+                  existing.segment = delivSegment;
+                }
+              } else {
                 const rawSpecs = String(d.specs || d.count || '').trim();
-                const sheetCount = parseInt(rawSpecs.replace(/\D/g, '')) || (cat === 'album_design' || cat === 'album_printing' ? 30 : 1);
+                const sheetCount = parseInt(rawSpecs.replace(/\D/g, '')) || (cat === 'album_design' || cat === 'album_printing' ? 30 : 0);
                 let totalAmt = d.agreed_amount !== undefined && d.agreed_amount !== null && !isNaN(Number(d.agreed_amount))
                   ? Number(d.agreed_amount)
                   : 0;
@@ -327,7 +358,7 @@ export async function fetchVendorAlbumOrders(
                   project_id: proj.id,
                   deliverable_id: d.id,
                   category: cat,
-                  segment: d.segment || 'Wedding',
+                  segment: delivSegment,
                   item_title: d.title || 'Deliverable Task',
                   specs: rawSpecs,
                   service_type: cat === 'video_editing' ? 'Video Editing' : cat === 'photo_editing' ? 'Photo Editing' : cat === 'album_printing' ? 'Album Printing' : 'Album Designing',
@@ -623,7 +654,7 @@ export async function saveVendorAlbumOrder(
     assignment_id: order.assignment_id || '',
     payout_id: order.payout_id || '',
     category: cat,
-    segment: order.segment || 'Wedding',
+    segment: detectDeliverableSegment(order.segment, order.item_title || order.album_type, order.event_name),
     event_name: order.event_name || order.item_title || order.album_type || 'Event',
     event_date: order.event_date || order.due_date || '',
     event_time: order.event_time || '',
@@ -722,6 +753,26 @@ export async function saveVendorAlbumOrder(
   }
 
   return payload;
+}
+
+/**
+ * Permanently Delete an Assignment / Order from partner_album_orders
+ */
+export async function deleteVendorAlbumOrder(orderId: string): Promise<boolean> {
+  try {
+    const { error } = await supabaseAdmin
+      .from('partner_album_orders')
+      .delete()
+      .eq('id', orderId);
+    if (error) {
+      console.error('[vendorDeliverablesService] delete error:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('[vendorDeliverablesService] delete error:', err);
+    return false;
+  }
 }
 
 /**
