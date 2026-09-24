@@ -3,6 +3,7 @@
 import React, { useRef, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Printer, Download, FileText, CheckCircle2, Building2, User, Loader2 } from 'lucide-react';
+import { detectDeliverableSegment } from '@/lib/services/vendorDeliverablesService';
 
 export interface VendorInvoiceItem {
   order_id?: string;
@@ -107,18 +108,26 @@ export default function VendorStatementInvoicePdfTemplate({
       const cPaid = clientItems.reduce((s, i) => s + (Number(i.paid_amount) || 0), 0);
       const cBal = Math.max(0, cAgreed - cPaid);
 
-      // Group inside each couple by Segment
+      // Group inside each couple by detected Segment
       const segmentMap = new Map<string, VendorInvoiceItem[]>();
       clientItems.forEach(item => {
-        const s = (item.segment || 'Wedding').trim();
+        const s = detectDeliverableSegment(item.segment, item.item_title || item.album_type, item.event_name);
         if (!segmentMap.has(s)) segmentMap.set(s, []);
         segmentMap.get(s)!.push(item);
       });
 
-      const segments = Array.from(segmentMap.entries()).map(([segmentName, segItems]) => ({
-        segmentName,
-        items: segItems,
-      }));
+      const segments = Array.from(segmentMap.entries()).map(([segmentName, segItems]) => {
+        const segAgreed = segItems.reduce((s, i) => s + (Number(i.total_amount) || 0), 0);
+        const segPaid = segItems.reduce((s, i) => s + (Number(i.paid_amount) || 0), 0);
+        const segBal = Math.max(0, segAgreed - segPaid);
+        return {
+          segmentName,
+          items: segItems,
+          segAgreed,
+          segPaid,
+          segBal,
+        };
+      });
 
       return {
         clientName,
@@ -430,12 +439,21 @@ export default function VendorStatementInvoicePdfTemplate({
                           group.segments.map((seg, sIdx) => (
                             <React.Fragment key={`${group.clientName}_${seg.segmentName}_${sIdx}`}>
                               {/* Segment Subheading */}
-                              <tr className="bg-amber-50/70 border-b border-amber-200/50">
-                                <td colSpan={7} className="py-1 px-3">
-                                  <div className="flex items-center gap-1.5 text-[10px] font-black text-amber-900 tracking-wide uppercase">
-                                    <span className="text-amber-600 font-bold">❖</span>
-                                    <span>Segment: {seg.segmentName}</span>
-                                    <span className="text-stone-400 font-normal">({seg.items.length} {seg.items.length === 1 ? 'task' : 'tasks'})</span>
+                              <tr className="bg-[#FAF6F0] border-b border-amber-200/80">
+                                <td colSpan={7} className="py-1.5 px-3">
+                                  <div className="flex items-center justify-between flex-wrap gap-2 text-[10px] font-black text-amber-950 uppercase tracking-wide">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-amber-700 font-bold">❖</span>
+                                      <span>Segment: {seg.segmentName}</span>
+                                      <span className="px-1.5 py-0.2 rounded text-[9px] bg-white border border-amber-200 text-stone-600 font-mono">
+                                        {seg.items.length} {seg.items.length === 1 ? 'Deliverable' : 'Deliverables'}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-2.5 text-[10px] font-mono text-stone-600">
+                                      <span>Subtotal: ₹{seg.segAgreed.toLocaleString('en-IN')}</span>
+                                      {seg.segPaid > 0 && <span className="text-emerald-700">• Paid: ₹{seg.segPaid.toLocaleString('en-IN')}</span>}
+                                      {seg.segBal > 0 && <span className="text-rose-700 font-bold">• Bal: ₹{seg.segBal.toLocaleString('en-IN')}</span>}
+                                    </div>
                                   </div>
                                 </td>
                               </tr>

@@ -30,9 +30,10 @@ interface TeamRemindersDrawerProps {
 }
 
 interface ParsedReminder {
-  category: 'shoot' | 'album';
+  category: 'shoot' | 'video_editing' | 'photo_editing' | 'album' | 'album_printing';
   categoryLabel: string;
   categoryIcon: string;
+  badgeStyle: string;
   personName: string;
   coupleName: string;
   eventName: string;
@@ -42,21 +43,57 @@ interface ParsedReminder {
 let memCachedReminders: StudioReminder[] = [];
 
 function parseReminder(rem: StudioReminder): ParsedReminder {
-  const fullText = (rem.reminder_text || rem.title || '').trim();
-  let category: 'shoot' | 'album' = 'shoot';
+  let fullText = (rem.reminder_text || rem.title || '').trim();
+  let category: 'shoot' | 'video_editing' | 'photo_editing' | 'album' | 'album_printing' = 'shoot';
   let coupleName = '';
   let eventName = '';
   let noteText = fullText;
 
-  const lower = fullText.toLowerCase();
+  // Check explicit category tag like [Video Editing] or [Photo Editing] or [Shoot] or [Album]
+  const tagMatch = fullText.match(/^\[([^\]]+)\]\s*(.*)$/);
+  let explicitTag = '';
+  if (tagMatch) {
+    explicitTag = tagMatch[1].toLowerCase();
+    fullText = tagMatch[2].trim();
+    noteText = fullText;
+  }
+
+  const lower = (explicitTag + ' ' + fullText).toLowerCase();
+
   if (
-    lower.includes('album') || 
-    lower.includes('photobook') || 
-    lower.includes('printing') || 
-    lower.includes('video edit') || 
-    lower.includes('photo edit') || 
+    explicitTag.includes('video') ||
+    lower.includes('video') ||
+    lower.includes('teaser') ||
+    lower.includes('highlight') ||
+    lower.includes('trailer') ||
+    lower.includes('wedding film') ||
+    lower.includes('cinematic') ||
+    lower.includes('reel') ||
+    lower.includes('sde') ||
+    lower.includes('raw footage') ||
+    lower.includes('video edit')
+  ) {
+    category = 'video_editing';
+  } else if (
+    explicitTag.includes('photo') ||
+    lower.includes('photo edit') ||
+    lower.includes('retouch') ||
     lower.includes('color grade') ||
-    lower.includes('teaser')
+    lower.includes('stills')
+  ) {
+    category = 'photo_editing';
+  } else if (
+    lower.includes('printing') ||
+    lower.includes('print') ||
+    lower.includes('binding') ||
+    lower.includes('lab')
+  ) {
+    category = 'album_printing';
+  } else if (
+    explicitTag.includes('album') ||
+    lower.includes('album') ||
+    lower.includes('photobook') ||
+    lower.includes('design')
   ) {
     category = 'album';
   } else {
@@ -84,10 +121,41 @@ function parseReminder(rem: StudioReminder): ParsedReminder {
     }
   }
 
+  const categoryConfigs = {
+    shoot: {
+      label: 'Shoot',
+      icon: '📸',
+      badgeStyle: 'bg-amber-100 text-amber-900 border-amber-300'
+    },
+    video_editing: {
+      label: 'Video Editing',
+      icon: '🎬',
+      badgeStyle: 'bg-rose-100 text-rose-900 border-rose-300'
+    },
+    photo_editing: {
+      label: 'Photo Editing',
+      icon: '✨',
+      badgeStyle: 'bg-purple-100 text-purple-900 border-purple-300'
+    },
+    album_printing: {
+      label: 'Album Printing',
+      icon: '📖',
+      badgeStyle: 'bg-emerald-100 text-emerald-900 border-emerald-300'
+    },
+    album: {
+      label: 'Album Designing',
+      icon: '🎨',
+      badgeStyle: 'bg-sky-100 text-sky-900 border-sky-300'
+    },
+  };
+
+  const conf = categoryConfigs[category] || categoryConfigs.shoot;
+
   return {
     category,
-    categoryLabel: category === 'shoot' ? 'Shoot' : 'Album / Post-Prod',
-    categoryIcon: category === 'shoot' ? '📸' : '🎨',
+    categoryLabel: conf.label,
+    categoryIcon: conf.icon,
+    badgeStyle: conf.badgeStyle,
     personName: rem.recipient_name || '',
     coupleName,
     eventName,
@@ -320,11 +388,7 @@ export default function TeamRemindersDrawer({
                     <div className="flex items-center justify-between gap-2 flex-wrap">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         {/* Category Badge */}
-                        <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-2xs ${
-                          parsed.category === 'shoot'
-                            ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                            : 'bg-indigo-100 text-indigo-900 border border-indigo-300'
-                        }`}>
+                        <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center gap-1 border shadow-2xs ${parsed.badgeStyle}`}>
                           <span>{parsed.categoryIcon}</span>
                           <span>{parsed.categoryLabel}</span>
                         </span>
@@ -344,7 +408,7 @@ export default function TeamRemindersDrawer({
                         </span>
                       </div>
 
-                      {/* Done Button (e.stopPropagation ensures navigation isn't triggered) */}
+                      {/* Top Done Button */}
                       <button
                         type="button"
                         onClick={(e) => {
@@ -383,9 +447,23 @@ export default function TeamRemindersDrawer({
                       )}
                     </div>
 
-                    {/* Note Box */}
-                    <div className="p-2.5 rounded-xl bg-[#FAF8F5] border border-amber-200/70 text-xs font-medium text-stone-800 leading-relaxed italic">
-                      "{parsed.noteText}"
+                    {/* Note Box with Green Done Checkmark Button on Right */}
+                    <div className="p-2.5 rounded-xl bg-[#FAF8F5] border border-amber-200/70 text-xs font-medium text-stone-800 leading-relaxed italic flex items-center justify-between gap-3">
+                      <div className="flex-1">
+                        "{parsed.noteText}"
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setConfirmTarget(rem);
+                        }}
+                        className="shrink-0 p-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 hover:text-emerald-800 border border-emerald-300 hover:border-emerald-400 transition cursor-pointer shadow-2xs flex items-center gap-1 group/done"
+                        title="Mark comment reminder done"
+                      >
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 group-hover/done:scale-110 transition-transform" />
+                        <span className="text-[10px] font-black not-italic text-emerald-700">Done</span>
+                      </button>
                     </div>
                   </motion.div>
                 );

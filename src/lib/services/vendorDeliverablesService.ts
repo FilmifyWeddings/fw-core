@@ -169,6 +169,22 @@ export function detectDeliverableSegment(segment?: string, title?: string, event
 }
 
 /**
+ * Checks if an order was originated / assigned directly from Post-Production tasks
+ */
+export function isPostProductionOrder(order: VendorAlbumOrder): boolean {
+  if (!order) return false;
+  if (order.deliverable_id && order.deliverable_id.trim()) return true;
+  if (order.project_id && order.project_id.trim()) return true;
+  if (typeof order.id === 'string' && (
+    order.id.startsWith('order_deliv_') ||
+    order.id.startsWith('deliv_') ||
+    order.id.startsWith('pp_') ||
+    order.id.startsWith('proj_')
+  )) return true;
+  return false;
+}
+
+/**
  * Fetch All Orders / Deliverables / Shoots for a vendor / team member with bi-directional Post-Production sync
  */
 export async function fetchVendorAlbumOrders(
@@ -849,7 +865,8 @@ export async function addVendorOrderComment(
     // If reminder_at is set, schedule in post_production_reminders
     if (comment.reminder_at) {
       try {
-        const remTitle = `Reminder for ${order.client_name} (${order.event_name || order.album_type || 'Shoot'}): ${comment.text}`;
+        const catTag = order.category === 'video_editing' ? 'Video Editing' : order.category === 'photo_editing' ? 'Photo Editing' : order.category === 'shoot' ? 'Shoot' : 'Album';
+        const remTitle = `[${catTag}] Reminder for ${order.client_name} (${order.event_name || order.item_title || order.album_type || 'Task'}): ${comment.text}`;
         await supabaseAdmin.from('post_production_reminders').insert([{
           workspace_id: order.workspace_id || 'ws_default',
           deliverable_id: order.deliverable_id || order.id,

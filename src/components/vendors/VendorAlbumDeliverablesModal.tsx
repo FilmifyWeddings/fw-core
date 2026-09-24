@@ -17,7 +17,8 @@ import {
   detectDeliverableCategory,
   detectDeliverableSegment,
   formatNoteDateTime,
-  saveVendorAlbumOrder
+  saveVendorAlbumOrder,
+  isPostProductionOrder
 } from '@/lib/services/vendorDeliverablesService';
 import { 
   fetchWorkspaceEventTypes, 
@@ -353,6 +354,265 @@ export function ThreeDSegmentSelect({
               </button>
             )}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ThreeDDeliverableSelect({
+  value,
+  specs,
+  presets,
+  onChange,
+  className = '',
+  placeholder = 'Select Deliverable',
+}: {
+  value: string;
+  specs?: string;
+  presets: Array<{ title: string; specs: string }>;
+  onChange: (title: string, specs: string) => void;
+  className?: string;
+  placeholder?: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isCustomMode, setIsCustomMode] = useState(false);
+  const [customTitle, setCustomTitle] = useState('');
+  const [customSpecs, setCustomSpecs] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+        setIsCustomMode(false);
+        setSearchQuery('');
+      }
+    }
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen]);
+
+  const filteredPresets = useMemo(() => {
+    if (!searchQuery.trim()) return presets;
+    const q = searchQuery.toLowerCase().trim();
+    return presets.filter(p => 
+      p.title.toLowerCase().includes(q) || 
+      (p.specs && p.specs.toLowerCase().includes(q))
+    );
+  }, [presets, searchQuery]);
+
+  const matchedPreset = useMemo(() => {
+    return presets.find(p => p.title.toLowerCase() === (value || '').toLowerCase());
+  }, [presets, value]);
+
+  const displaySpecs = specs || matchedPreset?.specs || '';
+
+  return (
+    <div ref={containerRef} className={`relative w-full ${className}`}>
+      {/* 3D Trigger Button */}
+      <button
+        type="button"
+        onClick={() => {
+          setIsOpen(prev => !prev);
+          setIsCustomMode(false);
+          setSearchQuery('');
+        }}
+        className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-white border-2 border-amber-300/80 hover:border-amber-500 shadow-2xs hover:shadow-xs transition text-xs font-bold text-stone-900 cursor-pointer active:translate-y-0.5 text-left"
+      >
+        <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
+          <Film className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+          <span className="truncate font-black text-stone-900">
+            {value || placeholder}
+          </span>
+          {displaySpecs && (
+            <span className="shrink-0 font-mono text-[10px] font-extrabold text-amber-900 bg-amber-100/80 px-1.5 py-0.5 rounded border border-amber-300">
+              {displaySpecs}
+            </span>
+          )}
+        </div>
+        <ChevronDown className={`w-3.5 h-3.5 text-stone-400 shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {/* 3D Dropdown Menu */}
+      {isOpen && (
+        <div className="absolute left-0 top-full mt-1.5 z-[220] w-full min-w-[280px] sm:min-w-[340px] bg-white rounded-2xl border-2 border-amber-400 shadow-2xl overflow-hidden p-2.5 space-y-2 text-stone-900 animate-in fade-in zoom-in-95 duration-100">
+          {isCustomMode ? (
+            /* Custom Manual Entry Mode */
+            <div className="space-y-2.5 p-2 bg-amber-50/50 rounded-xl border border-amber-200/70">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-wider text-amber-900 flex items-center gap-1">
+                  <span>✍️ Custom Deliverable</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsCustomMode(false)}
+                  className="text-[10px] font-bold text-stone-400 hover:text-stone-700 underline cursor-pointer"
+                >
+                  Back to presets
+                </button>
+              </div>
+
+              <div>
+                <label className="text-[9px] font-black uppercase tracking-wider text-stone-500 block mb-0.5">
+                  Deliverable Title *
+                </label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={customTitle}
+                  onChange={(e) => setCustomTitle(e.target.value)}
+                  placeholder="e.g. Drone Reel / Extended Highlights"
+                  className="w-full px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && customTitle.trim()) {
+                      e.preventDefault();
+                      onChange(customTitle.trim(), customSpecs.trim());
+                      setIsOpen(false);
+                      setIsCustomMode(false);
+                    }
+                  }}
+                />
+              </div>
+
+              <div>
+                <label className="text-[9px] font-black uppercase tracking-wider text-stone-500 block mb-0.5">
+                  Specs / Duration
+                </label>
+                <input
+                  type="text"
+                  value={customSpecs}
+                  onChange={(e) => setCustomSpecs(e.target.value)}
+                  placeholder="e.g. 1-2 Mins, 4K, 60fps"
+                  className="w-full px-2.5 py-1.5 bg-white border border-stone-200 rounded-lg text-xs font-medium text-stone-800 focus:outline-none focus:border-amber-500"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && customTitle.trim()) {
+                      e.preventDefault();
+                      onChange(customTitle.trim(), customSpecs.trim());
+                      setIsOpen(false);
+                      setIsCustomMode(false);
+                    }
+                  }}
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-1.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setIsCustomMode(false)}
+                  className="px-2.5 py-1 rounded-lg border border-stone-200 text-stone-600 text-xs font-bold hover:bg-stone-50 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!customTitle.trim()}
+                  onClick={() => {
+                    if (customTitle.trim()) {
+                      onChange(customTitle.trim(), customSpecs.trim());
+                      setIsOpen(false);
+                      setIsCustomMode(false);
+                    }
+                  }}
+                  className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-black transition cursor-pointer disabled:opacity-50 flex items-center gap-1 shadow-2xs"
+                >
+                  <Check className="w-3.5 h-3.5 stroke-[3]" />
+                  <span>Apply</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* Presets Search & Selection List */
+            <>
+              {/* Search Bar */}
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-stone-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  autoFocus
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search deliverables..."
+                  className="w-full pl-8 pr-2.5 py-1.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 focus:bg-white transition"
+                />
+              </div>
+
+              {/* Presets List */}
+              <div className="max-h-56 overflow-y-auto space-y-1 pr-0.5">
+                {filteredPresets.map((preset) => {
+                  const isSelected = (value || '').toLowerCase() === preset.title.toLowerCase();
+                  return (
+                    <button
+                      key={preset.title}
+                      type="button"
+                      onClick={() => {
+                        onChange(preset.title, preset.specs || '');
+                        setIsOpen(false);
+                      }}
+                      className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-xs transition cursor-pointer text-left ${
+                        isSelected
+                          ? 'bg-amber-100/90 text-amber-950 font-black border border-amber-300'
+                          : 'hover:bg-amber-50/70 text-stone-800 font-bold'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 truncate">
+                        <Film className="w-3 h-3 text-amber-600 shrink-0" />
+                        <span className="truncate">{preset.title}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {preset.specs && (
+                          <span className="font-mono text-[10px] text-amber-900/90 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/80 font-bold">
+                            {preset.specs}
+                          </span>
+                        )}
+                        {isSelected && <Check className="w-3.5 h-3.5 text-amber-600 stroke-[3]" />}
+                      </div>
+                    </button>
+                  );
+                })}
+
+                {filteredPresets.length === 0 && (
+                  <div className="p-3 text-center text-xs text-stone-500 space-y-1.5">
+                    <p>No presets found for "{searchQuery}"</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onChange(searchQuery.trim(), '');
+                        setIsOpen(false);
+                      }}
+                      className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded-lg text-[11px] font-black transition cursor-pointer"
+                    >
+                      + Use "{searchQuery}"
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Bottom Custom Entry Option */}
+              <div className="pt-1.5 border-t border-stone-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCustomMode(true);
+                    setCustomTitle(value || searchQuery);
+                    setCustomSpecs(specs || '');
+                  }}
+                  className="w-full py-1.5 px-3 rounded-xl border border-dashed border-amber-400 bg-amber-50/40 hover:bg-amber-100/60 text-amber-900 text-xs font-black transition flex items-center justify-between cursor-pointer"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <Plus className="w-3.5 h-3.5 text-amber-600 stroke-[3]" />
+                    <span>+ Custom / Manual Deliverable</span>
+                  </div>
+                  <span className="text-[10px] text-stone-400 font-bold">Enter title &amp; specs</span>
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -1893,7 +2153,7 @@ export default function VendorAlbumDeliverablesModal({
     const mapped: VendorInvoiceItem[] = effectiveOrders.map(o => ({
       order_id: o.id,
       client_name: o.client_name,
-      segment: o.segment || 'Wedding',
+      segment: detectDeliverableSegment(o.segment, o.item_title || o.album_type, o.event_name),
       item_title: o.item_title || o.album_type,
       album_type: o.item_title || o.album_type || o.event_name || 'Deliverable Task',
       event_name: o.event_name,
@@ -2453,6 +2713,7 @@ export default function VendorAlbumDeliverablesModal({
                   const isZero = grp.totalAgreed === 0 && grp.totalPaid === 0 && grp.totalBalance === 0;
                   const isFullPaid = grp.totalAgreed > 0 && grp.totalBalance === 0 && grp.totalPaid >= grp.totalAgreed;
                   const isPartiallyPaid = grp.totalPaid > 0 && grp.totalBalance > 0;
+                  const isCardFromPostProduction = grp.orders.length > 0 && grp.orders.some(o => isPostProductionOrder(o));
 
                   return (
                     <div
@@ -2493,9 +2754,12 @@ export default function VendorAlbumDeliverablesModal({
 
                           <div>
                             <div className="flex items-center gap-2 flex-wrap">
-                              <h3 className="text-base sm:text-lg font-black text-stone-900 tracking-tight">
-                                {grp.clientName}
-                              </h3>
+                              <div className="flex items-center gap-1.5">
+                                <span className="w-2.5 h-2.5 rounded-full bg-gradient-to-tr from-amber-600 to-amber-400 shadow-2xs shrink-0" />
+                                <h3 className="text-base sm:text-lg font-black tracking-tight bg-gradient-to-r from-[#451A03] via-[#78350F] to-[#292524] bg-clip-text text-transparent drop-shadow-2xs">
+                                  {grp.clientName}
+                                </h3>
+                              </div>
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-stone-100 text-stone-600 border border-stone-200/80 font-mono">
                                 {grp.orders.length} {grp.orders.length === 1 ? 'Deliverable' : 'Deliverables'}
                               </span>
@@ -2539,27 +2803,29 @@ export default function VendorAlbumDeliverablesModal({
                             </span>
                           )}
 
-                          {/* + SEGMENT BUTTON FOR THIS COUPLE */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setCardAddSegmentClient(grp.clientName);
-                              setCardNewSegmentName('Pre-Wedding');
-                              setCardNewDeliverables([{
-                                id: `del_${Date.now()}`,
-                                title: ppVideoPresets[0]?.title || 'Cinematic Teaser',
-                                specs: ppVideoPresets[0]?.specs || '',
-                                dueDate: '',
-                                agreedFee: '0',
-                                paidAmount: '0',
-                              }]);
-                            }}
-                            className="px-3 py-1.5 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-xs font-black flex items-center gap-1.5 transition cursor-pointer shadow-2xs active:translate-y-0.5"
-                            title={`Add new segment to ${grp.clientName}`}
-                          >
-                            <Plus className="w-3.5 h-3.5 stroke-[3] text-amber-700" />
-                            <span>+ Segment</span>
-                          </button>
+                          {/* + SEGMENT BUTTON FOR THIS COUPLE (Only for manual cards, hidden for post-production synced cards) */}
+                          {!isCardFromPostProduction && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCardAddSegmentClient(grp.clientName);
+                                setCardNewSegmentName('Pre-Wedding');
+                                setCardNewDeliverables([{
+                                  id: `del_${Date.now()}`,
+                                  title: ppVideoPresets[0]?.title || 'Cinematic Teaser',
+                                  specs: ppVideoPresets[0]?.specs || '',
+                                  dueDate: '',
+                                  agreedFee: '0',
+                                  paidAmount: '0',
+                                }]);
+                              }}
+                              className="px-3 py-1.5 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-xs font-black flex items-center gap-1.5 transition cursor-pointer shadow-2xs active:translate-y-0.5"
+                              title={`Add new segment to ${grp.clientName}`}
+                            >
+                              <Plus className="w-3.5 h-3.5 stroke-[3] text-amber-700" />
+                              <span>+ Segment</span>
+                            </button>
+                          )}
 
                           {/* SINGLE COUPLE INVOICE BUTTON (Entire Couple Level) */}
                           <button
@@ -2568,6 +2834,7 @@ export default function VendorAlbumDeliverablesModal({
                               setInvoiceItems(grp.orders.map(o => ({
                                 id: o.id,
                                 client_name: grp.clientName,
+                                segment: detectDeliverableSegment(o.segment, o.item_title || o.album_type, o.event_name),
                                 album_type: o.item_title || o.album_type,
                                 specs: o.specs || '',
                                 sheet_count: o.sheet_count || 1,
@@ -2606,6 +2873,8 @@ export default function VendorAlbumDeliverablesModal({
                           <div className="space-y-4">
                             {segmentList.map(({ segment, orders: segOrders }) => {
                               const segConfig = getSegmentConfig(segment);
+                              const isSegmentPostProduction = segOrders.some(o => isPostProductionOrder(o));
+
                               return (
                                 <div key={segment} className="space-y-2">
                                   {/* Distinct Bold Color-Coded Segment Header */}
@@ -2620,32 +2889,37 @@ export default function VendorAlbumDeliverablesModal({
                                       <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border shadow-2xs ${segConfig.badgeBg}`}>
                                         {segOrders.length} {segOrders.length === 1 ? 'Deliverable' : 'Deliverables'}
                                       </span>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setAddDeliverableTarget({ clientName: grp.clientName, segmentName: segment });
-                                          setTargetDelivTitle(ppVideoPresets[0]?.title || 'Cinematic Teaser');
-                                          setTargetDelivSpecs(ppVideoPresets[0]?.specs || '');
-                                          setTargetDelivDueDate('');
-                                          setTargetDelivFee('0');
-                                          setTargetDelivPaid('0');
-                                        }}
-                                        className="px-2.5 py-1 rounded-lg bg-white/95 hover:bg-white text-stone-800 hover:text-amber-900 border border-stone-200 text-[10px] font-bold flex items-center gap-1 shadow-2xs transition cursor-pointer active:translate-y-0.5"
-                                        title={`Add deliverable directly to ${segment}`}
-                                      >
-                                        <Plus className="w-2.5 h-2.5 stroke-[3] text-amber-600" />
-                                        <span>+ Deliverable</span>
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setDeleteSegmentConfirmTarget({ clientName: grp.clientName, segmentName: segment, orders: segOrders });
-                                        }}
-                                        className="p-1 rounded-lg text-stone-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
-                                        title={`Delete ${segment} segment and its ${segOrders.length} deliverables`}
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
+                                      {/* Only manual segments allow adding deliverables directly or deleting segment */}
+                                      {!isSegmentPostProduction && (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setAddDeliverableTarget({ clientName: grp.clientName, segmentName: segment });
+                                              setTargetDelivTitle(ppVideoPresets[0]?.title || 'Cinematic Teaser');
+                                              setTargetDelivSpecs(ppVideoPresets[0]?.specs || '');
+                                              setTargetDelivDueDate('');
+                                              setTargetDelivFee('0');
+                                              setTargetDelivPaid('0');
+                                            }}
+                                            className="px-2.5 py-1 rounded-lg bg-white/95 hover:bg-white text-stone-800 hover:text-amber-900 border border-stone-200 text-[10px] font-bold flex items-center gap-1 shadow-2xs transition cursor-pointer active:translate-y-0.5"
+                                            title={`Add deliverable directly to ${segment}`}
+                                          >
+                                            <Plus className="w-2.5 h-2.5 stroke-[3] text-amber-600" />
+                                            <span>+ Deliverable</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setDeleteSegmentConfirmTarget({ clientName: grp.clientName, segmentName: segment, orders: segOrders });
+                                            }}
+                                            className="p-1 rounded-lg text-stone-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                                            title={`Delete ${segment} segment and its ${segOrders.length} deliverables`}
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </>
+                                      )}
                                     </div>
                                   </div>
 
@@ -2842,15 +3116,17 @@ export default function VendorAlbumDeliverablesModal({
                                                 <Edit3 className="w-3 h-3" />
                                               </button>
 
-                                              {/* Delete Deliverable Modal Trigger */}
-                                              <button
-                                                type="button"
-                                                onClick={() => setDeleteConfirmTarget(order)}
-                                                className="p-1.5 rounded-xl border border-stone-200 bg-white hover:bg-rose-50 hover:border-rose-300 text-stone-400 hover:text-rose-600 transition cursor-pointer shadow-2xs"
-                                                title="Delete Deliverable"
-                                              >
-                                                <Trash2 className="w-3 h-3" />
-                                              </button>
+                                              {/* Delete Deliverable Modal Trigger (Only for manual assignments, hidden for post-production synced orders) */}
+                                              {!isPostProductionOrder(order) && (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setDeleteConfirmTarget(order)}
+                                                  className="p-1.5 rounded-xl border border-stone-200 bg-white hover:bg-rose-50 hover:border-rose-300 text-stone-400 hover:text-rose-600 transition cursor-pointer shadow-2xs"
+                                                  title="Delete Deliverable"
+                                                >
+                                                  <Trash2 className="w-3 h-3" />
+                                                </button>
+                                              )}
                                             </div>
                                           </div>
                                         </div>
@@ -3223,39 +3499,21 @@ export default function VendorAlbumDeliverablesModal({
                             {segment.deliverables.map((del) => (
                               <div key={del.id} className="p-3 bg-[#FAF8F5] rounded-xl border border-stone-200 space-y-2">
                                 <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
-                                  {/* Deliverable Title & Preset Picker */}
+                                  {/* Deliverable Title: 3D Selector with Presets, Specs, Search & Custom Mode */}
                                   <div className="sm:col-span-5 space-y-1">
-                                    <div className="flex items-center justify-between">
-                                      <label className="text-[9px] font-black uppercase tracking-wider text-stone-500">
-                                        Deliverable Title
-                                      </label>
-                                      {ppVideoPresets.length > 0 && (
-                                        <select
-                                          onChange={(e) => {
-                                            const found = ppVideoPresets.find(p => p.title === e.target.value);
-                                            if (found) {
-                                              handleUpdateDeliverable(segment.id, del.id, {
-                                                title: found.title,
-                                                specs: found.specs || del.specs,
-                                              });
-                                            }
-                                          }}
-                                          value=""
-                                          className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 cursor-pointer"
-                                        >
-                                          <option value="" disabled>⚡ Pick Preset</option>
-                                          {ppVideoPresets.map(p => (
-                                            <option key={p.title} value={p.title}>{p.title}</option>
-                                          ))}
-                                        </select>
-                                      )}
-                                    </div>
-                                    <input
-                                      type="text"
+                                    <label className="text-[9px] font-black uppercase tracking-wider text-stone-500 block">
+                                      Deliverable Title
+                                    </label>
+                                    <ThreeDDeliverableSelect
                                       value={del.title}
-                                      onChange={(e) => handleUpdateDeliverable(segment.id, del.id, { title: e.target.value })}
-                                      placeholder="e.g. Cinematic Teaser"
-                                      className="w-full p-1.5 bg-white border border-stone-200 rounded-lg text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500"
+                                      specs={del.specs}
+                                      presets={ppVideoPresets}
+                                      onChange={(newTitle, newSpecs) => {
+                                        handleUpdateDeliverable(segment.id, del.id, {
+                                          title: newTitle,
+                                          specs: newSpecs || del.specs,
+                                        });
+                                      }}
                                     />
                                   </div>
 
@@ -4120,35 +4378,22 @@ export default function VendorAlbumDeliverablesModal({
                       {cardNewDeliverables.map((del) => (
                         <div key={del.id} className="p-3 bg-white rounded-2xl border border-stone-200 shadow-2xs space-y-2.5">
                           <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+                            {/* Deliverable Title: 3D Selector with Presets, Specs, Search & Custom Mode */}
                             <div className="sm:col-span-5 space-y-1">
-                              <div className="flex items-center justify-between">
-                                <label className="text-[9px] font-black uppercase tracking-wider text-stone-500">
-                                  Deliverable Title
-                                </label>
-                                {ppVideoPresets.length > 0 && (
-                                  <select
-                                    onChange={(e) => {
-                                      const found = ppVideoPresets.find(p => p.title === e.target.value);
-                                      if (found) {
-                                        setCardNewDeliverables(prev => prev.map(d => d.id === del.id ? { ...d, title: found.title, specs: found.specs || d.specs } : d));
-                                      }
-                                    }}
-                                    value=""
-                                    className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 cursor-pointer"
-                                  >
-                                    <option value="" disabled>⚡ Pick Preset</option>
-                                    {ppVideoPresets.map(p => (
-                                      <option key={p.title} value={p.title}>{p.title}</option>
-                                    ))}
-                                  </select>
-                                )}
-                              </div>
-                              <input
-                                type="text"
+                              <label className="text-[9px] font-black uppercase tracking-wider text-stone-500 block">
+                                Deliverable Title
+                              </label>
+                              <ThreeDDeliverableSelect
                                 value={del.title}
-                                onChange={(e) => setCardNewDeliverables(prev => prev.map(d => d.id === del.id ? { ...d, title: e.target.value } : d))}
-                                placeholder="e.g. Cinematic Teaser"
-                                className="w-full p-1.5 bg-stone-50 border border-stone-200 rounded-lg text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500"
+                                specs={del.specs}
+                                presets={ppVideoPresets}
+                                onChange={(newTitle, newSpecs) => {
+                                  setCardNewDeliverables(prev => prev.map(d => d.id === del.id ? {
+                                    ...d,
+                                    title: newTitle,
+                                    specs: newSpecs || d.specs,
+                                  } : d));
+                                }}
                               />
                             </div>
 
@@ -4280,37 +4525,19 @@ export default function VendorAlbumDeliverablesModal({
                   </div>
 
                   <div className="p-5 space-y-3.5 bg-[#FFFDFB]">
-                    {/* Deliverable Title & Preset Picker */}
+                    {/* Deliverable Title: 3D Selector with Presets, Specs, Search & Custom Mode */}
                     <div className="space-y-1">
-                      <div className="flex items-center justify-between">
-                        <label className="text-[10px] font-black uppercase tracking-wider text-stone-600">
-                          Deliverable Title *
-                        </label>
-                        {ppVideoPresets.length > 0 && (
-                          <select
-                            onChange={(e) => {
-                              const found = ppVideoPresets.find(p => p.title === e.target.value);
-                              if (found) {
-                                setTargetDelivTitle(found.title);
-                                if (found.specs) setTargetDelivSpecs(found.specs);
-                              }
-                            }}
-                            value=""
-                            className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 cursor-pointer"
-                          >
-                            <option value="" disabled>⚡ Pick Preset</option>
-                            {ppVideoPresets.map(p => (
-                              <option key={p.title} value={p.title}>{p.title}</option>
-                            ))}
-                          </select>
-                        )}
-                      </div>
-                      <input
-                        type="text"
+                      <label className="text-[10px] font-black uppercase tracking-wider text-stone-600 block">
+                        Deliverable Title *
+                      </label>
+                      <ThreeDDeliverableSelect
                         value={targetDelivTitle}
-                        onChange={(e) => setTargetDelivTitle(e.target.value)}
-                        placeholder="e.g. Cinematic Teaser"
-                        className="w-full p-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
+                        specs={targetDelivSpecs}
+                        presets={ppVideoPresets}
+                        onChange={(newTitle, newSpecs) => {
+                          setTargetDelivTitle(newTitle);
+                          if (newSpecs) setTargetDelivSpecs(newSpecs);
+                        }}
                       />
                     </div>
 
