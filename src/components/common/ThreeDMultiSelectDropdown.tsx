@@ -21,6 +21,7 @@ interface ThreeDMultiSelectDropdownProps {
   searchPlaceholder?: string;
   maxDisplayPills?: number;
   className?: string;
+  emptyMessage?: string;
 }
 
 export default function ThreeDMultiSelectDropdown({
@@ -33,6 +34,7 @@ export default function ThreeDMultiSelectDropdown({
   searchPlaceholder = 'Search...',
   maxDisplayPills = 2,
   className = '',
+  emptyMessage,
 }: ThreeDMultiSelectDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -226,7 +228,7 @@ export default function ThreeDMultiSelectDropdown({
             <div className="p-1.5 overflow-y-auto max-h-48 space-y-0.5">
               {filteredOptions.length === 0 ? (
                 <div className="py-6 text-center text-xs text-stone-400 font-medium italic">
-                  No matching options found
+                  {emptyMessage || 'No matching options found'}
                 </div>
               ) : (
                 filteredOptions.map((opt) => {

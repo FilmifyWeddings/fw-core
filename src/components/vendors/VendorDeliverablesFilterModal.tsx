@@ -138,7 +138,7 @@ export default function VendorDeliverablesFilterModal({
                   )}
                 </h3>
                 <p className="text-xs text-stone-500 font-medium">
-                  Refine by date range, payment status, configured events, and crew roles
+                  Refine by date range, payment status, assigned event types, and crew roles
                 </p>
               </div>
             </div>
@@ -228,29 +228,31 @@ export default function VendorDeliverablesFilterModal({
               />
             </div>
 
-            {/* 3. Event Types Single Box with 3D Creamy Multi-Select Dropdown (Studio Settings Events Only) */}
+            {/* 3. Event Types Single Box with 3D Creamy Multi-Select Dropdown (Derived from Assigned Cards) */}
             <div className="pt-2 border-t border-amber-200/60">
               <ThreeDMultiSelectDropdown
                 label={`Event Types (${availableEventTypes.length})`}
                 icon={<Tag className="w-3.5 h-3.5 text-amber-700" />}
-                placeholder="Select event types from settings..."
+                placeholder={availableEventTypes.length === 0 ? "No assigned event types on cards" : "Select assigned event types..."}
                 options={eventOptions}
                 selectedValues={filters.eventTypes}
                 onChange={(events) => onChange({ ...filters, eventTypes: events })}
                 searchPlaceholder="Search event type..."
+                emptyMessage="No assigned event types found on cards"
               />
             </div>
 
-            {/* 4. Crew Roles Single Box with 3D Creamy Multi-Select Dropdown (Studio Settings Roles Only) */}
+            {/* 4. Crew Roles Single Box with 3D Creamy Multi-Select Dropdown (Derived from Assigned Cards) */}
             <div className="pt-2 border-t border-amber-200/60">
               <ThreeDMultiSelectDropdown
                 label={`Crew Roles (${availableRoles.length})`}
                 icon={<Users className="w-3.5 h-3.5 text-amber-700" />}
-                placeholder="Select crew roles from settings..."
+                placeholder={availableRoles.length === 0 ? "No assigned crew roles on cards" : "Select assigned crew roles..."}
                 options={roleOptions}
                 selectedValues={filters.roles}
                 onChange={(roles) => onChange({ ...filters, roles })}
                 searchPlaceholder="Search crew role..."
+                emptyMessage="No assigned crew roles found on cards"
               />
             </div>
           </div>

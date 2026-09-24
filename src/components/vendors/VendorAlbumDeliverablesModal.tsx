@@ -384,6 +384,74 @@ export default function VendorAlbumDeliverablesModal({
     }
   };
 
+  // Dynamically derive Event Types strictly from the member's assigned cards (NOT global settings)
+  const cardEventTypes = useMemo(() => {
+    const set = new Set<string>();
+    const targetOrders = orders.filter(o => {
+      const itemCat = o.category || detectDeliverableCategory(undefined, o.album_type || o.item_title);
+      return itemCat === activeCategoryTab;
+    });
+
+    targetOrders.forEach(o => {
+      const raw = o.event_name || o.item_title || o.album_type;
+      if (!raw || typeof raw !== 'string') return;
+      if (/sheet|page|photo\s*book|flush\s*mount|album\s*size|matte|glossy|diamond|inch|x\s*\d/i.test(raw)) return;
+
+      const parts = raw.split(/[,|•]/);
+      for (let part of parts) {
+        part = part.trim();
+        if (part && part.length > 1 && !/sheet|page|inch|x\s*\d/i.test(part)) {
+          const formatted = part
+            .split(/\s+/)
+            .map(word => {
+              if (word.includes('-')) {
+                return word.split('-').map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join('-');
+              }
+              return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+            })
+            .join(' ');
+          set.add(formatted);
+        }
+      }
+    });
+
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [orders, activeCategoryTab]);
+
+  // Dynamically derive Crew Roles strictly from the member's assigned cards (NOT global settings)
+  const cardCrewRoles = useMemo(() => {
+    const set = new Set<string>();
+    const targetOrders = orders.filter(o => {
+      const itemCat = o.category || detectDeliverableCategory(undefined, o.album_type || o.item_title);
+      return itemCat === activeCategoryTab;
+    });
+
+    targetOrders.forEach(o => {
+      const raw = o.role || o.service_type;
+      if (!raw || typeof raw !== 'string') return;
+      if (/sheet|page|album|print|book/i.test(raw)) return;
+
+      const parts = raw.split(/[,|•]/);
+      for (let part of parts) {
+        part = part.trim();
+        if (part && part.length > 1 && !/sheet|page|album|print/i.test(part)) {
+          const formatted = part
+            .split(/\s+/)
+            .map(word => {
+              if (word.includes('-')) {
+                return word.split('-').map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join('-');
+              }
+              return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+            })
+            .join(' ');
+          set.add(formatted);
+        }
+      }
+    });
+
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [orders, activeCategoryTab]);
+
   // Filtered Orders for Current Tab with Multi-Select Filters
   const filteredOrders = useMemo(() => {
     return orders.filter(o => {
@@ -411,17 +479,25 @@ export default function VendorAlbumDeliverablesModal({
       if (filters.startDate && orderDate && orderDate < filters.startDate) return false;
       if (filters.endDate && orderDate && orderDate > filters.endDate) return false;
 
-      // 5. Event Types Multi-Select Filter (Matching against configured studio event types)
+      // 5. Event Types Multi-Select Filter (Matching against card-assigned event types)
       if (filters.eventTypes.length > 0) {
-        const eventName = (o.event_name || o.album_type || o.item_title || '').toLowerCase();
-        const matchesEvent = filters.eventTypes.some(et => eventName.includes(et.toLowerCase()));
+        const rawEvent = (o.event_name || o.album_type || o.item_title || '').toLowerCase();
+        const matchesEvent = filters.eventTypes.some(et => {
+          const filterLower = et.toLowerCase();
+          const tokens = rawEvent.split(/[,|•]/).map(t => t.trim().toLowerCase());
+          return tokens.includes(filterLower) || rawEvent.includes(filterLower);
+        });
         if (!matchesEvent) return false;
       }
 
-      // 6. Crew Roles Multi-Select Filter (Matching against configured studio crew roles)
+      // 6. Crew Roles Multi-Select Filter (Matching against card-assigned crew roles)
       if (filters.roles.length > 0) {
-        const orderRole = (o.role || o.service_type || '').toLowerCase();
-        const matchesRole = filters.roles.some(r => orderRole.includes(r.toLowerCase()));
+        const rawRole = (o.role || o.service_type || '').toLowerCase();
+        const matchesRole = filters.roles.some(r => {
+          const roleLower = r.toLowerCase();
+          const tokens = rawRole.split(/[,|•]/).map(t => t.trim().toLowerCase());
+          return tokens.includes(roleLower) || rawRole.includes(roleLower);
+        });
         if (!matchesRole) return false;
       }
 
@@ -2184,15 +2260,15 @@ export default function VendorAlbumDeliverablesModal({
           </AnimatePresence>
         </motion.div>
 
-        {/* 3D Multi-Select Filter Modal (With Settings Event Types & Crew Roles Only) */}
+        {/* 3D Multi-Select Filter Modal (Card-Derived Event Types & Crew Roles Only) */}
         <VendorDeliverablesFilterModal
           isOpen={isFilterModalOpen}
           onClose={() => setIsFilterModalOpen(false)}
           filters={filters}
           onChange={setFilters}
           onReset={() => setFilters({ startDate: '', endDate: '', eventTypes: [], roles: [], paymentStatuses: [] })}
-          availableEventTypes={studioEventTypes}
-          availableRoles={studioCrewRoles}
+          availableEventTypes={cardEventTypes}
+          availableRoles={cardCrewRoles}
           totalFilteredCount={filteredOrders.length}
         />
 
