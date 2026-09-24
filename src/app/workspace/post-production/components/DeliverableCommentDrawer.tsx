@@ -90,6 +90,7 @@ export default function DeliverableCommentDrawer({
       } else if (deliverable.drive_link && deliverable.drive_link.trim()) {
         initialLinks = [{
           id: 'dl_' + Date.now(),
+          title: 'Primary Drive Folder',
           label: 'Primary Drive Folder',
           url: deliverable.drive_link.trim(),
         }];
@@ -239,6 +240,7 @@ export default function DeliverableCommentDrawer({
 
     const newEntry: DeliverableDriveLink = {
       id: 'link_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+      title: label,
       label,
       url: formatted,
     };

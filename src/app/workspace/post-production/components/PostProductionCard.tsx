@@ -686,6 +686,8 @@ export default function PostProductionCard({
                       segmentName={segName}
                       deliverables={segDeliverables}
                       teamMembers={teamMembers}
+                      clientName={project.client_name}
+                      workspaceId={project.workspace_id}
                       disabledCategories={disabledCats}
                       onUpdateItem={handleUpdateItem}
                       onUpdateItemFields={handleUpdateItemFields}

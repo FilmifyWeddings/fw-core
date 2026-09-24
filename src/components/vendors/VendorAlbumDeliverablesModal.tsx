@@ -9,13 +9,14 @@ import {
   Printer, ArrowUpRight, ShieldCheck, User, Phone, Mail,
   RefreshCw, CheckSquare, Square, Layers, Edit3, Trash2,
   Film, Camera, Palette, Video, Layers as LayersIcon, Bell,
-  Filter, Tag, Users
+  Filter, Tag, Users, Link2
 } from 'lucide-react';
 import { 
   VendorAlbumOrder, 
   AssignmentCategory, 
   detectDeliverableCategory,
-  formatNoteDateTime
+  formatNoteDateTime,
+  saveVendorAlbumOrder
 } from '@/lib/services/vendorDeliverablesService';
 import { 
   fetchWorkspaceEventTypes, 
@@ -23,10 +24,18 @@ import {
   DEFAULT_EVENT_TYPES,
   DEFAULT_CREW_ROLES
 } from '@/lib/workspace-settings';
+import { 
+  fetchPostProductionSettings, 
+  getCachedPostProductionSettings, 
+  DEFAULT_POST_PRODUCTION_STATUSES, 
+  PostProductionStatusSetting 
+} from '@/lib/post-production-settings';
 import AiMicButton from '@/components/AiMicButton';
 import VendorStatementInvoicePdfTemplate, { VendorInvoiceItem } from './VendorStatementInvoicePdfTemplate';
 import VendorDeliverablesFilterModal, { DeliverablesFilterState } from './VendorDeliverablesFilterModal';
 import ThreeDMultiSelectDropdown from '@/components/common/ThreeDMultiSelectDropdown';
+import AttachLinksModal, { DeliverableAttachedLink } from '@/components/common/AttachLinksModal';
+import ThreeDStatusSelect from '@/components/common/ThreeDStatusSelect';
 
 // Fast Module-Level In-Memory Cache for 0ms instant loading
 const memCachedVendorOrders = new Map<string, VendorAlbumOrder[]>();
@@ -244,6 +253,36 @@ export default function VendorAlbumDeliverablesModal({
   const [commentReminder, setCommentReminder] = useState('');
   const [showReminderPicker, setShowReminderPicker] = useState(false);
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
+
+  // Post-Production Statuses Sync
+  const [ppStatuses, setPpStatuses] = useState<PostProductionStatusSetting[]>(() => {
+    const cached = getCachedPostProductionSettings();
+    if (cached && cached.statuses && cached.statuses.length > 0) return cached.statuses;
+    return DEFAULT_POST_PRODUCTION_STATUSES;
+  });
+
+  useEffect(() => {
+    fetchPostProductionSettings(workspaceId).then(settings => {
+      if (settings && settings.statuses && settings.statuses.length > 0) {
+        setPpStatuses(settings.statuses);
+      }
+    }).catch(() => {});
+
+    const handleSettingsUpdated = () => {
+      fetchPostProductionSettings(workspaceId).then(settings => {
+        if (settings && settings.statuses && settings.statuses.length > 0) {
+          setPpStatuses(settings.statuses);
+        }
+      }).catch(() => {});
+    };
+    window.addEventListener('post_production_settings_updated', handleSettingsUpdated);
+    return () => {
+      window.removeEventListener('post_production_settings_updated', handleSettingsUpdated);
+    };
+  }, [workspaceId]);
+
+  // Attach Multiple Links Modal Target Order
+  const [attachLinksOrder, setAttachLinksOrder] = useState<VendorAlbumOrder | null>(null);
 
   // Check member types and roles
   const isFreelancer = vendor?.primary_type === 'FREELANCER' || (vendor?.member_types || []).includes('FREELANCER');
@@ -525,6 +564,46 @@ export default function VendorAlbumDeliverablesModal({
     return filteredOrders.slice(0, visibleCardCount);
   }, [filteredOrders, visibleCardCount]);
 
+  // Group non-shoot deliverables by client/couple for Single Couple Card
+  const clientGroups = useMemo(() => {
+    const map = new Map<string, VendorAlbumOrder[]>();
+    for (const o of filteredOrders) {
+      const key = (o.client_name || 'Valued Couple').trim();
+      if (!map.has(key)) {
+        map.set(key, []);
+      }
+      map.get(key)!.push(o);
+    }
+
+    const groups: Array<{
+      clientName: string;
+      orders: VendorAlbumOrder[];
+      totalAgreed: number;
+      totalPaid: number;
+      totalBalance: number;
+    }> = [];
+
+    for (const [cName, list] of map.entries()) {
+      const totalAgreed = list.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
+      const totalPaid = list.reduce((sum, o) => sum + (Number(o.paid_amount) || 0), 0);
+      const totalBalance = Math.max(0, totalAgreed - totalPaid);
+
+      groups.push({
+        clientName: cName,
+        orders: list,
+        totalAgreed,
+        totalPaid,
+        totalBalance,
+      });
+    }
+
+    return groups;
+  }, [filteredOrders]);
+
+  const displayedClientGroups = useMemo(() => {
+    return clientGroups.slice(0, visibleCardCount);
+  }, [clientGroups, visibleCardCount]);
+
   // Active Filters Count
   const activeFiltersCount = 
     (filters.startDate || filters.endDate ? 1 : 0) +
@@ -561,11 +640,34 @@ export default function VendorAlbumDeliverablesModal({
     const updated = { ...order, order_status: nextStatus };
     setOrders(prev => prev.map(o => o.id === order.id ? updated : o));
 
+    try {
+      await saveVendorAlbumOrder(workspaceId, updated);
+    } catch (_) {}
+
     await fetch('/api/vendors/albums', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updated)
     }).catch(() => {});
+  };
+
+  // Save Multiple Attached Links Handler
+  const handleSaveAttachLinks = async (links: DeliverableAttachedLink[]) => {
+    if (!attachLinksOrder) return;
+    const firstUrl = links[0]?.url || '';
+    const updated: VendorAlbumOrder = {
+      ...attachLinksOrder,
+      drive_links: links,
+      drive_folder_url: firstUrl || attachLinksOrder.drive_folder_url || '',
+    };
+    setOrders(prev => prev.map(o => o.id === attachLinksOrder.id ? updated : o));
+    setAttachLinksOrder(null);
+
+    try {
+      await saveVendorAlbumOrder(workspaceId, updated);
+    } catch (err) {
+      console.warn('Failed to save attached links:', err);
+    }
   };
 
   // ── SAVE DEDICATED NEW SHOOT ──
@@ -1327,11 +1429,11 @@ export default function VendorAlbumDeliverablesModal({
                   </button>
                 )}
               </div>
-            ) : (
+            ) : activeCategoryTab === 'shoot' ? (
+              /* ── 1. SHOOTS CARDS (INDIVIDUAL SHOOT CARDS) ── */
               <>
                 {displayedOrders.map(order => {
                   const isSelected = selectedOrderIds.has(order.id);
-                  const isShoot = order.category === 'shoot';
                   const statusStyle = STATUS_COLOR_MAP[order.order_status] || STATUS_COLOR_MAP['Pending Design'];
 
                   // Commercials Calculations
@@ -1366,112 +1468,67 @@ export default function VendorAlbumDeliverablesModal({
                           </button>
 
                           <div>
-                            {isShoot ? (
-                              /* SHOOTS DETAILS */
-                              <div className="space-y-1">
-                                <h3 className="text-base sm:text-lg font-black text-stone-900 tracking-tight">
-                                  {order.client_name}
-                                </h3>
+                            <div className="space-y-1">
+                              <h3 className="text-base sm:text-lg font-black text-stone-900 tracking-tight">
+                                {order.client_name}
+                              </h3>
 
-                                <div className="flex items-center gap-2 text-xs text-stone-700 font-medium flex-wrap pt-0.5">
-                                  {/* Event Name */}
-                                  <span className="font-extrabold text-amber-950 text-xs sm:text-sm">
-                                    {order.event_name || order.item_title || order.album_type || 'Wedding Event'}
-                                  </span>
+                              <div className="flex items-center gap-2 text-xs text-stone-700 font-medium flex-wrap pt-0.5">
+                                {/* Event Name */}
+                                <span className="font-extrabold text-amber-950 text-xs sm:text-sm">
+                                  {order.event_name || order.item_title || order.album_type || 'Wedding Event'}
+                                </span>
 
-                                  <span className="text-stone-300">•</span>
+                                <span className="text-stone-300">•</span>
 
-                                  {/* Date & Timing */}
-                                  <span className="inline-flex items-center gap-1.5 text-stone-700 font-semibold bg-stone-100 px-2.5 py-0.5 rounded-md border border-stone-200/80 font-mono text-[11px]">
-                                    <Calendar className="w-3 h-3 text-amber-600" />
-                                    <span>{formatShootDate(order.event_date || order.due_date)}</span>
-                                    {order.event_time && (
-                                      <>
-                                        <span className="text-stone-300">|</span>
-                                        <Clock className="w-3 h-3 text-amber-600" />
-                                        <span>{order.event_time}</span>
-                                      </>
-                                    )}
-                                  </span>
-
-                                  <span className="text-stone-300">•</span>
-
-                                  {/* Category / Role */}
-                                  <span className="px-2.5 py-0.5 rounded-md text-[11px] font-black bg-amber-50 text-amber-900 border border-amber-300/60 shadow-2xs">
-                                    {order.role || order.service_type || 'Shoot Specialist'}
-                                  </span>
-                                </div>
-                              </div>
-                            ) : (
-                              /* DELIVERABLES DETAILS */
-                              <div>
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <h3 className="text-sm sm:text-base font-black text-stone-900 tracking-tight">
-                                    {order.client_name}
-                                  </h3>
-                                  {getCategoryBadge(order.category)}
-                                </div>
-                                
-                                <div className="flex items-center gap-2 mt-1 text-xs text-stone-600 font-medium flex-wrap">
-                                  <span className="font-bold text-amber-950">
-                                    {order.item_title || order.album_type}
-                                  </span>
-                                  {order.specs && (
-                                    <span className="font-mono text-stone-700 bg-stone-100 px-2 py-0.5 rounded-md border border-stone-200/60 font-bold">
-                                      {order.specs}
-                                    </span>
+                                {/* Date & Timing */}
+                                <span className="inline-flex items-center gap-1.5 text-stone-700 font-semibold bg-stone-100 px-2.5 py-0.5 rounded-md border border-stone-200/80 font-mono text-[11px]">
+                                  <Calendar className="w-3 h-3 text-amber-600" />
+                                  <span>{formatShootDate(order.event_date || order.due_date)}</span>
+                                  {order.event_time && (
+                                    <>
+                                      <span className="text-stone-300">|</span>
+                                      <Clock className="w-3 h-3 text-amber-600" />
+                                      <span>{order.event_time}</span>
+                                    </>
                                   )}
-                                  {order.due_date && (
-                                    <span className="font-mono text-stone-500 text-[11px]">
-                                      Due: {order.due_date}
-                                    </span>
-                                  )}
-                                </div>
+                                </span>
+
+                                <span className="text-stone-300">•</span>
+
+                                {/* Category / Role */}
+                                <span className="px-2.5 py-0.5 rounded-md text-[11px] font-black bg-amber-50 text-amber-900 border border-amber-300/60 shadow-2xs">
+                                  {order.role || order.service_type || 'Shoot Specialist'}
+                                </span>
                               </div>
-                            )}
+                            </div>
                           </div>
                         </div>
 
-                        {/* Top-Right Status: For Shoots: Synchronized Status Pill! */}
-                        {isShoot ? (
-                          <div className="flex items-center gap-2 shrink-0">
-                            {isZero ? (
-                              <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-stone-100 text-stone-600 border border-stone-300 shadow-2xs uppercase tracking-wider">
-                                UNSETTLED
-                              </span>
-                            ) : isFullPaid ? (
-                              <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1 shadow-2xs uppercase tracking-wider">
-                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                FULL PAID
-                              </span>
-                            ) : isPartiallyPaid ? (
-                              <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1 shadow-2xs uppercase tracking-wider">
-                                PARTIALLY PAID
-                              </span>
-                            ) : (
-                              <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-300 flex items-center gap-1 shadow-2xs uppercase tracking-wider">
-                                UNPAID
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            <select
-                              value={order.order_status}
-                              onChange={(e) => handleStatusChange(order, e.target.value)}
-                              className={`px-3 py-1 rounded-full text-xs font-black border cursor-pointer outline-none shadow-2xs transition ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border}`}
-                            >
-                              {DEFAULT_STATUS_LIST.map(st => (
-                                <option key={st} value={st} className="bg-white text-stone-900 font-bold">
-                                  {st}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
+                        {/* Top-Right Status: Synchronized Status Pill */}
+                        <div className="flex items-center gap-2 shrink-0">
+                          {isZero ? (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-stone-100 text-stone-600 border border-stone-300 shadow-2xs uppercase tracking-wider">
+                              UNSETTLED
+                            </span>
+                          ) : isFullPaid ? (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1 shadow-2xs uppercase tracking-wider">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              FULL PAID
+                            </span>
+                          ) : isPartiallyPaid ? (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1 shadow-2xs uppercase tracking-wider">
+                              PARTIALLY PAID
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-300 flex items-center gap-1 shadow-2xs uppercase tracking-wider">
+                              UNPAID
+                            </span>
+                          )}
+                        </div>
                       </div>
 
-                      {/* Bottom Row: Commercials (Agreed, Paid, Balance in RED) & Actions */}
+                      {/* Bottom Row: Commercials & Actions */}
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-3 rounded-2xl bg-[#FAF8F5] border border-amber-200/60 items-center">
                         {/* Financials Strip */}
                         <div>
@@ -1493,42 +1550,11 @@ export default function VendorAlbumDeliverablesModal({
                           </div>
                         </div>
 
-                        {/* PDF Proof / Drive Link for deliverables */}
-                        <div className="sm:text-center">
-                          {!isShoot ? (
-                            <>
-                              <span className="text-[9px] font-black uppercase tracking-wider text-stone-400 block">
-                                Drive Folder / Proof
-                              </span>
-                              {order.pdf_proof_url || order.drive_folder_url ? (
-                                <a
-                                  href={order.pdf_proof_url || order.drive_folder_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-700 hover:text-amber-900 hover:underline mt-0.5 truncate max-w-[200px]"
-                                >
-                                  <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-                                  <span className="truncate">Open Link</span>
-                                </a>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const url = prompt('Enter Google Drive or Canva Link:');
-                                    if (url) {
-                                      handleStatusChange({ ...order, pdf_proof_url: url.trim() }, order.order_status);
-                                    }
-                                  }}
-                                  className="text-[11px] font-bold text-amber-600 hover:underline mt-0.5 cursor-pointer"
-                                >
-                                  + Attach Link
-                                </button>
-                              )}
-                            </>
-                          ) : null}
+                        <div className="sm:text-center text-xs text-stone-400 font-mono">
+                          {order.event_date ? `Date: ${order.event_date}` : ''}
                         </div>
 
-                        {/* Action Buttons: Status Button Bug Fixed for 0,0,0 cards */}
+                        {/* Action Buttons */}
                         <div className="flex items-center justify-end gap-1.5 flex-wrap">
                           {isZero ? (
                             <button
@@ -1582,9 +1608,9 @@ export default function VendorAlbumDeliverablesModal({
                             type="button"
                             onClick={() => handleOpenInvoice(order)}
                             className="px-2.5 py-1 rounded-xl bg-stone-900 hover:bg-stone-800 text-white text-[11px] font-black flex items-center gap-1 transition cursor-pointer shadow-2xs"
-                            title="Generate Single Job Invoice"
+                            title="Generate Single Shoot Invoice"
                           >
-                            <FileText className="w-3 h-3 text-amber-400" />
+                            <Printer className="w-3 h-3 text-amber-400" />
                             <span>Invoice</span>
                           </button>
                         </div>
@@ -1593,7 +1619,7 @@ export default function VendorAlbumDeliverablesModal({
                   );
                 })}
 
-                {/* Progressive Lazy Rendering: Load More Button */}
+                {/* Progressive Lazy Rendering: Load More Button for Shoots */}
                 {visibleCardCount < filteredOrders.length && (
                   <div className="pt-2 pb-4 text-center">
                     <button
@@ -1601,7 +1627,349 @@ export default function VendorAlbumDeliverablesModal({
                       onClick={() => setVisibleCardCount(prev => prev + 10)}
                       className="px-5 py-2.5 rounded-2xl bg-white hover:bg-amber-50 text-amber-900 border border-amber-300 font-black text-xs shadow-2xs transition cursor-pointer inline-flex items-center gap-2"
                     >
-                      <span>Load More ({filteredOrders.length - visibleCardCount} remaining)</span>
+                      <span>Load More Shoots ({filteredOrders.length - visibleCardCount} remaining)</span>
+                      <ChevronDown className="w-4 h-4 text-amber-600" />
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              /* ── 2. NON-SHOOT DELIVERABLES (SINGLE CARD PER COUPLE) ── */
+              <>
+                {displayedClientGroups.map(grp => {
+                  // Check if all orders in grp are selected
+                  const allSelected = grp.orders.length > 0 && grp.orders.every(o => selectedOrderIds.has(o.id));
+                  const someSelected = grp.orders.some(o => selectedOrderIds.has(o.id));
+
+                  // Couple status calculation
+                  const isZero = grp.totalAgreed === 0 && grp.totalPaid === 0 && grp.totalBalance === 0;
+                  const isFullPaid = grp.totalAgreed > 0 && grp.totalBalance === 0 && grp.totalPaid >= grp.totalAgreed;
+                  const isPartiallyPaid = grp.totalPaid > 0 && grp.totalBalance > 0;
+
+                  return (
+                    <div
+                      key={grp.clientName}
+                      className={`p-4 sm:p-5 rounded-3xl bg-white border-2 transition-all shadow-2xs hover:shadow-xs space-y-4 ${
+                        allSelected ? 'border-amber-500 bg-amber-50/15' : 'border-stone-200/90'
+                      }`}
+                    >
+                      {/* ── COUPLE CARD HEADER ── */}
+                      <div className="flex items-start sm:items-center justify-between flex-wrap gap-3 pb-3 border-b border-stone-200/80">
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedOrderIds(prev => {
+                                const next = new Set(prev);
+                                if (allSelected) {
+                                  grp.orders.forEach(o => next.delete(o.id));
+                                } else {
+                                  grp.orders.forEach(o => next.add(o.id));
+                                }
+                                return next;
+                              });
+                            }}
+                            className="mt-0.5 text-stone-400 hover:text-amber-600 cursor-pointer"
+                            title={allSelected ? 'Deselect all deliverables' : 'Select all deliverables'}
+                          >
+                            {allSelected ? (
+                              <CheckSquare className="w-4 h-4 text-amber-600" />
+                            ) : someSelected ? (
+                              <div className="w-4 h-4 rounded-xs border-2 border-amber-600 bg-amber-100 flex items-center justify-center">
+                                <div className="w-2 h-0.5 bg-amber-600" />
+                              </div>
+                            ) : (
+                              <Square className="w-4 h-4 text-stone-300" />
+                            )}
+                          </button>
+
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h3 className="text-base sm:text-lg font-black text-stone-900 tracking-tight">
+                                {grp.clientName}
+                              </h3>
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-stone-100 text-stone-600 border border-stone-200/80 font-mono">
+                                {grp.orders.length} {grp.orders.length === 1 ? 'Deliverable' : 'Deliverables'}
+                              </span>
+                            </div>
+
+                            {/* Aggregated Financials Header Bar */}
+                            <div className="flex items-center gap-2 text-xs font-bold mt-1 flex-wrap">
+                              <span className="font-mono font-black text-stone-800">
+                                Agreed: ₹{grp.totalAgreed.toLocaleString('en-IN')}
+                              </span>
+                              <span className="text-stone-300">•</span>
+                              <span className="font-mono text-emerald-700 font-bold">
+                                Paid: ₹{grp.totalPaid.toLocaleString('en-IN')}
+                              </span>
+                              <span className="text-stone-300">•</span>
+                              <span className={`font-mono font-black ${grp.totalBalance > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
+                                Balance: ₹{grp.totalBalance.toLocaleString('en-IN')}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Status Pill and Single Couple Invoice Button */}
+                        <div className="flex items-center gap-2.5">
+                          {isZero ? (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-stone-100 text-stone-600 border border-stone-300 shadow-2xs uppercase tracking-wider">
+                              UNSETTLED
+                            </span>
+                          ) : isFullPaid ? (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1 shadow-2xs uppercase tracking-wider">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              FULL PAID
+                            </span>
+                          ) : isPartiallyPaid ? (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1 shadow-2xs uppercase tracking-wider">
+                              PARTIALLY PAID
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-300 flex items-center gap-1 shadow-2xs uppercase tracking-wider">
+                              UNPAID
+                            </span>
+                          )}
+
+                          {/* SINGLE COUPLE INVOICE BUTTON (Entire Couple Level) */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setInvoiceItems(grp.orders.map(o => ({
+                                id: o.id,
+                                client_name: grp.clientName,
+                                album_type: o.item_title || o.album_type,
+                                specs: o.specs || '',
+                                sheet_count: o.sheet_count || 1,
+                                rate_per_sheet: o.rate_per_sheet || 0,
+                                total_amount: Number(o.total_amount) || 0,
+                                paid_amount: Number(o.paid_amount) || 0,
+                                balance_amount: Number(o.balance_amount) || 0,
+                                order_status: o.order_status,
+                                payment_status: o.payment_status,
+                                order_date: o.order_date || '',
+                                due_date: o.due_date || '',
+                                notes: o.notes || '',
+                              })));
+                              setIsInvoiceModalOpen(true);
+                            }}
+                            className="px-3.5 py-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-white text-xs font-black flex items-center gap-1.5 transition cursor-pointer shadow-2xs active:translate-y-0.5"
+                            title={`Generate Invoice for all ${grp.orders.length} deliverables of ${grp.clientName}`}
+                          >
+                            <Printer className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Invoice</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* ── DELIVERABLES LIST INSIDE THE COUPLE CARD ── */}
+                      <div className="space-y-2.5">
+                        {grp.orders.map(order => {
+                          const isSelected = selectedOrderIds.has(order.id);
+                          const oTot = Number(order.total_amount || 0);
+                          const oPaid = Number(order.paid_amount || 0);
+                          const oBal = Number(order.balance_amount || 0);
+                          const oFullPaid = oTot > 0 && oBal === 0 && oPaid >= oTot;
+
+                          // Due date and Overdue indicator
+                          const dueDateStr = order.due_date || '';
+                          const deadlineInfo = (() => {
+                            if (!dueDateStr) return null;
+                            const due = new Date(dueDateStr);
+                            if (isNaN(due.getTime())) return null;
+                            const today = new Date();
+                            today.setHours(0, 0, 0, 0);
+                            due.setHours(0, 0, 0, 0);
+                            const diffDays = Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                            const isDone = (order.order_status || '').toLowerCase().includes('done') || (order.order_status || '').toLowerCase().includes('completed');
+                            if (isDone) {
+                              return { label: 'Done', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+                            }
+                            if (diffDays < 0) {
+                              return { 
+                                label: `Overdue ${Math.abs(diffDays)}d`, 
+                                className: 'bg-rose-100 text-rose-700 border-rose-300 animate-pulse font-black' 
+                              };
+                            }
+                            if (diffDays === 0) {
+                              return { label: 'Due Today', className: 'bg-amber-100 text-amber-800 border-amber-300 font-black' };
+                            }
+                            return { label: `${diffDays}d left`, className: 'bg-stone-100 text-stone-600 border-stone-200 font-bold' };
+                          })();
+
+                          return (
+                            <div
+                              key={order.id}
+                              className={`p-3.5 rounded-2xl bg-[#FFFDF9] border transition shadow-2xs hover:shadow-xs space-y-2.5 ${
+                                isSelected ? 'border-amber-400 bg-amber-50/30' : 'border-[#EAE5DA]'
+                              }`}
+                            >
+                              {/* Row 1: Title, Specs (ONLY if exists), Due Date, and Status */}
+                              <div className="flex items-center justify-between flex-wrap gap-2">
+                                <div className="flex items-center gap-2 flex-wrap min-w-0 flex-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleSelectOrder(order.id)}
+                                    className="text-stone-400 hover:text-amber-600 cursor-pointer shrink-0"
+                                  >
+                                    {isSelected ? (
+                                      <CheckSquare className="w-3.5 h-3.5 text-amber-600" />
+                                    ) : (
+                                      <Square className="w-3.5 h-3.5 text-stone-300" />
+                                    )}
+                                  </button>
+
+                                  <span className="text-xs sm:text-sm font-black text-stone-900 truncate">
+                                    {order.item_title || order.album_type || 'Deliverable'}
+                                  </span>
+
+                                  {/* Clean Specs Badge: ONLY if specs exist and not empty */}
+                                  {order.specs && order.specs.trim().length > 0 && (
+                                    <span className="font-mono text-[11px] text-amber-950 font-extrabold bg-amber-100/70 px-2 py-0.5 rounded-md border border-amber-300/80 shadow-2xs">
+                                      {order.specs}
+                                    </span>
+                                  )}
+
+                                  {/* Due Date & Red Overdue Indicator */}
+                                  {dueDateStr && (
+                                    <div className="flex items-center gap-1.5 text-stone-600 text-[11px] font-mono">
+                                      <span className="text-stone-400">Due:</span>
+                                      <span className="font-bold text-stone-700">{dueDateStr}</span>
+                                      {deadlineInfo && (
+                                        <span className={`px-2 py-0.5 rounded-md text-[10px] border shadow-2xs shrink-0 ${deadlineInfo.className}`}>
+                                          {deadlineInfo.label}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Status Dropdown: Synced with Post-Production Settings */}
+                                <div className="shrink-0">
+                                  <ThreeDStatusSelect
+                                    currentStatus={order.order_status}
+                                    statuses={ppStatuses}
+                                    workspaceId={workspaceId}
+                                    onChange={(val) => handleStatusChange(order, val)}
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Row 2: Attached Link Pills (if any) */}
+                              {((order.drive_links && order.drive_links.length > 0) || order.pdf_proof_url || order.drive_folder_url) && (
+                                <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                                  {order.drive_links && order.drive_links.length > 0 ? (
+                                    order.drive_links.map((link, idx) => (
+                                      <a
+                                        key={idx}
+                                        href={link.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white text-stone-800 border border-amber-300 hover:bg-amber-100 hover:text-amber-900 transition shadow-2xs"
+                                        title={`Open ${link.title}: ${link.url}`}
+                                      >
+                                        <ExternalLink className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                                        <span className="truncate max-w-[140px]">{link.title || 'Link'}</span>
+                                      </a>
+                                    ))
+                                  ) : (
+                                    <a
+                                      href={order.pdf_proof_url || order.drive_folder_url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white text-stone-800 border border-amber-300 hover:bg-amber-100 transition shadow-2xs"
+                                    >
+                                      <ExternalLink className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                                      <span>Drive / Proof Link</span>
+                                    </a>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Row 3: Deliverable Commercials & Action Buttons */}
+                              <div className="flex items-center justify-between flex-wrap gap-2 pt-1 border-t border-stone-200/50">
+                                {/* Financials */}
+                                <div className="flex items-center gap-2 text-xs font-bold flex-wrap">
+                                  <span className="font-mono text-stone-800">
+                                    Fee: ₹{oTot.toLocaleString('en-IN')}
+                                  </span>
+                                  <span className="text-stone-300">•</span>
+                                  <span className="font-mono text-emerald-700">
+                                    Paid: ₹{oPaid.toLocaleString('en-IN')}
+                                  </span>
+                                  <span className="text-stone-300">•</span>
+                                  <span className={`font-mono font-black ${oBal > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
+                                    Bal: ₹{oBal.toLocaleString('en-IN')}
+                                  </span>
+                                </div>
+
+                                {/* Actions */}
+                                <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+                                  {/* Record Payment Button */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenRecordPayment(order)}
+                                    className={`px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-2xs ${
+                                      oFullPaid 
+                                        ? 'bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100'
+                                        : oPaid > 0
+                                        ? 'bg-amber-50 text-amber-900 border border-amber-300 hover:bg-amber-100'
+                                        : 'bg-white text-stone-700 border border-stone-200 hover:bg-stone-50'
+                                    }`}
+                                  >
+                                    <IndianRupee className="w-3 h-3 text-amber-600" />
+                                    <span>{oFullPaid ? 'Paid' : oPaid > 0 ? 'Part Paid' : 'Record Pay'}</span>
+                                  </button>
+
+                                  {/* Attach Links Button */}
+                                  <button
+                                    type="button"
+                                    onClick={() => setAttachLinksOrder(order)}
+                                    className="px-2 py-1 rounded-xl border border-stone-200 bg-white hover:bg-amber-50 hover:border-amber-300 text-stone-700 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                                    title="Manage Drive and review links"
+                                  >
+                                    <Link2 className="w-3 h-3 text-amber-600" />
+                                    <span>Links {order.drive_links?.length ? `(${order.drive_links.length})` : ''}</span>
+                                  </button>
+
+                                  {/* Notes Button */}
+                                  <button
+                                    type="button"
+                                    onClick={() => setCommentTarget(order)}
+                                    className="px-2 py-1 rounded-xl border border-stone-200 bg-white hover:bg-stone-50 text-[11px] font-bold text-stone-700 flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                                  >
+                                    <MessageSquare className="w-3 h-3 text-stone-400" />
+                                    <span>Notes ({(order.comments || []).length})</span>
+                                  </button>
+
+                                  {/* Edit Item Details */}
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingOrder(order)}
+                                    className="p-1.5 rounded-xl border border-stone-200 bg-white hover:bg-stone-100 text-stone-500 transition cursor-pointer shadow-2xs"
+                                    title="Edit Item Title & Specs"
+                                  >
+                                    <Edit3 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Progressive Lazy Rendering: Load More Button for Couples */}
+                {visibleCardCount < clientGroups.length && (
+                  <div className="pt-2 pb-4 text-center">
+                    <button
+                      type="button"
+                      onClick={() => setVisibleCardCount(prev => prev + 10)}
+                      className="px-5 py-2.5 rounded-2xl bg-white hover:bg-amber-50 text-amber-900 border border-amber-300 font-black text-xs shadow-2xs transition cursor-pointer inline-flex items-center gap-2"
+                    >
+                      <span>Load More Couples ({clientGroups.length - visibleCardCount} remaining)</span>
                       <ChevronDown className="w-4 h-4 text-amber-600" />
                     </button>
                   </div>
@@ -2282,6 +2650,20 @@ export default function VendorAlbumDeliverablesModal({
           studioEmail={studioProfile.email}
           studioAddress={studioProfile.address}
           items={invoiceItems}
+        />
+
+        {/* Attach Resource / Drive Links Modal */}
+        <AttachLinksModal
+          isOpen={Boolean(attachLinksOrder)}
+          onClose={() => setAttachLinksOrder(null)}
+          title={attachLinksOrder?.item_title || attachLinksOrder?.album_type || 'Deliverable'}
+          subtitle={attachLinksOrder?.client_name}
+          initialLinks={(attachLinksOrder?.drive_links || []).map((l: any, i: number) => ({
+            id: l.id || `lnk_${i}`,
+            title: l.title || l.label || 'Link',
+            url: l.url || '',
+          }))}
+          onSave={handleSaveAttachLinks}
         />
       </div>
     </AnimatePresence>

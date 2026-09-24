@@ -10,8 +10,9 @@ import { fetchPostProductionSettings, getCachedPostProductionSettings, DEFAULT_P
 
 export interface DeliverableDriveLink {
   id: string;
-  label: string;
   url: string;
+  title?: string;
+  label?: string;
 }
 
 export interface DeliverableCommentItem {
@@ -39,6 +40,10 @@ export interface PostProductionDeliverable {
   due_date?: string | null;
   deadline?: string | null;
   notes?: string | null;
+  agreed_amount?: number | null;
+  paid_amount?: number | null;
+  balance_amount?: number | null;
+  payment_status?: string | null;
   drive_link?: string | null;
   drive_links?: DeliverableDriveLink[];
   comments?: DeliverableCommentItem[];
@@ -53,7 +58,9 @@ interface DeliverableCategorySectionProps {
   segment: string;
   category: string;
   items: PostProductionDeliverable[];
-  teamMembers: { id: string; name: string; role?: string }[];
+  teamMembers: { id: string; name: string; role?: string; default_daily_rate?: number; daily_rate?: number; email?: string }[];
+  clientName?: string;
+  workspaceId?: string;
   onAddItem: (segment: string, category: string, title: string, specs?: string) => void;
   onAddMultipleItems?: (items: Partial<PostProductionDeliverable>[]) => void;
   onUpdateItem: (itemId: string, field: keyof PostProductionDeliverable, value: any) => void;
@@ -69,6 +76,8 @@ export default function DeliverableCategorySection({
   category,
   items,
   teamMembers,
+  clientName,
+  workspaceId,
   onAddItem,
   onAddMultipleItems,
   onUpdateItem,
@@ -653,6 +662,8 @@ export default function DeliverableCategorySection({
               key={item.id}
               item={item}
               teamMembers={filteredTeamMembers}
+              clientName={clientName}
+              workspaceId={workspaceId}
               onUpdateItem={onUpdateItem}
               onUpdateItemFields={onUpdateItemFields}
               onDeleteItem={onDeleteItem}

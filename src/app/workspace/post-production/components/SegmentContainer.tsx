@@ -23,7 +23,9 @@ export function normalizeCategoryName(cat: string, title?: string): string {
 interface SegmentContainerProps {
   segmentName: string;
   deliverables: PostProductionDeliverable[];
-  teamMembers: { id: string; name: string; role?: string }[];
+  teamMembers: { id: string; name: string; role?: string; default_daily_rate?: number; daily_rate?: number; email?: string }[];
+  clientName?: string;
+  workspaceId?: string;
   disabledCategories?: string[];
   onUpdateItem: (itemId: string, field: keyof PostProductionDeliverable, value: any) => void;
   onUpdateItemFields?: (itemId: string, fields: Partial<PostProductionDeliverable>) => void;
@@ -42,6 +44,8 @@ export default function SegmentContainer({
   segmentName,
   deliverables,
   teamMembers,
+  clientName,
+  workspaceId,
   disabledCategories = [],
   onUpdateItem,
   onUpdateItemFields,
@@ -318,6 +322,8 @@ export default function SegmentContainer({
                 category={cat}
                 items={catDeliverables}
                 teamMembers={teamMembers}
+                clientName={clientName}
+                workspaceId={workspaceId}
                 onUpdateItem={onUpdateItem}
                 onUpdateItemFields={onUpdateItemFields}
                 onDeleteItem={onDeleteItem}

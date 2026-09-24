@@ -3,16 +3,22 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Camera, Video, BookOpen, Calendar, Trash2, Edit3, 
-  MessageSquare, Link2, Check, Sparkles, Plus
+  MessageSquare, Link2, Check, Sparkles, Plus, IndianRupee, ExternalLink
 } from 'lucide-react';
 import { PostProductionDeliverable } from './DeliverableCategorySection';
 import Searchable3DCreamSelect, { Searchable3DCreamSelectOption } from '@/components/ui/Searchable3DCreamSelect';
 import PostProductionConfirmModal from './PostProductionConfirmModal';
-import { fetchPostProductionSettings, getCachedPostProductionSettings, DEFAULT_POST_PRODUCTION_STATUSES } from '@/lib/post-production-settings';
+import { fetchPostProductionSettings, getCachedPostProductionSettings, DEFAULT_POST_PRODUCTION_STATUSES, PostProductionStatusSetting } from '@/lib/post-production-settings';
+import AssignCommercialsModal from './AssignCommercialsModal';
+import AttachLinksModal, { DeliverableAttachedLink } from '@/components/common/AttachLinksModal';
+import ThreeDStatusSelect from '@/components/common/ThreeDStatusSelect';
+import { detectDeliverableCategory, saveVendorAlbumOrder } from '@/lib/services/vendorDeliverablesService';
 
 interface DeliverableRowItemProps {
   item: PostProductionDeliverable;
-  teamMembers: { id: string; name: string; role?: string }[];
+  teamMembers: { id: string; name: string; role?: string; default_daily_rate?: number; daily_rate?: number; email?: string }[];
+  clientName?: string;
+  workspaceId?: string;
   onUpdateItem: (itemId: string, field: keyof PostProductionDeliverable, value: any) => void;
   onUpdateItemFields?: (itemId: string, fields: Partial<PostProductionDeliverable>) => void;
   onDeleteItem: (itemId: string) => void;
@@ -40,6 +46,8 @@ const getRoleShortCode = (role?: string) => {
 export default function DeliverableRowItem({
   item,
   teamMembers,
+  clientName,
+  workspaceId,
   onUpdateItem,
   onUpdateItemFields,
   onDeleteItem,
@@ -53,63 +61,38 @@ export default function DeliverableRowItem({
   const [specInput, setSpecInput] = useState(String(item.specs ?? item.count ?? ''));
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [isAttachLinksModalOpen, setIsAttachLinksModalOpen] = useState(false);
   const datePickerRef = useRef<HTMLInputElement | null>(null);
 
   // Dynamic workflow statuses loaded synchronously from memory cache (0ms)
-  const [statusOptions, setStatusOptions] = useState<Searchable3DCreamSelectOption[]>(() => {
+  const [ppStatuses, setPpStatuses] = useState<PostProductionStatusSetting[]>(() => {
     const cached = getCachedPostProductionSettings();
     if (cached && cached.statuses && cached.statuses.length > 0) {
-      const opts = cached.statuses.map(s => ({
-        value: s.name,
-        label: s.name,
-        color: s.color,
-      }));
-      if (item.status && !opts.some(o => o.value.toLowerCase() === item.status.toLowerCase())) {
-        opts.push({
-          value: item.status,
-          label: item.status,
-          color: '#64748b',
-        });
-      }
-      return opts;
+      return cached.statuses;
     }
-    return [
-      { value: 'Upcoming', label: 'Upcoming', color: '#d97706' },
-      { value: 'In Progress', label: 'In Progress', color: '#0284c7' },
-      { value: 'Under Review', label: 'Under Review', color: '#9333ea' },
-      { value: 'Done', label: 'Done', color: '#059669' },
-    ];
+    return DEFAULT_POST_PRODUCTION_STATUSES;
   });
 
-  const loadStatusSettings = () => {
-    fetchPostProductionSettings().then(settings => {
+  useEffect(() => {
+    fetchPostProductionSettings(workspaceId).then(settings => {
       if (settings && settings.statuses && settings.statuses.length > 0) {
-        const loaded: Searchable3DCreamSelectOption[] = settings.statuses.map(s => ({
-          value: s.name,
-          label: s.name,
-          color: s.color,
-        }));
-        if (item.status && !loaded.some(o => o.value.toLowerCase() === item.status.toLowerCase())) {
-          loaded.push({
-            value: item.status,
-            label: item.status,
-            color: '#64748b',
-          });
-        }
-        setStatusOptions(loaded);
+        setPpStatuses(settings.statuses);
       }
     }).catch(() => {});
-  };
 
-  useEffect(() => {
     const handleSettingsUpdated = () => {
-      loadStatusSettings();
+      fetchPostProductionSettings(workspaceId).then(settings => {
+        if (settings && settings.statuses && settings.statuses.length > 0) {
+          setPpStatuses(settings.statuses);
+        }
+      }).catch(() => {});
     };
     window.addEventListener('post_production_settings_updated', handleSettingsUpdated);
     return () => {
       window.removeEventListener('post_production_settings_updated', handleSettingsUpdated);
     };
-  }, [item.status]);
+  }, [workspaceId]);
 
 
   useEffect(() => {
@@ -344,25 +327,62 @@ export default function DeliverableRowItem({
               </button>
             </div>
           )}
+
+          {/* Attached Resource / Drive Link Pills */}
+          {item.drive_links && item.drive_links.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap mt-1 w-full">
+              {item.drive_links.map((link: any, idx) => (
+                <a
+                  key={idx}
+                  href={link.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#FAF8F5] dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-amber-200 dark:border-stone-700 hover:bg-amber-100 hover:text-amber-900 hover:border-amber-300 transition shadow-2xs"
+                  title={`Open ${link.title || link.label || 'Link'}: ${link.url}`}
+                >
+                  <ExternalLink className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <span className="truncate max-w-[120px]">{link.title || link.label || 'Link'}</span>
+                </a>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
       {/* ── 2. EXACT HORIZONTAL LINE CONTROLS CLUSTER (ALIGNABLE COLUMNS) ── */}
       <div className="flex items-center gap-2.5 lg:gap-3 shrink-0 flex-nowrap overflow-x-auto pb-1 xl:pb-0">
-        {/* Column 1: Assignee Selector (Clean fixed width w-44 sm:w-48, atomic single-shot update) */}
-        <div className="w-44 sm:w-48 shrink-0">
+        {/* Column 1: Assignee Selector (Clean fixed width w-44 sm:w-52, atomic single-shot update) */}
+        <div className="w-44 sm:w-52 shrink-0">
           <Searchable3DCreamSelect
             value={currentAssignee}
             onChange={(val) => {
-              const matched = teamMembers.find(m => m.id === val || m.name === val);
-              const assigned_member_id = val === 'unassigned' ? null : (matched?.id || val);
-              const assigned_to = val === 'unassigned' ? null : (matched?.name || val);
-
-              if (onUpdateItemFields) {
-                onUpdateItemFields(item.id, { assigned_member_id, assigned_to });
+              if (val === 'unassigned') {
+                if (onUpdateItemFields) {
+                  onUpdateItemFields(item.id, { 
+                    assigned_member_id: null, 
+                    assigned_to: null,
+                    agreed_amount: 0,
+                    paid_amount: 0,
+                    balance_amount: 0
+                  });
+                } else {
+                  onUpdateItem(item.id, 'assigned_member_id', null);
+                  onUpdateItem(item.id, 'assigned_to', null);
+                }
               } else {
-                onUpdateItem(item.id, 'assigned_member_id', assigned_member_id);
-                onUpdateItem(item.id, 'assigned_to', assigned_to);
+                const matched = teamMembers.find(m => m.id === val || m.name === val);
+                const assigned_member_id = matched?.id || val;
+                const assigned_to = matched?.name || val;
+
+                if (onUpdateItemFields) {
+                  onUpdateItemFields(item.id, { assigned_member_id, assigned_to });
+                } else {
+                  onUpdateItem(item.id, 'assigned_member_id', assigned_member_id);
+                  onUpdateItem(item.id, 'assigned_to', assigned_to);
+                }
+                // Automatically open Assign Commercials Modal for the selected member
+                setIsAssignModalOpen(true);
               }
             }}
             options={teamMemberOptions}
@@ -371,6 +391,26 @@ export default function DeliverableRowItem({
             searchPlaceholder="🔍 Search editor..."
             placeholder="+ Assign Editor"
           />
+
+          {/* Quick Commercials Fee Badge if assigned */}
+          {(item.assigned_member_id || item.assigned_to) && (
+            <div className="flex items-center gap-1.5 mt-1">
+              <button
+                type="button"
+                onClick={() => setIsAssignModalOpen(true)}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 border border-amber-200 dark:border-amber-800 text-[10px] font-black hover:bg-amber-100 cursor-pointer shadow-2xs transition"
+                title="Click to view/edit commercials & payment ledger"
+              >
+                <IndianRupee className="w-2.5 h-2.5 text-amber-700" />
+                <span>Fee: ₹{(item.agreed_amount !== undefined && item.agreed_amount !== null ? item.agreed_amount : 0).toLocaleString('en-IN')}</span>
+                {item.payment_status === 'FULL_PAID' ? (
+                  <span className="text-[9px] text-emerald-700 font-extrabold ml-0.5">✓ Paid</span>
+                ) : item.paid_amount && item.paid_amount > 0 ? (
+                  <span className="text-[9px] text-amber-700 font-extrabold ml-0.5">Part</span>
+                ) : null}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Column 2: Due Date & Countdown Status (Clean width w-48 sm:w-52, direct box click) */}
@@ -405,19 +445,31 @@ export default function DeliverableRowItem({
           )}
         </div>
 
-        {/* Column 3: Status Dropdown (Fixed width w-36 sm:w-40, dynamically loaded from Settings) */}
-        <div className="w-36 sm:w-40 shrink-0">
-          <Searchable3DCreamSelect
-            value={currentStatus}
-            usePortal={true}
+        {/* Column 3: Status Dropdown (Dynamic from Post Production Settings) */}
+        <div className="w-36 sm:w-44 shrink-0">
+          <ThreeDStatusSelect
+            currentStatus={currentStatus}
+            statuses={ppStatuses}
+            workspaceId={workspaceId || 'ws_default'}
             onChange={(val) => {
               if (onUpdateItemFields) {
                 onUpdateItemFields(item.id, { status: val });
               } else {
                 onUpdateItem(item.id, 'status', val);
               }
+              if (item.assigned_member_id) {
+                const cat = detectDeliverableCategory(item.category, item.title);
+                saveVendorAlbumOrder(workspaceId || 'ws_default', {
+                  partner_id: item.assigned_member_id,
+                  partner_name: item.assigned_to || '',
+                  client_name: clientName || 'Client Project',
+                  deliverable_id: item.id,
+                  category: cat,
+                  item_title: item.title,
+                  order_status: val,
+                }).catch(() => {});
+              }
             }}
-            options={statusOptions}
           />
         </div>
 
@@ -434,30 +486,28 @@ export default function DeliverableRowItem({
             <span className="font-black">{commentCount}</span>
           </button>
 
-          {/* Drive & Resource Links action */}
-          {onOpenDrive && (
-            <button
-              type="button"
-              onClick={() => onOpenDrive(item.id, item.drive_link || '')}
-              title={
-                (item.drive_links && item.drive_links.length > 0)
-                  ? `${item.drive_links.length} drive/resource link(s) added`
-                  : item.drive_link
-                  ? 'Open Drive Link'
-                  : 'Add Drive / Review Links'
-              }
-              className={`px-2 py-1.5 rounded-lg border transition cursor-pointer text-xs flex items-center gap-1 shadow-2xs ${
-                (item.drive_links && item.drive_links.length > 0) || item.drive_link
-                  ? 'bg-sky-50 dark:bg-sky-950/40 border-sky-300 dark:border-sky-800 text-sky-700 dark:text-sky-300' 
-                  : 'bg-white dark:bg-stone-800 border-[#EAE5DA] dark:border-stone-700 text-slate-400 hover:text-sky-600'
-              }`}
-            >
-              <Link2 className="w-3.5 h-3.5" />
-              {((item.drive_links?.length || 0) > 0) && (
-                <span className="font-black text-[10px]">{item.drive_links?.length}</span>
-              )}
-            </button>
-          )}
+          {/* Drive & Review Links modal trigger */}
+          <button
+            type="button"
+            onClick={() => setIsAttachLinksModalOpen(true)}
+            title={
+              (item.drive_links && item.drive_links.length > 0)
+                ? `${item.drive_links.length} attached link(s)`
+                : item.drive_link
+                ? 'Manage Links & Drive'
+                : 'Attach Links (Drive, Review, Preview)'
+            }
+            className={`px-2 py-1.5 rounded-lg border transition cursor-pointer text-xs flex items-center gap-1 shadow-2xs ${
+              (item.drive_links && item.drive_links.length > 0) || item.drive_link
+                ? 'bg-amber-100/70 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200' 
+                : 'bg-white dark:bg-stone-800 border-[#EAE5DA] dark:border-stone-700 text-slate-400 hover:text-amber-700'
+            }`}
+          >
+            <Link2 className="w-3.5 h-3.5" />
+            {((item.drive_links?.length || 0) > 0) && (
+              <span className="font-black text-[10px]">{item.drive_links?.length}</span>
+            )}
+          </button>
 
           {/* Edit Title Button */}
           <button
@@ -489,6 +539,112 @@ export default function DeliverableRowItem({
         title="Delete Deliverable?"
         message={`Are you sure you want to delete "${item.title}"? This action cannot be undone.`}
         confirmText="Yes, Delete"
+      />
+
+      {/* Assign Specialist & Set Commercials Modal */}
+      <AssignCommercialsModal
+        isOpen={isAssignModalOpen}
+        onClose={() => setIsAssignModalOpen(false)}
+        deliverable={item}
+        clientName={clientName || 'Project Deliverables'}
+        teamMembers={teamMembers}
+        onSaveAssignment={async (data) => {
+          const pStatus = data.balanceAmount === 0 && data.agreedAmount > 0 
+            ? 'FULL_PAID' 
+            : data.paidAmount > 0 
+            ? 'PARTIAL' 
+            : 'PENDING';
+
+          const updatePayload: Partial<PostProductionDeliverable> = {
+            assigned_member_id: data.memberId,
+            assigned_to: data.memberName,
+            agreed_amount: data.agreedAmount,
+            paid_amount: data.paidAmount,
+            balance_amount: data.balanceAmount,
+            payment_status: pStatus,
+            due_date: data.dueDate,
+            deadline: data.dueDate,
+            notes: data.notes || item.notes,
+          };
+
+          if (onUpdateItemFields) {
+            onUpdateItemFields(item.id, updatePayload);
+          } else {
+            Object.entries(updatePayload).forEach(([k, v]) => onUpdateItem(item.id, k as any, v));
+          }
+
+          // Directly sync to partner_album_orders for immediate visibility in Team & Partners
+          try {
+            const cat = detectDeliverableCategory(item.category, item.title);
+            await saveVendorAlbumOrder(workspaceId || 'ws_default', {
+              partner_id: data.memberId,
+              partner_name: data.memberName,
+              partner_email: data.memberEmail || '',
+              client_name: clientName || 'Client Project',
+              project_id: item.project_id || '',
+              deliverable_id: item.id,
+              category: cat,
+              item_title: item.title,
+              album_type: item.title,
+              specs: item.specs || item.count || '',
+              total_amount: data.agreedAmount,
+              paid_amount: data.paidAmount,
+              balance_amount: data.balanceAmount,
+              due_date: data.dueDate,
+              order_status: item.status || 'Pending',
+              payment_status: pStatus === 'FULL_PAID' ? 'PAID' : pStatus,
+              drive_links: (item.drive_links || []).map((l: any, i: number) => ({
+                id: l.id || `lnk_${i}`,
+                title: l.title || l.label || 'Link',
+                url: l.url || '',
+              })),
+              notes: data.notes || item.notes || '',
+            });
+          } catch (err) {
+            console.warn('[DeliverableRowItem] Failed to sync to partner_album_orders:', err);
+          }
+        }}
+      />
+
+      {/* Attach Multiple Resource / Drive Links Modal */}
+      <AttachLinksModal
+        isOpen={isAttachLinksModalOpen}
+        onClose={() => setIsAttachLinksModalOpen(false)}
+        title={item.title}
+        subtitle={clientName}
+        initialLinks={(item.drive_links || []).map((l: any, i: number) => ({
+          id: l.id || `lnk_${i}`,
+          title: l.title || l.label || 'Link',
+          url: l.url || '',
+        }))}
+        onSave={(links: DeliverableAttachedLink[]) => {
+          const firstUrl = links[0]?.url || '';
+          if (onUpdateItemFields) {
+            onUpdateItemFields(item.id, { 
+              drive_links: links,
+              drive_link: firstUrl || item.drive_link || '' 
+            });
+          } else {
+            onUpdateItem(item.id, 'drive_links' as any, links);
+            if (firstUrl) onUpdateItem(item.id, 'drive_link', firstUrl);
+          }
+
+          if (item.assigned_member_id) {
+            const cat = detectDeliverableCategory(item.category, item.title);
+            saveVendorAlbumOrder(workspaceId || 'ws_default', {
+              partner_id: item.assigned_member_id,
+              partner_name: item.assigned_to || '',
+              client_name: clientName || 'Client Project',
+              deliverable_id: item.id,
+              category: cat,
+              item_title: item.title,
+              drive_links: links,
+              drive_folder_url: firstUrl,
+              total_amount: item.agreed_amount ?? undefined,
+              paid_amount: item.paid_amount ?? undefined,
+            }).catch(() => {});
+          }
+        }}
       />
     </div>
   );

@@ -43,6 +43,7 @@ export interface VendorAlbumOrder {
   delivery_date?: string;
   pdf_proof_url?: string;
   drive_folder_url?: string;
+  drive_links?: Array<{ id: string; title: string; url: string }>;
   notes?: string;
   comments?: Array<{
     id: string;
@@ -225,14 +226,19 @@ export async function fetchVendorAlbumOrders(
 
           if (!exists) {
             const clientName = projectClientMap.get(deliv.project_id) || 'Valued Couple';
-            const rawSpecs = String(deliv.specs || deliv.count || '');
+            const rawSpecs = String(deliv.specs || deliv.count || '').trim();
             const sheetCount = parseInt(rawSpecs.replace(/\D/g, '')) || (cat === 'album_design' || cat === 'album_printing' ? 30 : 1);
             
-            let defaultRate = 2500;
-            if (cat === 'video_editing') defaultRate = 4500;
-            else if (cat === 'photo_editing') defaultRate = 3000;
-            else if (cat === 'album_design') defaultRate = sheetCount * 150;
-            else if (cat === 'album_printing') defaultRate = sheetCount * 220;
+            let totalAmt = Number(deliv.agreed_amount);
+            if (isNaN(totalAmt) || totalAmt === 0) {
+              if (cat === 'video_editing') totalAmt = 4500;
+              else if (cat === 'photo_editing') totalAmt = 3000;
+              else if (cat === 'album_design') totalAmt = sheetCount * 150;
+              else if (cat === 'album_printing') totalAmt = sheetCount * 220;
+              else totalAmt = 2500;
+            }
+            const paidAmt = Number(deliv.paid_amount) || 0;
+            const balAmt = Math.max(0, totalAmt - paidAmt);
 
             const newOrder: VendorAlbumOrder = {
               id: `order_${deliv.id.replace('deliv_', '')}`,
@@ -245,19 +251,21 @@ export async function fetchVendorAlbumOrders(
               deliverable_id: deliv.id,
               category: cat,
               item_title: deliv.title || 'Deliverable Task',
-              specs: rawSpecs || `${sheetCount} Sheets`,
+              specs: rawSpecs,
               service_type: cat === 'video_editing' ? 'Video Editing' : cat === 'photo_editing' ? 'Photo Editing' : cat === 'album_printing' ? 'Album Printing' : 'Album Designing',
               album_type: deliv.title || (cat === 'video_editing' ? 'Wedding Film Edit' : cat === 'photo_editing' ? 'Photo Retouching' : 'Signature Photobook'),
               sheet_count: sheetCount,
               page_count: sheetCount * 2,
               rate_per_sheet: cat === 'album_design' ? 150 : 0,
-              total_amount: defaultRate,
-              paid_amount: 0,
-              balance_amount: defaultRate,
+              total_amount: totalAmt,
+              paid_amount: paidAmt,
+              balance_amount: balAmt,
               order_status: normalizeVendorOrderStatus(deliv.status),
-              payment_status: 'PENDING',
+              payment_status: balAmt === 0 && totalAmt > 0 ? 'PAID' : paidAmt > 0 ? 'PARTIAL' : 'PENDING',
               order_date: new Date().toISOString().split('T')[0],
               due_date: deliv.due_date ? new Date(deliv.due_date).toISOString().split('T')[0] : '',
+              drive_folder_url: deliv.drive_link || '',
+              drive_links: Array.isArray(deliv.drive_links) ? deliv.drive_links : [],
               notes: deliv.notes || '',
               comments: [],
               created_at: deliv.created_at || new Date().toISOString()
@@ -304,13 +312,18 @@ export async function fetchVendorAlbumOrders(
                 o => o.deliverable_id === d.id || (d.id && o.id === `order_${String(d.id).replace('deliv_', '')}`)
               );
               if (!exists) {
-                const rawSpecs = String(d.specs || d.count || '');
+                const rawSpecs = String(d.specs || d.count || '').trim();
                 const sheetCount = parseInt(rawSpecs.replace(/\D/g, '')) || (cat === 'album_design' || cat === 'album_printing' ? 30 : 1);
-                let defaultRate = 2500;
-                if (cat === 'video_editing') defaultRate = 4500;
-                else if (cat === 'photo_editing') defaultRate = 3000;
-                else if (cat === 'album_design') defaultRate = sheetCount * 150;
-                else if (cat === 'album_printing') defaultRate = sheetCount * 220;
+                let totalAmt = Number(d.agreed_amount);
+                if (isNaN(totalAmt) || totalAmt === 0) {
+                  if (cat === 'video_editing') totalAmt = 4500;
+                  else if (cat === 'photo_editing') totalAmt = 3000;
+                  else if (cat === 'album_design') totalAmt = sheetCount * 150;
+                  else if (cat === 'album_printing') totalAmt = sheetCount * 220;
+                  else totalAmt = 2500;
+                }
+                const paidAmt = Number(d.paid_amount) || 0;
+                const balAmt = Math.max(0, totalAmt - paidAmt);
 
                 const newOrder: VendorAlbumOrder = {
                   id: `order_${String(d.id || Math.random().toString(36).substring(7)).replace('deliv_', '')}`,
@@ -323,19 +336,21 @@ export async function fetchVendorAlbumOrders(
                   deliverable_id: d.id,
                   category: cat,
                   item_title: d.title || 'Deliverable Task',
-                  specs: rawSpecs || `${sheetCount} Sheets`,
+                  specs: rawSpecs,
                   service_type: cat === 'video_editing' ? 'Video Editing' : cat === 'photo_editing' ? 'Photo Editing' : cat === 'album_printing' ? 'Album Printing' : 'Album Designing',
                   album_type: d.title || (cat === 'video_editing' ? 'Wedding Film Edit' : cat === 'photo_editing' ? 'Photo Retouching' : 'Signature Photobook'),
                   sheet_count: sheetCount,
                   page_count: sheetCount * 2,
                   rate_per_sheet: cat === 'album_design' ? 150 : 0,
-                  total_amount: defaultRate,
-                  paid_amount: 0,
-                  balance_amount: defaultRate,
+                  total_amount: totalAmt,
+                  paid_amount: paidAmt,
+                  balance_amount: balAmt,
                   order_status: normalizeVendorOrderStatus(d.status),
-                  payment_status: 'PENDING',
+                  payment_status: balAmt === 0 && totalAmt > 0 ? 'PAID' : paidAmt > 0 ? 'PARTIAL' : 'PENDING',
                   order_date: new Date().toISOString().split('T')[0],
                   due_date: d.due_date ? new Date(d.due_date).toISOString().split('T')[0] : '',
+                  drive_folder_url: d.drive_link || '',
+                  drive_links: Array.isArray(d.drive_links) ? d.drive_links : [],
                   notes: d.notes || '',
                   comments: [],
                   created_at: d.created_at || new Date().toISOString()
@@ -637,6 +652,7 @@ export async function saveVendorAlbumOrder(
     delivery_date: order.delivery_date || '',
     pdf_proof_url: order.pdf_proof_url || '',
     drive_folder_url: order.drive_folder_url || '',
+    drive_links: order.drive_links || [],
     notes: order.notes || '',
     comments: order.comments || [],
     updated_at: new Date().toISOString()
@@ -651,8 +667,13 @@ export async function saveVendorAlbumOrder(
         .from('post_production_deliverables')
         .update({
           status: payload.order_status,
-          specs: payload.specs || `${payload.sheet_count} Sheets`,
+          specs: payload.specs || (payload.category === 'album_design' || payload.category === 'album_printing' ? `${payload.sheet_count} Sheets` : null),
           due_date: payload.due_date ? new Date(payload.due_date).toISOString() : null,
+          drive_links: payload.drive_links || [],
+          agreed_amount: payload.total_amount,
+          paid_amount: payload.paid_amount,
+          balance_amount: payload.balance_amount,
+          payment_status: payload.payment_status,
           notes: payload.notes,
           updated_at: new Date().toISOString()
         })
