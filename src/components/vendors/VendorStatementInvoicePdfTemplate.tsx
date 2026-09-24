@@ -7,7 +7,9 @@ import { X, Printer, Download, FileText, CheckCircle2, Building2, User, Loader2 
 export interface VendorInvoiceItem {
   order_id?: string;
   client_name: string;
+  segment?: string;
   album_type: string;
+  item_title?: string;
   event_name?: string;
   event_date?: string;
   event_time?: string;
@@ -45,6 +47,8 @@ export interface VendorStatementInvoicePdfTemplateProps {
   studioPhone?: string;
   studioEmail?: string;
   studioAddress?: string;
+  specialization?: string;
+  category?: string;
   items: VendorInvoiceItem[];
   notes?: string;
 }
@@ -81,13 +85,15 @@ export default function VendorStatementInvoicePdfTemplate({
   studioPhone = '+91 98765 43210',
   studioEmail = 'accounts@filmifyweddings.com',
   studioAddress = 'StudioCore Hub, Creative District, Mumbai',
+  specialization,
+  category,
   items,
   notes = 'Thank you for your creative partnership and excellence in craftsmanship.'
 }: VendorStatementInvoicePdfTemplateProps) {
   const [isDownloading, setIsDownloading] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
 
-  // Group items by Client/Couple
+  // Group items by Client/Couple, and inside each Couple by Segment
   const groupedByClient = useMemo(() => {
     const map = new Map<string, VendorInvoiceItem[]>();
     items.forEach(item => {
@@ -95,15 +101,47 @@ export default function VendorStatementInvoicePdfTemplate({
       if (!map.has(c)) map.set(c, []);
       map.get(c)!.push(item);
     });
+
     return Array.from(map.entries()).map(([clientName, clientItems]) => {
       const cAgreed = clientItems.reduce((s, i) => s + (Number(i.total_amount) || 0), 0);
       const cPaid = clientItems.reduce((s, i) => s + (Number(i.paid_amount) || 0), 0);
       const cBal = Math.max(0, cAgreed - cPaid);
-      return { clientName, clientItems, cAgreed, cPaid, cBal };
+
+      // Group inside each couple by Segment
+      const segmentMap = new Map<string, VendorInvoiceItem[]>();
+      clientItems.forEach(item => {
+        const s = (item.segment || 'Wedding').trim();
+        if (!segmentMap.has(s)) segmentMap.set(s, []);
+        segmentMap.get(s)!.push(item);
+      });
+
+      const segments = Array.from(segmentMap.entries()).map(([segmentName, segItems]) => ({
+        segmentName,
+        items: segItems,
+      }));
+
+      return {
+        clientName,
+        clientItems,
+        segments,
+        cAgreed,
+        cPaid,
+        cBal
+      };
     });
   }, [items]);
 
   if (!isOpen) return null;
+
+  const specializationDisplay = specialization || (
+    category === 'video_editing' ? 'Video Editing' :
+    category === 'photo_editing' ? 'Photo Editing' :
+    category === 'album_design' ? 'Album Designing' :
+    category === 'album_printing' ? 'Album Printing' :
+    items.length > 0 && items.every(i => i.category === 'shoot') ? (vendor.role || 'Shoot Specialist') :
+    items.some(i => i.category === 'video_editing') ? 'Video Editing' :
+    (vendor.role || 'Creative Partner')
+  );
 
   // Real studio name fallback if "My Studio" or empty
   const cleanStudioName = (!studioName || studioName.trim() === '' || studioName.trim() === 'My Studio' || studioName.trim() === 'StudioCore Partner Studio')
@@ -283,7 +321,7 @@ export default function VendorStatementInvoicePdfTemplate({
                     {vendor.name}
                   </h3>
                   <p className="text-xs text-stone-600 font-medium">
-                    Specialization: <span className="font-bold text-amber-950">{vendor.role || 'Shoot & Deliverables Partner'}</span>
+                    Specialization: <span className="font-bold text-amber-950">{specializationDisplay}</span>
                   </p>
                   {vendor.phone && <p className="text-xs text-stone-500">Phone: {vendor.phone}</p>}
                   {vendor.email && <p className="text-xs text-stone-500">Email: {vendor.email}</p>}
@@ -357,59 +395,95 @@ export default function VendorStatementInvoicePdfTemplate({
                           </td>
                         </tr>
 
-                        {/* Deliverable Items in this Client Group */}
-                        {group.clientItems.map((item, idx) => (
-                          <tr key={idx} className="hover:bg-amber-50/30 transition border-b border-stone-100">
-                            <td className="py-2.5 px-2 font-mono text-stone-400 font-bold text-center">{idx + 1}</td>
-                            <td className="py-2.5 px-3">
-                              <span className="font-bold text-stone-900 block">
-                                {item.event_name || item.album_type}
-                              </span>
-                              {item.category === 'shoot' ? (
+                        {/* Deliverables Grouped Segment-Wise */}
+                        {isAllShoots ? (
+                          group.clientItems.map((item, idx) => (
+                            <tr key={idx} className="hover:bg-amber-50/30 transition border-b border-stone-100">
+                              <td className="py-2.5 px-2 font-mono text-stone-400 font-bold text-center">{idx + 1}</td>
+                              <td className="py-2.5 px-3">
+                                <span className="font-bold text-stone-900 block">
+                                  {item.event_name || item.album_type}
+                                </span>
                                 <span className="text-[10px] text-stone-500 block font-mono font-medium">
                                   {item.event_date ? formatStatementDate(item.event_date) : item.due_date ? `Due: ${formatStatementDate(item.due_date)}` : ''}
                                   {item.event_time ? ` • ${item.event_time}` : ''}
                                   {item.role ? ` • ${item.role}` : ''}
                                 </span>
-                              ) : (
-                                <span className="text-[10px] text-stone-500 block font-medium">
-                                  {item.specs || (item.sheet_count > 1 ? `${item.sheet_count} Sheets` : '')}
-                                  {item.due_date ? ` • Due: ${formatStatementDate(item.due_date)}` : ''}
-                                </span>
-                              )}
-                            </td>
-                            <td className="py-2.5 px-2 text-center">
-                              <span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-stone-100 text-stone-700 border border-stone-200 font-mono">
-                                {item.category === 'shoot' ? 'Shoot' :
-                                 item.category === 'video_editing' ? 'Video' :
-                                 item.category === 'photo_editing' ? 'Photo' :
-                                 item.category === 'album_printing' ? 'Printing' : 'Album'}
-                              </span>
-                            </td>
-                            <td className="py-2.5 px-2 text-right font-mono font-bold text-stone-900">
-                              ₹{Number(item.total_amount).toLocaleString('en-IN')}
-                            </td>
-                            <td className="py-2.5 px-2 text-right font-mono font-semibold text-emerald-700">
-                              ₹{Number(item.paid_amount || 0).toLocaleString('en-IN')}
-                            </td>
-                            <td className="py-2.5 px-2 text-right font-mono font-black text-rose-700">
-                              ₹{Number(item.balance_amount || 0).toLocaleString('en-IN')}
-                            </td>
-                            {!isAllShoots && (
+                              </td>
                               <td className="py-2.5 px-2 text-center">
-                                <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
-                                  item.payment_status === 'PAID'
-                                    ? 'bg-emerald-100 text-emerald-800'
-                                    : item.paid_amount > 0
-                                    ? 'bg-amber-100 text-amber-800'
-                                    : 'bg-stone-100 text-stone-700'
-                                }`}>
-                                  {item.order_status || item.payment_status}
+                                <span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-stone-100 text-stone-700 border border-stone-200 font-mono">
+                                  Shoot
                                 </span>
                               </td>
-                            )}
-                          </tr>
-                        ))}
+                              <td className="py-2.5 px-2 text-right font-mono font-bold text-stone-900">
+                                ₹{Number(item.total_amount).toLocaleString('en-IN')}
+                              </td>
+                              <td className="py-2.5 px-2 text-right font-mono font-semibold text-emerald-700">
+                                ₹{Number(item.paid_amount || 0).toLocaleString('en-IN')}
+                              </td>
+                              <td className="py-2.5 px-2 text-right font-mono font-black text-rose-700">
+                                ₹{Number(item.balance_amount || 0).toLocaleString('en-IN')}
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          group.segments.map((seg, sIdx) => (
+                            <React.Fragment key={`${group.clientName}_${seg.segmentName}_${sIdx}`}>
+                              {/* Segment Subheading */}
+                              <tr className="bg-amber-50/70 border-b border-amber-200/50">
+                                <td colSpan={7} className="py-1 px-3">
+                                  <div className="flex items-center gap-1.5 text-[10px] font-black text-amber-900 tracking-wide uppercase">
+                                    <span className="text-amber-600 font-bold">❖</span>
+                                    <span>Segment: {seg.segmentName}</span>
+                                    <span className="text-stone-400 font-normal">({seg.items.length} {seg.items.length === 1 ? 'task' : 'tasks'})</span>
+                                  </div>
+                                </td>
+                              </tr>
+
+                              {seg.items.map((item, idx) => (
+                                <tr key={idx} className="hover:bg-amber-50/30 transition border-b border-stone-100">
+                                  <td className="py-2.5 px-2 font-mono text-stone-400 font-bold text-center">{idx + 1}</td>
+                                  <td className="py-2.5 px-3">
+                                    <span className="font-bold text-stone-900 block">
+                                      {item.item_title || item.album_type || item.event_name}
+                                    </span>
+                                    <span className="text-[10px] text-stone-500 block font-medium">
+                                      {item.specs ? item.specs : (item.category === 'album_design' || item.category === 'album_printing') && item.sheet_count > 1 ? `${item.sheet_count} Sheets` : ''}
+                                      {item.due_date ? ` • Due: ${formatStatementDate(item.due_date)}` : ''}
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5 px-2 text-center">
+                                    <span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-stone-100 text-stone-700 border border-stone-200 font-mono">
+                                      {item.category === 'video_editing' ? 'Video' :
+                                       item.category === 'photo_editing' ? 'Photo' :
+                                       item.category === 'album_printing' ? 'Printing' : 'Album'}
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right font-mono font-bold text-stone-900">
+                                    ₹{Number(item.total_amount).toLocaleString('en-IN')}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right font-mono font-semibold text-emerald-700">
+                                    ₹{Number(item.paid_amount || 0).toLocaleString('en-IN')}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right font-mono font-black text-rose-700">
+                                    ₹{Number(item.balance_amount || 0).toLocaleString('en-IN')}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-center">
+                                    <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
+                                      item.payment_status === 'PAID'
+                                        ? 'bg-emerald-100 text-emerald-800'
+                                        : item.paid_amount > 0
+                                        ? 'bg-amber-100 text-amber-800'
+                                        : 'bg-stone-100 text-stone-700'
+                                    }`}>
+                                      {item.order_status || item.payment_status || 'None'}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </React.Fragment>
+                          ))
+                        )}
                       </React.Fragment>
                     ))}
                   </tbody>

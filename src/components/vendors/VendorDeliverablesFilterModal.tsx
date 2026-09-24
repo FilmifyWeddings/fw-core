@@ -12,6 +12,8 @@ export interface DeliverablesFilterState {
   startDate: string;
   endDate: string;
   eventTypes: string[];
+  segments?: string[];
+  deliverables?: string[];
   roles: string[];
   paymentStatuses: string[];
   workflowStatuses?: string[];
@@ -25,6 +27,8 @@ interface VendorDeliverablesFilterModalProps {
   onChange: (filters: DeliverablesFilterState) => void;
   onReset: () => void;
   availableEventTypes: string[];
+  availableSegments?: string[];
+  availableDeliverables?: string[];
   availableRoles: string[];
   availableWorkflowStatuses?: Array<{ id?: string; name: string; color?: string; }>;
   category?: string;
@@ -45,6 +49,8 @@ export default function VendorDeliverablesFilterModal({
   onChange,
   onReset,
   availableEventTypes,
+  availableSegments = [],
+  availableDeliverables = [],
   availableRoles,
   availableWorkflowStatuses = [],
   category = 'shoot',
@@ -98,7 +104,9 @@ export default function VendorDeliverablesFilterModal({
 
   const activeFiltersCount = 
     (filters.startDate || filters.endDate ? 1 : 0) +
-    filters.eventTypes.length +
+    (isShoot ? filters.eventTypes.length : 0) +
+    (!isShoot ? (filters.segments?.length || 0) : 0) +
+    (!isShoot ? (filters.deliverables?.length || 0) : 0) +
     (isShoot ? filters.roles.length : 0) +
     filters.paymentStatuses.length +
     (filters.workflowStatuses?.length || 0) +
@@ -107,6 +115,16 @@ export default function VendorDeliverablesFilterModal({
   const eventOptions: MultiSelectOption[] = availableEventTypes.map(evt => ({
     id: evt,
     label: evt,
+  }));
+
+  const segmentOptions: MultiSelectOption[] = availableSegments.map(seg => ({
+    id: seg,
+    label: seg,
+  }));
+
+  const deliverableOptions: MultiSelectOption[] = availableDeliverables.map(deliv => ({
+    id: deliv,
+    label: deliv,
   }));
 
   const roleOptions: MultiSelectOption[] = availableRoles.map(role => ({
@@ -296,21 +314,55 @@ export default function VendorDeliverablesFilterModal({
               />
             </div>
 
-            {/* 5. Event Types Multi-Select */}
-            <div className="pt-2 border-t border-amber-200/60">
-              <ThreeDMultiSelectDropdown
-                label={`Event Types (${availableEventTypes.length})`}
-                icon={<Tag className="w-3.5 h-3.5 text-amber-700" />}
-                placeholder={availableEventTypes.length === 0 ? "No assigned event types on cards" : "Select assigned event types..."}
-                options={eventOptions}
-                selectedValues={filters.eventTypes}
-                onChange={(events) => onChange({ ...filters, eventTypes: events })}
-                searchPlaceholder="Search event type..."
-                emptyMessage="No assigned event types found on cards"
-              />
-            </div>
+            {/* 5. Segments Multi-Select (For Non-Shoots: Pre-Wedding, Wedding, Reception, Haldi, etc.) */}
+            {!isShoot && (
+              <div className="pt-2 border-t border-amber-200/60">
+                <ThreeDMultiSelectDropdown
+                  label={`Segments (${availableSegments.length})`}
+                  icon={<Tag className="w-3.5 h-3.5 text-amber-700" />}
+                  placeholder={availableSegments.length === 0 ? "No assigned segments on cards" : "Select assigned segments..."}
+                  options={segmentOptions}
+                  selectedValues={filters.segments || []}
+                  onChange={(segments) => onChange({ ...filters, segments })}
+                  searchPlaceholder="Search segment (e.g. Wedding, Pre-Wedding)..."
+                  emptyMessage="No assigned segments found on cards"
+                />
+              </div>
+            )}
 
-            {/* 6. Crew Roles Multi-Select (STRICTLY FOR SHOOTS ONLY) */}
+            {/* 6. Deliverables Multi-Select (For Non-Shoots: Cinematic Film, Teaser, Reels, etc.) */}
+            {!isShoot && (
+              <div className="pt-2 border-t border-amber-200/60">
+                <ThreeDMultiSelectDropdown
+                  label={`Deliverables (${availableDeliverables.length})`}
+                  icon={<Sparkles className="w-3.5 h-3.5 text-amber-700" />}
+                  placeholder={availableDeliverables.length === 0 ? "No assigned deliverables on cards" : "Select deliverables..."}
+                  options={deliverableOptions}
+                  selectedValues={filters.deliverables || []}
+                  onChange={(deliverables) => onChange({ ...filters, deliverables })}
+                  searchPlaceholder="Search deliverable..."
+                  emptyMessage="No assigned deliverables found on cards"
+                />
+              </div>
+            )}
+
+            {/* 7. Event Types Multi-Select (STRICTLY FOR SHOOTS ONLY) */}
+            {isShoot && (
+              <div className="pt-2 border-t border-amber-200/60">
+                <ThreeDMultiSelectDropdown
+                  label={`Event Types (${availableEventTypes.length})`}
+                  icon={<Tag className="w-3.5 h-3.5 text-amber-700" />}
+                  placeholder={availableEventTypes.length === 0 ? "No assigned event types on cards" : "Select assigned event types..."}
+                  options={eventOptions}
+                  selectedValues={filters.eventTypes}
+                  onChange={(events) => onChange({ ...filters, eventTypes: events })}
+                  searchPlaceholder="Search event type..."
+                  emptyMessage="No assigned event types found on cards"
+                />
+              </div>
+            )}
+
+            {/* 8. Crew Roles Multi-Select (STRICTLY FOR SHOOTS ONLY) */}
             {isShoot && (
               <div className="pt-2 border-t border-amber-200/60">
                 <ThreeDMultiSelectDropdown

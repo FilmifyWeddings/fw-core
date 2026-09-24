@@ -234,6 +234,8 @@ export default function VendorAlbumDeliverablesModal({
     startDate: '',
     endDate: '',
     eventTypes: [],
+    segments: [],
+    deliverables: [],
     roles: [],
     paymentStatuses: [],
     workflowStatuses: [],
@@ -333,6 +335,49 @@ export default function VendorAlbumDeliverablesModal({
   const [showReminderPicker, setShowReminderPicker] = useState(false);
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
 
+  // Dedicated Multi-Segment Add Assignment Modal State (Toolbar "+ Add Assignment" Trigger)
+  const [isAddAssignmentModalOpen, setIsAddAssignmentModalOpen] = useState(false);
+  const [assignCoupleName, setAssignCoupleName] = useState('');
+  const [assignSegments, setAssignSegments] = useState<Array<{
+    id: string;
+    name: string;
+    deliverables: Array<{
+      id: string;
+      title: string;
+      specs: string;
+      dueDate: string;
+      agreedFee: string;
+      paidAmount: string;
+    }>;
+  }>>([
+    {
+      id: 'seg_1',
+      name: 'Wedding',
+      deliverables: [
+        {
+          id: 'del_1',
+          title: 'Cinematic Teaser',
+          specs: '1-2 Mins',
+          dueDate: '',
+          agreedFee: '0',
+          paidAmount: '0',
+        }
+      ]
+    }
+  ]);
+  const [isSavingAssignment, setIsSavingAssignment] = useState(false);
+
+  // Video Deliverables Presets (Synced from Post-Production Settings)
+  const [ppVideoPresets, setPpVideoPresets] = useState<Array<{ title: string; specs: string }>>([
+    { title: 'Cinematic Teaser', specs: '1-2 Mins' },
+    { title: 'Full Wedding Film', specs: '25-30 Mins' },
+    { title: 'Traditional Video', specs: '2-3 Hours' },
+    { title: 'Instagram Reels', specs: '5 Reels' },
+    { title: 'Highlight Video', specs: '3-5 Mins' },
+    { title: 'Same Day Edit (SDE)', specs: '2-4 Mins' },
+    { title: 'Raw Footage', specs: 'All Cameras' },
+  ]);
+
   // Post-Production Statuses Sync
   const [ppStatuses, setPpStatuses] = useState<PostProductionStatusSetting[]>(() => {
     const cached = getCachedPostProductionSettings();
@@ -345,12 +390,32 @@ export default function VendorAlbumDeliverablesModal({
       if (settings && settings.statuses && settings.statuses.length > 0) {
         setPpStatuses(settings.statuses);
       }
+      if (settings && settings.categories) {
+        const videoCat = settings.categories.find(c => c.name.toLowerCase().includes('video'));
+        if (videoCat && videoCat.presets && videoCat.presets.length > 0) {
+          const normalized = videoCat.presets.map(p => {
+            if (typeof p === 'string') return { title: p, specs: '' };
+            return { title: p.title || '', specs: p.specs || p.count || '' };
+          });
+          setPpVideoPresets(normalized);
+        }
+      }
     }).catch(() => {});
 
     const handleSettingsUpdated = () => {
       fetchPostProductionSettings(workspaceId).then(settings => {
         if (settings && settings.statuses && settings.statuses.length > 0) {
           setPpStatuses(settings.statuses);
+        }
+        if (settings && settings.categories) {
+          const videoCat = settings.categories.find(c => c.name.toLowerCase().includes('video'));
+          if (videoCat && videoCat.presets && videoCat.presets.length > 0) {
+            const normalized = videoCat.presets.map(p => {
+              if (typeof p === 'string') return { title: p, specs: '' };
+              return { title: p.title || '', specs: p.specs || p.count || '' };
+            });
+            setPpVideoPresets(normalized);
+          }
         }
       }).catch(() => {});
     };
@@ -502,12 +567,50 @@ export default function VendorAlbumDeliverablesModal({
     }
   };
 
-  // Dynamically derive Event Types strictly from the member's assigned cards (NOT global settings)
-  const cardEventTypes = useMemo(() => {
+  // Dynamically derive Segments strictly from non-shoot cards (e.g. Wedding, Pre-Wedding, Reception, Haldi)
+  const cardSegments = useMemo(() => {
     const set = new Set<string>();
     const targetOrders = orders.filter(o => {
       const itemCat = o.category || detectDeliverableCategory(undefined, o.album_type || o.item_title);
       return itemCat === activeCategoryTab;
+    });
+
+    targetOrders.forEach(o => {
+      const seg = o.segment || 'Wedding';
+      if (seg && typeof seg === 'string') {
+        const clean = seg.trim();
+        if (clean) set.add(clean);
+      }
+    });
+
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [orders, activeCategoryTab]);
+
+  // Dynamically derive Deliverable Titles strictly from non-shoot cards (e.g. Cinematic Wedding Film, Teaser, Reels)
+  const cardDeliverables = useMemo(() => {
+    const set = new Set<string>();
+    const targetOrders = orders.filter(o => {
+      const itemCat = o.category || detectDeliverableCategory(undefined, o.album_type || o.item_title);
+      return itemCat === activeCategoryTab;
+    });
+
+    targetOrders.forEach(o => {
+      const title = o.item_title || o.album_type;
+      if (title && typeof title === 'string') {
+        const clean = title.trim();
+        if (clean) set.add(clean);
+      }
+    });
+
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [orders, activeCategoryTab]);
+
+  // Dynamically derive Event Types strictly from Shoot cards (NOT global settings)
+  const cardEventTypes = useMemo(() => {
+    const set = new Set<string>();
+    const targetOrders = orders.filter(o => {
+      const itemCat = o.category || detectDeliverableCategory(undefined, o.album_type || o.item_title);
+      return itemCat === 'shoot';
     });
 
     targetOrders.forEach(o => {
@@ -534,7 +637,7 @@ export default function VendorAlbumDeliverablesModal({
     });
 
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [orders, activeCategoryTab]);
+  }, [orders]);
 
   // Dynamically derive Crew Roles strictly from the member's assigned cards (NOT global settings)
   const cardCrewRoles = useMemo(() => {
@@ -570,6 +673,33 @@ export default function VendorAlbumDeliverablesModal({
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [orders, activeCategoryTab]);
 
+  // Unique client names for assignment autocomplete
+  const availableClientNames = useMemo(() => {
+    const set = new Set<string>();
+    orders.forEach(o => {
+      if (o.client_name?.trim()) set.add(o.client_name.trim());
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [orders]);
+
+  // Aggregate totals for the multi-segment assignment builder
+  const assignTotals = useMemo(() => {
+    let totalAgreed = 0;
+    let totalPaid = 0;
+    let deliverableCount = 0;
+
+    assignSegments.forEach(seg => {
+      seg.deliverables.forEach(del => {
+        deliverableCount++;
+        totalAgreed += Number(del.agreedFee) || 0;
+        totalPaid += Number(del.paidAmount) || 0;
+      });
+    });
+
+    const balanceDue = Math.max(0, totalAgreed - totalPaid);
+    return { totalAgreed, totalPaid, balanceDue, deliverableCount };
+  }, [assignSegments]);
+
   // Filtered Orders for Current Tab with Multi-Select Filters
   const filteredOrders = useMemo(() => {
     return orders.filter(o => {
@@ -597,8 +727,8 @@ export default function VendorAlbumDeliverablesModal({
       if (filters.startDate && orderDate && orderDate < filters.startDate) return false;
       if (filters.endDate && orderDate && orderDate > filters.endDate) return false;
 
-      // 5. Event Types Multi-Select Filter (Matching against card-assigned event types)
-      if (filters.eventTypes.length > 0) {
+      // 5. Event Types Multi-Select Filter (Matching against shoot event types)
+      if (activeCategoryTab === 'shoot' && filters.eventTypes.length > 0) {
         const rawEvent = (o.event_name || o.album_type || o.item_title || '').toLowerCase();
         const matchesEvent = filters.eventTypes.some(et => {
           const filterLower = et.toLowerCase();
@@ -608,8 +738,22 @@ export default function VendorAlbumDeliverablesModal({
         if (!matchesEvent) return false;
       }
 
+      // 5b. Segments Multi-Select Filter (For Non-Shoots: Pre-Wedding, Wedding, Reception, Haldi, etc.)
+      if (activeCategoryTab !== 'shoot' && filters.segments && filters.segments.length > 0) {
+        const orderSeg = (o.segment || 'Wedding').toLowerCase();
+        const matchesSeg = filters.segments.some(seg => seg.toLowerCase() === orderSeg);
+        if (!matchesSeg) return false;
+      }
+
+      // 5c. Deliverables Multi-Select Filter (For Non-Shoots: Cinematic Film, Teaser, Reels, etc.)
+      if (activeCategoryTab !== 'shoot' && filters.deliverables && filters.deliverables.length > 0) {
+        const orderDeliv = (o.item_title || o.album_type || '').toLowerCase();
+        const matchesDeliv = filters.deliverables.some(d => d.toLowerCase() === orderDeliv);
+        if (!matchesDeliv) return false;
+      }
+
       // 6. Crew Roles Multi-Select Filter (Matching against card-assigned crew roles)
-      if (filters.roles.length > 0) {
+      if (activeCategoryTab === 'shoot' && filters.roles.length > 0) {
         const rawRole = (o.role || o.service_type || '').toLowerCase();
         const matchesRole = filters.roles.some(r => {
           const roleLower = r.toLowerCase();
@@ -634,10 +778,16 @@ export default function VendorAlbumDeliverablesModal({
         if (!filters.paymentStatuses.includes(statusKey)) return false;
       }
 
-      // 8. Workflow Status Multi-Select Filter (Post-Production Synced)
+      // 8. Workflow Status Multi-Select Filter (Post-Production Synced + None Support)
       if (filters.workflowStatuses && filters.workflowStatuses.length > 0) {
         const orderStatusLower = (o.order_status || '').toLowerCase();
-        const matchesStatus = filters.workflowStatuses.some(st => st.toLowerCase() === orderStatusLower);
+        const matchesStatus = filters.workflowStatuses.some(st => {
+          const stLower = st.toLowerCase();
+          if ((stLower === 'none' || stLower === 'unset') && (!orderStatusLower || orderStatusLower === 'none' || orderStatusLower === 'unset')) {
+            return true;
+          }
+          return stLower === orderStatusLower;
+        });
         if (!matchesStatus) return false;
       }
 
@@ -714,7 +864,9 @@ export default function VendorAlbumDeliverablesModal({
   // Active Filters Count
   const activeFiltersCount = 
     (filters.startDate || filters.endDate ? 1 : 0) +
-    filters.eventTypes.length +
+    (activeCategoryTab === 'shoot' ? filters.eventTypes.length : 0) +
+    (activeCategoryTab !== 'shoot' ? (filters.segments?.length || 0) : 0) +
+    (activeCategoryTab !== 'shoot' ? (filters.deliverables?.length || 0) : 0) +
     (activeCategoryTab === 'shoot' ? filters.roles.length : 0) +
     filters.paymentStatuses.length +
     (filters.workflowStatuses?.length || 0) +
@@ -883,8 +1035,9 @@ export default function VendorAlbumDeliverablesModal({
   // Add / Save New Non-Shoot Assignment
   const handleSaveNewJob = async () => {
     if (!newClientName.trim()) return;
-    const sheetNum = parseInt(newSheets, 10) || (newCategory === 'album_design' || newCategory === 'album_printing' ? 30 : 1);
-    const totalFeeNum = Number(newFee) || (newCategory === 'album_design' ? sheetNum * 150 : 5000);
+    const isAlbum = newCategory === 'album_design' || newCategory === 'album_printing';
+    const sheetNum = parseInt(newSheets, 10) || (isAlbum ? 30 : 0);
+    const totalFeeNum = Number(newFee) || (newCategory === 'album_design' ? sheetNum * 150 : 0);
 
     const payload: Partial<VendorAlbumOrder> = {
       workspace_id: workspaceId,
@@ -895,14 +1048,14 @@ export default function VendorAlbumDeliverablesModal({
       category: newCategory,
       item_title: newAlbumType || 'Creative Task',
       album_type: newAlbumType || 'Creative Task',
-      specs: newSpecs.trim() || `${sheetNum} Sheets`,
+      specs: newSpecs.trim() || (isAlbum ? `${sheetNum} Sheets` : ''),
       sheet_count: sheetNum,
       page_count: sheetNum * 2,
-      rate_per_sheet: newCategory === 'album_design' ? Math.round(totalFeeNum / sheetNum) : 0,
+      rate_per_sheet: newCategory === 'album_design' && sheetNum > 0 ? Math.round(totalFeeNum / sheetNum) : 0,
       total_amount: totalFeeNum,
       paid_amount: 0,
       balance_amount: totalFeeNum,
-      order_status: 'Pending Design',
+      order_status: '',
       payment_status: 'PENDING',
       due_date: newDueDate || '',
       pdf_proof_url: newPdfUrl.trim() || '',
@@ -927,6 +1080,211 @@ export default function VendorAlbumDeliverablesModal({
       setNewDueDate('');
       setNewPdfUrl('');
       setNewNotes('');
+    }
+  };
+
+  // Quick Segment Suggestions for Deliverables Builder
+  const SEGMENT_PRESETS = ['Wedding', 'Pre-Wedding', 'Reception', 'Sangeet', 'Haldi', 'Engagement', 'Cocktail', 'Mehndi'];
+
+  const handleAddSegment = () => {
+    const nextIdx = assignSegments.length + 1;
+    const defaultSegName = SEGMENT_PRESETS[nextIdx - 1] || `Segment ${nextIdx}`;
+    setAssignSegments(prev => [
+      ...prev,
+      {
+        id: `seg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        name: defaultSegName,
+        deliverables: [
+          {
+            id: `del_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            title: ppVideoPresets[0]?.title || 'Cinematic Teaser',
+            specs: ppVideoPresets[0]?.specs || '',
+            dueDate: '',
+            agreedFee: '0',
+            paidAmount: '0',
+          }
+        ]
+      }
+    ]);
+  };
+
+  const handleRemoveSegment = (segmentId: string) => {
+    if (assignSegments.length <= 1) return;
+    setAssignSegments(prev => prev.filter(s => s.id !== segmentId));
+  };
+
+  const handleUpdateSegmentName = (segmentId: string, name: string) => {
+    setAssignSegments(prev => prev.map(s => s.id === segmentId ? { ...s, name } : s));
+  };
+
+  const handleAddDeliverable = (segmentId: string) => {
+    const defaultDel = ppVideoPresets[0] || { title: 'Cinematic Teaser', specs: '1-2 Mins' };
+    setAssignSegments(prev => prev.map(s => {
+      if (s.id !== segmentId) return s;
+      return {
+        ...s,
+        deliverables: [
+          ...s.deliverables,
+          {
+            id: `del_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            title: defaultDel.title,
+            specs: defaultDel.specs,
+            dueDate: '',
+            agreedFee: '0',
+            paidAmount: '0',
+          }
+        ]
+      };
+    }));
+  };
+
+  const handleRemoveDeliverable = (segmentId: string, delId: string) => {
+    setAssignSegments(prev => prev.map(s => {
+      if (s.id !== segmentId) return s;
+      if (s.deliverables.length <= 1) return s;
+      return {
+        ...s,
+        deliverables: s.deliverables.filter(d => d.id !== delId)
+      };
+    }));
+  };
+
+  const handleUpdateDeliverable = (
+    segmentId: string,
+    delId: string,
+    updates: Partial<{
+      title: string;
+      specs: string;
+      dueDate: string;
+      agreedFee: string;
+      paidAmount: string;
+    }>
+  ) => {
+    setAssignSegments(prev => prev.map(s => {
+      if (s.id !== segmentId) return s;
+      return {
+        ...s,
+        deliverables: s.deliverables.map(d => {
+          if (d.id !== delId) return d;
+          return { ...d, ...updates };
+        })
+      };
+    }));
+  };
+
+  const handleSaveAssignments = async () => {
+    if (!assignCoupleName.trim()) return;
+    setIsSavingAssignment(true);
+
+    const targetCategory = activeCategoryTab === 'shoot' ? 'video_editing' : activeCategoryTab;
+    const isAlbum = targetCategory === 'album_design' || targetCategory === 'album_printing';
+    const createdOrders: VendorAlbumOrder[] = [];
+
+    try {
+      for (const seg of assignSegments) {
+        const segName = seg.name.trim() || 'Wedding';
+        for (const del of seg.deliverables) {
+          if (!del.title.trim()) continue;
+
+          const agreedNum = Number(del.agreedFee) || 0;
+          const paidNum = Number(del.paidAmount) || 0;
+          const balNum = Math.max(0, agreedNum - paidNum);
+          const isFull = agreedNum > 0 && paidNum >= agreedNum;
+
+          const payload: Partial<VendorAlbumOrder> = {
+            workspace_id: workspaceId,
+            partner_id: vendor.id,
+            partner_name: vendor.name,
+            partner_email: vendor.email || '',
+            client_name: assignCoupleName.trim(),
+            category: targetCategory,
+            segment: segName,
+            item_title: del.title.trim(),
+            album_type: del.title.trim(),
+            event_name: segName,
+            specs: del.specs.trim(), // strictly empty if blank, no sheet fallback for video!
+            sheet_count: isAlbum ? 30 : 0,
+            page_count: isAlbum ? 60 : 0,
+            rate_per_sheet: 0,
+            total_amount: agreedNum,
+            paid_amount: paidNum,
+            balance_amount: balNum,
+            order_status: '', // empty / None workflow status by default
+            payment_status: isFull ? 'PAID' : paidNum > 0 ? 'PARTIAL' : 'PENDING',
+            order_date: new Date().toISOString().split('T')[0],
+            due_date: del.dueDate || '',
+            notes: '',
+          };
+
+          const res = await fetch('/api/vendors/albums', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          const json = await res.json();
+          if (json.success && json.order) {
+            const savedOrder: VendorAlbumOrder = json.order;
+            createdOrders.push(savedOrder);
+
+            // Record initial payment if provided
+            if (paidNum > 0) {
+              await fetch('/api/vendors/payments', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  orderId: savedOrder.id,
+                  workspaceId,
+                  partnerId: vendor.id,
+                  partnerName: vendor.name,
+                  totalAmount: agreedNum,
+                  paidAmount: paidNum,
+                  isFullPaid: isFull,
+                  paymentMode: 'Bank Transfer',
+                  paymentDate: new Date().toISOString().split('T')[0],
+                  notes: `Initial advance recorded for ${del.title}`,
+                  autoSyncExpense: true
+                })
+              }).catch(() => {});
+            }
+          }
+        }
+      }
+
+      if (createdOrders.length > 0) {
+        setOrders(prev => {
+          const updated = [...createdOrders, ...prev];
+          memCachedVendorOrders.set(vendor.id, updated);
+          try {
+            localStorage.setItem(`sc_vendor_album_orders_${workspaceId}_${vendor.id}`, JSON.stringify(updated));
+            localStorage.setItem(`vendor_orders_${vendor.id}`, JSON.stringify(updated));
+          } catch (_) {}
+          return updated;
+        });
+
+        // Reset assignment form state
+        setAssignCoupleName('');
+        setAssignSegments([
+          {
+            id: 'seg_1',
+            name: 'Wedding',
+            deliverables: [
+              {
+                id: 'del_1',
+                title: ppVideoPresets[0]?.title || 'Cinematic Teaser',
+                specs: ppVideoPresets[0]?.specs || '',
+                dueDate: '',
+                agreedFee: '0',
+                paidAmount: '0',
+              }
+            ]
+          }
+        ]);
+        setIsAddAssignmentModalOpen(false);
+      }
+    } catch (err) {
+      console.warn('Failed to save assignments:', err);
+    } finally {
+      setIsSavingAssignment(false);
     }
   };
 
@@ -1087,13 +1445,15 @@ export default function VendorAlbumDeliverablesModal({
     const mapped: VendorInvoiceItem[] = effectiveOrders.map(o => ({
       order_id: o.id,
       client_name: o.client_name,
-      album_type: o.event_name || o.item_title || o.album_type || 'Shoot Task',
+      segment: o.segment || 'Wedding',
+      item_title: o.item_title || o.album_type,
+      album_type: o.item_title || o.album_type || o.event_name || 'Deliverable Task',
       event_name: o.event_name,
       event_date: o.event_date || o.order_date,
       event_time: o.event_time,
       role: o.role || o.service_type,
-      category: o.category || 'shoot',
-      specs: o.specs || `${o.sheet_count} Sheets`,
+      category: o.category || activeCategoryTab || 'shoot',
+      specs: o.specs || (o.category === 'album_design' || o.category === 'album_printing' ? `${o.sheet_count} Sheets` : ''),
       sheet_count: o.sheet_count,
       page_count: o.page_count,
       rate_per_sheet: o.rate_per_sheet,
@@ -1220,20 +1580,7 @@ export default function VendorAlbumDeliverablesModal({
                 </a>
               )}
 
-              {/* In Non-Shoots Tab, Show Header "+ Add Assignment" button */}
-              {activeCategoryTab !== 'shoot' && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setNewCategory(activeCategoryTab);
-                    setIsAddJobOpen(!isAddJobOpen);
-                  }}
-                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-black transition flex items-center gap-1.5 cursor-pointer shadow-xs"
-                >
-                  <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                  <span>+ Add Assignment</span>
-                </button>
-              )}
+
 
               <button
                 type="button"
@@ -1321,116 +1668,6 @@ export default function VendorAlbumDeliverablesModal({
             </div>
           </div>
 
-          {/* Non-Shoot Add Assignment Inline Form */}
-          <AnimatePresence>
-            {isAddJobOpen && activeCategoryTab !== 'shoot' && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="p-4 bg-amber-100/70 border-b border-amber-300 space-y-3"
-              >
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-black text-amber-950 flex items-center gap-1.5">
-                    <Plus className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Create &amp; Assign New Deliverable Task</span>
-                  </h4>
-                  <button type="button" onClick={() => setIsAddJobOpen(false)} className="text-stone-400 hover:text-stone-700">
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
-                  <div>
-                    <label className="text-[10px] font-bold text-stone-500 block mb-1">Category</label>
-                    <select
-                      value={newCategory}
-                      onChange={(e) => setNewCategory(e.target.value as any)}
-                      className="w-full p-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs cursor-pointer"
-                    >
-                      <option value="video_editing">🎬 Video Editing</option>
-                      <option value="photo_editing">✨ Photo Editing</option>
-                      <option value="album_design">🎨 Album Designing</option>
-                      <option value="album_printing">📖 Album Printing</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-bold text-stone-500 block mb-1">Couple / Client Name</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Rahul & Pooja"
-                      value={newClientName}
-                      onChange={(e) => setNewClientName(e.target.value)}
-                      className="w-full p-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-bold text-stone-500 block mb-1">Deliverable Title</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Cinematic Teaser"
-                      value={newAlbumType}
-                      onChange={(e) => setNewAlbumType(e.target.value)}
-                      className="w-full p-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-bold text-stone-500 block mb-1">Specs / Sheets</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. 30 Sheets (60 Pages)"
-                      value={newSpecs}
-                      onChange={(e) => setNewSpecs(e.target.value)}
-                      className="w-full p-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1">
-                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Done Price (₹)</label>
-                      <input
-                        type="number"
-                        placeholder="₹"
-                        value={newFee}
-                        onChange={(e) => setNewFee(e.target.value)}
-                        className="w-full p-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 font-mono shadow-2xs"
-                      />
-                    </div>
-                    <div className="flex-1">
-                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Deadline</label>
-                      <input
-                        type="date"
-                        value={newDueDate}
-                        onChange={(e) => setNewDueDate(e.target.value)}
-                        className="w-full p-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <input
-                    type="url"
-                    placeholder="Optional Drive Folder URL or Proof Link"
-                    value={newPdfUrl}
-                    onChange={(e) => setNewPdfUrl(e.target.value)}
-                    className="flex-1 p-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs font-mono"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleSaveNewJob}
-                    className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white font-black text-xs rounded-xl shadow-xs transition cursor-pointer shrink-0"
-                  >
-                    Save &amp; Assign Task
-                  </button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
           {/* Filter & Toolbar Strip */}
           <div className="p-3 sm:p-4 bg-white/70 border-b border-amber-200/60 flex items-center justify-between flex-wrap gap-2.5">
             {/* Left: Search Input + 3D Filters Button */}
@@ -1469,7 +1706,7 @@ export default function VendorAlbumDeliverablesModal({
               {activeFiltersCount > 0 && (
                 <button
                   type="button"
-                  onClick={() => setFilters({ startDate: '', endDate: '', eventTypes: [], roles: [], paymentStatuses: [] })}
+                  onClick={() => setFilters({ startDate: '', endDate: '', eventTypes: [], segments: [], deliverables: [], roles: [], paymentStatuses: [], workflowStatuses: [], dueDateFilter: 'all' })}
                   className="text-[11px] font-bold text-amber-700 hover:underline cursor-pointer hidden md:inline-block"
                 >
                   Clear Filters
@@ -1477,7 +1714,7 @@ export default function VendorAlbumDeliverablesModal({
               )}
             </div>
 
-            {/* Right: Select All + Download Statement + (+ Add Shoot on Shoots Tab) */}
+            {/* Right: Select All + Download Statement + Add Actions */}
             <div className="flex items-center gap-2 flex-wrap">
               <button
                 type="button"
@@ -1510,6 +1747,18 @@ export default function VendorAlbumDeliverablesModal({
                 >
                   <Plus className="w-3.5 h-3.5 stroke-[3]" />
                   <span>+ Add Shoot</span>
+                </button>
+              )}
+
+              {/* Dedicated "+ Add Assignment" Button directly to the right of Download Statement */}
+              {activeCategoryTab !== 'shoot' && (
+                <button
+                  type="button"
+                  onClick={() => setIsAddAssignmentModalOpen(true)}
+                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-[11px] font-black flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                  <span>+ Add Assignment</span>
                 </button>
               )}
             </div>
@@ -2358,6 +2607,288 @@ export default function VendorAlbumDeliverablesModal({
             )}
           </AnimatePresence>
 
+          {/* Dedicated Multi-Segment Add Assignment Modal */}
+          <AnimatePresence>
+            {isAddAssignmentModalOpen && (
+              <div className="fixed inset-0 z-[150] flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                  className="bg-[#FAF8F5] rounded-3xl shadow-2xl border-2 border-amber-300 max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden text-stone-900"
+                >
+                  {/* Modal Header */}
+                  <div className="p-4 sm:p-5 bg-gradient-to-r from-[#2B231D] via-[#3A3027] to-[#2B231D] text-amber-50 flex items-center justify-between border-b border-amber-900/40">
+                    <div>
+                      <h4 className="text-sm sm:text-base font-black flex items-center gap-2">
+                        <Plus className="w-4 h-4 text-amber-400 stroke-[3]" />
+                        <span>Assign Deliverables • {activeCategoryTab === 'video_editing' ? 'Video Editing' : activeCategoryTab === 'photo_editing' ? 'Photo Editing' : activeCategoryTab === 'album_design' ? 'Album Designing' : activeCategoryTab === 'album_printing' ? 'Album Printing' : 'Deliverables'}</span>
+                      </h4>
+                      <p className="text-xs text-amber-200/70 font-semibold mt-0.5">
+                        Assign multi-segment deliverables to {vendor.name}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsAddAssignmentModalOpen(false)}
+                      className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center cursor-pointer transition shadow-xs"
+                    >
+                      <X className="w-4 h-4 stroke-[2.5]" />
+                    </button>
+                  </div>
+
+                  {/* Modal Body */}
+                  <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4">
+                    {/* Couple Name */}
+                    <div className="bg-white p-3.5 rounded-2xl border border-amber-200/80 shadow-2xs space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-stone-500 block">
+                        Couple / Client Name <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        list="available-client-names-list"
+                        value={assignCoupleName}
+                        onChange={(e) => setAssignCoupleName(e.target.value)}
+                        placeholder="e.g. Rahul & Pooja or Vikram & Ananya"
+                        className="w-full p-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
+                      />
+                      <datalist id="available-client-names-list">
+                        {availableClientNames.map(cn => (
+                          <option key={cn} value={cn} />
+                        ))}
+                      </datalist>
+                    </div>
+
+                    {/* Segments & Deliverables Builder */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h5 className="text-xs font-black uppercase tracking-wider text-stone-600 flex items-center gap-1.5">
+                          <span>Event Segments &amp; Deliverables</span>
+                          <span className="text-[10px] font-bold text-stone-400">({assignSegments.length} Segments, {assignTotals.deliverableCount} Deliverables)</span>
+                        </h5>
+                        <button
+                          type="button"
+                          onClick={handleAddSegment}
+                          className="px-2.5 py-1 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-900 text-[11px] font-black flex items-center gap-1 border border-amber-300 transition cursor-pointer"
+                        >
+                          <Plus className="w-3 h-3 stroke-[3]" />
+                          <span>+ Add Segment</span>
+                        </button>
+                      </div>
+
+                      {assignSegments.map((segment) => (
+                        <div key={segment.id} className="p-4 bg-white rounded-2xl border-2 border-amber-200/90 shadow-2xs space-y-3">
+                          {/* Segment Top Bar */}
+                          <div className="flex items-center justify-between gap-2 border-b border-amber-100 pb-2.5 flex-wrap">
+                            <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+                              <span className="text-xs font-black text-amber-800">❖ Segment:</span>
+                              <input
+                                type="text"
+                                value={segment.name}
+                                onChange={(e) => handleUpdateSegmentName(segment.id, e.target.value)}
+                                placeholder="e.g. Wedding, Pre-Wedding, Reception"
+                                className="px-2.5 py-1 bg-amber-50/70 border border-amber-300 rounded-lg text-xs font-black text-stone-900 focus:outline-none focus:border-amber-600"
+                              />
+                              {/* Quick Segment Presets */}
+                              <div className="hidden sm:flex items-center gap-1 overflow-x-auto">
+                                {SEGMENT_PRESETS.slice(0, 4).map(preset => (
+                                  <button
+                                    key={preset}
+                                    type="button"
+                                    onClick={() => handleUpdateSegmentName(segment.id, preset)}
+                                    className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition cursor-pointer ${
+                                      segment.name === preset
+                                        ? 'bg-amber-500 text-white border-amber-600'
+                                        : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'
+                                    }`}
+                                  >
+                                    {preset}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleAddDeliverable(segment.id)}
+                                className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition"
+                              >
+                                <Plus className="w-3 h-3 stroke-[3]" />
+                                <span>Add Deliverable</span>
+                              </button>
+                              {assignSegments.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveSegment(segment.id)}
+                                  className="p-1 rounded-lg text-stone-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                                  title="Remove Segment"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Deliverables List in Segment */}
+                          <div className="space-y-2">
+                            {segment.deliverables.map((del) => (
+                              <div key={del.id} className="p-3 bg-[#FAF8F5] rounded-xl border border-stone-200 space-y-2">
+                                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+                                  {/* Deliverable Title & Preset Picker */}
+                                  <div className="sm:col-span-5 space-y-1">
+                                    <div className="flex items-center justify-between">
+                                      <label className="text-[9px] font-black uppercase tracking-wider text-stone-500">
+                                        Deliverable Title
+                                      </label>
+                                      {ppVideoPresets.length > 0 && (
+                                        <select
+                                          onChange={(e) => {
+                                            const found = ppVideoPresets.find(p => p.title === e.target.value);
+                                            if (found) {
+                                              handleUpdateDeliverable(segment.id, del.id, {
+                                                title: found.title,
+                                                specs: found.specs || del.specs,
+                                              });
+                                            }
+                                          }}
+                                          value=""
+                                          className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 cursor-pointer"
+                                        >
+                                          <option value="" disabled>⚡ Pick Preset</option>
+                                          {ppVideoPresets.map(p => (
+                                            <option key={p.title} value={p.title}>{p.title}</option>
+                                          ))}
+                                        </select>
+                                      )}
+                                    </div>
+                                    <input
+                                      type="text"
+                                      value={del.title}
+                                      onChange={(e) => handleUpdateDeliverable(segment.id, del.id, { title: e.target.value })}
+                                      placeholder="e.g. Cinematic Teaser"
+                                      className="w-full p-1.5 bg-white border border-stone-200 rounded-lg text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500"
+                                    />
+                                  </div>
+
+                                  {/* Specs / Duration */}
+                                  <div className="sm:col-span-3 space-y-1">
+                                    <label className="text-[9px] font-black uppercase tracking-wider text-stone-500 block">
+                                      Specs / Duration
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={del.specs}
+                                      onChange={(e) => handleUpdateDeliverable(segment.id, del.id, { specs: e.target.value })}
+                                      placeholder="e.g. 1-2 Mins, 4K"
+                                      className="w-full p-1.5 bg-white border border-stone-200 rounded-lg text-xs font-medium text-stone-800 focus:outline-none focus:border-amber-500"
+                                    />
+                                  </div>
+
+                                  {/* Due Date */}
+                                  <div className="sm:col-span-3 space-y-1">
+                                    <label className="text-[9px] font-black uppercase tracking-wider text-stone-500 block">
+                                      Deadline
+                                    </label>
+                                    <input
+                                      type="date"
+                                      value={del.dueDate}
+                                      onChange={(e) => handleUpdateDeliverable(segment.id, del.id, { dueDate: e.target.value })}
+                                      className="w-full p-1.5 bg-white border border-stone-200 rounded-lg text-xs font-bold font-mono text-stone-800 focus:outline-none focus:border-amber-500"
+                                    />
+                                  </div>
+
+                                  {/* Remove Button */}
+                                  <div className="sm:col-span-1 flex items-end justify-center pt-2 sm:pt-4">
+                                    {segment.deliverables.length > 1 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveDeliverable(segment.id, del.id)}
+                                        className="p-1 rounded text-stone-400 hover:text-rose-600 transition cursor-pointer"
+                                        title="Delete Deliverable"
+                                      >
+                                        <X className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Commercials row for deliverable */}
+                                <div className="grid grid-cols-3 gap-2 pt-1 border-t border-stone-100">
+                                  <div>
+                                    <label className="text-[9px] font-bold text-stone-500 block">Agreed Fee (₹)</label>
+                                    <input
+                                      type="number"
+                                      value={del.agreedFee}
+                                      onChange={(e) => handleUpdateDeliverable(segment.id, del.id, { agreedFee: e.target.value })}
+                                      className="w-full p-1 bg-white border border-stone-200 rounded-lg text-xs font-mono font-bold text-stone-900"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="text-[9px] font-bold text-emerald-700 block">Paid Amount (₹)</label>
+                                    <input
+                                      type="number"
+                                      value={del.paidAmount}
+                                      onChange={(e) => handleUpdateDeliverable(segment.id, del.id, { paidAmount: e.target.value })}
+                                      className="w-full p-1 bg-white border border-stone-200 rounded-lg text-xs font-mono font-bold text-emerald-700"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="text-[9px] font-bold text-stone-500 block">Balance (₹)</label>
+                                    <div className="p-1 bg-stone-100 rounded-lg text-xs font-mono font-bold text-stone-700">
+                                      ₹{(Math.max(0, (Number(del.agreedFee) || 0) - (Number(del.paidAmount) || 0))).toLocaleString('en-IN')}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Modal Footer */}
+                  <div className="p-4 bg-amber-50/70 border-t border-amber-200/90 flex items-center justify-between flex-wrap gap-3">
+                    <div className="flex items-center gap-3 text-xs">
+                      <div>
+                        <span className="text-[10px] font-bold text-stone-500 block">Total Agreed:</span>
+                        <span className="font-mono font-black text-stone-900">₹{assignTotals.totalAgreed.toLocaleString('en-IN')}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-emerald-700 block">Total Paid:</span>
+                        <span className="font-mono font-black text-emerald-700">₹{assignTotals.totalPaid.toLocaleString('en-IN')}</span>
+                      </div>
+                      <div>
+                        <span className={`text-[10px] font-bold block ${assignTotals.balanceDue > 0 ? 'text-rose-700' : 'text-stone-500'}`}>Balance Due:</span>
+                        <span className={`font-mono font-black ${assignTotals.balanceDue > 0 ? 'text-rose-700' : 'text-stone-700'}`}>₹{assignTotals.balanceDue.toLocaleString('en-IN')}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsAddAssignmentModalOpen(false)}
+                        className="px-4 py-2 border border-stone-200 text-stone-600 text-xs font-bold rounded-xl hover:bg-stone-50 transition cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isSavingAssignment || !assignCoupleName.trim()}
+                        onClick={handleSaveAssignments}
+                        className="px-5 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-black text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        <Check className="w-3.5 h-3.5 stroke-[3]" />
+                        <span>{isSavingAssignment ? 'Saving Assignments...' : 'Save & Assign Deliverables'}</span>
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              </div>
+            )}
+          </AnimatePresence>
+
           {/* Edit Assignment Modal */}
           <AnimatePresence>
             {editingOrder && (
@@ -2855,12 +3386,16 @@ export default function VendorAlbumDeliverablesModal({
             startDate: '',
             endDate: '',
             eventTypes: [],
+            segments: [],
+            deliverables: [],
             roles: [],
             paymentStatuses: [],
             workflowStatuses: [],
             dueDateFilter: 'all',
           })}
           availableEventTypes={cardEventTypes}
+          availableSegments={cardSegments}
+          availableDeliverables={cardDeliverables}
           availableRoles={cardCrewRoles}
           availableWorkflowStatuses={ppStatuses}
           category={activeCategoryTab}
@@ -2877,6 +3412,14 @@ export default function VendorAlbumDeliverablesModal({
           studioEmail={studioProfile.email}
           studioAddress={studioProfile.address}
           items={invoiceItems}
+          category={activeCategoryTab}
+          specialization={
+            activeCategoryTab === 'video_editing' ? 'Video Editing' :
+            activeCategoryTab === 'photo_editing' ? 'Photo Editing' :
+            activeCategoryTab === 'album_design' ? 'Album Designing' :
+            activeCategoryTab === 'album_printing' ? 'Album Printing' :
+            (vendor.role || 'Shoot Specialist')
+          }
         />
 
         {/* Attach Resource / Drive Links Modal */}

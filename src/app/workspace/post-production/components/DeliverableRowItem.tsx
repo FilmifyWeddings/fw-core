@@ -104,7 +104,7 @@ export default function DeliverableRowItem({
   }, [item.specs, item.count]);
 
   // Current status normalized or matched
-  const currentStatus = item.status || 'Upcoming';
+  const currentStatus = item.status || '';
 
   // Current Assignee resolution
   const currentAssignee = item.assigned_member_id || item.assigned_to || 'unassigned';

@@ -126,14 +126,14 @@ const LOCAL_STORAGE_KEY_PREFIX = 'sc_vendor_album_orders_';
  * Normalizes status strings into standard readable status with 3D color styling
  */
 export function normalizeVendorOrderStatus(raw?: string): string {
-  if (!raw) return 'Pending Design';
+  if (!raw) return '';
   const s = raw.toLowerCase().trim();
+  if (s === 'none' || s === 'unset' || s === '') return '';
   if (s.includes('sent') || s.includes('print')) return 'Sent for Printing';
   if (s.includes('review') || s.includes('under review')) return 'Client Review';
   if (s.includes('change') || s.includes('revision') || s.includes('modifi')) return 'Changes Requested';
   if (s.includes('progress') || s.includes('design') || s.includes('editing')) return 'In Progress';
   if (s.includes('done') || s.includes('completed') || s.includes('delivered')) return 'Completed';
-  if (s.includes('upcoming') || s.includes('pending') || s.includes('todo')) return 'Pending Design';
   return raw;
 }
 
@@ -228,7 +228,7 @@ export async function fetchVendorAlbumOrders(
           if (!exists) {
             const clientName = projectClientMap.get(deliv.project_id) || 'Valued Couple';
             const rawSpecs = String(deliv.specs || deliv.count || '').trim();
-            const sheetCount = parseInt(rawSpecs.replace(/\D/g, '')) || (cat === 'album_design' || cat === 'album_printing' ? 30 : 1);
+            const sheetCount = parseInt(rawSpecs.replace(/\D/g, '')) || (cat === 'album_design' || cat === 'album_printing' ? 30 : 0);
             
             let totalAmt = deliv.agreed_amount !== undefined && deliv.agreed_amount !== null && !isNaN(Number(deliv.agreed_amount))
               ? Number(deliv.agreed_amount)
@@ -599,12 +599,12 @@ export async function saveVendorAlbumOrder(
   order: Partial<VendorAlbumOrder> & { partner_id: string; client_name: string }
 ): Promise<VendorAlbumOrder> {
   const cat = order.category || detectDeliverableCategory(undefined, order.album_type || order.item_title);
-  const sheetCount = Number(order.sheet_count) || (cat === 'album_design' || cat === 'album_printing' ? 30 : 1);
+  const sheetCount = Number(order.sheet_count) || (cat === 'album_design' || cat === 'album_printing' ? 30 : 0);
   const pageCount = Number(order.page_count) || sheetCount * 2;
   const ratePerSheet = Number(order.rate_per_sheet) || 0;
   const totalAmount = order.total_amount !== undefined 
     ? Number(order.total_amount) 
-    : (ratePerSheet > 0 ? sheetCount * ratePerSheet : 3500);
+    : (ratePerSheet > 0 ? sheetCount * ratePerSheet : 0);
   const paidAmount = Number(order.paid_amount) || 0;
   const balanceAmount = Math.max(0, totalAmount - paidAmount);
   const paymentStatus: 'PENDING' | 'PARTIAL' | 'PAID' = 
@@ -623,12 +623,13 @@ export async function saveVendorAlbumOrder(
     assignment_id: order.assignment_id || '',
     payout_id: order.payout_id || '',
     category: cat,
+    segment: order.segment || 'Wedding',
     event_name: order.event_name || order.item_title || order.album_type || 'Event',
     event_date: order.event_date || order.due_date || '',
     event_time: order.event_time || '',
     role: order.role || order.service_type || '',
     item_title: order.item_title || order.album_type || 'Creative Task',
-    specs: order.specs || (cat === 'album_design' || cat === 'album_printing' ? `${sheetCount} Sheets (${pageCount} Pages)` : `${sheetCount} Qty`),
+    specs: order.specs ? order.specs : (cat === 'album_design' || cat === 'album_printing' ? (sheetCount > 0 ? `${sheetCount} Sheets (${pageCount} Pages)` : '') : ''),
     service_type: order.service_type || (cat === 'video_editing' ? 'Video Editing' : cat === 'photo_editing' ? 'Photo Editing' : cat === 'album_printing' ? 'Album Printing' : cat === 'shoot' ? 'Freelance Shoot' : 'Album Designing'),
     album_type: order.album_type || order.item_title || 'Creative Task',
     sheet_count: sheetCount,

@@ -130,13 +130,17 @@ export default function ThreeDStatusSelect({
     };
   }, [isOpen]);
 
-  const activeSetting = allStatuses.find(
-    s => s.name.toLowerCase() === (currentStatus || '').toLowerCase()
-  ) || {
-    id: 'unknown',
-    name: currentStatus || 'Pending',
-    color: '#f59e0b',
-  };
+  const isNone = !currentStatus || currentStatus.trim() === '' || currentStatus.toLowerCase() === 'none' || currentStatus.toLowerCase() === 'unset';
+
+  const activeSetting = isNone
+    ? { id: 'none', name: 'None', color: '#78716c' }
+    : allStatuses.find(
+        s => s.name.toLowerCase() === (currentStatus || '').toLowerCase()
+      ) || {
+        id: 'unknown',
+        name: currentStatus,
+        color: '#f59e0b',
+      };
 
   const handleSelect = (name: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -212,8 +216,27 @@ export default function ThreeDStatusSelect({
 
           {/* Statuses List */}
           <div className="p-1.5 max-h-48 overflow-y-auto space-y-0.5">
+            {/* None / Unset Option */}
+            <button
+              type="button"
+              onClick={(e) => handleSelect('', e)}
+              className={`w-full px-2.5 py-1.5 rounded-xl text-left text-xs font-bold flex items-center justify-between transition cursor-pointer ${
+                isNone
+                  ? 'bg-stone-100 text-stone-900 font-black shadow-2xs'
+                  : 'hover:bg-white text-stone-600'
+              }`}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-2.5 h-2.5 rounded-full shrink-0 border border-dashed border-stone-400 bg-stone-200" />
+                <span className="truncate italic text-stone-500">None</span>
+              </div>
+              {isNone && (
+                <Check className="w-3.5 h-3.5 text-stone-700 stroke-[3] shrink-0" />
+              )}
+            </button>
+
             {allStatuses.map(status => {
-              const isSelected = status.name.toLowerCase() === (currentStatus || '').toLowerCase();
+              const isSelected = !isNone && status.name.toLowerCase() === (currentStatus || '').toLowerCase();
               return (
                 <button
                   key={status.id || status.name}
@@ -318,16 +341,17 @@ export default function ThreeDStatusSelect({
           size === 'sm' ? 'px-2.5 py-1 text-xs' : 'px-3 py-1.5 text-xs'
         }`}
         style={{
-          backgroundColor: `${activeSetting.color}15`,
-          color: activeSetting.color,
-          borderColor: `${activeSetting.color}50`,
+          backgroundColor: isNone ? '#f5f5f4' : `${activeSetting.color}15`,
+          color: isNone ? '#78716c' : activeSetting.color,
+          borderColor: isNone ? '#d6d3d1' : `${activeSetting.color}50`,
+          borderStyle: isNone ? 'dashed' : 'solid',
         }}
       >
         <span
           className="w-2 h-2 rounded-full shrink-0 shadow-xs"
-          style={{ backgroundColor: activeSetting.color }}
+          style={{ backgroundColor: isNone ? '#a8a29e' : activeSetting.color }}
         />
-        <span className="truncate max-w-[130px] font-extrabold">{activeSetting.name}</span>
+        <span className="truncate max-w-[130px] font-bold">{isNone ? 'None' : activeSetting.name}</span>
         <ChevronDown className="w-3 h-3 opacity-70 ml-0.5 shrink-0" />
       </button>
 
