@@ -44,7 +44,7 @@ export default function AssignCommercialsModal({
   onSaveAssignment,
 }: AssignCommercialsModalProps) {
   const [selectedMemberId, setSelectedMemberId] = useState<string>('');
-  const [agreedAmount, setAgreedAmount] = useState<string>('4500');
+  const [agreedAmount, setAgreedAmount] = useState<string>('0');
   const [paidAmount, setPaidAmount] = useState<string>('0');
   const [dueDate, setDueDate] = useState<string>('');
   const [payMode, setPayMode] = useState<'UPI' | 'Bank Transfer' | 'Cash'>('UPI');
@@ -57,20 +57,13 @@ export default function AssignCommercialsModal({
       const initialId = deliverable.assigned_member_id || '';
       setSelectedMemberId(initialId);
 
-      // Auto-suggest fee based on category
-      const cat = (deliverable.category || '').toLowerCase();
-      let defaultFee = '4500';
-      if (cat.includes('video')) defaultFee = '4500';
-      else if (cat.includes('photo')) defaultFee = '3000';
-      else if (cat.includes('album')) defaultFee = '5000';
-
-      const existingMember = teamMembers.find(m => m.id === initialId);
-      if (existingMember?.daily_rate || existingMember?.default_daily_rate) {
-        defaultFee = String(existingMember.daily_rate || existingMember.default_daily_rate);
+      // Default agreed amount is strictly 0 unless already set on the deliverable
+      if (deliverable.agreed_amount !== undefined && deliverable.agreed_amount !== null && !isNaN(Number(deliverable.agreed_amount))) {
+        setAgreedAmount(String(deliverable.agreed_amount));
+      } else {
+        setAgreedAmount('0');
       }
-
-      setAgreedAmount(deliverable.agreed_amount !== undefined ? String(deliverable.agreed_amount) : defaultFee);
-      setPaidAmount(deliverable.paid_amount !== undefined ? String(deliverable.paid_amount) : '0');
+      setPaidAmount(deliverable.paid_amount !== undefined && deliverable.paid_amount !== null ? String(deliverable.paid_amount) : '0');
       
       const due = deliverable.due_date || deliverable.deadline || '';
       if (due) {
@@ -190,12 +183,7 @@ export default function AssignCommercialsModal({
               <select
                 value={selectedMemberId}
                 onChange={(e) => {
-                  const val = e.target.value;
-                  setSelectedMemberId(val);
-                  const mem = teamMembers.find(m => m.id === val);
-                  if (mem?.daily_rate || mem?.default_daily_rate) {
-                    setAgreedAmount(String(mem.daily_rate || mem.default_daily_rate));
-                  }
+                  setSelectedMemberId(e.target.value);
                 }}
                 className="w-full p-2.5 bg-white border border-stone-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs cursor-pointer"
               >

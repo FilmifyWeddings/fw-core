@@ -4,7 +4,7 @@ import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, Filter, Calendar, RotateCcw, Check, Sparkles, 
-  IndianRupee, Users, Tag
+  IndianRupee, Users, Tag, Clock, AlertTriangle
 } from 'lucide-react';
 import ThreeDMultiSelectDropdown, { MultiSelectOption } from '@/components/common/ThreeDMultiSelectDropdown';
 
@@ -14,6 +14,8 @@ export interface DeliverablesFilterState {
   eventTypes: string[];
   roles: string[];
   paymentStatuses: string[];
+  workflowStatuses?: string[];
+  dueDateFilter?: 'all' | 'overdue' | 'due_today' | 'due_this_week';
 }
 
 interface VendorDeliverablesFilterModalProps {
@@ -24,6 +26,8 @@ interface VendorDeliverablesFilterModalProps {
   onReset: () => void;
   availableEventTypes: string[];
   availableRoles: string[];
+  availableWorkflowStatuses?: Array<{ id?: string; name: string; color?: string; }>;
+  category?: string;
   totalFilteredCount: number;
 }
 
@@ -42,6 +46,8 @@ export default function VendorDeliverablesFilterModal({
   onReset,
   availableEventTypes,
   availableRoles,
+  availableWorkflowStatuses = [],
+  category = 'shoot',
   totalFilteredCount,
 }: VendorDeliverablesFilterModalProps) {
   if (!isOpen) return null;
@@ -88,11 +94,15 @@ export default function VendorDeliverablesFilterModal({
     }
   };
 
+  const isShoot = category === 'shoot';
+
   const activeFiltersCount = 
     (filters.startDate || filters.endDate ? 1 : 0) +
     filters.eventTypes.length +
-    filters.roles.length +
-    filters.paymentStatuses.length;
+    (isShoot ? filters.roles.length : 0) +
+    filters.paymentStatuses.length +
+    (filters.workflowStatuses?.length || 0) +
+    (filters.dueDateFilter && filters.dueDateFilter !== 'all' ? 1 : 0);
 
   const eventOptions: MultiSelectOption[] = availableEventTypes.map(evt => ({
     id: evt,
@@ -102,6 +112,13 @@ export default function VendorDeliverablesFilterModal({
   const roleOptions: MultiSelectOption[] = availableRoles.map(role => ({
     id: role,
     label: role,
+  }));
+
+  const statusOptions: MultiSelectOption[] = availableWorkflowStatuses.map(st => ({
+    id: st.name,
+    label: st.name,
+    badge: st.name,
+    badgeClass: 'font-black px-2 py-0.5 rounded-full border shadow-2xs',
   }));
 
   return (
@@ -130,7 +147,7 @@ export default function VendorDeliverablesFilterModal({
               </div>
               <div>
                 <h3 className="text-base font-black text-stone-900 flex items-center gap-2">
-                  <span>Filter Assignments &amp; Shoots</span>
+                  <span>Filter {isShoot ? 'Shoots' : 'Deliverables & Jobs'}</span>
                   {activeFiltersCount > 0 && (
                     <span className="px-2 py-0.5 rounded-full text-xs font-black bg-amber-500 text-white shadow-2xs">
                       {activeFiltersCount} active
@@ -138,7 +155,9 @@ export default function VendorDeliverablesFilterModal({
                   )}
                 </h3>
                 <p className="text-xs text-stone-500 font-medium">
-                  Refine by date range, payment status, assigned event types, and crew roles
+                  {isShoot 
+                    ? 'Refine by date range, payment status, event types, and crew roles'
+                    : 'Refine by due date status, workflow stage, payment status, and events'}
                 </p>
               </div>
             </div>
@@ -154,12 +173,46 @@ export default function VendorDeliverablesFilterModal({
 
           {/* Body */}
           <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1 text-stone-800">
-            {/* 1. Date Range & Presets */}
-            <div className="space-y-2">
+            {/* 1. Due Date Urgency Quick Filter (Non-Shoots) */}
+            {!isShoot && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-black uppercase tracking-wider text-stone-600 flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-amber-700" />
+                  <span>Due Date Urgency</span>
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    { id: 'all', label: 'All Dates' },
+                    { id: 'overdue', label: '🚨 Overdue' },
+                    { id: 'due_today', label: '⏳ Due Today' },
+                    { id: 'due_this_week', label: '📅 Due 7 Days' },
+                  ].map(tab => {
+                    const isSelected = (filters.dueDateFilter || 'all') === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => onChange({ ...filters, dueDateFilter: tab.id as any })}
+                        className={`py-2 px-2.5 rounded-xl text-xs font-black transition cursor-pointer border shadow-2xs ${
+                          isSelected
+                            ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
+                            : 'bg-white hover:bg-amber-50 text-stone-700 border-stone-200'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* 2. Date Range & Presets */}
+            <div className="space-y-2 pt-1 border-t border-amber-200/60">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-black uppercase tracking-wider text-stone-600 flex items-center gap-1.5">
                   <Calendar className="w-3.5 h-3.5 text-amber-700" />
-                  <span>Date Range</span>
+                  <span>{isShoot ? 'Shoot Date Range' : 'Assignment / Due Date Range'}</span>
                 </label>
                 {(filters.startDate || filters.endDate) && (
                   <button
@@ -215,7 +268,22 @@ export default function VendorDeliverablesFilterModal({
               </div>
             </div>
 
-            {/* 2. Payment Status Single Box with 3D Creamy Multi-Select Dropdown */}
+            {/* 3. Workflow Status Multi-Select (Post-Production Settings Aligned) */}
+            {availableWorkflowStatuses.length > 0 && (
+              <div className="pt-2 border-t border-amber-200/60">
+                <ThreeDMultiSelectDropdown
+                  label={`Workflow Statuses (${availableWorkflowStatuses.length})`}
+                  icon={<Sparkles className="w-3.5 h-3.5 text-amber-600" />}
+                  placeholder="Select workflow statuses..."
+                  options={statusOptions}
+                  selectedValues={filters.workflowStatuses || []}
+                  onChange={(statuses) => onChange({ ...filters, workflowStatuses: statuses })}
+                  searchPlaceholder="Search status..."
+                />
+              </div>
+            )}
+
+            {/* 4. Payment Status Multi-Select */}
             <div className="pt-2 border-t border-amber-200/60">
               <ThreeDMultiSelectDropdown
                 label="Payment Status"
@@ -228,7 +296,7 @@ export default function VendorDeliverablesFilterModal({
               />
             </div>
 
-            {/* 3. Event Types Single Box with 3D Creamy Multi-Select Dropdown (Derived from Assigned Cards) */}
+            {/* 5. Event Types Multi-Select */}
             <div className="pt-2 border-t border-amber-200/60">
               <ThreeDMultiSelectDropdown
                 label={`Event Types (${availableEventTypes.length})`}
@@ -242,19 +310,21 @@ export default function VendorDeliverablesFilterModal({
               />
             </div>
 
-            {/* 4. Crew Roles Single Box with 3D Creamy Multi-Select Dropdown (Derived from Assigned Cards) */}
-            <div className="pt-2 border-t border-amber-200/60">
-              <ThreeDMultiSelectDropdown
-                label={`Crew Roles (${availableRoles.length})`}
-                icon={<Users className="w-3.5 h-3.5 text-amber-700" />}
-                placeholder={availableRoles.length === 0 ? "No assigned crew roles on cards" : "Select assigned crew roles..."}
-                options={roleOptions}
-                selectedValues={filters.roles}
-                onChange={(roles) => onChange({ ...filters, roles })}
-                searchPlaceholder="Search crew role..."
-                emptyMessage="No assigned crew roles found on cards"
-              />
-            </div>
+            {/* 6. Crew Roles Multi-Select (STRICTLY FOR SHOOTS ONLY) */}
+            {isShoot && (
+              <div className="pt-2 border-t border-amber-200/60">
+                <ThreeDMultiSelectDropdown
+                  label={`Crew Roles (${availableRoles.length})`}
+                  icon={<Users className="w-3.5 h-3.5 text-amber-700" />}
+                  placeholder={availableRoles.length === 0 ? "No assigned crew roles on cards" : "Select assigned crew roles..."}
+                  options={roleOptions}
+                  selectedValues={filters.roles}
+                  onChange={(roles) => onChange({ ...filters, roles })}
+                  searchPlaceholder="Search crew role..."
+                  emptyMessage="No assigned crew roles found on cards"
+                />
+              </div>
+            )}
           </div>
 
           {/* Footer Bar */}

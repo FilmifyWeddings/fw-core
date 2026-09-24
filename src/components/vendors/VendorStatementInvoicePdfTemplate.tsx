@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Printer, Download, FileText, CheckCircle2, Building2, User, Loader2 } from 'lucide-react';
 
@@ -87,9 +87,31 @@ export default function VendorStatementInvoicePdfTemplate({
   const [isDownloading, setIsDownloading] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
 
+  // Group items by Client/Couple
+  const groupedByClient = useMemo(() => {
+    const map = new Map<string, VendorInvoiceItem[]>();
+    items.forEach(item => {
+      const c = item.client_name || 'Client Project';
+      if (!map.has(c)) map.set(c, []);
+      map.get(c)!.push(item);
+    });
+    return Array.from(map.entries()).map(([clientName, clientItems]) => {
+      const cAgreed = clientItems.reduce((s, i) => s + (Number(i.total_amount) || 0), 0);
+      const cPaid = clientItems.reduce((s, i) => s + (Number(i.paid_amount) || 0), 0);
+      const cBal = Math.max(0, cAgreed - cPaid);
+      return { clientName, clientItems, cAgreed, cPaid, cBal };
+    });
+  }, [items]);
+
   if (!isOpen) return null;
 
+  // Real studio name fallback if "My Studio" or empty
+  const cleanStudioName = (!studioName || studioName.trim() === '' || studioName.trim() === 'My Studio' || studioName.trim() === 'StudioCore Partner Studio')
+    ? 'Filmify Weddings Studio'
+    : studioName.trim();
+
   const isAllShoots = items.length > 0 && items.every(i => i.category === 'shoot');
+  const isAlbumCategory = items.some(i => i.category === 'album_design' || i.category === 'album_printing');
   const invoiceNo = statementNumber || `INV-${Date.now().toString().slice(-6)}`;
   const displayDate = statementDate || new Date().toLocaleDateString('en-IN', {
     day: '2-digit',
@@ -228,7 +250,7 @@ export default function VendorStatementInvoicePdfTemplate({
                     Vendor Commercial Statement
                   </span>
                   <h1 className="text-xl sm:text-2xl font-black text-stone-900 tracking-tight mt-0.5">
-                    {studioName}
+                    {cleanStudioName}
                   </h1>
                   <p className="text-xs text-stone-500 font-medium mt-1">
                     {studioAddress}
@@ -277,7 +299,8 @@ export default function VendorStatementInvoicePdfTemplate({
                       {items.length} {isAllShoots ? (items.length === 1 ? 'Shoot' : 'Shoots') : (items.length === 1 ? 'Job' : 'Jobs')}
                     </span>
                   </p>
-                  {!isAllShoots && totalSheets > 0 && (
+                  {/* Total Output Specs ONLY shown for Album orders */}
+                  {isAlbumCategory && totalSheets > 0 && (
                     <p className="text-xs text-stone-700 font-semibold">
                       Total Output Specs: <span className="font-bold text-stone-900 font-mono">{totalSheets} Sheets / Units</span>
                     </p>
@@ -291,74 +314,103 @@ export default function VendorStatementInvoicePdfTemplate({
                 </div>
               </div>
 
-              {/* Itemized Table */}
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
+              {/* Itemized Deliverables Table Grouped Client-Wise */}
+              <div className="overflow-x-auto space-y-4">
+                <table className="w-full text-left text-xs border-collapse">
                   <thead>
-                    <tr className="border-b-2 border-stone-200 text-[10px] font-black uppercase tracking-wider text-stone-500">
-                      <th className="py-2.5 px-2">#</th>
-                      <th className="py-2.5 px-3">Client / Project</th>
-                      <th className="py-2.5 px-3">Deliverable / Task &amp; Specs</th>
-                      <th className="py-2.5 px-2 text-center">Category</th>
-                      <th className="py-2.5 px-2 text-right">Agreed Fee</th>
-                      <th className="py-2.5 px-2 text-right">Paid</th>
-                      <th className="py-2.5 px-2 text-right">Balance</th>
-                      {!isAllShoots && <th className="py-2.5 px-2 text-center">Status</th>}
+                    <tr className="border-b-2 border-stone-300 text-[10px] font-black uppercase tracking-wider text-stone-500 bg-stone-50/50">
+                      <th className="py-2 px-2 text-center w-8">#</th>
+                      <th className="py-2 px-3">Deliverable / Task &amp; Specs</th>
+                      <th className="py-2 px-2 text-center">Category</th>
+                      <th className="py-2 px-2 text-right">Agreed Fee</th>
+                      <th className="py-2 px-2 text-right">Paid</th>
+                      <th className="py-2 px-2 text-right">Balance</th>
+                      {!isAllShoots && <th className="py-2 px-2 text-center">Status</th>}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-stone-100">
-                    {items.map((item, idx) => (
-                      <tr key={idx} className="hover:bg-amber-50/30 transition">
-                        <td className="py-2.5 px-2 font-mono text-stone-400 font-bold">{idx + 1}</td>
-                        <td className="py-2.5 px-3 font-bold text-stone-900">{item.client_name}</td>
-                        <td className="py-2.5 px-3">
-                          <span className="font-bold text-stone-800 block">
-                            {item.event_name || item.album_type}
-                          </span>
-                          {item.category === 'shoot' ? (
-                            <span className="text-[10px] text-stone-500 block font-mono font-medium">
-                              {item.event_date ? formatStatementDate(item.event_date) : item.due_date ? `Due: ${formatStatementDate(item.due_date)}` : ''}
-                              {item.event_time ? ` • ${item.event_time}` : ''}
-                              {item.role ? ` • ${item.role}` : ''}
-                            </span>
-                          ) : (
-                            <span className="text-[10px] text-stone-500 block font-medium">
-                              {item.specs || (item.sheet_count > 1 ? `${item.sheet_count} Sheets` : '')}
-                              {item.due_date ? ` • Due: ${formatStatementDate(item.due_date)}` : ''}
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-2.5 px-2 text-center">
-                          <span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-amber-50 text-amber-900 border border-amber-200/60 font-mono">
-                            {item.category === 'shoot' ? 'Shoot' :
-                             item.category === 'video_editing' ? 'Video Edit' :
-                             item.category === 'photo_editing' ? 'Photo Edit' :
-                             item.category === 'album_printing' ? 'Printing' : 'Album'}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-2 text-right font-mono font-bold text-stone-900">
-                          ₹{Number(item.total_amount).toLocaleString('en-IN')}
-                        </td>
-                        <td className="py-2.5 px-2 text-right font-mono font-semibold text-emerald-700">
-                          ₹{Number(item.paid_amount || 0).toLocaleString('en-IN')}
-                        </td>
-                        <td className="py-2.5 px-2 text-right font-mono font-black text-rose-700">
-                          ₹{Number(item.balance_amount || 0).toLocaleString('en-IN')}
-                        </td>
-                        {!isAllShoots && (
-                          <td className="py-2.5 px-2 text-center">
-                            <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
-                              item.payment_status === 'PAID'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : item.paid_amount > 0
-                                ? 'bg-amber-100 text-amber-800'
-                                : 'bg-stone-100 text-stone-700'
-                            }`}>
-                              {item.order_status || item.payment_status}
-                            </span>
+                  <tbody>
+                    {groupedByClient.map((group, gIdx) => (
+                      <React.Fragment key={group.clientName || gIdx}>
+                        {/* Client Group Header Banner */}
+                        <tr className="bg-amber-100/60 border-t-2 border-b border-amber-200">
+                          <td colSpan={isAllShoots ? 6 : 7} className="py-2 px-3">
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-amber-600 shrink-0" />
+                                <span className="text-xs font-black text-amber-950 uppercase tracking-tight">
+                                  {group.clientName}
+                                </span>
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-white text-stone-700 border border-amber-300 shadow-2xs font-mono">
+                                  {group.clientItems.length} {group.clientItems.length === 1 ? 'Deliverable' : 'Deliverables'}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-3 text-[11px] font-mono font-bold text-amber-950">
+                                <span>Fee: ₹{group.cAgreed.toLocaleString('en-IN')}</span>
+                                <span className="text-amber-400">•</span>
+                                <span className="text-emerald-800">Paid: ₹{group.cPaid.toLocaleString('en-IN')}</span>
+                                <span className="text-amber-400">•</span>
+                                <span className={group.cBal > 0 ? 'text-rose-800 font-black' : 'text-emerald-800 font-black'}>
+                                  Bal: ₹{group.cBal.toLocaleString('en-IN')}
+                                </span>
+                              </div>
+                            </div>
                           </td>
-                        )}
-                      </tr>
+                        </tr>
+
+                        {/* Deliverable Items in this Client Group */}
+                        {group.clientItems.map((item, idx) => (
+                          <tr key={idx} className="hover:bg-amber-50/30 transition border-b border-stone-100">
+                            <td className="py-2.5 px-2 font-mono text-stone-400 font-bold text-center">{idx + 1}</td>
+                            <td className="py-2.5 px-3">
+                              <span className="font-bold text-stone-900 block">
+                                {item.event_name || item.album_type}
+                              </span>
+                              {item.category === 'shoot' ? (
+                                <span className="text-[10px] text-stone-500 block font-mono font-medium">
+                                  {item.event_date ? formatStatementDate(item.event_date) : item.due_date ? `Due: ${formatStatementDate(item.due_date)}` : ''}
+                                  {item.event_time ? ` • ${item.event_time}` : ''}
+                                  {item.role ? ` • ${item.role}` : ''}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-stone-500 block font-medium">
+                                  {item.specs || (item.sheet_count > 1 ? `${item.sheet_count} Sheets` : '')}
+                                  {item.due_date ? ` • Due: ${formatStatementDate(item.due_date)}` : ''}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-2 text-center">
+                              <span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-stone-100 text-stone-700 border border-stone-200 font-mono">
+                                {item.category === 'shoot' ? 'Shoot' :
+                                 item.category === 'video_editing' ? 'Video' :
+                                 item.category === 'photo_editing' ? 'Photo' :
+                                 item.category === 'album_printing' ? 'Printing' : 'Album'}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-2 text-right font-mono font-bold text-stone-900">
+                              ₹{Number(item.total_amount).toLocaleString('en-IN')}
+                            </td>
+                            <td className="py-2.5 px-2 text-right font-mono font-semibold text-emerald-700">
+                              ₹{Number(item.paid_amount || 0).toLocaleString('en-IN')}
+                            </td>
+                            <td className="py-2.5 px-2 text-right font-mono font-black text-rose-700">
+                              ₹{Number(item.balance_amount || 0).toLocaleString('en-IN')}
+                            </td>
+                            {!isAllShoots && (
+                              <td className="py-2.5 px-2 text-center">
+                                <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
+                                  item.payment_status === 'PAID'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : item.paid_amount > 0
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-stone-100 text-stone-700'
+                                }`}>
+                                  {item.order_status || item.payment_status}
+                                </span>
+                              </td>
+                            )}
+                          </tr>
+                        ))}
+                      </React.Fragment>
                     ))}
                   </tbody>
                 </table>
@@ -382,7 +434,7 @@ export default function VendorStatementInvoicePdfTemplate({
                 </div>
               </div>
 
-              {/* Signatures & Verification (Banking info removed per request) */}
+              {/* Signatures & Verification */}
               <div className="flex items-center justify-between pt-6 border-t border-stone-200">
                 <div className="text-xs text-stone-500 italic max-w-sm">
                   {notes}
@@ -393,8 +445,8 @@ export default function VendorStatementInvoicePdfTemplate({
                   <span className="text-[10px] font-black uppercase text-stone-800 tracking-wider">
                     Authorized Studio Signatory
                   </span>
-                  <span className="text-[9px] text-stone-400 font-medium">
-                    {studioName}
+                  <span className="text-[9px] text-stone-500 font-bold">
+                    {cleanStudioName}
                   </span>
                 </div>
               </div>

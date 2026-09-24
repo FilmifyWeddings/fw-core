@@ -92,6 +92,80 @@ const DEFAULT_STATUS_LIST = [
   'Completed'
 ];
 
+export function getSegmentConfig(segmentName: string) {
+  const s = (segmentName || '').toLowerCase();
+  if (s.includes('pre-wedding') || s.includes('prewedding')) {
+    return {
+      emoji: '💍',
+      containerBg: 'bg-[#F2F8FA]',
+      containerBorder: 'border-[#D1E8EE]',
+      headerText: 'text-[#164E63]',
+      badgeBg: 'bg-[#E0F2F7] text-[#164E63] border-[#C3E4ED]',
+    };
+  }
+  if (s.includes('wedding')) {
+    return {
+      emoji: '💒',
+      containerBg: 'bg-[#FAF7F2]',
+      containerBorder: 'border-[#EEDFC6]',
+      headerText: 'text-[#6A4B23]',
+      badgeBg: 'bg-[#F4E9D5] text-[#6A4B23] border-[#E3D1B4]',
+    };
+  }
+  if (s.includes('reception')) {
+    return {
+      emoji: '🥂',
+      containerBg: 'bg-[#F6F4FA]',
+      containerBorder: 'border-[#DFDAEE]',
+      headerText: 'text-[#3730A3]',
+      badgeBg: 'bg-[#EDE9FE] text-[#3730A3] border-[#DDD6FE]',
+    };
+  }
+  if (s.includes('haldi')) {
+    return {
+      emoji: '🌼',
+      containerBg: 'bg-[#FEFAF0]',
+      containerBorder: 'border-[#F8E7BE]',
+      headerText: 'text-[#78350F]',
+      badgeBg: 'bg-[#FEF3C7] text-[#78350F] border-[#FDE68A]',
+    };
+  }
+  if (s.includes('sangeet')) {
+    return {
+      emoji: '💃',
+      containerBg: 'bg-[#FAF3F6]',
+      containerBorder: 'border-[#EED3DE]',
+      headerText: 'text-[#831843]',
+      badgeBg: 'bg-[#FCE7F3] text-[#831843] border-[#FBCFE8]',
+    };
+  }
+  if (s.includes('mehendi') || s.includes('mehndi')) {
+    return {
+      emoji: '🌿',
+      containerBg: 'bg-[#F2F8F4]',
+      containerBorder: 'border-[#CCE5D4]',
+      headerText: 'text-[#065F46]',
+      badgeBg: 'bg-[#D1FAE5] text-[#065F46] border-[#A7F3D0]',
+    };
+  }
+  if (s.includes('engagement') || s.includes('roka')) {
+    return {
+      emoji: '💍',
+      containerBg: 'bg-[#FAF6F0]',
+      containerBorder: 'border-[#EEDDC8]',
+      headerText: 'text-[#713F12]',
+      badgeBg: 'bg-[#FEF3C7] text-[#713F12] border-[#FDE68A]',
+    };
+  }
+  return {
+    emoji: '✨',
+    containerBg: 'bg-[#FAF8F5]',
+    containerBorder: 'border-[#EAE5DA]',
+    headerText: 'text-[#292524]',
+    badgeBg: 'bg-stone-100 text-stone-700 border-stone-200',
+  };
+}
+
 export default function VendorAlbumDeliverablesModal({
   isOpen,
   onClose,
@@ -162,6 +236,8 @@ export default function VendorAlbumDeliverablesModal({
     eventTypes: [],
     roles: [],
     paymentStatuses: [],
+    workflowStatuses: [],
+    dueDateFilter: 'all',
   });
 
   // Active Category Tab
@@ -184,13 +260,16 @@ export default function VendorAlbumDeliverablesModal({
     email: string;
     address: string;
   }>(() => {
+    const fallbackName = (!studioName || studioName === 'My Studio' || studioName === 'StudioCore Partner Studio')
+      ? 'Filmify Weddings Studio'
+      : studioName;
     if (typeof window !== 'undefined') {
       try {
         const stored = localStorage.getItem(`studio_settings_${workspaceId}`) || localStorage.getItem('sc_studio_settings');
         if (stored) {
           const parsed = JSON.parse(stored);
           return {
-            name: parsed.studio_name || parsed.studioName || studioName,
+            name: parsed.studio_name || parsed.studioName || fallbackName,
             phone: parsed.phone || parsed.studioPhone || '+91 98765 43210',
             email: parsed.email || parsed.studioEmail || 'accounts@filmifyweddings.com',
             address: parsed.address || parsed.studioAddress || 'StudioCore Hub, Creative District, Mumbai'
@@ -199,7 +278,7 @@ export default function VendorAlbumDeliverablesModal({
       } catch (_) {}
     }
     return {
-      name: studioName,
+      name: fallbackName,
       phone: '+91 98765 43210',
       email: 'accounts@filmifyweddings.com',
       address: 'StudioCore Hub, Creative District, Mumbai'
@@ -555,6 +634,34 @@ export default function VendorAlbumDeliverablesModal({
         if (!filters.paymentStatuses.includes(statusKey)) return false;
       }
 
+      // 8. Workflow Status Multi-Select Filter (Post-Production Synced)
+      if (filters.workflowStatuses && filters.workflowStatuses.length > 0) {
+        const orderStatusLower = (o.order_status || '').toLowerCase();
+        const matchesStatus = filters.workflowStatuses.some(st => st.toLowerCase() === orderStatusLower);
+        if (!matchesStatus) return false;
+      }
+
+      // 9. Due Date Urgency Filter
+      if (filters.dueDateFilter && filters.dueDateFilter !== 'all') {
+        const dueStr = o.due_date;
+        if (!dueStr) return false;
+        const due = new Date(dueStr);
+        if (isNaN(due.getTime())) return false;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        due.setHours(0, 0, 0, 0);
+        const diffDays = Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        const isDone = (o.order_status || '').toLowerCase().includes('done') || (o.order_status || '').toLowerCase().includes('completed');
+
+        if (filters.dueDateFilter === 'overdue') {
+          if (isDone || diffDays >= 0) return false;
+        } else if (filters.dueDateFilter === 'due_today') {
+          if (diffDays !== 0) return false;
+        } else if (filters.dueDateFilter === 'due_this_week') {
+          if (diffDays < 0 || diffDays > 7) return false;
+        }
+      }
+
       return true;
     });
   }, [orders, activeCategoryTab, searchQuery, statusFilter, filters]);
@@ -608,8 +715,10 @@ export default function VendorAlbumDeliverablesModal({
   const activeFiltersCount = 
     (filters.startDate || filters.endDate ? 1 : 0) +
     filters.eventTypes.length +
-    filters.roles.length +
-    filters.paymentStatuses.length;
+    (activeCategoryTab === 'shoot' ? filters.roles.length : 0) +
+    filters.paymentStatuses.length +
+    (filters.workflowStatuses?.length || 0) +
+    (filters.dueDateFilter && filters.dueDateFilter !== 'all' ? 1 : 0);
 
   // Dynamic Tab Metrics Calculation based on filtered results
   const tabTotalCount = filteredOrders.length;
@@ -1175,7 +1284,9 @@ export default function VendorAlbumDeliverablesModal({
                 Total {activeCategoryTab === 'shoot' ? 'Shoots' : (visibleTabs.find(t => t.id === activeCategoryTab)?.label || 'Assignments')}
               </span>
               <span className="text-sm sm:text-base font-black text-amber-950 font-mono mt-0.5 block">
-                {tabTotalCount} {activeCategoryTab === 'shoot' ? 'Shoots' : 'Jobs'}
+                {activeCategoryTab === 'shoot' 
+                  ? `${tabTotalCount} ${tabTotalCount === 1 ? 'Shoot' : 'Shoots'}` 
+                  : `${clientGroups.length} ${clientGroups.length === 1 ? 'Client' : 'Clients'} • ${tabTotalCount} ${tabTotalCount === 1 ? 'Job' : 'Jobs'}`}
               </span>
             </div>
 
@@ -1762,201 +1873,239 @@ export default function VendorAlbumDeliverablesModal({
                         </div>
                       </div>
 
-                      {/* ── DELIVERABLES LIST INSIDE THE COUPLE CARD ── */}
-                      <div className="space-y-2.5">
-                        {grp.orders.map(order => {
-                          const isSelected = selectedOrderIds.has(order.id);
-                          const oTot = Number(order.total_amount || 0);
-                          const oPaid = Number(order.paid_amount || 0);
-                          const oBal = Number(order.balance_amount || 0);
-                          const oFullPaid = oTot > 0 && oBal === 0 && oPaid >= oTot;
+                      {/* ── DELIVERABLES LIST INSIDE THE COUPLE CARD GROUPED BY SEGMENT ── */}
+                      {(() => {
+                        const segMap = new Map<string, VendorAlbumOrder[]>();
+                        grp.orders.forEach(order => {
+                          const seg = (order.segment && order.segment.trim()) || 'Wedding';
+                          if (!segMap.has(seg)) segMap.set(seg, []);
+                          segMap.get(seg)!.push(order);
+                        });
+                        const segmentList = Array.from(segMap.entries()).map(([segment, orders]) => ({ segment, orders }));
 
-                          // Due date and Overdue indicator
-                          const dueDateStr = order.due_date || '';
-                          const deadlineInfo = (() => {
-                            if (!dueDateStr) return null;
-                            const due = new Date(dueDateStr);
-                            if (isNaN(due.getTime())) return null;
-                            const today = new Date();
-                            today.setHours(0, 0, 0, 0);
-                            due.setHours(0, 0, 0, 0);
-                            const diffDays = Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-                            const isDone = (order.order_status || '').toLowerCase().includes('done') || (order.order_status || '').toLowerCase().includes('completed');
-                            if (isDone) {
-                              return { label: 'Done', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
-                            }
-                            if (diffDays < 0) {
-                              return { 
-                                label: `Overdue ${Math.abs(diffDays)}d`, 
-                                className: 'bg-rose-100 text-rose-700 border-rose-300 animate-pulse font-black' 
-                              };
-                            }
-                            if (diffDays === 0) {
-                              return { label: 'Due Today', className: 'bg-amber-100 text-amber-800 border-amber-300 font-black' };
-                            }
-                            return { label: `${diffDays}d left`, className: 'bg-stone-100 text-stone-600 border-stone-200 font-bold' };
-                          })();
-
-                          return (
-                            <div
-                              key={order.id}
-                              className={`p-3.5 rounded-2xl bg-[#FFFDF9] border transition shadow-2xs hover:shadow-xs space-y-2.5 ${
-                                isSelected ? 'border-amber-400 bg-amber-50/30' : 'border-[#EAE5DA]'
-                              }`}
-                            >
-                              {/* Row 1: Title, Specs (ONLY if exists), Due Date, and Status */}
-                              <div className="flex items-center justify-between flex-wrap gap-2">
-                                <div className="flex items-center gap-2 flex-wrap min-w-0 flex-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleToggleSelectOrder(order.id)}
-                                    className="text-stone-400 hover:text-amber-600 cursor-pointer shrink-0"
-                                  >
-                                    {isSelected ? (
-                                      <CheckSquare className="w-3.5 h-3.5 text-amber-600" />
-                                    ) : (
-                                      <Square className="w-3.5 h-3.5 text-stone-300" />
-                                    )}
-                                  </button>
-
-                                  <span className="text-xs sm:text-sm font-black text-stone-900 truncate">
-                                    {order.item_title || order.album_type || 'Deliverable'}
-                                  </span>
-
-                                  {/* Clean Specs Badge: ONLY if specs exist and not empty */}
-                                  {order.specs && order.specs.trim().length > 0 && (
-                                    <span className="font-mono text-[11px] text-amber-950 font-extrabold bg-amber-100/70 px-2 py-0.5 rounded-md border border-amber-300/80 shadow-2xs">
-                                      {order.specs}
-                                    </span>
-                                  )}
-
-                                  {/* Due Date & Red Overdue Indicator */}
-                                  {dueDateStr && (
-                                    <div className="flex items-center gap-1.5 text-stone-600 text-[11px] font-mono">
-                                      <span className="text-stone-400">Due:</span>
-                                      <span className="font-bold text-stone-700">{dueDateStr}</span>
-                                      {deadlineInfo && (
-                                        <span className={`px-2 py-0.5 rounded-md text-[10px] border shadow-2xs shrink-0 ${deadlineInfo.className}`}>
-                                          {deadlineInfo.label}
-                                        </span>
-                                      )}
+                        return (
+                          <div className="space-y-4">
+                            {segmentList.map(({ segment, orders: segOrders }) => {
+                              const segConfig = getSegmentConfig(segment);
+                              return (
+                                <div key={segment} className="space-y-2">
+                                  {/* Distinct Bold Color-Coded Segment Header */}
+                                  <div className={`px-3.5 py-1.5 rounded-xl border flex items-center justify-between shadow-2xs ${segConfig.containerBg} ${segConfig.containerBorder}`}>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-sm">{segConfig.emoji}</span>
+                                      <span className={`text-xs font-black uppercase tracking-wider ${segConfig.headerText}`}>
+                                        {segment}
+                                      </span>
                                     </div>
-                                  )}
+                                    <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border shadow-2xs ${segConfig.badgeBg}`}>
+                                      {segOrders.length} {segOrders.length === 1 ? 'Deliverable' : 'Deliverables'}
+                                    </span>
+                                  </div>
+
+                                  {/* Segment Deliverables Rows */}
+                                  <div className="space-y-2 pl-1 sm:pl-1.5">
+                                    {segOrders.map(order => {
+                                      const isSelected = selectedOrderIds.has(order.id);
+                                      const oTot = Number(order.total_amount || 0);
+                                      const oPaid = Number(order.paid_amount || 0);
+                                      const oBal = Number(order.balance_amount || 0);
+                                      const oFullPaid = oTot > 0 && oBal === 0 && oPaid >= oTot;
+
+                                      // Due date and Overdue indicator
+                                      const dueDateStr = order.due_date || '';
+                                      const deadlineInfo = (() => {
+                                        if (!dueDateStr) return null;
+                                        const due = new Date(dueDateStr);
+                                        if (isNaN(due.getTime())) return null;
+                                        const today = new Date();
+                                        today.setHours(0, 0, 0, 0);
+                                        due.setHours(0, 0, 0, 0);
+                                        const diffDays = Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                                        const isDone = (order.order_status || '').toLowerCase().includes('done') || (order.order_status || '').toLowerCase().includes('completed');
+                                        if (isDone) {
+                                          return { label: 'Done', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+                                        }
+                                        if (diffDays < 0) {
+                                          return { 
+                                            label: `Overdue ${Math.abs(diffDays)}d`, 
+                                            className: 'bg-rose-100 text-rose-700 border-rose-300 animate-pulse font-black' 
+                                          };
+                                        }
+                                        if (diffDays === 0) {
+                                          return { label: 'Due Today', className: 'bg-amber-100 text-amber-800 border-amber-300 font-black' };
+                                        }
+                                        return { label: `${diffDays}d left`, className: 'bg-stone-100 text-stone-600 border-stone-200 font-bold' };
+                                      })();
+
+                                      return (
+                                        <div
+                                          key={order.id}
+                                          className={`p-3.5 rounded-2xl bg-[#FFFDF9] border transition shadow-2xs hover:shadow-xs space-y-2.5 ${
+                                            isSelected ? 'border-amber-400 bg-amber-50/30' : 'border-[#EAE5DA]'
+                                          }`}
+                                        >
+                                          {/* Row 1: Title, Specs (ONLY if exists), Due Date, and Status */}
+                                          <div className="flex items-center justify-between flex-wrap gap-2">
+                                            <div className="flex items-center gap-2 flex-wrap min-w-0 flex-1">
+                                              <button
+                                                type="button"
+                                                onClick={() => handleToggleSelectOrder(order.id)}
+                                                className="text-stone-400 hover:text-amber-600 cursor-pointer shrink-0"
+                                              >
+                                                {isSelected ? (
+                                                  <CheckSquare className="w-3.5 h-3.5 text-amber-600" />
+                                                ) : (
+                                                  <Square className="w-3.5 h-3.5 text-stone-300" />
+                                                )}
+                                              </button>
+
+                                              <span className="text-xs sm:text-sm font-black text-stone-900 truncate">
+                                                {order.item_title || order.album_type || 'Deliverable'}
+                                              </span>
+
+                                              {/* Clean Specs Badge: ONLY if specs exist and not empty */}
+                                              {order.specs && order.specs.trim().length > 0 && (
+                                                <span className="font-mono text-[11px] text-amber-950 font-extrabold bg-amber-100/70 px-2 py-0.5 rounded-md border border-amber-300/80 shadow-2xs">
+                                                  {order.specs}
+                                                </span>
+                                              )}
+
+                                              {/* Due Date & Red Overdue Indicator */}
+                                              {dueDateStr && (
+                                                <div className="flex items-center gap-1.5 text-stone-600 text-[11px] font-mono">
+                                                  <span className="text-stone-400">Due:</span>
+                                                  <span className="font-bold text-stone-700">{dueDateStr}</span>
+                                                  {deadlineInfo && (
+                                                    <span className={`px-2 py-0.5 rounded-md text-[10px] border shadow-2xs shrink-0 ${deadlineInfo.className}`}>
+                                                      {deadlineInfo.label}
+                                                    </span>
+                                                  )}
+                                                </div>
+                                              )}
+                                            </div>
+
+                                            {/* Status Dropdown: Synced with Post-Production Settings */}
+                                            <div className="shrink-0">
+                                              <ThreeDStatusSelect
+                                                currentStatus={order.order_status}
+                                                statuses={ppStatuses}
+                                                workspaceId={workspaceId}
+                                                onChange={(val) => handleStatusChange(order, val)}
+                                              />
+                                            </div>
+                                          </div>
+
+                                          {/* Row 2: Attached Link Pills (Shows Link Title instead of generic "Link") */}
+                                          {((order.drive_links && order.drive_links.length > 0) || order.pdf_proof_url || order.drive_folder_url) && (
+                                            <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                                              {order.drive_links && order.drive_links.length > 0 ? (
+                                                order.drive_links.map((link, idx) => {
+                                                  const linkTitle = link.title || (link as any).label || (link as any).name || 'Attached Link';
+                                                  return (
+                                                    <a
+                                                      key={idx}
+                                                      href={link.url}
+                                                      target="_blank"
+                                                      rel="noopener noreferrer"
+                                                      className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white text-stone-800 border border-amber-300 hover:bg-amber-100 hover:text-amber-900 transition shadow-2xs"
+                                                      title={`Open ${linkTitle}: ${link.url}`}
+                                                    >
+                                                      <ExternalLink className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                                                      <span className="truncate max-w-[140px]">{linkTitle}</span>
+                                                    </a>
+                                                  );
+                                                })
+                                              ) : (
+                                                <a
+                                                  href={order.pdf_proof_url || order.drive_folder_url}
+                                                  target="_blank"
+                                                  rel="noopener noreferrer"
+                                                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white text-stone-800 border border-amber-300 hover:bg-amber-100 transition shadow-2xs"
+                                                >
+                                                  <ExternalLink className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                                                  <span>Drive / Proof Link</span>
+                                                </a>
+                                              )}
+                                            </div>
+                                          )}
+
+                                          {/* Row 3: Deliverable Commercials & Action Buttons */}
+                                          <div className="flex items-center justify-between flex-wrap gap-2 pt-1 border-t border-stone-200/50">
+                                            {/* Financials (Strictly respects ₹0) */}
+                                            <div className="flex items-center gap-2 text-xs font-bold flex-wrap">
+                                              <span className="font-mono text-stone-800">
+                                                Fee: ₹{oTot.toLocaleString('en-IN')}
+                                              </span>
+                                              <span className="text-stone-300">•</span>
+                                              <span className="font-mono text-emerald-700">
+                                                Paid: ₹{oPaid.toLocaleString('en-IN')}
+                                              </span>
+                                              <span className="text-stone-300">•</span>
+                                              <span className={`font-mono font-black ${oBal > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
+                                                Bal: ₹{oBal.toLocaleString('en-IN')}
+                                              </span>
+                                            </div>
+
+                                            {/* Actions */}
+                                            <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+                                              {/* Record Payment Button */}
+                                              <button
+                                                type="button"
+                                                onClick={() => handleOpenRecordPayment(order)}
+                                                className={`px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-2xs ${
+                                                  oFullPaid 
+                                                    ? 'bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100'
+                                                    : oPaid > 0
+                                                    ? 'bg-amber-50 text-amber-900 border border-amber-300 hover:bg-amber-100'
+                                                    : 'bg-white text-stone-700 border border-stone-200 hover:bg-stone-50'
+                                                }`}
+                                              >
+                                                <IndianRupee className="w-3 h-3 text-amber-600" />
+                                                <span>{oFullPaid ? 'Paid' : oPaid > 0 ? 'Part Paid' : 'Record Pay'}</span>
+                                              </button>
+
+                                              {/* Attach Links Button */}
+                                              <button
+                                                type="button"
+                                                onClick={() => setAttachLinksOrder(order)}
+                                                className="px-2 py-1 rounded-xl border border-stone-200 bg-white hover:bg-amber-50 hover:border-amber-300 text-stone-700 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                                                title="Manage Drive and review links"
+                                              >
+                                                <Link2 className="w-3 h-3 text-amber-600" />
+                                                <span>Links {order.drive_links?.length ? `(${order.drive_links.length})` : ''}</span>
+                                              </button>
+
+                                              {/* Notes Button */}
+                                              <button
+                                                type="button"
+                                                onClick={() => setCommentTarget(order)}
+                                                className="px-2 py-1 rounded-xl border border-stone-200 bg-white hover:bg-stone-50 text-[11px] font-bold text-stone-700 flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                                              >
+                                                <MessageSquare className="w-3 h-3 text-stone-400" />
+                                                <span>Notes ({(order.comments || []).length})</span>
+                                              </button>
+
+                                              {/* Edit Item Details Modal Trigger */}
+                                              <button
+                                                type="button"
+                                                onClick={() => setEditingOrder(order)}
+                                                className="p-1.5 rounded-xl border border-stone-200 bg-white hover:bg-stone-100 text-stone-500 transition cursor-pointer shadow-2xs"
+                                                title="Edit Deliverable Title, Specs & Due Date"
+                                              >
+                                                <Edit3 className="w-3 h-3" />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
                                 </div>
-
-                                {/* Status Dropdown: Synced with Post-Production Settings */}
-                                <div className="shrink-0">
-                                  <ThreeDStatusSelect
-                                    currentStatus={order.order_status}
-                                    statuses={ppStatuses}
-                                    workspaceId={workspaceId}
-                                    onChange={(val) => handleStatusChange(order, val)}
-                                  />
-                                </div>
-                              </div>
-
-                              {/* Row 2: Attached Link Pills (if any) */}
-                              {((order.drive_links && order.drive_links.length > 0) || order.pdf_proof_url || order.drive_folder_url) && (
-                                <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
-                                  {order.drive_links && order.drive_links.length > 0 ? (
-                                    order.drive_links.map((link, idx) => (
-                                      <a
-                                        key={idx}
-                                        href={link.url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white text-stone-800 border border-amber-300 hover:bg-amber-100 hover:text-amber-900 transition shadow-2xs"
-                                        title={`Open ${link.title}: ${link.url}`}
-                                      >
-                                        <ExternalLink className="w-2.5 h-2.5 text-amber-600 shrink-0" />
-                                        <span className="truncate max-w-[140px]">{link.title || 'Link'}</span>
-                                      </a>
-                                    ))
-                                  ) : (
-                                    <a
-                                      href={order.pdf_proof_url || order.drive_folder_url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white text-stone-800 border border-amber-300 hover:bg-amber-100 transition shadow-2xs"
-                                    >
-                                      <ExternalLink className="w-2.5 h-2.5 text-amber-600 shrink-0" />
-                                      <span>Drive / Proof Link</span>
-                                    </a>
-                                  )}
-                                </div>
-                              )}
-
-                              {/* Row 3: Deliverable Commercials & Action Buttons */}
-                              <div className="flex items-center justify-between flex-wrap gap-2 pt-1 border-t border-stone-200/50">
-                                {/* Financials */}
-                                <div className="flex items-center gap-2 text-xs font-bold flex-wrap">
-                                  <span className="font-mono text-stone-800">
-                                    Fee: ₹{oTot.toLocaleString('en-IN')}
-                                  </span>
-                                  <span className="text-stone-300">•</span>
-                                  <span className="font-mono text-emerald-700">
-                                    Paid: ₹{oPaid.toLocaleString('en-IN')}
-                                  </span>
-                                  <span className="text-stone-300">•</span>
-                                  <span className={`font-mono font-black ${oBal > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
-                                    Bal: ₹{oBal.toLocaleString('en-IN')}
-                                  </span>
-                                </div>
-
-                                {/* Actions */}
-                                <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
-                                  {/* Record Payment Button */}
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenRecordPayment(order)}
-                                    className={`px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-2xs ${
-                                      oFullPaid 
-                                        ? 'bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100'
-                                        : oPaid > 0
-                                        ? 'bg-amber-50 text-amber-900 border border-amber-300 hover:bg-amber-100'
-                                        : 'bg-white text-stone-700 border border-stone-200 hover:bg-stone-50'
-                                    }`}
-                                  >
-                                    <IndianRupee className="w-3 h-3 text-amber-600" />
-                                    <span>{oFullPaid ? 'Paid' : oPaid > 0 ? 'Part Paid' : 'Record Pay'}</span>
-                                  </button>
-
-                                  {/* Attach Links Button */}
-                                  <button
-                                    type="button"
-                                    onClick={() => setAttachLinksOrder(order)}
-                                    className="px-2 py-1 rounded-xl border border-stone-200 bg-white hover:bg-amber-50 hover:border-amber-300 text-stone-700 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-2xs"
-                                    title="Manage Drive and review links"
-                                  >
-                                    <Link2 className="w-3 h-3 text-amber-600" />
-                                    <span>Links {order.drive_links?.length ? `(${order.drive_links.length})` : ''}</span>
-                                  </button>
-
-                                  {/* Notes Button */}
-                                  <button
-                                    type="button"
-                                    onClick={() => setCommentTarget(order)}
-                                    className="px-2 py-1 rounded-xl border border-stone-200 bg-white hover:bg-stone-50 text-[11px] font-bold text-stone-700 flex items-center gap-1 transition cursor-pointer shadow-2xs"
-                                  >
-                                    <MessageSquare className="w-3 h-3 text-stone-400" />
-                                    <span>Notes ({(order.comments || []).length})</span>
-                                  </button>
-
-                                  {/* Edit Item Details */}
-                                  <button
-                                    type="button"
-                                    onClick={() => setEditingOrder(order)}
-                                    className="p-1.5 rounded-xl border border-stone-200 bg-white hover:bg-stone-100 text-stone-500 transition cursor-pointer shadow-2xs"
-                                    title="Edit Item Title & Specs"
-                                  >
-                                    <Edit3 className="w-3 h-3" />
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
                     </div>
                   );
                 })}
@@ -2230,26 +2379,94 @@ export default function VendorAlbumDeliverablesModal({
                   </div>
 
                   <div className="space-y-3 py-1">
-                    <div>
-                      <label className="text-[10px] font-bold text-stone-500 block mb-1">Couple / Client Name</label>
-                      <input
-                        type="text"
-                        value={editingOrder.client_name}
-                        onChange={(e) => setEditingOrder({ ...editingOrder, client_name: e.target.value })}
-                        className="w-full p-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-stone-500 block mb-1">
-                        {editingOrder.category === 'shoot' ? 'Event Name (e.g. Wedding, Reception)' : 'Event / Task Title'}
-                      </label>
-                      <input
-                        type="text"
-                        value={editingOrder.event_name || editingOrder.item_title || editingOrder.album_type}
-                        onChange={(e) => setEditingOrder({ ...editingOrder, event_name: e.target.value, item_title: e.target.value, album_type: e.target.value })}
-                        className="w-full p-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
-                      />
-                    </div>
+                    {editingOrder.category === 'shoot' ? (
+                      <>
+                        <div>
+                          <label className="text-[10px] font-black uppercase tracking-wider text-stone-600 block mb-1">
+                            Couple / Client Name
+                          </label>
+                          <input
+                            type="text"
+                            value={editingOrder.client_name}
+                            onChange={(e) => setEditingOrder({ ...editingOrder, client_name: e.target.value })}
+                            className="w-full p-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-black uppercase tracking-wider text-stone-600 block mb-1">
+                            Event Name (e.g. Wedding, Reception)
+                          </label>
+                          <input
+                            type="text"
+                            value={editingOrder.event_name || editingOrder.item_title || editingOrder.album_type}
+                            onChange={(e) => setEditingOrder({ ...editingOrder, event_name: e.target.value, item_title: e.target.value, album_type: e.target.value })}
+                            className="w-full p-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        {/* Deliverable Title */}
+                        <div>
+                          <label className="text-[10px] font-black uppercase tracking-wider text-stone-600 block mb-1">
+                            Deliverable Title *
+                          </label>
+                          <input
+                            type="text"
+                            value={editingOrder.item_title || editingOrder.album_type || ''}
+                            onChange={(e) => setEditingOrder({
+                              ...editingOrder,
+                              item_title: e.target.value,
+                              album_type: e.target.value,
+                              event_name: e.target.value,
+                            })}
+                            placeholder="e.g. Cinematic Wedding Film, Teaser 60s..."
+                            className="w-full p-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
+                          />
+                        </div>
+
+                        {/* Specs / Duration / Subtitle */}
+                        <div>
+                          <label className="text-[10px] font-black uppercase tracking-wider text-stone-600 block mb-1">
+                            Specs / Duration / Subtitle (e.g. 2 min, 30 min, 30 Sheets)
+                          </label>
+                          <input
+                            type="text"
+                            value={editingOrder.specs || ''}
+                            onChange={(e) => setEditingOrder({ ...editingOrder, specs: e.target.value })}
+                            placeholder="e.g. 2 min 4K, 3-5 Mins Cinematic, 30 Sheets (60 Pages)..."
+                            className="w-full p-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
+                          />
+                        </div>
+
+                        {/* Due Date & Client Name */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-[10px] font-black uppercase tracking-wider text-stone-600 block mb-1">
+                              Due Date
+                            </label>
+                            <input
+                              type="date"
+                              value={editingOrder.due_date || editingOrder.event_date || ''}
+                              onChange={(e) => setEditingOrder({ ...editingOrder, due_date: e.target.value })}
+                              className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-mono font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-[10px] font-black uppercase tracking-wider text-stone-600 block mb-1">
+                              Client / Couple Name
+                            </label>
+                            <input
+                              type="text"
+                              value={editingOrder.client_name}
+                              onChange={(e) => setEditingOrder({ ...editingOrder, client_name: e.target.value })}
+                              className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
+                            />
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   <div className="flex items-center justify-between pt-2">
@@ -2634,9 +2851,19 @@ export default function VendorAlbumDeliverablesModal({
           onClose={() => setIsFilterModalOpen(false)}
           filters={filters}
           onChange={setFilters}
-          onReset={() => setFilters({ startDate: '', endDate: '', eventTypes: [], roles: [], paymentStatuses: [] })}
+          onReset={() => setFilters({
+            startDate: '',
+            endDate: '',
+            eventTypes: [],
+            roles: [],
+            paymentStatuses: [],
+            workflowStatuses: [],
+            dueDateFilter: 'all',
+          })}
           availableEventTypes={cardEventTypes}
           availableRoles={cardCrewRoles}
+          availableWorkflowStatuses={ppStatuses}
+          category={activeCategoryTab}
           totalFilteredCount={filteredOrders.length}
         />
 

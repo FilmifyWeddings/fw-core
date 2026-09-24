@@ -21,6 +21,7 @@ export interface VendorAlbumOrder {
   assignment_id?: string;
   payout_id?: string;
   category?: AssignmentCategory; // 'shoot', 'video_editing', 'photo_editing', 'album_design', 'album_printing'
+  segment?: string; // e.g. "Pre-Wedding", "Wedding", "Reception", "Haldi", "Sangeet"
   event_name?: string; // e.g. "Wedding", "Reception", "Engagement", "Sangeet", "Haldi"
   event_date?: string; // e.g. "2026-10-15"
   event_time?: string; // e.g. "09:00 AM - 02:00 PM"
@@ -229,14 +230,9 @@ export async function fetchVendorAlbumOrders(
             const rawSpecs = String(deliv.specs || deliv.count || '').trim();
             const sheetCount = parseInt(rawSpecs.replace(/\D/g, '')) || (cat === 'album_design' || cat === 'album_printing' ? 30 : 1);
             
-            let totalAmt = Number(deliv.agreed_amount);
-            if (isNaN(totalAmt) || totalAmt === 0) {
-              if (cat === 'video_editing') totalAmt = 4500;
-              else if (cat === 'photo_editing') totalAmt = 3000;
-              else if (cat === 'album_design') totalAmt = sheetCount * 150;
-              else if (cat === 'album_printing') totalAmt = sheetCount * 220;
-              else totalAmt = 2500;
-            }
+            let totalAmt = deliv.agreed_amount !== undefined && deliv.agreed_amount !== null && !isNaN(Number(deliv.agreed_amount))
+              ? Number(deliv.agreed_amount)
+              : 0;
             const paidAmt = Number(deliv.paid_amount) || 0;
             const balAmt = Math.max(0, totalAmt - paidAmt);
 
@@ -250,6 +246,7 @@ export async function fetchVendorAlbumOrders(
               project_id: deliv.project_id,
               deliverable_id: deliv.id,
               category: cat,
+              segment: deliv.segment || 'Wedding',
               item_title: deliv.title || 'Deliverable Task',
               specs: rawSpecs,
               service_type: cat === 'video_editing' ? 'Video Editing' : cat === 'photo_editing' ? 'Photo Editing' : cat === 'album_printing' ? 'Album Printing' : 'Album Designing',
@@ -314,14 +311,9 @@ export async function fetchVendorAlbumOrders(
               if (!exists) {
                 const rawSpecs = String(d.specs || d.count || '').trim();
                 const sheetCount = parseInt(rawSpecs.replace(/\D/g, '')) || (cat === 'album_design' || cat === 'album_printing' ? 30 : 1);
-                let totalAmt = Number(d.agreed_amount);
-                if (isNaN(totalAmt) || totalAmt === 0) {
-                  if (cat === 'video_editing') totalAmt = 4500;
-                  else if (cat === 'photo_editing') totalAmt = 3000;
-                  else if (cat === 'album_design') totalAmt = sheetCount * 150;
-                  else if (cat === 'album_printing') totalAmt = sheetCount * 220;
-                  else totalAmt = 2500;
-                }
+                let totalAmt = d.agreed_amount !== undefined && d.agreed_amount !== null && !isNaN(Number(d.agreed_amount))
+                  ? Number(d.agreed_amount)
+                  : 0;
                 const paidAmt = Number(d.paid_amount) || 0;
                 const balAmt = Math.max(0, totalAmt - paidAmt);
 
@@ -335,6 +327,7 @@ export async function fetchVendorAlbumOrders(
                   project_id: proj.id,
                   deliverable_id: d.id,
                   category: cat,
+                  segment: d.segment || 'Wedding',
                   item_title: d.title || 'Deliverable Task',
                   specs: rawSpecs,
                   service_type: cat === 'video_editing' ? 'Video Editing' : cat === 'photo_editing' ? 'Photo Editing' : cat === 'album_printing' ? 'Album Printing' : 'Album Designing',
@@ -666,6 +659,7 @@ export async function saveVendorAlbumOrder(
       await supabaseAdmin
         .from('post_production_deliverables')
         .update({
+          title: payload.item_title || payload.album_type,
           status: payload.order_status,
           specs: payload.specs || (payload.category === 'album_design' || payload.category === 'album_printing' ? `${payload.sheet_count} Sheets` : null),
           due_date: payload.due_date ? new Date(payload.due_date).toISOString() : null,

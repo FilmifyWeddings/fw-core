@@ -391,26 +391,6 @@ export default function DeliverableRowItem({
             searchPlaceholder="🔍 Search editor..."
             placeholder="+ Assign Editor"
           />
-
-          {/* Quick Commercials Fee Badge if assigned */}
-          {(item.assigned_member_id || item.assigned_to) && (
-            <div className="flex items-center gap-1.5 mt-1">
-              <button
-                type="button"
-                onClick={() => setIsAssignModalOpen(true)}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 border border-amber-200 dark:border-amber-800 text-[10px] font-black hover:bg-amber-100 cursor-pointer shadow-2xs transition"
-                title="Click to view/edit commercials & payment ledger"
-              >
-                <IndianRupee className="w-2.5 h-2.5 text-amber-700" />
-                <span>Fee: ₹{(item.agreed_amount !== undefined && item.agreed_amount !== null ? item.agreed_amount : 0).toLocaleString('en-IN')}</span>
-                {item.payment_status === 'FULL_PAID' ? (
-                  <span className="text-[9px] text-emerald-700 font-extrabold ml-0.5">✓ Paid</span>
-                ) : item.paid_amount && item.paid_amount > 0 ? (
-                  <span className="text-[9px] text-amber-700 font-extrabold ml-0.5">Part</span>
-                ) : null}
-              </button>
-            </div>
-          )}
         </div>
 
         {/* Column 2: Due Date & Countdown Status (Clean width w-48 sm:w-52, direct box click) */}
@@ -518,6 +498,18 @@ export default function DeliverableRowItem({
           >
             <Edit3 className="w-3.5 h-3.5" />
           </button>
+
+          {/* Edit Commercials Fee Button */}
+          {(item.assigned_member_id || item.assigned_to) && (
+            <button
+              type="button"
+              onClick={() => setIsAssignModalOpen(true)}
+              title="Edit Commercials & Payment"
+              className="p-1.5 rounded-lg border border-[#EAE5DA] dark:border-stone-700 bg-white dark:bg-stone-800 text-amber-700 dark:text-amber-400 hover:text-amber-800 hover:border-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition cursor-pointer"
+            >
+              <IndianRupee className="w-3.5 h-3.5" />
+            </button>
+          )}
 
           {/* Delete Item with 3D confirmation dialog */}
           <button
