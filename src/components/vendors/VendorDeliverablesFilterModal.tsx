@@ -3,9 +3,10 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  X, Filter, Calendar, CheckSquare, Square, 
-  RotateCcw, Check, Sparkles, IndianRupee, Users, Tag
+  X, Filter, Calendar, RotateCcw, Check, Sparkles, 
+  IndianRupee, Users, Tag
 } from 'lucide-react';
+import ThreeDMultiSelectDropdown, { MultiSelectOption } from '@/components/common/ThreeDMultiSelectDropdown';
 
 export interface DeliverablesFilterState {
   startDate: string;
@@ -26,11 +27,11 @@ interface VendorDeliverablesFilterModalProps {
   totalFilteredCount: number;
 }
 
-export const PAYMENT_STATUS_OPTIONS = [
-  { id: 'UNSETTLED', label: 'Unsettled (₹0 Commercials)', badge: 'bg-stone-100 text-stone-700 border-stone-300' },
-  { id: 'FULL PAID', label: 'Full Paid (Cleared)', badge: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
-  { id: 'PARTIALLY PAID', label: 'Partially Paid', badge: 'bg-amber-100 text-amber-800 border-amber-300' },
-  { id: 'UNPAID', label: 'Unpaid (Balance Pending)', badge: 'bg-rose-100 text-rose-800 border-rose-300' },
+const PAYMENT_STATUS_OPTIONS: MultiSelectOption[] = [
+  { id: 'UNSETTLED', label: 'Unsettled (₹0 Commercials)', badge: 'UNSETTLED', badgeClass: 'bg-stone-100 text-stone-700 border border-stone-300' },
+  { id: 'FULL PAID', label: 'Full Paid (Cleared)', badge: 'FULL PAID', badgeClass: 'bg-emerald-100 text-emerald-800 border border-emerald-300' },
+  { id: 'PARTIALLY PAID', label: 'Partially Paid', badge: 'PARTIAL', badgeClass: 'bg-amber-100 text-amber-800 border border-amber-300' },
+  { id: 'UNPAID', label: 'Unpaid (Balance Pending)', badge: 'UNPAID', badgeClass: 'bg-rose-100 text-rose-800 border border-rose-300' },
 ];
 
 export default function VendorDeliverablesFilterModal({
@@ -44,30 +45,6 @@ export default function VendorDeliverablesFilterModal({
   totalFilteredCount,
 }: VendorDeliverablesFilterModalProps) {
   if (!isOpen) return null;
-
-  const toggleEventType = (item: string) => {
-    const exists = filters.eventTypes.includes(item);
-    const updated = exists 
-      ? filters.eventTypes.filter(x => x !== item)
-      : [...filters.eventTypes, item];
-    onChange({ ...filters, eventTypes: updated });
-  };
-
-  const toggleRole = (item: string) => {
-    const exists = filters.roles.includes(item);
-    const updated = exists 
-      ? filters.roles.filter(x => x !== item)
-      : [...filters.roles, item];
-    onChange({ ...filters, roles: updated });
-  };
-
-  const togglePaymentStatus = (item: string) => {
-    const exists = filters.paymentStatuses.includes(item);
-    const updated = exists 
-      ? filters.paymentStatuses.filter(x => x !== item)
-      : [...filters.paymentStatuses, item];
-    onChange({ ...filters, paymentStatuses: updated });
-  };
 
   const setDatePreset = (preset: 'all' | 'this_month' | 'last_month' | 'next_30' | 'this_year') => {
     const now = new Date();
@@ -117,6 +94,16 @@ export default function VendorDeliverablesFilterModal({
     filters.roles.length +
     filters.paymentStatuses.length;
 
+  const eventOptions: MultiSelectOption[] = availableEventTypes.map(evt => ({
+    id: evt,
+    label: evt,
+  }));
+
+  const roleOptions: MultiSelectOption[] = availableRoles.map(role => ({
+    id: role,
+    label: role,
+  }));
+
   return (
     <AnimatePresence>
       <div className="fixed inset-0 z-[160] flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-2xs">
@@ -151,7 +138,7 @@ export default function VendorDeliverablesFilterModal({
                   )}
                 </h3>
                 <p className="text-xs text-stone-500 font-medium">
-                  Multi-select filters for date range, event types, crew roles, and payment status
+                  Refine by date range, payment status, configured events, and crew roles
                 </p>
               </div>
             </div>
@@ -166,7 +153,7 @@ export default function VendorDeliverablesFilterModal({
           </div>
 
           {/* Body */}
-          <div className="p-4 sm:p-5 overflow-y-auto space-y-5 flex-1 text-stone-800">
+          <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1 text-stone-800">
             {/* 1. Date Range & Presets */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -228,135 +215,44 @@ export default function VendorDeliverablesFilterModal({
               </div>
             </div>
 
-            {/* 2. Payment Status Multi-Select */}
-            <div className="space-y-2 pt-2 border-t border-amber-200/60">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-black uppercase tracking-wider text-stone-600 flex items-center gap-1.5">
-                  <IndianRupee className="w-3.5 h-3.5 text-emerald-700" />
-                  <span>Payment Status</span>
-                </label>
-                {filters.paymentStatuses.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => onChange({ ...filters, paymentStatuses: [] })}
-                    className="text-[11px] font-bold text-amber-700 hover:underline cursor-pointer"
-                  >
-                    Clear Statuses
-                  </button>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {PAYMENT_STATUS_OPTIONS.map((opt) => {
-                  const isChecked = filters.paymentStatuses.includes(opt.id);
-                  return (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => togglePaymentStatus(opt.id)}
-                      className={`p-2.5 rounded-xl border-2 text-left flex items-center gap-2.5 transition cursor-pointer shadow-2xs ${
-                        isChecked
-                          ? 'border-amber-500 bg-amber-50/50'
-                          : 'border-stone-200 bg-white hover:bg-stone-50'
-                      }`}
-                    >
-                      {isChecked ? (
-                        <CheckSquare className="w-4 h-4 text-amber-600 shrink-0" />
-                      ) : (
-                        <Square className="w-4 h-4 text-stone-300 shrink-0" />
-                      )}
-                      <span className="text-xs font-bold text-stone-800 flex-1 truncate">
-                        {opt.label}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+            {/* 2. Payment Status Single Box with 3D Creamy Multi-Select Dropdown */}
+            <div className="pt-2 border-t border-amber-200/60">
+              <ThreeDMultiSelectDropdown
+                label="Payment Status"
+                icon={<IndianRupee className="w-3.5 h-3.5 text-emerald-700" />}
+                placeholder="Select payment statuses..."
+                options={PAYMENT_STATUS_OPTIONS}
+                selectedValues={filters.paymentStatuses}
+                onChange={(statuses) => onChange({ ...filters, paymentStatuses: statuses })}
+                searchPlaceholder="Search payment status..."
+              />
             </div>
 
-            {/* 3. Event Types Multi-Select */}
-            {availableEventTypes.length > 0 && (
-              <div className="space-y-2 pt-2 border-t border-amber-200/60">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-black uppercase tracking-wider text-stone-600 flex items-center gap-1.5">
-                    <Tag className="w-3.5 h-3.5 text-amber-700" />
-                    <span>Event Types ({availableEventTypes.length})</span>
-                  </label>
-                  {filters.eventTypes.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => onChange({ ...filters, eventTypes: [] })}
-                      className="text-[11px] font-bold text-amber-700 hover:underline cursor-pointer"
-                    >
-                      Clear Events
-                    </button>
-                  )}
-                </div>
+            {/* 3. Event Types Single Box with 3D Creamy Multi-Select Dropdown (Studio Settings Events Only) */}
+            <div className="pt-2 border-t border-amber-200/60">
+              <ThreeDMultiSelectDropdown
+                label={`Event Types (${availableEventTypes.length})`}
+                icon={<Tag className="w-3.5 h-3.5 text-amber-700" />}
+                placeholder="Select event types from settings..."
+                options={eventOptions}
+                selectedValues={filters.eventTypes}
+                onChange={(events) => onChange({ ...filters, eventTypes: events })}
+                searchPlaceholder="Search event type..."
+              />
+            </div>
 
-                <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-1 bg-white rounded-2xl border border-stone-200">
-                  {availableEventTypes.map((evt) => {
-                    const isChecked = filters.eventTypes.includes(evt);
-                    return (
-                      <button
-                        key={evt}
-                        type="button"
-                        onClick={() => toggleEventType(evt)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition flex items-center gap-1.5 cursor-pointer shadow-2xs ${
-                          isChecked
-                            ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
-                            : 'bg-stone-50 text-stone-700 border-stone-200 hover:bg-amber-50'
-                        }`}
-                      >
-                        {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
-                        <span>{evt}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* 4. Crew Roles Multi-Select */}
-            {availableRoles.length > 0 && (
-              <div className="space-y-2 pt-2 border-t border-amber-200/60">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-black uppercase tracking-wider text-stone-600 flex items-center gap-1.5">
-                    <Users className="w-3.5 h-3.5 text-amber-700" />
-                    <span>Crew Roles ({availableRoles.length})</span>
-                  </label>
-                  {filters.roles.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => onChange({ ...filters, roles: [] })}
-                      className="text-[11px] font-bold text-amber-700 hover:underline cursor-pointer"
-                    >
-                      Clear Roles
-                    </button>
-                  )}
-                </div>
-
-                <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-1 bg-white rounded-2xl border border-stone-200">
-                  {availableRoles.map((role) => {
-                    const isChecked = filters.roles.includes(role);
-                    return (
-                      <button
-                        key={role}
-                        type="button"
-                        onClick={() => toggleRole(role)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition flex items-center gap-1.5 cursor-pointer shadow-2xs ${
-                          isChecked
-                            ? 'bg-amber-600 text-white border-amber-700 shadow-xs'
-                            : 'bg-stone-50 text-stone-700 border-stone-200 hover:bg-amber-50'
-                        }`}
-                      >
-                        {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
-                        <span>{role}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+            {/* 4. Crew Roles Single Box with 3D Creamy Multi-Select Dropdown (Studio Settings Roles Only) */}
+            <div className="pt-2 border-t border-amber-200/60">
+              <ThreeDMultiSelectDropdown
+                label={`Crew Roles (${availableRoles.length})`}
+                icon={<Users className="w-3.5 h-3.5 text-amber-700" />}
+                placeholder="Select crew roles from settings..."
+                options={roleOptions}
+                selectedValues={filters.roles}
+                onChange={(roles) => onChange({ ...filters, roles })}
+                searchPlaceholder="Search crew role..."
+              />
+            </div>
           </div>
 
           {/* Footer Bar */}

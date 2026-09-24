@@ -9,7 +9,7 @@ import {
   Printer, ArrowUpRight, ShieldCheck, User, Phone, Mail,
   RefreshCw, CheckSquare, Square, Layers, Edit3, Trash2,
   Film, Camera, Palette, Video, Layers as LayersIcon, Bell,
-  Filter
+  Filter, Tag, Users
 } from 'lucide-react';
 import { 
   VendorAlbumOrder, 
@@ -17,9 +17,16 @@ import {
   detectDeliverableCategory,
   formatNoteDateTime
 } from '@/lib/services/vendorDeliverablesService';
+import { 
+  fetchWorkspaceEventTypes, 
+  fetchWorkspaceCrewRoles,
+  DEFAULT_EVENT_TYPES,
+  DEFAULT_CREW_ROLES
+} from '@/lib/workspace-settings';
 import AiMicButton from '@/components/AiMicButton';
 import VendorStatementInvoicePdfTemplate, { VendorInvoiceItem } from './VendorStatementInvoicePdfTemplate';
 import VendorDeliverablesFilterModal, { DeliverablesFilterState } from './VendorDeliverablesFilterModal';
+import ThreeDMultiSelectDropdown from '@/components/common/ThreeDMultiSelectDropdown';
 
 // Fast Module-Level In-Memory Cache for 0ms instant loading
 const memCachedVendorOrders = new Map<string, VendorAlbumOrder[]>();
@@ -76,19 +83,6 @@ const DEFAULT_STATUS_LIST = [
   'Completed'
 ];
 
-const PRESET_EVENT_OPTIONS = [
-  'Wedding',
-  'Reception',
-  'Sangeet',
-  'Haldi',
-  'Engagement',
-  'Mehendi',
-  'Cocktail',
-  'Pre-Wedding',
-  'Ring Ceremony',
-  'Post-Wedding'
-];
-
 export default function VendorAlbumDeliverablesModal({
   isOpen,
   onClose,
@@ -122,6 +116,34 @@ export default function VendorAlbumDeliverablesModal({
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
+
+  // Studio Settings Event Types and Crew Roles
+  const [studioEventTypes, setStudioEventTypes] = useState<string[]>(() => DEFAULT_EVENT_TYPES.map(e => e.name));
+  const [studioCrewRoles, setStudioCrewRoles] = useState<string[]>(() => DEFAULT_CREW_ROLES.map(r => r.name));
+
+  useEffect(() => {
+    let isCancelled = false;
+    async function loadSettings() {
+      try {
+        const [evts, roles] = await Promise.all([
+          fetchWorkspaceEventTypes(workspaceId),
+          fetchWorkspaceCrewRoles(workspaceId)
+        ]);
+        if (!isCancelled) {
+          if (evts && evts.length > 0) {
+            setStudioEventTypes(evts.map(e => e.name));
+          }
+          if (roles && roles.length > 0) {
+            setStudioCrewRoles(roles.map(r => r.name));
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load studio event types or roles:', err);
+      }
+    }
+    loadSettings();
+    return () => { isCancelled = true; };
+  }, [workspaceId]);
 
   // Advanced 3D Multi-Select Filters
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
@@ -178,11 +200,11 @@ export default function VendorAlbumDeliverablesModal({
   // Dedicated Add Shoot Modal State (Toolbar "+ Add Shoot" trigger)
   const [isAddShootModalOpen, setIsAddShootModalOpen] = useState(false);
   const [shootCoupleName, setShootCoupleName] = useState('');
-  const [shootSelectedEvents, setShootSelectedEvents] = useState<string[]>(['Wedding']);
+  const [shootSelectedEvents, setShootSelectedEvents] = useState<string[]>(['Wedding Ceremony']);
   const [shootCustomEvent, setShootCustomEvent] = useState('');
   const [shootDate, setShootDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [shootTime, setShootTime] = useState('10:00 AM - 10:00 PM');
-  const [shootRole, setShootRole] = useState(vendor?.primary_role || 'Cinematographer');
+  const [shootSelectedRoles, setShootSelectedRoles] = useState<string[]>([vendor?.primary_role || 'Cinematographer']);
   const [shootAgreedFee, setShootAgreedFee] = useState(String(vendor?.daily_rate || vendor?.default_daily_rate || '5000'));
   const [shootPaidAmount, setShootPaidAmount] = useState('0');
   const [shootPayMode, setShootPayMode] = useState<'UPI' | 'Bank Transfer' | 'Cash'>('UPI');
@@ -337,36 +359,6 @@ export default function VendorAlbumDeliverablesModal({
     }
   }, [isOpen, visibleTabs, activeCategoryTab]);
 
-  // Collect available event types for multi-select filter
-  const availableEventTypes = useMemo(() => {
-    const set = new Set<string>(PRESET_EVENT_OPTIONS);
-    orders.forEach(o => {
-      const name = o.event_name || o.item_title || o.album_type;
-      if (name && name.trim()) set.add(name.trim());
-    });
-    return Array.from(set);
-  }, [orders]);
-
-  // Collect available crew roles for multi-select filter
-  const availableRoles = useMemo(() => {
-    const set = new Set<string>([
-      'Cinematographer', 
-      'Candid Photographer', 
-      'Traditional Photographer', 
-      'Drone Pilot', 
-      'Traditional Videographer', 
-      'Assistant', 
-      'Lead Editor'
-    ]);
-    if (vendor.primary_role) set.add(vendor.primary_role);
-    (vendor.roles || []).forEach((r: string) => set.add(r));
-    orders.forEach(o => {
-      if (o.role) set.add(o.role);
-      if (o.service_type) set.add(o.service_type);
-    });
-    return Array.from(set);
-  }, [orders, vendor]);
-
   // Format Shoot Date helper (e.g. 28 NOV 2026 or 18 MAR 2026)
   const formatShootDate = (rawDate?: string): string => {
     if (!rawDate) return 'Date Scheduled';
@@ -419,14 +411,14 @@ export default function VendorAlbumDeliverablesModal({
       if (filters.startDate && orderDate && orderDate < filters.startDate) return false;
       if (filters.endDate && orderDate && orderDate > filters.endDate) return false;
 
-      // 5. Event Types Multi-Select Filter
+      // 5. Event Types Multi-Select Filter (Matching against configured studio event types)
       if (filters.eventTypes.length > 0) {
         const eventName = (o.event_name || o.album_type || o.item_title || '').toLowerCase();
         const matchesEvent = filters.eventTypes.some(et => eventName.includes(et.toLowerCase()));
         if (!matchesEvent) return false;
       }
 
-      // 6. Crew Roles Multi-Select Filter
+      // 6. Crew Roles Multi-Select Filter (Matching against configured studio crew roles)
       if (filters.roles.length > 0) {
         const orderRole = (o.role || o.service_type || '').toLowerCase();
         const matchesRole = filters.roles.some(r => orderRole.includes(r.toLowerCase()));
@@ -513,7 +505,8 @@ export default function VendorAlbumDeliverablesModal({
     if (shootCustomEvent.trim() && !allEvents.includes(shootCustomEvent.trim())) {
       allEvents.push(shootCustomEvent.trim());
     }
-    const eventTitle = allEvents.join(', ') || 'Wedding Shoot';
+    const eventTitle = allEvents.join(', ') || 'Wedding Ceremony';
+    const roleTitle = shootSelectedRoles.join(', ') || vendor?.primary_role || 'Cinematographer';
 
     const payload: Partial<VendorAlbumOrder> = {
       workspace_id: workspaceId,
@@ -526,8 +519,8 @@ export default function VendorAlbumDeliverablesModal({
       event_name: eventTitle,
       album_type: eventTitle,
       specs: shootTime ? `${shootDate} • ${shootTime}` : shootDate || 'Scheduled Shoot',
-      service_type: shootRole,
-      role: shootRole,
+      service_type: roleTitle,
+      role: roleTitle,
       event_date: shootDate,
       event_time: shootTime,
       sheet_count: 1,
@@ -587,7 +580,7 @@ export default function VendorAlbumDeliverablesModal({
 
         setIsAddShootModalOpen(false);
         setShootCoupleName('');
-        setShootSelectedEvents(['Wedding']);
+        setShootSelectedEvents(['Wedding Ceremony']);
         setShootCustomEvent('');
         setShootPaidAmount('0');
         setShootPayRef('');
@@ -965,31 +958,35 @@ export default function VendorAlbumDeliverablesModal({
             </div>
           </div>
 
-          {/* Dynamic Visible Navigation Tabs */}
-          <div className="px-4 py-2.5 bg-[#FAF8F5] border-b border-amber-200/80 flex items-center gap-1.5 overflow-x-auto scrollbar-none">
-            {visibleTabs.map(tab => {
-              const isActive = activeCategoryTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveCategoryTab(tab.id)}
-                  className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 whitespace-nowrap cursor-pointer shadow-2xs ${
-                    isActive
-                      ? 'bg-amber-500 text-white shadow-xs'
-                      : 'bg-white hover:bg-amber-50 text-stone-700 border border-stone-200/80'
-                  }`}
-                >
-                  <span>{tab.icon}</span>
-                  <span>{tab.label}</span>
-                  <span className={`px-2 py-0.2 rounded-full text-[10px] font-black ${
-                    isActive ? 'bg-amber-700/60 text-white' : 'bg-stone-100 text-stone-600'
-                  }`}>
-                    {tab.count}
-                  </span>
-                </button>
-              );
-            })}
+          {/* Sleek Minimal & Decent Segmented Navigation Tabs */}
+          <div className="px-4 py-2.5 bg-[#FAF9F6] border-b border-stone-200/80">
+            <div className="inline-flex items-center gap-1.5 p-1 bg-stone-200/60 rounded-2xl border border-stone-300/60 max-w-full overflow-x-auto scrollbar-none">
+              {visibleTabs.map(tab => {
+                const isActive = activeCategoryTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveCategoryTab(tab.id)}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+                      isActive
+                        ? 'bg-white text-stone-900 shadow-xs border border-stone-200/90 font-black'
+                        : 'text-stone-600 hover:text-stone-900 hover:bg-white/60 font-bold'
+                    }`}
+                  >
+                    <span className="text-sm">{tab.icon}</span>
+                    <span>{tab.label}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold transition ${
+                      isActive
+                        ? 'bg-amber-100 text-amber-900 border border-amber-300/80'
+                        : 'bg-stone-200/80 text-stone-600'
+                    }`}>
+                      {tab.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Top 3D Creamy KPI Overview Strip: Dynamic to Filtered Results, "9 Shoots" for shoots tab */}
@@ -1549,7 +1546,7 @@ export default function VendorAlbumDeliverablesModal({
                 >
                   <div className="flex items-center justify-between border-b border-amber-200/80 pb-3">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-9 h-9 rounded-2xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-900">
+                      <div className="w-9 h-9 rounded-2xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-900 shadow-2xs">
                         <Camera className="w-5 h-5 text-amber-700" />
                       </div>
                       <div>
@@ -1579,44 +1576,41 @@ export default function VendorAlbumDeliverablesModal({
                       />
                     </div>
 
-                    {/* Event Types Multi-Select */}
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-stone-600 block">Event Types (Select Multiple)</label>
-                      <div className="flex flex-wrap gap-1.5">
-                        {PRESET_EVENT_OPTIONS.map((evt) => {
-                          const isChecked = shootSelectedEvents.includes(evt);
-                          return (
-                            <button
-                              key={evt}
-                              type="button"
-                              onClick={() => {
-                                setShootSelectedEvents(prev => 
-                                  prev.includes(evt) ? prev.filter(x => x !== evt) : [...prev, evt]
-                                );
-                              }}
-                              className={`px-3 py-1 rounded-xl text-xs font-bold border transition flex items-center gap-1.5 cursor-pointer shadow-2xs ${
-                                isChecked
-                                  ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
-                                  : 'bg-white text-stone-700 border-stone-200 hover:bg-amber-50'
-                              }`}
-                            >
-                              {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
-                              <span>{evt}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
+                    {/* 3D Multi-Select Dropdown for Event Types (From Studio Settings) */}
+                    <div>
+                      <ThreeDMultiSelectDropdown
+                        label={`Event Types (${studioEventTypes.length} configured in settings)`}
+                        icon={<Tag className="w-3.5 h-3.5 text-amber-700" />}
+                        placeholder="Select event types..."
+                        options={studioEventTypes.map(e => ({ id: e, label: e }))}
+                        selectedValues={shootSelectedEvents}
+                        onChange={setShootSelectedEvents}
+                        searchPlaceholder="Search event type..."
+                      />
                       <input
                         type="text"
-                        placeholder="Or enter custom event title..."
+                        placeholder="Or add custom event title if not in settings..."
                         value={shootCustomEvent}
                         onChange={(e) => setShootCustomEvent(e.target.value)}
                         className="w-full mt-1.5 p-2 bg-white border border-stone-200 rounded-xl text-xs font-medium text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
                       />
                     </div>
 
-                    {/* Date & Timing & Role */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    {/* 3D Multi-Select Dropdown for Assigned Crew Roles (From Studio Settings) */}
+                    <div>
+                      <ThreeDMultiSelectDropdown
+                        label={`Assigned Roles (${studioCrewRoles.length} configured in settings)`}
+                        icon={<Users className="w-3.5 h-3.5 text-amber-700" />}
+                        placeholder="Select assigned crew roles..."
+                        options={studioCrewRoles.map(r => ({ id: r, label: r }))}
+                        selectedValues={shootSelectedRoles}
+                        onChange={setShootSelectedRoles}
+                        searchPlaceholder="Search crew role..."
+                      />
+                    </div>
+
+                    {/* Date & Timing */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                       <div>
                         <label className="text-xs font-bold text-stone-600 block mb-1">Shoot Date *</label>
                         <input
@@ -1636,23 +1630,6 @@ export default function VendorAlbumDeliverablesModal({
                           onChange={(e) => setShootTime(e.target.value)}
                           className="w-full p-2 bg-white border border-stone-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
                         />
-                      </div>
-
-                      <div>
-                        <label className="text-xs font-bold text-stone-600 block mb-1">Assigned Role</label>
-                        <select
-                          value={shootRole}
-                          onChange={(e) => setShootRole(e.target.value)}
-                          className="w-full p-2 bg-white border border-stone-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs cursor-pointer"
-                        >
-                          <option value="Cinematographer">Cinematographer</option>
-                          <option value="Candid Photographer">Candid Photographer</option>
-                          <option value="Traditional Photographer">Traditional Photographer</option>
-                          <option value="Drone Pilot">Drone Pilot</option>
-                          <option value="Traditional Videographer">Traditional Videographer</option>
-                          <option value="Assistant">Assistant</option>
-                          <option value="Lead Editor">Lead Editor</option>
-                        </select>
                       </div>
                     </div>
 
@@ -2207,15 +2184,15 @@ export default function VendorAlbumDeliverablesModal({
           </AnimatePresence>
         </motion.div>
 
-        {/* 3D Multi-Select Filter Modal */}
+        {/* 3D Multi-Select Filter Modal (With Settings Event Types & Crew Roles Only) */}
         <VendorDeliverablesFilterModal
           isOpen={isFilterModalOpen}
           onClose={() => setIsFilterModalOpen(false)}
           filters={filters}
           onChange={setFilters}
           onReset={() => setFilters({ startDate: '', endDate: '', eventTypes: [], roles: [], paymentStatuses: [] })}
-          availableEventTypes={availableEventTypes}
-          availableRoles={availableRoles}
+          availableEventTypes={studioEventTypes}
+          availableRoles={studioCrewRoles}
           totalFilteredCount={filteredOrders.length}
         />
 

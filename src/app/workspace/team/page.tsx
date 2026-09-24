@@ -1270,6 +1270,18 @@ export default function WorkspaceTeamPage() {
         onClose={() => setIsRemindersDrawerOpen(false)}
         workspaceId={workspaceId || ''}
         onCountChange={setPendingRemindersCount}
+        onNavigateToMember={(recipientIdOrName) => {
+          setIsRemindersDrawerOpen(false);
+          const target = members.find(m => 
+            m.id === recipientIdOrName || 
+            (m.name && recipientIdOrName && m.name.toLowerCase() === recipientIdOrName.toLowerCase()) ||
+            (m.name && recipientIdOrName && recipientIdOrName.toLowerCase().includes(m.name.toLowerCase()))
+          );
+          if (target) {
+            setSelectedVendorDeliverablesMember(target);
+            setIsVendorDeliverablesModalOpen(true);
+          }
+        }}
       />
     </div>
   );
