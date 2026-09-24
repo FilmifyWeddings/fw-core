@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Users2, UserPlus, Search, Filter, Mail, Phone, 
@@ -81,6 +82,7 @@ let memCachedTeamMembers: TeamMember[] = [];
 let memCachedLogs: ActivityLog[] = [];
 
 export default function WorkspaceTeamPage() {
+  const router = useRouter();
   const { workspaceId, workspaceName, isOwner, userEmail, userName } = useWorkspace();
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<'directory' | 'activity_logs'>('directory');
@@ -688,13 +690,17 @@ export default function WorkspaceTeamPage() {
 
   // Direct Member Action Handlers
   const handleOpenDetails = (member: TeamMember) => {
-    setSelectedVendorDeliverablesMember(member);
-    setIsVendorDeliverablesModalOpen(true);
+    try {
+      sessionStorage.setItem(`sc_team_member_${member.id}`, JSON.stringify(member));
+    } catch (_) {}
+    router.push(`/workspace/team/${member.id}`);
   };
 
   const handleOpenVendorDeliverables = (member: TeamMember) => {
-    setSelectedVendorDeliverablesMember(member);
-    setIsVendorDeliverablesModalOpen(true);
+    try {
+      sessionStorage.setItem(`sc_team_member_${member.id}`, JSON.stringify(member));
+    } catch (_) {}
+    router.push(`/workspace/team/${member.id}`);
   };
 
   const handleEditMember = (member: TeamMember) => {
@@ -1278,8 +1284,10 @@ export default function WorkspaceTeamPage() {
             (m.name && recipientIdOrName && recipientIdOrName.toLowerCase().includes(m.name.toLowerCase()))
           );
           if (target) {
-            setSelectedVendorDeliverablesMember(target);
-            setIsVendorDeliverablesModalOpen(true);
+            try {
+              sessionStorage.setItem(`sc_team_member_${target.id}`, JSON.stringify(target));
+            } catch (_) {}
+            router.push(`/workspace/team/${target.id}`);
           }
         }}
       />

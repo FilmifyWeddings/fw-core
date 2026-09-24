@@ -6,7 +6,22 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { orderId, author, text, reminderAt, isVoice, category } = body;
+    const { 
+      orderId, 
+      author, 
+      text, 
+      reminderAt, 
+      isVoice, 
+      category,
+      partnerId,
+      partnerName,
+      clientName,
+      workspaceId,
+      projectId,
+      deliverableId,
+      itemTitle,
+      specs
+    } = body;
 
     if (!orderId || !text) {
       return NextResponse.json({ error: 'orderId and text are required' }, { status: 400 });
@@ -17,7 +32,15 @@ export async function POST(req: NextRequest) {
       text,
       reminder_at: reminderAt,
       is_voice: isVoice,
-      category
+      category,
+      partner_id: partnerId,
+      partner_name: partnerName,
+      client_name: clientName,
+      workspace_id: workspaceId,
+      project_id: projectId,
+      deliverable_id: deliverableId,
+      item_title: itemTitle,
+      specs
     });
 
     if (!updated) {

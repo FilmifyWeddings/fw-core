@@ -156,3 +156,41 @@ BEGIN
             FOR ALL USING (true) WITH CHECK (true);
     END IF;
 END $$;
+
+-- 6. Ensure post_production_reminders table exists & is properly indexed
+CREATE TABLE IF NOT EXISTS public.post_production_reminders (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id TEXT,
+    deliverable_id TEXT,
+    project_id TEXT,
+    title TEXT,
+    reminder_text TEXT,
+    recipient_name TEXT,
+    reminder_at TIMESTAMPTZ NOT NULL,
+    status TEXT DEFAULT 'pending',
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE public.post_production_reminders ADD COLUMN IF NOT EXISTS workspace_id TEXT;
+ALTER TABLE public.post_production_reminders ADD COLUMN IF NOT EXISTS title TEXT;
+ALTER TABLE public.post_production_reminders ADD COLUMN IF NOT EXISTS reminder_text TEXT;
+ALTER TABLE public.post_production_reminders ADD COLUMN IF NOT EXISTS recipient_name TEXT;
+ALTER TABLE public.post_production_reminders ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending';
+
+CREATE INDEX IF NOT EXISTS idx_ppr_status_at ON public.post_production_reminders(status, reminder_at);
+CREATE INDEX IF NOT EXISTS idx_ppr_workspace ON public.post_production_reminders(workspace_id);
+
+ALTER TABLE public.post_production_reminders ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE tablename = 'post_production_reminders' 
+          AND policyname = 'post_production_reminders_all_access'
+    ) THEN
+        CREATE POLICY post_production_reminders_all_access ON public.post_production_reminders
+            FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+END $$;

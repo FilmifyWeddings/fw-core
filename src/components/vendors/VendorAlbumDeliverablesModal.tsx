@@ -9,7 +9,7 @@ import {
   Printer, ArrowUpRight, ShieldCheck, User, Phone, Mail,
   RefreshCw, CheckSquare, Square, Layers, Edit3, Trash2,
   Film, Camera, Palette, Video, Layers as LayersIcon, Bell,
-  Filter, Tag, Users, Link2
+  Filter, Tag, Users, Link2, ArrowLeft
 } from 'lucide-react';
 import { 
   VendorAlbumOrder, 
@@ -63,6 +63,7 @@ interface VendorAlbumDeliverablesModalProps {
   };
   studioName?: string;
   onOpenSalaryDrawer?: (member: any) => void;
+  isPageMode?: boolean;
 }
 
 export type HubCategoryTab = 'shoot' | 'video_editing' | 'photo_editing' | 'album_design' | 'album_printing';
@@ -367,6 +368,7 @@ export function ThreeDDeliverableSelect({
   onChange,
   className = '',
   placeholder = 'Select Deliverable',
+  category,
 }: {
   value: string;
   specs?: string;
@@ -374,6 +376,7 @@ export function ThreeDDeliverableSelect({
   onChange: (title: string, specs: string) => void;
   className?: string;
   placeholder?: string;
+  category?: HubCategoryTab | AssignmentCategory;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -467,7 +470,7 @@ export function ThreeDDeliverableSelect({
                   autoFocus
                   value={customTitle}
                   onChange={(e) => setCustomTitle(e.target.value)}
-                  placeholder="e.g. Drone Reel / Extended Highlights"
+                  placeholder={category === 'photo_editing' ? 'e.g. Raw Photo Selection / Color Graded Photos' : category === 'video_editing' ? 'e.g. Drone Reel / Extended Highlights' : 'e.g. Signature Photobook / Mini Book'}
                   className="w-full px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && customTitle.trim()) {
@@ -482,13 +485,13 @@ export function ThreeDDeliverableSelect({
 
               <div>
                 <label className="text-[9px] font-black uppercase tracking-wider text-stone-500 block mb-0.5">
-                  Specs / Duration
+                  {category === 'photo_editing' ? 'Count' : category === 'video_editing' ? 'Specs / Duration' : 'Sheet Count / Specs'}
                 </label>
                 <input
                   type="text"
                   value={customSpecs}
                   onChange={(e) => setCustomSpecs(e.target.value)}
-                  placeholder="e.g. 1-2 Mins, 4K, 60fps"
+                  placeholder={category === 'photo_editing' ? 'e.g. 500 Photos' : category === 'video_editing' ? 'e.g. 1-2 Mins, 4K, 60fps' : 'e.g. 30 Sheets'}
                   className="w-full px-2.5 py-1.5 bg-white border border-stone-200 rounded-lg text-xs font-medium text-stone-800 focus:outline-none focus:border-amber-500"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && customTitle.trim()) {
@@ -626,6 +629,7 @@ export default function VendorAlbumDeliverablesModal({
   vendor,
   studioName = 'StudioCore Partner Studio',
   onOpenSalaryDrawer,
+  isPageMode = false,
 }: VendorAlbumDeliverablesModalProps) {
   // Synchronous initial cache read for 0ms instant display
   const [orders, setOrders] = useState<VendorAlbumOrder[]>(() => {
@@ -2243,7 +2247,15 @@ export default function VendorAlbumDeliverablesModal({
           text: commentInput.trim(),
           reminderAt: commentReminder || undefined,
           isVoice,
-          category: commentTarget.category || activeCategoryTab
+          category: commentTarget.category || activeCategoryTab,
+          partnerId: vendor.id,
+          partnerName: vendor.name,
+          clientName: commentTarget.client_name,
+          workspaceId: workspaceId || commentTarget.workspace_id,
+          projectId: commentTarget.project_id,
+          deliverableId: commentTarget.deliverable_id,
+          itemTitle: commentTarget.item_title || commentTarget.album_type,
+          specs: commentTarget.specs
         })
       });
       const data = await res.json();
@@ -2329,26 +2341,9 @@ export default function VendorAlbumDeliverablesModal({
 
   if (!isOpen) return null;
 
-  return (
-    <AnimatePresence>
-      <div className="fixed inset-0 z-[140] flex items-center justify-center p-2 sm:p-4 bg-black/60 backdrop-blur-xs">
-        {/* Backdrop */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onClick={onClose}
-          className="fixed inset-0 bg-transparent"
-        />
-
-        {/* 3D Creamy Modal Container */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 15 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 15 }}
-          className="relative w-full max-w-5xl max-h-[94vh] flex flex-col bg-[#FAF8F2] rounded-3xl shadow-2xl border-2 border-amber-200/90 overflow-hidden z-10 text-stone-900"
-        >
-          {/* Header Bar */}
+  const modalInnerContent = (
+    <>
+      {/* Header Bar */}
           <div className="p-4 sm:p-5 bg-gradient-to-r from-[#2B231D] via-[#3A3027] to-[#2B231D] text-amber-50 flex items-center justify-between border-b border-amber-900/40 flex-wrap gap-3">
             <div className="flex items-center gap-3">
               <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-amber-500/20 border-2 border-amber-400/40 text-amber-300 flex items-center justify-center shadow-xs font-black text-lg overflow-hidden shrink-0">
@@ -3666,6 +3661,7 @@ export default function VendorAlbumDeliverablesModal({
                                       value={del.title}
                                       specs={del.specs}
                                       presets={activeCategoryPresets}
+                                      category={activeCategoryTab}
                                       onChange={(newTitle, newSpecs) => {
                                         handleUpdateDeliverable(segment.id, del.id, {
                                           title: newTitle,
@@ -3675,16 +3671,16 @@ export default function VendorAlbumDeliverablesModal({
                                     />
                                   </div>
 
-                                  {/* Specs / Duration */}
+                                  {/* Specs / Duration or Count */}
                                   <div className="sm:col-span-3 space-y-1">
                                     <label className="text-[9px] font-black uppercase tracking-wider text-stone-500 block">
-                                      Specs / Duration
+                                      {activeCategoryTab === 'photo_editing' ? 'Count' : activeCategoryTab === 'video_editing' ? 'Specs / Duration' : 'Sheet Count / Specs'}
                                     </label>
                                     <input
                                       type="text"
                                       value={del.specs}
                                       onChange={(e) => handleUpdateDeliverable(segment.id, del.id, { specs: e.target.value })}
-                                      placeholder="e.g. 1-2 Mins, 4K"
+                                      placeholder={activeCategoryTab === 'photo_editing' ? 'e.g. 500 Photos' : activeCategoryTab === 'video_editing' ? 'e.g. 1-2 Mins, 4K' : 'e.g. 30 Sheets'}
                                       className="w-full p-1.5 bg-white border border-stone-200 rounded-lg text-xs font-medium text-stone-800 focus:outline-none focus:border-amber-500"
                                     />
                                   </div>
@@ -3882,16 +3878,24 @@ export default function VendorAlbumDeliverablesModal({
                           />
                         </div>
 
-                        {/* Specs / Duration / Subtitle */}
+                        {/* Specs / Duration / Subtitle or Count */}
                         <div>
                           <label className="text-[10px] font-black uppercase tracking-wider text-stone-600 block mb-1">
-                            Specs / Duration / Subtitle (e.g. 2 min, 30 min, 30 Sheets)
+                            {activeCategoryTab === 'photo_editing' 
+                              ? 'Count' 
+                              : activeCategoryTab === 'video_editing'
+                                ? 'Specs / Duration / Subtitle (e.g. 2 min, 30 min)'
+                                : 'Specs / Sheet Count / Subtitle (e.g. 30 Sheets)'}
                           </label>
                           <input
                             type="text"
                             value={editingOrder.specs || ''}
                             onChange={(e) => setEditingOrder({ ...editingOrder, specs: e.target.value })}
-                            placeholder="e.g. 2 min 4K, 3-5 Mins Cinematic, 30 Sheets (60 Pages)..."
+                            placeholder={activeCategoryTab === 'photo_editing' 
+                              ? 'e.g. 500 Photos' 
+                              : activeCategoryTab === 'video_editing'
+                                ? 'e.g. 2 min 4K, 3-5 Mins Cinematic'
+                                : 'e.g. 30 Sheets (60 Pages)'}
                             className="w-full p-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
                           />
                         </div>
@@ -4545,6 +4549,7 @@ export default function VendorAlbumDeliverablesModal({
                                 value={del.title}
                                 specs={del.specs}
                                 presets={activeCategoryPresets}
+                                category={activeCategoryTab}
                                 onChange={(newTitle, newSpecs) => {
                                   setCardNewDeliverables(prev => prev.map(d => d.id === del.id ? {
                                     ...d,
@@ -4557,13 +4562,13 @@ export default function VendorAlbumDeliverablesModal({
 
                             <div className="sm:col-span-3 space-y-1">
                               <label className="text-[9px] font-black uppercase tracking-wider text-stone-500 block">
-                                Specs / Duration
+                                {activeCategoryTab === 'photo_editing' ? 'Count' : activeCategoryTab === 'video_editing' ? 'Specs / Duration' : 'Sheet Count / Specs'}
                               </label>
                               <input
                                 type="text"
                                 value={del.specs}
                                 onChange={(e) => setCardNewDeliverables(prev => prev.map(d => d.id === del.id ? { ...d, specs: e.target.value } : d))}
-                                placeholder="e.g. 1-2 Mins"
+                                placeholder={activeCategoryTab === 'photo_editing' ? 'e.g. 500 Photos' : activeCategoryTab === 'video_editing' ? 'e.g. 1-2 Mins' : 'e.g. 30 Sheets'}
                                 className="w-full p-1.5 bg-stone-50 border border-stone-200 rounded-lg text-xs font-medium text-stone-800 focus:outline-none focus:border-amber-500"
                               />
                             </div>
@@ -4692,6 +4697,7 @@ export default function VendorAlbumDeliverablesModal({
                         value={targetDelivTitle}
                         specs={targetDelivSpecs}
                         presets={activeCategoryPresets}
+                        category={activeCategoryTab}
                         onChange={(newTitle, newSpecs) => {
                           setTargetDelivTitle(newTitle);
                           if (newSpecs) setTargetDelivSpecs(newSpecs);
@@ -4699,16 +4705,16 @@ export default function VendorAlbumDeliverablesModal({
                       />
                     </div>
 
-                    {/* Specs / Duration */}
+                    {/* Specs / Duration or Count */}
                     <div className="space-y-1">
                       <label className="text-[10px] font-black uppercase tracking-wider text-stone-600 block">
-                        Specs / Duration
+                        {activeCategoryTab === 'photo_editing' ? 'Count' : activeCategoryTab === 'video_editing' ? 'Specs / Duration' : 'Sheet Count / Specs'}
                       </label>
                       <input
                         type="text"
                         value={targetDelivSpecs}
                         onChange={(e) => setTargetDelivSpecs(e.target.value)}
-                        placeholder="e.g. 1-2 Mins"
+                        placeholder={activeCategoryTab === 'photo_editing' ? 'e.g. 500 Photos' : activeCategoryTab === 'video_editing' ? 'e.g. 1-2 Mins' : 'e.g. 30 Sheets'}
                         className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-medium text-stone-800 focus:outline-none focus:border-amber-500 shadow-2xs"
                       />
                     </div>
@@ -4782,67 +4788,131 @@ export default function VendorAlbumDeliverablesModal({
               </div>
             )}
           </AnimatePresence>
+    </>
+  );
+
+  const siblingModals = (
+    <>
+      {/* 3D Multi-Select Filter Modal (Card-Derived Event Types & Crew Roles Only) */}
+      <VendorDeliverablesFilterModal
+        isOpen={isFilterModalOpen}
+        onClose={() => setIsFilterModalOpen(false)}
+        filters={filters}
+        onChange={setFilters}
+        onReset={() => setFilters({
+          startDate: '',
+          endDate: '',
+          eventTypes: [],
+          segments: [],
+          deliverables: [],
+          roles: [],
+          paymentStatuses: [],
+          workflowStatuses: [],
+          dueDateFilter: 'all',
+        })}
+        availableEventTypes={cardEventTypes}
+        availableSegments={cardSegments}
+        availableDeliverables={cardDeliverables}
+        availableRoles={cardCrewRoles}
+        availableWorkflowStatuses={ppStatuses}
+        category={activeCategoryTab}
+        totalFilteredCount={filteredOrders.length}
+      />
+
+      {/* Minimal Luxury Statement / Invoice Printable Component */}
+      <VendorStatementInvoicePdfTemplate
+        isOpen={isInvoiceModalOpen}
+        onClose={() => setIsInvoiceModalOpen(false)}
+        vendor={vendor}
+        studioName={studioProfile.name || studioName}
+        studioPhone={studioProfile.phone}
+        studioEmail={studioProfile.email}
+        studioAddress={studioProfile.address}
+        items={invoiceItems}
+        category={activeCategoryTab}
+        specialization={
+          activeCategoryTab === 'video_editing' ? 'Video Editing' :
+          activeCategoryTab === 'photo_editing' ? 'Photo Editing' :
+          activeCategoryTab === 'album_design' ? 'Album Designing' :
+          activeCategoryTab === 'album_printing' ? 'Album Printing' :
+          (vendor.role || 'Shoot Specialist')
+        }
+      />
+
+      {/* Attach Resource / Drive Links Modal */}
+      <AttachLinksModal
+        isOpen={Boolean(attachLinksOrder)}
+        onClose={() => setAttachLinksOrder(null)}
+        title={attachLinksOrder?.item_title || attachLinksOrder?.album_type || 'Deliverable'}
+        subtitle={attachLinksOrder?.client_name}
+        initialLinks={(attachLinksOrder?.drive_links || []).map((l: any, i: number) => ({
+          id: l.id || `lnk_${i}`,
+          title: l.title || l.label || 'Link',
+          url: l.url || '',
+        }))}
+        onSave={handleSaveAttachLinks}
+      />
+    </>
+  );
+
+  if (isPageMode) {
+    return (
+      <div className="w-full min-h-[calc(100vh-4rem)] flex flex-col space-y-3 px-1 sm:px-3 lg:px-4 py-2 sm:py-3 animate-in fade-in duration-200">
+        {/* Dedicated Page Top Breadcrumbs & Back Button */}
+        <div className="flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white border-2 border-stone-200 hover:border-amber-400 text-stone-800 hover:text-stone-950 font-black text-xs shadow-2xs hover:shadow-xs transition-all cursor-pointer active:translate-y-0.5 group"
+          >
+            <ArrowLeft className="w-4 h-4 text-amber-600 transition-transform group-hover:-translate-x-1" />
+            <span>Back to Team & Partners</span>
+          </button>
+
+          <div className="text-xs font-bold text-stone-500 font-mono hidden sm:flex items-center gap-1.5">
+            <span>Workspace</span>
+            <span>/</span>
+            <button type="button" onClick={onClose} className="hover:underline cursor-pointer">
+              Team & Partners
+            </button>
+            <span>/</span>
+            <span className="text-amber-950 font-extrabold">{vendor.name}</span>
+          </div>
+        </div>
+
+        {/* Full-bleed Content Container */}
+        <div className="relative w-full flex-1 flex flex-col bg-[#FAF8F2] rounded-3xl shadow-xl border-2 border-amber-200/90 overflow-hidden text-stone-900">
+          {modalInnerContent}
+        </div>
+
+        {siblingModals}
+      </div>
+    );
+  }
+
+  return (
+    <AnimatePresence>
+      <div className="fixed inset-0 z-[140] flex items-center justify-center p-2 sm:p-4 bg-black/60 backdrop-blur-xs">
+        {/* Backdrop */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={onClose}
+          className="fixed inset-0 bg-transparent"
+        />
+
+        {/* 3D Creamy Modal Container */}
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 15 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 15 }}
+          className="relative w-full max-w-5xl max-h-[94vh] flex flex-col bg-[#FAF8F2] rounded-3xl shadow-2xl border-2 border-amber-200/90 overflow-hidden z-10 text-stone-900"
+        >
+          {modalInnerContent}
         </motion.div>
 
-        {/* 3D Multi-Select Filter Modal (Card-Derived Event Types & Crew Roles Only) */}
-        <VendorDeliverablesFilterModal
-          isOpen={isFilterModalOpen}
-          onClose={() => setIsFilterModalOpen(false)}
-          filters={filters}
-          onChange={setFilters}
-          onReset={() => setFilters({
-            startDate: '',
-            endDate: '',
-            eventTypes: [],
-            segments: [],
-            deliverables: [],
-            roles: [],
-            paymentStatuses: [],
-            workflowStatuses: [],
-            dueDateFilter: 'all',
-          })}
-          availableEventTypes={cardEventTypes}
-          availableSegments={cardSegments}
-          availableDeliverables={cardDeliverables}
-          availableRoles={cardCrewRoles}
-          availableWorkflowStatuses={ppStatuses}
-          category={activeCategoryTab}
-          totalFilteredCount={filteredOrders.length}
-        />
-
-        {/* Minimal Luxury Statement / Invoice Printable Component */}
-        <VendorStatementInvoicePdfTemplate
-          isOpen={isInvoiceModalOpen}
-          onClose={() => setIsInvoiceModalOpen(false)}
-          vendor={vendor}
-          studioName={studioProfile.name || studioName}
-          studioPhone={studioProfile.phone}
-          studioEmail={studioProfile.email}
-          studioAddress={studioProfile.address}
-          items={invoiceItems}
-          category={activeCategoryTab}
-          specialization={
-            activeCategoryTab === 'video_editing' ? 'Video Editing' :
-            activeCategoryTab === 'photo_editing' ? 'Photo Editing' :
-            activeCategoryTab === 'album_design' ? 'Album Designing' :
-            activeCategoryTab === 'album_printing' ? 'Album Printing' :
-            (vendor.role || 'Shoot Specialist')
-          }
-        />
-
-        {/* Attach Resource / Drive Links Modal */}
-        <AttachLinksModal
-          isOpen={Boolean(attachLinksOrder)}
-          onClose={() => setAttachLinksOrder(null)}
-          title={attachLinksOrder?.item_title || attachLinksOrder?.album_type || 'Deliverable'}
-          subtitle={attachLinksOrder?.client_name}
-          initialLinks={(attachLinksOrder?.drive_links || []).map((l: any, i: number) => ({
-            id: l.id || `lnk_${i}`,
-            title: l.title || l.label || 'Link',
-            url: l.url || '',
-          }))}
-          onSave={handleSaveAttachLinks}
-        />
+        {siblingModals}
       </div>
     </AnimatePresence>
   );
