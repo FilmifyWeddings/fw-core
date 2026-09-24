@@ -867,6 +867,33 @@ export default function VendorAlbumDeliverablesModal({
     { title: 'Raw Footage', specs: 'All Cameras' },
   ]);
 
+  // Photo Deliverables Presets (Synced from Post-Production Settings)
+  const [ppPhotoPresets, setPpPhotoPresets] = useState<Array<{ title: string; specs: string }>>([
+    { title: 'Edited Photos', specs: '500 Photos' },
+    { title: 'Save the Date Photo', specs: '1-3 Photos' },
+    { title: 'Instagram Posts', specs: '10-15 Photos' },
+    { title: 'Teaser Stills', specs: '20-30 Photos' },
+    { title: 'Raw Photos', specs: 'All Cameras' },
+    { title: 'Candid Retouching', specs: '100 Photos' },
+    { title: 'Traditional Photos', specs: 'All Processed' },
+  ]);
+
+  // Album Deliverables Presets (Synced from Post-Production Settings)
+  const [ppAlbumPresets, setPpAlbumPresets] = useState<Array<{ title: string; specs: string }>>([
+    { title: 'Signature Photobook', specs: '30 Sheets (60 Pages)' },
+    { title: 'Pre-Wedding Mini Book', specs: '15 Sheets (30 Pages)' },
+    { title: 'Parent Album', specs: '25 Sheets (50 Pages)' },
+    { title: 'Flush Mount Wedding Album', specs: '40 Sheets (80 Pages)' },
+    { title: 'Magazine Style Book', specs: '20 Sheets (40 Pages)' },
+  ]);
+
+  // Dynamic active presets based on current hub category tab
+  const activeCategoryPresets = useMemo(() => {
+    if (activeCategoryTab === 'photo_editing') return ppPhotoPresets;
+    if (activeCategoryTab === 'album_design' || activeCategoryTab === 'album_printing') return ppAlbumPresets;
+    return ppVideoPresets;
+  }, [activeCategoryTab, ppPhotoPresets, ppAlbumPresets, ppVideoPresets]);
+
   // Post-Production Statuses Sync
   const [ppStatuses, setPpStatuses] = useState<PostProductionStatusSetting[]>(() => {
     const cached = getCachedPostProductionSettings();
@@ -888,6 +915,24 @@ export default function VendorAlbumDeliverablesModal({
           });
           setPpVideoPresets(normalized);
         }
+
+        const photoCat = settings.categories.find(c => c.name.toLowerCase().includes('photo'));
+        if (photoCat && photoCat.presets && photoCat.presets.length > 0) {
+          const normalized = photoCat.presets.map(p => {
+            if (typeof p === 'string') return { title: p, specs: '' };
+            return { title: p.title || '', specs: p.specs || p.count || '' };
+          });
+          setPpPhotoPresets(normalized);
+        }
+
+        const albumCat = settings.categories.find(c => c.name.toLowerCase().includes('album'));
+        if (albumCat && albumCat.presets && albumCat.presets.length > 0) {
+          const normalized = albumCat.presets.map(p => {
+            if (typeof p === 'string') return { title: p, specs: '' };
+            return { title: p.title || '', specs: p.specs || p.count || '' };
+          });
+          setPpAlbumPresets(normalized);
+        }
       }
     }).catch(() => {});
 
@@ -904,6 +949,24 @@ export default function VendorAlbumDeliverablesModal({
               return { title: p.title || '', specs: p.specs || p.count || '' };
             });
             setPpVideoPresets(normalized);
+          }
+
+          const photoCat = settings.categories.find(c => c.name.toLowerCase().includes('photo'));
+          if (photoCat && photoCat.presets && photoCat.presets.length > 0) {
+            const normalized = photoCat.presets.map(p => {
+              if (typeof p === 'string') return { title: p, specs: '' };
+              return { title: p.title || '', specs: p.specs || p.count || '' };
+            });
+            setPpPhotoPresets(normalized);
+          }
+
+          const albumCat = settings.categories.find(c => c.name.toLowerCase().includes('album'));
+          if (albumCat && albumCat.presets && albumCat.presets.length > 0) {
+            const normalized = albumCat.presets.map(p => {
+              if (typeof p === 'string') return { title: p, specs: '' };
+              return { title: p.title || '', specs: p.specs || p.count || '' };
+            });
+            setPpAlbumPresets(normalized);
           }
         }
       }).catch(() => {});
@@ -1410,13 +1473,37 @@ export default function VendorAlbumDeliverablesModal({
       drive_links: links,
       drive_folder_url: firstUrl || attachLinksOrder.drive_folder_url || '',
     };
-    setOrders(prev => prev.map(o => o.id === attachLinksOrder.id ? updated : o));
+    setOrders(prev => {
+      const next = prev.map(o => o.id === attachLinksOrder.id ? updated : o);
+      memCachedVendorOrders.set(vendor.id, next);
+      try {
+        localStorage.setItem(`sc_vendor_album_orders_${workspaceId}_${vendor.id}`, JSON.stringify(next));
+        localStorage.setItem(`vendor_orders_${vendor.id}`, JSON.stringify(next));
+      } catch (_) {}
+      return next;
+    });
     setAttachLinksOrder(null);
 
     try {
-      await saveVendorAlbumOrder(workspaceId, updated);
+      const res = await fetch('/api/vendors/albums', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+      const data = await res.json();
+      if (data.success && data.order) {
+        setOrders(prev => {
+          const next = prev.map(o => o.id === data.order.id ? data.order : o);
+          memCachedVendorOrders.set(vendor.id, next);
+          try {
+            localStorage.setItem(`sc_vendor_album_orders_${workspaceId}_${vendor.id}`, JSON.stringify(next));
+            localStorage.setItem(`vendor_orders_${vendor.id}`, JSON.stringify(next));
+          } catch (_) {}
+          return next;
+        });
+      }
     } catch (err) {
-      console.warn('Failed to save attached links:', err);
+      console.warn('Failed to save attached links via API:', err);
     }
   };
 
@@ -1586,8 +1673,8 @@ export default function VendorAlbumDeliverablesModal({
         deliverables: [
           {
             id: `del_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-            title: ppVideoPresets[0]?.title || 'Cinematic Teaser',
-            specs: ppVideoPresets[0]?.specs || '',
+            title: activeCategoryPresets[0]?.title || 'Creative Task',
+            specs: activeCategoryPresets[0]?.specs || '',
             dueDate: '',
             agreedFee: '0',
             paidAmount: '0',
@@ -1607,7 +1694,7 @@ export default function VendorAlbumDeliverablesModal({
   };
 
   const handleAddDeliverable = (segmentId: string) => {
-    const defaultDel = ppVideoPresets[0] || { title: 'Cinematic Teaser', specs: '1-2 Mins' };
+    const defaultDel = activeCategoryPresets[0] || { title: 'Creative Task', specs: '' };
     setAssignSegments(prev => prev.map(s => {
       if (s.id !== segmentId) return s;
       return {
@@ -1725,6 +1812,7 @@ export default function VendorAlbumDeliverablesModal({
                   workspaceId,
                   partnerId: vendor.id,
                   partnerName: vendor.name,
+                  category: targetCategory,
                   totalAmount: agreedNum,
                   paidAmount: paidNum,
                   isFullPaid: isFull,
@@ -1759,8 +1847,8 @@ export default function VendorAlbumDeliverablesModal({
             deliverables: [
               {
                 id: 'del_1',
-                title: ppVideoPresets[0]?.title || 'Cinematic Teaser',
-                specs: ppVideoPresets[0]?.specs || '',
+                title: activeCategoryPresets[0]?.title || 'Creative Task',
+                specs: activeCategoryPresets[0]?.specs || '',
                 dueDate: '',
                 agreedFee: '0',
                 paidAmount: '0',
@@ -1932,6 +2020,7 @@ export default function VendorAlbumDeliverablesModal({
               workspaceId,
               partnerId: vendor.id,
               partnerName: vendor.name,
+              category: targetCategory,
               totalAmount: agreedNum,
               paidAmount: paidNum,
               isFullPaid: isFull,
@@ -2002,6 +2091,26 @@ export default function VendorAlbumDeliverablesModal({
         const json = await res.json();
         if (json.success && json.order) {
           createdOrders.push(json.order);
+          if (paidNum > 0) {
+            await fetch('/api/vendors/payments', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                orderId: json.order.id,
+                workspaceId,
+                partnerId: vendor.id,
+                partnerName: vendor.name,
+                category: targetCategory,
+                totalAmount: agreedNum,
+                paidAmount: paidNum,
+                isFullPaid: isFull,
+                paymentMode: 'Bank Transfer',
+                paymentDate: new Date().toISOString().split('T')[0],
+                notes: `Initial advance recorded for ${del.title}`,
+                autoSyncExpense: true
+              })
+            }).catch(() => {});
+          }
         }
       }
 
@@ -2052,6 +2161,7 @@ export default function VendorAlbumDeliverablesModal({
           workspaceId,
           partnerId: vendor.id,
           partnerName: vendor.name,
+          category: paymentTarget.category || activeCategoryTab,
           totalAmount: doneNum,
           paidAmount: isFull ? doneNum : paidNum,
           isFullPaid: isFull,
@@ -2064,7 +2174,15 @@ export default function VendorAlbumDeliverablesModal({
       });
       const data = await res.json();
       if (data.success && data.order) {
-        setOrders(prev => prev.map(o => o.id === data.order.id ? data.order : o));
+        setOrders(prev => {
+          const updated = prev.map(o => o.id === data.order.id ? data.order : o);
+          memCachedVendorOrders.set(vendor.id, updated);
+          try {
+            localStorage.setItem(`sc_vendor_album_orders_${workspaceId}_${vendor.id}`, JSON.stringify(updated));
+            localStorage.setItem(`vendor_orders_${vendor.id}`, JSON.stringify(updated));
+          } catch (_) {}
+          return updated;
+        });
         setPaymentTarget(null);
       } else {
         const bal = Math.max(0, doneNum - paidNum);
@@ -2075,7 +2193,15 @@ export default function VendorAlbumDeliverablesModal({
           balance_amount: bal,
           payment_status: bal === 0 && doneNum > 0 ? 'PAID' : paidNum > 0 ? 'PARTIAL' : 'PENDING'
         };
-        setOrders(prev => prev.map(o => o.id === paymentTarget.id ? updated : o));
+        setOrders(prev => {
+          const next = prev.map(o => o.id === paymentTarget.id ? updated : o);
+          memCachedVendorOrders.set(vendor.id, next);
+          try {
+            localStorage.setItem(`sc_vendor_album_orders_${workspaceId}_${vendor.id}`, JSON.stringify(next));
+            localStorage.setItem(`vendor_orders_${vendor.id}`, JSON.stringify(next));
+          } catch (_) {}
+          return next;
+        });
         setPaymentTarget(null);
       }
     } catch (err) {
@@ -2116,12 +2242,21 @@ export default function VendorAlbumDeliverablesModal({
           author: studioName || 'Studio Lead',
           text: commentInput.trim(),
           reminderAt: commentReminder || undefined,
-          isVoice
+          isVoice,
+          category: commentTarget.category || activeCategoryTab
         })
       });
       const data = await res.json();
       if (data.success && data.order) {
-        setOrders(prev => prev.map(o => o.id === data.order.id ? data.order : o));
+        setOrders(prev => {
+          const next = prev.map(o => o.id === data.order.id ? data.order : o);
+          memCachedVendorOrders.set(vendor.id, next);
+          try {
+            localStorage.setItem(`sc_vendor_album_orders_${workspaceId}_${vendor.id}`, JSON.stringify(next));
+            localStorage.setItem(`vendor_orders_${vendor.id}`, JSON.stringify(next));
+          } catch (_) {}
+          return next;
+        });
         setCommentTarget(data.order);
         setCommentInput('');
         setCommentReminder('');
@@ -2462,7 +2597,27 @@ export default function VendorAlbumDeliverablesModal({
               {activeCategoryTab !== 'shoot' && (
                 <button
                   type="button"
-                  onClick={() => setIsAddAssignmentModalOpen(true)}
+                  onClick={() => {
+                    const defaultDel = activeCategoryPresets[0] || { title: 'Creative Task', specs: '' };
+                    setAssignCoupleName('');
+                    setAssignSegments([
+                      {
+                        id: 'seg_1',
+                        name: 'Wedding',
+                        deliverables: [
+                          {
+                            id: 'del_1',
+                            title: defaultDel.title,
+                            specs: defaultDel.specs,
+                            dueDate: '',
+                            agreedFee: '0',
+                            paidAmount: '0',
+                          }
+                        ]
+                      }
+                    ]);
+                    setIsAddAssignmentModalOpen(true);
+                  }}
                   className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-[11px] font-black flex items-center gap-1.5 shadow-xs transition cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5 stroke-[3]" />
@@ -2808,12 +2963,13 @@ export default function VendorAlbumDeliverablesModal({
                             <button
                               type="button"
                               onClick={() => {
+                                const defaultDel = activeCategoryPresets[0] || { title: 'Creative Task', specs: '' };
                                 setCardAddSegmentClient(grp.clientName);
                                 setCardNewSegmentName('Pre-Wedding');
                                 setCardNewDeliverables([{
                                   id: `del_${Date.now()}`,
-                                  title: ppVideoPresets[0]?.title || 'Cinematic Teaser',
-                                  specs: ppVideoPresets[0]?.specs || '',
+                                  title: defaultDel.title,
+                                  specs: defaultDel.specs,
                                   dueDate: '',
                                   agreedFee: '0',
                                   paidAmount: '0',
@@ -2834,6 +2990,7 @@ export default function VendorAlbumDeliverablesModal({
                               setInvoiceItems(grp.orders.map(o => ({
                                 id: o.id,
                                 client_name: grp.clientName,
+                                category: o.category || activeCategoryTab || 'photo_editing',
                                 segment: detectDeliverableSegment(o.segment, o.item_title || o.album_type, o.event_name),
                                 album_type: o.item_title || o.album_type,
                                 specs: o.specs || '',
@@ -2895,9 +3052,10 @@ export default function VendorAlbumDeliverablesModal({
                                           <button
                                             type="button"
                                             onClick={() => {
+                                              const defaultDel = activeCategoryPresets[0] || { title: 'Creative Task', specs: '' };
                                               setAddDeliverableTarget({ clientName: grp.clientName, segmentName: segment });
-                                              setTargetDelivTitle(ppVideoPresets[0]?.title || 'Cinematic Teaser');
-                                              setTargetDelivSpecs(ppVideoPresets[0]?.specs || '');
+                                              setTargetDelivTitle(defaultDel.title);
+                                              setTargetDelivSpecs(defaultDel.specs);
                                               setTargetDelivDueDate('');
                                               setTargetDelivFee('0');
                                               setTargetDelivPaid('0');
@@ -3507,7 +3665,7 @@ export default function VendorAlbumDeliverablesModal({
                                     <ThreeDDeliverableSelect
                                       value={del.title}
                                       specs={del.specs}
-                                      presets={ppVideoPresets}
+                                      presets={activeCategoryPresets}
                                       onChange={(newTitle, newSpecs) => {
                                         handleUpdateDeliverable(segment.id, del.id, {
                                           title: newTitle,
@@ -4355,7 +4513,7 @@ export default function VendorAlbumDeliverablesModal({
                         <button
                           type="button"
                           onClick={() => {
-                            const defaultDel = ppVideoPresets[0] || { title: 'Cinematic Teaser', specs: '1-2 Mins' };
+                            const defaultDel = activeCategoryPresets[0] || { title: 'Creative Task', specs: '' };
                             setCardNewDeliverables(prev => [
                               ...prev,
                               {
@@ -4370,7 +4528,7 @@ export default function VendorAlbumDeliverablesModal({
                           }}
                           className="px-2.5 py-1 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[11px] font-bold flex items-center gap-1 border border-emerald-300 transition cursor-pointer"
                         >
-                          <Plus className="w-3 h-3 stroke-[3]" />
+                          <Plus className="w-3.5 h-3.5 stroke-[3]" />
                           <span>+ Add Deliverable</span>
                         </button>
                       </div>
@@ -4386,7 +4544,7 @@ export default function VendorAlbumDeliverablesModal({
                               <ThreeDDeliverableSelect
                                 value={del.title}
                                 specs={del.specs}
-                                presets={ppVideoPresets}
+                                presets={activeCategoryPresets}
                                 onChange={(newTitle, newSpecs) => {
                                   setCardNewDeliverables(prev => prev.map(d => d.id === del.id ? {
                                     ...d,
@@ -4533,7 +4691,7 @@ export default function VendorAlbumDeliverablesModal({
                       <ThreeDDeliverableSelect
                         value={targetDelivTitle}
                         specs={targetDelivSpecs}
-                        presets={ppVideoPresets}
+                        presets={activeCategoryPresets}
                         onChange={(newTitle, newSpecs) => {
                           setTargetDelivTitle(newTitle);
                           if (newSpecs) setTargetDelivSpecs(newSpecs);

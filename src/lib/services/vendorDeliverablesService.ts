@@ -141,12 +141,20 @@ export function normalizeVendorOrderStatus(raw?: string): string {
  * Detects assignment category from deliverable data
  */
 export function detectDeliverableCategory(category?: string, title?: string, role?: string): AssignmentCategory {
-  const combined = `${category || ''} ${title || ''} ${role || ''}`.toLowerCase();
-  if (combined.includes('print') || combined.includes('lab') || combined.includes('binding')) return 'album_printing';
-  if (combined.includes('album') || combined.includes('book') || combined.includes('sheet') || combined.includes('flush mount')) return 'album_design';
-  if (combined.includes('video') || combined.includes('film') || combined.includes('teaser') || combined.includes('trailer') || combined.includes('reel') || combined.includes('cinemat') || combined.includes('editor')) return 'video_editing';
-  if (combined.includes('photo') || combined.includes('stills') || combined.includes('retouch') || combined.includes('color grade')) return 'photo_editing';
-  if (combined.includes('shoot') || combined.includes('candid') || combined.includes('drone') || combined.includes('traditional') || combined.includes('photographer') || combined.includes('cinematographer')) return 'shoot';
+  const cat = (category || '').toLowerCase().trim();
+  if (cat === 'photo_editing' || cat === 'photo' || cat === 'photo editing') return 'photo_editing';
+  if (cat === 'video_editing' || cat === 'video' || cat === 'video editing') return 'video_editing';
+  if (cat === 'shoot') return 'shoot';
+  if (cat === 'album_printing' || cat === 'printing') return 'album_printing';
+
+  const titleAndRole = `${title || ''} ${role || ''}`.toLowerCase();
+  if (titleAndRole.includes('video') || titleAndRole.includes('film') || titleAndRole.includes('teaser') || titleAndRole.includes('trailer') || titleAndRole.includes('reel') || titleAndRole.includes('cinemat') || titleAndRole.includes('editor')) return 'video_editing';
+  if (titleAndRole.includes('photo') || titleAndRole.includes('stills') || titleAndRole.includes('retouch') || titleAndRole.includes('color grade')) return 'photo_editing';
+  if (titleAndRole.includes('print') || titleAndRole.includes('lab') || titleAndRole.includes('binding')) return 'album_printing';
+  if (titleAndRole.includes('album') || titleAndRole.includes('book') || titleAndRole.includes('sheet') || titleAndRole.includes('flush mount')) return 'album_design';
+  if (titleAndRole.includes('shoot') || titleAndRole.includes('candid') || titleAndRole.includes('drone') || titleAndRole.includes('traditional') || titleAndRole.includes('photographer') || titleAndRole.includes('cinematographer')) return 'shoot';
+
+  if (cat === 'album_design' || cat === 'album') return 'album_design';
   return 'album_design';
 }
 
@@ -209,10 +217,14 @@ export async function fetchVendorAlbumOrders(
 
     const { data: dbOrders, error } = await query.order('created_at', { ascending: false });
 
-    const orderList: VendorAlbumOrder[] = Array.isArray(dbOrders) ? dbOrders.map(o => ({
-      ...o,
-      segment: detectDeliverableSegment(o.segment, o.item_title || o.album_type, o.event_name),
-    })) : [];
+    const orderList: VendorAlbumOrder[] = Array.isArray(dbOrders) ? dbOrders.map(o => {
+      const derivedCat = detectDeliverableCategory(o.category, o.item_title || o.album_type, o.role);
+      return {
+        ...o,
+        category: derivedCat,
+        segment: detectDeliverableSegment(o.segment, o.item_title || o.album_type, o.event_name),
+      };
+    }) : [];
 
     // AUTO-SYNC 1: Check post_production_deliverables for ALL categories (Videos, Photos, Albums, Printing)
     try {
@@ -266,6 +278,26 @@ export async function fetchVendorAlbumOrders(
           if (existing) {
             if (delivSegment !== 'Wedding' && existing.segment === 'Wedding') {
               existing.segment = delivSegment;
+            }
+            if (cat && existing.category !== cat) {
+              existing.category = cat;
+            }
+            if (deliv.agreed_amount !== undefined && deliv.agreed_amount !== null && !isNaN(Number(deliv.agreed_amount))) {
+              const dTot = Number(deliv.agreed_amount);
+              if (dTot > 0 && existing.total_amount === 0) {
+                existing.total_amount = dTot;
+              }
+            }
+            if (deliv.paid_amount !== undefined && deliv.paid_amount !== null && !isNaN(Number(deliv.paid_amount))) {
+              const dPaid = Number(deliv.paid_amount);
+              if (dPaid > (existing.paid_amount || 0)) {
+                existing.paid_amount = dPaid;
+                existing.balance_amount = Math.max(0, existing.total_amount - existing.paid_amount);
+                existing.payment_status = existing.balance_amount === 0 && existing.total_amount > 0 ? 'PAID' : existing.paid_amount > 0 ? 'PARTIAL' : 'PENDING';
+              }
+            }
+            if (deliv.drive_links && (!existing.drive_links || existing.drive_links.length === 0)) {
+              existing.drive_links = deliv.drive_links;
             }
           } else {
             const clientName = projectClientMap.get(deliv.project_id) || 'Valued Couple';
@@ -354,6 +386,26 @@ export async function fetchVendorAlbumOrders(
               if (existing) {
                 if (delivSegment !== 'Wedding' && existing.segment === 'Wedding') {
                   existing.segment = delivSegment;
+                }
+                if (cat && existing.category !== cat) {
+                  existing.category = cat;
+                }
+                if (d.agreed_amount !== undefined && d.agreed_amount !== null && !isNaN(Number(d.agreed_amount))) {
+                  const dTot = Number(d.agreed_amount);
+                  if (dTot > 0 && existing.total_amount === 0) {
+                    existing.total_amount = dTot;
+                  }
+                }
+                if (d.paid_amount !== undefined && d.paid_amount !== null && !isNaN(Number(d.paid_amount))) {
+                  const dPaid = Number(d.paid_amount);
+                  if (dPaid > (existing.paid_amount || 0)) {
+                    existing.paid_amount = dPaid;
+                    existing.balance_amount = Math.max(0, existing.total_amount - existing.paid_amount);
+                    existing.payment_status = existing.balance_amount === 0 && existing.total_amount > 0 ? 'PAID' : existing.paid_amount > 0 ? 'PARTIAL' : 'PENDING';
+                  }
+                }
+                if (d.drive_links && (!existing.drive_links || existing.drive_links.length === 0)) {
+                  existing.drive_links = d.drive_links;
                 }
               } else {
                 const rawSpecs = String(d.specs || d.count || '').trim();
@@ -703,11 +755,13 @@ export async function saveVendorAlbumOrder(
     await supabaseAdmin.from('partner_album_orders').upsert(payload);
 
     // BI-DIRECTIONAL SYNC: If deliverable_id exists, sync back to post_production_deliverables
-    if (payload.deliverable_id) {
+    const effectiveDelivId = payload.deliverable_id || (payload.id?.startsWith('order_deliv_') ? payload.id.replace('order_', '') : (payload.id?.startsWith('deliv_') ? payload.id : ''));
+    if (effectiveDelivId) {
       await supabaseAdmin
         .from('post_production_deliverables')
         .update({
           title: payload.item_title || payload.album_type,
+          category: payload.category,
           status: payload.order_status,
           specs: payload.specs || (payload.category === 'album_design' || payload.category === 'album_printing' ? `${payload.sheet_count} Sheets` : null),
           due_date: payload.due_date ? new Date(payload.due_date).toISOString() : null,
@@ -719,7 +773,7 @@ export async function saveVendorAlbumOrder(
           notes: payload.notes,
           updated_at: new Date().toISOString()
         })
-        .eq('id', payload.deliverable_id);
+        .eq('id', effectiveDelivId);
     }
 
     // BI-DIRECTIONAL SYNC: If assignment_id exists, sync amounts to fw_assignments
@@ -779,11 +833,19 @@ export async function deleteVendorAlbumOrder(orderId: string): Promise<boolean> 
     const { error } = await supabaseAdmin
       .from('partner_album_orders')
       .delete()
-      .eq('id', orderId);
+      .or(`id.eq.${orderId},deliverable_id.eq.${orderId}`);
     if (error) {
       console.error('[vendorDeliverablesService] delete error:', error);
       return false;
     }
+
+    const delivId = orderId.startsWith('order_deliv_') ? orderId.replace('order_', '') : (orderId.startsWith('deliv_') ? orderId : '');
+    if (delivId) {
+      try {
+        await supabaseAdmin.from('post_production_deliverables').delete().eq('id', delivId);
+      } catch (_) {}
+    }
+
     return true;
   } catch (err) {
     console.error('[vendorDeliverablesService] delete error:', err);
@@ -801,6 +863,7 @@ export async function addVendorOrderComment(
     text: string;
     reminder_at?: string;
     is_voice?: boolean;
+    category?: AssignmentCategory;
   }
 ): Promise<VendorAlbumOrder | null> {
   try {
@@ -811,12 +874,23 @@ export async function addVendorOrderComment(
       .maybeSingle();
 
     if (!order) {
+      const { data: byDeliv } = await supabaseAdmin
+        .from('partner_album_orders')
+        .select('*')
+        .eq('deliverable_id', orderId)
+        .maybeSingle();
+      if (byDeliv) order = byDeliv;
+    }
+
+    if (!order) {
+      const fallbackCat = comment.category || (orderId.includes('video') ? 'video_editing' : orderId.includes('photo') ? 'photo_editing' : 'album_design');
       // Create a fallback order if not already in table
       const placeholder: Partial<VendorAlbumOrder> = {
         id: orderId,
         partner_id: 'unknown',
         partner_name: 'Team Specialist',
         client_name: 'Valued Couple',
+        category: fallbackCat,
         album_type: 'Assignment Note',
         total_amount: 0,
         paid_amount: 0,
@@ -865,8 +939,10 @@ export async function addVendorOrderComment(
     // If reminder_at is set, schedule in post_production_reminders
     if (comment.reminder_at) {
       try {
-        const catTag = order.category === 'video_editing' ? 'Video Editing' : order.category === 'photo_editing' ? 'Photo Editing' : order.category === 'shoot' ? 'Shoot' : 'Album';
-        const remTitle = `[${catTag}] Reminder for ${order.client_name} (${order.event_name || order.item_title || order.album_type || 'Task'}): ${comment.text}`;
+        const orderCat = comment.category || order.category;
+        const catTag = orderCat === 'video_editing' ? 'Video Editing' : orderCat === 'photo_editing' ? 'Photo Editing' : orderCat === 'shoot' ? 'Shoot' : orderCat === 'album_printing' ? 'Album Printing' : 'Album';
+        const taskName = order.event_name || order.item_title || order.album_type || 'Task';
+        const remTitle = `[${catTag}] Reminder for ${order.client_name} (${taskName}): ${comment.text}`;
         await supabaseAdmin.from('post_production_reminders').insert([{
           workspace_id: order.workspace_id || 'ws_default',
           deliverable_id: order.deliverable_id || order.id,
@@ -876,6 +952,19 @@ export async function addVendorOrderComment(
           reminder_at: new Date(comment.reminder_at).toISOString(),
           status: 'pending'
         }]);
+      } catch (_) {}
+    }
+
+    const effectiveDelivId = order.deliverable_id || (order.id?.startsWith('order_deliv_') ? order.id.replace('order_', '') : (order.id?.startsWith('deliv_') ? order.id : ''));
+    if (effectiveDelivId) {
+      try {
+        await supabaseAdmin
+          .from('post_production_deliverables')
+          .update({
+            notes: comment.text,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', effectiveDelivId);
       } catch (_) {}
     }
 

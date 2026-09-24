@@ -58,7 +58,14 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   try {
     const searchParams = req.nextUrl.searchParams;
-    const orderId = searchParams.get('id');
+    let orderId = searchParams.get('id') || searchParams.get('order_id');
+    if (!orderId) {
+      try {
+        const body = await req.json();
+        orderId = body.id || body.order_id || body.deliverable_id;
+      } catch (_) {}
+    }
+
     if (!orderId) {
       return NextResponse.json({ error: 'Order ID is required' }, { status: 400 });
     }

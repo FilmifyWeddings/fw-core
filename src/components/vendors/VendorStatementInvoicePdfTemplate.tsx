@@ -3,7 +3,24 @@
 import React, { useRef, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Printer, Download, FileText, CheckCircle2, Building2, User, Loader2 } from 'lucide-react';
-import { detectDeliverableSegment } from '@/lib/services/vendorDeliverablesService';
+import { detectDeliverableSegment, detectDeliverableCategory } from '@/lib/services/vendorDeliverablesService';
+
+function getInvoiceCategoryDisplay(item: VendorInvoiceItem, defaultCat?: string): { label: string; badgeClass: string } {
+  const detected = detectDeliverableCategory(item.category || defaultCat, item.item_title || item.album_type, item.role);
+  if (detected === 'video_editing') {
+    return { label: 'Video Editing', badgeClass: 'bg-purple-50 text-purple-800 border-purple-200' };
+  }
+  if (detected === 'photo_editing') {
+    return { label: 'Photo Editing', badgeClass: 'bg-sky-50 text-sky-800 border-sky-200' };
+  }
+  if (detected === 'album_printing') {
+    return { label: 'Album Printing', badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200' };
+  }
+  if (detected === 'shoot') {
+    return { label: 'Shoot', badgeClass: 'bg-stone-100 text-stone-700 border-stone-200' };
+  }
+  return { label: 'Album Designing', badgeClass: 'bg-amber-50 text-amber-800 border-amber-200' };
+}
 
 export interface VendorInvoiceItem {
   order_id?: string;
@@ -471,11 +488,14 @@ export default function VendorStatementInvoicePdfTemplate({
                                     </span>
                                   </td>
                                   <td className="py-2.5 px-2 text-center">
-                                    <span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-stone-100 text-stone-700 border border-stone-200 font-mono">
-                                      {item.category === 'video_editing' ? 'Video' :
-                                       item.category === 'photo_editing' ? 'Photo' :
-                                       item.category === 'album_printing' ? 'Printing' : 'Album'}
-                                    </span>
+                                    {(() => {
+                                      const catInfo = getInvoiceCategoryDisplay(item, category);
+                                      return (
+                                        <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold uppercase border font-mono ${catInfo.badgeClass}`}>
+                                          {catInfo.label}
+                                        </span>
+                                      );
+                                    })()}
                                   </td>
                                   <td className="py-2.5 px-2 text-right font-mono font-bold text-stone-900">
                                     ₹{Number(item.total_amount).toLocaleString('en-IN')}

@@ -100,21 +100,31 @@ function parseReminder(rem: StudioReminder): ParsedReminder {
     category = 'shoot';
   }
 
+  let taskTitle = '';
+
+  // Strip [Category Tag] prefix if present to parse header & note cleanly
+  const textWithoutTag = fullText.replace(/^\[[^\]]+\]\s*/i, '').trim();
+
   // Check pattern: "Reminder for [Couple / Item]: [Note]"
-  const matchColon = fullText.match(/^reminder\s*(?:for)?\s*([^:]+):\s*(.+)$/i);
+  const matchColon = textWithoutTag.match(/^reminder\s*(?:for)?\s*([^:]+):\s*(.+)$/i);
   if (matchColon) {
     const header = matchColon[1].trim();
     noteText = matchColon[2].trim();
 
-    if (header.includes('-')) {
+    // Check if header has (Task / Deliverable): e.g. "Rahul & Pooja (Pre-Wedding Edited Photos)"
+    const matchParen = header.match(/^([^(]+)\s*\((.*?)\)$/);
+    if (matchParen) {
+      coupleName = matchParen[1].trim();
+      taskTitle = matchParen[2].trim();
+    } else if (header.includes('-')) {
       const parts = header.split('-');
       coupleName = parts[0].trim();
       eventName = parts.slice(1).join('-').trim();
     } else {
       coupleName = header;
     }
-  } else if (fullText.includes(' - ')) {
-    const parts = fullText.split(' - ');
+  } else if (textWithoutTag.includes(' - ')) {
+    const parts = textWithoutTag.split(' - ');
     if (parts.length >= 2) {
       coupleName = parts[0].replace(/^reminder\s*:/i, '').trim();
       noteText = parts.slice(1).join(' - ').trim();
@@ -158,8 +168,8 @@ function parseReminder(rem: StudioReminder): ParsedReminder {
     badgeStyle: conf.badgeStyle,
     personName: rem.recipient_name || '',
     coupleName,
-    eventName,
-    noteText: noteText || fullText,
+    eventName: taskTitle || eventName,
+    noteText: noteText || textWithoutTag || fullText,
   };
 }
 
@@ -407,20 +417,6 @@ export default function TeamRemindersDrawer({
                           {formatReminderDate(rem.reminder_at)}
                         </span>
                       </div>
-
-                      {/* Top Done Button */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setConfirmTarget(rem);
-                        }}
-                        className="px-2.5 py-1 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-[11px] font-black flex items-center gap-1 transition cursor-pointer shadow-2xs shrink-0"
-                        title="Mark reminder as completed"
-                      >
-                        <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
-                        <span>Done</span>
-                      </button>
                     </div>
 
                     {/* Person / Assignee & Couple/Event Information */}

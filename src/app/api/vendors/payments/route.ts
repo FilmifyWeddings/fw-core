@@ -18,6 +18,7 @@ export async function POST(req: NextRequest) {
       paidAmount,
       amount,
       isFullPaid,
+      category,
       paymentMode = 'UPI',
       paymentDate = new Date().toISOString().split('T')[0],
       referenceNo = '',
@@ -37,6 +38,7 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     if (!order) {
+      const orderCat = category || (orderId.startsWith('shoot_') ? 'shoot' : (orderId.includes('video') ? 'video_editing' : (orderId.includes('photo') ? 'photo_editing' : 'photo_editing')));
       const placeholder = {
         id: orderId,
         workspace_id: workspaceId,
@@ -44,7 +46,7 @@ export async function POST(req: NextRequest) {
         partner_name: partnerName,
         client_name: 'Valued Couple',
         album_type: 'Assignment Order',
-        category: orderId.startsWith('shoot_') ? 'shoot' : 'album_design',
+        category: orderCat,
         total_amount: Number(totalAmount) || 0,
         paid_amount: 0,
         balance_amount: Number(totalAmount) || 0,
@@ -84,21 +86,42 @@ export async function POST(req: NextRequest) {
     const paymentStatus: 'PENDING' | 'PARTIAL' | 'PAID' = 
       newBalance === 0 && donePrice > 0 ? 'PAID' : newPaid > 0 ? 'PARTIAL' : 'PENDING';
 
+    const updatePayload: any = {
+      total_amount: donePrice,
+      paid_amount: newPaid,
+      balance_amount: newBalance,
+      payment_status: paymentStatus,
+      notes: notes || order.notes || undefined,
+      updated_at: new Date().toISOString()
+    };
+    if (category) {
+      updatePayload.category = category;
+    }
+
     const { data: updatedOrder, error: updateErr } = await supabaseAdmin
       .from('partner_album_orders')
-      .update({
-        total_amount: donePrice,
-        paid_amount: newPaid,
-        balance_amount: newBalance,
-        payment_status: paymentStatus,
-        notes: notes || order.notes || undefined,
-        updated_at: new Date().toISOString()
-      })
+      .update(updatePayload)
       .eq('id', orderId)
       .select()
       .single();
 
     if (updateErr) throw updateErr;
+
+    // Bi-Directional Sync: post_production_deliverables
+    const delivId = order.deliverable_id || (orderId.startsWith('order_deliv_') ? orderId.replace('order_', '') : (orderId.startsWith('deliv_') ? orderId : ''));
+    if (delivId) {
+      try {
+        await supabaseAdmin.from('post_production_deliverables').update({
+          agreed_amount: donePrice,
+          paid_amount: newPaid,
+          balance_amount: newBalance,
+          payment_status: paymentStatus,
+          updated_at: new Date().toISOString()
+        }).eq('id', delivId);
+      } catch (delivSyncErr) {
+        console.warn('[Payments API] post_production_deliverables sync error:', delivSyncErr);
+      }
+    }
 
     // Bi-Directional Sync: fw_assignments
     const assignId = order.assignment_id || (orderId.startsWith('shoot_assign_') ? orderId.replace('shoot_assign_', '') : (orderId.startsWith('shoot_') && !orderId.includes('payout') ? orderId.replace('shoot_', '') : ''));
@@ -143,16 +166,23 @@ export async function POST(req: NextRequest) {
     if (autoSyncExpense && newPaid > 0) {
       const priorPaid = Number(order.paid_amount) || 0;
       const logAmount = (newPaid > priorPaid) ? (newPaid - priorPaid) : newPaid;
+      const currentCategory = category || order.category;
       await syncTeamPaymentToExpensesAndAnalytics(workspaceId, {
-        paymentType: order.category === 'shoot' ? 'Freelance Shoot Payout' : 'Vendor Album Fee',
+        paymentType: currentCategory === 'shoot' 
+          ? 'Freelance Shoot Payout' 
+          : currentCategory === 'photo_editing'
+          ? 'Photo Editing Fee'
+          : currentCategory === 'video_editing'
+          ? 'Video Editing Fee'
+          : 'Vendor Album Fee',
         memberName: partnerName || order.partner_name,
         memberId: partnerId || order.partner_id,
-        memberType: order.category === 'shoot' ? 'FREELANCER' : 'PARTNER',
+        memberType: currentCategory === 'shoot' ? 'FREELANCER' : 'PARTNER',
         paidAmount: logAmount,
         paymentDate: paymentDate,
         paymentMethod: paymentMode,
         safeAssignmentId: orderId,
-        notes: notes || `Payment for ${order.client_name} (${order.event_name || order.album_type || 'Shoot'})`
+        notes: notes || `Payment for ${order.client_name} (${order.event_name || order.album_type || 'Task'})`
       }).catch((e) => console.warn('[Vendor Payment] Expense sync warning:', e));
     }
 

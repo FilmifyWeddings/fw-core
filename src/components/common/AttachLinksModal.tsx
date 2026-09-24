@@ -21,16 +21,6 @@ interface AttachLinksModalProps {
   onSave: (links: DeliverableAttachedLink[]) => Promise<void> | void;
 }
 
-const PRESET_LINK_TITLES = [
-  'Google Drive Raw',
-  'Draft Review',
-  'YouTube Preview',
-  'Vimeo Master',
-  'Dropbox Files',
-  'Frame.io Review',
-  'Final High-Res Export'
-];
-
 export default function AttachLinksModal({
   isOpen,
   onClose,
@@ -136,26 +126,6 @@ export default function AttachLinksModal({
 
           {/* Body */}
           <div className="p-4 sm:p-5 overflow-y-auto max-h-[60vh] space-y-3.5">
-            {/* Quick Preset Pills */}
-            <div className="space-y-1.5">
-              <span className="text-[10px] font-black uppercase tracking-wider text-stone-400 block">
-                Quick Title Presets
-              </span>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {PRESET_LINK_TITLES.map((preset) => (
-                  <button
-                    key={preset}
-                    type="button"
-                    onClick={() => handleAddLink(preset)}
-                    className="px-2.5 py-1 rounded-xl bg-white hover:bg-amber-50 text-stone-700 hover:text-amber-900 border border-stone-200 text-[11px] font-bold shadow-2xs transition cursor-pointer flex items-center gap-1"
-                  >
-                    <Plus className="w-2.5 h-2.5" />
-                    <span>{preset}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
             {/* Links Rows */}
             <div className="space-y-2.5 pt-1">
               {links.length === 0 ? (
