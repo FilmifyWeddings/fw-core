@@ -342,7 +342,9 @@ export async function sendMessageServerless(
     const isImageMime = payload.mimeType && payload.mimeType.startsWith('image/');
     const isImageUrl = payload.mediaUrl && /\.(jpg|jpeg|png|webp)($|\?)/i.test(payload.mediaUrl);
     if (payload.mediaUrl && (isImageMime || isImageUrl)) {
-      payload.type = 'image';
+      if (payload.type !== 'buttons' && payload.type !== 'poll') {
+        payload.type = 'image';
+      }
       if (!payload.mimeType || !payload.mimeType.startsWith('image/')) {
         const extMatch = payload.mediaUrl.match(/\.(jpg|jpeg|png|webp)($|\?)/i);
         const ext = extMatch ? extMatch[1].toLowerCase() : 'jpeg';

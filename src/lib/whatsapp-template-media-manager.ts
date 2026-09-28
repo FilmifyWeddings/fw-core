@@ -15,6 +15,7 @@ export interface WhatsAppMediaFile {
   created_at: string;
   mime_type?: string;
   usedInTemplates: string[];
+  fileKey?: string;
 }
 
 export interface StorageQuotaStats {
@@ -28,7 +29,20 @@ export interface StorageQuotaStats {
 const MAX_QUOTA_BYTES = 500 * 1024 * 1024; // Strictly 500 MB Limit
 
 /**
+ * Returns cached storage stats from sessionStorage if available to avoid 0 MB flicker
+ */
+export function getCachedWhatsAppTemplateStorageUsage(workspaceId: string): StorageQuotaStats | null {
+  if (typeof window === 'undefined' || !workspaceId) return null;
+  try {
+    const raw = sessionStorage.getItem(`wa_storage_stats_${workspaceId}`);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return null;
+}
+
+/**
  * Calculates current storage consumed by workspace from vw_workspace_whatsapp_storage_usage / fw_whatsapp_media_files.
+ * In the browser, queries the server admin API (/api/whatsapp/templates/upload) to avoid RLS auth race conditions.
  */
 export async function getWhatsAppTemplateStorageUsage(
   workspaceId: string,
@@ -36,8 +50,33 @@ export async function getWhatsAppTemplateStorageUsage(
 ): Promise<StorageQuotaStats> {
   const folderPath = workspaceId || '00000000-0000-0000-0000-000000000000';
 
+  // 1. Primary in browser: Fetch from server API with service_role privileges
+  if (typeof window !== 'undefined' && folderPath && folderPath !== '00000000-0000-0000-0000-000000000000') {
+    try {
+      const res = await fetch(`/api/whatsapp/templates/upload?workspaceId=${encodeURIComponent(folderPath)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          const stats: StorageQuotaStats = {
+            totalBytes: Number(data.usedBytes || 0),
+            totalMB: Number(data.usedMb || 0),
+            maxMB: Number(data.quotaMb || 500),
+            usagePercentage: Number(data.usagePercentage || 0),
+            filesCount: Number(data.filesCount || 0),
+          };
+          try {
+            sessionStorage.setItem(`wa_storage_stats_${folderPath}`, JSON.stringify(stats));
+          } catch {}
+          return stats;
+        }
+      }
+    } catch (apiErr) {
+      console.warn('[getWhatsAppTemplateStorageUsage] API fetch failed, falling back to direct db:', apiErr);
+    }
+  }
+
   try {
-    // 1. Primary: Query Backblaze B2 quota view
+    // 2. Query Backblaze B2 quota view
     const { data: viewData, error: viewErr } = await client
       .from('vw_workspace_whatsapp_storage_usage')
       .select('total_files, total_bytes, total_mb, usage_percent')
@@ -192,6 +231,7 @@ export async function listWhatsAppTemplateMediaFiles(
           created_at: f.created_at || new Date().toISOString(),
           mime_type: f.mime_type,
           usedInTemplates,
+          fileKey: f.file_key,
         };
       });
     }
@@ -230,6 +270,7 @@ export async function listWhatsAppTemplateMediaFiles(
         created_at: file.created_at || new Date().toISOString(),
         mime_type: file.metadata?.mimetype || (file.name.match(/\.(mp4|webm|mov)$/i) ? 'video/mp4' : 'image/webp'),
         usedInTemplates,
+        fileKey: `${folderPath}/${file.name}`,
       };
     });
   } catch (err) {
@@ -239,46 +280,45 @@ export async function listWhatsAppTemplateMediaFiles(
 }
 
 /**
- * Instantly deletes a media file from Backblaze B2, fw_whatsapp_media_files, and legacy storage.
+ * Instantly deletes a media file permanently from Backblaze B2 bucket, fw_whatsapp_media_files,
+ * and detaches it from any referencing whatsapp_templates.
  */
 export async function deleteWhatsAppTemplateMediaFile(
   workspaceId: string,
   fileName: string,
+  fileKey?: string,
   client: SupabaseClient = supabase
 ): Promise<boolean> {
   const folderPath = workspaceId || '00000000-0000-0000-0000-000000000000';
 
   try {
-    // 1. Delete from Backblaze B2 via API
+    // 1. Delete from Backblaze B2 & Supabase using delete-media API
     try {
-      await fetch(`/api/whatsapp/templates/upload?workspaceId=${folderPath}&fileName=${encodeURIComponent(fileName)}`, {
-        method: 'DELETE',
+      await fetch('/api/whatsapp/templates/delete-media', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspaceId: folderPath,
+          fileKey: fileKey || '',
+          fileName: fileName || '',
+        }),
       });
     } catch (apiErr) {
       console.warn('[deleteWhatsAppTemplateMediaFile] API delete warning:', apiErr);
     }
 
-    // 2. Delete from Supabase Storage if legacy file exists
-    await client.storage
-      .from('whatsapp_templates_media')
-      .remove([`${folderPath}/${fileName}`]);
+    // 2. Also ensure legacy storage bucket clean up if applicable
+    try {
+      await client.storage
+        .from('whatsapp_templates_media')
+        .remove([`${folderPath}/${fileName}`]);
+    } catch {}
 
-    // 3. Delete from DB records
-    await client
-      .from('fw_whatsapp_media_files')
-      .delete()
-      .eq('workspace_id', folderPath)
-      .eq('file_name', fileName);
-
-    await client
-      .from('user_gallery_images')
-      .delete()
-      .eq('workspace_id', folderPath)
-      .eq('file_name', fileName)
-      .eq('source_module', 'whatsapp_templates');
-
-    // Broadcast instant update custom event
+    // Invalidate local session storage cache
     if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.removeItem(`wa_storage_stats_${folderPath}`);
+      } catch {}
       window.dispatchEvent(new CustomEvent('wa_template_media_updated'));
     }
 

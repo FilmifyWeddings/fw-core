@@ -12,6 +12,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { 
   getWhatsAppTemplateStorageUsage, 
+  getCachedWhatsAppTemplateStorageUsage,
   checkWhatsAppStorageQuotaGuard, 
   StorageQuotaStats 
 } from '@/lib/whatsapp-template-media-manager';
@@ -51,12 +52,14 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
   const [error, setError] = useState<string | null>(null);
 
   // Dedicated WhatsApp Template Storage Quota state (Strict 500 MB Limit)
-  const [storageStats, setStorageStats] = useState<StorageQuotaStats>({
-    totalBytes: 0,
-    totalMB: 0,
-    maxMB: 500,
-    usagePercentage: 0,
-    filesCount: 0,
+  const [storageStats, setStorageStats] = useState<StorageQuotaStats>(() => {
+    return getCachedWhatsAppTemplateStorageUsage(workspaceId) || {
+      totalBytes: 0,
+      totalMB: 0,
+      maxMB: 500,
+      usagePercentage: 0,
+      filesCount: 0,
+    };
   });
   const [showMediaGalleryModal, setShowMediaGalleryModal] = useState(false);
   const [quotaWarningModal, setQuotaWarningModal] = useState<string | null>(null);
@@ -72,6 +75,10 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
   };
 
   useEffect(() => {
+    if (workspaceId) {
+      const cached = getCachedWhatsAppTemplateStorageUsage(workspaceId);
+      if (cached) setStorageStats(cached);
+    }
     loadStorageStats();
     const handleUpdate = () => loadStorageStats();
     if (typeof window !== 'undefined') {
@@ -218,21 +225,26 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
       return;
     }
 
-    // Size limits: Images = 50MB, Videos = 50MB, Other documents = 100MB
-    let maxLimit = 100 * 1024 * 1024; // Default 100MB
+    // Size limits: Images = 16MB, Videos = 16MB (WhatsApp hard limit for playable video delivery), Documents = 50MB
+    let maxLimit = 50 * 1024 * 1024; // Default 50MB for documents
     let typeName = "file";
     if (file.type.startsWith('image/')) {
-      maxLimit = 50 * 1024 * 1024; // 50MB
+      maxLimit = 16 * 1024 * 1024; // 16MB
       typeName = "image";
-    } else if (file.type.startsWith('video/')) {
-      maxLimit = 50 * 1024 * 1024; // 50MB
+    } else if (file.type.startsWith('video/') || file.name.match(/\.(mp4|m4v|mov|avi|mkv|webm|3gp)$/i)) {
+      maxLimit = 16 * 1024 * 1024; // 16MB - WhatsApp playable video message hard limit
       typeName = "video";
     }
 
     if (file.size > maxLimit) {
       const maxLimitMb = maxLimit / (1024 * 1024);
       const fileSizeMb = (file.size / (1024 * 1024)).toFixed(2);
-      alert(`File size exceeds the limit. Selected ${typeName} is ${fileSizeMb}MB, but the maximum allowed size is ${maxLimitMb}MB.`);
+      if (typeName === 'video') {
+        alert(`WhatsApp strictly limits playable video messages to 16 MB. Selected video is ${fileSizeMb} MB. Please compress your video to under 16 MB (using Handbrake, CapCut, or an online compressor) so it can play smoothly inside WhatsApp.`);
+      } else {
+        alert(`File size exceeds the limit. Selected ${typeName} is ${fileSizeMb} MB, but the maximum allowed size is ${maxLimitMb} MB.`);
+      }
+      if (e.target) e.target.value = '';
       return;
     }
 
@@ -313,56 +325,13 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     }
   };
 
-  // Two-way Cascade Delete for attached template media
-  const handleDeleteAttachedMedia = async () => {
-    if (!mediaUrl && !mediaFileKey) {
-      setMediaUrl('');
-      setMediaFileKey('');
-      setMediaMime('');
-      setMediaFileName('');
-      setMediaFileSize(null);
-      return;
-    }
-
-    if (!confirm('Are you sure you want to delete this media file? It will be permanently removed from storage.')) {
-      return;
-    }
-
-    setDeletingMedia(true);
-    try {
-      const fileKey = mediaFileKey || (mediaUrl.includes('/api/media/') ? mediaUrl.split('/api/media/')[1] : mediaUrl);
-      const res = await fetch('/api/whatsapp/templates/delete-media', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          workspaceId: workspaceId || '00000000-0000-0000-0000-000000000000',
-          fileKey,
-          templateId: editTemplateId || undefined,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        console.warn('[DeleteMedia] Server warning:', data.error);
-      }
-      setMediaUrl('');
-      setMediaFileKey('');
-      setMediaMime('');
-      setMediaFileName('');
-      setMediaFileSize(null);
-      await loadStorageStats();
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('wa_template_media_updated'));
-      }
-    } catch (err: any) {
-      console.error('Failed to cascade delete media:', err);
-      setMediaUrl('');
-      setMediaFileKey('');
-      setMediaMime('');
-      setMediaFileName('');
-      setMediaFileSize(null);
-    } finally {
-      setDeletingMedia(false);
-    }
+  // Detach media from template form state (DOES NOT delete from Backblaze B2 or Template Storage)
+  const handleRemoveAttachedMedia = () => {
+    setMediaUrl('');
+    setMediaFileKey('');
+    setMediaMime('');
+    setMediaFileName('');
+    setMediaFileSize(null);
   };
   
   // Text Body state
@@ -813,30 +782,6 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     if (!deleteConfirmTarget) return;
     setLoading(true);
     try {
-      // Find template being deleted to cascade delete media from Backblaze B2 & database if present
-      const targetTpl = templates.find(t => t.id === deleteConfirmTarget);
-      if (targetTpl && targetTpl.payload) {
-        const tplKey = targetTpl.payload.mediaFileKey || targetTpl.payload.media_file_key || 
-          (targetTpl.payload.mediaUrl && targetTpl.payload.mediaUrl.includes('/api/media/') 
-            ? targetTpl.payload.mediaUrl.split('/api/media/')[1] 
-            : targetTpl.payload.mediaUrl);
-        if (tplKey) {
-          try {
-            await fetch('/api/whatsapp/templates/delete-media', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                workspaceId: workspaceId || '00000000-0000-0000-0000-000000000000',
-                fileKey: tplKey,
-                templateId: targetTpl.id,
-              })
-            });
-          } catch (e) {
-            console.warn('[DeleteTemplate] Cascade delete media warning:', e);
-          }
-        }
-      }
-
       const res = await fetch(`/api/templates?workspace_id=${workspaceId}&template_id=${deleteConfirmTarget}`, {
         method: 'DELETE',
       });
@@ -1364,16 +1309,43 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                     {editTemplateId ? `Edit Template: ${name}` : 'Create a New Template'}
                   </h3>
                 </div>
-                <button 
-                  onClick={() => setShowBuilder(false)}
-                  className="p-2 text-zinc-500 hover:text-zinc-800 dark:hover:text-white transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="submit"
+                    form="template-designer-form"
+                    disabled={loading}
+                    className="px-5 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-500/20 hover:opacity-95 disabled:opacity-50 cursor-pointer flex items-center gap-1.5 transition-all"
+                  >
+                    {loading ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Processing...</span>
+                      </>
+                    ) : editTemplateId ? (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Update Template</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Save & Publish Template</span>
+                      </>
+                    )}
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setShowBuilder(false)}
+                    className="p-2 text-zinc-500 hover:text-zinc-800 dark:hover:text-white transition-colors cursor-pointer rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                    title="Cancel"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
 
               {/* Form Content in 2-Column Split */}
-              <form onSubmit={handleCreateTemplate} className="flex-1 overflow-y-auto p-6">
+              <form id="template-designer-form" onSubmit={handleCreateTemplate} className="flex-1 overflow-y-auto p-6">
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                   
                   {/* Left Column: Form Configuration (7 cols) */}
@@ -1558,16 +1530,11 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={handleDeleteAttachedMedia}
-                                    disabled={deletingMedia}
-                                    className="p-1.5 text-zinc-400 hover:text-rose-500 transition rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30 cursor-pointer disabled:opacity-50"
-                                    title="Delete media from Backblaze B2 & database"
+                                    onClick={handleRemoveAttachedMedia}
+                                    className="p-1.5 text-zinc-400 hover:text-rose-500 transition rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30 cursor-pointer"
+                                    title="Remove media from this template (keeps file safe in Template Storage)"
                                   >
-                                    {deletingMedia ? (
-                                      <RefreshCw className="w-4 h-4 animate-spin text-rose-500" />
-                                    ) : (
-                                      <Trash2 className="w-4 h-4" />
-                                    )}
+                                    <X className="w-4 h-4" />
                                   </button>
                                 </div>
                               </div>
@@ -1598,7 +1565,7 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                                     </>
                                   )}
                                 </button>
-                                <span className="text-[11px] text-zinc-400">Supports JPG, PNG, WebP, MP4, PDF (up to 50MB)</span>
+                                <span className="text-[11px] text-zinc-400">Images (max 16 MB) • Videos (max 16 MB WhatsApp limit) • Documents (max 50 MB)</span>
                               </div>
                             )}
                           </div>
@@ -1947,13 +1914,6 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                     Required Meta Approval?
                   </label>
 
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="px-6 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-500/20 hover:opacity-95 disabled:opacity-50 cursor-pointer"
-                  >
-                    {loading ? 'Processing...' : editTemplateId ? 'Update Template' : 'Save & Publish Template'}
-                  </button>
                 </div>
 
               </form>

@@ -3,6 +3,7 @@ import {
   uploadWhatsAppFileAndGetSignedUrl, 
   getWorkspaceWhatsAppStorageUsage,
   deleteWhatsAppFile,
+  syncB2WithDatabase,
 } from '@/lib/services/whatsappStorageService';
 
 export const dynamic = 'force-dynamic';
@@ -25,16 +26,21 @@ function deduceMimeType(fName: string, rawMime?: string): string {
 }
 
 /**
- * GET /api/whatsapp/templates/upload?workspaceId=...
- * Returns current 500 MB quota stats for template uploads
+ * GET /api/whatsapp/templates/upload?workspaceId=...&sync=true
+ * Returns current 500 MB quota stats for template uploads, optionally reconciling B2 bucket
  */
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const workspaceId = searchParams.get('workspaceId') || searchParams.get('workspace_id');
+    const shouldSync = searchParams.get('sync') === 'true';
 
     if (!workspaceId) {
       return NextResponse.json({ success: false, error: 'Missing workspaceId' }, { status: 400 });
+    }
+
+    if (shouldSync) {
+      await syncB2WithDatabase(workspaceId);
     }
 
     const usage = await getWorkspaceWhatsAppStorageUsage(workspaceId);
@@ -123,6 +129,19 @@ export async function POST(req: NextRequest) {
     if (!workspaceId) {
       return NextResponse.json(
         { success: false, error: 'workspaceId is required' },
+        { status: 400 }
+      );
+    }
+
+    // Strict WhatsApp playable video size limit: 16 MB (16,777,216 bytes)
+    const isVideo = mimeType.startsWith('video/') || fileName.match(/\.(mp4|m4v|mov|avi|mkv|webm|3gp)$/i);
+    if (isVideo && fileBuffer.length > 16 * 1024 * 1024) {
+      const sizeMb = (fileBuffer.length / (1024 * 1024)).toFixed(1);
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: `WhatsApp strictly limits playable video messages to 16 MB. This video is ${sizeMb} MB. Please compress your video to under 16 MB before uploading so it can be delivered smoothly.` 
+        },
         { status: 400 }
       );
     }

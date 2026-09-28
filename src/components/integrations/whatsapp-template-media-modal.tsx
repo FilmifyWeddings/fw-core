@@ -10,6 +10,7 @@ import {
   WhatsAppMediaFile, 
   StorageQuotaStats, 
   getWhatsAppTemplateStorageUsage, 
+  getCachedWhatsAppTemplateStorageUsage,
   listWhatsAppTemplateMediaFiles, 
   deleteWhatsAppTemplateMediaFile 
 } from '@/lib/whatsapp-template-media-manager';
@@ -28,23 +29,35 @@ export function WhatsAppTemplateMediaModal({
   onSelectMediaUrl
 }: WhatsAppTemplateMediaModalProps) {
   const [files, setFiles] = useState<WhatsAppMediaFile[]>([]);
-  const [stats, setStats] = useState<StorageQuotaStats>({
-    totalBytes: 0,
-    totalMB: 0,
-    maxMB: 500,
-    usagePercentage: 0,
-    filesCount: 0,
+  const [stats, setStats] = useState<StorageQuotaStats>(() => {
+    return getCachedWhatsAppTemplateStorageUsage(workspaceId) || {
+      totalBytes: 0,
+      totalMB: 0,
+      maxMB: 500,
+      usagePercentage: 0,
+      filesCount: 0,
+    };
   });
   const [loading, setLoading] = useState(true);
   const [selectedMediaForPreview, setSelectedMediaForPreview] = useState<WhatsAppMediaFile | null>(null);
+
+  // Re-hydrate cached stats whenever workspaceId changes
+  useEffect(() => {
+    if (workspaceId) {
+      const cached = getCachedWhatsAppTemplateStorageUsage(workspaceId);
+      if (cached) setStats(cached);
+    }
+  }, [workspaceId]);
 
   const loadMediaData = async () => {
     if (!workspaceId) return;
     setLoading(true);
     try {
+      // 1. Sync B2 deletions with DB and fetch fresh quota stats
       const [quotaData, fileList] = await Promise.all([
         getWhatsAppTemplateStorageUsage(workspaceId),
-        listWhatsAppTemplateMediaFiles(workspaceId)
+        listWhatsAppTemplateMediaFiles(workspaceId),
+        fetch(`/api/whatsapp/templates/upload?workspaceId=${encodeURIComponent(workspaceId)}&sync=true`).catch(() => null)
       ]);
       setStats(quotaData);
       setFiles(fileList);
@@ -70,7 +83,7 @@ export function WhatsAppTemplateMediaModal({
   }, [workspaceId]);
 
   const handleDeleteFile = async (file: WhatsAppMediaFile) => {
-    if (!confirm(`Are you sure you want to delete "${file.name}"? This will instantly free up storage space under your 500 MB quota.`)) return;
+    if (!confirm(`Are you sure you want to permanently delete "${file.name}" from Backblaze B2 Cloud Storage? This will remove it from storage and detach it from all templates.`)) return;
 
     // Instant local state update for zero-delay UI grid and quota meter feedback
     setFiles(prev => prev.filter(f => f.name !== file.name));
@@ -86,7 +99,8 @@ export function WhatsAppTemplateMediaModal({
       };
     });
 
-    await deleteWhatsAppTemplateMediaFile(workspaceId, file.name);
+    // Cascade delete from Backblaze B2, fw_whatsapp_media_files, and detach from templates
+    await deleteWhatsAppTemplateMediaFile(workspaceId, file.name, file.fileKey);
   };
 
   if (!isOpen) return null;

@@ -1,4 +1,4 @@
-import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import sharp from 'sharp';
 import { whatsappB2Client, B2_WHATSAPP_BUCKET } from '@/lib/storage/whatsappB2Client';
@@ -51,19 +51,23 @@ export async function checkWorkspaceStorageQuota(
   usedMb: number;
   quotaBytes: number;
   quotaMb: number;
+  filesCount: number;
+  usagePercentage: number;
 }> {
   let usedBytes = 0;
+  let filesCount = 0;
 
   try {
     // 1. Try querying the database view first
     const { data: viewData, error: viewError } = await supabaseAdmin
       .from('vw_workspace_whatsapp_storage_usage')
-      .select('total_bytes, total_mb')
+      .select('total_files, total_bytes, total_mb, usage_percent')
       .eq('workspace_id', workspaceId)
       .maybeSingle();
 
     if (!viewError && viewData) {
       usedBytes = Number(viewData.total_bytes || 0);
+      filesCount = Number(viewData.total_files || 0);
     } else {
       // 2. Fallback: Query fw_whatsapp_media_files directly if view is not yet applied
       const { data: rawFiles, error: rawError } = await supabaseAdmin
@@ -73,6 +77,7 @@ export async function checkWorkspaceStorageQuota(
 
       if (!rawError && rawFiles && rawFiles.length > 0) {
         usedBytes = rawFiles.reduce((acc, f) => acc + Number(f.file_size_bytes || 0), 0);
+        filesCount = rawFiles.length;
       }
     }
   } catch (err) {
@@ -81,6 +86,7 @@ export async function checkWorkspaceStorageQuota(
 
   const isAllowed = usedBytes + additionalBytes <= WORKSPACE_STORAGE_QUOTA_BYTES;
   const usedMb = Math.round((usedBytes / (1024 * 1024)) * 100) / 100;
+  const usagePercentage = Math.min(100, Math.round(((usedBytes / WORKSPACE_STORAGE_QUOTA_BYTES) * 100) * 10) / 10);
 
   return {
     allowed: isAllowed,
@@ -88,6 +94,8 @@ export async function checkWorkspaceStorageQuota(
     usedMb,
     quotaBytes: WORKSPACE_STORAGE_QUOTA_BYTES,
     quotaMb: WORKSPACE_STORAGE_QUOTA_MB,
+    filesCount,
+    usagePercentage,
   };
 }
 
@@ -312,5 +320,81 @@ export async function getDirectB2FetchUrl(fileKeyOrUrl: string): Promise<string>
   } catch (err) {
     console.error('[WhatsAppStorage] Error generating direct B2 fetch URL for key:', fileKey, err);
     return fileKeyOrUrl;
+  }
+}
+
+/**
+ * Reconciles Backblaze B2 bucket objects with Supabase database.
+ * If any file was deleted directly from B2 Cloud Storage, this purges its entry
+ * from fw_whatsapp_media_files and detaches it from any referencing templates.
+ */
+export async function syncB2WithDatabase(workspaceId: string): Promise<{ deletedCount: number }> {
+  if (!workspaceId) return { deletedCount: 0 };
+  try {
+    const listCmd = new ListObjectsV2Command({
+      Bucket: B2_WHATSAPP_BUCKET,
+      Prefix: `${workspaceId}/`,
+    });
+    const b2Res = await whatsappB2Client.send(listCmd);
+    const existingB2Keys = new Set((b2Res.Contents || []).map(o => o.Key).filter(Boolean));
+
+    // Get all records in fw_whatsapp_media_files for this workspace
+    const { data: dbFiles } = await supabaseAdmin
+      .from('fw_whatsapp_media_files')
+      .select('id, file_key, file_name')
+      .eq('workspace_id', workspaceId);
+
+    if (!dbFiles || dbFiles.length === 0) return { deletedCount: 0 };
+
+    const orphanedIds: string[] = [];
+    const orphanedKeys: string[] = [];
+    for (const f of dbFiles) {
+      if (f.file_key && !existingB2Keys.has(f.file_key)) {
+        orphanedIds.push(f.id);
+        orphanedKeys.push(f.file_key);
+      }
+    }
+
+    if (orphanedIds.length > 0) {
+      console.log(`[B2Sync] Removing ${orphanedIds.length} files from DB that were deleted in B2 bucket:`, orphanedKeys);
+      await supabaseAdmin
+        .from('fw_whatsapp_media_files')
+        .delete()
+        .in('id', orphanedIds);
+
+      // Also detach from templates
+      const { data: templates } = await supabaseAdmin
+        .from('whatsapp_templates')
+        .select('id, payload')
+        .eq('workspace_id', workspaceId);
+
+      if (templates && templates.length > 0) {
+        for (const t of templates) {
+          const payload = t.payload || {};
+          const tplKey = payload.mediaFileKey || (payload.mediaUrl?.includes('/api/media/') ? payload.mediaUrl.split('/api/media/')[1] : null);
+          if (tplKey && orphanedKeys.includes(tplKey)) {
+            const updatedPayload = {
+              ...payload,
+              mediaUrl: '',
+              mediaFileKey: '',
+              mediaMime: '',
+              mediaFileName: '',
+              mediaFileSize: null,
+            };
+            await supabaseAdmin
+              .from('whatsapp_templates')
+              .update({ payload: updatedPayload, updated_at: new Date().toISOString() })
+              .eq('id', t.id);
+          }
+        }
+      }
+
+      return { deletedCount: orphanedIds.length };
+    }
+
+    return { deletedCount: 0 };
+  } catch (err) {
+    console.warn('[B2Sync] Reconcile warning:', err);
+    return { deletedCount: 0 };
   }
 }

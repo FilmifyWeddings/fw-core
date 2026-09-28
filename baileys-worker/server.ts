@@ -557,7 +557,17 @@ async function sendMediaMessage(
         mimetype: finalMime,
       } as any);
     } else if (finalCategory === 'video') {
-      result = await targetSock.sendMessage(to, { video: buffer, caption, mimetype: resolvedMime } as any);
+      if (buffer.length > 16 * 1024 * 1024) {
+        logger.warn({ to, sizeMb: (buffer.length / (1024 * 1024)).toFixed(1) }, '⚠️ Video exceeds WhatsApp 16 MB playable limit, sending as document');
+        result = await targetSock.sendMessage(to, {
+          document: buffer,
+          mimetype: resolvedMime || 'video/mp4',
+          fileName: fileName || 'video.mp4',
+          caption: caption || undefined,
+        } as any);
+      } else {
+        result = await targetSock.sendMessage(to, { video: buffer, caption: caption || undefined, mimetype: resolvedMime } as any);
+      }
     } else if (finalCategory === 'audio') {
       result = await targetSock.sendMessage(to, { audio: buffer, mimetype: resolvedMime, ptt: false } as any);
     } else {
@@ -2104,12 +2114,17 @@ function startHealthServer(): http.Server {
 
             const cardMessage = `${text || ''}\n\n━━━━━━━━━━━━━━━━━━━━\n${actionBlocks}\n━━━━━━━━━━━━━━━━━━━━${footer ? `\n_${footer}_` : ''}`;
 
-            const sentResult = await targetSock.sendMessage(jid, {
-              text: cardMessage
-            });
-
-            console.log(`✅ Action card message delivered to ${jid}, ID:`, sentResult?.key?.id);
-            waMessageId = sentResult?.key?.id ?? null;
+            if (mediaUrl && typeof mediaUrl === 'string' && mediaUrl.trim() !== '' && mediaUrl !== 'null') {
+              const detectedMime = mimeType || detectMimeTypeFromUrl(mediaUrl);
+              logger.info({ jid, mediaUrl: mediaUrl.slice(0, 80), detectedMime }, '📤 Sending action card message WITH media attachment');
+              waMessageId = await sendMediaMessage(jid, mediaUrl, cardMessage, detectedMime, targetWsId);
+            } else {
+              const sentResult = await targetSock.sendMessage(jid, {
+                text: cardMessage
+              });
+              logger.info({ jid, id: sentResult?.key?.id }, '✅ Action card message delivered');
+              waMessageId = sentResult?.key?.id ?? null;
+            }
             break;
           }
           default:
