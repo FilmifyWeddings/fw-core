@@ -63,6 +63,13 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
   });
   const [showMediaGalleryModal, setShowMediaGalleryModal] = useState(false);
   const [quotaWarningModal, setQuotaWarningModal] = useState<string | null>(null);
+  const [videoLimitModal, setVideoLimitModal] = useState<{
+    isOpen: boolean;
+    fileName: string;
+    fileSizeMb: string;
+    maxLimitMb: number;
+    isVideo: boolean;
+  } | null>(null);
 
   const loadStorageStats = async () => {
     if (!workspaceId) return;
@@ -239,11 +246,13 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     if (file.size > maxLimit) {
       const maxLimitMb = maxLimit / (1024 * 1024);
       const fileSizeMb = (file.size / (1024 * 1024)).toFixed(2);
-      if (typeName === 'video') {
-        alert(`WhatsApp strictly limits playable video messages to 16 MB. Selected video is ${fileSizeMb} MB. Please compress your video to under 16 MB (using Handbrake, CapCut, or an online compressor) so it can play smoothly inside WhatsApp.`);
-      } else {
-        alert(`File size exceeds the limit. Selected ${typeName} is ${fileSizeMb} MB, but the maximum allowed size is ${maxLimitMb} MB.`);
-      }
+      setVideoLimitModal({
+        isOpen: true,
+        fileName: file.name,
+        fileSizeMb,
+        maxLimitMb,
+        isVideo: typeName === 'video',
+      });
       if (e.target) e.target.value = '';
       return;
     }
@@ -1137,6 +1146,9 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
               </span>
               <p className="text-sm font-extrabold text-zinc-900 dark:text-white">
                 {storageStats.totalMB} MB <span className="text-xs text-zinc-400 font-normal">/ 500 MB</span>
+                {storageStats.filesCount > 0 && (
+                  <span className="ml-2 text-[11px] font-semibold text-zinc-400">({storageStats.filesCount} {storageStats.filesCount === 1 ? 'asset' : 'assets'})</span>
+                )}
               </p>
             </div>
             <button
@@ -2156,6 +2168,100 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                   className="flex-1 py-2.5 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer"
                 >
                   Manage Storage
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── VIDEO / FILE SIZE LIMIT WARNING MODAL ── */}
+      <AnimatePresence>
+        {videoLimitModal && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 text-left">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.92, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 15 }}
+              className="bg-white dark:bg-zinc-950 rounded-3xl p-6 max-w-md w-full space-y-5 shadow-2xl border border-zinc-200 dark:border-zinc-800 relative overflow-hidden"
+            >
+              {/* Header Icon + Title */}
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-500 flex items-center justify-center shrink-0">
+                  <Video className="w-6 h-6" />
+                </div>
+                <div className="space-y-1 flex-1 min-w-0">
+                  <h4 className="text-base font-extrabold text-zinc-900 dark:text-white">
+                    {videoLimitModal.isVideo ? 'Video Exceeds WhatsApp 16 MB Limit' : 'File Size Limit Exceeded'}
+                  </h4>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 font-medium truncate">
+                    {videoLimitModal.fileName}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setVideoLimitModal(null)}
+                  className="p-1.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Size Comparison Badge Cards */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 space-y-1">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-rose-600 dark:text-rose-400">
+                    Selected File Size
+                  </span>
+                  <p className="text-base font-black text-rose-700 dark:text-rose-300">
+                    {videoLimitModal.fileSizeMb} MB
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40 space-y-1">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-600 dark:text-emerald-400">
+                    Max Allowed Limit
+                  </span>
+                  <p className="text-base font-black text-emerald-700 dark:text-emerald-300">
+                    {videoLimitModal.maxLimitMb.toFixed(2)} MB
+                  </p>
+                </div>
+              </div>
+
+              {/* Informative Explanation */}
+              <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 text-xs text-zinc-600 dark:text-zinc-300 space-y-2 leading-relaxed">
+                <p>
+                  {videoLimitModal.isVideo ? (
+                    <>
+                      <strong className="text-zinc-900 dark:text-white">Why 16 MB?</strong> WhatsApp strictly restricts playable video messages directly inside chat conversations to <strong className="text-emerald-600 dark:text-emerald-400">16 MB</strong>. Videos above this threshold fail to deliver or will not play inline for your clients.
+                    </>
+                  ) : (
+                    <>
+                      Files uploaded to this template category cannot exceed {videoLimitModal.maxLimitMb} MB.
+                    </>
+                  )}
+                </p>
+                {videoLimitModal.isVideo && (
+                  <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800 text-[11px] text-zinc-500 dark:text-zinc-400 space-y-1">
+                    <p className="font-semibold text-zinc-700 dark:text-zinc-300">Recommended quick tools to compress:</p>
+                    <ul className="list-disc list-inside space-y-0.5 pl-1">
+                      <li><strong>Handbrake</strong> (Free desktop compressor for PC &amp; Mac)</li>
+                      <li><strong>CapCut</strong> (Export at 720p / 1080p standard bitrate)</li>
+                      <li><strong>Online Compressors</strong> (FreeConvert, Clideo, or CloudConvert)</li>
+                    </ul>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Button */}
+              <div className="flex gap-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setVideoLimitModal(null)}
+                  className="w-full py-2.5 rounded-2xl bg-green-600 hover:bg-green-700 text-white text-xs font-bold shadow-lg shadow-green-600/20 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Got It, I Will Compress Video</span>
                 </button>
               </div>
             </motion.div>

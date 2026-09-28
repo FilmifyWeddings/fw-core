@@ -29,13 +29,17 @@ export interface StorageQuotaStats {
 const MAX_QUOTA_BYTES = 500 * 1024 * 1024; // Strictly 500 MB Limit
 
 /**
- * Returns cached storage stats from sessionStorage if available to avoid 0 MB flicker
+ * Returns cached storage stats from sessionStorage/localStorage if available to avoid 0 MB flicker
  */
-export function getCachedWhatsAppTemplateStorageUsage(workspaceId: string): StorageQuotaStats | null {
-  if (typeof window === 'undefined' || !workspaceId) return null;
+export function getCachedWhatsAppTemplateStorageUsage(workspaceId?: string): StorageQuotaStats | null {
+  if (typeof window === 'undefined') return null;
   try {
-    const raw = sessionStorage.getItem(`wa_storage_stats_${workspaceId}`);
-    if (raw) return JSON.parse(raw);
+    if (workspaceId && workspaceId !== '00000000-0000-0000-0000-000000000000') {
+      const raw = sessionStorage.getItem(`wa_storage_stats_${workspaceId}`) || localStorage.getItem(`wa_storage_stats_${workspaceId}`);
+      if (raw) return JSON.parse(raw);
+    }
+    const latest = sessionStorage.getItem('wa_storage_stats_latest') || localStorage.getItem('wa_storage_stats_latest');
+    if (latest) return JSON.parse(latest);
   } catch {}
   return null;
 }
@@ -49,6 +53,21 @@ export async function getWhatsAppTemplateStorageUsage(
   client: SupabaseClient = supabase
 ): Promise<StorageQuotaStats> {
   const folderPath = workspaceId || '00000000-0000-0000-0000-000000000000';
+
+  // Helper to persist stats in both workspace key and latest global key
+  const cacheStats = (s: StorageQuotaStats) => {
+    try {
+      if (typeof window !== 'undefined') {
+        const str = JSON.stringify(s);
+        if (folderPath && folderPath !== '00000000-0000-0000-0000-000000000000') {
+          sessionStorage.setItem(`wa_storage_stats_${folderPath}`, str);
+          localStorage.setItem(`wa_storage_stats_${folderPath}`, str);
+        }
+        sessionStorage.setItem('wa_storage_stats_latest', str);
+        localStorage.setItem('wa_storage_stats_latest', str);
+      }
+    } catch {}
+  };
 
   // 1. Primary in browser: Fetch from server API with service_role privileges
   if (typeof window !== 'undefined' && folderPath && folderPath !== '00000000-0000-0000-0000-000000000000') {
@@ -64,9 +83,7 @@ export async function getWhatsAppTemplateStorageUsage(
             usagePercentage: Number(data.usagePercentage || 0),
             filesCount: Number(data.filesCount || 0),
           };
-          try {
-            sessionStorage.setItem(`wa_storage_stats_${folderPath}`, JSON.stringify(stats));
-          } catch {}
+          cacheStats(stats);
           return stats;
         }
       }
@@ -89,13 +106,15 @@ export async function getWhatsAppTemplateStorageUsage(
       const usagePercentage = Math.min(100, Number(viewData.usage_percent || 0));
       const filesCount = Number(viewData.total_files || 0);
 
-      return {
+      const stats: StorageQuotaStats = {
         totalBytes,
         totalMB,
         maxMB: 500,
         usagePercentage,
         filesCount,
       };
+      cacheStats(stats);
+      return stats;
     }
 
     // 2. Query fw_whatsapp_media_files directly if view is empty or pending
@@ -109,13 +128,15 @@ export async function getWhatsAppTemplateStorageUsage(
       const totalMB = +(totalBytes / (1024 * 1024)).toFixed(1);
       const usagePercentage = Math.min(100, +((totalBytes / MAX_QUOTA_BYTES) * 100).toFixed(1));
 
-      return {
+      const stats: StorageQuotaStats = {
         totalBytes,
         totalMB,
         maxMB: 500,
         usagePercentage,
         filesCount: b2Files.length,
       };
+      cacheStats(stats);
+      return stats;
     }
 
     // 3. Fallback: legacy storage bucket check if no B2 files found
@@ -128,16 +149,20 @@ export async function getWhatsAppTemplateStorageUsage(
       const totalBytes = storageFiles.reduce((acc, file) => acc + ((file as any).metadata?.size || (file as any).size || 0), 0);
       const totalMB = +(totalBytes / (1024 * 1024)).toFixed(1);
       const usagePercentage = Math.min(100, +((totalBytes / MAX_QUOTA_BYTES) * 100).toFixed(1));
-      return { totalBytes, totalMB, maxMB: 500, usagePercentage, filesCount };
+      const stats: StorageQuotaStats = { totalBytes, totalMB, maxMB: 500, usagePercentage, filesCount };
+      cacheStats(stats);
+      return stats;
     }
 
-    return {
+    const emptyStats: StorageQuotaStats = {
       totalBytes: 0,
       totalMB: 0,
       maxMB: 500,
       usagePercentage: 0,
       filesCount: 0,
     };
+    cacheStats(emptyStats);
+    return emptyStats;
   } catch (err) {
     console.warn('[getWhatsAppTemplateStorageUsage] Error:', err);
     return {
@@ -318,6 +343,8 @@ export async function deleteWhatsAppTemplateMediaFile(
     if (typeof window !== 'undefined') {
       try {
         sessionStorage.removeItem(`wa_storage_stats_${folderPath}`);
+        sessionStorage.removeItem('wa_storage_stats_latest');
+        localStorage.removeItem('wa_storage_stats_latest');
       } catch {}
       window.dispatchEvent(new CustomEvent('wa_template_media_updated'));
     }

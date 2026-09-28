@@ -1,4 +1,11 @@
-import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { 
+  PutObjectCommand, 
+  GetObjectCommand, 
+  DeleteObjectCommand, 
+  ListObjectsV2Command,
+  ListObjectVersionsCommand,
+  DeleteObjectsCommand 
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import sharp from 'sharp';
 import { whatsappB2Client, B2_WHATSAPP_BUCKET } from '@/lib/storage/whatsappB2Client';
@@ -24,6 +31,39 @@ export interface UploadWhatsAppFileResult {
   fileSizeBytes: number;
   mimeType: string;
   fileName: string;
+}
+
+/**
+ * Resolves user UUID or workspace UUID to the effective active workspace UUID.
+ */
+export async function resolveEffectiveWorkspaceId(idOrUserId: string): Promise<string> {
+  if (!idOrUserId || idOrUserId === '00000000-0000-0000-0000-000000000000') return idOrUserId;
+
+  try {
+    // 1. Direct workspace check
+    const { data: ws } = await supabaseAdmin
+      .from('workspaces')
+      .select('id')
+      .eq('id', idOrUserId)
+      .maybeSingle();
+
+    if (ws?.id) return ws.id;
+
+    // 2. Member lookup if user_id was passed
+    const { data: member } = await supabaseAdmin
+      .from('workspace_members')
+      .select('workspace_id')
+      .eq('user_id', idOrUserId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (member?.workspace_id) return member.workspace_id;
+  } catch (err) {
+    console.warn('[WhatsAppStorage] resolveEffectiveWorkspaceId error:', err);
+  }
+
+  return idOrUserId;
 }
 
 /**
@@ -56,13 +96,14 @@ export async function checkWorkspaceStorageQuota(
 }> {
   let usedBytes = 0;
   let filesCount = 0;
+  const effectiveWsId = await resolveEffectiveWorkspaceId(workspaceId);
 
   try {
     // 1. Try querying the database view first
     const { data: viewData, error: viewError } = await supabaseAdmin
       .from('vw_workspace_whatsapp_storage_usage')
       .select('total_files, total_bytes, total_mb, usage_percent')
-      .eq('workspace_id', workspaceId)
+      .eq('workspace_id', effectiveWsId)
       .maybeSingle();
 
     if (!viewError && viewData) {
@@ -73,7 +114,7 @@ export async function checkWorkspaceStorageQuota(
       const { data: rawFiles, error: rawError } = await supabaseAdmin
         .from('fw_whatsapp_media_files')
         .select('file_size_bytes')
-        .eq('workspace_id', workspaceId);
+        .eq('workspace_id', effectiveWsId);
 
       if (!rawError && rawFiles && rawFiles.length > 0) {
         usedBytes = rawFiles.reduce((acc, f) => acc + Number(f.file_size_bytes || 0), 0);
@@ -239,20 +280,55 @@ export async function getWhatsAppFileSignedUrl(
 }
 
 /**
- * Deletes a file from Backblaze B2 and removes its database entry
+ * Permanently deletes a file and all its versions from Backblaze B2 and removes its database entry
  */
 export async function deleteWhatsAppFile(
   workspaceId: string,
   fileKey: string
 ): Promise<boolean> {
+  const effectiveWsId = await resolveEffectiveWorkspaceId(workspaceId);
   const cleanKey = fileKey.replace(/^\/?api\/media\//, '').replace(/^\/+/, '');
+
   try {
-    await whatsappB2Client.send(
-      new DeleteObjectCommand({
+    // List all versions and delete markers for this exact key
+    const versionsRes = await whatsappB2Client.send(
+      new ListObjectVersionsCommand({
         Bucket: B2_WHATSAPP_BUCKET,
-        Key: cleanKey,
+        Prefix: cleanKey,
       })
     );
+
+    const objectsToDelete: { Key: string; VersionId?: string }[] = [];
+    if (versionsRes.Versions) {
+      versionsRes.Versions.filter(v => v.Key === cleanKey).forEach(v => {
+        objectsToDelete.push({ Key: v.Key!, VersionId: v.VersionId });
+      });
+    }
+    if (versionsRes.DeleteMarkers) {
+      versionsRes.DeleteMarkers.filter(d => d.Key === cleanKey).forEach(d => {
+        objectsToDelete.push({ Key: d.Key!, VersionId: d.VersionId });
+      });
+    }
+
+    if (objectsToDelete.length > 0) {
+      await whatsappB2Client.send(
+        new DeleteObjectsCommand({
+          Bucket: B2_WHATSAPP_BUCKET,
+          Delete: {
+            Objects: objectsToDelete,
+            Quiet: true,
+          },
+        })
+      );
+      console.log(`[WhatsAppStorage] Permanently purged ${objectsToDelete.length} versions/markers for:`, cleanKey);
+    } else {
+      await whatsappB2Client.send(
+        new DeleteObjectCommand({
+          Bucket: B2_WHATSAPP_BUCKET,
+          Key: cleanKey,
+        })
+      );
+    }
   } catch (s3Err) {
     console.warn('[WhatsAppStorage] B2 DeleteObject warning:', s3Err);
   }
@@ -261,7 +337,8 @@ export async function deleteWhatsAppFile(
     await supabaseAdmin
       .from('fw_whatsapp_media_files')
       .delete()
-      .match({ workspace_id: workspaceId, file_key: cleanKey });
+      .or(`workspace_id.eq.${effectiveWsId},workspace_id.eq.${workspaceId}`)
+      .eq('file_key', cleanKey);
 
     return true;
   } catch (err) {
@@ -327,31 +404,38 @@ export async function getDirectB2FetchUrl(fileKeyOrUrl: string): Promise<string>
  * Reconciles Backblaze B2 bucket objects with Supabase database.
  * If any file was deleted directly from B2 Cloud Storage, this purges its entry
  * from fw_whatsapp_media_files and detaches it from any referencing templates.
+ * Also synchronizes any live B2 files into fw_whatsapp_media_files.
  */
-export async function syncB2WithDatabase(workspaceId: string): Promise<{ deletedCount: number }> {
-  if (!workspaceId) return { deletedCount: 0 };
+export async function syncB2WithDatabase(workspaceId: string): Promise<{ deletedCount: number; addedCount: number }> {
+  if (!workspaceId) return { deletedCount: 0, addedCount: 0 };
+  const effectiveWsId = await resolveEffectiveWorkspaceId(workspaceId);
+
   try {
     const listCmd = new ListObjectsV2Command({
       Bucket: B2_WHATSAPP_BUCKET,
-      Prefix: `${workspaceId}/`,
+      Prefix: `${effectiveWsId}/`,
     });
     const b2Res = await whatsappB2Client.send(listCmd);
-    const existingB2Keys = new Set((b2Res.Contents || []).map(o => o.Key).filter(Boolean));
+    const b2Contents = b2Res.Contents || [];
+    const existingB2Keys = new Set(b2Contents.map(o => o.Key).filter(Boolean));
 
     // Get all records in fw_whatsapp_media_files for this workspace
     const { data: dbFiles } = await supabaseAdmin
       .from('fw_whatsapp_media_files')
       .select('id, file_key, file_name')
-      .eq('workspace_id', workspaceId);
+      .eq('workspace_id', effectiveWsId);
 
-    if (!dbFiles || dbFiles.length === 0) return { deletedCount: 0 };
+    const dbFileKeys = new Set((dbFiles || []).map(f => f.file_key).filter(Boolean));
 
+    // 1. Purge DB records for objects deleted in B2
     const orphanedIds: string[] = [];
     const orphanedKeys: string[] = [];
-    for (const f of dbFiles) {
-      if (f.file_key && !existingB2Keys.has(f.file_key)) {
-        orphanedIds.push(f.id);
-        orphanedKeys.push(f.file_key);
+    if (dbFiles) {
+      for (const f of dbFiles) {
+        if (f.file_key && !existingB2Keys.has(f.file_key)) {
+          orphanedIds.push(f.id);
+          orphanedKeys.push(f.file_key);
+        }
       }
     }
 
@@ -366,7 +450,7 @@ export async function syncB2WithDatabase(workspaceId: string): Promise<{ deleted
       const { data: templates } = await supabaseAdmin
         .from('whatsapp_templates')
         .select('id, payload')
-        .eq('workspace_id', workspaceId);
+        .eq('workspace_id', effectiveWsId);
 
       if (templates && templates.length > 0) {
         for (const t of templates) {
@@ -388,13 +472,38 @@ export async function syncB2WithDatabase(workspaceId: string): Promise<{ deleted
           }
         }
       }
-
-      return { deletedCount: orphanedIds.length };
     }
 
-    return { deletedCount: 0 };
+    // 2. Add any live B2 files missing from fw_whatsapp_media_files
+    let addedCount = 0;
+    for (const b2Obj of b2Contents) {
+      if (b2Obj.Key && !dbFileKeys.has(b2Obj.Key)) {
+        const parts = b2Obj.Key.split('/');
+        const fullFileName = parts[parts.length - 1];
+        const cleanFileName = fullFileName.replace(/^\d+_/, '');
+        let mimeType = 'application/octet-stream';
+        if (cleanFileName.endsWith('.webp')) mimeType = 'image/webp';
+        else if (cleanFileName.endsWith('.jpg') || cleanFileName.endsWith('.jpeg')) mimeType = 'image/jpeg';
+        else if (cleanFileName.endsWith('.png')) mimeType = 'image/png';
+        else if (cleanFileName.endsWith('.mp4')) mimeType = 'video/mp4';
+        else if (cleanFileName.endsWith('.pdf')) mimeType = 'application/pdf';
+
+        await supabaseAdmin.from('fw_whatsapp_media_files').insert({
+          workspace_id: effectiveWsId,
+          file_key: b2Obj.Key,
+          file_name: cleanFileName,
+          file_size_bytes: b2Obj.Size || 0,
+          mime_type: mimeType,
+          media_category: 'template',
+          created_at: b2Obj.LastModified ? b2Obj.LastModified.toISOString() : new Date().toISOString(),
+        });
+        addedCount++;
+      }
+    }
+
+    return { deletedCount: orphanedIds.length, addedCount };
   } catch (err) {
     console.warn('[B2Sync] Reconcile warning:', err);
-    return { deletedCount: 0 };
+    return { deletedCount: 0, addedCount: 0 };
   }
 }

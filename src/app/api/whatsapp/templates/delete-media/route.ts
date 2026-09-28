@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { 
+  DeleteObjectCommand, 
+  ListObjectVersionsCommand, 
+  DeleteObjectsCommand 
+} from '@aws-sdk/client-s3';
 import { whatsappB2Client, B2_WHATSAPP_BUCKET } from '@/lib/storage/whatsappB2Client';
 import { supabaseAdmin } from '@/lib/supabase';
-import { getWorkspaceWhatsAppStorageUsage } from '@/lib/services/whatsappStorageService';
+import { 
+  getWorkspaceWhatsAppStorageUsage, 
+  resolveEffectiveWorkspaceId 
+} from '@/lib/services/whatsappStorageService';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -13,7 +20,6 @@ async function handleDelete(req: NextRequest) {
     let workspaceId = searchParams.get('workspaceId') || searchParams.get('workspace_id');
     let fileKey = searchParams.get('fileKey') || searchParams.get('file_key');
     let templateId = searchParams.get('templateId') || searchParams.get('template_id');
-
     let fileName = searchParams.get('fileName') || searchParams.get('file_name');
 
     if (req.method === 'POST') {
@@ -35,6 +41,8 @@ async function handleDelete(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Missing workspaceId' }, { status: 400 });
     }
 
+    const effectiveWsId = await resolveEffectiveWorkspaceId(workspaceId);
+
     if (!fileKey && !fileName && !templateId) {
       return NextResponse.json({ success: false, error: 'fileKey, fileName, or templateId is required' }, { status: 400 });
     }
@@ -44,7 +52,7 @@ async function handleDelete(req: NextRequest) {
       const { data: fileRow } = await supabaseAdmin
         .from('fw_whatsapp_media_files')
         .select('file_key')
-        .eq('workspace_id', workspaceId)
+        .or(`workspace_id.eq.${effectiveWsId},workspace_id.eq.${workspaceId}`)
         .eq('file_name', fileName)
         .order('created_at', { ascending: false })
         .limit(1)
@@ -70,16 +78,48 @@ async function handleDelete(req: NextRequest) {
     // Clean fileKey if a proxy URL was provided
     let cleanKey = (fileKey || '').replace(/^\/?api\/media\//, '').replace(/^\/+/, '');
 
-    // 3. Delete object from Backblaze B2 bucket
+    // 3. Permanently purge object and ALL versions/markers from Backblaze B2 bucket
     if (cleanKey) {
       try {
-        await whatsappB2Client.send(
-          new DeleteObjectCommand({
+        const versionsRes = await whatsappB2Client.send(
+          new ListObjectVersionsCommand({
             Bucket: B2_WHATSAPP_BUCKET,
-            Key: cleanKey,
+            Prefix: cleanKey,
           })
         );
-        console.log('[DeleteMediaRoute] 🗑️ Deleted object from Backblaze B2:', cleanKey);
+
+        const objectsToDelete: { Key: string; VersionId?: string }[] = [];
+        if (versionsRes.Versions) {
+          versionsRes.Versions.filter(v => v.Key === cleanKey).forEach(v => {
+            objectsToDelete.push({ Key: v.Key!, VersionId: v.VersionId });
+          });
+        }
+        if (versionsRes.DeleteMarkers) {
+          versionsRes.DeleteMarkers.filter(d => d.Key === cleanKey).forEach(d => {
+            objectsToDelete.push({ Key: d.Key!, VersionId: d.VersionId });
+          });
+        }
+
+        if (objectsToDelete.length > 0) {
+          await whatsappB2Client.send(
+            new DeleteObjectsCommand({
+              Bucket: B2_WHATSAPP_BUCKET,
+              Delete: {
+                Objects: objectsToDelete,
+                Quiet: true,
+              },
+            })
+          );
+          console.log(`[DeleteMediaRoute] 🗑️ Permanently purged ${objectsToDelete.length} versions/markers for:`, cleanKey);
+        } else {
+          await whatsappB2Client.send(
+            new DeleteObjectCommand({
+              Bucket: B2_WHATSAPP_BUCKET,
+              Key: cleanKey,
+            })
+          );
+          console.log('[DeleteMediaRoute] 🗑️ Standard DeleteObject executed for:', cleanKey);
+        }
       } catch (s3Err) {
         console.warn('[DeleteMediaRoute] B2 DeleteObject warning:', s3Err);
       }
@@ -89,7 +129,8 @@ async function handleDelete(req: NextRequest) {
         const { error: dbErr } = await supabaseAdmin
           .from('fw_whatsapp_media_files')
           .delete()
-          .match({ file_key: cleanKey, workspace_id: workspaceId });
+          .or(`workspace_id.eq.${effectiveWsId},workspace_id.eq.${workspaceId}`)
+          .eq('file_key', cleanKey);
 
         if (dbErr) {
           console.error('[DeleteMediaRoute] DB delete error:', dbErr);
@@ -107,7 +148,8 @@ async function handleDelete(req: NextRequest) {
         await supabaseAdmin
           .from('fw_whatsapp_media_files')
           .delete()
-          .match({ file_name: fileName, workspace_id: workspaceId });
+          .or(`workspace_id.eq.${effectiveWsId},workspace_id.eq.${workspaceId}`)
+          .eq('file_name', fileName);
       } catch {}
     }
 
@@ -116,7 +158,7 @@ async function handleDelete(req: NextRequest) {
       const { data: templates } = await supabaseAdmin
         .from('whatsapp_templates')
         .select('id, payload')
-        .eq('workspace_id', workspaceId);
+        .or(`workspace_id.eq.${effectiveWsId},workspace_id.eq.${workspaceId}`);
 
       if (templates && templates.length > 0) {
         for (const tpl of templates) {
@@ -152,13 +194,13 @@ async function handleDelete(req: NextRequest) {
     }
 
     // 6. Recalculate storage quota and return fresh stats
-    const usage = await getWorkspaceWhatsAppStorageUsage(workspaceId);
+    const usage = await getWorkspaceWhatsAppStorageUsage(effectiveWsId);
 
     return NextResponse.json({
       success: true,
-      message: 'Template media permanently deleted from Backblaze B2 and database',
+      message: 'Template media permanently deleted and detached from templates',
       fileKey: cleanKey || fileName,
-      workspaceId,
+      workspaceId: effectiveWsId,
       storage: usage,
     });
   } catch (err: any) {

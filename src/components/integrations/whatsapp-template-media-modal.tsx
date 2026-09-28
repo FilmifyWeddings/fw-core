@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Folder, HardDrive, Trash2, Eye, X, FileText, Play, Film, 
-  Image as ImageIcon, RefreshCw, Tag, ExternalLink, Check
+  Image as ImageIcon, RefreshCw, Tag, ExternalLink, Check, Loader2
 } from 'lucide-react';
 import { 
   WhatsAppMediaFile, 
@@ -82,25 +82,37 @@ export function WhatsAppTemplateMediaModal({
     }
   }, [workspaceId]);
 
-  const handleDeleteFile = async (file: WhatsAppMediaFile) => {
-    if (!confirm(`Are you sure you want to permanently delete "${file.name}" from Backblaze B2 Cloud Storage? This will remove it from storage and detach it from all templates.`)) return;
+  const [fileToDelete, setFileToDelete] = useState<WhatsAppMediaFile | null>(null);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
-    // Instant local state update for zero-delay UI grid and quota meter feedback
-    setFiles(prev => prev.filter(f => f.name !== file.name));
-    setStats(prev => {
-      const newTotalBytes = Math.max(0, prev.totalBytes - file.size);
-      const newTotalMB = +(newTotalBytes / (1024 * 1024)).toFixed(1);
-      return {
-        ...prev,
-        totalBytes: newTotalBytes,
-        totalMB: newTotalMB,
-        usagePercentage: Math.min(100, +((newTotalBytes / (500 * 1024 * 1024)) * 100).toFixed(1)),
-        filesCount: Math.max(0, prev.filesCount - 1),
-      };
-    });
+  const handleConfirmDelete = async () => {
+    if (!fileToDelete) return;
+    const file = fileToDelete;
+    setIsDeleting(true);
 
-    // Cascade delete from Backblaze B2, fw_whatsapp_media_files, and detach from templates
-    await deleteWhatsAppTemplateMediaFile(workspaceId, file.name, file.fileKey);
+    try {
+      // Instant local state update for zero-delay UI grid and quota meter feedback
+      setFiles(prev => prev.filter(f => f.name !== file.name));
+      setStats(prev => {
+        const newTotalBytes = Math.max(0, prev.totalBytes - file.size);
+        const newTotalMB = +(newTotalBytes / (1024 * 1024)).toFixed(1);
+        return {
+          ...prev,
+          totalBytes: newTotalBytes,
+          totalMB: newTotalMB,
+          usagePercentage: Math.min(100, +((newTotalBytes / (500 * 1024 * 1024)) * 100).toFixed(1)),
+          filesCount: Math.max(0, prev.filesCount - 1),
+        };
+      });
+
+      // Cascade delete permanently from Backblaze B2, fw_whatsapp_media_files, and detach from templates
+      await deleteWhatsAppTemplateMediaFile(workspaceId, file.name, file.fileKey);
+      setFileToDelete(null);
+    } catch (delErr) {
+      console.error('[MediaModal] Delete error:', delErr);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -265,7 +277,7 @@ export function WhatsAppTemplateMediaModal({
                         {/* Delete Button (Trash Icon - Red) */}
                         <button
                           type="button"
-                          onClick={() => handleDeleteFile(file)}
+                          onClick={() => setFileToDelete(file)}
                           className="p-2.5 rounded-full bg-rose-600 text-white hover:bg-rose-700 cursor-pointer shadow-xl transition-transform hover:scale-110"
                           title="Delete File"
                         >
@@ -349,6 +361,66 @@ export function WhatsAppTemplateMediaModal({
                     <p className="text-xs text-zinc-300">
                       {(selectedMediaForPreview.size / (1024 * 1024)).toFixed(2)} MB • {new Date(selectedMediaForPreview.created_at).toLocaleString()}
                     </p>
+                  </div>
+                </motion.div>
+              </div>
+            )}
+          </AnimatePresence>
+
+          {/* Custom Delete Confirmation Modal (NO mention of B2, sleek polished design) */}
+          <AnimatePresence>
+            {fileToDelete && (
+              <div className="fixed inset-0 z-[120] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                  className="bg-white dark:bg-zinc-950 rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-zinc-200 dark:border-zinc-800 relative text-left"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 flex items-center justify-center shrink-0 text-rose-600 dark:text-rose-400 shadow-sm">
+                      <Trash2 className="w-6 h-6" />
+                    </div>
+                    <div className="space-y-1.5 flex-1 min-w-0">
+                      <h4 className="text-base font-bold text-zinc-900 dark:text-white">
+                        Permanently Delete Media?
+                      </h4>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                        Are you sure you want to delete <span className="font-semibold text-zinc-800 dark:text-zinc-200 break-all">"{fileToDelete.name}"</span>?
+                      </p>
+                      <p className="text-xs text-rose-600 dark:text-rose-400 font-medium">
+                        This file will be permanently removed from storage and detached from all templates. This action cannot be undone.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-100 dark:border-zinc-900">
+                    <button
+                      type="button"
+                      disabled={isDeleting}
+                      onClick={() => setFileToDelete(null)}
+                      className="px-4 py-2 rounded-xl text-xs font-semibold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isDeleting}
+                      onClick={handleConfirmDelete}
+                      className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-md shadow-rose-600/20 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      {isDeleting ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Deleting...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Yes, Delete</span>
+                        </>
+                      )}
+                    </button>
                   </div>
                 </motion.div>
               </div>

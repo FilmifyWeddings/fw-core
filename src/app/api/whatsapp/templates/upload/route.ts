@@ -4,6 +4,7 @@ import {
   getWorkspaceWhatsAppStorageUsage,
   deleteWhatsAppFile,
   syncB2WithDatabase,
+  resolveEffectiveWorkspaceId,
 } from '@/lib/services/whatsappStorageService';
 
 export const dynamic = 'force-dynamic';
@@ -133,6 +134,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const effectiveWsId = await resolveEffectiveWorkspaceId(workspaceId);
+
     // Strict WhatsApp playable video size limit: 16 MB (16,777,216 bytes)
     const isVideo = mimeType.startsWith('video/') || fileName.match(/\.(mp4|m4v|mov|avi|mkv|webm|3gp)$/i);
     if (isVideo && fileBuffer.length > 16 * 1024 * 1024) {
@@ -151,7 +154,7 @@ export async function POST(req: NextRequest) {
     // compresses images to WebP 85 via sharp, preserves videos/PDFs as raw buffers,
     // and saves metadata into fw_whatsapp_media_files
     const result = await uploadWhatsAppFileAndGetSignedUrl({
-      workspaceId,
+      workspaceId: effectiveWsId,
       buffer: fileBuffer,
       fileName,
       mimeType,
