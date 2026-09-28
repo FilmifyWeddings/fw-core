@@ -13,6 +13,9 @@ const nextConfig: NextConfig = {
   experimental: {
     // Prevent memory exhaustion on VPS
     cpus: 1, 
+    serverActions: {
+      bodySizeLimit: '50mb',
+    },
   },
 
   // 4. Images build-time render skip

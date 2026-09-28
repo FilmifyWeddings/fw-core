@@ -248,29 +248,44 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
         body: formData,
       });
 
-      // 2. If browser environment had a bad header interceptor or multipart failed, fallback to base64 payload:
-      if (!res.ok) {
-        const base64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
+      // 2. If multipart failed (and not 413 entity too large), attempt base64 fallback:
+      if (!res.ok && res.status !== 413) {
+        try {
+          const base64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          });
 
-        res = await fetch('/api/whatsapp/templates/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            base64,
-            fileName: file.name,
-            mimeType: file.type,
-            workspaceId: targetWorkspaceId,
-            templateName: name || 'template',
-          }),
-        });
+          res = await fetch('/api/whatsapp/templates/upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              base64,
+              fileName: file.name,
+              mimeType: file.type,
+              workspaceId: targetWorkspaceId,
+              templateName: name || 'template',
+            }),
+          });
+        } catch {
+          // If fallback encoding fails, proceed with original response
+        }
       }
 
-      const data = await res.json();
+      let data: any = {};
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        const rawText = await res.text().catch(() => '');
+        if (res.status === 413 || rawText.includes('413 Request Entity Too Large')) {
+          throw new Error('File size exceeds server upload limit (max 50MB). Please select a smaller file.');
+        }
+        throw new Error(`Server returned HTTP ${res.status}`);
+      }
+
       if (!res.ok || !data.success) {
         throw new Error(data.error || 'Failed to upload media');
       }
