@@ -35,10 +35,37 @@ export async function GET(req: NextRequest) {
     }
 
     const userId = user.id;
-    const targetWsId = req.nextUrl.searchParams.get('workspace_id') || req.nextUrl.searchParams.get('workspaceId') || userId;
+    let targetWsId = req.nextUrl.searchParams.get('workspace_id') || req.nextUrl.searchParams.get('workspaceId') || userId;
+    if (targetWsId === 'all' || !targetWsId.trim()) {
+      targetWsId = userId;
+    }
 
-    // Use select('*') with precise workspace_id OR user_id matching
-    const { data, error } = await supabaseAdmin
+    // STRICT MULTI-USER ISOLATION: Validate that requesting user has access to targetWsId
+    if (targetWsId !== userId) {
+      const { data: wsOwner } = await supabaseAdmin
+        .from('workspaces')
+        .select('id')
+        .eq('id', targetWsId)
+        .eq('owner_id', userId)
+        .maybeSingle();
+
+      if (!wsOwner) {
+        const { data: wsMember } = await supabaseAdmin
+          .from('workspace_members')
+          .select('id')
+          .eq('workspace_id', targetWsId)
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        if (!wsMember) {
+          // Fallback strictly to user's own userId so they never see another tenant's session!
+          targetWsId = userId;
+        }
+      }
+    }
+
+    // Read session strictly scoped to targetWsId
+    const { data } = await supabaseAdmin
       .from('baileys_sessions')
       .select('*')
       .or(`user_id.eq.${targetWsId},workspace_id.eq.${targetWsId}`)
@@ -54,12 +81,12 @@ export async function GET(req: NextRequest) {
     try {
       const healthRes = await fetch(
         `http://127.0.0.1:${WORKER_PORT}/health?workspace_id=${encodeURIComponent(targetWsId)}`,
-        { signal: AbortSignal.timeout(1200) }
+        { signal: AbortSignal.timeout(1500) }
       );
       if (healthRes.ok) {
         const health = await healthRes.json();
         workerChecked = true;
-        if (health.socket_authenticated && health.socket_conn_state === 'open' && health.phone_number) {
+        if ((health.socket_authenticated || health.socket_conn_state === 'open') && health.phone_number) {
           workerConnected = true;
           workerPhone = health.phone_number;
         }
@@ -68,79 +95,46 @@ export async function GET(req: NextRequest) {
       workerChecked = false;
     }
 
-    if (error || !data) {
-      // AUTO-TRIGGER QR GENERATION FOR UNCONNECTED WORKSPACE
-      fetch(`http://127.0.0.1:${WORKER_PORT}/init-qr?workspace_id=${encodeURIComponent(targetWsId)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(1500),
-      }).catch(() => {});
-
-      return NextResponse.json({
-        workspace_id: targetWsId,
-        isConnected: false,
-        conn_state: 'disconnected',
-        status: 'DISCONNECTED',
-        qr_string: null,
-        phone_number: null,
-        last_connected: null,
-      }, {
-        status: 200,
-        headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' },
-      });
-    }
-
     let isConnected = false;
     let phoneNumber: string | null = null;
     let lastConnected: string | null = null;
-    let qrString: string | null = (data.qr_string as string) ?? null;
+    let qrString: string | null = (data?.qr_string as string) ?? null;
 
-    if (workerChecked) {
-      if (workerConnected && workerPhone) {
-        isConnected = true;
-        phoneNumber = workerPhone;
-        lastConnected = data.last_connected ?? new Date().toISOString();
-        qrString = null;
-      } else {
-        // Worker is online, but NO open authenticated socket exists for this workspace!
-        isConnected = false;
-        phoneNumber = null;
+    if (workerChecked && workerConnected && workerPhone) {
+      isConnected = true;
+      phoneNumber = workerPhone;
+      lastConnected = data?.last_connected ?? new Date().toISOString();
+      qrString = null;
 
-        // Auto-heal DB: if DB still falsely says open or retains a stale phone number, wipe it cleanly
-        if (data.conn_state === 'open' || data.phone_number || data.status !== 'disconnected') {
-          await supabaseAdmin
-            .from('baileys_sessions')
-            .update({
-              conn_state: qrString ? 'connecting' : 'disconnected',
-              status: 'disconnected',
-              phone_number: null,
-              updated_at: new Date().toISOString(),
-            })
-            .or(`user_id.eq.${targetWsId},workspace_id.eq.${targetWsId}`);
-        }
+      // Ensure DB reflects connected state so page refresh and DB views stay 100% in sync
+      if (data?.conn_state !== 'open' || !data?.phone_number) {
+        await supabaseAdmin
+          .from('baileys_sessions')
+          .update({
+            conn_state: 'open',
+            status: 'open',
+            phone_number: workerPhone,
+            qr_string: null,
+            last_connected: lastConnected,
+            updated_at: new Date().toISOString(),
+          })
+          .or(`user_id.eq.${targetWsId},workspace_id.eq.${targetWsId}`);
       }
     } else {
-      // Worker unreachable: strictly validate database row
-      const rawState = (data.conn_state as string) ?? 'disconnected';
-      const rawStatus = ((data.status as string) ?? '').toLowerCase();
-      const hasQr = !!data.qr_string;
-      isConnected = rawState === 'open' && rawStatus !== 'disconnected' && !hasQr && !!(data.phone_number && data.phone_number.trim().length > 5);
-      if (isConnected) {
-        phoneNumber = (data.phone_number as string) || null;
-        lastConnected = data.last_connected ?? null;
+      // Validate database row: If DB has conn_state === 'open' and a valid phone_number,
+      // session is considered connected and must NEVER be wiped out by passive status polling!
+      const dbHasPhone = !!(data?.phone_number && String(data.phone_number).trim().length > 5);
+      const dbIsOpen = data?.conn_state === 'open' && dbHasPhone;
+
+      if (dbIsOpen) {
+        isConnected = true;
+        phoneNumber = String(data.phone_number);
+        lastConnected = data?.last_connected ?? null;
         qrString = null;
       } else {
+        isConnected = false;
         phoneNumber = null;
       }
-    }
-
-    // AUTO-TRIGGER QR GENERATION IF UNCONNECTED AND QR IS NULL
-    if (!isConnected && !qrString) {
-      fetch(`http://127.0.0.1:${WORKER_PORT}/init-qr?workspace_id=${encodeURIComponent(targetWsId)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(1500),
-      }).catch(() => {});
     }
 
     return NextResponse.json({

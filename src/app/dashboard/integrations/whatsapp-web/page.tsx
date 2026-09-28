@@ -15,7 +15,7 @@ export default function WhatsAppDevicePage() {
     );
   }
 
-  const activeWs = workspaceId || userId;
+  const activeWs = (workspaceId && workspaceId !== 'all') ? workspaceId : userId;
 
   return (
     <BaileysQrConnect workspaceId={activeWs!} />

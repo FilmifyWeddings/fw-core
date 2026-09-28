@@ -6,14 +6,43 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
 import { useMultiFileAuthState, AuthenticationCreds, SignalKeyStore } from '@whiskeysockets/baileys';
 export type { SignalKeyStore };
 import pino from 'pino';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const logger = pino({
   level: process.env.LOG_LEVEL ?? 'info',
   transport: { target: 'pino-pretty' },
 });
+
+export function getSessionsBasePath(): string {
+  if (fs.existsSync('/var/www/fw-core/sessions')) {
+    return '/var/www/fw-core/sessions';
+  }
+  if (fs.existsSync('/var/www/fw-core')) {
+    const dir = '/var/www/fw-core/sessions';
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    return dir;
+  }
+
+  const candidates = [
+    path.resolve(process.cwd(), 'baileys-worker', 'sessions'),
+    path.resolve(process.cwd(), 'sessions'),
+    path.resolve(__dirname, '..', 'sessions'),
+    path.resolve(__dirname, '..', '..', 'sessions'),
+    path.resolve(__dirname, '..', '..', 'baileys-worker', 'sessions'),
+  ];
+
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
+  }
+
+  return path.resolve(process.cwd(), 'sessions');
+}
 
 /**
  * Returns the local file system path for a given workspace's session files.
@@ -23,10 +52,24 @@ export function getSessionDir(workspaceId: string): string {
   if (!workspaceId || workspaceId.trim() === '' || workspaceId === 'null' || workspaceId === 'undefined') {
     throw new Error('Cannot getSessionDir for empty workspaceId');
   }
-  const basePath = fs.existsSync('/var/www/fw-core')
-    ? '/var/www/fw-core/sessions'
-    : path.resolve(process.cwd(), 'sessions');
 
+  const candidates = [
+    '/var/www/fw-core/sessions',
+    path.resolve(process.cwd(), 'baileys-worker', 'sessions'),
+    path.resolve(process.cwd(), 'sessions'),
+    path.resolve(__dirname, '..', 'sessions'),
+    path.resolve(__dirname, '..', '..', 'sessions'),
+    path.resolve(__dirname, '..', '..', 'baileys-worker', 'sessions'),
+  ];
+
+  for (const base of candidates) {
+    const credsFile = path.join(base, workspaceId, 'creds.json');
+    if (fs.existsSync(credsFile)) {
+      return path.join(base, workspaceId);
+    }
+  }
+
+  const basePath = getSessionsBasePath();
   const dir = path.join(basePath, workspaceId);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
@@ -41,12 +84,20 @@ export function hasDiskSession(workspaceId: string): boolean {
   if (!workspaceId || workspaceId.trim() === '' || workspaceId === 'null' || workspaceId === 'undefined') {
     return false;
   }
-  const basePath = fs.existsSync('/var/www/fw-core')
-    ? '/var/www/fw-core/sessions'
-    : path.resolve(process.cwd(), 'sessions');
+  const candidates = [
+    '/var/www/fw-core/sessions',
+    path.resolve(process.cwd(), 'baileys-worker', 'sessions'),
+    path.resolve(process.cwd(), 'sessions'),
+    path.resolve(__dirname, '..', 'sessions'),
+    path.resolve(__dirname, '..', '..', 'sessions'),
+    path.resolve(__dirname, '..', '..', 'baileys-worker', 'sessions'),
+  ];
 
-  const credsFile = path.join(basePath, workspaceId, 'creds.json');
-  return fs.existsSync(credsFile);
+  for (const base of candidates) {
+    const credsFile = path.join(base, workspaceId, 'creds.json');
+    if (fs.existsSync(credsFile)) return true;
+  }
+  return false;
 }
 
 /**

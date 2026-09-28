@@ -805,13 +805,14 @@ export async function generateQrServerless(
     const healthRes = await fetch(`http://127.0.0.1:${WORKER_PORT}/health?workspace_id=${encodeURIComponent(workspaceId)}`, { signal: AbortSignal.timeout(1500) });
     if (healthRes.ok) {
       const health = await healthRes.json();
-      if (health.socket_authenticated && health.socket_conn_state === 'open' && health.phone_number) {
+      if ((health.socket_authenticated || health.socket_conn_state === 'open') && health.phone_number) {
         console.log(`[generateQrServerless] ✅ Worker reports socket already authenticated for ${workspaceId}`);
         onConnected(health.phone_number);
         return;
       }
       isWorkerAvailable = true;
-      await fetch(`http://127.0.0.1:${WORKER_PORT}/init-qr?workspace_id=${encodeURIComponent(workspaceId)}&force=true`, { method: 'POST' }).catch(() => {});
+      // Do NOT pass force=true during regular QR generation — preserving existing sessions!
+      await fetch(`http://127.0.0.1:${WORKER_PORT}/init-qr?workspace_id=${encodeURIComponent(workspaceId)}`, { method: 'POST' }).catch(() => {});
     }
   } catch {
     isWorkerAvailable = false;
@@ -822,10 +823,13 @@ export async function generateQrServerless(
     const { data: dbSess } = await supabaseAdmin
       .from('baileys_sessions')
       .select('conn_state, status, phone_number, qr_string')
-      .eq('workspace_id', workspaceId)
+      .or(`workspace_id.eq.${workspaceId},user_id.eq.${workspaceId}`)
+      .order('updated_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
 
-    if ((dbSess?.conn_state === 'open' || dbSess?.status === 'CONNECTED') && !dbSess?.qr_string && dbSess?.phone_number) {
+    const dbHasPhone = !!(dbSess?.phone_number && String(dbSess.phone_number).trim().length > 5);
+    if ((dbSess?.conn_state === 'open' || dbSess?.status === 'open' || dbSess?.status === 'CONNECTED') && !dbSess?.qr_string && dbHasPhone) {
       console.log(`[generateQrServerless] ✅ DB shows session already connected for ${workspaceId}`);
       onConnected(dbSess.phone_number);
       return;

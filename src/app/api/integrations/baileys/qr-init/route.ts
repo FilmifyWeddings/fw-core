@@ -81,11 +81,38 @@ export async function GET(req: NextRequest) {
   }
 
   const explicitWs = req.nextUrl.searchParams.get('workspace_id') || req.nextUrl.searchParams.get('workspaceId');
-  const targetWsId = explicitWs || workspaceId;
+  let targetWsId = explicitWs || workspaceId;
+  if (targetWsId === 'all' || !targetWsId?.trim()) {
+    targetWsId = workspaceId;
+  }
 
   if (!targetWsId) {
     return new Response('Unauthorized', { status: 401 });
   }
+
+  // STRICT MULTI-USER ISOLATION: Validate requesting user has access to targetWsId
+  if (workspaceId && targetWsId !== workspaceId) {
+    const { data: wsOwner } = await supabaseAdmin
+      .from('workspaces')
+      .select('id')
+      .eq('id', targetWsId)
+      .eq('owner_id', workspaceId)
+      .maybeSingle();
+
+    if (!wsOwner) {
+      const { data: wsMember } = await supabaseAdmin
+        .from('workspace_members')
+        .select('id')
+        .eq('workspace_id', targetWsId)
+        .eq('user_id', workspaceId)
+        .maybeSingle();
+
+      if (!wsMember) {
+        targetWsId = workspaceId;
+      }
+    }
+  }
+
   // ── Fast Pre-check: If already connected, DO NOT recreate socket or wait ──
   const WORKER_PORT = process.env.WORKER_PORT ?? '3002';
   let isAlreadyConnected = false;
@@ -94,11 +121,11 @@ export async function GET(req: NextRequest) {
   try {
     const healthRes = await fetch(
       `http://127.0.0.1:${WORKER_PORT}/health?workspace_id=${encodeURIComponent(targetWsId)}`,
-      { signal: AbortSignal.timeout(1200) }
+      { signal: AbortSignal.timeout(1500) }
     );
     if (healthRes.ok) {
       const health = await healthRes.json();
-      if (health.socket_authenticated && health.socket_conn_state === 'open' && health.phone_number) {
+      if ((health.socket_authenticated || health.socket_conn_state === 'open') && health.phone_number) {
         isAlreadyConnected = true;
         connectedPhone = health.phone_number;
       }
@@ -116,9 +143,12 @@ export async function GET(req: NextRequest) {
       .limit(1)
       .maybeSingle();
 
-    if (dbSess && (dbSess.conn_state === 'open' || dbSess.status === 'CONNECTED') && !dbSess.qr_string && dbSess.phone_number) {
+    const dbHasPhone = !!(dbSess?.phone_number && String(dbSess.phone_number).trim().length > 5);
+    const dbIsOpen = (dbSess?.conn_state === 'open' || dbSess?.status === 'open' || dbSess?.status === 'CONNECTED') && !dbSess?.qr_string && dbHasPhone;
+
+    if (dbIsOpen) {
       isAlreadyConnected = true;
-      connectedPhone = dbSess.phone_number;
+      connectedPhone = String(dbSess?.phone_number);
     }
   }
 

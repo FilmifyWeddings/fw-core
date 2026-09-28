@@ -230,8 +230,8 @@ export async function drainQueue(workspaceId, handler, batchSize = 3) {
             .select('conn_state, status')
             .or(`workspace_id.eq.${workspaceId},user_id.eq.${workspaceId}`)
             .maybeSingle();
-        if (session?.conn_state === 'disconnected' || session?.status === 'DISCONNECTED') {
-            console.warn(`[QueueProcessor] ⏸️ WhatsApp session is DISCONNECTED for workspace ${workspaceId} — pausing queue dispatches.`);
+        if (session?.conn_state !== 'open') {
+            console.warn(`[QueueProcessor] ⏸️ WhatsApp session is not open for workspace ${workspaceId} (state: ${session?.conn_state ?? 'none'}) — pausing queue dispatches.`);
             return;
         }
         const now = new Date().toISOString();

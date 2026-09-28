@@ -154,37 +154,14 @@ async function resolveB2DirectFetchUrl(urlOrKey) {
 const activeSessions = new Map();
 async function getWorkspaceSocket(wsId) {
     let resolvedWsId = wsId?.trim();
-    // If empty/null, try to resolve from active in-memory sessions
+    // STRICT MULTI-TENANT ISOLATION: Never borrow another tenant's session!
     if (!resolvedWsId || resolvedWsId === 'null' || resolvedWsId === 'undefined') {
-        if (activeSessions.size > 0) {
-            resolvedWsId = Array.from(activeSessions.keys())[0];
-            logger.info({ resolvedWsId }, '🔍 getWorkspaceSocket: Resolved empty wsId from active in-memory session');
-        }
-    }
-    // If still empty, check DB for any open baileys session
-    if (!resolvedWsId || resolvedWsId === 'null' || resolvedWsId === 'undefined') {
-        try {
-            const { data: openSess } = await supabase
-                .from('baileys_sessions')
-                .select('workspace_id, user_id')
-                .or('conn_state.eq.open,creds_json.neq.null')
-                .order('updated_at', { ascending: false })
-                .limit(1)
-                .maybeSingle();
-            if (openSess) {
-                resolvedWsId = openSess.workspace_id || openSess.user_id;
-                logger.info({ resolvedWsId }, '🔍 getWorkspaceSocket: Resolved empty wsId from DB open session');
-            }
-        }
-        catch { }
-    }
-    // If still empty, check environment WORKSPACE_ID
-    if (!resolvedWsId || resolvedWsId === 'null' || resolvedWsId === 'undefined') {
-        if (WORKSPACE_ID)
+        if (WORKSPACE_ID) {
             resolvedWsId = WORKSPACE_ID;
+        }
     }
     if (!resolvedWsId || resolvedWsId === 'null' || resolvedWsId === 'undefined') {
-        throw new Error('WhatsApp is not connected yet. Please scan the QR code to link your WhatsApp account.');
+        throw new Error('WhatsApp is not connected yet. Workspace ID is required to access WhatsApp session.');
     }
     const effectiveId = resolvedWsId;
     // 1. Direct activeSessions lookup
@@ -1162,8 +1139,8 @@ function startConnectingTimeout(wsId) {
             .select('conn_state, creds_json')
             .eq('workspace_id', wsId)
             .maybeSingle();
-        if (cur?.conn_state === 'open' || (cur?.creds_json && cur.creds_json !== 'null')) {
-            logger.info({ workspaceId: wsId }, '⏰ Watchdog: session already open or creds saved — skipping force-reset.');
+        if (hasDiskSession(wsId) || cur?.conn_state === 'open' || (cur?.creds_json && cur.creds_json !== 'null')) {
+            logger.info({ workspaceId: wsId }, '⏰ Watchdog: session already open, disk credentials exist, or creds saved — skipping force-reset.');
             return;
         }
         logger.warn({ workspaceId: wsId }, '⏰ Connection stuck in "connecting" for 120s — force-resetting socket for fresh QR...');
@@ -1667,16 +1644,31 @@ function startHealthServer() {
             const parsedUrl = new URL(req.url ?? '', `http://localhost:${PORT}`);
             if (req.method === 'GET' && parsedUrl.pathname === '/health') {
                 const targetWs = parsedUrl.searchParams.get('workspace_id') || WORKSPACE_ID;
+                if (!targetWs || targetWs === 'null' || targetWs === 'undefined') {
+                    res.writeHead(200);
+                    res.end(JSON.stringify({ status: 'ok', worker: 'baileys', active_sessions_count: activeSessions.size }));
+                    return;
+                }
                 const { data } = await supabase
                     .from('baileys_sessions')
                     .select('conn_state, phone_number, last_connected')
-                    .eq('workspace_id', targetWs)
+                    .or(`workspace_id.eq.${targetWs},user_id.eq.${targetWs}`)
+                    .order('updated_at', { ascending: false })
+                    .limit(1)
                     .maybeSingle();
-                const sess = activeSessions.get(targetWs);
+                let sess = activeSessions.get(targetWs);
+                // If not in memory but disk session exists, auto-restore socket into memory in background!
+                if ((!sess || !sess.sock?.user?.id) && hasDiskSession(targetWs)) {
+                    startBaileysSocket(false, targetWs).catch(() => { });
+                    sess = activeSessions.get(targetWs);
+                }
                 const socketAlive = !!sess?.sock;
                 const socketReadyState = sess?.sock?.ws?.readyState;
                 const socketAuthenticated = !!sess?.sock?.user?.id;
                 const socketConnState = socketAuthenticated ? 'open' : (socketReadyState === 1 ? 'connecting' : (socketAlive ? 'connecting' : 'disconnected'));
+                const authenticatedPhone = sess?.sock?.user?.id ? (sess?.sock).user.id.split(':')[0].replace(/\D/g, '') : null;
+                const effectivePhone = authenticatedPhone || data?.phone_number || null;
+                const isEffectiveConnected = socketAuthenticated || (data?.conn_state === 'open' && !!data?.phone_number);
                 res.writeHead(200);
                 res.end(JSON.stringify({
                     status: 'ok',
@@ -1684,9 +1676,9 @@ function startHealthServer() {
                     workspace_id: targetWs,
                     active_sessions_count: activeSessions.size,
                     socket: socketAlive ? 'alive' : 'null',
-                    socket_conn_state: socketConnState,
-                    socket_authenticated: socketAuthenticated,
-                    phone_number: sess?.sock?.user?.id?.split(':')[0] ?? null,
+                    socket_conn_state: isEffectiveConnected ? 'open' : socketConnState,
+                    socket_authenticated: isEffectiveConnected,
+                    phone_number: effectivePhone,
                     session: data,
                 }));
                 return;
@@ -1725,18 +1717,38 @@ function startHealthServer() {
                 const forceFresh = parsedUrl.searchParams.get('force') === 'true' || parsedUrl.searchParams.get('force_fresh') === 'true';
                 const sess = activeSessions.get(qsWorkspace);
                 const now = Date.now();
+                // 1. If already connected in memory:
                 if (!forceFresh && sess?.sock && sess.sock.user && sess.sock.user.id) {
+                    const p = sess.sock.user.id.split(':')[0].replace(/\D/g, '');
                     logger.info({ workspace_id: qsWorkspace }, 'Session is ALREADY CONNECTED! Skipping reset on /init-qr.');
                     res.writeHead(200);
-                    res.end(JSON.stringify({ success: true, message: `Workspace ${qsWorkspace} is already connected.` }));
+                    res.end(JSON.stringify({ success: true, isConnected: true, phone: p, message: `Workspace ${qsWorkspace} is already connected.` }));
                     return;
                 }
+                // 2. If disk credentials exist and not forceFresh, restore socket instead of throwing it away!
+                if (!forceFresh && hasDiskSession(qsWorkspace)) {
+                    logger.info({ workspace_id: qsWorkspace }, 'Disk credentials exist — restoring existing session instead of new QR');
+                    startBaileysSocket(false, qsWorkspace).catch(() => { });
+                    res.writeHead(200);
+                    res.end(JSON.stringify({ success: true, restoring: true, message: `Restoring existing session for ${qsWorkspace}.` }));
+                    return;
+                }
+                // 3. If DB already has open session with phone number:
                 const { data: dbSess } = await supabase
                     .from('baileys_sessions')
-                    .select('conn_state, status, qr_string, updated_at')
+                    .select('conn_state, status, phone_number, qr_string, updated_at')
                     .or(`workspace_id.eq.${qsWorkspace},user_id.eq.${qsWorkspace}`)
+                    .order('updated_at', { ascending: false })
+                    .limit(1)
                     .maybeSingle();
-                // DEBOUNCE ONLY IF VALID QR ALREADY EXISTS IN MEMORY/DB
+                if (!forceFresh && dbSess?.conn_state === 'open' && dbSess?.phone_number) {
+                    logger.info({ workspace_id: qsWorkspace }, 'DB shows session open — skipping force-reset.');
+                    startBaileysSocket(false, qsWorkspace).catch(() => { });
+                    res.writeHead(200);
+                    res.end(JSON.stringify({ success: true, isConnected: true, phone: dbSess.phone_number }));
+                    return;
+                }
+                // 4. Debounce if valid QR already exists
                 const validMemoryQr = !!(sess?.lastQrTime && (now - sess.lastQrTime < 20_000));
                 const validDbQr = dbSess?.qr_string && dbSess?.updated_at && (now - new Date(dbSess.updated_at).getTime() < 20_000);
                 if (!forceFresh && (validMemoryQr || validDbQr)) {
@@ -1745,8 +1757,17 @@ function startHealthServer() {
                     res.end(JSON.stringify({ success: true, message: `Active QR pairing in progress.` }));
                     return;
                 }
-                logger.info({ workspace_id: qsWorkspace }, '🔁 Initiating fresh QR pairing flow for workspace...');
-                await initiateForceReset(qsWorkspace);
+                // 5. If forceFresh was explicitly passed, initiate force reset. Otherwise, start socket cleanly!
+                if (forceFresh) {
+                    logger.info({ workspace_id: qsWorkspace }, '🔴 Hard force-fresh requested — purging session and starting clean socket...');
+                    await initiateForceReset(qsWorkspace);
+                }
+                else {
+                    logger.info({ workspace_id: qsWorkspace }, '🚀 Starting Baileys socket for QR pairing...');
+                    startBaileysSocket(false, qsWorkspace).catch(err => {
+                        logger.error({ err, workspaceId: qsWorkspace }, 'Failed to start socket on /init-qr');
+                    });
+                }
                 res.writeHead(200);
                 res.end(JSON.stringify({ success: true, message: `Pairing flow initialized for ${qsWorkspace}. QR code is being generated.` }));
                 return;
@@ -2488,19 +2509,22 @@ async function main() {
     // Restore existing active workspace sessions ONLY if local disk credentials exist
     const { data: activeSessionsDb } = await supabase
         .from('baileys_sessions')
-        .select('workspace_id, conn_state')
-        .or('conn_state.eq.open,creds_json.neq.null');
+        .select('workspace_id, user_id, conn_state, phone_number')
+        .or('conn_state.eq.open,phone_number.neq.null');
     if (activeSessionsDb && activeSessionsDb.length > 0) {
         logger.info({ count: activeSessionsDb.length }, '🔁 Checking workspace sessions to restore from disk...');
         for (const s of activeSessionsDb) {
-            if (hasDiskSession(s.workspace_id)) {
-                logger.info({ workspaceId: s.workspace_id }, 'Restoring local workspace session from disk...');
-                startBaileysSocket(false, s.workspace_id).catch(err => {
-                    logger.error({ err, workspaceId: s.workspace_id }, 'Failed to restore workspace session at startup');
+            const targetWs = s.workspace_id || s.user_id;
+            if (!targetWs)
+                continue;
+            if (hasDiskSession(targetWs)) {
+                logger.info({ workspaceId: targetWs }, 'Restoring local workspace session from disk...');
+                startBaileysSocket(false, targetWs).catch(err => {
+                    logger.error({ err, workspaceId: targetWs }, 'Failed to restore workspace session at startup');
                 });
             }
             else {
-                logger.info({ workspaceId: s.workspace_id }, 'Skipping startup restore: no local disk session found (prevents unprompted QR generation)');
+                logger.info({ workspaceId: targetWs }, 'Skipping startup restore: no local disk session found (prevents unprompted QR generation)');
             }
         }
     }
