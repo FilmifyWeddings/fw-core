@@ -849,10 +849,7 @@ async function executeAction(action) {
             logger.error({ actionId: action.id, err: dbErr }, 'Error fetching targetWsId from DB');
         }
     }
-    // IF targetWsId is STILL missing/empty, fallback to active session ID if available
-    if ((!targetWsId || targetWsId.trim() === '' || targetWsId === 'null' || targetWsId === 'undefined') && activeSessions.size > 0) {
-        targetWsId = Array.from(activeSessions.keys())[0];
-    }
+    // IF targetWsId is missing/empty, do NOT borrow another workspace's session!
     if (!targetWsId || targetWsId.trim() === '' || targetWsId === 'null' || targetWsId === 'undefined') {
         logger.error({ actionId: action.id, action }, '[QueueProcessor Trace Error] Missing user_id/workspace_id in action payload');
         throw new Error(`[QueueProcessor Error] Missing user_id/workspace_id for action ${action.id}`);
@@ -863,26 +860,8 @@ async function executeAction(action) {
         targetSock = await getWorkspaceSocket(targetWsId);
     }
     catch (err) {
-        logger.error({ actionId: action.id, workspaceId: targetWsId }, '🔴 [Pre-Send Check] Workspace socket is unauthenticated or missing.');
-        const sess = activeSessions.get(targetWsId);
-        if (sess?.sock?.user?.id) {
-            await dbWriteCritical(supabase
-                .from('baileys_sessions')
-                .update({
-                conn_state: 'disconnected',
-                status: 'disconnected',
-                phone_number: null,
-                updated_at: new Date().toISOString(),
-            })
-                .eq('workspace_id', targetWsId), 'presend-disconnect-update');
-            await dbWrite(supabase.from('wa_instance_alerts').insert({
-                workspace_id: targetWsId,
-                alert_type: 'presend_session_expired',
-                message: 'Pre-send check failed: WhatsApp Session Expired. Please reconnect QR code.',
-                metadata: { action_id: action.id, action_type: action.action_type },
-            }), 'insert-presend-alert');
-        }
-        throw new Error('WhatsApp Session Expired or Not Connected. Please reconnect QR code.');
+        logger.error({ actionId: action.id, workspaceId: targetWsId, err: err?.message || err }, '🔴 [Pre-Send Check] Workspace socket is unauthenticated or missing.');
+        throw new Error(`Workspace ${targetWsId} socket not ready: ${err?.message || err}`);
     }
     let waMessageId = null;
     try {
@@ -1024,7 +1003,6 @@ async function executeAction(action) {
                 .update({
                 conn_state: 'disconnected',
                 status: 'disconnected',
-                phone_number: null,
                 updated_at: new Date().toISOString(),
             })
                 .eq('workspace_id', action.workspace_id), 'execute-action-disconnect');
@@ -1394,22 +1372,20 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
                     const error = lastDisconnect?.error;
                     const statusCode = error?.output?.statusCode;
                     const hasCredsMe = !!authState.state.creds?.me?.id;
-                    // 401 is ONLY a true logout if we do NOT have paired user creds
-                    const isExplicitLoggedOut = statusCode === DisconnectReason.loggedOut;
-                    const isLoggedOut = isExplicitLoggedOut || (statusCode === 401 && !hasCredsMe);
-                    console.log(`🔌 Connection CLOSED [${wsId.slice(0, 8)}] — statusCode:`, statusCode, 'hasCredsMe:', hasCredsMe, 'isLoggedOut:', isLoggedOut);
-                    logger.error({ statusCode, isLoggedOut, hasCredsMe, message: error?.message, lastDisconnect, workspaceId: wsId }, '🔌 Connection closed details');
-                    if (!isLoggedOut) {
-                        // NON-LOGGED-OUT DISCONNECT (temporary network drop, code 515 stream restart)
-                        logger.info({ statusCode, workspaceId: wsId, hasCredsMe }, '♻️ Non-logged-out disconnect — auto-reconnecting in 1.5s with local disk auth...');
-                        console.log(`♻️ Auto-reconnecting socket for workspace ${wsId} in 1.5s (preserving session)...`);
+                    // If we have paired user creds on disk, auto-reconnect on transient drops (network drop, 515 restart required, 428, etc.)
+                    const isLoggedOutFromPhone = statusCode === DisconnectReason.loggedOut && !hasCredsMe;
+                    console.log(`🔌 Connection CLOSED [${wsId.slice(0, 8)}] — statusCode:`, statusCode, 'hasCredsMe:', hasCredsMe, 'isLoggedOutFromPhone:', isLoggedOutFromPhone);
+                    logger.error({ statusCode, isLoggedOutFromPhone, hasCredsMe, message: error?.message, lastDisconnect, workspaceId: wsId }, '🔌 Connection closed details');
+                    if (!isLoggedOutFromPhone) {
+                        logger.info({ statusCode, workspaceId: wsId, hasCredsMe }, '♻️ Non-logged-out disconnect — auto-reconnecting in 2s with local disk auth...');
+                        console.log(`♻️ Auto-reconnecting socket for workspace ${wsId} in 2s (preserving session)...`);
                         if (currentSess.reconnectTimer)
                             clearTimeout(currentSess.reconnectTimer);
-                        currentSess.reconnectTimer = setTimeout(() => startBaileysSocket(false, wsId), 1500);
+                        currentSess.reconnectTimer = setTimeout(() => startBaileysSocket(false, wsId), 2000);
                         return;
                     }
-                    // EXPLICIT LOGOUT OR 401
-                    logger.warn({ workspaceId: wsId, statusCode }, '🚪 WhatsApp session LOGGED OUT / 401 — Performing disk & memory purge');
+                    // Explicit logout from WhatsApp mobile app (where creds were wiped/invalidated by phone unpair)
+                    logger.warn({ workspaceId: wsId, statusCode }, '🚪 WhatsApp session unlinked from device — cleaning in-memory socket');
                     try {
                         localSock.ev.removeAllListeners();
                         localSock.ws?.close();
@@ -1420,7 +1396,8 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
                     if (currentSess.connectingTimeoutTimer)
                         clearTimeout(currentSess.connectingTimeoutTimer);
                     activeSessions.delete(wsId);
-                    purgeSessionDir(wsId);
+                    // NOTE: We do NOT call purgeSessionDir here to protect against false positives!
+                    // Disk purge is strictly reserved for explicit user-initiated Force Reset (/force-reset).
                     await supabase
                         .from('baileys_sessions')
                         .update({
@@ -1428,13 +1405,11 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
                         status: 'disconnected',
                         qr_string: null,
                         qr_expires_at: null,
-                        phone_number: null,
-                        creds_json: null,
-                        keys_json: null,
                         updated_at: new Date().toISOString()
                     })
                         .or(`user_id.eq.${wsId},workspace_id.eq.${wsId}`);
-                    setTimeout(() => startBaileysSocket(true, wsId), 1000);
+                    // NOTE: We do NOT auto-restart in forceFresh loop.
+                    // Sockets should only be spawned on user demand (e.g., viewing WhatsApp Web dashboard).
                 }
             });
             localSock.ev.on('messages.upsert', async ({ messages, type }) => {
