@@ -115,11 +115,13 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
   const [activeTab, setActiveTab] = useState<'text' | 'media' | 'poll'>('text');
   
   const [mediaUrl, setMediaUrl] = useState('');
+  const [mediaFileKey, setMediaFileKey] = useState('');
   const [mediaMime, setMediaMime] = useState('');
   const [mediaFileName, setMediaFileName] = useState('');
   const [mediaFileSize, setMediaFileSize] = useState<number | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [deletingMedia, setDeletingMedia] = useState(false);
 
   const formatMediaFileSize = (bytes?: number | null) => {
     if (!bytes) return '';
@@ -248,8 +250,8 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
         body: formData,
       });
 
-      // 2. If multipart failed (and not 413 entity too large), attempt base64 fallback:
-      if (!res.ok && res.status !== 413) {
+      // 2. If multipart failed (and not 413 entity too large), attempt base64 fallback only for small files (<= 4MB)
+      if (!res.ok && res.status !== 413 && file.size <= 4 * 1024 * 1024) {
         try {
           const base64 = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
@@ -292,18 +294,74 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
 
       // Store permanent proxy URL (/api/media/...) and metadata in template state
       setMediaUrl(data.fileUrl);
+      setMediaFileKey(data.fileKey || '');
       setMediaFileName(data.fileName || file.name);
       setMediaFileSize(data.fileSize || data.fileSizeBytes || file.size);
       const detectedMime = data.mimeType || file.type || (file.name.match(/\.(mp4|webm|mov|mkv)$/i) ? 'video/mp4' : (file.name.match(/\.(pdf)$/i) ? 'application/pdf' : 'image/webp'));
       setMediaMime(detectedMime);
       // Instantly refresh template storage stats meter
       loadStorageStats();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('wa_template_media_updated'));
+      }
     } catch (err: any) {
       console.error('File upload error:', err);
       alert(`File upload failed: ${err.message || err}. You can enter a public URL manually.`);
     } finally {
       setUploading(false);
       if (e.target) e.target.value = '';
+    }
+  };
+
+  // Two-way Cascade Delete for attached template media
+  const handleDeleteAttachedMedia = async () => {
+    if (!mediaUrl && !mediaFileKey) {
+      setMediaUrl('');
+      setMediaFileKey('');
+      setMediaMime('');
+      setMediaFileName('');
+      setMediaFileSize(null);
+      return;
+    }
+
+    if (!confirm('Are you sure you want to delete this media file? It will be permanently removed from storage.')) {
+      return;
+    }
+
+    setDeletingMedia(true);
+    try {
+      const fileKey = mediaFileKey || (mediaUrl.includes('/api/media/') ? mediaUrl.split('/api/media/')[1] : mediaUrl);
+      const res = await fetch('/api/whatsapp/templates/delete-media', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspaceId: workspaceId || '00000000-0000-0000-0000-000000000000',
+          fileKey,
+          templateId: editTemplateId || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        console.warn('[DeleteMedia] Server warning:', data.error);
+      }
+      setMediaUrl('');
+      setMediaFileKey('');
+      setMediaMime('');
+      setMediaFileName('');
+      setMediaFileSize(null);
+      await loadStorageStats();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('wa_template_media_updated'));
+      }
+    } catch (err: any) {
+      console.error('Failed to cascade delete media:', err);
+      setMediaUrl('');
+      setMediaFileKey('');
+      setMediaMime('');
+      setMediaFileName('');
+      setMediaFileSize(null);
+    } finally {
+      setDeletingMedia(false);
     }
   };
   
@@ -342,6 +400,7 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     setTextBody(payload.body || payload.question || '');
     const currentMediaUrl = payload.mediaUrl || payload.default_send_media_url || '';
     setMediaUrl(currentMediaUrl);
+    setMediaFileKey(payload.mediaFileKey || payload.media_file_key || '');
     setMediaMime(payload.mediaMime || payload.default_send_media_mime || '');
     setMediaFileName(payload.mediaFileName || payload.fileName || (currentMediaUrl ? currentMediaUrl.split('/').pop()?.split('?')[0] : ''));
     setMediaFileSize(payload.mediaFileSize || payload.fileSize || null);
@@ -370,6 +429,7 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     setTextBody(payload.body || payload.question || '');
     const currentMediaUrl = payload.mediaUrl || payload.default_send_media_url || '';
     setMediaUrl(currentMediaUrl);
+    setMediaFileKey(payload.mediaFileKey || payload.media_file_key || '');
     setMediaMime(payload.mediaMime || payload.default_send_media_mime || '');
     setMediaFileName(payload.mediaFileName || payload.fileName || (currentMediaUrl ? currentMediaUrl.split('/').pop()?.split('?')[0] : ''));
     setMediaFileSize(payload.mediaFileSize || payload.fileSize || null);
@@ -396,6 +456,7 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     setActiveTab('text');
     setTextBody('');
     setMediaUrl('');
+    setMediaFileKey('');
     setMediaMime('');
     setMediaFileName('');
     setMediaFileSize(null);
@@ -415,6 +476,7 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     setLanguage('en_US');
     setActiveTab('text');
     setMediaUrl('');
+    setMediaFileKey('');
     setMediaMime('');
     setMediaFileName('');
     setMediaFileSize(null);
@@ -676,6 +738,8 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
       payload = { 
         body: textBody, 
         mediaUrl, 
+        mediaFileKey: mediaFileKey || (mediaUrl.includes('/api/media/') ? mediaUrl.split('/api/media/')[1] : ''),
+        media_file_key: mediaFileKey || (mediaUrl.includes('/api/media/') ? mediaUrl.split('/api/media/')[1] : ''),
         mediaMime,
         fileName: mediaFileName || (mediaUrl ? mediaUrl.split('/').pop()?.split('?')[0] : ''),
         fileSize: mediaFileSize,
@@ -714,6 +778,7 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
         setActiveTab('text');
         setTextBody('');
         setMediaUrl('');
+        setMediaFileKey('');
         setMediaMime('');
         setMediaFileName('');
         setMediaFileSize(null);
@@ -726,6 +791,7 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
         
         // Reload list
         loadTemplates();
+        loadStorageStats();
       } else {
         alert(data.error || 'Failed to create template.');
       }
@@ -747,6 +813,30 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     if (!deleteConfirmTarget) return;
     setLoading(true);
     try {
+      // Find template being deleted to cascade delete media from Backblaze B2 & database if present
+      const targetTpl = templates.find(t => t.id === deleteConfirmTarget);
+      if (targetTpl && targetTpl.payload) {
+        const tplKey = targetTpl.payload.mediaFileKey || targetTpl.payload.media_file_key || 
+          (targetTpl.payload.mediaUrl && targetTpl.payload.mediaUrl.includes('/api/media/') 
+            ? targetTpl.payload.mediaUrl.split('/api/media/')[1] 
+            : targetTpl.payload.mediaUrl);
+        if (tplKey) {
+          try {
+            await fetch('/api/whatsapp/templates/delete-media', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                workspaceId: workspaceId || '00000000-0000-0000-0000-000000000000',
+                fileKey: tplKey,
+                templateId: targetTpl.id,
+              })
+            });
+          } catch (e) {
+            console.warn('[DeleteTemplate] Cascade delete media warning:', e);
+          }
+        }
+      }
+
       const res = await fetch(`/api/templates?workspace_id=${workspaceId}&template_id=${deleteConfirmTarget}`, {
         method: 'DELETE',
       });
@@ -755,6 +845,10 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
         setDeleteConfirmTarget(null);
         setDeleteConfirmName('');
         loadTemplates();
+        loadStorageStats();
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('wa_template_media_updated'));
+        }
       } else {
         alert(data.error || 'Delete operation failed.');
       }
@@ -1464,16 +1558,16 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => {
-                                      setMediaUrl('');
-                                      setMediaMime('');
-                                      setMediaFileName('');
-                                      setMediaFileSize(null);
-                                    }}
-                                    className="p-1.5 text-zinc-400 hover:text-rose-500 transition rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30 cursor-pointer"
-                                    title="Remove media"
+                                    onClick={handleDeleteAttachedMedia}
+                                    disabled={deletingMedia}
+                                    className="p-1.5 text-zinc-400 hover:text-rose-500 transition rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30 cursor-pointer disabled:opacity-50"
+                                    title="Delete media from Backblaze B2 & database"
                                   >
-                                    <X className="w-4 h-4" />
+                                    {deletingMedia ? (
+                                      <RefreshCw className="w-4 h-4 animate-spin text-rose-500" />
+                                    ) : (
+                                      <Trash2 className="w-4 h-4" />
+                                    )}
                                   </button>
                                 </div>
                               </div>

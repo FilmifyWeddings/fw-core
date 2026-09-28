@@ -120,15 +120,22 @@ export async function uploadWhatsAppFileAndGetSignedUrl({
   let uploadMimeType: string = mimeType || 'application/octet-stream';
   let uploadFileName: string = fileName || 'whatsapp-media';
 
-  // 1. Image Optimization: Compress to JPEG (quality 85, progressive) for 100% WhatsApp mobile compatibility
-  if (uploadMimeType.startsWith('image/') && uploadMimeType !== 'image/gif') {
+  // 1. Image Optimization: Compress to WebP (quality 85) for images ONLY.
+  // CRITICAL: DO NOT run sharp on videos, PDFs, or documents!
+  const isImage = uploadMimeType.startsWith('image/') && uploadMimeType !== 'image/gif';
+  const isVideoOrDoc = 
+    uploadMimeType.startsWith('video/') || 
+    uploadMimeType === 'application/pdf' || 
+    uploadFileName.match(/\.(mp4|m4v|mov|avi|mkv|webm|pdf|doc|docx|xls|xlsx|txt)$/i);
+
+  if (isImage && !isVideoOrDoc) {
     try {
       uploadBuffer = await sharp(buffer)
-        .jpeg({ quality: 85, progressive: true })
+        .webp({ quality: 85 })
         .toBuffer();
-      uploadMimeType = 'image/jpeg';
-      if (!uploadFileName.toLowerCase().endsWith('.jpg') && !uploadFileName.toLowerCase().endsWith('.jpeg')) {
-        uploadFileName = uploadFileName.replace(/\.[^.]+$/, '') + '.jpg';
+      uploadMimeType = 'image/webp';
+      if (!uploadFileName.toLowerCase().endsWith('.webp')) {
+        uploadFileName = uploadFileName.replace(/\.[^.]+$/, '') + '.webp';
       }
     } catch (compressErr) {
       console.warn('[WhatsAppStorage] Sharp compression failed, retaining original image:', compressErr);
@@ -179,26 +186,21 @@ export async function uploadWhatsAppFileAndGetSignedUrl({
 
   // 6. Log entry into Supabase database (fw_whatsapp_media_files)
   try {
-    await supabaseAdmin.from('fw_whatsapp_media_files').insert({
+    const { error: insertErr } = await supabaseAdmin.from('fw_whatsapp_media_files').insert({
       workspace_id: workspaceId,
       file_key: fileKey,
       file_name: uploadFileName,
       file_size_bytes: uploadBuffer.length,
       mime_type: uploadMimeType,
       media_category: mediaCategory,
-      signed_url: permanentUrl || signedUrl,
-      expires_at: null, // Lifetime permanent access via secure proxy
-      b2_bucket: B2_WHATSAPP_BUCKET,
-      metadata: {
-        ...metadata,
-        permanent_url: permanentUrl,
-        presigned_url: signedUrl,
-        original_name: fileName,
-        compressed_with_sharp: uploadMimeType === 'image/webp',
-      },
     });
+    if (insertErr) {
+      console.error('[WhatsAppStorage] Error inserting media file into Supabase:', insertErr);
+    } else {
+      console.log('[WhatsAppStorage] ✅ Logged file to fw_whatsapp_media_files:', fileKey);
+    }
   } catch (dbErr) {
-    console.warn('[WhatsAppStorage] Error saving media file record in Supabase:', dbErr);
+    console.warn('[WhatsAppStorage] Exception saving media file record in Supabase:', dbErr);
   }
 
   return {
@@ -235,19 +237,23 @@ export async function deleteWhatsAppFile(
   workspaceId: string,
   fileKey: string
 ): Promise<boolean> {
+  const cleanKey = fileKey.replace(/^\/?api\/media\//, '').replace(/^\/+/, '');
   try {
     await whatsappB2Client.send(
       new DeleteObjectCommand({
         Bucket: B2_WHATSAPP_BUCKET,
-        Key: fileKey,
+        Key: cleanKey,
       })
     );
+  } catch (s3Err) {
+    console.warn('[WhatsAppStorage] B2 DeleteObject warning:', s3Err);
+  }
 
+  try {
     await supabaseAdmin
       .from('fw_whatsapp_media_files')
       .delete()
-      .eq('workspace_id', workspaceId)
-      .eq('file_key', fileKey);
+      .match({ workspace_id: workspaceId, file_key: cleanKey });
 
     return true;
   } catch (err) {

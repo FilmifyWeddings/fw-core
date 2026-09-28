@@ -1,10 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { 
   uploadWhatsAppFileAndGetSignedUrl, 
-  getWorkspaceWhatsAppStorageUsage 
+  getWorkspaceWhatsAppStorageUsage,
+  deleteWhatsAppFile,
 } from '@/lib/services/whatsappStorageService';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+export const maxDuration = 60; // Allow 60s for video/document uploads
+
+// Helper to deduce mimeType from file extension
+function deduceMimeType(fName: string, rawMime?: string): string {
+  const ext = (fName.split('.').pop() || '').toLowerCase();
+  if (['mp4', 'm4v', 'mov', 'avi', 'mkv', 'webm', '3gp'].includes(ext)) return 'video/mp4';
+  if (['pdf'].includes(ext)) return 'application/pdf';
+  if (['jpg', 'jpeg'].includes(ext)) return 'image/jpeg';
+  if (['png'].includes(ext)) return 'image/png';
+  if (['webp'].includes(ext)) return 'image/webp';
+  if (['gif'].includes(ext)) return 'image/gif';
+  if (['doc', 'docx'].includes(ext)) return 'application/msword';
+  if (['xls', 'xlsx'].includes(ext)) return 'application/vnd.ms-excel';
+  if (rawMime && rawMime !== 'application/octet-stream' && rawMime.trim() !== '') return rawMime;
+  return 'application/octet-stream';
+}
 
 /**
  * GET /api/whatsapp/templates/upload?workspaceId=...
@@ -30,7 +48,8 @@ export async function GET(req: NextRequest) {
 /**
  * POST /api/whatsapp/templates/upload
  * Handles template media uploads (photos, videos, documents) to Backblaze B2 private bucket
- * with automatic image compression (sharp WebP 85), 500 MB quota enforcement,
+ * with automatic image compression (sharp WebP 85 for images only), raw preservation for video/PDF,
+ * 500 MB quota enforcement, Supabase logging (fw_whatsapp_media_files),
  * and permanent lifetime proxy URL generation (/api/media/...).
  */
 export async function POST(req: NextRequest) {
@@ -39,7 +58,7 @@ export async function POST(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     let fileBuffer: Buffer | null = null;
     let fileName = `template_media_${Date.now()}`;
-    let mimeType = 'image/jpeg';
+    let mimeType = 'application/octet-stream';
     let workspaceId = searchParams.get('workspaceId') || searchParams.get('workspace_id') || '';
     let templateName = searchParams.get('templateName') || searchParams.get('template_name') || '';
 
@@ -47,36 +66,50 @@ export async function POST(req: NextRequest) {
     if (contentType.includes('multipart/form-data')) {
       try {
         const formData = await req.formData();
-        const file = formData.get('file') as File | null;
+        const file = (formData.get('file') || formData.get('media') || formData.get('attachment')) as File | null;
         workspaceId = (formData.get('workspaceId') as string) || (formData.get('workspace_id') as string) || workspaceId;
         templateName = (formData.get('templateName') as string) || (formData.get('template_name') as string) || templateName;
 
-        if (file) {
-          fileName = file.name;
-          mimeType = file.type || 'application/octet-stream';
+        if (file && typeof file.arrayBuffer === 'function') {
+          fileName = file.name || fileName;
+          mimeType = deduceMimeType(fileName, file.type);
           const arrayBuffer = await file.arrayBuffer();
           fileBuffer = Buffer.from(arrayBuffer);
         }
       } catch (formErr) {
-        console.warn('[TemplateUploadRoute] FormData parse failed, checking JSON fallback:', formErr);
+        console.warn('[TemplateUploadRoute] FormData parse failed, checking JSON/binary fallback:', formErr);
       }
     }
 
-    // 2. Fallback: Parse base64 JSON payload if multipart boundary was corrupted or posted as JSON
-    if (!fileBuffer) {
+    // 2. Fallback: Parse base64 JSON payload
+    if (!fileBuffer && contentType.includes('application/json')) {
       try {
         const body = await req.json();
         if (body.base64) {
           workspaceId = body.workspaceId || body.workspace_id || workspaceId;
           templateName = body.templateName || body.template_name || templateName;
           fileName = body.fileName || body.file_name || fileName;
-          mimeType = body.mimeType || body.mime_type || mimeType;
+          mimeType = deduceMimeType(fileName, body.mimeType || body.mime_type);
 
           const base64Data = body.base64.replace(/^data:.*?;base64,/, '');
           fileBuffer = Buffer.from(base64Data, 'base64');
         }
       } catch (jsonErr) {
         console.warn('[TemplateUploadRoute] JSON fallback parse failed:', jsonErr);
+      }
+    }
+
+    // 3. Fallback: Raw binary octet-stream
+    if (!fileBuffer && req.body) {
+      try {
+        const arrayBuffer = await req.arrayBuffer();
+        if (arrayBuffer && arrayBuffer.byteLength > 0) {
+          fileBuffer = Buffer.from(arrayBuffer);
+          fileName = searchParams.get('fileName') || searchParams.get('file_name') || fileName;
+          mimeType = deduceMimeType(fileName, contentType.split(';')[0].trim());
+        }
+      } catch (rawErr) {
+        console.warn('[TemplateUploadRoute] Raw stream parse failed:', rawErr);
       }
     }
 
@@ -96,10 +129,9 @@ export async function POST(req: NextRequest) {
 
     // Upload to Backblaze B2 WhatsApp bucket under 'template' category
     // Enforces 500MB quota against vw_workspace_whatsapp_storage_usage,
-    // compresses images to WebP 85 via sharp, preserves videos/PDFs as-is,
+    // compresses images to WebP 85 via sharp, preserves videos/PDFs as raw buffers,
     // and saves metadata into fw_whatsapp_media_files
-    const { uploadWhatsAppAttachment } = await import('@/lib/services/whatsappStorageService');
-    const result = await uploadWhatsAppAttachment({
+    const result = await uploadWhatsAppFileAndGetSignedUrl({
       workspaceId,
       buffer: fileBuffer,
       fileName,
@@ -116,8 +148,8 @@ export async function POST(req: NextRequest) {
       success: true,
       fileUrl: result.permanentUrl,
       fileName: result.fileName || fileName,
-      fileSize: fileBuffer.length,
-      fileSizeBytes: fileBuffer.length,
+      fileSize: result.fileSizeBytes,
+      fileSizeBytes: result.fileSizeBytes,
       mimeType: result.mimeType || mimeType,
       fileKey: result.fileKey,
       signedUrl: result.signedUrl,
@@ -137,20 +169,28 @@ export async function POST(req: NextRequest) {
 
 /**
  * DELETE /api/whatsapp/templates/upload?workspaceId=...&fileKey=...
- * Deletes media from Backblaze B2 bucket and fw_whatsapp_media_files record.
+ * Two-way cascade delete: Deletes media from Backblaze B2 bucket and fw_whatsapp_media_files.
  */
 export async function DELETE(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const workspaceId = searchParams.get('workspaceId') || searchParams.get('workspace_id');
-    const fileKey = searchParams.get('fileKey') || searchParams.get('file_key');
-    const fileName = searchParams.get('fileName') || searchParams.get('file_name');
+    let workspaceId = searchParams.get('workspaceId') || searchParams.get('workspace_id');
+    let fileKey = searchParams.get('fileKey') || searchParams.get('file_key');
+    let fileName = searchParams.get('fileName') || searchParams.get('file_name');
+
+    if (!fileKey && req.headers.get('content-type')?.includes('application/json')) {
+      try {
+        const body = await req.json();
+        workspaceId = body.workspaceId || body.workspace_id || workspaceId;
+        fileKey = body.fileKey || body.file_key || fileKey;
+        fileName = body.fileName || body.file_name || fileName;
+      } catch {}
+    }
 
     if (!workspaceId) {
       return NextResponse.json({ success: false, error: 'Missing workspaceId' }, { status: 400 });
     }
 
-    const { deleteWhatsAppFile } = await import('@/lib/services/whatsappStorageService');
     const { supabaseAdmin } = await import('@/lib/supabase');
 
     let targetKey = fileKey;
@@ -171,7 +211,7 @@ export async function DELETE(req: NextRequest) {
       await deleteWhatsAppFile(workspaceId, targetKey);
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, message: 'Media permanently deleted from B2 and database' });
   } catch (error: any) {
     console.error('[TemplateUploadRoute] DELETE error:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
