@@ -11,6 +11,7 @@ import Searchable3DCreamSelect, { Searchable3DCreamSelectOption } from '@/compon
 import { DEFAULT_EVENT_TYPES } from '@/lib/workspace-settings';
 import PostProductionConfirmModal from './PostProductionConfirmModal';
 import { PostProductionTeamMember } from '../page';
+import { ProjectManagerAssignModal } from '@/components/modals/ProjectManagerAssignModal';
 
 export interface PostProductionProjectData {
   id: string;
@@ -65,6 +66,7 @@ export default function PostProductionCard({
   const [segmentSearchQuery, setSegmentSearchQuery] = useState('');
   const [segmentToDelete, setSegmentToDelete] = useState<string | null>(null);
   const [showDeleteProjectModal, setShowDeleteProjectModal] = useState(false);
+  const [showPMAssignModal, setShowPMAssignModal] = useState(false);
   const [localPM, setLocalPM] = useState<string | null>(project.project_manager_name || null);
 
   useEffect(() => {
@@ -383,11 +385,24 @@ export default function PostProductionCard({
           onClick={(e) => e.stopPropagation()} 
           className="flex items-center gap-3 shrink-0"
         >
-          {/* PM Selector: Clean Single 3D Cream Box with clear label */}
+          {/* PM Selector: Clean Single 3D Cream Box with clear label & Granular Assign trigger */}
           <div className="w-48 sm:w-56">
-            <span className="text-[10px] font-black uppercase tracking-wider text-amber-900/70 dark:text-amber-400/70 block mb-1">
-              Project Manager
-            </span>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] font-black uppercase tracking-wider text-amber-900/70 dark:text-amber-400/70 block">
+                Project Manager
+              </span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowPMAssignModal(true);
+                }}
+                className="text-[10px] font-bold text-amber-700 dark:text-amber-400 hover:underline cursor-pointer"
+                title="Open Multi-Module Assignment Modal"
+              >
+                Assign Modules ↗
+              </button>
+            </div>
             <Searchable3DCreamSelect
               value={localPM || 'unassigned'}
               onChange={(val) => {
@@ -738,6 +753,27 @@ export default function PostProductionCard({
         message={`Are you sure you want to move this project to trash? It will be removed from the active post-production pipeline.`}
         confirmText="Yes, Move to Trash"
         cancelText="Cancel"
+      />
+
+      {/* 3D Cream Project Manager Granular Assignment Modal */}
+      <ProjectManagerAssignModal
+        isOpen={showPMAssignModal}
+        onClose={() => setShowPMAssignModal(false)}
+        client={{
+          id: project.client_id || project.id,
+          name: project.client_name,
+          project_manager_id: project.project_manager_id,
+          project_manager_name: project.project_manager_name
+        }}
+        teamMembers={teamMembers}
+        onAssigned={({ memberId, memberName }) => {
+          setLocalPM(memberName);
+          onUpdateProject(project.id, {
+            project_manager_id: memberId,
+            project_manager_name: memberName
+          });
+          setShowPMAssignModal(false);
+        }}
       />
     </div>
   );

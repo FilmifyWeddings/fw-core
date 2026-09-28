@@ -12,6 +12,7 @@ import { MasterSettingsHub } from '@/components/settings/master-settings-hub';
 import { extractFinancialsFromQuotation, extractCoupleNameFromQuotation, findFinalQuotationForLead, syncQuotationToTeamManagerEvents } from '@/lib/quotation-finance-sync';
 import { parseQuotationDeliverables } from '@/lib/services/postProductionSyncService';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
+import { LeadBookingConfirmationModal, LeadUnbookingTrashModal } from '@/components/modals/LeadStageConfirmModals';
 
 const MOCK_WORKSPACE_ID = '00000000-0000-0000-0000-000000000000';
 
@@ -215,6 +216,25 @@ export default function LeadsPage() {
   const [notifiedCommentIds, setNotifiedCommentIds] = useState<string[]>([]);
   const [impersonatedWorkspaceName, setImpersonatedWorkspaceName] = useState<string | null>(null);
   const notifContainerRef = useRef<HTMLDivElement>(null);
+
+  // 3D Cream Confirmation Modal States for Booking & Unbooking
+  const [pendingBookingAction, setPendingBookingAction] = useState<{
+    leadId: string;
+    lead: Lead;
+    updatedFields: Partial<Lead>;
+    hasFinalQuotation: boolean;
+    quotationTitle?: string;
+    packageAmount: number;
+  } | null>(null);
+
+  const [pendingUnbookingAction, setPendingUnbookingAction] = useState<{
+    leadId: string;
+    lead: Lead;
+    updatedFields: Partial<Lead>;
+    clientName: string;
+  } | null>(null);
+
+  const [isProcessingStageAction, setIsProcessingStageAction] = useState(false);
 
   // Close notifications popover on click outside
   useEffect(() => {
@@ -663,18 +683,11 @@ export default function LeadsPage() {
         ? extractFinancialsFromQuotation(latestQuote.content_json, parsedEventDate)
         : null;
 
+      // If no final quotation exists, amounts MUST remain strictly 0 (empty placeholder cards)
       let packageAmount = quoteFinancials ? quoteFinancials.final_total_amount : 0;
       let paidAmount = quoteFinancials ? quoteFinancials.received_amount : 0;
       if (quoteFinancials?.event_date) parsedEventDate = quoteFinancials.event_date;
       if (quoteFinancials?.event_type) eventType = quoteFinancials.event_type;
-
-      if (!quoteFinancials) {
-        if (raw.budget || raw.package_amount || raw.amount) {
-          const numStr = String(raw.budget || raw.package_amount || raw.amount).replace(/[^0-9.]/g, '');
-          const parsed = parseFloat(numStr) || 0;
-          if (parsed > 1000) packageAmount = parsed;
-        }
-      }
 
       // 3. Check if client already exists for this lead (by lead_id, or direct id match, or couple name match)
       const { data: existingClients } = await supabase
@@ -698,7 +711,7 @@ export default function LeadsPage() {
 
       if (matchedClient?.id) {
         targetClientId = matchedClient.id;
-        console.log('[LeadToClient] Client already exists for lead:', leadId, 'Updating with latest quotation...');
+        console.log('[LeadToClient] Client already exists for lead:', leadId, 'Updating with latest quotation or placeholder...');
         await supabase
           .from('workspace_clients')
           .update({
@@ -706,6 +719,9 @@ export default function LeadsPage() {
             paid_amount: paidAmount,
             event_type: eventType,
             event_date: parsedEventDate,
+            status: 'active',
+            is_deleted: false,
+            deleted_at: null,
             updated_at: new Date().toISOString()
           })
           .eq('id', targetClientId);
@@ -721,7 +737,8 @@ export default function LeadsPage() {
           event_date: parsedEventDate,
           total_package_amount: packageAmount,
           paid_amount: paidAmount,
-          status: 'active'
+          status: 'active',
+          is_deleted: false
         };
 
         const { data: newClient, error: clientErr } = await supabase
@@ -743,21 +760,43 @@ export default function LeadsPage() {
             .from('leads')
             .update({ client_id: targetClientId })
             .eq('id', leadId);
+        }
+      }
 
-          // Auto-create Post-Production Project for new client (strictly sync from quotation, NO demo data)
-          let initialDeliverables: any[] = [];
-          let ppNotes = '';
-          let enabledSegments = ['Wedding'];
+      if (targetClientId) {
+        // Auto-create / restore Post-Production Project for client
+        let initialDeliverables: any[] = [];
+        let ppNotes = '';
+        let enabledSegments = ['Wedding'];
 
-          if (latestQuote?.content_json) {
-            const parsed = parseQuotationDeliverables(latestQuote);
-            if (parsed.deliverables.length > 0) {
-              initialDeliverables = parsed.deliverables;
-              enabledSegments = parsed.enabledSegments;
-              ppNotes = `quotation_id:${latestQuote.template_id || latestQuote.id || ''};quotation_title:${latestQuote.content_json?.meta?.project_name || 'Final Quotation'};pp_config:${encodeURIComponent(JSON.stringify({ enabled_segments: enabledSegments }))};`;
-            }
+        if (latestQuote?.content_json) {
+          const parsed = parseQuotationDeliverables(latestQuote);
+          if (parsed.deliverables.length > 0) {
+            initialDeliverables = parsed.deliverables;
+            enabledSegments = parsed.enabledSegments;
+            ppNotes = `quotation_id:${latestQuote.template_id || latestQuote.id || ''};quotation_title:${latestQuote.content_json?.meta?.project_name || 'Final Quotation'};pp_config:${encodeURIComponent(JSON.stringify({ enabled_segments: enabledSegments }))};`;
           }
+        }
 
+        const { data: existingPP } = await supabase
+          .from('post_production_projects')
+          .select('id')
+          .eq('client_id', targetClientId)
+          .maybeSingle();
+
+        if (existingPP) {
+          await supabase
+            .from('post_production_projects')
+            .update({
+              overall_status: 'active',
+              is_deleted: false,
+              deleted_at: null,
+              deliverables: initialDeliverables,
+              notes: ppNotes,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', existingPP.id);
+        } else {
           await supabase
             .from('post_production_projects')
             .insert([{
@@ -766,26 +805,25 @@ export default function LeadsPage() {
               client_id: targetClientId,
               project_manager_name: null,
               overall_status: 'active',
+              is_deleted: false,
               deliverables: initialDeliverables,
               notes: ppNotes,
             }]);
-
-          if (enabledSegments.length > 0) {
-            try {
-              await supabase
-                .from('post_production_project_config')
-                .upsert({
-                  project_id: targetClientId,
-                  enabled_segments: enabledSegments,
-                  updated_at: new Date().toISOString()
-                }, { onConflict: 'project_id' });
-            } catch (_) {}
-          }
         }
-      }
 
-      // 4. Upsert Client Finance Record matching exact quotation breakdown
-      if (targetClientId) {
+        if (enabledSegments.length > 0) {
+          try {
+            await supabase
+              .from('post_production_project_config')
+              .upsert({
+                project_id: targetClientId,
+                enabled_segments: enabledSegments,
+                updated_at: new Date().toISOString()
+              }, { onConflict: 'project_id' });
+          } catch (_) {}
+        }
+
+        // 4. Upsert Client Finance Record matching exact quotation breakdown (or ₹0 placeholder)
         const finPayload = quoteFinancials ? {
           user_id: currentWorkspaceId,
           workspace_id: currentWorkspaceId,
@@ -802,24 +840,30 @@ export default function LeadsPage() {
           received_amount: quoteFinancials.received_amount,
           pending_amount: quoteFinancials.pending_amount,
           payment_status: quoteFinancials.payment_status,
+          status: 'active',
+          is_deleted: false,
+          deleted_at: null,
           milestones: quoteFinancials.milestones,
           updated_at: new Date().toISOString()
         } : {
           user_id: currentWorkspaceId,
           workspace_id: currentWorkspaceId,
           client_id: targetClientId,
-          base_package_price: packageAmount,
+          base_package_price: 0,
           discount_amount: 0,
           accommodation_charges: 0,
           travel_charges: 0,
           additional_charges: 0,
-          subtotal_amount: packageAmount,
+          subtotal_amount: 0,
           gst_rate: 0,
           gst_amount: 0,
-          final_total_amount: packageAmount,
+          final_total_amount: 0,
           received_amount: 0,
-          pending_amount: packageAmount,
+          pending_amount: 0,
           payment_status: 'pending',
+          status: 'active',
+          is_deleted: false,
+          deleted_at: null,
           milestones: [],
           updated_at: new Date().toISOString()
         };
@@ -840,43 +884,62 @@ export default function LeadsPage() {
             .from('client_finance_records')
             .insert([{ ...finPayload, created_at: new Date().toISOString() }]);
         }
-      }
 
-      // 5. Auto-create / Sync Team Manager Bookings & Event Cards (fw_projects + fw_sub_events + fw_assignments)
-      try {
-        const mainVenue = raw.venue || raw.location || raw.city || '';
-        if (latestQuote?.content_json) {
-          await syncQuotationToTeamManagerEvents(
-            supabase,
-            leadId,
-            latestQuote.content_json,
-            clientName,
-            currentWorkspaceId,
-            parsedEventDate,
-            mainVenue,
-            targetClientId
-          );
-        } else {
-          // Create an EMPTY master project in Team Manager (0 sub-events) so user can add manually or wait for final quotation
-          const { data: existingFwProjects } = await supabase
-            .from('fw_projects')
-            .select('id')
-            .ilike('client_name', `%${clientName}%`);
-
-          if (!existingFwProjects || existingFwProjects.length === 0) {
-            await supabase
+        // 5. Auto-create / Sync Team Manager Bookings & Event Cards (fw_projects + fw_sub_events + fw_assignments)
+        try {
+          const mainVenue = raw.venue || raw.location || raw.city || '';
+          if (latestQuote?.content_json) {
+            await syncQuotationToTeamManagerEvents(
+              supabase,
+              leadId,
+              latestQuote.content_json,
+              clientName,
+              currentWorkspaceId,
+              parsedEventDate,
+              mainVenue,
+              targetClientId
+            );
+          } else {
+            // Create or restore an EMPTY master project in Team Manager (0 sub-events)
+            const { data: existingFwProjects } = await supabase
               .from('fw_projects')
-              .insert([{
-                client_name: clientName,
-                main_date: parsedEventDate,
-                main_venue: mainVenue || null,
-                user_id: currentWorkspaceId,
-                status: 'active'
-              }]);
+              .select('id')
+              .or(`client_id.eq.${targetClientId},client_name.ilike.%${clientName}%`);
+
+            if (existingFwProjects && existingFwProjects.length > 0) {
+              await supabase
+                .from('fw_projects')
+                .update({
+                  status: 'active',
+                  is_archived: false,
+                  client_id: targetClientId,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', existingFwProjects[0].id);
+            } else {
+              await supabase
+                .from('fw_projects')
+                .insert([{
+                  client_name: clientName,
+                  client_id: targetClientId,
+                  main_date: parsedEventDate,
+                  main_venue: mainVenue || null,
+                  user_id: currentWorkspaceId,
+                  status: 'active',
+                  is_archived: false
+                }]);
+            }
           }
+        } catch (fwErr) {
+          console.warn('[LeadToTeamManager] Error creating team manager events:', fwErr);
         }
-      } catch (fwErr) {
-        console.warn('[LeadToTeamManager] Error creating team manager events:', fwErr);
+
+        // Dispatch refresh events to all tabs
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('client_updated'));
+          window.dispatchEvent(new CustomEvent('post_production_updated'));
+          window.dispatchEvent(new CustomEvent('team_events_updated'));
+        }
       }
     } catch (e) {
       console.error('[LeadToClient] autoSyncBookedLeadToClient Exception:', e);
@@ -888,57 +951,16 @@ export default function LeadsPage() {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
   };
 
-  const handleLeadUpdate = async (leadId: string, updatedFields: Partial<Lead>) => {
+  const isBookedState = (obj?: Partial<Lead> | null) => {
+    if (!obj) return false;
+    const stageId = (obj.stage_id || '').toLowerCase();
+    const status = (typeof obj.status === 'string' ? obj.status : '').toLowerCase();
+    return stageId.includes('book') || status.includes('book') || stages.some(s => s.id === obj.stage_id && s.name?.toLowerCase().includes('book'));
+  };
+
+  const executeLeadUpdate = async (leadId: string, updatedFields: Partial<Lead>) => {
     const currentLead = leads.find(l => l.id === leadId);
-
-    // Check if moving out of "Booked"
-    const wasBooked = currentLead && (
-      (currentLead.stage_id && currentLead.stage_id.toLowerCase().includes('book')) ||
-      (typeof currentLead.status === 'string' && currentLead.status.toLowerCase().includes('book')) ||
-      (currentLead.stage_id && stages.some(s => s.id === currentLead.stage_id && s.name.toLowerCase().includes('book')))
-    );
-
-    const isNowBooked = 
-      (updatedFields.stage_id && updatedFields.stage_id.toLowerCase().includes('book')) ||
-      (typeof updatedFields.status === 'string' && updatedFields.status.toLowerCase().includes('book')) ||
-      (updatedFields.stage_id && stages.some(s => s.id === updatedFields.stage_id && s.name.toLowerCase().includes('book')));
-
-    if (wasBooked && !isNowBooked && ('stage_id' in updatedFields || 'status' in updatedFields)) {
-      const confirmRemove = confirm(
-        `Are you sure you want to move this lead out of 'Booked'?\n\nThis will remove the linked Client Directory card, Finance Ledger, and Bookings & Events card.`
-      );
-      if (!confirmRemove) {
-        // Revert local UI
-        return;
-      }
-
-      // User confirmed un-booking: clean up client and bookings
-      try {
-        const clientName = (currentLead as any)?.couple_names || currentLead?.raw_payload?.couple_name || currentLead?.client_name || currentLead?.name || '';
-        // 1. Delete or deactivate linked client & finance
-        if (currentLead?.client_id) {
-          await supabase.from('workspace_clients').delete().eq('id', currentLead.client_id);
-          await supabase.from('client_finance_records').delete().eq('client_id', currentLead.client_id);
-        }
-        await supabase.from('workspace_clients').delete().eq('lead_id', leadId);
-        
-        // 2. Delete linked fw_projects
-        if (clientName) {
-          const { data: projs } = await supabase.from('fw_projects').select('id').ilike('client_name', `%${clientName}%`);
-          if (projs && projs.length > 0) {
-            const pIds = projs.map(p => p.id);
-            const { data: subEvs } = await supabase.from('fw_sub_events').select('id').in('project_id', pIds);
-            if (subEvs && subEvs.length > 0) {
-              await supabase.from('fw_assignments').delete().in('sub_event_id', subEvs.map(s => s.id));
-              await supabase.from('fw_sub_events').delete().in('project_id', pIds);
-            }
-            await supabase.from('fw_projects').delete().in('id', pIds);
-          }
-        }
-      } catch (cleanErr) {
-        console.warn('[handleLeadUpdate] Error cleaning unbooked records:', cleanErr);
-      }
-    }
+    const isNowBooked = isBookedState(updatedFields);
 
     // Optimistic UI Update
     setLeads(prev => {
@@ -982,7 +1004,7 @@ export default function LeadsPage() {
           .eq('id', leadId);
 
         if (dbErr) {
-          console.warn('[handleLeadUpdate] Supabase client update warning, using API fallback:', dbErr.message);
+          console.warn('[executeLeadUpdate] Supabase client update warning, using API fallback:', dbErr.message);
         }
 
         // 2. Reliable Backend API fallback with supabaseAdmin
@@ -990,12 +1012,10 @@ export default function LeadsPage() {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(sanitizedFields)
-        }).catch(err => console.error('[handleLeadUpdate API error]:', err));
+        }).catch(err => console.error('[executeLeadUpdate API error]:', err));
 
         // AUTO-CONVERT TO CLIENT WHEN STAGE IS "BOOKED"
         if (isNowBooked && currentLead) {
-          // If this update was triggered by set-final quotation, the backend API route handles full workspace sync.
-          // Do NOT run autoSyncBookedLeadToClient concurrently to prevent race condition duplicate card inserts!
           if (!updatedFields.final_quotation_id) {
             await autoSyncBookedLeadToClient(leadId, currentLead, updatedFields);
           }
@@ -1003,6 +1023,168 @@ export default function LeadsPage() {
       } catch (err) {
         console.error("Database update error:", err);
       }
+    }
+  };
+
+  const handleLeadUpdate = async (leadId: string, updatedFields: Partial<Lead>) => {
+    const currentLead = leads.find(l => l.id === leadId);
+    const wasBooked = isBookedState(currentLead);
+    const isNowBooked = isBookedState(updatedFields);
+
+    // Case 1: Moving OUT of "Booked" -> Show 3D Cream warning confirmation modal
+    if (wasBooked && !isNowBooked && ('stage_id' in updatedFields || 'status' in updatedFields)) {
+      const clientName = (currentLead as any)?.couple_names || currentLead?.raw_payload?.couple_name || currentLead?.client_name || currentLead?.name || 'Client';
+      setPendingUnbookingAction({
+        leadId,
+        lead: currentLead!,
+        updatedFields,
+        clientName
+      });
+      return;
+    }
+
+    // Case 2: Moving INTO "Booked" -> Show 3D Cream booking confirmation modal
+    if (!wasBooked && isNowBooked && ('stage_id' in updatedFields || 'status' in updatedFields)) {
+      const latestQuote = await findFinalQuotationForLead(supabase, leadId);
+      const hasFinalQuotation = !!latestQuote;
+      const quoteFinancials = latestQuote && latestQuote.content_json
+        ? extractFinancialsFromQuotation(latestQuote.content_json)
+        : null;
+
+      setPendingBookingAction({
+        leadId,
+        lead: currentLead!,
+        updatedFields,
+        hasFinalQuotation,
+        quotationTitle: latestQuote?.content_json?.meta?.project_name || latestQuote?.name || 'Final Quotation',
+        packageAmount: quoteFinancials?.final_total_amount || 0
+      });
+      return;
+    }
+
+    // Default: Directly execute update
+    await executeLeadUpdate(leadId, updatedFields);
+  };
+
+  const handleConfirmBooking = async () => {
+    if (!pendingBookingAction) return;
+    setIsProcessingStageAction(true);
+    const { leadId, updatedFields } = pendingBookingAction;
+    try {
+      await executeLeadUpdate(leadId, updatedFields);
+      setPendingBookingAction(null);
+    } catch (err) {
+      console.error('[handleConfirmBooking] Error:', err);
+    } finally {
+      setIsProcessingStageAction(false);
+    }
+  };
+
+  const handleConfirmUnbooking = async () => {
+    if (!pendingUnbookingAction) return;
+    setIsProcessingStageAction(true);
+    const { leadId, lead, updatedFields, clientName } = pendingUnbookingAction;
+    try {
+      const targetClientId = lead.client_id;
+      const nowIso = new Date().toISOString();
+
+      let resolvedClientId = targetClientId;
+      if (!resolvedClientId) {
+        const { data: cl } = await supabase
+          .from('workspace_clients')
+          .select('id, notes')
+          .or(`lead_id.eq.${leadId},id.eq.${leadId}`)
+          .maybeSingle();
+        if (cl) resolvedClientId = cl.id;
+      }
+
+      if (resolvedClientId) {
+        // A. Workspace Clients Trash
+        const { data: clientObj } = await supabase
+          .from('workspace_clients')
+          .select('notes')
+          .eq('id', resolvedClientId)
+          .maybeSingle();
+        const trashedNotes = (clientObj?.notes || '') + ' [status:trash]';
+
+        await supabase
+          .from('workspace_clients')
+          .update({
+            status: 'trash',
+            is_deleted: true,
+            deleted_at: nowIso,
+            notes: trashedNotes,
+            updated_at: nowIso
+          })
+          .eq('id', resolvedClientId);
+
+        // B. Client Finance Records Trash
+        await supabase
+          .from('client_finance_records')
+          .update({
+            status: 'trash',
+            is_deleted: true,
+            deleted_at: nowIso,
+            updated_at: nowIso
+          })
+          .eq('client_id', resolvedClientId);
+
+        // C. Post Production Projects Trash
+        await supabase
+          .from('post_production_projects')
+          .update({
+            overall_status: 'trash',
+            is_deleted: true,
+            deleted_at: nowIso,
+            notes: '[status:trash]',
+            updated_at: nowIso
+          })
+          .eq('client_id', resolvedClientId);
+
+        // D. Bookings & Events Trash (by client_id)
+        await supabase
+          .from('fw_projects')
+          .update({
+            status: 'trash',
+            is_archived: true,
+            updated_at: nowIso
+          })
+          .eq('client_id', resolvedClientId);
+      }
+
+      // Also clean up by clientName if any unlinked fw_projects exist
+      if (clientName) {
+        const { data: projs } = await supabase
+          .from('fw_projects')
+          .select('id')
+          .ilike('client_name', `%${clientName}%`);
+        if (projs && projs.length > 0) {
+          const pIds = projs.map(p => p.id);
+          await supabase
+            .from('fw_projects')
+            .update({
+              status: 'trash',
+              is_archived: true,
+              updated_at: nowIso
+            })
+            .in('id', pIds);
+        }
+      }
+
+      // Dispatch refresh events to all tabs
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('client_updated'));
+        window.dispatchEvent(new CustomEvent('post_production_updated'));
+        window.dispatchEvent(new CustomEvent('team_events_updated'));
+      }
+
+      // Execute lead update to move to new stage
+      await executeLeadUpdate(leadId, updatedFields);
+      setPendingUnbookingAction(null);
+    } catch (err) {
+      console.error('[handleConfirmUnbooking] Error:', err);
+    } finally {
+      setIsProcessingStageAction(false);
     }
   };
 
@@ -1391,6 +1573,32 @@ export default function LeadsPage() {
           workspaceId={userId}
           onStagesUpdated={() => loadLeadsAndPreferences(userId)}
         />
+
+        {/* 3D Cream Confirmation Modal: Moving to Booked */}
+        {pendingBookingAction && (
+          <LeadBookingConfirmationModal
+            isOpen={!!pendingBookingAction}
+            onClose={() => setPendingBookingAction(null)}
+            onConfirm={handleConfirmBooking}
+            lead={pendingBookingAction.lead}
+            hasFinalQuotation={pendingBookingAction.hasFinalQuotation}
+            quotationTitle={pendingBookingAction.quotationTitle}
+            packageAmount={pendingBookingAction.packageAmount}
+            isSubmitting={isProcessingStageAction}
+          />
+        )}
+
+        {/* 3D Cream Warning Modal: Moving out of Booked (Unbooking & Trashing) */}
+        {pendingUnbookingAction && (
+          <LeadUnbookingTrashModal
+            isOpen={!!pendingUnbookingAction}
+            onClose={() => setPendingUnbookingAction(null)}
+            onConfirm={handleConfirmUnbooking}
+            lead={pendingUnbookingAction.lead}
+            leadName={pendingUnbookingAction.clientName || pendingUnbookingAction.lead.name || 'This Lead'}
+            isSubmitting={isProcessingStageAction}
+          />
+        )}
 
       </div>
     </div>

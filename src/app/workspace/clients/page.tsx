@@ -20,6 +20,7 @@ import { fetchWorkspaceTeamMembers, type WorkspaceMemberOption } from '@/lib/tea
 import { fetchWorkspaceEventTypes } from '@/lib/workspace-settings';
 import AddClientModal, { AddClientFormData } from './components/AddClientModal';
 import { handleAssignClientPM } from './components/ClientRow';
+import { ProjectManagerAssignModal } from '@/components/modals/ProjectManagerAssignModal';
 import ClientStatusDropdown from './components/ClientStatusDropdown';
 import type { WorkspaceClient, Lead, ClientFinanceRecord, FinanceMilestoneItem } from '@/types';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
@@ -1646,123 +1647,28 @@ export default function ClientsPage() {
         isSubmitting={isSubmitting}
       />
 
-      {/* ── QUICK ASSIGN PROJECT MANAGER (PM) MODAL ── */}
-      <AnimatePresence>
-        {quickAssignClient && (
-          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-[#FFFDF9] rounded-3xl p-6 max-w-sm w-full border border-[#EAE5DA] shadow-2xl space-y-4"
-            >
-              <div className="flex items-center justify-between border-b border-[#EAE5DA] pb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-200">
-                    <UserPlus className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-black text-slate-900">Assign Project Manager</h3>
-                    <p className="text-[11px] text-slate-500 font-bold">{quickAssignClient.name}</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => {
-                    setQuickAssignClient(null);
-                    setQuickPmSearch('');
-                  }}
-                  className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="space-y-3 text-xs">
-                <p className="text-slate-600 font-medium">
-                  Select an In-House team member to assign as Project Manager (PM) for <strong>{quickAssignClient.name}</strong>:
-                </p>
-
-                {/* Search PM */}
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Search In-House PM..."
-                    value={quickPmSearch}
-                    onChange={(e) => setQuickPmSearch(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-medium"
-                    autoFocus
-                  />
-                </div>
-
-                <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
-                  {/* Option: Unassign */}
-                  <button
-                    onClick={() => {
-                      handleAssignProjectManager(quickAssignClient, null);
-                      setQuickPmSearch('');
-                    }}
-                    className="w-full p-2.5 rounded-2xl border border-slate-200 hover:border-rose-300 hover:bg-rose-50 text-left flex items-center justify-between transition cursor-pointer"
-                  >
-                    <span className="font-bold text-slate-600 text-xs">❌ Remove / Unassigned</span>
-                    {!(quickAssignClient.project_manager_name || parseClientExtended(quickAssignClient).project_manager_name) && (
-                      <Check className="w-4 h-4 text-emerald-600" />
-                    )}
-                  </button>
-
-                  {filteredQuickMembers.length === 0 ? (
-                    <div className="p-4 text-center text-slate-400 text-xs">
-                      No matching In-House PM found
-                    </div>
-                  ) : (
-                    filteredQuickMembers.map((member) => {
-                      const isSelected =
-                        quickAssignClient.project_manager_id === member.id ||
-                        parseClientExtended(quickAssignClient).project_manager_id === member.id;
-                      const initials = member.name.split(/\s+/).filter(Boolean).map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
-
-                      return (
-                        <button
-                          key={member.id}
-                          onClick={() => {
-                            handleAssignProjectManager(quickAssignClient, member);
-                            setQuickPmSearch('');
-                          }}
-                          className={`w-full p-2.5 rounded-2xl border text-left flex items-center justify-between transition cursor-pointer ${
-                            isSelected
-                              ? 'bg-amber-50 border-amber-400 text-amber-950 font-black shadow-2xs'
-                              : 'bg-white hover:bg-amber-50/40 border-slate-200 text-slate-800'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-800 font-black text-xs flex items-center justify-center border border-amber-500/20">
-                              {initials}
-                            </span>
-                            <p className="font-bold text-xs text-slate-900">{member.name}</p>
-                          </div>
-                          {isSelected && <Check className="w-4 h-4 text-amber-600 shrink-0" />}
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-
-              <div className="pt-2 border-t border-[#EAE5DA] flex justify-end">
-                <button
-                  onClick={() => {
-                    setQuickAssignClient(null);
-                    setQuickPmSearch('');
-                  }}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
-                >
-                  Cancel
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      {/* ── 3D CREAM PROJECT MANAGER (PM) GRANULAR ASSIGNMENT MODAL ── */}
+      <ProjectManagerAssignModal
+        isOpen={Boolean(quickAssignClient)}
+        onClose={() => setQuickAssignClient(null)}
+        client={quickAssignClient}
+        teamMembers={teamMembers}
+        onAssigned={({ memberId, memberName }) => {
+          if (quickAssignClient) {
+            setClients(prev => prev.map(c => {
+              if (c.id === quickAssignClient.id) {
+                return {
+                  ...c,
+                  project_manager_id: memberId,
+                  project_manager_name: memberName
+                };
+              }
+              return c;
+            }));
+          }
+          setQuickAssignClient(null);
+        }}
+      />
 
       {/* ─────────────────────────────────────────────────────────────
           CLIENT DELETE TO TRASH CONFIRMATION MODAL

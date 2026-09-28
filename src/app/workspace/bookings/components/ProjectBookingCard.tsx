@@ -105,36 +105,29 @@ export interface ProjectBookingCardProps {
   onPMChange?: (projectId: string, memberId: string | null, memberName: string | null) => void;
 }
 
+import { ProjectManagerAssignModal } from '@/components/modals/ProjectManagerAssignModal';
+
 export const ProjectBookingCard: React.FC<ProjectBookingCardProps> = ({
   project,
   teamMembers,
   onPMChange,
 }) => {
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [search, setSearch] = useState('');
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
 
-  const handleSelect = async (member: FWTeamMember | null) => {
-    setDropdownOpen(false);
-    setSearch('');
-    const mId = member ? member.id : null;
-    const mName = member ? member.name : null;
-    if (onPMChange) {
-      onPMChange(project.id, mId, mName);
-    }
-    await handleUpdateBookingPM(project.id, project.client_id || null, project.client_name, member);
-  };
-
-  const filteredMembers = teamMembers.filter((m) =>
-    !search.trim() ||
-    m.name.toLowerCase().includes(search.toLowerCase()) ||
-    (m.primary_role || '').toLowerCase().includes(search.toLowerCase())
-  );
+  const assignableMembers = teamMembers.map(m => ({
+    id: m.id,
+    name: m.name,
+    role: m.primary_role || 'Crew Member',
+    email: m.email,
+    phone: m.phone,
+    avatar_url: m.avatar_url
+  }));
 
   return (
     <div className="relative inline-block">
       <button
         type="button"
-        onClick={() => setDropdownOpen(!dropdownOpen)}
+        onClick={() => setIsAssignModalOpen(true)}
         className="px-3 py-1.5 rounded-2xl bg-amber-50 hover:bg-amber-100/80 border border-amber-200 text-amber-950 text-xs font-bold flex items-center gap-2 transition shadow-xs cursor-pointer group"
       >
         <span className="text-[10px] font-black uppercase tracking-wider text-amber-800">PM:</span>
@@ -148,67 +141,24 @@ export const ProjectBookingCard: React.FC<ProjectBookingCardProps> = ({
         <ChevronDown className="w-3 h-3 text-amber-700 group-hover:translate-y-0.5 transition-transform" />
       </button>
 
-      {dropdownOpen && (
-        <div className="absolute right-0 mt-2 z-[9999] w-64 max-h-80 overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl p-2 space-y-1.5 text-slate-800">
-          <div className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 flex items-center justify-between">
-            <span>Assign Project Manager</span>
-            {project.project_manager_name && (
-              <button
-                type="button"
-                onClick={() => handleSelect(null)}
-                className="text-rose-500 hover:underline cursor-pointer font-bold"
-              >
-                Clear PM
-              </button>
-            )}
-          </div>
-
-          <div className="relative px-1 pt-1 pb-0.5">
-            <input
-              type="text"
-              placeholder="Search team member..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-7 pr-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-amber-500 focus:bg-white"
-              autoFocus
-            />
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
-          </div>
-
-          <div className="space-y-1 max-h-48 overflow-y-auto">
-            {filteredMembers.map((m) => {
-              const isSelected = project.project_manager_id === m.id || project.project_manager_name === m.name;
-              return (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => handleSelect(m)}
-                  className={`w-full flex items-center justify-between gap-2.5 p-2 rounded-xl text-left transition cursor-pointer ${
-                    isSelected
-                      ? 'bg-amber-50 text-amber-950 font-bold border border-amber-200'
-                      : 'hover:bg-slate-50 text-slate-700'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-amber-500 to-amber-600 text-white font-black text-[10px] flex items-center justify-center shrink-0 overflow-hidden shadow-xs">
-                      {m.avatar_url ? (
-                        <img src={m.avatar_url} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        m.name.slice(0, 2).toUpperCase()
-                      )}
-                    </div>
-                    <div className="truncate">
-                      <p className="text-xs font-bold leading-tight truncate">{m.name}</p>
-                      <p className="text-[10px] text-slate-400 leading-tight truncate">{m.primary_role || 'Crew'}</p>
-                    </div>
-                  </div>
-                  {isSelected && <UserCheck className="w-3.5 h-3.5 text-amber-600 shrink-0" />}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      {/* 3D Cream Project Manager Granular Assignment Modal */}
+      <ProjectManagerAssignModal
+        isOpen={isAssignModalOpen}
+        onClose={() => setIsAssignModalOpen(false)}
+        client={{
+          id: project.client_id || project.id,
+          name: project.client_name,
+          project_manager_id: project.project_manager_id,
+          project_manager_name: project.project_manager_name
+        }}
+        teamMembers={assignableMembers}
+        onAssigned={({ memberId, memberName }) => {
+          if (onPMChange) {
+            onPMChange(project.id, memberId, memberName);
+          }
+          setIsAssignModalOpen(false);
+        }}
+      />
     </div>
   );
 };
