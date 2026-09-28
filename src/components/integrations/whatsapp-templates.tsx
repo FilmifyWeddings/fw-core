@@ -245,7 +245,7 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
       formData.append('templateName', name || 'template');
 
       // 1. Call fetch without ANY explicit headers so browser calculates multipart boundary
-      let res = await fetch('/api/whatsapp/templates/upload', {
+      let res = await fetch(`/api/whatsapp/templates/upload?workspaceId=${encodeURIComponent(targetWorkspaceId)}&templateName=${encodeURIComponent(name || 'template')}`, {
         method: 'POST',
         body: formData,
       });

@@ -92,7 +92,7 @@ export function AddTemplateModal({ isOpen, onClose, workspaceId, onTemplateCreat
       formData.append('templateName', form.name || 'template');
 
       // Native streaming multipart upload without base64 bloat for large files
-      let res = await fetch('/api/whatsapp/templates/upload', {
+      let res = await fetch(`/api/whatsapp/templates/upload?workspaceId=${encodeURIComponent(workspaceId || '00000000-0000-0000-0000-000000000000')}&templateName=${encodeURIComponent(form.name || 'template')}`, {
         method: 'POST',
         body: formData,
       });

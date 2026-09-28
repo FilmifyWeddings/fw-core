@@ -423,8 +423,11 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
+     * - api/whatsapp/templates/upload (bypasses middleware 10MB stream truncation)
+     * - api/whatsapp/templates/delete-media
+     * - api/media (direct media streaming)
      * - public folder files (.svg, .png, .jpg, .ico)
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff|woff2|ttf|eot)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|api/whatsapp/templates/upload|api/whatsapp/templates/delete-media|api/media|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff|woff2|ttf|eot)$).*)',
   ],
 };

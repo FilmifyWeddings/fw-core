@@ -14,8 +14,9 @@ const nextConfig: NextConfig = {
     // Prevent memory exhaustion on VPS
     cpus: 1, 
     serverActions: {
-      bodySizeLimit: '50mb',
+      bodySizeLimit: '100mb',
     },
+    proxyClientMaxBodySize: '100mb',
   },
 
   // 4. Images build-time render skip
