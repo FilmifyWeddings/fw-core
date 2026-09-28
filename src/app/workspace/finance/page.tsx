@@ -594,17 +594,17 @@ export default function FinancePage() {
     }
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const workspaceId = session?.user?.id || 'ws_demo';
-      if (session?.user?.id) {
+      const workspaceId: string = String(activeWsId || session?.user?.id || 'ws_demo');
+      if (session?.user?.id && !currentWorkspaceId) {
         setCurrentWorkspaceId(session.user.id);
       }
 
-      // 1. Fetch Clients (Initial 50 records limit for sub-300ms transition)
+      // 1. Fetch Clients (Fetch all active workspace clients up to 1000 records)
       let clientQuery = supabase
         .from('workspace_clients')
         .select('*')
         .order('created_at', { ascending: false })
-        .range(0, 49);
+        .limit(1000);
 
       if (workspaceId && workspaceId !== 'ws_demo') {
         clientQuery = clientQuery.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
@@ -619,7 +619,8 @@ export default function FinancePage() {
           .from('leads')
           .select('*')
           .or('final_quotation_id.not.is.null,status.in.(booked,accepted,closed,converted)')
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false })
+          .limit(1000);
 
         if (workspaceId && workspaceId !== 'ws_demo') {
           leadsQuery = leadsQuery.or(`workspace_id.eq.${workspaceId},created_by_user_id.eq.${workspaceId}`);
@@ -629,15 +630,13 @@ export default function FinancePage() {
         if (leadsData) {
           for (const lead of leadsData) {
             const coupleName = lead.raw_payload?.couple_name || (lead as any).couple_names || lead.client_name || lead.name || 'Untitled Client';
-            const leadPhone = lead.phone ? lead.phone.replace(/\D/g, '').slice(-10) : '';
             const exists = clientList.some(c => {
-              const cPhone = c.phone ? c.phone.replace(/\D/g, '').slice(-10) : '';
               return (
                 c.id === lead.id || 
                 c.lead_id === lead.id || 
-                (leadPhone && cPhone && leadPhone === cPhone) ||
-                (c.final_quotation_id && lead.final_quotation_id && c.final_quotation_id === lead.final_quotation_id) ||
-                (c.name && coupleName && c.name.toLowerCase().trim() === coupleName.toLowerCase().trim())
+                Boolean(lead.client_id && c.id === lead.client_id) ||
+                Boolean(lead.raw_payload?.client_id && c.id === lead.raw_payload.client_id) ||
+                Boolean(c.final_quotation_id && lead.final_quotation_id && c.final_quotation_id === lead.final_quotation_id)
               );
             });
             if (!exists) {
@@ -913,6 +912,7 @@ export default function FinancePage() {
       }
 
       // Deduplicate finalRecords so no duplicate client or lead card is ever shown in Finance
+      // NOTE: We NEVER deduplicate by phone number because a client can book multiple events/shoots (e.g. Wedding, Baby Shoot, Pre-Wedding).
       const seenCardKeys = new Set<string>();
       const deduplicatedRecords: ClientFinanceRecord[] = [];
 
@@ -921,18 +921,15 @@ export default function FinancePage() {
         const cId = c?.id || rec.client_id;
         const lId = c?.lead_id;
         const qId = rec.final_quotation_id || (c as any)?.final_quotation_id;
-        const phone = c?.phone ? c.phone.replace(/\D/g, '').slice(-10) : '';
 
         const idKey = cId ? `id:${cId}` : null;
         const leadKey = lId ? `lead:${lId}` : null;
         const quoteKey = qId ? `quote:${qId}` : null;
-        const phoneKey = phone && phone.length >= 7 ? `phone:${phone}` : null;
 
         const isDuplicate = 
           (idKey && seenCardKeys.has(idKey)) ||
           (leadKey && seenCardKeys.has(leadKey)) ||
-          (quoteKey && seenCardKeys.has(quoteKey)) ||
-          (phoneKey && seenCardKeys.has(phoneKey));
+          (quoteKey && seenCardKeys.has(quoteKey));
 
         if (isDuplicate) {
           continue;
@@ -941,7 +938,6 @@ export default function FinancePage() {
         if (idKey) seenCardKeys.add(idKey);
         if (leadKey) seenCardKeys.add(leadKey);
         if (quoteKey) seenCardKeys.add(quoteKey);
-        if (phoneKey) seenCardKeys.add(phoneKey);
 
         deduplicatedRecords.push(rec);
       }
@@ -1009,7 +1005,7 @@ export default function FinancePage() {
           .from('finance_expenses')
           .select('*')
           .order('payment_date', { ascending: false })
-          .range(0, 49);
+          .limit(1000);
 
         if (workspaceId && workspaceId !== 'ws_demo') {
           expenseQuery = expenseQuery.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
@@ -1057,7 +1053,7 @@ export default function FinancePage() {
 
       if (typeof window !== 'undefined') {
         try {
-          localStorage.setItem('sc_cached_finance_records', JSON.stringify(finalRecords));
+          localStorage.setItem('sc_cached_finance_records', JSON.stringify(deduplicatedRecords));
           localStorage.setItem('sc_cached_finance_expenses', JSON.stringify(combinedExpenses));
           localStorage.setItem('sc_cached_finance_clients', JSON.stringify(clientList));
         } catch (_) {}
@@ -2029,10 +2025,22 @@ export default function FinancePage() {
       const phone = client?.phone?.toLowerCase() || '';
       const city = ((client as any)?.city || (client as any)?.venue || '').toLowerCase();
       const handled = (client as any)?.handled_by || (client as any)?.assigned_team_member_name || 'Unassigned';
-      const query = searchQuery.toLowerCase();
+      const query = searchQuery.toLowerCase().trim();
 
-      // Search Query
-      const matchesSearch = !query || clientName.includes(query) || eventType.toLowerCase().includes(query) || phone.includes(query) || city.includes(query) || handled.toLowerCase().includes(query);
+      // Search Query: Smart multi-token matching (handles combined keywords, phone, event type, city, handled_by, notes)
+      let matchesSearch = true;
+      if (query) {
+        const queryTokens = query.split(/\s+/).filter(Boolean);
+        const searchableText = `${clientName} ${eventType} ${phone} ${city} ${handled} ${rec.notes || ''}`.toLowerCase();
+        if (searchableText.includes(query)) {
+          matchesSearch = true;
+        } else if (queryTokens.length <= 2) {
+          matchesSearch = queryTokens.every(tok => searchableText.includes(tok));
+        } else {
+          const matchedCount = queryTokens.filter(tok => searchableText.includes(tok)).length;
+          matchesSearch = matchedCount >= Math.ceil(queryTokens.length * 0.5) || queryTokens.every(tok => searchableText.includes(tok));
+        }
+      }
 
       // Category
       const matchesCategory = categoryFilter === 'all' || eventType === categoryFilter;
@@ -2169,12 +2177,24 @@ export default function FinancePage() {
 
   const filteredExpenses = useMemo(() => {
     return expenses.filter(exp => {
-      const query = searchQuery.toLowerCase();
+      const query = searchQuery.toLowerCase().trim();
       const title = exp.title?.toLowerCase() || '';
       const paidTo = exp.paid_to?.toLowerCase() || '';
       const cat = exp.category?.toLowerCase() || '';
 
-      const matchesSearch = !query || title.includes(query) || paidTo.includes(query) || cat.includes(query);
+      let matchesSearch = true;
+      if (query) {
+        const queryTokens = query.split(/\s+/).filter(Boolean);
+        const searchableText = `${title} ${paidTo} ${cat} ${exp.notes || ''}`.toLowerCase();
+        if (searchableText.includes(query)) {
+          matchesSearch = true;
+        } else if (queryTokens.length <= 2) {
+          matchesSearch = queryTokens.every(tok => searchableText.includes(tok));
+        } else {
+          const matchedCount = queryTokens.filter(tok => searchableText.includes(tok)).length;
+          matchesSearch = matchedCount >= Math.ceil(queryTokens.length * 0.5) || queryTokens.every(tok => searchableText.includes(tok));
+        }
+      }
       const matchesCategory = categoryFilter === 'all' || exp.category === categoryFilter;
       const matchesMode = paymentModeFilter === 'all' || exp.payment_mode === paymentModeFilter;
 
