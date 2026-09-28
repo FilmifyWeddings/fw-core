@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { motion as motionImport, AnimatePresence as AnimatePresenceImport } from 'framer-motion';
@@ -506,7 +507,10 @@ export function LeadTable({
   }, [activeLeadId, leads]);
 
   const [viewMode, setViewMode] = useState<'table' | 'tasks'>('table');
-  const [phoneActionMenuLeadId, setPhoneActionMenuLeadId] = useState<string | null>(null);
+  const [phoneActionMenu, setPhoneActionMenu] = useState<{
+    lead: Lead;
+    coords: { top: number; right: number };
+  } | null>(null);
   const [syncingLeadId, setSyncingLeadId] = useState<string | null>(null);
   
   // Search and Filters
@@ -552,7 +556,10 @@ export function LeadTable({
     'overview';
 
   const [sidebarWidth, setSidebarWidth] = useState(0);
-  const [rowActionMenuLeadId, setRowActionMenuLeadId] = useState<string | null>(null);
+  const [rowActionMenu, setRowActionMenu] = useState<{
+    lead: Lead;
+    coords: { top: number; right: number };
+  } | null>(null);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
 
   // Quotation Status Map: Maps lead.id -> { count, hasFinal, finalVersion, versions }
@@ -1533,6 +1540,75 @@ export function LeadTable({
       }
     };
   }, []);
+
+  // Helper callbacks to toggle unclipped floating action menus
+  const toggleRowActionMenu = useCallback((lead: Lead, targetElem: HTMLElement) => {
+    setRowActionMenu(prev => {
+      if (prev?.lead.id === lead.id) return null;
+      const rect = targetElem.getBoundingClientRect();
+      const menuHeight = quickActionsConfig.delete === true ? 160 : 110;
+      const menuWidth = 192; // 12rem / w-48
+      const fitsBelow = rect.bottom + menuHeight <= window.innerHeight - 10;
+      const rightPos = Math.max(10, Math.min(window.innerWidth - rect.right, window.innerWidth - menuWidth - 10));
+      const topPos = fitsBelow ? rect.bottom + 6 : Math.max(10, rect.top - menuHeight - 6);
+
+      return {
+        lead,
+        coords: {
+          top: Math.round(topPos),
+          right: Math.round(rightPos),
+        }
+      };
+    });
+    setPhoneActionMenu(null);
+  }, [quickActionsConfig.delete]);
+
+  const togglePhoneActionMenu = useCallback((lead: Lead, targetElem: HTMLElement) => {
+    setPhoneActionMenu(prev => {
+      if (prev?.lead.id === lead.id) return null;
+      const rect = targetElem.getBoundingClientRect();
+      const menuHeight = 110;
+      const menuWidth = 208; // 13rem / w-52
+      const fitsBelow = rect.bottom + menuHeight <= window.innerHeight - 10;
+      const rightPos = Math.max(10, Math.min(window.innerWidth - rect.right, window.innerWidth - menuWidth - 10));
+      const topPos = fitsBelow ? rect.bottom + 6 : Math.max(10, rect.top - menuHeight - 6);
+
+      return {
+        lead,
+        coords: {
+          top: Math.round(topPos),
+          right: Math.round(rightPos),
+        }
+      };
+    });
+    setRowActionMenu(null);
+  }, []);
+
+  // Close floating menus on table/window scroll, resize, or Escape key
+  useEffect(() => {
+    if (!rowActionMenu && !phoneActionMenu) return;
+
+    const handleCloseFloatingMenus = () => {
+      setRowActionMenu(null);
+      setPhoneActionMenu(null);
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        handleCloseFloatingMenus();
+      }
+    };
+
+    window.addEventListener('scroll', handleCloseFloatingMenus, true);
+    window.addEventListener('resize', handleCloseFloatingMenus);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('scroll', handleCloseFloatingMenus, true);
+      window.removeEventListener('resize', handleCloseFloatingMenus);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [rowActionMenu, phoneActionMenu]);
 
   useEffect(() => {
     const localSources = localStorage.getItem('leads_workspace_sources') || localStorage.getItem('leads_custom_sources');
@@ -3127,6 +3203,23 @@ export function LeadTable({
                         </button>
                       );
                     })()}
+
+                    {/* 3-Dots Context Menu Button */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleRowActionMenu(lead, e.currentTarget);
+                      }}
+                      className={`w-7.5 h-7.5 rounded-full flex items-center justify-center transition-all active:scale-95 cursor-pointer border ${
+                        rowActionMenu?.lead.id === lead.id
+                          ? 'border-[#D4AF37] dark:border-[#C5A059] bg-amber-50 dark:bg-amber-950/40 text-[#D4AF37] dark:text-[#C5A059] ring-2 ring-[#D4AF37]/30'
+                          : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 border-slate-200 dark:border-zinc-700'
+                      }`}
+                      title="More Actions"
+                    >
+                      <MoreHorizontal className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
               </div>
@@ -4089,35 +4182,17 @@ export function LeadTable({
                                   <button 
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      setPhoneActionMenuLeadId(phoneActionMenuLeadId === lead.id ? null : lead.id);
+                                      togglePhoneActionMenu(lead, e.currentTarget);
                                     }}
-                                    className="p-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 hover:text-emerald-600 transition-all"
+                                    className={`p-1.5 rounded-lg border transition-all ${
+                                      phoneActionMenu?.lead.id === lead.id
+                                        ? 'bg-emerald-100 dark:bg-emerald-950 border-emerald-400 text-emerald-600 ring-2 ring-emerald-500/20'
+                                        : 'border-slate-200 dark:border-zinc-700 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 hover:text-emerald-600'
+                                    }`}
                                   >
                                     <PhoneCall className="w-3.5 h-3.5" />
                                   </button>
                                 </PremiumTooltip>
-                                {phoneActionMenuLeadId === lead.id && (
-                                  <div className="absolute right-0 bottom-8 mt-2 w-52 bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl p-1.5 shadow-2xl flex flex-col gap-1 z-50 text-left">
-                                    <a 
-                                      href={`tel:${lead.phone}`}
-                                      onClick={() => setPhoneActionMenuLeadId(null)}
-                                      className="w-full flex items-center gap-2 p-2 hover:bg-[#FAF8F5] dark:hover:bg-[#2C2926] rounded-md text-xs font-semibold text-zinc-700 dark:text-zinc-350 hover:text-[#1A1A1A] dark:hover:text-white transition-colors"
-                                    >
-                                      <Phone className="w-3.5 h-3.5 text-blue-500" />
-                                      Device Dialer Call
-                                    </a>
-                                    <button 
-                                      onClick={() => {
-                                        setPhoneActionMenuLeadId(null);
-                                        handleWhatsappWelcomeDispatch(lead);
-                                      }}
-                                      className="w-full flex items-center gap-2 p-2 hover:bg-[#FAF8F5] dark:hover:bg-[#2C2926] rounded-md text-xs font-semibold text-zinc-700 dark:text-zinc-350 hover:text-[#1A1A1A] dark:hover:text-white transition-colors"
-                                    >
-                                      <Send className="w-3.5 h-3.5 text-green-500" />
-                                      Baileys WA Welcome
-                                    </button>
-                                  </div>
-                                )}
                               </div>
                             )}
 
@@ -4166,77 +4241,17 @@ export function LeadTable({
                                   whileHover={{ scale: 1.1 }}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    setRowActionMenuLeadId(rowActionMenuLeadId === lead.id ? null : lead.id);
+                                    toggleRowActionMenu(lead, e.currentTarget);
                                   }}
-                                  className="p-1.5 rounded-lg border border-[#E8E5DF] dark:border-[#2C2926] bg-white hover:bg-slate-50 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-[#1A1A1A] dark:text-zinc-200 hover:text-[#D4AF37] dark:hover:text-[#C5A059] transition-all"
+                                  className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                                    rowActionMenu?.lead.id === lead.id
+                                      ? 'border-[#D4AF37] dark:border-[#C5A059] bg-amber-50 dark:bg-amber-950/40 text-[#D4AF37] dark:text-[#C5A059] ring-2 ring-[#D4AF37]/30'
+                                      : 'border-[#E8E5DF] dark:border-[#2C2926] bg-white hover:bg-slate-50 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-[#1A1A1A] dark:text-zinc-200 hover:text-[#D4AF37] dark:hover:text-[#C5A059]'
+                                  }`}
                                 >
                                   <MoreHorizontal className="w-3.5 h-3.5" />
                                 </MotionButton>
                               </PremiumTooltip>
-                              {rowActionMenuLeadId === lead.id && (
-                                <div className={`absolute right-0 ${rowIdx >= paginatedLeads.length - 2 ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} w-44 bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] rounded-xl p-1.5 shadow-2xl flex flex-col gap-1 z-[99999] text-left backdrop-blur-md`}>
-                                  <button 
-                                    onClick={() => {
-                                      setRowActionMenuLeadId(null);
-                                      setSelectedLead(lead);
-                                      setDrawerMode('full');
-                                    }}
-                                    className="w-full flex items-center gap-2 p-2 hover:bg-[#FAF8F5] dark:hover:bg-[#2C2926] rounded-md text-xs font-semibold text-zinc-700 dark:text-zinc-350 hover:text-[#1A1A1A] dark:hover:text-white transition-colors"
-                                  >
-                                    <Info className="w-3.5 h-3.5 text-blue-500" />
-                                    Details
-                                  </button>
-                                  {lead.raw_payload?.is_archived ? (
-                                    <button 
-                                      onClick={() => {
-                                        setRowActionMenuLeadId(null);
-                                        const updatedPayload = { ...lead.raw_payload, is_archived: false };
-                                        handleInlineLeadEdit({ raw_payload: updatedPayload }, lead.id);
-                                      }}
-                                      className="w-full flex items-center gap-2 p-2 hover:bg-[#FAF8F5] dark:hover:bg-[#2C2926] rounded-md text-xs font-semibold text-zinc-700 dark:text-zinc-350 hover:text-[#1A1A1A] dark:hover:text-white transition-colors"
-                                    >
-                                      <FolderOpen className="w-3.5 h-3.5 text-blue-500" />
-                                      Unarchive Lead
-                                    </button>
-                                  ) : (
-                                    <button 
-                                      onClick={() => {
-                                        setRowActionMenuLeadId(null);
-                                        const updatedPayload = { ...lead.raw_payload, is_archived: true };
-                                        handleInlineLeadEdit({ raw_payload: updatedPayload }, lead.id);
-                                      }}
-                                      className="w-full flex items-center gap-2 p-2 hover:bg-[#FAF8F5] dark:hover:bg-[#2C2926] rounded-md text-xs font-semibold text-zinc-700 dark:text-zinc-350 hover:text-[#1A1A1A] dark:hover:text-white transition-colors"
-                                    >
-                                      <Archive className="w-3.5 h-3.5 text-blue-500" />
-                                      Archive Lead
-                                    </button>
-                                  )}
-                                  {quickActionsConfig.delete === true && (
-                                    <>
-                                      <div className="h-[1px] bg-slate-100 dark:bg-zinc-800 my-1" />
-                                      <button 
-                                        onClick={async () => {
-                                          setRowActionMenuLeadId(null);
-                                          if (confirm('Are you sure you want to delete this lead?')) {
-                                            try {
-                                              const { error } = await supabase.from('client_leads').delete().eq('id', lead.id);
-                                              if (error) throw error;
-                                              alert('Lead deleted successfully.');
-                                              window.location.reload();
-                                            } catch (err: any) {
-                                              alert('Error deleting lead: ' + err.message);
-                                            }
-                                          }
-                                        }}
-                                        className="w-full flex items-center gap-2 p-2 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-md text-xs font-semibold text-red-600 dark:text-red-400 transition-colors"
-                                      >
-                                        <Trash className="w-3.5 h-3.5 text-red-500" />
-                                        Delete Lead
-                                      </button>
-                                    </>
-                                  )}
-                                </div>
-                              )}
                             </div>
                           </div>
                         </td>
@@ -5004,6 +5019,160 @@ export function LeadTable({
 
       {/* Dynamic Column Filter Dropdown at root level to prevent clipping */}
       {viewMode === 'table' && openFilterColId && renderFilterDropdown(openFilterColId)}
+
+      {/* Floating Row Actions (3-Dots) Menu Portal - Escapes table clipping */}
+      {mounted && typeof document !== 'undefined' && rowActionMenu && createPortal(
+        <>
+          {/* Fullscreen transparent backdrop for click-outside */}
+          <div 
+            className="fixed inset-0 z-[999998] cursor-default bg-transparent"
+            onClick={(e) => {
+              e.stopPropagation();
+              setRowActionMenu(null);
+            }}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setRowActionMenu(null);
+            }}
+          />
+
+          {/* Floating Action Menu */}
+          <div 
+            style={{
+              position: 'fixed',
+              top: `${rowActionMenu.coords.top}px`,
+              right: `${rowActionMenu.coords.right}px`,
+              zIndex: 999999,
+            }}
+            className="w-48 bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] rounded-2xl p-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.18)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.6)] flex flex-col gap-1 text-left backdrop-blur-md animate-in fade-in zoom-in-95 duration-100 font-sans select-none"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button 
+              type="button"
+              onClick={() => {
+                const targetLead = rowActionMenu.lead;
+                setRowActionMenu(null);
+                setSelectedLead(targetLead);
+                setDrawerMode('full');
+              }}
+              className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-[#FAF8F5] dark:hover:bg-[#2C2926] rounded-xl text-xs font-bold text-zinc-700 dark:text-zinc-350 hover:text-[#1A1A1A] dark:hover:text-white transition-colors cursor-pointer"
+            >
+              <Info className="w-4 h-4 text-blue-500 shrink-0" />
+              <span>Details</span>
+            </button>
+
+            {rowActionMenu.lead.raw_payload?.is_archived ? (
+              <button 
+                type="button"
+                onClick={() => {
+                  const targetLead = rowActionMenu.lead;
+                  setRowActionMenu(null);
+                  const updatedPayload = { ...targetLead.raw_payload, is_archived: false };
+                  handleInlineLeadEdit({ raw_payload: updatedPayload }, targetLead.id);
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-[#FAF8F5] dark:hover:bg-[#2C2926] rounded-xl text-xs font-bold text-zinc-700 dark:text-zinc-350 hover:text-[#1A1A1A] dark:hover:text-white transition-colors cursor-pointer"
+              >
+                <FolderOpen className="w-4 h-4 text-blue-500 shrink-0" />
+                <span>Unarchive Lead</span>
+              </button>
+            ) : (
+              <button 
+                type="button"
+                onClick={() => {
+                  const targetLead = rowActionMenu.lead;
+                  setRowActionMenu(null);
+                  const updatedPayload = { ...targetLead.raw_payload, is_archived: true };
+                  handleInlineLeadEdit({ raw_payload: updatedPayload }, targetLead.id);
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-[#FAF8F5] dark:hover:bg-[#2C2926] rounded-xl text-xs font-bold text-zinc-700 dark:text-zinc-350 hover:text-[#1A1A1A] dark:hover:text-white transition-colors cursor-pointer"
+              >
+                <Archive className="w-4 h-4 text-amber-500 shrink-0" />
+                <span>Archive Lead</span>
+              </button>
+            )}
+
+            {quickActionsConfig.delete === true && (
+              <>
+                <div className="h-[1px] bg-slate-100 dark:bg-zinc-800 my-0.5" />
+                <button 
+                  type="button"
+                  onClick={async () => {
+                    const targetLead = rowActionMenu.lead;
+                    setRowActionMenu(null);
+                    if (confirm('Are you sure you want to delete this lead?')) {
+                      try {
+                        const { error } = await supabase.from('client_leads').delete().eq('id', targetLead.id);
+                        if (error) throw error;
+                        alert('Lead deleted successfully.');
+                        window.location.reload();
+                      } catch (err: any) {
+                        alert('Error deleting lead: ' + err.message);
+                      }
+                    }
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 transition-colors cursor-pointer"
+                >
+                  <Trash className="w-4 h-4 text-rose-500 shrink-0" />
+                  <span>Delete Lead</span>
+                </button>
+              </>
+            )}
+          </div>
+        </>,
+        document.body
+      )}
+
+      {/* Floating Phone Actions Menu Portal - Escapes table clipping */}
+      {mounted && typeof document !== 'undefined' && phoneActionMenu && createPortal(
+        <>
+          {/* Fullscreen transparent backdrop for click-outside */}
+          <div 
+            className="fixed inset-0 z-[999998] cursor-default bg-transparent"
+            onClick={(e) => {
+              e.stopPropagation();
+              setPhoneActionMenu(null);
+            }}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setPhoneActionMenu(null);
+            }}
+          />
+
+          {/* Floating Phone Action Menu */}
+          <div 
+            style={{
+              position: 'fixed',
+              top: `${phoneActionMenu.coords.top}px`,
+              right: `${phoneActionMenu.coords.right}px`,
+              zIndex: 999999,
+            }}
+            className="w-52 bg-white dark:bg-[#1C1A18] border border-[#E8E5DF] dark:border-[#2C2926] rounded-2xl p-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.18)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.6)] flex flex-col gap-1 text-left backdrop-blur-md animate-in fade-in zoom-in-95 duration-100 font-sans select-none"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <a 
+              href={`tel:${phoneActionMenu.lead.phone}`}
+              onClick={() => setPhoneActionMenu(null)}
+              className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-[#FAF8F5] dark:hover:bg-[#2C2926] rounded-xl text-xs font-bold text-zinc-700 dark:text-zinc-350 hover:text-[#1A1A1A] dark:hover:text-white transition-colors"
+            >
+              <Phone className="w-4 h-4 text-blue-500 shrink-0" />
+              <span>Device Dialer Call</span>
+            </a>
+            <button 
+              type="button"
+              onClick={() => {
+                const targetLead = phoneActionMenu.lead;
+                setPhoneActionMenu(null);
+                handleWhatsappWelcomeDispatch(targetLead);
+              }}
+              className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-[#FAF8F5] dark:hover:bg-[#2C2926] rounded-xl text-xs font-bold text-zinc-700 dark:text-zinc-350 hover:text-[#1A1A1A] dark:hover:text-white transition-colors cursor-pointer"
+            >
+              <Send className="w-4 h-4 text-green-500 shrink-0" />
+              <span>Baileys WA Welcome</span>
+            </button>
+          </div>
+        </>,
+        document.body
+      )}
 
       {/* Synced horizontal scrollbar directly at root level of LeadTable JSX */}
       {viewMode === 'table' && (

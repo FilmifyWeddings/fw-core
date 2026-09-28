@@ -80,8 +80,61 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  if (!workspaceId) {
+  const explicitWs = req.nextUrl.searchParams.get('workspace_id') || req.nextUrl.searchParams.get('workspaceId');
+  const targetWsId = explicitWs || workspaceId;
+
+  if (!targetWsId) {
     return new Response('Unauthorized', { status: 401 });
+  }
+  // ── Fast Pre-check: If already connected, DO NOT recreate socket or wait ──
+  const WORKER_PORT = process.env.WORKER_PORT ?? '3002';
+  let isAlreadyConnected = false;
+  let connectedPhone: string | null = null;
+
+  try {
+    const healthRes = await fetch(
+      `http://127.0.0.1:${WORKER_PORT}/health?workspace_id=${encodeURIComponent(targetWsId)}`,
+      { signal: AbortSignal.timeout(1200) }
+    );
+    if (healthRes.ok) {
+      const health = await healthRes.json();
+      if (health.socket_authenticated && health.socket_conn_state === 'open' && health.phone_number) {
+        isAlreadyConnected = true;
+        connectedPhone = health.phone_number;
+      }
+    }
+  } catch {
+    /* fallback to DB */
+  }
+
+  if (!isAlreadyConnected) {
+    const { data: dbSess } = await supabaseAdmin
+      .from('baileys_sessions')
+      .select('conn_state, status, phone_number, qr_string')
+      .or(`workspace_id.eq.${targetWsId},user_id.eq.${targetWsId}`)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (dbSess && (dbSess.conn_state === 'open' || dbSess.status === 'CONNECTED') && !dbSess.qr_string && dbSess.phone_number) {
+      isAlreadyConnected = true;
+      connectedPhone = dbSess.phone_number;
+    }
+  }
+
+  // Fast JSON return if non-SSE client
+  const acceptHeader = req.headers.get('accept') || '';
+  if (!acceptHeader.includes('text/event-stream') && isAlreadyConnected) {
+    return new Response(
+      JSON.stringify({
+        status: 'open',
+        conn_state: 'open',
+        isConnected: true,
+        phone: connectedPhone,
+        message: 'Already connected',
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
   }
 
   // ── Setup SSE Stream ────────────────────────────────────────────────────────
@@ -98,6 +151,13 @@ export async function GET(req: NextRequest) {
         }
       };
 
+      if (isAlreadyConnected) {
+        send('connected', { phone: connectedPhone, state: 'open' });
+        send('done', { message: 'Already connected' });
+        try { controller.close(); } catch {}
+        return;
+      }
+
       // Initial ping
       send('status', { message: 'Initializing Baileys socket...', state: 'connecting' });
 
@@ -109,7 +169,7 @@ export async function GET(req: NextRequest) {
       try {
         await generateQrServerless(
           supabaseAdmin,
-          workspaceId,
+          targetWsId,
           // onQr callback — send QR string to browser
           (qrString) => {
             send('qr', { qr: qrString });

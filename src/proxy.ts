@@ -187,6 +187,14 @@ export async function proxy(request: NextRequest) {
     // Fallback 1: Direct cookie token inspection with proper chunk reassembly
     if (!user) {
       const candidateTokens: string[] = [];
+
+      // Extract Bearer token from authorization header if present (for API requests)
+      const authHeader = request.headers.get('authorization');
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        const bearerToken = authHeader.substring(7).trim();
+        if (bearerToken) candidateTokens.push(bearerToken);
+      }
+
       const allCookies = request.cookies.getAll();
 
       // Group and reassemble chunked cookies (e.g., sb-*-auth-token.0, .1)

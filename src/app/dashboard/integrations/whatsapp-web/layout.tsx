@@ -89,7 +89,7 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { userId } = useBhamstra();
+  const { userId, workspaceId } = useBhamstra();
 
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [wsStatus, setWsStatus] = useState<'connected' | 'disconnected' | 'checking'>('checking');
@@ -123,18 +123,19 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
 
   // Sync WA connection status from API (consistent with BaileysQrConnect)
   useEffect(() => {
-    if (!userId) return;
+    const targetWs = workspaceId || userId;
+    if (!targetWs) return;
     const checkStatus = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
         if (!token) { setWsStatus('disconnected'); return; }
-        const res = await fetch('/api/integrations/baileys/qr-status', {
+        const res = await fetch(`/api/integrations/baileys/qr-status?workspace_id=${encodeURIComponent(targetWs)}`, {
           headers: { Authorization: `Bearer ${token}` }, cache: 'no-store',
         });
         if (res.ok) {
           const d = await res.json();
-          setWsStatus(d.isConnected || d.conn_state === 'open' || d.status === 'CONNECTED' ? 'connected' : 'disconnected');
+          setWsStatus(d.isConnected === true && (d.conn_state === 'open' || d.conn_state === 'connected') && !!d.phone_number ? 'connected' : 'disconnected');
           return;
         }
       } catch (err) {

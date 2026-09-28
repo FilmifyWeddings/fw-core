@@ -1,8 +1,8 @@
 /**
  * WhatsApp Template Storage Quota & Media Manager
  * =================================================
- * Dedicated storage tracking for `whatsapp_template_media` bucket.
- * Enforces a strict 1,024 MB (1 GB) default storage quota per workspace.
+ * Dedicated storage tracking for Backblaze B2 private bucket & fw_whatsapp_media_files.
+ * Enforces a strict 500 MB storage quota per workspace.
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
@@ -28,7 +28,7 @@ export interface StorageQuotaStats {
 const MAX_QUOTA_BYTES = 500 * 1024 * 1024; // Strictly 500 MB Limit
 
 /**
- * Calculates current storage consumed by workspace in `whatsapp_template_media` bucket.
+ * Calculates current storage consumed by workspace from vw_workspace_whatsapp_storage_usage / fw_whatsapp_media_files.
  */
 export async function getWhatsAppTemplateStorageUsage(
   workspaceId: string,
@@ -37,40 +37,67 @@ export async function getWhatsAppTemplateStorageUsage(
   const folderPath = workspaceId || '00000000-0000-0000-0000-000000000000';
 
   try {
-    // 1. Try listing files directly from Supabase Storage bucket
-    const { data: storageFiles, error: storageErr } = await client.storage
+    // 1. Primary: Query Backblaze B2 quota view
+    const { data: viewData, error: viewErr } = await client
+      .from('vw_workspace_whatsapp_storage_usage')
+      .select('total_files, total_bytes, total_mb, usage_percent')
+      .eq('workspace_id', folderPath)
+      .maybeSingle();
+
+    if (!viewErr && viewData) {
+      const totalBytes = Number(viewData.total_bytes || 0);
+      const totalMB = Number(viewData.total_mb || 0);
+      const usagePercentage = Math.min(100, Number(viewData.usage_percent || 0));
+      const filesCount = Number(viewData.total_files || 0);
+
+      return {
+        totalBytes,
+        totalMB,
+        maxMB: 500,
+        usagePercentage,
+        filesCount,
+      };
+    }
+
+    // 2. Query fw_whatsapp_media_files directly if view is empty or pending
+    const { data: b2Files, error: b2Err } = await client
+      .from('fw_whatsapp_media_files')
+      .select('file_size_bytes')
+      .eq('workspace_id', folderPath);
+
+    if (!b2Err && b2Files && b2Files.length > 0) {
+      const totalBytes = b2Files.reduce((acc, f) => acc + Number(f.file_size_bytes || 0), 0);
+      const totalMB = +(totalBytes / (1024 * 1024)).toFixed(1);
+      const usagePercentage = Math.min(100, +((totalBytes / MAX_QUOTA_BYTES) * 100).toFixed(1));
+
+      return {
+        totalBytes,
+        totalMB,
+        maxMB: 500,
+        usagePercentage,
+        filesCount: b2Files.length,
+      };
+    }
+
+    // 3. Fallback: legacy storage bucket check if no B2 files found
+    const { data: storageFiles } = await client.storage
       .from('whatsapp_templates_media')
       .list(folderPath, { limit: 500 });
 
-    let totalBytes = 0;
-    let filesCount = 0;
-
-    if (!storageErr && storageFiles) {
-      filesCount = storageFiles.length;
-      totalBytes = storageFiles.reduce((acc, file) => acc + ((file as any).metadata?.size || (file as any).size || 0), 0);
-    } else {
-      // 2. Fallback check DB table user_gallery_images strictly for whatsapp_templates
-      const { data: dbFiles } = await client
-        .from('user_gallery_images')
-        .select('file_size')
-        .eq('workspace_id', folderPath)
-        .eq('source_module', 'whatsapp_templates');
-
-      if (dbFiles) {
-        filesCount = dbFiles.length;
-        totalBytes = dbFiles.reduce((acc, f) => acc + (f.file_size || 0), 0);
-      }
+    if (storageFiles && storageFiles.length > 0) {
+      const filesCount = storageFiles.length;
+      const totalBytes = storageFiles.reduce((acc, file) => acc + ((file as any).metadata?.size || (file as any).size || 0), 0);
+      const totalMB = +(totalBytes / (1024 * 1024)).toFixed(1);
+      const usagePercentage = Math.min(100, +((totalBytes / MAX_QUOTA_BYTES) * 100).toFixed(1));
+      return { totalBytes, totalMB, maxMB: 500, usagePercentage, filesCount };
     }
 
-    const totalMB = +(totalBytes / (1024 * 1024)).toFixed(1);
-    const usagePercentage = Math.min(100, +((totalBytes / MAX_QUOTA_BYTES) * 100).toFixed(1));
-
     return {
-      totalBytes,
-      totalMB,
+      totalBytes: 0,
+      totalMB: 0,
       maxMB: 500,
-      usagePercentage,
-      filesCount,
+      usagePercentage: 0,
+      filesCount: 0,
     };
   } catch (err) {
     console.warn('[getWhatsAppTemplateStorageUsage] Error:', err);
@@ -107,7 +134,8 @@ export async function checkWhatsAppStorageQuotaGuard(
 }
 
 /**
- * Lists all template media files uploaded for the workspace, matching template usage tags.
+ * Lists all template media files uploaded for the workspace from Backblaze B2 (fw_whatsapp_media_files),
+ * mapping template usage tags and permanent proxy URLs.
  */
 export async function listWhatsAppTemplateMediaFiles(
   workspaceId: string,
@@ -122,12 +150,58 @@ export async function listWhatsAppTemplateMediaFiles(
       .select('name, payload')
       .eq('workspace_id', folderPath);
 
-    // List storage files
+    const { data: tenantTemplates } = await client
+      .from('tenant_whatsapp_templates')
+      .select('template_name, media_url_payload, payload_json')
+      .eq('tenant_id', folderPath);
+
+    // 1. Primary: Fetch Backblaze B2 files from fw_whatsapp_media_files
+    const { data: b2Files, error: b2Err } = await client
+      .from('fw_whatsapp_media_files')
+      .select('*')
+      .eq('workspace_id', folderPath)
+      .order('created_at', { ascending: false });
+
+    if (!b2Err && b2Files && b2Files.length > 0) {
+      return b2Files.map(f => {
+        const proxyUrl = f.file_key ? `/api/media/${f.file_key}` : (f.signed_url || '');
+        const usedInTemplates: string[] = [];
+
+        if (templates) {
+          templates.forEach(t => {
+            const payloadStr = JSON.stringify(t.payload || {});
+            if (payloadStr.includes(f.file_name) || (proxyUrl && payloadStr.includes(proxyUrl)) || (f.file_key && payloadStr.includes(f.file_key))) {
+              if (!usedInTemplates.includes(t.name)) usedInTemplates.push(t.name);
+            }
+          });
+        }
+
+        if (tenantTemplates) {
+          tenantTemplates.forEach(t => {
+            const payloadStr = JSON.stringify(t.payload_json || {}) + (t.media_url_payload || '');
+            if (payloadStr.includes(f.file_name) || (proxyUrl && payloadStr.includes(proxyUrl)) || (f.file_key && payloadStr.includes(f.file_key))) {
+              if (!usedInTemplates.includes(t.template_name)) usedInTemplates.push(t.template_name);
+            }
+          });
+        }
+
+        return {
+          name: f.file_name,
+          url: proxyUrl,
+          size: Number(f.file_size_bytes || 0),
+          created_at: f.created_at || new Date().toISOString(),
+          mime_type: f.mime_type,
+          usedInTemplates,
+        };
+      });
+    }
+
+    // 2. Fallback: Legacy Supabase Storage bucket
     const { data: storageFiles, error: storageErr } = await client.storage
       .from('whatsapp_templates_media')
       .list(folderPath, { limit: 500, sortBy: { column: 'created_at', order: 'desc' } });
 
-    if (storageErr || !storageFiles) {
+    if (storageErr || !storageFiles || storageFiles.length === 0) {
       return [];
     }
 
@@ -139,8 +213,6 @@ export async function listWhatsAppTemplateMediaFiles(
 
     return storageFiles.map(file => {
       const filePublicUrl = `${baseUrl}/${file.name}`;
-      
-      // Match template usage
       const usedInTemplates: string[] = [];
       if (templates) {
         templates.forEach(t => {
@@ -167,7 +239,7 @@ export async function listWhatsAppTemplateMediaFiles(
 }
 
 /**
- * Instantly deletes a media file from Supabase Storage & DB logs.
+ * Instantly deletes a media file from Backblaze B2, fw_whatsapp_media_files, and legacy storage.
  */
 export async function deleteWhatsAppTemplateMediaFile(
   workspaceId: string,
@@ -177,16 +249,27 @@ export async function deleteWhatsAppTemplateMediaFile(
   const folderPath = workspaceId || '00000000-0000-0000-0000-000000000000';
 
   try {
-    // Delete from storage bucket
-    const { error: removeErr } = await client.storage
+    // 1. Delete from Backblaze B2 via API
+    try {
+      await fetch(`/api/whatsapp/templates/upload?workspaceId=${folderPath}&fileName=${encodeURIComponent(fileName)}`, {
+        method: 'DELETE',
+      });
+    } catch (apiErr) {
+      console.warn('[deleteWhatsAppTemplateMediaFile] API delete warning:', apiErr);
+    }
+
+    // 2. Delete from Supabase Storage if legacy file exists
+    await client.storage
       .from('whatsapp_templates_media')
       .remove([`${folderPath}/${fileName}`]);
 
-    if (removeErr) {
-      console.warn('[deleteWhatsAppTemplateMediaFile] Storage remove warning:', removeErr);
-    }
+    // 3. Delete from DB records
+    await client
+      .from('fw_whatsapp_media_files')
+      .delete()
+      .eq('workspace_id', folderPath)
+      .eq('file_name', fileName);
 
-    // Delete from DB logs if present (strictly for whatsapp_templates)
     await client
       .from('user_gallery_images')
       .delete()

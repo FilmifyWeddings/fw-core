@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "node --max-http-header-size=65536 node_modules/next/dist/bin/next dev --webpack",
+    "worker": "cd baileys-worker && node dist/server.js",
+    "worker:dev": "cd baileys-worker && npm run dev",
     "build": "next build --webpack",
     "start": "node --max-http-header-size=65536 node_modules/next/dist/bin/next start",
     "lint": "eslint"

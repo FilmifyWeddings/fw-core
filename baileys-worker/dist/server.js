@@ -14,6 +14,8 @@
 import { config } from 'dotenv';
 import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, Browsers, } from '@whiskeysockets/baileys';
 import { createClient } from '@supabase/supabase-js';
+import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import pino from 'pino';
 import ws from 'ws';
 import * as fs from 'fs';
@@ -101,6 +103,54 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
         transport: ws,
     },
 });
+// (In-Memory Store chat cache removed to comply with ESM build of @whiskeysockets/baileys)
+// ─── Backblaze B2 S3 Client for Direct Media Streaming & Signed URLs ───────────
+const b2S3Client = new S3Client({
+    endpoint: process.env.B2_ENDPOINT || 'https://s3.eu-central-003.backblazeb2.com',
+    region: process.env.B2_REGION || 'eu-central-003',
+    credentials: {
+        accessKeyId: process.env.B2_ACCESS_KEY_ID || '',
+        secretAccessKey: process.env.B2_SECRET_ACCESS_KEY || '',
+    },
+});
+const B2_WHATSAPP_BUCKET = process.env.B2_WHATSAPP_BUCKET_NAME || 'studiocore-whatsapp-media';
+/**
+ * Resolves any media URL, proxy URL (/api/media/...), or B2 file key to a direct Backblaze S3 pre-signed URL.
+ * Valid for 2 hours (7200 seconds).
+ * Ensures Baileys worker downloads directly from Backblaze B2 cloud storage without 404 or localhost dependency.
+ */
+async function resolveB2DirectFetchUrl(urlOrKey) {
+    if (!urlOrKey || typeof urlOrKey !== 'string')
+        return urlOrKey;
+    let key = urlOrKey.trim();
+    // If already a presigned B2 URL, return as is
+    if (key.includes('backblazeb2.com') && key.includes('X-Amz-Signature')) {
+        return key;
+    }
+    // If proxy URL (/api/media/... or http://.../api/media/...)
+    if (key.includes('/api/media/')) {
+        key = key.split('/api/media/')[1];
+    }
+    key = decodeURIComponent(key).replace(/^\/+/, '');
+    // If it's an external URL (e.g. cloudinary, etc.) and not our proxy, return as is
+    if (key.startsWith('http://') || key.startsWith('https://')) {
+        return urlOrKey;
+    }
+    // It's a B2 file key! Sign it directly with B2 client
+    try {
+        const cmd = new GetObjectCommand({
+            Bucket: B2_WHATSAPP_BUCKET,
+            Key: key,
+        });
+        const directSignedUrl = await getSignedUrl(b2S3Client, cmd, { expiresIn: 7200 });
+        logger.info({ original: urlOrKey.slice(0, 80), key, directSignedUrl: directSignedUrl.slice(0, 80) }, '🔑 Resolved media to direct Backblaze S3 signed URL');
+        return directSignedUrl;
+    }
+    catch (err) {
+        logger.warn({ err: err?.message, key }, 'Failed to presign B2 URL, returning original');
+        return urlOrKey;
+    }
+}
 const activeSessions = new Map();
 async function getWorkspaceSocket(wsId) {
     let resolvedWsId = wsId?.trim();
@@ -139,7 +189,7 @@ async function getWorkspaceSocket(wsId) {
     const effectiveId = resolvedWsId;
     // 1. Direct activeSessions lookup
     let sess = activeSessions.get(effectiveId);
-    if (sess && sess.sock)
+    if (sess && sess.sock && sess.sock.user?.id)
         return sess.sock;
     // 2. Check DB session mapping for user_id or workspace_id
     let mappedId = effectiveId;
@@ -152,7 +202,7 @@ async function getWorkspaceSocket(wsId) {
         if (dbSess) {
             mappedId = dbSess.user_id || dbSess.workspace_id || effectiveId;
             sess = activeSessions.get(mappedId);
-            if (sess && sess.sock)
+            if (sess && sess.sock && sess.sock.user?.id)
                 return sess.sock;
         }
     }
@@ -163,15 +213,24 @@ async function getWorkspaceSocket(wsId) {
         logger.info({ workspaceId: targetId }, '🔌 Disk credentials found — auto-restoring socket into memory on-the-fly...');
         await startBaileysSocket(false, targetId);
         sess = activeSessions.get(targetId) || activeSessions.get(effectiveId);
-        if (sess && sess.sock)
+        if (sess && sess.sock && sess.sock.user?.id)
             return sess.sock;
     }
     // 4. Final attempt to restore socket
     logger.info({ workspaceId: targetId }, '🔌 Restoring socket from disk/DB creds...');
     await startBaileysSocket(false, targetId);
     sess = activeSessions.get(targetId) || activeSessions.get(effectiveId);
-    if (!sess || !sess.sock) {
-        throw new Error('WhatsApp is not connected. Please scan the QR code to connect.');
+    // If session is currently reconnecting/handshaking with disk credentials, wait briefly for handshake
+    if (sess && sess.sock && !sess.sock.user?.id && hasDiskSession(targetId)) {
+        for (let i = 0; i < 4; i++) {
+            await new Promise(r => setTimeout(r, 500));
+            sess = activeSessions.get(targetId) || activeSessions.get(effectiveId);
+            if (sess?.sock?.user?.id)
+                return sess.sock;
+        }
+    }
+    if (!sess || !sess.sock || !sess.sock.user?.id) {
+        throw new Error('WhatsApp is not connected. Please scan the QR code in WhatsApp Web Integration before sending messages.');
     }
     return sess.sock;
 }
@@ -295,6 +354,20 @@ function detectMediaCategory(mimeType) {
     return 'document';
 }
 async function downloadMediaAsBuffer(mediaSource, overrideMimeType, maxRetries = 2) {
+    // If mediaSource is a B2 proxy path (/api/media/...) or B2 file key, resolve directly to Backblaze S3 pre-signed URL
+    if (mediaSource.includes('/api/media/') ||
+        (!mediaSource.startsWith('http://') &&
+            !mediaSource.startsWith('https://') &&
+            !mediaSource.startsWith('/tmp') &&
+            !mediaSource.startsWith('./') &&
+            !mediaSource.startsWith('../') &&
+            !mediaSource.includes('\\'))) {
+        mediaSource = await resolveB2DirectFetchUrl(mediaSource);
+    }
+    else if (mediaSource.startsWith('/api/') || mediaSource.startsWith('/api')) {
+        const appBase = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/+$/, '');
+        mediaSource = `${appBase}${mediaSource}`;
+    }
     // ── LOCAL FILE PATH: /tmp/fw_comp_*.jpg, /var/www/..., relative paths ──
     const isLocalPath = mediaSource.startsWith('/') || mediaSource.startsWith('./') || mediaSource.startsWith('../');
     if (isLocalPath) {
@@ -371,28 +444,74 @@ async function sendTextMessage(to, text, wsId = WORKSPACE_ID) {
     const result = await targetSock.sendMessage(to, { text });
     return result?.key?.id ?? null;
 }
-async function sendMediaMessage(to, mediaUrl, caption, mimeType, wsId = WORKSPACE_ID) {
+async function sendMediaMessage(to, mediaUrl, caption, mimeType, wsId = WORKSPACE_ID, fileName) {
     const targetSock = await getWorkspaceSocket(wsId);
+    if (!targetSock?.user?.id) {
+        throw new Error('WhatsApp is not connected. Please scan the QR code in WhatsApp Web Integration before sending messages.');
+    }
+    const resolvedUrl = await resolveB2DirectFetchUrl(mediaUrl);
     const mediaCategory = detectMediaCategory(mimeType);
-    // Download media to buffer first — avoids VPS→URL network issues
-    const { buffer, mimeType: resolvedMime } = await downloadMediaAsBuffer(mediaUrl, mimeType);
+    // 1. Documents / PDFs: Direct B2 / HTTP streaming to save RAM
+    if (mediaCategory === 'document' || mimeType === 'application/pdf') {
+        if (typeof resolvedUrl === 'string' && (resolvedUrl.startsWith('http://') || resolvedUrl.startsWith('https://'))) {
+            try {
+                const streamResult = await targetSock.sendMessage(to, {
+                    document: { url: resolvedUrl },
+                    mimetype: mimeType || 'application/pdf',
+                    fileName: fileName || caption || 'document.pdf',
+                    caption: caption || undefined,
+                });
+                return streamResult?.key?.id ?? null;
+            }
+            catch (streamErr) {
+                logger.warn({ err: streamErr?.message, resolvedUrl }, 'Direct B2 document streaming failed, falling back to buffer download');
+            }
+        }
+    }
+    // 2. Download media to buffer
+    const { buffer, mimeType: resolvedMime } = await downloadMediaAsBuffer(resolvedUrl, mimeType);
     const finalCategory = detectMediaCategory(resolvedMime);
     let result;
-    if (finalCategory === 'image') {
-        result = await targetSock.sendMessage(to, { image: buffer, caption, mimetype: resolvedMime });
+    try {
+        if (finalCategory === 'image') {
+            let finalBuffer = buffer;
+            let finalMime = resolvedMime || 'image/jpeg';
+            // WhatsApp phone apps require genuine JPEG/PNG for photo messages (WebP is rejected or displays blank)
+            if (finalMime === 'image/webp' || resolvedUrl.toLowerCase().includes('.webp') || mimeType === 'image/webp') {
+                try {
+                    const sharp = (await import('sharp')).default;
+                    finalBuffer = await sharp(buffer).jpeg({ quality: 85, progressive: true }).toBuffer();
+                    finalMime = 'image/jpeg';
+                    logger.info({ to }, '🖼️ Successfully converted WebP image to standard JPEG for WhatsApp delivery');
+                }
+                catch (sharpErr) {
+                    logger.warn({ err: sharpErr?.message }, '⚠️ Sharp WebP to JPEG conversion failed, sending original buffer');
+                }
+            }
+            result = await targetSock.sendMessage(to, {
+                image: finalBuffer,
+                caption: caption || undefined,
+                mimetype: finalMime,
+            });
+        }
+        else if (finalCategory === 'video') {
+            result = await targetSock.sendMessage(to, { video: buffer, caption, mimetype: resolvedMime });
+        }
+        else if (finalCategory === 'audio') {
+            result = await targetSock.sendMessage(to, { audio: buffer, mimetype: resolvedMime, ptt: false });
+        }
+        else {
+            result = await targetSock.sendMessage(to, {
+                document: buffer,
+                mimetype: resolvedMime || 'application/pdf',
+                fileName: fileName || caption || 'document.pdf',
+                caption: caption || undefined,
+            });
+        }
     }
-    else if (finalCategory === 'video') {
-        result = await targetSock.sendMessage(to, { video: buffer, caption, mimetype: resolvedMime });
-    }
-    else if (finalCategory === 'audio') {
-        result = await targetSock.sendMessage(to, { audio: buffer, mimetype: resolvedMime, ptt: false });
-    }
-    else {
-        result = await targetSock.sendMessage(to, {
-            document: buffer,
-            mimetype: resolvedMime,
-            fileName: caption || 'file',
-        });
+    catch (sendErr) {
+        logger.error({ err: sendErr?.message, to, wsId }, 'Error sending media message via WhatsApp');
+        throw new Error(sendErr?.message || 'Failed to dispatch media message via WhatsApp');
     }
     return result?.key?.id ?? null;
 }
@@ -594,7 +713,8 @@ async function sendTemplateMessage(to, templateId, variables, wsId = WORKSPACE_I
     if (rawButtons.length > 0) {
         try {
             logger.info({ to, buttonCount: rawButtons.length }, '📤 Sending template with interactive native flow buttons');
-            const interactiveRes = await sendInteractiveTemplateMessage(targetSock, to, body || '', 'StudioCore', rawButtons, tpl.media_url || undefined);
+            const interactiveMediaUrl = tpl.media_url ? await resolveB2DirectFetchUrl(tpl.media_url) : undefined;
+            const interactiveRes = await sendInteractiveTemplateMessage(targetSock, to, body || '', 'StudioCore', rawButtons, interactiveMediaUrl);
             if (interactiveRes?.messageId) {
                 return interactiveRes.messageId;
             }
@@ -610,8 +730,9 @@ async function sendTemplateMessage(to, templateId, variables, wsId = WORKSPACE_I
     }
     // ── MEDIA (with or without action links) ─────────────────────────────────
     if (tpl.media_url) {
-        const mimeType = detectMimeTypeFromUrl(tpl.media_url);
-        return sendMediaMessage(to, tpl.media_url, finalBody, mimeType, wsId);
+        const directMediaUrl = await resolveB2DirectFetchUrl(tpl.media_url);
+        const mimeType = detectMimeTypeFromUrl(directMediaUrl || tpl.media_url);
+        return sendMediaMessage(to, directMediaUrl || tpl.media_url, finalBody, mimeType, wsId);
     }
     // ── PLAIN TEXT ────────────────────────────────────────────────────────────
     return sendTextMessage(to, finalBody, wsId);
@@ -766,22 +887,25 @@ async function executeAction(action) {
     }
     catch (err) {
         logger.error({ actionId: action.id, workspaceId: targetWsId }, '🔴 [Pre-Send Check] Workspace socket is unauthenticated or missing.');
-        await dbWriteCritical(supabase
-            .from('baileys_sessions')
-            .update({
-            conn_state: 'disconnected',
-            error_info: 'WhatsApp Session Expired. Please reconnect QR code.',
-            last_status_change: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-        })
-            .eq('workspace_id', targetWsId), 'presend-disconnect-update');
-        await dbWrite(supabase.from('wa_instance_alerts').insert({
-            workspace_id: targetWsId,
-            alert_type: 'presend_session_expired',
-            message: 'Pre-send check failed: WhatsApp Session Expired. Please reconnect QR code.',
-            metadata: { action_id: action.id, action_type: action.action_type },
-        }), 'insert-presend-alert');
-        throw new Error('WhatsApp Session Expired. Please reconnect QR code.');
+        const sess = activeSessions.get(targetWsId);
+        if (sess?.sock?.user?.id) {
+            await dbWriteCritical(supabase
+                .from('baileys_sessions')
+                .update({
+                conn_state: 'disconnected',
+                status: 'disconnected',
+                phone_number: null,
+                updated_at: new Date().toISOString(),
+            })
+                .eq('workspace_id', targetWsId), 'presend-disconnect-update');
+            await dbWrite(supabase.from('wa_instance_alerts').insert({
+                workspace_id: targetWsId,
+                alert_type: 'presend_session_expired',
+                message: 'Pre-send check failed: WhatsApp Session Expired. Please reconnect QR code.',
+                metadata: { action_id: action.id, action_type: action.action_type },
+            }), 'insert-presend-alert');
+        }
+        throw new Error('WhatsApp Session Expired or Not Connected. Please reconnect QR code.');
     }
     let waMessageId = null;
     try {
@@ -792,14 +916,99 @@ async function executeAction(action) {
                 waMessageId = await sendTextMessage(to, text, targetWsId);
                 break;
             }
+            case 'send_image':
+            case 'send_video':
+            case 'send_document':
+            case 'send_audio':
             case 'send_media': {
-                const { to, mediaUrl, caption, mimeType } = action.payload;
-                waMessageId = await sendMediaMessage(to, mediaUrl, caption, mimeType, targetWsId);
+                const payload = action.payload;
+                const to = payload.to;
+                // Resolve any Backblaze B2 URLs or keys to direct signed URLs
+                let targetDocUrl = payload.document?.url;
+                let targetImgUrl = payload.image?.url;
+                let targetMediaUrl = payload.mediaUrl;
+                if (targetDocUrl)
+                    targetDocUrl = await resolveB2DirectFetchUrl(targetDocUrl);
+                if (targetImgUrl)
+                    targetImgUrl = await resolveB2DirectFetchUrl(targetImgUrl);
+                if (targetMediaUrl)
+                    targetMediaUrl = await resolveB2DirectFetchUrl(targetMediaUrl);
+                // Requirement 3: Stream directly from Backblaze B2 Signed URLs without keeping large buffers in RAM
+                if (targetDocUrl) {
+                    const targetSock = await getWorkspaceSocket(targetWsId);
+                    const result = await targetSock.sendMessage(to, {
+                        document: { url: targetDocUrl },
+                        fileName: payload.fileName || payload.caption || 'document.pdf',
+                        mimetype: payload.mimetype || payload.mimeType || 'application/pdf',
+                        caption: payload.caption || undefined,
+                    });
+                    waMessageId = result?.key?.id ?? null;
+                }
+                else if (targetImgUrl) {
+                    const mime = payload.mimetype || payload.mimeType || 'image/jpeg';
+                    waMessageId = await sendMediaMessage(to, targetImgUrl, payload.caption, mime, targetWsId, payload.fileName);
+                }
+                else {
+                    const { caption, mimeType, fileName } = payload;
+                    waMessageId = await sendMediaMessage(to, targetMediaUrl, caption, mimeType, targetWsId, fileName);
+                }
                 break;
             }
             case 'send_template': {
                 const { to, templateId, variables } = action.payload;
                 waMessageId = await sendTemplateMessage(to, templateId, variables, targetWsId);
+                break;
+            }
+            case 'send_poll': {
+                const payload = action.payload;
+                const to = payload.to;
+                const text = payload.text;
+                const rawOpts = payload.pollOptions || payload.options || [];
+                const cleanOpts = (Array.isArray(rawOpts) ? rawOpts : [])
+                    .map((o) => typeof o === 'string' ? o.trim() : (o?.text || o?.value || o?.option || '').trim())
+                    .filter((s) => s.length > 0);
+                if (cleanOpts.length < 2) {
+                    if (cleanOpts.length === 1)
+                        cleanOpts.push('No / Other');
+                    else
+                        cleanOpts.push('Yes', 'No');
+                }
+                const safeSelectableCount = Math.min(Math.max(1, payload.pollSelectableCount || 1), cleanOpts.length);
+                const sock = await getWorkspaceSocket(targetWsId);
+                try {
+                    const pollResult = await sock.sendMessage(to, {
+                        poll: { name: text, values: cleanOpts, selectableCount: safeSelectableCount }
+                    });
+                    waMessageId = pollResult?.key?.id ?? null;
+                }
+                catch (pollErr) {
+                    const textPoll = `${text}\n\n` + cleanOpts.map((opt, i) => `${i + 1}. ${opt}`).join('\n');
+                    const textRes = await sock.sendMessage(to, { text: textPoll });
+                    waMessageId = textRes?.key?.id ?? null;
+                }
+                break;
+            }
+            case 'send_buttons': {
+                const payload = action.payload;
+                const to = payload.to;
+                const text = payload.text;
+                const rawButtons = payload.rawButtons || payload.buttons || [];
+                const footer = payload.footer || 'StudioCore';
+                const buttonsList = rawButtons || [];
+                const actionBlocks = buttonsList.map((btn) => {
+                    if (btn.type === 'cta_url' || btn.type === 'url') {
+                        return `🌐 *${btn.text}*\n👉 ${btn.value}`;
+                    }
+                    if (btn.type === 'cta_call' || btn.type === 'phone' || btn.type === 'call') {
+                        const cleanPhone = String(btn.value || '').replace(/[^0-9+]/g, '');
+                        return `📞 *${btn.text}*\n👉 tel:${cleanPhone}`;
+                    }
+                    return `⚡ *[ ${String(btn.text || '').toUpperCase()} ]*`;
+                }).join('\n\n');
+                const cardMessage = `${text || ''}\n\n━━━━━━━━━━━━━━━━━━━━\n${actionBlocks}\n━━━━━━━━━━━━━━━━━━━━${footer ? `\n_${footer}_` : ''}`;
+                const sock = await getWorkspaceSocket(targetWsId);
+                const sentResult = await sock.sendMessage(to, { text: cardMessage });
+                waMessageId = sentResult?.key?.id ?? null;
                 break;
             }
             case 'group_dispatch':
@@ -837,8 +1046,8 @@ async function executeAction(action) {
                 .from('baileys_sessions')
                 .update({
                 conn_state: 'disconnected',
-                error_info: 'WhatsApp Session Expired. Please reconnect QR code.',
-                last_status_change: new Date().toISOString(),
+                status: 'disconnected',
+                phone_number: null,
                 updated_at: new Date().toISOString(),
             })
                 .eq('workspace_id', action.workspace_id), 'execute-action-disconnect');
@@ -883,6 +1092,10 @@ async function runQueueDrain() {
         const { drainQueue } = await import('./src/queue-processor.js');
         for (const wsId of activeSessions.keys()) {
             if (!wsId || wsId.trim() === '' || wsId === 'null' || wsId === 'undefined')
+                continue;
+            const sess = activeSessions.get(wsId);
+            // Guard: Only drain queue if this worker has an authenticated live socket for this workspace
+            if (!sess?.sock?.user?.id)
                 continue;
             await drainQueue(wsId, executeAction, 3);
         }
@@ -988,17 +1201,17 @@ async function initiateForceReset(targetWorkspaceId) {
     // Update Supabase metadata ONLY (no heavy JSONs written to DB)
     await supabase
         .from('baileys_sessions')
-        .upsert({
-        user_id: wsId,
-        workspace_id: wsId,
+        .update({
         conn_state: 'connecting',
+        status: 'disconnected',
         qr_string: null,
         qr_expires_at: null,
         phone_number: null,
-        error_info: 'Force reset — fresh QR generated',
-        last_status_change: new Date().toISOString(),
+        creds_json: null,
+        keys_json: null,
         updated_at: new Date().toISOString(),
-    }, { onConflict: 'user_id' });
+    })
+        .or(`workspace_id.eq.${wsId},user_id.eq.${wsId}`);
     startBaileysSocket(true, wsId).catch(err => {
         logger.error({ err, workspaceId: wsId }, 'Failed to start Baileys socket after force-reset');
     });
@@ -1070,19 +1283,21 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
                 activeSessions.delete(wsId);
             }
             clearConnectingTimeout(wsId);
-            const authState = await useSupabaseAuthState(supabase, wsId);
-            const hasCredsMe = !!authState.state.creds?.me?.id;
             if (forceFresh) {
                 logger.info({ workspaceId: wsId }, '🔄 Force-fresh mode: purging local session dir and initializing fresh auth');
                 purgeSessionDir(wsId);
                 getSessionDir(wsId); // Guarantee directory re-creation immediately after purge
-                await updateSessionState('connecting', {}, wsId);
+                await updateSessionState('connecting', { status: 'disconnected', phone_number: null, qr_string: null }, wsId);
             }
             else {
                 getSessionDir(wsId); // Guarantee directory exists
+            }
+            const authState = await useSupabaseAuthState(supabase, wsId);
+            const hasCredsMe = !forceFresh && !!authState.state.creds?.me?.id;
+            if (!forceFresh) {
                 logger.info({ workspaceId: wsId, hasCredsMe }, '🧠 Reconnect mode: loading file-based auth state from local disk');
                 if (!hasCredsMe) {
-                    await updateSessionState('connecting', {}, wsId);
+                    await updateSessionState('connecting', { status: 'disconnected', phone_number: null }, wsId);
                 }
             }
             let { version } = await fetchLatestBaileysVersion().catch(() => ({
@@ -1116,7 +1331,7 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
             localSock.ev.on('creds.update', async () => {
                 try {
                     await authState.saveCreds();
-                    const hasUser = !!localSock.user?.id || !!authState.state.creds?.me?.id;
+                    const hasUser = !!localSock.user?.id;
                     if (hasUser) {
                         await syncOpenSessionToDb(wsId, localSock, authState);
                     }
@@ -1130,7 +1345,7 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
                 console.log(`⚡ Connection state changed [${wsId.slice(0, 8)}]:`, connection || 'qr_event');
                 logger.info({ update, workspaceId: wsId }, '🔌 Received connection update event');
                 if (qr) {
-                    const isAlreadyPaired = !!authState.state.creds?.me?.id || !!localSock.user?.id;
+                    const isAlreadyPaired = !!localSock.user?.id;
                     if (isAlreadyPaired) {
                         logger.info({ workspaceId: wsId }, '🛡️ Guard: Ignoring residual QR event because session already has paired user credentials');
                     }
@@ -1150,6 +1365,8 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
                                 qr_string: qr,
                                 qr_expires_at: new Date(Date.now() + 60_000).toISOString(),
                                 conn_state: 'connecting',
+                                status: 'disconnected',
+                                phone_number: null,
                                 updated_at: new Date().toISOString(),
                             }, { onConflict: 'user_id' }), `upsert-qr-${wsId}`);
                         }
@@ -1231,11 +1448,12 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
                         .from('baileys_sessions')
                         .update({
                         conn_state: 'disconnected',
+                        status: 'disconnected',
                         qr_string: null,
                         qr_expires_at: null,
                         phone_number: null,
-                        error_info: 'Logged out from mobile device — QR re-scan required',
-                        last_status_change: new Date().toISOString(),
+                        creds_json: null,
+                        keys_json: null,
                         updated_at: new Date().toISOString()
                     })
                         .or(`user_id.eq.${wsId},workspace_id.eq.${wsId}`);
@@ -1324,6 +1542,39 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
                                 phone: chatJid.split('@')[0],
                                 updated_at: new Date().toISOString(),
                             }, { onConflict: 'workspace_id, jid', ignoreDuplicates: false });
+                        }
+                        catch (_) { }
+                    }
+                }
+            });
+            localSock.ev.on('messages.update', async (updates) => {
+                for (const update of updates) {
+                    const waId = update.key?.id;
+                    const statusNum = update.update?.status;
+                    if (!waId)
+                        continue;
+                    let statusStr = null;
+                    if (statusNum === 2)
+                        statusStr = 'sent'; // SERVER_ACK (single tick)
+                    else if (statusNum === 3)
+                        statusStr = 'delivered'; // DELIVERY_ACK (double tick)
+                    else if (statusNum === 4)
+                        statusStr = 'read'; // READ (blue tick)
+                    else if (statusNum === 5)
+                        statusStr = 'played';
+                    logger.info({ workspaceId: wsId, waId, statusNum, statusStr }, '📬 WhatsApp message receipt status update');
+                    if (statusStr) {
+                        const updateData = { status: statusStr };
+                        if (statusStr === 'delivered')
+                            updateData.delivered_at = new Date().toISOString();
+                        if (statusStr === 'read')
+                            updateData.read_at = new Date().toISOString();
+                        try {
+                            await supabase
+                                .from('baileys_messages')
+                                .update(updateData)
+                                .eq('workspace_id', wsId)
+                                .eq('wa_message_id', waId);
                         }
                         catch (_) { }
                     }
@@ -1440,6 +1691,28 @@ function startHealthServer() {
                 }));
                 return;
             }
+            if (req.method === 'GET' && parsedUrl.pathname === '/check-phone') {
+                const targetWs = parsedUrl.searchParams.get('workspace_id') || WORKSPACE_ID;
+                const phone = parsedUrl.searchParams.get('phone');
+                if (!phone) {
+                    res.writeHead(400);
+                    res.end(JSON.stringify({ error: 'Missing phone' }));
+                    return;
+                }
+                try {
+                    const targetSock = await getWorkspaceSocket(targetWs);
+                    const cleanPhone = phone.replace(/[^0-9]/g, '');
+                    const jid = `${cleanPhone}@s.whatsapp.net`;
+                    const results = await targetSock.onWhatsApp(jid);
+                    res.writeHead(200);
+                    res.end(JSON.stringify({ phone, jid, results }));
+                }
+                catch (checkErr) {
+                    res.writeHead(500);
+                    res.end(JSON.stringify({ error: checkErr.message }));
+                }
+                return;
+            }
             if (req.method === 'POST' && parsedUrl.pathname === '/trigger') {
                 logger.info('Manual trigger hit — executing queue drain');
                 runQueueDrain().catch(err => logger.error({ err }, 'Manual trigger queue drain error'));
@@ -1452,7 +1725,7 @@ function startHealthServer() {
                 const forceFresh = parsedUrl.searchParams.get('force') === 'true' || parsedUrl.searchParams.get('force_fresh') === 'true';
                 const sess = activeSessions.get(qsWorkspace);
                 const now = Date.now();
-                if (sess?.sock && sess.sock.user && sess.sock.user.id) {
+                if (!forceFresh && sess?.sock && sess.sock.user && sess.sock.user.id) {
                     logger.info({ workspace_id: qsWorkspace }, 'Session is ALREADY CONNECTED! Skipping reset on /init-qr.');
                     res.writeHead(200);
                     res.end(JSON.stringify({ success: true, message: `Workspace ${qsWorkspace} is already connected.` }));
@@ -1463,12 +1736,6 @@ function startHealthServer() {
                     .select('conn_state, status, qr_string, updated_at')
                     .or(`workspace_id.eq.${qsWorkspace},user_id.eq.${qsWorkspace}`)
                     .maybeSingle();
-                if (dbSess?.conn_state === 'open' || dbSess?.status === 'CONNECTED') {
-                    logger.info({ workspace_id: qsWorkspace }, 'DB session is ALREADY OPEN! Skipping reset on /init-qr.');
-                    res.writeHead(200);
-                    res.end(JSON.stringify({ success: true, message: `Workspace ${qsWorkspace} is already connected in DB.` }));
-                    return;
-                }
                 // DEBOUNCE ONLY IF VALID QR ALREADY EXISTS IN MEMORY/DB
                 const validMemoryQr = !!(sess?.lastQrTime && (now - sess.lastQrTime < 20_000));
                 const validDbQr = dbSess?.qr_string && dbSess?.updated_at && (now - new Date(dbSess.updated_at).getTime() < 20_000);
@@ -1503,8 +1770,27 @@ function startHealthServer() {
                     res.end(JSON.stringify({ success: false, error: `[Workflow Trigger Error] Missing user_id/workspace_id in payload: ${targetWsId}` }));
                     return;
                 }
-                logger.info({ payload, workspaceId: targetWsId }, 'Received send message request');
-                const targetSock = await getWorkspaceSocket(targetWsId);
+                let targetSock;
+                try {
+                    targetSock = await getWorkspaceSocket(targetWsId);
+                }
+                catch (sockErr) {
+                    logger.warn({ err: sockErr?.message, workspaceId: targetWsId }, '⚠️ /send: Socket not connected');
+                    res.writeHead(400);
+                    res.end(JSON.stringify({
+                        success: false,
+                        error: sockErr?.message || 'WhatsApp is not connected. Please scan the QR code in WhatsApp Web Integration before sending messages.'
+                    }));
+                    return;
+                }
+                if (!targetSock?.user?.id) {
+                    res.writeHead(400);
+                    res.end(JSON.stringify({
+                        success: false,
+                        error: 'WhatsApp is not connected. Please scan the QR code in WhatsApp Web Integration before sending messages.'
+                    }));
+                    return;
+                }
                 // ── Intercept: if rawButtons/buttons are present, force 'buttons' route ──
                 if (Array.isArray(payload.rawButtons) && payload.rawButtons.length > 0) {
                     payload.type = 'buttons';
@@ -2096,9 +2382,15 @@ let heartbeatTimer = null;
 async function runSessionHeartbeatCheck() {
     for (const [wsId, sess] of activeSessions.entries()) {
         try {
+            const targetSock = sess.sock;
+            // Only check zombie state if THIS worker actually has/had authenticated credentials for this session.
+            // If targetSock.user is missing because credentials belong to another worker or were not loaded locally, skip!
+            if (!targetSock?.user?.id && !hasDiskSession(wsId)) {
+                continue;
+            }
             const { data: dbSession } = await supabase
                 .from('baileys_sessions')
-                .select('conn_state, status, last_status_change')
+                .select('conn_state, status, updated_at')
                 .eq('workspace_id', wsId)
                 .maybeSingle();
             // Only check zombie state if DB believes the workspace session IS OPEN or CONNECTED.
@@ -2107,22 +2399,17 @@ async function runSessionHeartbeatCheck() {
                 continue;
             }
             // If connection state changed within the last 30 seconds, give the socket handshake time to settle
-            if (dbSession.last_status_change) {
-                const timeSinceChange = Date.now() - new Date(dbSession.last_status_change).getTime();
+            if (dbSession.updated_at) {
+                const timeSinceChange = Date.now() - new Date(dbSession.updated_at).getTime();
                 if (timeSinceChange < 30_000) {
                     continue;
                 }
             }
-            const targetSock = sess.sock;
             let isDead = false;
             let reason = '';
             if (!targetSock) {
                 isDead = true;
                 reason = 'Socket instance is null/undefined';
-            }
-            else if (!targetSock.user || !targetSock.user.id) {
-                isDead = true;
-                reason = 'Socket unauthenticated (sock.user missing)';
             }
             else {
                 const wsState = targetSock.ws?.readyState;
@@ -2132,27 +2419,17 @@ async function runSessionHeartbeatCheck() {
                 }
             }
             if (isDead) {
-                logger.error({ wsId, reason }, '🔴 [Heartbeat] Zombie WhatsApp session detected!');
-                await dbWriteCritical(supabase
-                    .from('baileys_sessions')
-                    .update({
-                    conn_state: 'disconnected',
-                    phone_number: null,
-                    qr_string: null,
-                    creds_json: null,
-                    keys_json: null,
-                    error_info: `Zombie Session Heartbeat Failure: ${reason} — QR re-scan required`,
-                    last_status_change: new Date().toISOString(),
-                    updated_at: new Date().toISOString(),
-                })
-                    .eq('workspace_id', wsId), `heartbeat-disconnect-${wsId}`);
+                logger.warn({ wsId, reason }, '⚠️ [Heartbeat] WhatsApp socket closed/unready — attempting graceful reconnect');
                 try {
                     targetSock.ev.removeAllListeners();
                     targetSock.end(undefined);
                 }
                 catch { }
                 activeSessions.delete(wsId);
-                startBaileysSocket(false, wsId).catch(() => { });
+                // Attempt reconnection using disk session
+                if (hasDiskSession(wsId)) {
+                    startBaileysSocket(false, wsId).catch(() => { });
+                }
             }
         }
         catch (err) {
@@ -2208,20 +2485,26 @@ async function main() {
     startLeadsRealtimeListener();
     startGoogleSheetsWatcher();
     startSessionHeartbeat();
-    // Restore all existing active workspace sessions from DB at startup
+    // Restore existing active workspace sessions ONLY if local disk credentials exist
     const { data: activeSessionsDb } = await supabase
         .from('baileys_sessions')
         .select('workspace_id, conn_state')
         .or('conn_state.eq.open,creds_json.neq.null');
     if (activeSessionsDb && activeSessionsDb.length > 0) {
-        logger.info({ count: activeSessionsDb.length }, '🔁 Restoring active workspace sessions from DB...');
+        logger.info({ count: activeSessionsDb.length }, '🔁 Checking workspace sessions to restore from disk...');
         for (const s of activeSessionsDb) {
-            startBaileysSocket(false, s.workspace_id).catch(err => {
-                logger.error({ err, workspaceId: s.workspace_id }, 'Failed to restore workspace session at startup');
-            });
+            if (hasDiskSession(s.workspace_id)) {
+                logger.info({ workspaceId: s.workspace_id }, 'Restoring local workspace session from disk...');
+                startBaileysSocket(false, s.workspace_id).catch(err => {
+                    logger.error({ err, workspaceId: s.workspace_id }, 'Failed to restore workspace session at startup');
+                });
+            }
+            else {
+                logger.info({ workspaceId: s.workspace_id }, 'Skipping startup restore: no local disk session found (prevents unprompted QR generation)');
+            }
         }
     }
-    else if (WORKSPACE_ID) {
+    else if (WORKSPACE_ID && hasDiskSession(WORKSPACE_ID)) {
         logger.info({ workspaceId: WORKSPACE_ID }, 'Starting default workspace socket...');
         startBaileysSocket(false, WORKSPACE_ID).catch(() => { });
     }

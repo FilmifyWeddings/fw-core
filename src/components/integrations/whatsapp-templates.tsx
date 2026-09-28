@@ -116,8 +116,17 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
   
   const [mediaUrl, setMediaUrl] = useState('');
   const [mediaMime, setMediaMime] = useState('');
+  const [mediaFileName, setMediaFileName] = useState('');
+  const [mediaFileSize, setMediaFileSize] = useState<number | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+
+  const formatMediaFileSize = (bytes?: number | null) => {
+    if (!bytes) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
 
   // Live Preview Dynamic Token Evaluator
   const getLivePreviewText = (text: string) => {
@@ -227,17 +236,50 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
 
     setUploading(true);
     try {
-      const { uploadMasterImage } = await import('@/lib/master-image-manager');
-      const uploadResult = await uploadMasterImage(supabase, file, {
-        bucket: 'whatsapp_templates_media',
-        folder: workspaceId,
-        cacheControl: '31536000'
+      const targetWorkspaceId = workspaceId || '00000000-0000-0000-0000-000000000000';
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('workspaceId', targetWorkspaceId);
+      formData.append('templateName', name || 'template');
+
+      // 1. Call fetch without ANY explicit headers so browser calculates multipart boundary
+      let res = await fetch('/api/whatsapp/templates/upload', {
+        method: 'POST',
+        body: formData,
       });
 
-      if (uploadResult.error) throw new Error(uploadResult.error);
+      // 2. If browser environment had a bad header interceptor or multipart failed, fallback to base64 payload:
+      if (!res.ok) {
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
 
-      setMediaUrl(uploadResult.url);
-      const detectedMime = file.type || (file.name.match(/\.(mp4|webm|mov|mkv)$/i) ? 'video/mp4' : (file.name.match(/\.(pdf)$/i) ? 'application/pdf' : 'image/jpeg'));
+        res = await fetch('/api/whatsapp/templates/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            base64,
+            fileName: file.name,
+            mimeType: file.type,
+            workspaceId: targetWorkspaceId,
+            templateName: name || 'template',
+          }),
+        });
+      }
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to upload media');
+      }
+
+      // Store permanent proxy URL (/api/media/...) and metadata in template state
+      setMediaUrl(data.fileUrl);
+      setMediaFileName(data.fileName || file.name);
+      setMediaFileSize(data.fileSize || data.fileSizeBytes || file.size);
+      const detectedMime = data.mimeType || file.type || (file.name.match(/\.(mp4|webm|mov|mkv)$/i) ? 'video/mp4' : (file.name.match(/\.(pdf)$/i) ? 'application/pdf' : 'image/webp'));
       setMediaMime(detectedMime);
       // Instantly refresh template storage stats meter
       loadStorageStats();
@@ -246,6 +288,7 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
       alert(`File upload failed: ${err.message || err}. You can enter a public URL manually.`);
     } finally {
       setUploading(false);
+      if (e.target) e.target.value = '';
     }
   };
   
@@ -282,8 +325,11 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     
     const payload = template.payload || {};
     setTextBody(payload.body || payload.question || '');
-    setMediaUrl(payload.mediaUrl || payload.default_send_media_url || '');
+    const currentMediaUrl = payload.mediaUrl || payload.default_send_media_url || '';
+    setMediaUrl(currentMediaUrl);
     setMediaMime(payload.mediaMime || payload.default_send_media_mime || '');
+    setMediaFileName(payload.mediaFileName || payload.fileName || (currentMediaUrl ? currentMediaUrl.split('/').pop()?.split('?')[0] : ''));
+    setMediaFileSize(payload.mediaFileSize || payload.fileSize || null);
     setPollQuestion(payload.question || '');
     setPollAllowMultiple(!!payload.allowMultiple || !!payload.multipleAnswers);
     setPollOptions(payload.options || [{ id: '1', text: '' }, { id: '2', text: '' }]);
@@ -307,8 +353,11 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     
     const payload = template.payload || {};
     setTextBody(payload.body || payload.question || '');
-    setMediaUrl(payload.mediaUrl || payload.default_send_media_url || '');
+    const currentMediaUrl = payload.mediaUrl || payload.default_send_media_url || '';
+    setMediaUrl(currentMediaUrl);
     setMediaMime(payload.mediaMime || payload.default_send_media_mime || '');
+    setMediaFileName(payload.mediaFileName || payload.fileName || (currentMediaUrl ? currentMediaUrl.split('/').pop()?.split('?')[0] : ''));
+    setMediaFileSize(payload.mediaFileSize || payload.fileSize || null);
     setPollQuestion(payload.question || '');
     setPollAllowMultiple(!!payload.allowMultiple || !!payload.multipleAnswers);
     setPollOptions(payload.options || [{ id: '1', text: '' }, { id: '2', text: '' }]);
@@ -333,6 +382,8 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     setTextBody('');
     setMediaUrl('');
     setMediaMime('');
+    setMediaFileName('');
+    setMediaFileSize(null);
     setPollQuestion('');
     setPollAllowMultiple(false);
     setPollOptions([{ id: '1', text: '' }, { id: '2', text: '' }]);
@@ -348,6 +399,10 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     setCategory('group_alert');
     setLanguage('en_US');
     setActiveTab('text');
+    setMediaUrl('');
+    setMediaMime('');
+    setMediaFileName('');
+    setMediaFileSize(null);
     setTextBody(
       '*🚨 New Lead Alert! 🚨*\n\n' +
       '1. Created Time : *{{created_time}}*\n' +
@@ -602,7 +657,16 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     if (activeTab === 'text') {
       payload = { body: textBody };
     } else if (activeTab === 'media') {
-      payload = { body: textBody, mediaUrl, mediaMime };
+      const mediaType = mediaMime.startsWith('video') ? 'video' : mediaMime.includes('pdf') ? 'document' : 'image';
+      payload = { 
+        body: textBody, 
+        mediaUrl, 
+        mediaMime,
+        fileName: mediaFileName || (mediaUrl ? mediaUrl.split('/').pop()?.split('?')[0] : ''),
+        fileSize: mediaFileSize,
+        media_url: mediaUrl,
+        media_type: mediaType,
+      };
     } else if (activeTab === 'poll') {
       payload = { question: pollQuestion, allowMultiple: pollAllowMultiple, options: pollOptions.filter(o => o.text.trim()) };
     }
@@ -636,6 +700,8 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
         setTextBody('');
         setMediaUrl('');
         setMediaMime('');
+        setMediaFileName('');
+        setMediaFileSize(null);
         setPollQuestion('');
         setPollOptions([{ id: '1', text: '' }, { id: '2', text: '' }]);
         setButtons([]);
@@ -1317,24 +1383,115 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                         <div className="space-y-4">
                           <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 bg-zinc-50/50 dark:bg-zinc-900/20 space-y-3">
                             <label className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 dark:text-zinc-400">Media Header Attachment</label>
-                            <div className="flex gap-3">
-                              <input
-                                ref={fileInputRef}
-                                type="file"
-                                accept="image/*,video/*,application/pdf"
-                                onChange={handleFileChange}
-                                className="hidden"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => fileInputRef.current?.click()}
-                                disabled={uploading}
-                                className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:border-zinc-300 transition-all cursor-pointer disabled:opacity-50"
-                              >
-                                <Upload className="w-3.5 h-3.5" />
-                                {uploading ? 'Uploading...' : 'Upload Media File'}
-                              </button>
-                            </div>
+                            
+                            {mediaUrl ? (
+                              <div className="flex items-center justify-between p-3 rounded-xl bg-white dark:bg-zinc-900 border border-emerald-500/30 dark:border-emerald-500/20 shadow-xs">
+                                <div className="flex items-center gap-3 min-w-0">
+                                  {/* Thumbnail / Icon */}
+                                  {mediaMime?.includes('video') || mediaUrl.match(/\.(mp4|webm|mov|mkv)$/i) ? (
+                                    <div className="w-12 h-12 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20 flex items-center justify-center shrink-0">
+                                      <Video className="w-5 h-5" />
+                                    </div>
+                                  ) : mediaMime?.includes('pdf') || mediaUrl.match(/\.(pdf|doc|docx)$/i) ? (
+                                    <div className="w-12 h-12 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20 flex items-center justify-center shrink-0">
+                                      <FileText className="w-5 h-5" />
+                                    </div>
+                                  ) : (
+                                    <img
+                                      src={mediaUrl}
+                                      alt="Media Thumbnail"
+                                      className="w-12 h-12 rounded-lg object-cover border border-zinc-200 dark:border-zinc-700 shrink-0 bg-zinc-100 dark:bg-zinc-800"
+                                    />
+                                  )}
+
+                                  {/* File Metadata */}
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-xs font-bold text-zinc-850 dark:text-zinc-100 truncate max-w-[260px] sm:max-w-md" title={mediaFileName || mediaUrl}>
+                                      {mediaFileName || (mediaUrl.split('/').pop()?.split('?')[0] || 'media_attachment')}
+                                    </p>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                      <span className="text-[10px] font-mono font-bold uppercase text-zinc-500">
+                                        {mediaMime?.includes('video') ? 'Video' : mediaMime?.includes('pdf') ? 'PDF Document' : 'Image'}
+                                      </span>
+                                      {mediaFileSize ? (
+                                        <span className="text-[10px] text-zinc-400 font-mono">
+                                          • {formatMediaFileSize(mediaFileSize)}
+                                        </span>
+                                      ) : null}
+                                      <span className="inline-flex items-center gap-1 text-[9.5px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded-md border border-emerald-200/50 dark:border-emerald-800/50">
+                                        <Check className="w-2.5 h-2.5" /> Attached
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Actions */}
+                                <div className="flex items-center gap-1.5 shrink-0 ml-3">
+                                  <input
+                                    ref={fileInputRef}
+                                    type="file"
+                                    accept="image/*,video/*,application/pdf"
+                                    onChange={handleFileChange}
+                                    className="hidden"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => fileInputRef.current?.click()}
+                                    disabled={uploading}
+                                    className="px-2.5 py-1.5 text-xs font-semibold text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition cursor-pointer disabled:opacity-50"
+                                  >
+                                    {uploading ? (
+                                      <span className="flex items-center gap-1">
+                                        <RefreshCw className="w-3 h-3 animate-spin text-emerald-500" />
+                                        Uploading...
+                                      </span>
+                                    ) : 'Change'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setMediaUrl('');
+                                      setMediaMime('');
+                                      setMediaFileName('');
+                                      setMediaFileSize(null);
+                                    }}
+                                    className="p-1.5 text-zinc-400 hover:text-rose-500 transition rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30 cursor-pointer"
+                                    title="Remove media"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex flex-wrap gap-3 items-center">
+                                <input
+                                  ref={fileInputRef}
+                                  type="file"
+                                  accept="image/*,video/*,application/pdf"
+                                  onChange={handleFileChange}
+                                  className="hidden"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => fileInputRef.current?.click()}
+                                  disabled={uploading}
+                                  className="flex items-center gap-2 px-3.5 py-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:border-zinc-300 transition-all cursor-pointer disabled:opacity-50 shadow-2xs"
+                                >
+                                  {uploading ? (
+                                    <>
+                                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-500" />
+                                      <span>Uploading media...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Upload className="w-3.5 h-3.5" />
+                                      <span>Upload Media File</span>
+                                    </>
+                                  )}
+                                </button>
+                                <span className="text-[11px] text-zinc-400">Supports JPG, PNG, WebP, MP4, PDF (up to 50MB)</span>
+                              </div>
+                            )}
                           </div>
 
                           <div className="space-y-2">

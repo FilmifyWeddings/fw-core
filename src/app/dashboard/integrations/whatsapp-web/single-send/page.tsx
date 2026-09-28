@@ -66,59 +66,42 @@ export default function WhatsAppSingleSendPage() {
     if (isInitial) setLoadingConfig(true);
     try {
       // 1. Get authenticated user session
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      const activeWsId = session?.user?.id || tenantId;
+      const { data: authData } = await supabase.auth.getSession();
+      const token = authData?.session?.access_token;
+      const activeWsId = ctxWorkspaceId || tenantId || authData?.session?.user?.id;
 
       let isConnected = false;
       let phoneNum: string | null = null;
       let resolvedWsId = activeWsId;
 
-      // 2. Query status endpoint with token
-      if (token) {
+      // 2. Query status endpoint with token & workspace_id (Sole Source of Truth)
+      if (token && activeWsId) {
         try {
-          const statusRes = await fetch('/api/integrations/baileys/qr-status', {
+          const statusRes = await fetch(`/api/integrations/baileys/qr-status?workspace_id=${encodeURIComponent(activeWsId)}`, {
             headers: { Authorization: `Bearer ${token}` },
             cache: 'no-store',
           });
           if (statusRes.ok) {
             const d = await statusRes.json();
-            const isConn = (d.conn_state === 'open' || d.conn_state === 'connected') && d.isConnected !== false;
+            const isConn = (d.conn_state === 'open' || d.conn_state === 'connected') && d.isConnected === true && !!d.phone_number;
             if (isConn) {
               isConnected = true;
-              phoneNum = d.phone_number || d.phone || 'Connected Device';
+              phoneNum = d.phone_number;
               resolvedWsId = d.workspace_id || activeWsId;
             }
           }
-        } catch {}
-      }
-
-      // 3. Clean direct Supabase DB check fallback
-      if (!isConnected && activeWsId) {
-        const { data: dbSession } = await supabase
-          .from('baileys_sessions')
-          .select('id, workspace_id, user_id, conn_state, status, phone_number')
-          .or(`user_id.eq.${activeWsId},workspace_id.eq.${activeWsId}`)
-          .maybeSingle();
-
-        if (dbSession) {
-          const isConn = dbSession.conn_state === 'open' || dbSession.conn_state === 'connected';
-          if (isConn) {
-            isConnected = true;
-            phoneNum = dbSession.phone_number || 'Connected Device';
-            resolvedWsId = dbSession.user_id || dbSession.workspace_id || activeWsId;
-          }
+        } catch (fetchErr) {
+          console.error('[single-send] Error fetching qr-status:', fetchErr);
         }
       }
 
-      if (isConnected) {
-        const displayPhone = phoneNum || 'Connected Device';
+      if (isConnected && phoneNum) {
         setDeviceState({
           conn_state: 'open',
-          phone_number: displayPhone,
-          workspace_id: resolvedWsId
+          phone_number: phoneNum,
+          workspace_id: resolvedWsId || null
         });
-        setSelectedDeviceId(resolvedWsId);
+        setSelectedDeviceId(resolvedWsId || '');
       } else {
         setDeviceState({
           conn_state: 'disconnected',
@@ -130,8 +113,8 @@ export default function WhatsAppSingleSendPage() {
 
       // 4. Fetch templates
       const tempRes = await fetch(`/api/templates?workspace_id=${resolvedWsId}`);
-      const tempData = await tempRes.json();
-      if (tempData.success) {
+      const tempData = await tempRes.json().catch(() => ({}));
+      if (tempData?.success) {
         setTemplates(tempData.results || []);
       }
     } catch (err) {
@@ -307,13 +290,26 @@ export default function WhatsAppSingleSendPage() {
     setSuccessMsg('');
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Auth session not found.');
+      if (deviceState.conn_state !== 'open') {
+        setErrorMsg('WhatsApp is not connected for this workspace. Please scan the QR code to link your device first.');
+        setSending(false);
+        return;
+      }
+
+      const { data: authData } = await supabase.auth.getSession();
+      const session = authData?.session;
+      if (!session) {
+        setErrorMsg('Authentication session not found. Please log in again.');
+        setSending(false);
+        return;
+      }
+
+      const targetWs = deviceState.workspace_id || tenantId;
 
       // 1. Optionally save plain text as template
       if (activeMode === 'plain' && saveAsTemplate) {
         const templateName = `Quick Template - ${new Date().toLocaleDateString('en-IN', { hour: '2-digit', minute: '2-digit' })}`;
-        await fetch(`/api/templates?workspace_id=${tenantId}`, {
+        await fetch(`/api/templates?workspace_id=${targetWs}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -329,7 +325,8 @@ export default function WhatsAppSingleSendPage() {
       // 2. Prepare message sending request
       let payload: any = {
         to: receiver.trim(),
-        mode: 'direct'
+        mode: 'direct',
+        workspace_id: targetWs,
       };
 
       if (activeMode === 'plain') {
@@ -373,16 +370,16 @@ export default function WhatsAppSingleSendPage() {
         body: JSON.stringify(payload)
       });
 
-      const data = await sendRes.json();
-      if (sendRes.ok && data.success) {
+      const data = await sendRes.json().catch(() => ({}));
+      if (sendRes.ok && data?.success) {
         setSuccessMsg('Message sent successfully!');
         if (activeMode === 'plain') {
           setMessageText('');
         }
         setReceiver('');
-        loadConfigData();
+        await loadConfigData();
       } else {
-        throw new Error(data.error || 'Failed to dispatch message.');
+        setErrorMsg(data?.error || 'Failed to dispatch message.');
       }
     } catch (err: any) {
       console.error(err);
@@ -428,6 +425,30 @@ export default function WhatsAppSingleSendPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Disconnected Warning Banner with Quick Reconnect CTA */}
+      {deviceState.conn_state !== 'open' && !loadingConfig && (
+        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-900 dark:text-amber-300 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center shrink-0">
+              <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+            </div>
+            <div>
+              <p className="font-bold text-slate-900 dark:text-white">WhatsApp Device Disconnected</p>
+              <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">
+                No active WhatsApp session found for this workspace. Link your WhatsApp account to enable message dispatching.
+              </p>
+            </div>
+          </div>
+          <a
+            href="/dashboard/integrations/whatsapp-web"
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition-all shrink-0 inline-flex items-center justify-center gap-2 shadow-sm"
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+            Connect WhatsApp
+          </a>
+        </div>
+      )}
 
       {/* Main Builder Card Container */}
       <div className="border border-slate-200 dark:border-zinc-900 bg-white dark:bg-zinc-950/20 rounded-2xl p-6 shadow-sm space-y-6">

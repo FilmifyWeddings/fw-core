@@ -24,9 +24,9 @@ interface SidebarLayoutProps {
 
 // Crisp, Modern StudioCore SC Brand Emblem (Never cut-off, always prominent)
 export const StudioCoreBrandIcon = ({ className = "w-8 h-8", isCollapsed = false }: { className?: string; isCollapsed?: boolean }) => (
-  <div className={`${className} rounded-xl bg-gradient-to-br from-[#D9822B] via-[#C8751F] to-[#A05A12] text-white flex items-center justify-center font-black tracking-wider shadow-sm border border-[#F5C78E]/40 shrink-0 select-none relative overflow-hidden group`}>
-    <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/25 to-transparent opacity-80 pointer-events-none" />
-    <span className="relative z-10 text-[13px] font-black tracking-tight drop-shadow-xs">SC</span>
+  <div suppressHydrationWarning className={`${className} rounded-xl bg-gradient-to-br from-[#D9822B] via-[#C8751F] to-[#A05A12] text-white flex items-center justify-center font-black tracking-wider shadow-sm border border-[#F5C78E]/40 shrink-0 select-none relative overflow-hidden group`}>
+    <div suppressHydrationWarning className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/25 to-transparent opacity-80 pointer-events-none" />
+    <span suppressHydrationWarning className="relative z-10 text-[13px] font-black tracking-tight drop-shadow-xs">SC</span>
   </div>
 );
 
@@ -508,7 +508,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   }
 
   return (
-    <div className="min-h-screen w-full bg-[#FAF9F6] text-zinc-900 flex flex-col font-sans selection:bg-amber-100">
+    <div suppressHydrationWarning className="min-h-screen w-full bg-[#FAF9F6] text-zinc-900 flex flex-col font-sans selection:bg-amber-100">
       
       {/* ─────────────────────────────────────────────────────────────
           1. DESKTOP & TABLET FIXED LEFT SIDEBAR
@@ -663,8 +663,8 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                     {userAvatarUrl ? (
                       <img src={userAvatarUrl} alt="Avatar" className="w-8 h-8 rounded-full object-cover border border-amber-400" />
                     ) : (
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-400 via-amber-500 to-[#F36F21] text-white font-black text-xs flex items-center justify-center shadow-xs">
-                        {(workspaceName || userName || 'SC').slice(0, 2).toUpperCase()}
+                      <div suppressHydrationWarning className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-400 via-amber-500 to-[#F36F21] text-white font-black text-xs flex items-center justify-center shadow-xs">
+                        {mounted ? (workspaceName || userName || 'SC').slice(0, 2).toUpperCase() : 'SC'}
                       </div>
                     )}
                     <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-white" />
@@ -750,8 +750,8 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
             {userAvatarUrl ? (
               <img src={userAvatarUrl} alt="Avatar" className="w-7 h-7 rounded-full object-cover border border-amber-400" />
             ) : (
-              <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-amber-400 via-amber-500 to-[#F36F21] text-white font-black text-[10px] flex items-center justify-center">
-                {(workspaceName || userName || 'SC').slice(0, 2).toUpperCase()}
+              <div suppressHydrationWarning className="w-7 h-7 rounded-full bg-gradient-to-tr from-amber-400 via-amber-500 to-[#F36F21] text-white font-black text-[10px] flex items-center justify-center">
+                {mounted ? (workspaceName || userName || 'SC').slice(0, 2).toUpperCase() : 'SC'}
               </div>
             )}
           </div>

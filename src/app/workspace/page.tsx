@@ -248,7 +248,7 @@ export default function WorkspaceHubPage() {
   }, []);
 
   return (
-    <div className="w-full bg-[#FAF9F6] text-zinc-900 font-sans selection:bg-amber-100 px-4 sm:px-6 lg:px-8 py-6 space-y-7">
+    <div suppressHydrationWarning className="w-full bg-[#FAF9F6] text-zinc-900 font-sans selection:bg-amber-100 px-4 sm:px-6 lg:px-8 py-6 space-y-7">
       
       {/* ─────────────────────────────────────────────────────────────
           1. HERO WELCOME SECTION WITH 3D CHARACTER & FLOATING STATS
@@ -383,7 +383,7 @@ export default function WorkspaceHubPage() {
                       <Target className="w-3.5 h-3.5" />
                     </div>
                   </div>
-                  <div className="text-xl sm:text-2xl font-black text-zinc-900 tracking-tight">
+                  <div suppressHydrationWarning className="text-xl sm:text-2xl font-black text-zinc-900 tracking-tight">
                     {stats.leadsCount}
                   </div>
                   <div className="text-[10px] font-extrabold text-emerald-600 flex items-center gap-0.5">
@@ -400,7 +400,7 @@ export default function WorkspaceHubPage() {
                       <Calendar className="w-3.5 h-3.5" />
                     </div>
                   </div>
-                  <div className="text-xl sm:text-2xl font-black text-zinc-900 tracking-tight">
+                  <div suppressHydrationWarning className="text-xl sm:text-2xl font-black text-zinc-900 tracking-tight">
                     {stats.bookingsCount}
                   </div>
                   <div className="text-[10px] font-extrabold text-purple-600 flex items-center gap-0.5">
@@ -417,7 +417,7 @@ export default function WorkspaceHubPage() {
                       <IndianRupee className="w-3.5 h-3.5" />
                     </div>
                   </div>
-                  <div className="text-lg sm:text-xl font-black text-zinc-900 tracking-tight truncate">
+                  <div suppressHydrationWarning className="text-lg sm:text-xl font-black text-zinc-900 tracking-tight truncate">
                     {stats.revenue}
                   </div>
                   <div className="text-[10px] font-extrabold text-amber-700 flex items-center gap-0.5">
@@ -434,7 +434,7 @@ export default function WorkspaceHubPage() {
                       <CreditCard className="w-3.5 h-3.5" />
                     </div>
                   </div>
-                  <div className="text-lg sm:text-xl font-black text-zinc-900 tracking-tight truncate">
+                  <div suppressHydrationWarning className="text-lg sm:text-xl font-black text-zinc-900 tracking-tight truncate">
                     {stats.pendingPayments}
                   </div>
                   <Link 

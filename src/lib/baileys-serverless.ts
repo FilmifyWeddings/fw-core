@@ -30,6 +30,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { SupabaseClient } from '@supabase/supabase-js';
+import { getDirectB2FetchUrl } from './services/whatsappStorageService';
 
 
 
@@ -328,6 +329,15 @@ export async function sendMessageServerless(
       }
     }
 
+    // 1.5. Resolve Backblaze B2 Direct Signed URL if mediaUrl is a proxy URL or B2 key
+    if (payload.mediaUrl) {
+      try {
+        payload.mediaUrl = await getDirectB2FetchUrl(payload.mediaUrl);
+      } catch (b2Err) {
+        console.warn('[sendMessageServerless] Warning resolving B2 direct fetch URL:', b2Err);
+      }
+    }
+
     // 2. Mime-type and extension check to fix PDF bug (ensure images are treated as 'image')
     const isImageMime = payload.mimeType && payload.mimeType.startsWith('image/');
     const isImageUrl = payload.mediaUrl && /\.(jpg|jpeg|png|webp)($|\?)/i.test(payload.mediaUrl);
@@ -406,6 +416,9 @@ export async function sendMessageServerless(
     const sendType = payload.type;
     console.log(`[send] ➡️ Sending ${sendType} to ${sendTo} via worker 127.0.0.1:${WORKER_PORT}...`);
 
+    let directError: string | null = null;
+    let shouldQueue = false;
+
     try {
       const res = await fetch(`http://127.0.0.1:${WORKER_PORT}/send`, {
         method: 'POST',
@@ -433,18 +446,96 @@ export async function sendMessageServerless(
 
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}));
-        const errMsg = errBody.error || `Worker returned HTTP ${res.status}`;
-        console.error(`[send] ❌ Worker rejected: ${errMsg}`);
-        return { success: false, error: errMsg };
+        directError = errBody.error || `Worker returned HTTP ${res.status}`;
+        console.warn(`[send] ⚠️ Local worker rejected or not connected: ${directError}. Falling back to queue...`);
+        shouldQueue = true;
+      } else {
+        const resData = await res.json();
+        console.log(`[send] ✅ Worker accepted. WA ID: ${resData.waMessageId || 'N/A'}`);
+        return { success: true, waMessageId: resData.waMessageId };
+      }
+    } catch (err: any) {
+      directError = err.message;
+      console.warn(`[send] ⚠️ Local worker at 127.0.0.1:${WORKER_PORT} unreachable (${err.message}). Falling back to queue...`);
+      shouldQueue = true;
+    }
+
+    // ── Fallback: Enqueue into baileys_action_queue for active worker execution ──
+    if (shouldQueue) {
+      console.log(`[send] 📥 Enqueuing message for background worker delivery (Workspace: ${workspaceId})...`);
+
+      let actionType = 'send_text';
+      if (['image', 'video', 'audio', 'document', 'media'].includes(sendType)) {
+        actionType = 'send_media';
+      } else if ((sendType as string) === 'template') {
+        actionType = 'send_template';
+      } else if (sendType === 'buttons') {
+        actionType = 'send_buttons';
+      } else if (sendType === 'poll') {
+        actionType = 'send_poll';
       }
 
-      const resData = await res.json();
-      console.log(`[send] ✅ Worker accepted. WA ID: ${resData.waMessageId || 'N/A'}`);
-      return { success: true, waMessageId: resData.waMessageId };
-    } catch (err: any) {
-      console.error(`[send] ❌ Failed to reach worker at 127.0.0.1:${WORKER_PORT}:`, err.message);
-      return { success: false, error: `Worker at 127.0.0.1:${WORKER_PORT} unreachable: ${err.message}. Ensure Baileys Worker is running under PM2.` };
+      const { data: queueItem, error: qErr } = await supabaseAdmin
+        .from('baileys_action_queue')
+        .insert({
+          workspace_id: workspaceId,
+          action_type: actionType,
+          payload: {
+            to: sendTo,
+            type: sendType,
+            text: payload.text,
+            mediaUrl: payload.mediaUrl,
+            caption: payload.caption,
+            mimeType: payload.mimeType,
+            templateId: (payload as any).templateId,
+            variables: (payload as any).variables,
+            buttons: payload.buttons,
+            rawButtons: payload.rawButtons,
+            pollOptions: payload.pollOptions,
+            pollSelectableCount: payload.pollSelectableCount,
+            footer: payload.footer,
+            _messageRecordId: (payload as any)._messageRecordId,
+          },
+          priority: 1, // High priority for manual UI send
+          status: 'pending',
+        })
+        .select('id')
+        .single();
+
+      if (qErr || !queueItem) {
+        console.error('[send] ❌ Failed to insert fallback queue item:', qErr);
+        return { success: false, error: directError || 'Failed to dispatch message.' };
+      }
+
+      console.log(`[send] ⏳ Action ${queueItem.id} queued. Awaiting confirmation from active worker...`);
+
+      // Wait up to 5 seconds for the active worker (e.g. VPS) to process via Realtime
+      const pollStart = Date.now();
+      while (Date.now() - pollStart < 5000) {
+        await new Promise(r => setTimeout(r, 400));
+        const { data: checkItem } = await supabaseAdmin
+          .from('baileys_action_queue')
+          .select('status, result_message_id, failure_reason')
+          .eq('id', queueItem.id)
+          .maybeSingle();
+
+        if (checkItem?.status === 'done') {
+          console.log(`[send] ✅ Queued action ${queueItem.id} confirmed completed! WA ID: ${checkItem.result_message_id}`);
+          return { success: true, waMessageId: checkItem.result_message_id ?? undefined };
+        }
+
+        if (checkItem?.status === 'failed') {
+          console.error(`[send] ❌ Queued action ${queueItem.id} failed:`, checkItem.failure_reason);
+          return { success: false, error: checkItem.failure_reason || 'Message dispatch failed in queue.' };
+        }
+      }
+
+      // If still pending after 5 seconds, it's queued and will be delivered shortly
+      console.log(`[send] ⏳ Action ${queueItem.id} queued successfully for delivery.`);
+      return { success: true, waMessageId: undefined };
     }
+
+    return { success: false, error: directError || 'Failed to dispatch message.' };
 
   } finally {
     // 4. Temp File Cleanup (Delayed to allow worker to read it)
@@ -709,37 +800,37 @@ export async function generateQrServerless(
 ): Promise<void> {
   const WORKER_PORT = process.env.WORKER_PORT ?? '3002';
 
-  // 1. Fast check DB — if session is ALREADY CONNECTED/OPEN, return immediately!
-  const { data: dbSess } = await supabaseAdmin
-    .from('baileys_sessions')
-    .select('conn_state, status, phone_number')
-    .eq('workspace_id', workspaceId)
-    .maybeSingle();
-
-  if (dbSess?.conn_state === 'open' || dbSess?.status === 'CONNECTED') {
-    console.log(`[generateQrServerless] ✅ DB shows session already connected for ${workspaceId}`);
-    onConnected(dbSess.phone_number || 'Device Linked');
-    return;
-  }
-
   let isWorkerAvailable = false;
   try {
     const healthRes = await fetch(`http://127.0.0.1:${WORKER_PORT}/health?workspace_id=${encodeURIComponent(workspaceId)}`, { signal: AbortSignal.timeout(1500) });
     if (healthRes.ok) {
       const health = await healthRes.json();
-      if (health.socket_conn_state === 'open' || health.socket_authenticated) {
-        console.log(`[generateQrServerless] ✅ Worker reports socket already connected for ${workspaceId}`);
-        onConnected(health.phone_number || 'Device Linked');
+      if (health.socket_authenticated && health.socket_conn_state === 'open' && health.phone_number) {
+        console.log(`[generateQrServerless] ✅ Worker reports socket already authenticated for ${workspaceId}`);
+        onConnected(health.phone_number);
         return;
       }
       isWorkerAvailable = true;
-      await fetch(`http://127.0.0.1:${WORKER_PORT}/init-qr?workspace_id=${encodeURIComponent(workspaceId)}`, { method: 'POST' }).catch(() => {});
+      await fetch(`http://127.0.0.1:${WORKER_PORT}/init-qr?workspace_id=${encodeURIComponent(workspaceId)}&force=true`, { method: 'POST' }).catch(() => {});
     }
   } catch {
     isWorkerAvailable = false;
   }
 
+  // 1. If worker is not available, check DB state as fallback
   if (!isWorkerAvailable) {
+    const { data: dbSess } = await supabaseAdmin
+      .from('baileys_sessions')
+      .select('conn_state, status, phone_number, qr_string')
+      .eq('workspace_id', workspaceId)
+      .maybeSingle();
+
+    if ((dbSess?.conn_state === 'open' || dbSess?.status === 'CONNECTED') && !dbSess?.qr_string && dbSess?.phone_number) {
+      console.log(`[generateQrServerless] ✅ DB shows session already connected for ${workspaceId}`);
+      onConnected(dbSess.phone_number);
+      return;
+    }
+
     console.log(`[generateQrServerless] Worker offline — falling back to Direct Serverless Gateway for ${workspaceId}`);
     return startDirectServerlessQr(supabaseAdmin, workspaceId, onQr, onConnected, onError, timeoutMs);
   }
@@ -782,11 +873,11 @@ export async function generateQrServerless(
     if (Date.now() - lastHealthCheck > 10_000) {
       lastHealthCheck = Date.now();
       try {
-        const healthRes = await fetch(`http://127.0.0.1:${WORKER_PORT}/health`);
+        const healthRes = await fetch(`http://127.0.0.1:${WORKER_PORT}/health?workspace_id=${encodeURIComponent(workspaceId)}`);
         if (healthRes.ok) {
           const health = await healthRes.json();
-          if (health.socket_conn_state === 'open') {
-            const hp = health.phone_number ?? '';
+          if (health.socket_authenticated && health.socket_conn_state === 'open' && health.phone_number) {
+            const hp = health.phone_number;
             console.log(`[generateQrServerless] ⚠️ Worker reports connected but DB lags — force-updating for ${workspaceId}`);
             await supabaseAdmin
               .from('baileys_sessions')
@@ -813,11 +904,11 @@ export async function generateQrServerless(
   // If the polling loop exhausted but the worker is actually connected, force
   // the DB update one last time before giving up.
   try {
-    const healthRes = await fetch(`http://127.0.0.1:${WORKER_PORT}/health`);
+    const healthRes = await fetch(`http://127.0.0.1:${WORKER_PORT}/health?workspace_id=${encodeURIComponent(workspaceId)}`);
     if (healthRes.ok) {
       const health = await healthRes.json();
-      if (health.socket_conn_state === 'open') {
-        const hp = health.phone_number ?? '';
+      if (health.socket_authenticated && health.socket_conn_state === 'open' && health.phone_number) {
+        const hp = health.phone_number;
         console.log(`[generateQrServerless] ⏰ Timeout fallback — worker connected, force-updating DB for ${workspaceId}`);
         await supabaseAdmin
           .from('baileys_sessions')
@@ -880,19 +971,20 @@ export async function processSingleQueuedAction(
     }
 
     case 'send_media': {
-      const { to, mediaUrl, caption, mimeType, workflowLogId } = payload as {
-        to: string; mediaUrl: string; caption?: string; mimeType: string; workflowLogId?: string;
-      };
-      const mediaType = mimeType.startsWith('image/') ? 'image' :
-                        mimeType.startsWith('video/') ? 'video' :
-                        mimeType.startsWith('audio/') ? 'audio' : 'document';
+      const { to, mediaUrl, caption, mimeType, workflowLogId, document, image, fileName } = payload as any;
+      const resolvedMediaUrl = document?.url || image?.url || mediaUrl;
+      const resolvedMimeType = mimeType || (document ? 'application/pdf' : image ? 'image/webp' : 'application/octet-stream');
+      const mediaType = resolvedMimeType.startsWith('image/') ? 'image' :
+                        resolvedMimeType.startsWith('video/') ? 'video' :
+                        resolvedMimeType.startsWith('audio/') ? 'audio' : 'document';
 
       return sendMessageServerless(supabaseAdmin, workspace_id, {
         to: normalizeJid(to),
         type: mediaType as any,
-        mediaUrl,
+        mediaUrl: resolvedMediaUrl,
         caption,
-        mimeType,
+        mimeType: resolvedMimeType,
+        fileName,
         workflowLogId,
       });
     }

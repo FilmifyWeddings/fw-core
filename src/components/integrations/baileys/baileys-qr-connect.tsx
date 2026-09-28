@@ -118,9 +118,11 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
 
   const qrStringRef = useRef<string | null>(null);
   const lastQrUpdateRef = useRef<number>(0);
+  const isFetchingRef = useRef(false);
+  const isConnectedRef = useRef(false);
 
   const updateQr = useCallback((newQr: string) => {
-    if (!newQr) return;
+    if (!newQr || isConnectedRef.current) return;
     qrStringRef.current = newQr;
     setQrString(newQr);
     setConnState('connecting');
@@ -138,66 +140,91 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
   }, []);
 
   const tick = useCallback(async () => {
+    if (isConnectedRef.current || isFetchingRef.current) return;
+    isFetchingRef.current = true;
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
       if (!token) return;
-      const res = await fetch('/api/integrations/baileys/qr-status', {
+      const res = await fetch(`/api/integrations/baileys/qr-status?workspace_id=${encodeURIComponent(workspaceId)}`, {
         headers: { Authorization: `Bearer ${token}` }, cache: 'no-store',
       });
       if (!res.ok) return;
       const d = await res.json();
-      if (d.isConnected || d.conn_state === 'open' || d.status === 'CONNECTED') {
+      const isNowConnected = (d.isConnected === true || d.status === 'open' || d.status === 'connected' || d.conn_state === 'open') && !d.qr_string && !!d.phone_number;
+      if (isNowConnected) {
+        isConnectedRef.current = true;
         setConnState('open'); 
-        setPhoneNumber(d.phone_number || 'Connected Device'); 
+        setPhoneNumber(d.phone_number); 
         setQrString(null); 
         qrStringRef.current = null; 
         setIsResetting(false); 
         stopPolling();
-      } else if (d.qr_string) {
-        updateQr(d.qr_string);
-      } else if (d.conn_state === 'connecting') {
-        setConnState('connecting');
-      } else if (d.conn_state === 'disconnected') {
-        setConnState('disconnected');
-        setPhoneNumber(null);
+        if (sseRef.current) {
+          sseRef.current.close();
+          sseRef.current = null;
+        }
+        return;
+      }
+      
+      if (!isConnectedRef.current) {
+        if (d.qr_string) {
+          updateQr(d.qr_string);
+        } else if (d.conn_state === 'connecting') {
+          setConnState('connecting');
+        } else if (d.conn_state === 'disconnected') {
+          setConnState('disconnected');
+          setPhoneNumber(null);
+        }
       }
     } catch { /* ignore */ }
-  }, [stopPolling, updateQr]);
+    finally {
+      isFetchingRef.current = false;
+    }
+  }, [stopPolling, updateQr, workspaceId]);
 
-  const startPolling = useCallback((fast = true) => {
+  const startPolling = useCallback(() => {
+    if (isConnectedRef.current) return;
     if (pollRef.current) clearInterval(pollRef.current);
     tick();
-    pollRef.current = setInterval(tick, fast ? 1500 : 2500);
+    pollRef.current = setInterval(tick, 2500); // 2.5s safe polling interval to eliminate race conditions
   }, [tick]);
 
   const initSSE = useCallback(async () => {
-    if (startedRef.current) return;
+    if (isConnectedRef.current || startedRef.current) return;
     startedRef.current = true;
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
-      if (!token) { startPolling(true); return; }
+      if (!token) { startPolling(); return; }
       if (sseRef.current) { sseRef.current.close(); sseRef.current = null; }
-      const sse = new EventSource(`/api/integrations/baileys/qr-init?token=${encodeURIComponent(token)}`);
+      const sse = new EventSource(`/api/integrations/baileys/qr-init?token=${encodeURIComponent(token)}&workspace_id=${encodeURIComponent(workspaceId)}`);
       sseRef.current = sse;
       sse.addEventListener('qr', (e) => {
+        if (isConnectedRef.current) return;
         const d = JSON.parse(e.data);
         if (d.qr) { updateQr(d.qr); }
       });
       sse.addEventListener('connected', (e) => {
         const d = JSON.parse(e.data);
+        isConnectedRef.current = true;
         setConnState('open'); 
         setPhoneNumber(d.phone ?? 'Connected Device'); 
         setQrString(null); 
-        setIsResetting(false);
+        qrStringRef.current = null;
+        setIsResetting(false); 
         sse.close(); 
+        sseRef.current = null;
         stopPolling();
       });
-      sse.onerror = () => { startPolling(true); };
-      startPolling(true);
-    } catch { startPolling(true); }
-  }, [startPolling, stopPolling, updateQr]);
+      sse.onerror = () => { 
+        if (!isConnectedRef.current) startPolling(); 
+      };
+      startPolling();
+    } catch { 
+      if (!isConnectedRef.current) startPolling(); 
+    }
+  }, [startPolling, stopPolling, updateQr, workspaceId]);
 
   useEffect(() => {
     let isMounted = true;
@@ -207,29 +234,42 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
         if (token) {
-          const res = await fetch('/api/integrations/baileys/qr-status', {
+          const res = await fetch(`/api/integrations/baileys/qr-status?workspace_id=${encodeURIComponent(workspaceId)}`, {
             headers: { Authorization: `Bearer ${token}` }, cache: 'no-store',
           });
           if (res.ok) {
             const d = await res.json();
-            if (d.isConnected || d.conn_state === 'open' || d.status === 'CONNECTED') {
+            const isNowConnected = (d.isConnected === true || d.status === 'open' || d.conn_state === 'open') && !d.qr_string && !!d.phone_number;
+            if (isNowConnected) {
               if (isMounted) {
+                isConnectedRef.current = true;
                 setConnState('open'); 
                 setPhoneNumber(d.phone_number || 'Connected Device'); 
                 setQrString(null); 
+                qrStringRef.current = null;
                 setIsResetting(false);
+                stopPolling();
+                if (sseRef.current) {
+                  sseRef.current.close();
+                  sseRef.current = null;
+                }
               }
               return;
             }
             if (d.qr_string && isMounted) {
+              setConnState('connecting');
+              setPhoneNumber(null);
               updateQr(d.qr_string);
+            } else if (isMounted) {
+              setConnState('disconnected');
+              setPhoneNumber(null);
             }
           }
         }
       } catch { if (isMounted) setConnState('connecting'); }
-      if (isMounted) {
+      if (isMounted && !isConnectedRef.current) {
         initSSE();
-        startPolling(true);
+        startPolling();
       }
     };
 
@@ -242,19 +282,45 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'baileys_sessions' },
         (payload) => {
+          const rowWs = (payload.new as any)?.workspace_id;
+          const rowUser = (payload.new as any)?.user_id;
+
+          // STRICT MULTI-USER ISOLATION: Ignore updates for other workspaces or users!
+          if (rowWs !== workspaceId && rowUser !== workspaceId) return;
+
           const newState = (payload.new as any)?.conn_state;
-          const status = (payload.new as any)?.status;
           const phone = (payload.new as any)?.phone_number;
           const qr = (payload.new as any)?.qr_string;
-          if ((newState === 'open' || status === 'CONNECTED') && isMounted) {
+
+          // A session is ONLY connected if newState === 'open' and phone exists and no active QR
+          const isActuallyConnected = newState === 'open' && !qr && !!phone;
+
+          if (isActuallyConnected && isMounted) {
+            isConnectedRef.current = true;
             setConnState('open'); 
             setPhoneNumber(phone ?? 'Connected Device'); 
             setQrString(null); 
             qrStringRef.current = null; 
             setIsResetting(false); 
+            if (sseRef.current) {
+              sseRef.current.close();
+              sseRef.current = null;
+            }
             stopPolling();
-          } else if (qr && isMounted && newState !== 'open' && status !== 'CONNECTED') {
-            updateQr(qr);
+          } else if (isMounted) {
+            if (newState === 'disconnected') {
+              isConnectedRef.current = false;
+            }
+            if (!isConnectedRef.current) {
+              setConnState(qr ? 'connecting' : 'disconnected');
+              setPhoneNumber(null);
+              if (qr) {
+                updateQr(qr);
+              } else {
+                setQrString(null);
+                qrStringRef.current = null;
+              }
+            }
           }
         }
       )
@@ -264,15 +330,18 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
       isMounted = false;
       supabase.removeChannel(channel);
       sseRef.current?.close();
+      sseRef.current = null;
       stopPolling();
     };
   }, [initSSE, startPolling, stopPolling, workspaceId, updateQr]);
 
   const handleDisconnect = async () => {
-    sseRef.current?.close(); stopPolling();
+    isConnectedRef.current = false;
+    if (sseRef.current) { sseRef.current.close(); sseRef.current = null; }
+    stopPolling();
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.access_token) {
-      await fetch('/api/integrations/baileys/qr-status', {
+      await fetch(`/api/integrations/baileys/qr-status?workspace_id=${encodeURIComponent(workspaceId)}`, {
         method: 'POST', headers: { Authorization: `Bearer ${session.access_token}` },
       });
     }
@@ -281,13 +350,14 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
   };
 
   const handleReconnect = async () => {
+    isConnectedRef.current = false;
     startedRef.current = false;
     setIsResetting(false);
-    setConnState('connecting'); setQrString(null); qrStringRef.current = null; lastQrUpdateRef.current = 0;
+    setConnState('connecting'); setQrString(null); qrStringRef.current = null; lastQrUpdateRef.current = 0; setPhoneNumber(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.access_token) {
-        await fetch('/api/integrations/baileys/qr-status', {
+        await fetch(`/api/integrations/baileys/qr-status?workspace_id=${encodeURIComponent(workspaceId)}`, {
           method: 'POST', headers: { Authorization: `Bearer ${session.access_token}` },
         });
       }
@@ -298,7 +368,9 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
   const handleForceReset = async () => {
     if (!window.confirm('This will completely reset your WhatsApp session. You will need to re-scan the QR code. Continue?')) return;
     // ── IMMEDIATE FRONTEND STATE WIPEOUT ──
-    sseRef.current?.close(); stopPolling();
+    isConnectedRef.current = false;
+    if (sseRef.current) { sseRef.current.close(); sseRef.current = null; }
+    stopPolling();
     setIsResetting(true);
     setConnState('connecting'); setQrString(null); qrStringRef.current = null; lastQrUpdateRef.current = 0; setPhoneNumber(null);
     setQrPanelKey(k => k + 1);
@@ -307,7 +379,7 @@ export function BaileysQrConnect({ workspaceId }: BaileysQrConnectProps) {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.access_token) {
-        await fetch('/api/integrations/baileys/force-reset', {
+        await fetch(`/api/integrations/baileys/force-reset?workspace_id=${encodeURIComponent(workspaceId)}`, {
           method: 'POST', headers: { Authorization: `Bearer ${session.access_token}` },
         });
       }

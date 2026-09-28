@@ -24,6 +24,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { createClient } from '@supabase/supabase-js';
 import { sendMessageServerless, normalizeJid } from '@/lib/baileys-serverless';
+import { getDirectB2FetchUrl } from '@/lib/services/whatsappStorageService';
 
 export const maxDuration = 60;
 export const runtime = 'nodejs';
@@ -75,15 +76,17 @@ export async function POST(req: NextRequest) {
     const { data: userSessions } = await supabaseAdmin
       .from('baileys_sessions')
       .select('*')
-      .or(`user_id.eq.${userId},workspace_id.eq.${requestedWsId},workspace_id.eq.${userId}`)
+      .or(`workspace_id.eq.${requestedWsId},user_id.eq.${requestedWsId},user_id.eq.${userId}`)
       .order('updated_at', { ascending: false });
 
     let activeSess: any = null;
     if (userSessions && userSessions.length > 0) {
       activeSess = userSessions.find(
         (s: any) =>
-          (s.user_id === userId || s.workspace_id === requestedWsId || s.workspace_id === userId) &&
-          (s.conn_state === 'open' || s.status === 'connected' || s.status === 'CONNECTED' || !!(s.phone_number && s.phone_number.length > 5))
+          (s.workspace_id === requestedWsId || s.user_id === requestedWsId || (requestedWsId === userId && s.user_id === userId)) &&
+          (s.conn_state === 'open' || s.status === 'connected' || s.status === 'CONNECTED') &&
+          !s.qr_string &&
+          !!(s.phone_number && s.phone_number.trim().length > 5)
       );
     }
 
@@ -101,7 +104,7 @@ export async function POST(req: NextRequest) {
     const { data: msgRecord } = await supabaseAdmin
       .from('baileys_messages')
       .insert({
-        workspace_id: user.id,
+        workspace_id: requestedWsId || user.id,
         lead_id: leadId ?? null,
         chat_jid: chatJid,
         direction: 'outbound',
@@ -158,7 +161,7 @@ export async function POST(req: NextRequest) {
           .from('tenant_whatsapp_templates')
           .select('body_text, media_url_payload, type, buttons, payload_json')
           .eq('id', body.templateId)
-          .eq('tenant_id', user.id)
+          .or(`tenant_id.eq.${requestedWsId},tenant_id.eq.${user.id}`)
           .maybeSingle();
 
         if (tenantTpl) {
@@ -175,7 +178,7 @@ export async function POST(req: NextRequest) {
             .from('whatsapp_templates')
             .select('payload, type, buttons')
             .eq('id', body.templateId)
-            .eq('workspace_id', user.id)
+            .or(`workspace_id.eq.${requestedWsId},workspace_id.eq.${user.id}`)
             .maybeSingle();
 
           if (legacyTpl) {
@@ -339,7 +342,13 @@ export async function POST(req: NextRequest) {
     if (type === 'text') {
       actionPayload = { to: chatJid, text: body.text };
     } else if (type === 'media') {
-      actionPayload = { to: chatJid, mediaUrl: body.mediaUrl, caption: body.caption, mimeType: body.mimeType };
+      const directMediaUrl = await getDirectB2FetchUrl(body.mediaUrl || '');
+      actionPayload = {
+        to: chatJid,
+        mediaUrl: directMediaUrl || body.mediaUrl,
+        caption: body.caption,
+        mimeType: body.mimeType,
+      };
     } else {
       actionPayload = { to: chatJid, templateId: body.templateId, variables: body.variables ?? {} };
     }
@@ -347,7 +356,7 @@ export async function POST(req: NextRequest) {
     const { data: queueItem } = await supabaseAdmin
       .from('baileys_action_queue')
       .insert({
-        workspace_id: user.id,
+        workspace_id: requestedWsId || user.id,
         action_type: `send_${type}`,
         payload: { ...actionPayload, _messageRecordId: msgRecord?.id },
         priority: 5,

@@ -24,14 +24,16 @@ export async function POST(req: NextRequest) {
     }
 
     const userId = user.id;
+    const targetWsId = req.nextUrl.searchParams.get('workspace_id') || req.nextUrl.searchParams.get('workspaceId') || userId;
 
     // 1. Always wipe database session state directly in Supabase Postgres
     await supabaseAdmin
       .from('baileys_sessions')
       .upsert({
-        user_id: userId,
-        workspace_id: userId,
+        user_id: targetWsId,
+        workspace_id: targetWsId,
         conn_state: 'connecting',
+        status: 'disconnected',
         qr_string: null,
         qr_expires_at: null,
         phone_number: null,
@@ -44,7 +46,7 @@ export async function POST(req: NextRequest) {
     // 2. Best-effort notification to external worker if running
     const WORKER_PORT = process.env.WORKER_PORT ?? '3002';
     try {
-      await fetch(`http://127.0.0.1:${WORKER_PORT}/force-reset?workspace_id=${encodeURIComponent(userId)}`, {
+      await fetch(`http://127.0.0.1:${WORKER_PORT}/force-reset?workspace_id=${encodeURIComponent(targetWsId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: AbortSignal.timeout(1500),

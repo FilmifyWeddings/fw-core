@@ -21,14 +21,15 @@ export function WhatsappStatusBadge({ workspaceId, className = '', showLabel = t
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
         if (token) {
-          const res = await fetch('/api/integrations/baileys/qr-status', {
+          const qs = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : '';
+          const res = await fetch(`/api/integrations/baileys/qr-status${qs}`, {
             headers: { Authorization: `Bearer ${token}` },
             cache: 'no-store',
           });
           if (res.ok) {
             const d = await res.json();
             if (isMounted) {
-              if (d.isConnected || d.conn_state === 'open' || d.status === 'CONNECTED') {
+              if (d.isConnected === true && (d.conn_state === 'open' || d.conn_state === 'connected') && !!d.phone_number) {
                 setState('open');
               } else if (d.conn_state) {
                 setState(d.conn_state as any);
