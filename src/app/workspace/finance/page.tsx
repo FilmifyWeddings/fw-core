@@ -836,12 +836,12 @@ export default function FinancePage() {
             supabase
               .from('quotation_documents')
               .select('id, template_id, lead_id, version, lead_version, is_final, content_json, created_at, updated_at')
-              .or(`lead_id.in.(${allLookupIds.join(',')}),${shortFilters.join(',')}`)
+              .or(workspaceId && workspaceId !== 'ws_demo' ? `user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}` : `lead_id.in.(${targetLeadIds.filter(id => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)).join(',') || '00000000-0000-0000-0000-000000000000'})`)
               .order('created_at', { ascending: false }),
             supabase
               .from('leads')
               .select('id, name, final_quotation_id, quotation_id')
-              .in('id', targetLeadIds.filter(id => id.length >= 8))
+              .in('id', targetLeadIds.filter(id => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)))
           ]);
 
           if (leadsRes.data) {
@@ -889,7 +889,7 @@ export default function FinancePage() {
         ) {
           continue;
         }
-        const existing = financeMap.get(c.id);
+        const existing = financeMap.get(c.id) || (c.lead_id ? financeMap.get(c.lead_id) : undefined);
         if (
           existing && (
             (existing as any).status === 'trash' ||
@@ -915,34 +915,50 @@ export default function FinancePage() {
 
         if (existing) {
           const quoteBase = linkedFinalQuote?.base_package_price || linkedFinalQuote?.subtotal_amount || 0;
-          const rawBase = (Number(existing.base_package_price) > 0)
-            ? Math.max(0, Math.round(Number(existing.base_package_price)))
-            : (quoteBase > 0 ? quoteBase : Math.max(0, Math.round(Number(c.total_package_amount) || 0)));
+          const isPlaceholderEmptyCard = existing.payment_status === 'unsettled' || (Number(existing.final_total_amount) === 0 && Number(existing.base_package_price) === 0);
+          const shouldTakeQuoteFinancials = Boolean(linkedFinalQuote) && (isPlaceholderEmptyCard || Number(existing.base_package_price) === 0);
+          const rawBase = (shouldTakeQuoteFinancials && quoteBase > 0)
+            ? quoteBase
+            : (Number(existing.base_package_price) > 0
+                ? Math.max(0, Math.round(Number(existing.base_package_price)))
+                : (quoteBase > 0 ? quoteBase : Math.max(0, Math.round(Number(c.total_package_amount) || 0))));
           const quoteDiscount = linkedFinalQuote?.discount_amount || 0;
-          const discount = (Number(existing.discount_amount) > 0)
-            ? Math.max(0, Math.round(Number(existing.discount_amount)))
-            : quoteDiscount;
+          const discount = (shouldTakeQuoteFinancials && quoteDiscount > 0)
+            ? quoteDiscount
+            : ((Number(existing.discount_amount) > 0)
+                ? Math.max(0, Math.round(Number(existing.discount_amount)))
+                : quoteDiscount);
           const quoteAccom = linkedFinalQuote?.accommodation_charges || 0;
-          const accommodation = (Number(existing.accommodation_charges) > 0)
-            ? Math.max(0, Math.round(Number(existing.accommodation_charges)))
-            : quoteAccom;
+          const accommodation = (shouldTakeQuoteFinancials && quoteAccom > 0)
+            ? quoteAccom
+            : ((Number(existing.accommodation_charges) > 0)
+                ? Math.max(0, Math.round(Number(existing.accommodation_charges)))
+                : quoteAccom);
           const quoteTravel = linkedFinalQuote?.travel_charges || 0;
-          const travel = (Number(existing.travel_charges) > 0)
-            ? Math.max(0, Math.round(Number(existing.travel_charges)))
-            : quoteTravel;
+          const travel = (shouldTakeQuoteFinancials && quoteTravel > 0)
+            ? quoteTravel
+            : ((Number(existing.travel_charges) > 0)
+                ? Math.max(0, Math.round(Number(existing.travel_charges)))
+                : quoteTravel);
           const quoteAdd = linkedFinalQuote?.additional_charges || 0;
-          const additional = (Number(existing.additional_charges) > 0)
-            ? Math.max(0, Math.round(Number(existing.additional_charges)))
-            : quoteAdd;
+          const additional = (shouldTakeQuoteFinancials && quoteAdd > 0)
+            ? quoteAdd
+            : ((Number(existing.additional_charges) > 0)
+                ? Math.max(0, Math.round(Number(existing.additional_charges)))
+                : quoteAdd);
           const subtotal = Math.max(0, rawBase - discount + accommodation + travel + additional);
           const quoteGstRate = linkedFinalQuote?.gst_rate || 0;
-          const gstRate = (Number(existing.gst_rate) > 0)
-            ? Number(existing.gst_rate)
-            : quoteGstRate;
+          const gstRate = (shouldTakeQuoteFinancials && quoteGstRate > 0)
+            ? quoteGstRate
+            : ((Number(existing.gst_rate) > 0)
+                ? Number(existing.gst_rate)
+                : quoteGstRate);
           const gstAmount = Math.round((subtotal * gstRate) / 100);
-          const finalTotal = (Number(existing.final_total_amount) > 0)
-            ? Number(existing.final_total_amount)
-            : (linkedFinalQuote?.final_total_amount ? Number(linkedFinalQuote.final_total_amount) : (subtotal + gstAmount));
+          const finalTotal = (shouldTakeQuoteFinancials && linkedFinalQuote?.final_total_amount)
+            ? Number(linkedFinalQuote.final_total_amount)
+            : ((Number(existing.final_total_amount) > 0)
+                ? Number(existing.final_total_amount)
+                : (linkedFinalQuote?.final_total_amount ? Number(linkedFinalQuote.final_total_amount) : (subtotal + gstAmount)));
           const received = Math.max(0, Math.round(Number(existing.received_amount) || Number(c.paid_amount) || (linkedFinalQuote?.received_amount || 0)));
           const pending = Math.max(0, finalTotal - received);
 
@@ -965,7 +981,9 @@ export default function FinancePage() {
             received_amount: received,
             pending_amount: pending,
             payment_status: (!hasFinalQuotation && finalTotal === 0 && received === 0) ? 'unsettled' : (pending === 0 && finalTotal > 0 ? 'paid' : received > 0 ? 'partially_paid' : 'pending'),
-            milestones: (Array.isArray(existing.milestones) && existing.milestones.length > 0) ? existing.milestones : (Array.isArray(linkedFinalQuote?.milestones) ? linkedFinalQuote.milestones : [])
+            milestones: (shouldTakeQuoteFinancials && Array.isArray(linkedFinalQuote?.milestones) && linkedFinalQuote.milestones.length > 0)
+              ? linkedFinalQuote.milestones
+              : ((Array.isArray(existing.milestones) && existing.milestones.length > 0) ? existing.milestones : (Array.isArray(linkedFinalQuote?.milestones) ? linkedFinalQuote.milestones : []))
           });
         } else {
           // CLEAN INITIAL STATE: STRICT ZERO DUMMY DATA FOR NEW BOOKED CLIENTS

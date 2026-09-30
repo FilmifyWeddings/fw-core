@@ -26,6 +26,7 @@ import type { WorkspaceClient, Lead, ClientFinanceRecord, FinanceMilestoneItem }
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import Searchable3DCreamSelect, { Searchable3DCreamSelectOption } from '@/components/ui/Searchable3DCreamSelect';
 import { safeParseCurrencyOrBudget } from '@/lib/budget-helpers';
+import { extractFinancialsFromQuotation } from '@/lib/quotation-finance-sync';
 
 const DEFAULT_EVENT_TYPES = [
   'Wedding Photography',
@@ -50,6 +51,7 @@ export default function ClientsPage() {
   const [clients, setClients] = useState<WorkspaceClient[]>(() => memCachedClients);
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string>('');
   const [financeRecordsMap, setFinanceRecordsMap] = useState<Map<string, ClientFinanceRecord>>(() => memCachedFinanceRecordsMap);
+  const [quoteFinanceMap, setQuoteFinanceMap] = useState<Map<string, { total: number; paid: number; due: number }>>(new Map());
   const [isExcelMigrationModalOpen, setIsExcelMigrationModalOpen] = useState(false);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [teamMembers, setTeamMembers] = useState<WorkspaceMemberOption[]>(() => memCachedTeamMembers);
@@ -137,16 +139,24 @@ export default function ClientsPage() {
   useEffect(() => {
     fetchClientsAndSyncBookedLeads();
 
-    const handleQuotationFinalized = () => {
+    const handleDataRefresh = () => {
       memCachedClients = [];
       try {
         localStorage.removeItem('sc_cached_clients');
       } catch (_) {}
       fetchClientsAndSyncBookedLeads();
     };
-    window.addEventListener('quotation_finalized', handleQuotationFinalized);
+    window.addEventListener('quotation_finalized', handleDataRefresh);
+    window.addEventListener('finance_updated', handleDataRefresh);
+    window.addEventListener('client_created', handleDataRefresh);
+    window.addEventListener('client_updated', handleDataRefresh);
+    window.addEventListener('post_production_updated', handleDataRefresh);
     return () => {
-      window.removeEventListener('quotation_finalized', handleQuotationFinalized);
+      window.removeEventListener('quotation_finalized', handleDataRefresh);
+      window.removeEventListener('finance_updated', handleDataRefresh);
+      window.removeEventListener('client_created', handleDataRefresh);
+      window.removeEventListener('client_updated', handleDataRefresh);
+      window.removeEventListener('post_production_updated', handleDataRefresh);
     };
   }, []);
 
@@ -181,9 +191,56 @@ export default function ClientsPage() {
       const { data: finData } = await finQuery;
       const fMap = new Map<string, ClientFinanceRecord>();
       if (finData) {
-        finData.forEach(f => fMap.set(f.client_id, f));
+        finData.forEach(f => {
+          if (f.client_id) fMap.set(f.client_id, f);
+        });
       }
       setFinanceRecordsMap(fMap);
+
+      // Fetch quotation documents to reactively populate financial package totals if finance records are not yet settled
+      const qFinMap = new Map<string, { total: number; paid: number; due: number }>();
+      try {
+        const { data: qDocs } = await supabase
+          .from('quotation_documents')
+          .select('id, template_id, lead_id, content_json, is_final');
+
+        if (qDocs && qDocs.length > 0) {
+          for (const doc of qDocs) {
+            const isFinal = Boolean(doc.is_final || doc.content_json?.is_final);
+            if (isFinal && doc.content_json) {
+              const fin = extractFinancialsFromQuotation(doc.content_json);
+              const data = {
+                total: fin.final_total_amount || 0,
+                paid: fin.received_amount || 0,
+                due: fin.pending_amount || 0
+              };
+              if (doc.lead_id) qFinMap.set(doc.lead_id, data);
+              if (doc.template_id) qFinMap.set(doc.template_id, data);
+            }
+          }
+        }
+      } catch (_) {}
+
+      try {
+        const { data: qRows } = await supabase
+          .from('quotations')
+          .select('id, quotation_number, client_id, status, is_final, financials, content_json')
+          .or('is_final.eq.true,status.in.(accepted,final)');
+
+        if (qRows && qRows.length > 0) {
+          for (const q of qRows) {
+            const tot = Number(q.financials?.total_amount || (q as any).total_amount || 0);
+            const paid = Number(q.financials?.received_amount || 0);
+            const due = Math.max(0, tot - paid);
+            if (tot > 0) {
+              const data = { total: tot, paid, due };
+              if (q.client_id) qFinMap.set(q.client_id, data);
+              if (q.quotation_number) qFinMap.set(q.quotation_number, data);
+            }
+          }
+        }
+      } catch (_) {}
+      setQuoteFinanceMap(qFinMap);
 
       // 3. Fetch all leads scoped to current workspace to check for booked leads
       let leadsQuery = supabase
@@ -936,8 +993,19 @@ export default function ClientsPage() {
   const totalClientsCount = nonTrashedClients.length;
   const activeClientsCount = nonTrashedClients.filter(c => c.status !== 'completed').length;
   const completedClientsCount = nonTrashedClients.filter(c => c.status === 'completed').length;
-  const totalInvoicesCount = filteredClients.reduce((sum, c) => sum + (c.total_package_amount || 0), 0);
-  const cashRevenueTotal = filteredClients.reduce((sum, c) => sum + (c.paid_amount || 0), 0);
+  const totalInvoicesCount = filteredClients.reduce((sum, c) => {
+    const fin = financeRecordsMap.get(c.id) || (c.lead_id ? financeRecordsMap.get(c.lead_id) : undefined);
+    const qFin = (c.lead_id ? quoteFinanceMap.get(c.lead_id) : undefined) || quoteFinanceMap.get(c.id);
+    const amt = (fin && Number(fin.final_total_amount) > 0 ? Number(fin.final_total_amount) : Number(c.total_package_amount)) || qFin?.total || 0;
+    return sum + amt;
+  }, 0);
+
+  const cashRevenueTotal = filteredClients.reduce((sum, c) => {
+    const fin = financeRecordsMap.get(c.id) || (c.lead_id ? financeRecordsMap.get(c.lead_id) : undefined);
+    const qFin = (c.lead_id ? quoteFinanceMap.get(c.lead_id) : undefined) || quoteFinanceMap.get(c.id);
+    const amt = (fin && Number(fin.received_amount) > 0 ? Number(fin.received_amount) : Number(c.paid_amount)) || qFin?.paid || 0;
+    return sum + amt;
+  }, 0);
   const pendingBalanceTotal = Math.max(0, totalInvoicesCount - cashRevenueTotal);
 
   return (
@@ -1429,9 +1497,27 @@ export default function ClientsPage() {
           <div className="space-y-3">
             {filteredClients.map((client) => {
               const ext = parseClientExtended(client);
-              const fin = financeRecordsMap.get(client.id);
-              const totalPkg = fin?.final_total_amount ?? client.total_package_amount ?? 0;
-              const paidAmt = fin?.received_amount ?? client.paid_amount ?? 0;
+              const fin = financeRecordsMap.get(client.id) || (client.lead_id ? financeRecordsMap.get(client.lead_id) : undefined);
+              const quoteFin = (client.lead_id ? quoteFinanceMap.get(client.lead_id) : undefined) || quoteFinanceMap.get(client.id);
+
+              let totalPkg = 0;
+              if (fin && Number(fin.final_total_amount) > 0) {
+                totalPkg = Number(fin.final_total_amount);
+              } else if (Number(client.total_package_amount) > 0) {
+                totalPkg = Number(client.total_package_amount);
+              } else if (quoteFin?.total) {
+                totalPkg = quoteFin.total;
+              }
+
+              let paidAmt = 0;
+              if (fin && Number(fin.received_amount) > 0) {
+                paidAmt = Number(fin.received_amount);
+              } else if (Number(client.paid_amount) > 0) {
+                paidAmt = Number(client.paid_amount);
+              } else if (quoteFin?.paid) {
+                paidAmt = quoteFin.paid;
+              }
+
               const dueAmount = fin?.pending_amount ?? Math.max(0, totalPkg - paidAmt);
               const isPaidFull = paidAmt >= totalPkg && totalPkg > 0;
               const isClientTrashed = (client.status as string) === 'trash' || (client as any).status === 'trashed' || (client as any).is_deleted === true || (client.notes && typeof client.notes === 'string' && client.notes.includes('[status:trash]'));
@@ -1461,7 +1547,7 @@ export default function ClientsPage() {
 
                         {/* ⏱️ OVERDUE DAYS COUNTER BADGE */}
                         {(() => {
-                          const fin = financeRecordsMap.get(client.id);
+                          const fin = financeRecordsMap.get(client.id) || (client.lead_id ? financeRecordsMap.get(client.lead_id) : undefined);
                           if (!fin || !Array.isArray(fin.milestones)) return null;
                           const today = new Date();
                           today.setHours(0, 0, 0, 0);

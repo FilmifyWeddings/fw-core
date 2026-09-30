@@ -984,7 +984,7 @@ export default function LeadsPage() {
     return false;
   };
 
-  const executeLeadUpdate = async (leadId: string, updatedFields: Partial<Lead>) => {
+  const executeLeadUpdate = async (leadId: string, updatedFields: Partial<Lead>, skipClientSync: boolean = false) => {
     const currentLead = leads.find(l => l.id === leadId);
     const isNowBooked = checkIsBookedStage(updatedFields.stage_id) || checkIsBookedStage(updatedFields.status as string) || checkIsBookedStage((updatedFields as any).stage);
 
@@ -1041,7 +1041,7 @@ export default function LeadsPage() {
         }).catch(err => console.error('[executeLeadUpdate API error]:', err));
 
         // AUTO-CONVERT TO CLIENT WHEN STAGE IS "BOOKED"
-        if (isNowBooked && currentLead) {
+        if (isNowBooked && currentLead && !skipClientSync) {
           await autoSyncBookedLeadToClient(leadId, currentLead, updatedFields);
         }
       } catch (err) {
@@ -1154,8 +1154,8 @@ export default function LeadsPage() {
     setIsProcessingStageAction(true);
 
     try {
-      // 1. Optimistic lead update
-      await executeLeadUpdate(leadId, updatedFields);
+      // 1. Optimistic lead update (skip client-side autoSyncBookedLeadToClient because /api/leads/${leadId}/book handles full server onboard)
+      await executeLeadUpdate(leadId, updatedFields, true);
 
       // 2. High-speed server-side booking onboarder via supabaseAdmin
       fetch(`/api/leads/${leadId}/book`, {

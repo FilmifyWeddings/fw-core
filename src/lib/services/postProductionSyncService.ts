@@ -89,8 +89,8 @@ export function determineMainEventSegment(docOrQuotation: any): string {
 export function determineDeliverableSegment(eventTitle: string, itemText: string, mainEventSegment: string = 'Wedding'): string {
   const combined = (eventTitle + ' ' + itemText).toLowerCase();
 
-  // If explicitly pre-wedding, assign to Pre-Wedding
-  if (/pre-wedding|pre\s*wedding|pre\s*shoot/i.test(combined)) {
+  // If explicitly pre-wedding, Save the Date, or Countdown, assign strictly to Pre-Wedding!
+  if (/pre-wedding|pre\s*wedding|pre\s*shoot|save\s*the\s*dates?|count\s*down/i.test(combined)) {
     return 'Pre-Wedding';
   }
 
@@ -233,7 +233,8 @@ export function parseQuotationDeliverables(q: any): {
   ) => {
     const cleanTitle = cleanDeliverableTitle(title);
     if (!cleanTitle) return;
-    const cleanSegment = segment === 'Pre-Wedding' ? 'Pre-Wedding' : mainEventSegment;
+    const isPreWeddingDeliverable = /save\s*the\s*dates?|count\s*down/i.test(cleanTitle) || segment === 'Pre-Wedding';
+    const cleanSegment = isPreWeddingDeliverable ? 'Pre-Wedding' : mainEventSegment;
     const key = cleanSegment.toLowerCase() + '_' + category.toLowerCase() + '_' + cleanTitle.toLowerCase();
     if (!seen.has(key)) {
       seen.add(key);

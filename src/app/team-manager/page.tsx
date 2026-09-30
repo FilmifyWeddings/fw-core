@@ -681,16 +681,28 @@ export default function TeamManagerPage() {
           project_manager_id: pmId,
           project_manager_name: pmName,
           studio_name: studioNameMap.get(proj.user_id) || proj.studio_name || '',
-          fw_sub_events: (proj.fw_sub_events || []).map((se: any) => ({
-            ...se,
-            fw_assignments: (se.fw_assignments || []).map((a: any) => {
-              const matched = a.fw_team_members || (a.assigned_member_id ? combinedMembers.find(m => m.id === a.assigned_member_id) : null);
-              return {
-                ...a,
-                fw_team_members: matched || a.fw_team_members || null
-              };
-            })
-          }))
+          fw_sub_events: (() => {
+            const seen = new Set<string>();
+            return (proj.fw_sub_events || [])
+              .filter((se: any) => {
+                const normTitle = (se.event_title || se.name || '').trim().toLowerCase();
+                const dateStr = se.event_date || '';
+                const key = `${normTitle}_${dateStr}`;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+              })
+              .map((se: any) => ({
+                ...se,
+                fw_assignments: (se.fw_assignments || []).map((a: any) => {
+                  const matched = a.fw_team_members || (a.assigned_member_id ? combinedMembers.find(m => m.id === a.assigned_member_id) : null);
+                  return {
+                    ...a,
+                    fw_team_members: matched || a.fw_team_members || null
+                  };
+                })
+              }));
+          })()
         };
       });
 

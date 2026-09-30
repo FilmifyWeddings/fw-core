@@ -911,13 +911,13 @@ export async function syncQuotationToTeamManagerEvents(
     const extractedEvents = extractSubEventsFromQuotation(contentJson, fallbackEventDate, fallbackVenue);
     if (extractedEvents.length === 0) return null;
 
-    // Deduplicate extractedEvents strictly by normalized event_title
+    // Deduplicate extractedEvents strictly by normalized event_title and event_date
     const uniqueEvents: ExtractedSubEvent[] = [];
-    const seenTitles = new Set<string>();
+    const seenEventKeys = new Set<string>();
     for (const ev of extractedEvents) {
-      const key = ev.event_title.trim().toLowerCase();
-      if (!seenTitles.has(key)) {
-        seenTitles.add(key);
+      const key = `${ev.event_title.trim().toLowerCase()}_${ev.event_date || ''}`;
+      if (!seenEventKeys.has(key)) {
+        seenEventKeys.add(key);
         uniqueEvents.push(ev);
       }
     }
@@ -943,6 +943,16 @@ export async function syncQuotationToTeamManagerEvents(
 
     if (existingProjects && existingProjects.length > 0) {
       targetProjectId = existingProjects[0].id;
+      // Clean up duplicate fw_projects if any exist
+      if (existingProjects.length > 1) {
+        const dupIds = existingProjects.slice(1).map((p: any) => p.id);
+        try {
+          await supabaseClient.from('fw_assignments').delete().in('project_id', dupIds);
+          await supabaseClient.from('fw_sub_events').delete().in('project_id', dupIds);
+          await supabaseClient.from('fw_projects').delete().in('id', dupIds);
+        } catch (_) {}
+      }
+
       // Update client_name to couple name, main date & venue, and link client_id
       await supabaseClient
         .from('fw_projects')
@@ -1009,9 +1019,16 @@ export async function syncQuotationToTeamManagerEvents(
       }
 
       // Delete old assignments and sub_events to cleanly sync with final quotation events
-      await supabaseClient.from('fw_assignments').delete().in('sub_event_id', subEventIds);
-      await supabaseClient.from('fw_sub_events').delete().eq('project_id', targetProjectId);
+      try {
+        await supabaseClient.from('fw_assignments').delete().in('sub_event_id', subEventIds);
+      } catch (_) {}
     }
+
+    // Always unconditionally clean any remaining sub-events and assignments for targetProjectId
+    try {
+      await supabaseClient.from('fw_assignments').delete().eq('project_id', targetProjectId);
+      await supabaseClient.from('fw_sub_events').delete().eq('project_id', targetProjectId);
+    } catch (_) {}
 
     // 3. Insert fresh unique sub-events and restore assignments slot-by-slot
     for (const ev of uniqueEvents) {
@@ -1135,12 +1152,47 @@ export async function syncBookedLeadOrFinalQuotation({
       const targetQId = quotationId || lead.final_quotation_id || lead.raw_payload?.final_quotation_id;
 
       if (targetQId) {
-        const { data: doc } = await supabaseClient
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(targetQId);
+        let qQuery = supabaseClient
           .from('quotation_documents')
-          .select('id, template_id, lead_id, version, lead_version, content_json')
-          .or(`template_id.eq.${targetQId},id.eq.${targetQId}`)
-          .maybeSingle();
+          .select('id, template_id, lead_id, version, lead_version, content_json');
+
+        if (isUUID) {
+          qQuery = qQuery.or(`template_id.eq.${targetQId},id.eq.${targetQId}`);
+        } else {
+          qQuery = qQuery.eq('template_id', targetQId);
+        }
+        const { data: doc } = await qQuery.maybeSingle();
         if (doc) finalDoc = doc;
+      }
+
+      if (!finalDoc && targetQId) {
+        try {
+          const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(targetQId);
+          let qTableQuery = supabaseClient
+            .from('quotations')
+            .select('id, quotation_number, client_id, title, status, financials, content_json, is_final');
+          if (isUUID) {
+            qTableQuery = qTableQuery.or(`quotation_number.eq.${targetQId},id.eq.${targetQId}`);
+          } else {
+            qTableQuery = qTableQuery.eq('quotation_number', targetQId);
+          }
+          const { data: qRow } = await qTableQuery.maybeSingle();
+          if (qRow) {
+            finalDoc = {
+              id: qRow.id,
+              template_id: qRow.quotation_number || qRow.id,
+              lead_id: leadId,
+              version: 1,
+              content_json: qRow.content_json || {
+                pricingPage: {
+                  basePrice: qRow.financials?.total_amount || 0,
+                  totalAmount: qRow.financials?.total_amount || 0
+                }
+              }
+            };
+          }
+        } catch (_) {}
       }
 
       if (!finalDoc) {
@@ -1311,11 +1363,12 @@ export async function syncBookedLeadOrFinalQuotation({
       } catch (_) {}
 
       // 5. Upsert client_finance_records (Finance Page primary source of truth)
-      if (workspaceClientId) {
+      const targetFinanceClientId = workspaceClientId || leadId;
+      if (targetFinanceClientId) {
         const clientFinPayload = {
           user_id: workspaceId,
           workspace_id: workspaceId,
-          client_id: workspaceClientId,
+          client_id: targetFinanceClientId,
           base_package_price: financials.base_package_price || financials.subtotal_amount,
           discount_amount: financials.discount_amount || 0,
           accommodation_charges: financials.accommodation_charges || 0,
@@ -1336,7 +1389,7 @@ export async function syncBookedLeadOrFinalQuotation({
         const { data: existingFin } = await supabaseClient
           .from('client_finance_records')
           .select('id')
-          .or(`client_id.eq.${workspaceClientId},client_id.eq.${leadId}`)
+          .or(`client_id.eq.${targetFinanceClientId},client_id.eq.${leadId}${workspaceClientId ? `,client_id.eq.${workspaceClientId}` : ''}`)
           .maybeSingle();
 
         if (existingFin?.id) {

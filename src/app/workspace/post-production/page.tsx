@@ -289,7 +289,17 @@ export default function PostProductionPage() {
           for (const lead of leadsData) {
             const coupleName = lead.raw_payload?.couple_name || (lead as any).couple_names || lead.client_name || lead.name || 'Untitled Client';
             const exists = clientList.some(
-              c => c.id === lead.id || c.lead_id === lead.id || (c.name && coupleName && c.name.toLowerCase().trim() === coupleName.toLowerCase().trim())
+              c => {
+                const cleanLeadName = coupleName.toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
+                const cleanCName = (c.name || '').toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
+                return (
+                  c.id === lead.id || 
+                  c.lead_id === lead.id || 
+                  (lead.client_id && (c.id === lead.client_id || c.lead_id === lead.client_id)) ||
+                  (c.lead_id && lead.client_id && c.lead_id === lead.client_id) ||
+                  (cleanCName && cleanLeadName && cleanCName === cleanLeadName)
+                );
+              }
             );
             if (!exists) {
               clientList.push({
@@ -362,6 +372,19 @@ export default function PostProductionPage() {
       const cards: PostProductionProjectData[] = [];
 
       for (const client of clientList) {
+        // Strict deduplication: guarantee at most 1 post-production card per client / lead
+        const clientLeadId = client.lead_id || client.id;
+        const clientNormName = (client.name || '').toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
+        const alreadyAdded = cards.some(c => {
+          if (c.client_id === client.id || c.id === client.id || (c as any).project_id === client.id) return true;
+          if (client.lead_id && (c.client_id === client.lead_id || (c as any).lead_id === client.lead_id)) return true;
+          if ((c as any).lead_id && (c as any).lead_id === clientLeadId) return true;
+          const existingNormName = (c.client_name || '').toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
+          if (clientNormName && existingNormName && clientNormName === existingNormName) return true;
+          return false;
+        });
+        if (alreadyAdded) continue;
+
         const isClientTrash = Boolean(
           client.status === 'trash' || 
           client.status === 'trashed' ||
