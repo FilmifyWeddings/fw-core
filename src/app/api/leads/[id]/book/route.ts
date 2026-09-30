@@ -38,8 +38,28 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Lead not found' }, { status: 404 });
     }
 
-    const targetQuotationId = explicitQuotationId || lead.final_quotation_id || (lead.raw_payload as any)?.final_quotation_id || null;
+    let targetQuotationId = explicitQuotationId || lead.final_quotation_id || (lead.raw_payload as any)?.final_quotation_id || null;
     const workspaceId = lead.workspace_id || lead.tenant_id || lead.created_by_user_id || 'ws_demo';
+
+    if (!targetQuotationId) {
+      const { data: finalQ } = await supabaseAdmin
+        .from('quotations')
+        .select('id, quotation_number')
+        .eq('client_id', leadId)
+        .eq('is_final', true)
+        .maybeSingle();
+      if (finalQ) targetQuotationId = finalQ.quotation_number || finalQ.id;
+    }
+
+    if (!targetQuotationId) {
+      const { data: finalDocs } = await supabaseAdmin
+        .from('quotation_documents')
+        .select('id, template_id, content_json')
+        .eq('lead_id', leadId)
+        .order('updated_at', { ascending: false });
+      const finalDoc = (finalDocs || []).find((d: any) => d.content_json?.is_final === true);
+      if (finalDoc) targetQuotationId = finalDoc.template_id || finalDoc.id;
+    }
 
     // 2. If a final quotation exists, run full synchronizer!
     if (targetQuotationId) {
@@ -85,13 +105,43 @@ export async function POST(
     }
 
     if (!workspaceClientId) {
-      const { data: clientByLeadId } = await supabaseAdmin
+      const { data: clientsByLeadId } = await supabaseAdmin
         .from('workspace_clients')
-        .select('id, notes')
+        .select('id, notes, total_package_amount, paid_amount')
         .or(`lead_id.eq.${leadId},id.eq.${leadId}`)
-        .order('created_at', { ascending: true })
+        .order('created_at', { ascending: false });
+      if (clientsByLeadId && clientsByLeadId.length > 0) {
+        const withPkg = clientsByLeadId.find(c => Number(c.total_package_amount) > 0);
+        workspaceClientId = withPkg ? withPkg.id : clientsByLeadId[0].id;
+      }
+    }
+
+    if (!workspaceClientId) {
+      const leadPhone = lead.phone ? lead.phone.replace(/\D/g, '').slice(-10) : '';
+      if (leadPhone && leadPhone.length >= 7) {
+        const { data: clientByPhone } = await supabaseAdmin
+          .from('workspace_clients')
+          .select('id, total_package_amount, paid_amount')
+          .ilike('phone', `%${leadPhone}%`)
+          .limit(1);
+        if (clientByPhone && clientByPhone.length > 0) {
+          workspaceClientId = clientByPhone[0].id;
+        }
+      }
+    }
+
+    let initialPackageAmount = 0;
+    let initialPaidAmount = 0;
+    if (workspaceClientId) {
+      const { data: existingData } = await supabaseAdmin
+        .from('workspace_clients')
+        .select('total_package_amount, paid_amount')
+        .eq('id', workspaceClientId)
         .maybeSingle();
-      if (clientByLeadId?.id) workspaceClientId = clientByLeadId.id;
+      if (existingData && Number(existingData.total_package_amount) > 0) {
+        initialPackageAmount = Number(existingData.total_package_amount);
+        initialPaidAmount = Number(existingData.paid_amount) || 0;
+      }
     }
 
     const extendedNotesPayload = JSON.stringify({
@@ -115,8 +165,8 @@ export async function POST(
       email: lead.email || null,
       event_type: eventType,
       event_date: eventDate,
-      total_package_amount: 0,
-      paid_amount: 0,
+      total_package_amount: initialPackageAmount,
+      paid_amount: initialPaidAmount,
       status: 'active',
       is_deleted: false,
       deleted_at: null,
@@ -156,8 +206,19 @@ export async function POST(
 
       // Run 3 remaining module cards in parallel for maximum speed
       await Promise.all([
-        // 3C. Client Finance Records: ₹0 Unsettled record
+        // 3C. Client Finance Records: ₹0 Unsettled record (preserve existing amounts if already set)
         (async () => {
+          const { data: existingFins } = await supabaseAdmin
+            .from('client_finance_records')
+            .select('id, final_total_amount, received_amount, base_package_price')
+            .or(`client_id.eq.${workspaceClientId},client_id.eq.${leadId}`);
+
+          const primaryFin = existingFins?.[0];
+          if (primaryFin && (Number(primaryFin.final_total_amount) > 0 || Number(primaryFin.base_package_price) > 0)) {
+            // Finance already has amounts populated from quotation! Do NOT wipe with 0!
+            return;
+          }
+
           const finPayload = {
             user_id: workspaceId,
             workspace_id: workspaceId,
@@ -182,17 +243,11 @@ export async function POST(
             updated_at: nowIso
           };
 
-          const { data: existingFin } = await supabaseAdmin
-            .from('client_finance_records')
-            .select('id')
-            .or(`client_id.eq.${workspaceClientId},client_id.eq.${leadId}`)
-            .maybeSingle();
-
-          if (existingFin?.id) {
+          if (primaryFin?.id) {
             await supabaseAdmin
               .from('client_finance_records')
               .update(finPayload)
-              .eq('id', existingFin.id);
+              .eq('id', primaryFin.id);
           } else {
             await supabaseAdmin
               .from('client_finance_records')
@@ -200,27 +255,44 @@ export async function POST(
           }
         })(),
 
-        // 3D. Post-Production Projects: Clean empty card (Purge duplicate leadId rows!)
+        // 3D. Post-Production Projects: Clean empty card (Purge duplicate leadId rows, preserve deliverables if present!)
         (async () => {
           const { data: existingPPPs } = await supabaseAdmin
             .from('post_production_projects')
-            .select('id, client_id')
+            .select('id, client_id, deliverables')
             .or(`client_id.eq.${workspaceClientId},client_id.eq.${leadId}`);
 
           if (existingPPPs && existingPPPs.length > 0) {
             const primaryId = existingPPPs[0].id;
-            await supabaseAdmin
-              .from('post_production_projects')
-              .update({
-                client_id: workspaceClientId,
-                overall_status: 'active',
-                is_deleted: false,
-                deleted_at: null,
-                deliverables: [],
-                notes: `Empty post-production card for (${coupleName})`,
-                updated_at: nowIso
-              })
-              .eq('id', primaryId);
+            const existingDelivs = existingPPPs[0].deliverables;
+            const hasDeliverables = Array.isArray(existingDelivs) && existingDelivs.length > 0;
+
+            if (hasDeliverables) {
+              // Preserve existing deliverables from quotation!
+              await supabaseAdmin
+                .from('post_production_projects')
+                .update({
+                  client_id: workspaceClientId,
+                  overall_status: 'active',
+                  is_deleted: false,
+                  deleted_at: null,
+                  updated_at: nowIso
+                })
+                .eq('id', primaryId);
+            } else {
+              await supabaseAdmin
+                .from('post_production_projects')
+                .update({
+                  client_id: workspaceClientId,
+                  overall_status: 'active',
+                  is_deleted: false,
+                  deleted_at: null,
+                  deliverables: [],
+                  notes: `Empty post-production card for (${coupleName})`,
+                  updated_at: nowIso
+                })
+                .eq('id', primaryId);
+            }
 
             // Delete any duplicate extra rows
             if (existingPPPs.length > 1) {

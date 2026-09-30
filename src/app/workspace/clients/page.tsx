@@ -26,7 +26,7 @@ import type { WorkspaceClient, Lead, ClientFinanceRecord, FinanceMilestoneItem }
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import Searchable3DCreamSelect, { Searchable3DCreamSelectOption } from '@/components/ui/Searchable3DCreamSelect';
 import { safeParseCurrencyOrBudget } from '@/lib/budget-helpers';
-import { extractFinancialsFromQuotation } from '@/lib/quotation-finance-sync';
+import { extractFinancialsFromQuotation, extractCoupleNameFromQuotation } from '@/lib/quotation-finance-sync';
 
 const DEFAULT_EVENT_TYPES = [
   'Wedding Photography',
@@ -202,11 +202,11 @@ export default function ClientsPage() {
       try {
         const { data: qDocs } = await supabase
           .from('quotation_documents')
-          .select('id, template_id, lead_id, content_json, is_final');
+          .select('id, template_id, lead_id, content_json');
 
         if (qDocs && qDocs.length > 0) {
           for (const doc of qDocs) {
-            const isFinal = Boolean(doc.is_final || doc.content_json?.is_final);
+            const isFinal = Boolean(doc.content_json?.is_final);
             if (isFinal && doc.content_json) {
               const fin = extractFinancialsFromQuotation(doc.content_json);
               const data = {
@@ -216,6 +216,11 @@ export default function ClientsPage() {
               };
               if (doc.lead_id) qFinMap.set(doc.lead_id, data);
               if (doc.template_id) qFinMap.set(doc.template_id, data);
+              const couple = extractCoupleNameFromQuotation(doc.content_json, '');
+              if (couple) {
+                qFinMap.set(couple.toLowerCase().trim(), data);
+                qFinMap.set(couple.toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim(), data);
+              }
             }
           }
         }
@@ -224,7 +229,7 @@ export default function ClientsPage() {
       try {
         const { data: qRows } = await supabase
           .from('quotations')
-          .select('id, quotation_number, client_id, status, is_final, financials, content_json')
+          .select('id, quotation_number, client_id, client_name, couple_names, status, is_final, financials, content_json')
           .or('is_final.eq.true,status.in.(accepted,final)');
 
         if (qRows && qRows.length > 0) {
@@ -236,6 +241,11 @@ export default function ClientsPage() {
               const data = { total: tot, paid, due };
               if (q.client_id) qFinMap.set(q.client_id, data);
               if (q.quotation_number) qFinMap.set(q.quotation_number, data);
+              const qName = q.couple_names || q.client_name;
+              if (qName) {
+                qFinMap.set(String(qName).toLowerCase().trim(), data);
+                qFinMap.set(String(qName).toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim(), data);
+              }
             }
           }
         }
@@ -276,17 +286,36 @@ export default function ClientsPage() {
         const alreadyLinked = 
           existingLeadIds.has(bookedLead.id) || 
           existingClientIds.has(bookedLead.id) ||
-          (leadPhoneDigits && existingClientPhones.has(leadPhoneDigits)) ||
-          (nameClean && existingClientNames.has(nameClean));
+          Boolean(bookedLead.client_id && existingClientIds.has(bookedLead.client_id)) ||
+          Boolean(leadPhoneDigits && existingClientPhones.has(leadPhoneDigits)) ||
+          Boolean(nameClean && existingClientNames.has(nameClean)) ||
+          Boolean(bookedLead.name && existingClientNames.has(bookedLead.name.toLowerCase().trim())) ||
+          Boolean((bookedLead as any).full_name && existingClientNames.has(String((bookedLead as any).full_name).toLowerCase().trim()));
+
+        if (alreadyLinked) {
+          const matched = existingClientList.find(c => 
+            c.id === bookedLead.client_id || 
+            c.lead_id === bookedLead.id || 
+            (c.name && nameClean && c.name.toLowerCase().trim() === nameClean)
+          );
+          if (matched && !matched.lead_id) {
+            matched.lead_id = bookedLead.id;
+          }
+        }
 
         if (!alreadyLinked && bookedLead.name) {
-          // Parse amount safely from lead raw payload
+          // Parse amount safely from lead raw payload or final quotation
           let packageAmt = 0;
           let paidAmt = 0;
           if (bookedLead.raw_payload) {
             const raw = bookedLead.raw_payload;
             packageAmt = safeParseCurrencyOrBudget(raw.package_amount || raw.amount || raw.budget || 0);
             paidAmt = safeParseCurrencyOrBudget(raw.paid_amount || raw.advance || raw.token || 0);
+          }
+          const quoteFin = qFinMap.get(bookedLead.id) || (nameClean ? qFinMap.get(nameClean) : null);
+          if (quoteFin?.total && quoteFin.total > packageAmt) {
+            packageAmt = quoteFin.total;
+            paidAmt = quoteFin.paid || 0;
           }
 
           const newClientPayload = {
@@ -342,6 +371,14 @@ export default function ClientsPage() {
         }
       }
 
+      // Sort existingClientList so records with non-zero package amounts come first!
+      existingClientList.sort((a, b) => {
+        const aAmt = Number(a.total_package_amount) || 0;
+        const bAmt = Number(b.total_package_amount) || 0;
+        if (aAmt !== bAmt) return bAmt - aAmt;
+        return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+      });
+
       // Deduplicate clients list before saving state
       const seenClientKeys = new Set<string>();
       const dedupedClients: WorkspaceClient[] = [];
@@ -350,17 +387,20 @@ export default function ClientsPage() {
         const idKey = cl.id ? `id:${cl.id}` : null;
         const leadKey = cl.lead_id ? `lead:${cl.lead_id}` : null;
         const phoneKey = cPhone && cPhone.length >= 7 ? `phone:${cPhone}` : null;
+        const nameKey = cl.name ? `name:${cl.name.toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim()}` : null;
 
         if (
           (idKey && seenClientKeys.has(idKey)) ||
           (leadKey && seenClientKeys.has(leadKey)) ||
-          (phoneKey && seenClientKeys.has(phoneKey))
+          (phoneKey && seenClientKeys.has(phoneKey)) ||
+          (nameKey && seenClientKeys.has(nameKey))
         ) {
           continue;
         }
         if (idKey) seenClientKeys.add(idKey);
         if (leadKey) seenClientKeys.add(leadKey);
         if (phoneKey) seenClientKeys.add(phoneKey);
+        if (nameKey) seenClientKeys.add(nameKey);
         dedupedClients.push(cl);
       }
       existingClientList = dedupedClients;
@@ -995,14 +1035,24 @@ export default function ClientsPage() {
   const completedClientsCount = nonTrashedClients.filter(c => c.status === 'completed').length;
   const totalInvoicesCount = filteredClients.reduce((sum, c) => {
     const fin = financeRecordsMap.get(c.id) || (c.lead_id ? financeRecordsMap.get(c.lead_id) : undefined);
-    const qFin = (c.lead_id ? quoteFinanceMap.get(c.lead_id) : undefined) || quoteFinanceMap.get(c.id);
+    const cName = (c.name || '').toLowerCase().trim();
+    const cNameNorm = (c.name || '').toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
+    const qFin = (c.lead_id ? quoteFinanceMap.get(c.lead_id) : undefined) 
+      || quoteFinanceMap.get(c.id) 
+      || (cName ? quoteFinanceMap.get(cName) : undefined)
+      || (cNameNorm ? quoteFinanceMap.get(cNameNorm) : undefined);
     const amt = (fin && Number(fin.final_total_amount) > 0 ? Number(fin.final_total_amount) : Number(c.total_package_amount)) || qFin?.total || 0;
     return sum + amt;
   }, 0);
 
   const cashRevenueTotal = filteredClients.reduce((sum, c) => {
     const fin = financeRecordsMap.get(c.id) || (c.lead_id ? financeRecordsMap.get(c.lead_id) : undefined);
-    const qFin = (c.lead_id ? quoteFinanceMap.get(c.lead_id) : undefined) || quoteFinanceMap.get(c.id);
+    const cName = (c.name || '').toLowerCase().trim();
+    const cNameNorm = (c.name || '').toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
+    const qFin = (c.lead_id ? quoteFinanceMap.get(c.lead_id) : undefined) 
+      || quoteFinanceMap.get(c.id)
+      || (cName ? quoteFinanceMap.get(cName) : undefined)
+      || (cNameNorm ? quoteFinanceMap.get(cNameNorm) : undefined);
     const amt = (fin && Number(fin.received_amount) > 0 ? Number(fin.received_amount) : Number(c.paid_amount)) || qFin?.paid || 0;
     return sum + amt;
   }, 0);
@@ -1498,7 +1548,12 @@ export default function ClientsPage() {
             {filteredClients.map((client) => {
               const ext = parseClientExtended(client);
               const fin = financeRecordsMap.get(client.id) || (client.lead_id ? financeRecordsMap.get(client.lead_id) : undefined);
-              const quoteFin = (client.lead_id ? quoteFinanceMap.get(client.lead_id) : undefined) || quoteFinanceMap.get(client.id);
+              const clName = (client.name || '').toLowerCase().trim();
+              const clNameNorm = (client.name || '').toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
+              const quoteFin = (client.lead_id ? quoteFinanceMap.get(client.lead_id) : undefined) 
+                || quoteFinanceMap.get(client.id)
+                || (clName ? quoteFinanceMap.get(clName) : undefined)
+                || (clNameNorm ? quoteFinanceMap.get(clNameNorm) : undefined);
 
               let totalPkg = 0;
               if (fin && Number(fin.final_total_amount) > 0) {
@@ -1518,7 +1573,9 @@ export default function ClientsPage() {
                 paidAmt = quoteFin.paid;
               }
 
-              const dueAmount = fin?.pending_amount ?? Math.max(0, totalPkg - paidAmt);
+              const dueAmount = (fin && Number(fin.final_total_amount) > 0 && fin.pending_amount !== undefined && Number(fin.pending_amount) > 0)
+                ? Number(fin.pending_amount)
+                : Math.max(0, totalPkg - paidAmt);
               const isPaidFull = paidAmt >= totalPkg && totalPkg > 0;
               const isClientTrashed = (client.status as string) === 'trash' || (client as any).status === 'trashed' || (client as any).is_deleted === true || (client.notes && typeof client.notes === 'string' && client.notes.includes('[status:trash]'));
 

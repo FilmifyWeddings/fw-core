@@ -700,16 +700,26 @@ export default function FinancePage() {
         if (leadsData) {
           for (const lead of leadsData) {
             const coupleName = lead.raw_payload?.couple_name || (lead as any).couple_names || lead.client_name || lead.name || 'Untitled Client';
-            const exists = clientList.some(c => {
+            const matchedClient = clientList.find(c => {
+              const cleanLeadName = coupleName.toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
+              const cleanCName = (c.name || '').toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
               return (
                 c.id === lead.id || 
                 c.lead_id === lead.id || 
-                Boolean(lead.client_id && c.id === lead.client_id) ||
+                Boolean(lead.client_id && (c.id === lead.client_id || c.lead_id === lead.client_id)) ||
                 Boolean(lead.raw_payload?.client_id && c.id === lead.raw_payload.client_id) ||
-                Boolean(c.final_quotation_id && lead.final_quotation_id && c.final_quotation_id === lead.final_quotation_id)
+                Boolean(c.final_quotation_id && lead.final_quotation_id && c.final_quotation_id === lead.final_quotation_id) ||
+                Boolean(cleanLeadName && cleanCName && cleanLeadName === cleanCName)
               );
             });
-            if (!exists) {
+            if (matchedClient) {
+              if (lead.final_quotation_id) {
+                matchedClient.final_quotation_id = lead.final_quotation_id;
+              }
+              if (!matchedClient.lead_id) {
+                matchedClient.lead_id = lead.id;
+              }
+            } else {
               clientList.push({
                 id: lead.id,
                 lead_id: lead.id,
@@ -835,7 +845,7 @@ export default function FinancePage() {
           const [docsRes, leadsRes] = await Promise.all([
             supabase
               .from('quotation_documents')
-              .select('id, template_id, lead_id, version, lead_version, is_final, content_json, created_at, updated_at')
+              .select('id, template_id, lead_id, version, lead_version, content_json, created_at, updated_at')
               .or(workspaceId && workspaceId !== 'ws_demo' ? `user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}` : `lead_id.in.(${targetLeadIds.filter(id => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)).join(',') || '00000000-0000-0000-0000-000000000000'})`)
               .order('created_at', { ascending: false }),
             supabase
@@ -902,7 +912,9 @@ export default function FinancePage() {
         }
         const availableQuotes = (c.lead_id ? allLeadQuotesMap.get(c.lead_id) : []) || [];
         const leadObj = c.lead_id ? leadMap.get(c.lead_id) : null;
-        const linkedFinalQuote = availableQuotes.find(q => q.is_final || (leadObj?.final_quotation_id && q.template_id === leadObj.final_quotation_id));
+        const targetQId = (c as any).final_quotation_id || leadObj?.final_quotation_id || null;
+        const linkedFinalQuote = availableQuotes.find(q => q.is_final || (targetQId && q.template_id === targetQId))
+          || (targetQId ? quoteDocMap.get(targetQId) : null);
         const hasFinalQuotation = Boolean(linkedFinalQuote || existing?.has_final_quotation);
         const finalVersion = linkedFinalQuote?.version || existing?.final_quotation_version;
 

@@ -243,7 +243,10 @@ export default function PostProductionPage() {
         const { data: qDocData } = await qDocQuery;
 
         const mergedMap = new Map<string, any>();
-        (qData || []).forEach((q: any) => mergedMap.set(q.id, q));
+        (qData || []).forEach((q: any) => {
+          if (q.id) mergedMap.set(q.id, q);
+          if (q.quotation_number) mergedMap.set(q.quotation_number, q);
+        });
         (qDocData || []).forEach((qd: any) => {
           const key = qd.template_id || qd.id;
           if (mergedMap.has(key)) {
@@ -288,7 +291,7 @@ export default function PostProductionPage() {
         if (leadsData) {
           for (const lead of leadsData) {
             const coupleName = lead.raw_payload?.couple_name || (lead as any).couple_names || lead.client_name || lead.name || 'Untitled Client';
-            const exists = clientList.some(
+            const matchedClient = clientList.find(
               c => {
                 const cleanLeadName = coupleName.toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
                 const cleanCName = (c.name || '').toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
@@ -301,7 +304,14 @@ export default function PostProductionPage() {
                 );
               }
             );
-            if (!exists) {
+            if (matchedClient) {
+              if (lead.final_quotation_id) {
+                matchedClient.final_quotation_id = lead.final_quotation_id;
+              }
+              if (!matchedClient.lead_id) {
+                matchedClient.lead_id = lead.id;
+              }
+            } else {
               clientList.push({
                 id: lead.id,
                 lead_id: lead.id,

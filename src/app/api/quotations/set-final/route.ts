@@ -79,7 +79,6 @@ export async function POST(req: NextRequest) {
         const updatePayload: any = {
           content_json: updatedContent,
           lead_id: leadId,
-          is_final: shouldUnmark ? false : isTarget,
           updated_at: now
         };
 
@@ -90,13 +89,6 @@ export async function POST(req: NextRequest) {
 
         if (docUpdateErr) {
           console.warn('[Set-Final] Warning updating quotation_document:', docUpdateErr.message);
-          await supabaseAdmin
-            .from('quotation_documents')
-            .update({
-              content_json: updatedContent,
-              updated_at: now
-            })
-            .eq('id', doc.id);
         }
       }));
     }
@@ -249,7 +241,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 4. Synchronous sync across Client Directory, Booking Events, Post Production, and Finance
+    // 4. Run cross-module synchronization so all tables (Clients, Finance, Post-Prod, Events) are 100% committed before response
     try {
       await syncBookedLeadOrFinalQuotation({
         leadId,
@@ -260,7 +252,7 @@ export async function POST(req: NextRequest) {
       });
       clearLeadSummaryCache();
     } catch (syncErr) {
-      console.error('[Set-Final] Synchronous sync exception:', syncErr);
+      console.error('[Set-Final] Sync exception:', syncErr);
     }
 
     return NextResponse.json({

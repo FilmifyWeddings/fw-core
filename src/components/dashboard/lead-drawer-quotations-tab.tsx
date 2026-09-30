@@ -235,6 +235,41 @@ export function LeadDrawerQuotationsTab({
       });
     }
 
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sc_quotation_summary_map');
+        const map = stored ? JSON.parse(stored) : {};
+        map[lead.id] = {
+          count: optimisticUpdated.length,
+          hasFinal: !unmark,
+          finalVersion: unmark ? undefined : q.version,
+          versions: optimisticUpdated
+        };
+        localStorage.setItem('sc_quotation_summary_map', JSON.stringify(map));
+
+        const cachedLeadsStr = localStorage.getItem('sc_cached_leads');
+        if (cachedLeadsStr) {
+          const cachedLeads = JSON.parse(cachedLeadsStr);
+          if (Array.isArray(cachedLeads)) {
+            const updatedLeads = cachedLeads.map((l: any) => {
+              if (l.id === lead.id) {
+                return {
+                  ...l,
+                  final_quotation_id: unmark ? null : q.template_id,
+                  raw_payload: {
+                    ...(l.raw_payload || {}),
+                    final_quotation_id: unmark ? null : q.template_id
+                  }
+                };
+              }
+              return l;
+            });
+            localStorage.setItem('sc_cached_leads', JSON.stringify(updatedLeads));
+          }
+        }
+      } catch (_) {}
+    }
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';

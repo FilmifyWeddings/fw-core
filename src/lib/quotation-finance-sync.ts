@@ -1327,6 +1327,18 @@ export async function syncBookedLeadOrFinalQuotation({
         }
       }
 
+      // Also ensure any client record with this lead_id is updated to the finalized package amounts
+      try {
+        await supabaseClient
+          .from('workspace_clients')
+          .update({
+            total_package_amount: financials.final_total_amount,
+            paid_amount: financials.received_amount,
+            updated_at: now
+          })
+          .eq('lead_id', leadId);
+      } catch (_) {}
+
       // Sync legacy clients table for backward compatibility
       try {
         if (workspaceId) {
@@ -1386,17 +1398,25 @@ export async function syncBookedLeadOrFinalQuotation({
           updated_at: now
         };
 
-        const { data: existingFin } = await supabaseClient
+        const { data: existingFinRows } = await supabaseClient
           .from('client_finance_records')
-          .select('id')
-          .or(`client_id.eq.${targetFinanceClientId},client_id.eq.${leadId}${workspaceClientId ? `,client_id.eq.${workspaceClientId}` : ''}`)
-          .maybeSingle();
+          .select('id, client_id')
+          .or(`client_id.eq.${targetFinanceClientId},client_id.eq.${leadId}${workspaceClientId ? `,client_id.eq.${workspaceClientId}` : ''}`);
 
-        if (existingFin?.id) {
+        if (existingFinRows && existingFinRows.length > 0) {
+          const primaryFinId = existingFinRows[0].id;
           await supabaseClient
             .from('client_finance_records')
             .update(clientFinPayload)
-            .eq('id', existingFin.id);
+            .eq('id', primaryFinId);
+
+          if (existingFinRows.length > 1) {
+            const extraIds = existingFinRows.slice(1).map((f: any) => f.id);
+            await supabaseClient
+              .from('client_finance_records')
+              .delete()
+              .in('id', extraIds);
+          }
         } else {
           await supabaseClient
             .from('client_finance_records')
