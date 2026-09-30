@@ -271,6 +271,7 @@ export default function TeamManagerPage() {
 
   // Luxury 3D History Modal Target State
   const [selectedProjectForHistory, setSelectedProjectForHistory] = useState<FWProject | null>(null);
+  const [selectedSubEventForHistory, setSelectedSubEventForHistory] = useState<FWSubEvent | null>(null);
 
   // Workspace-wide All History Modal State
   const [isAllHistoryOpen, setIsAllHistoryOpen] = useState<boolean>(false);
@@ -3548,6 +3549,10 @@ export default function TeamManagerPage() {
               setInitialDateForModal(initialDate || '');
               setIsAddProjectOpen(true);
             }}
+            onOpenHistory={(project, subEvent) => {
+              setSelectedProjectForHistory(project);
+              setSelectedSubEventForHistory(subEvent || null);
+            }}
             isTmReadOnly={isTmReadOnly}
             isSelfRoleOnly={isSelfRoleOnly}
             currentMemberId={currentMember?.id || activeWorkspace?.memberId || null}
@@ -4227,8 +4232,12 @@ export default function TeamManagerPage() {
       {selectedProjectForHistory && (
         <ProjectHistoryModal
           isOpen={Boolean(selectedProjectForHistory)}
-          onClose={() => setSelectedProjectForHistory(null)}
+          onClose={() => {
+            setSelectedProjectForHistory(null);
+            setSelectedSubEventForHistory(null);
+          }}
           project={selectedProjectForHistory}
+          subEvent={selectedSubEventForHistory}
         />
       )}
 

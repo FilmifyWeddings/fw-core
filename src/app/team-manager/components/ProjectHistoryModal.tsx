@@ -7,7 +7,7 @@ import {
   ShieldCheck, IndianRupee, Trash2, Search, RefreshCw, 
   ChevronDown, ChevronRight, ArrowRight, Sparkles, Clock, Crown, User
 } from 'lucide-react';
-import { FWProject } from '@/types';
+import { FWProject, FWSubEvent } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { ProjectActivityLog } from '@/lib/services/projectAuditService';
 
@@ -15,6 +15,7 @@ export interface ProjectHistoryModalProps {
   isOpen: boolean;
   onClose: () => void;
   project: FWProject | null;
+  subEvent?: FWSubEvent | null;
 }
 
 function formatLogTime(isoDateStr: string): string {
@@ -144,6 +145,7 @@ export const ProjectHistoryModal: React.FC<ProjectHistoryModalProps> = ({
   isOpen,
   onClose,
   project,
+  subEvent,
 }) => {
   const [logs, setLogs] = useState<ProjectActivityLog[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -202,10 +204,10 @@ export const ProjectHistoryModal: React.FC<ProjectHistoryModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       fetchLogs();
-      setSearchQuery('');
+      setSearchQuery(subEvent?.event_title ? subEvent.event_title : '');
       setExpandedDates({});
     }
-  }, [isOpen, fetchLogs]);
+  }, [isOpen, fetchLogs, subEvent]);
 
   // Filter logs based on search
   const filteredLogs = useMemo(() => {
@@ -279,6 +281,23 @@ export const ProjectHistoryModal: React.FC<ProjectHistoryModalProps> = ({
                 <p className="text-xs text-slate-500 dark:text-neutral-400 font-medium truncate">
                   Google-Sheets style tamper-evident audit history of all project changes
                 </p>
+                {subEvent?.event_title && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[11px] font-bold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                      <span>Event:</span>
+                      <span className="font-black">{subEvent.event_title}</span>
+                    </span>
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setSearchQuery('')}
+                        className="text-[11px] font-bold text-amber-600 hover:text-amber-700 dark:text-amber-400 hover:underline cursor-pointer"
+                      >
+                        (Show all events)
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center gap-2 shrink-0">

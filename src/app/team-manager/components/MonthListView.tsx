@@ -4,7 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { FWProject, FWSubEvent, FWTeamMember, FWAssignment } from '@/types';
 import { 
   Calendar, Clock, MapPin, ChevronDown, ChevronUp, AlertCircle, 
-  Moon, CheckCircle2, User, Users, Sparkles, Search, Plus
+  Moon, CheckCircle2, User, Users, Sparkles, Search, Plus, History
 } from 'lucide-react';
 import RoleAssignDropdown from './RoleAssignDropdown';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
@@ -22,6 +22,7 @@ interface MonthListViewProps {
   onAssignMember: (assignmentId: string, memberId: string | null) => void;
   onAddNewMember: (info: { assignmentId: string; role: string; subEventId: string; projectId: string }) => void;
   onAddProject?: (initialDate?: string) => void;
+  onOpenHistory?: (project: FWProject, subEvent?: FWSubEvent) => void;
   isTmReadOnly?: boolean;
   isSelfRoleOnly?: boolean;
   currentMemberId?: string | null;
@@ -54,6 +55,7 @@ export default function MonthListView({
   onAssignMember,
   onAddNewMember,
   onAddProject,
+  onOpenHistory,
   isTmReadOnly = false,
   isSelfRoleOnly = false,
   currentMemberId = null,
@@ -336,6 +338,21 @@ export default function MonthListView({
                               <span className="truncate max-w-[200px]">{subEvent.venue_name}</span>
                             </a>
                           )}
+                          {onOpenHistory && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                onOpenHistory(project, subEvent);
+                              }}
+                              className="p-1.5 rounded-xl bg-white hover:bg-rose-50 text-rose-800 border border-rose-200 transition-all cursor-pointer shadow-2xs flex items-center gap-1 group/hist shrink-0"
+                              title="View Sub-event History"
+                            >
+                              <History className="w-3.5 h-3.5 text-rose-600 group-hover/hist:rotate-[-45deg] transition-transform" />
+                              <span className="text-[10px] font-black hidden sm:inline">History</span>
+                            </button>
+                          )}
                         </div>
                       </div>
 
@@ -539,6 +556,21 @@ export default function MonthListView({
                                   <MapPin className="w-3 h-3 text-emerald-600 shrink-0" />
                                   <span className="truncate max-w-[150px]">{subEvent.venue_name}</span>
                                 </a>
+                              )}
+                              {onOpenHistory && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    onOpenHistory(project, subEvent);
+                                  }}
+                                  className="p-1.5 rounded-xl bg-white hover:bg-amber-100/70 text-slate-700 hover:text-amber-900 border border-slate-200 hover:border-amber-300 transition-all cursor-pointer shadow-2xs flex items-center gap-1 group/hist shrink-0"
+                                  title="View Sub-event History"
+                                >
+                                  <History className="w-3.5 h-3.5 text-amber-600 group-hover/hist:rotate-[-45deg] transition-transform" />
+                                  <span className="text-[10px] font-black hidden sm:inline">History</span>
+                                </button>
                               )}
                             </div>
                           </div>
@@ -746,6 +778,21 @@ export default function MonthListView({
                                         <MapPin className="w-4 h-4 text-emerald-600 shrink-0" />
                                         <span className="truncate max-w-[200px]">{subEvent.venue_name}</span>
                                       </a>
+                                    )}
+                                    {onOpenHistory && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          e.preventDefault();
+                                          onOpenHistory(project, subEvent);
+                                        }}
+                                        className="p-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition-all cursor-pointer shadow-2xs flex items-center gap-1 group/hist shrink-0"
+                                        title="View Sub-event History"
+                                      >
+                                        <History className="w-3.5 h-3.5 text-slate-600 group-hover/hist:rotate-[-45deg] transition-transform" />
+                                        <span className="text-[10px] font-black hidden sm:inline">History</span>
+                                      </button>
                                     )}
                                   </div>
                                 </div>

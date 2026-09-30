@@ -334,31 +334,72 @@ export default function ClientWorkspaceDetailPage() {
   const effectiveFinanceRecord: ClientFinanceRecord = useMemo(() => {
     const existing = (financeRecord || {}) as any;
     const quoteFinancials = finalQuotationDoc?.content_json ? extractFinancialsFromQuotation(finalQuotationDoc.content_json, client?.event_date || eventDate) : null;
-    const hasFinDocPrice = Boolean(quoteFinancials && quoteFinancials.final_total_amount > 0);
-    const rawBase = (Number(existing.base_package_price) > 0)
-      ? Math.max(0, Math.round(Number(existing.base_package_price)))
-      : (hasFinDocPrice ? (quoteFinancials!.base_package_price || quoteFinancials!.subtotal_amount) : Math.max(0, Math.round(Number(client?.total_package_amount) || 0)));
-    const discount = (Number(existing.discount_amount) > 0)
-      ? Math.max(0, Math.round(Number(existing.discount_amount)))
-      : (hasFinDocPrice ? (quoteFinancials!.discount_amount || 0) : 0);
-    const accommodation = (Number(existing.accommodation_charges) > 0)
-      ? Math.max(0, Math.round(Number(existing.accommodation_charges)))
-      : (hasFinDocPrice ? (quoteFinancials!.accommodation_charges || 0) : 0);
-    const travel = (Number(existing.travel_charges) > 0)
-      ? Math.max(0, Math.round(Number(existing.travel_charges)))
-      : (hasFinDocPrice ? (quoteFinancials!.travel_charges || 0) : 0);
-    const additional = (Number(existing.additional_charges) > 0)
-      ? Math.max(0, Math.round(Number(existing.additional_charges)))
-      : (hasFinDocPrice ? (quoteFinancials!.additional_charges || 0) : 0);
+    const hasFinalQuote = Boolean(finalQuotationDoc && quoteFinancials && quoteFinancials.final_total_amount > 0);
+
+    // When final quotation is selected, quotation is the SINGLE SOURCE OF TRUTH for pricing breakdown!
+    const rawBase = hasFinalQuote
+      ? (quoteFinancials!.base_package_price || quoteFinancials!.subtotal_amount)
+      : (Number(existing.base_package_price) > 0 ? Math.max(0, Math.round(Number(existing.base_package_price))) : 0);
+    const discount = hasFinalQuote
+      ? (quoteFinancials!.discount_amount || 0)
+      : (Number(existing.discount_amount) > 0 ? Math.max(0, Math.round(Number(existing.discount_amount))) : 0);
+    const accommodation = hasFinalQuote
+      ? (quoteFinancials!.accommodation_charges || 0)
+      : (Number(existing.accommodation_charges) > 0 ? Math.max(0, Math.round(Number(existing.accommodation_charges))) : 0);
+    const travel = hasFinalQuote
+      ? (quoteFinancials!.travel_charges || 0)
+      : (Number(existing.travel_charges) > 0 ? Math.max(0, Math.round(Number(existing.travel_charges))) : 0);
+    const additional = hasFinalQuote
+      ? (quoteFinancials!.additional_charges || 0)
+      : (Number(existing.additional_charges) > 0 ? Math.max(0, Math.round(Number(existing.additional_charges))) : 0);
     const subtotal = Math.max(0, rawBase - discount + accommodation + travel + additional);
-    const gstRate = (Number(existing.gst_rate) > 0)
-      ? Number(existing.gst_rate)
-      : (hasFinDocPrice ? (quoteFinancials!.gst_rate || 0) : 0);
+    const gstRate = hasFinalQuote
+      ? (quoteFinancials!.gst_rate || 0)
+      : (Number(existing.gst_rate) > 0 ? Number(existing.gst_rate) : 0);
     const gstAmount = Math.round((subtotal * gstRate) / 100);
-    const finalTotal = (Number(existing.final_total_amount) > 0)
-      ? Number(existing.final_total_amount)
-      : (hasFinDocPrice ? quoteFinancials!.final_total_amount : (subtotal + gstAmount));
-    const received = Math.max(0, Math.round(Number(existing.received_amount) || Number(client?.paid_amount) || (hasFinDocPrice ? quoteFinancials!.received_amount : 0) || 0));
+    const finalTotal = hasFinalQuote
+      ? quoteFinancials!.final_total_amount
+      : (Number(existing.final_total_amount) > 0 ? Number(existing.final_total_amount) : (subtotal + gstAmount));
+
+    // When final quotation is selected, quotation is the SINGLE SOURCE OF TRUTH for milestones (all steps: paid + pending)!
+    let mergedMilestones: FinanceMilestoneItem[] = [];
+    if (hasFinalQuote && Array.isArray(quoteFinancials?.milestones) && quoteFinancials.milestones.length > 0) {
+      const existingCompletedMap = new Map<string, any>();
+      if (Array.isArray(existing.milestones)) {
+        existing.milestones.forEach((m: any, idx: number) => {
+          if (m.status === 'completed' || m.status === 'paid') {
+            const keyName = String(m.step_name || m.title || '').trim().toLowerCase();
+            if (keyName) existingCompletedMap.set(keyName, m);
+            existingCompletedMap.set(`idx_${idx}`, m);
+          }
+        });
+      }
+
+      mergedMilestones = quoteFinancials.milestones.map((qm, idx) => {
+        const qKey = String(qm.step_name || qm.title || '').trim().toLowerCase();
+        const existingDone = existingCompletedMap.get(qKey) || existingCompletedMap.get(`idx_${idx}`);
+        if (existingDone) {
+          return {
+            ...qm,
+            status: 'completed' as const,
+            paid_date: existingDone.paid_date || qm.paid_date || new Date().toISOString().split('T')[0],
+            payment_mode: existingDone.payment_mode || qm.payment_mode || 'UPI'
+          };
+        }
+        return qm;
+      });
+    } else if (Array.isArray(existing.milestones) && existing.milestones.length > 0) {
+      mergedMilestones = existing.milestones;
+    }
+
+    const calculatedCompletedTotal = mergedMilestones
+      .filter(m => m.status === 'completed')
+      .reduce((sum, m) => sum + (Number(m.amount) || 0), 0);
+    const received = Math.max(0, Math.round(
+      calculatedCompletedTotal > 0
+        ? calculatedCompletedTotal
+        : (Number(existing.received_amount) || Number(client?.paid_amount) || (hasFinalQuote ? quoteFinancials!.received_amount : 0) || 0)
+    ));
     const pending = Math.max(0, finalTotal - received);
 
     // Resolve handled_by matching finance page rules (never placeholder defaults like 'Studio PM'!)
@@ -406,7 +447,7 @@ export default function ClientWorkspaceDetailPage() {
       received_amount: received,
       pending_amount: pending,
       payment_status: (!Boolean(finalQuotationDoc || existing.has_final_quotation) && finalTotal === 0 && received === 0) ? 'unsettled' : (existing.payment_status || (received >= finalTotal && finalTotal > 0 ? 'paid' : received > 0 ? 'partially_paid' : 'pending')),
-      milestones: (Array.isArray(existing.milestones) && existing.milestones.length > 0) ? existing.milestones : (hasFinDocPrice && Array.isArray(quoteFinancials!.milestones) ? quoteFinancials!.milestones : []),
+      milestones: mergedMilestones,
       created_at: existing.created_at || client?.created_at || new Date().toISOString(),
       updated_at: existing.updated_at || new Date().toISOString()
     } as any;

@@ -371,11 +371,8 @@ export default function ClientsPage() {
         }
       }
 
-      // Sort existingClientList so records with non-zero package amounts come first!
+      // Sort strictly by created_at DESC so newly created clients always appear at the very top!
       existingClientList.sort((a, b) => {
-        const aAmt = Number(a.total_package_amount) || 0;
-        const bAmt = Number(b.total_package_amount) || 0;
-        if (aAmt !== bAmt) return bAmt - aAmt;
         return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
       });
 
@@ -1704,8 +1701,10 @@ export default function ClientsPage() {
                             <Check className="w-3 h-3" /> Paid in Full
                           </span>
                         ) : (
-                          <span className="text-amber-800">
-                            Paid: ₹{paidAmt.toLocaleString('en-IN')} • Due: ₹{dueAmount.toLocaleString('en-IN')}
+                          <span>
+                            <span className="text-emerald-600 font-extrabold">Paid: ₹{paidAmt.toLocaleString('en-IN')}</span>
+                            <span className="text-stone-400 mx-1.5 font-bold">•</span>
+                            <span className="text-rose-600 font-extrabold">Due: ₹{dueAmount.toLocaleString('en-IN')}</span>
                           </span>
                         )}
                       </p>
