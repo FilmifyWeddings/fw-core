@@ -338,7 +338,11 @@ export default function LeadsPage() {
             } as Lead;
             setLeads(prev => {
               if (prev.some(x => x.id === newLead.id)) return prev;
-              return [newLead, ...prev];
+              return [newLead, ...prev].sort((a, b) => {
+                const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+                const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+                return timeB - timeA;
+              });
             });
           } else if (payload.eventType === 'UPDATE') {
             const l = payload.new as any;
@@ -549,7 +553,11 @@ export default function LeadsPage() {
         setLeads(prev => {
           const serverIds = new Set(sanitizedLeads.map(l => l.id));
           const recentLocals = prev.filter(l => !serverIds.has(l.id));
-          const merged = [...recentLocals, ...sanitizedLeads];
+          const merged = [...recentLocals, ...sanitizedLeads].sort((a, b) => {
+            const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+            const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+            return timeB - timeA;
+          });
           memCachedLeads = merged;
           if (typeof window !== 'undefined') {
             try {
@@ -562,7 +570,11 @@ export default function LeadsPage() {
         setLeads(prev => {
           const existingIds = new Set(prev.map(l => l.id));
           const newLeads = sanitizedLeads.filter(l => !existingIds.has(l.id));
-          const merged = [...prev, ...newLeads];
+          const merged = [...prev, ...newLeads].sort((a, b) => {
+            const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+            const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+            return timeB - timeA;
+          });
           memCachedLeads = merged;
           return merged;
         });
@@ -1442,7 +1454,11 @@ export default function LeadsPage() {
         if (!error && data && data.length > 0) {
           const savedLead = data[0] as Lead;
           setLeads(prev => {
-            const updated = [savedLead, ...prev.filter(l => l.id !== savedLead.id)];
+            const updated = [savedLead, ...prev.filter(l => l.id !== savedLead.id)].sort((a, b) => {
+              const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+              const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+              return timeB - timeA;
+            });
             memCachedLeads = updated;
             if (typeof window !== 'undefined') {
               try {

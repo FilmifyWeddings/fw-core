@@ -84,7 +84,8 @@ function toIsoDateString(d: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-import { resolveSubEventAssignments } from '@/lib/team-helpers';
+import { resolveSubEventAssignments, matchDateQuery, isDateSearchQuery } from '@/lib/team-helpers';
+import { isSlotAssigned } from '../hooks/useTeamManagerFilter';
 
 // Event Dot Colors
 const getEventDotColor = (title: string = '') => {
@@ -217,11 +218,16 @@ export default function Professional3DCalendar({
       if (project.is_archived) return;
 
       const q = effectiveSearch;
-      const matchClientName = !q || project.client_name.toLowerCase().includes(q);
+      const isDateQ = isDateSearchQuery(q);
+      const matchClientName = !isDateQ && (!q || project.client_name.toLowerCase().includes(q));
 
       (project.fw_sub_events || []).forEach((se) => {
-        const matchSubTitle = !q || se.event_title.toLowerCase().includes(q);
-        if (!matchClientName && !matchSubTitle) return;
+        if (isDateQ) {
+          if (!matchDateQuery(q, se.event_date)) return;
+        } else {
+          const matchSubTitle = !q || se.event_title.toLowerCase().includes(q) || (se.venue_name || '').toLowerCase().includes(q) || matchDateQuery(q, se.event_date);
+          if (!matchClientName && !matchSubTitle) return;
+        }
 
         const assignments = resolveSubEventAssignments(se, teamMembers);
 
@@ -624,7 +630,7 @@ export default function Professional3DCalendar({
 
                         // Robust assignment resolver ensuring roles are fetched via fw_assignments relation
                         const assignments = resolveSubEventAssignments(subEvent, teamMembers);
-                        const assignedCount = assignments.filter(a => a.assigned_member_id || a.fw_team_members).length;
+                        const assignedCount = assignments.filter((a) => isSlotAssigned(a)).length;
                         const totalSlots = assignments.length;
 
                         return (

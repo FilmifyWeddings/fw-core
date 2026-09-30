@@ -93,7 +93,7 @@ const format12HourTime = (timeStr?: string): string => {
   return `${formattedHours}:${minutes} ${ampm}`;
 };
 
-import { resolveSubEventAssignments, matchDateQuery } from '@/lib/team-helpers';
+import { resolveSubEventAssignments, matchDateQuery, isDateSearchQuery } from '@/lib/team-helpers';
 
 export default function TeamManagerPage() {
   const { workspaceId, workspaceName, isOwner, userRole, permissions, activeWorkspace, availableWorkspaces, userId, userEmail } = useWorkspace();
@@ -902,11 +902,12 @@ export default function TeamManagerPage() {
                           ...a, 
                           assigned_member_id: memberId, 
                           fw_team_members: matchedMemberObj,
-                          assigned_member_name: matchedMemberObj?.name || (a as any).assigned_member_name,
-                          agreed_amount: defaultAssignedRate,
+                          assigned_member_name: memberId ? (matchedMemberObj?.name || (a as any).assigned_member_name) : null,
+                          assigned_member_phone: memberId ? (matchedMemberObj?.phone || (a as any).assigned_member_phone) : null,
+                          agreed_amount: memberId ? defaultAssignedRate : 0,
                           paid_amount: 0,
                           advance_amount: 0,
-                          balance_amount: defaultAssignedRate,
+                          balance_amount: memberId ? defaultAssignedRate : 0,
                           payment_status: 'pending',
                           status: memberId ? 'assigned' : 'pending'
                         }
@@ -921,11 +922,12 @@ export default function TeamManagerPage() {
                       required_role: activeAssign.required_role,
                       assigned_member_id: memberId,
                       fw_team_members: matchedMemberObj,
-                      assigned_member_name: matchedMemberObj?.name,
-                      agreed_amount: defaultAssignedRate,
+                      assigned_member_name: memberId ? matchedMemberObj?.name : null,
+                      assigned_member_phone: memberId ? matchedMemberObj?.phone : null,
+                      agreed_amount: memberId ? defaultAssignedRate : 0,
                       paid_amount: 0,
                       advance_amount: 0,
-                      balance_amount: defaultAssignedRate,
+                      balance_amount: memberId ? defaultAssignedRate : 0,
                       payment_status: 'pending',
                       status: memberId ? 'assigned' : 'pending'
                     },
@@ -967,14 +969,33 @@ export default function TeamManagerPage() {
                   .update({
                     assigned_member_id: null,
                     assigned_member_name: null,
+                    assigned_member_phone: null,
                     agreed_amount: 0,
                     advance_amount: 0,
                     paid_amount: 0,
                     balance_amount: 0,
                     status: 'pending',
-                    payment_status: 'pending'
+                    payment_status: 'pending',
+                    notes: null
                   })
                   .eq('id', cleanAssignId);
+              } else if (activeAssign.sub_event_id && activeAssign.required_role) {
+                await supabase
+                  .from('fw_assignments')
+                  .update({
+                    assigned_member_id: null,
+                    assigned_member_name: null,
+                    assigned_member_phone: null,
+                    agreed_amount: 0,
+                    advance_amount: 0,
+                    paid_amount: 0,
+                    balance_amount: 0,
+                    status: 'pending',
+                    payment_status: 'pending',
+                    notes: null
+                  })
+                  .eq('sub_event_id', activeAssign.sub_event_id)
+                  .eq('required_role', activeAssign.required_role);
               }
 
               await unassignCrewSlot({
@@ -1680,17 +1701,24 @@ export default function TeamManagerPage() {
       if (activeTab === 'trash') return p.is_archived || p.status === 'trash';
       if (p.is_archived || p.status === 'trash') return false;
 
-      // 1. Search Query (Client Name, Title, Venue, Sub-Event Title, or Natural Date: e.g. "15 नवंबर", "15 august", "15 nov")
+      // 1. Search Query (Client Name, Title, Venue, Sub-Event Title, or Natural Date: e.g. "15 नवंबर", "15 august", "16 nov", "सोलहा NOV")
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
-        const matchName = (p.client_name || '').toLowerCase().includes(q) || ((p as any).title || '').toLowerCase().includes(q);
-        const matchVenue = (p.main_venue || '').toLowerCase().includes(q);
-        const matchSub = p.fw_sub_events?.some(se => 
-          (se.event_title || '').toLowerCase().includes(q) ||
-          (se.venue_name || '').toLowerCase().includes(q) ||
-          matchDateQuery(q, se.event_date)
-        );
-        if (!matchName && !matchVenue && !matchSub) return false;
+        const isDateQ = isDateSearchQuery(q);
+        if (isDateQ) {
+          // Strict Date Search: ONLY show projects that contain at least one sub-event matching this exact date
+          const matchDate = p.fw_sub_events?.some(se => matchDateQuery(q, se.event_date)) || matchDateQuery(q, p.main_date);
+          if (!matchDate) return false;
+        } else {
+          const matchName = (p.client_name || '').toLowerCase().includes(q) || ((p as any).title || '').toLowerCase().includes(q);
+          const matchVenue = (p.main_venue || '').toLowerCase().includes(q);
+          const matchSub = p.fw_sub_events?.some(se => 
+            (se.event_title || '').toLowerCase().includes(q) ||
+            (se.venue_name || '').toLowerCase().includes(q) ||
+            matchDateQuery(q, se.event_date)
+          );
+          if (!matchName && !matchVenue && !matchSub) return false;
+        }
       }
 
       // 2. Role Filter (legacy dropdown or unified)
@@ -1808,6 +1836,10 @@ export default function TeamManagerPage() {
       // Search Term Filter (Client name, Project title, Sub-event title, Venue, Date)
       if (searchQuery && searchQuery.trim() !== '') {
         const q = searchQuery.toLowerCase().trim();
+        if (isDateSearchQuery(q)) {
+          // A specific date search should never show Date Not Fixed (TBD) shoots
+          return;
+        }
         const matchClient = (p.client_name || '').toLowerCase().includes(q);
         const matchProject = ((p as any).title || (p as any).project_name || '').toLowerCase().includes(q);
         const matchSub = (p.fw_sub_events || []).some(se => 
@@ -1872,7 +1904,7 @@ export default function TeamManagerPage() {
   }
 
   return (
-    <div className="w-full min-h-screen bg-slate-100 text-[#0B111E] font-sans antialiased selection:bg-[#6C5CE7]/15 px-4 sm:px-6 lg:px-8 pt-2 pb-20 md:pb-6 space-y-6">
+    <div className="w-full min-h-screen bg-slate-100 text-[#0B111E] font-sans antialiased selection:bg-[#6C5CE7]/15 px-4 sm:px-6 lg:px-8 pt-2 pb-20 md:pb-6 space-y-6 scrollbar-dark-cream">
       {/* PC STICKY TOP TOOLBAR WRAPPER */}
         <div className="sticky top-[54px] lg:top-0 z-30 bg-slate-50/95 backdrop-blur-md pt-2 pb-2 px-3 sm:px-6 lg:px-8 -mx-4 sm:-mx-6 lg:-mx-8 border-b border-slate-200/60 shadow-2xs space-y-2 transition-all">
           {/* Top Responsive Header Block */}
@@ -2758,12 +2790,18 @@ export default function TeamManagerPage() {
                               }
                               if (searchQuery.trim()) {
                                 const q = searchQuery.toLowerCase().trim();
-                                const matchProj = (project.client_name || '').toLowerCase().includes(q) || ((project as any).title || '').toLowerCase().includes(q);
-                                if (!matchProj) {
-                                  const matchSub = (se.event_title || '').toLowerCase().includes(q) ||
-                                    (se.venue_name || '').toLowerCase().includes(q) ||
-                                    matchDateQuery(q, se.event_date);
-                                  if (!matchSub) return false;
+                                const isDateQ = isDateSearchQuery(q);
+                                if (isDateQ) {
+                                  // Strict Date Search: Only show sub-events matching this exact date!
+                                  if (!matchDateQuery(q, se.event_date)) return false;
+                                } else {
+                                  const matchProj = (project.client_name || '').toLowerCase().includes(q) || ((project as any).title || '').toLowerCase().includes(q);
+                                  if (!matchProj) {
+                                    const matchSub = (se.event_title || '').toLowerCase().includes(q) ||
+                                      (se.venue_name || '').toLowerCase().includes(q) ||
+                                      matchDateQuery(q, se.event_date);
+                                    if (!matchSub) return false;
+                                  }
                                 }
                               }
                               return true;
@@ -2799,7 +2837,7 @@ export default function TeamManagerPage() {
 
                             // Robust assignment resolver ensuring roles are fetched via fw_assignments relation
                             const assignments = resolveSubEventAssignments(subEvent, teamMembers);
-                            const assignedCount = assignments.filter((a: any) => a.assigned_member_id !== null).length;
+                            const assignedCount = assignments.filter((a: any) => isSlotAssigned(a)).length;
                             const totalSlots = assignments.length;
                             const eventVisibility = resolveEventCrewVisibility(
                               { ...subEvent, project },
@@ -2914,9 +2952,10 @@ export default function TeamManagerPage() {
                                     </span>
                                     <div className="flex items-start gap-4 flex-wrap">
                                       {assignments.map((assignment: any) => {
-                                        const isAssigned = assignment.assigned_member_id !== null;
                                         const memberObj = assignment.fw_team_members || (assignment.assigned_member_id ? teamMembers.find(m => m.id === assignment.assigned_member_id || (Boolean((assignment as any).assigned_member_name) && m.name.toLowerCase() === String((assignment as any).assigned_member_name).toLowerCase())) : null);
                                         const cleanName = (memberObj?.name || (assignment as any).assigned_member_name || (assignment as any).member_name || '').replace(/\.\.\./g, '').trim();
+                                        const isPlaceholderName = cleanName.toLowerCase() === 'not fixed' || cleanName.toLowerCase().startsWith('not fixed') || cleanName.toLowerCase() === 'tbd' || cleanName.toLowerCase() === 'unassigned' || cleanName.toLowerCase() === 'pending' || cleanName.toLowerCase() === 'date not fixed';
+                                        const isAssigned = assignment.assigned_member_id !== null && !isPlaceholderName;
                                         const role = assignment.required_role;
                                         const shortRole = getRoleAbbr(role, customCrewRoles);
 
@@ -3086,12 +3125,18 @@ export default function TeamManagerPage() {
                       }
                       if (searchQuery.trim()) {
                         const q = searchQuery.toLowerCase().trim();
-                        const matchProj = (project.client_name || '').toLowerCase().includes(q) || ((project as any).title || '').toLowerCase().includes(q);
-                        if (!matchProj) {
-                          const matchSub = (se.event_title || '').toLowerCase().includes(q) ||
-                            (se.venue_name || '').toLowerCase().includes(q) ||
-                            matchDateQuery(q, se.event_date);
-                          if (!matchSub) return false;
+                        const isDateQ = isDateSearchQuery(q);
+                        if (isDateQ) {
+                          // Strict Date Search: Only show sub-events matching this exact date!
+                          if (!matchDateQuery(q, se.event_date)) return false;
+                        } else {
+                          const matchProj = (project.client_name || '').toLowerCase().includes(q) || ((project as any).title || '').toLowerCase().includes(q);
+                          if (!matchProj) {
+                            const matchSub = (se.event_title || '').toLowerCase().includes(q) ||
+                              (se.venue_name || '').toLowerCase().includes(q) ||
+                              matchDateQuery(q, se.event_date);
+                            if (!matchSub) return false;
+                          }
                         }
                       }
                       return true;
@@ -3414,10 +3459,11 @@ export default function TeamManagerPage() {
                                       </span>
                                       <div className="flex items-start gap-2.5 flex-wrap">
                                         {assignments.map((assignment: any) => {
-                                          const isAssigned = assignment.assigned_member_id !== null;
                                           const memberObj = assignment.fw_team_members || (assignment.assigned_member_id ? teamMembers.find(m => m.id === assignment.assigned_member_id || (Boolean((assignment as any).assigned_member_name) && m.name.toLowerCase() === String((assignment as any).assigned_member_name).toLowerCase())) : null);
                                           const rawName = memberObj?.name || (assignment as any).assigned_member_name || (assignment as any).member_name || '';
                                           const cleanName = rawName.replace(/\.\.\./g, '').trim();
+                                          const isPlaceholderName = cleanName.toLowerCase() === 'not fixed' || cleanName.toLowerCase().startsWith('not fixed') || cleanName.toLowerCase() === 'tbd' || cleanName.toLowerCase() === 'unassigned' || cleanName.toLowerCase() === 'pending' || cleanName.toLowerCase() === 'date not fixed';
+                                          const isAssigned = assignment.assigned_member_id !== null && !isPlaceholderName;
                                           const role = assignment.required_role;
                                           const shortRole = getRoleAbbr(role, customCrewRoles);
 
@@ -3886,6 +3932,7 @@ export default function TeamManagerPage() {
                   type="button"
                   onClick={() => {
                     handleAssignMember(activeAssignment.id, null);
+                    setActiveDropdownId(null);
                     setDropdownPos(null);
                   }}
                   className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${

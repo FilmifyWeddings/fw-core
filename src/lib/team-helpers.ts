@@ -89,19 +89,41 @@ export function resolveSubEventAssignments(
 
   // Helper to resolve FWTeamMember object for an assignment
   const resolveMemberObj = (existing: any): FWTeamMember | null => {
+    // If no assigned_member_id is present, the slot is strictly UNASSIGNED
+    if (!existing.assigned_member_id) {
+      return null;
+    }
+
+    const assignedStr = String(existing.assigned_member_id).trim().toLowerCase();
+    if (!assignedStr || assignedStr === 'null' || assignedStr === 'undefined' || assignedStr === 'unassigned') {
+      return null;
+    }
+
+    // Check if name is a placeholder
+    const cleanName = String(existing.assigned_member_name || (existing.fw_team_members?.name) || '').trim().toLowerCase();
+    if (
+      cleanName === 'not fixed' ||
+      cleanName.startsWith('not fixed') ||
+      cleanName === 'tbd' ||
+      cleanName === 'unassigned' ||
+      cleanName === 'pending' ||
+      cleanName === 'date not fixed'
+    ) {
+      return null;
+    }
+
     let matched = existing.fw_team_members || null;
     if (!matched && existing.assigned_member_id) {
       matched = teamMembers.find(m => m.id === existing.assigned_member_id) || null;
     }
     if (!matched && existing.assigned_member_name) {
-      const cleanAssigned = String(existing.assigned_member_name).toLowerCase().trim();
-      matched = teamMembers.find(m => m.name.toLowerCase().trim() === cleanAssigned) || null;
+      matched = teamMembers.find(m => m.name.toLowerCase().trim() === cleanName) || null;
     }
-    if (!matched && (existing.assigned_member_id || existing.assigned_member_name)) {
+    if (!matched && existing.assigned_member_id) {
       const fallbackName = existing.assigned_member_name || existing.member_name || '';
-      if (fallbackName) {
+      if (fallbackName && !fallbackName.toLowerCase().includes('not fixed')) {
         matched = {
-          id: existing.assigned_member_id || `fallback-${fallbackName}`,
+          id: existing.assigned_member_id,
           name: fallbackName,
           primary_role: existing.required_role || 'Crew',
           is_active: true
@@ -204,108 +226,220 @@ export function resolveSubEventAssignments(
   return resolvedAssignments;
 }
 
+const HINDI_NUMBER_WORDS: Record<string, number> = {
+  'एक': 1, '1': 1, '01': 1,
+  'दो': 2, '2': 2, '02': 2,
+  'तीन': 3, '3': 3, '03': 3,
+  'चार': 4, '4': 4, '04': 4,
+  'पांच': 5, 'पाँच': 5, '5': 5, '05': 5,
+  'छह': 6, 'छः': 6, 'छ': 6, '6': 6, '06': 6,
+  'सात': 7, '7': 7, '07': 7,
+  'आठ': 8, '8': 8, '08': 8,
+  'नौ': 9, '9': 9, '09': 9,
+  'दस': 10, '10': 10,
+  'ग्यारह': 11, '11': 11,
+  'बारह': 12, '12': 12,
+  'तेरह': 13, '13': 13,
+  'चौदह': 14, '14': 14,
+  'पंद्रह': 15, 'पन्द्रह': 15, '15': 15,
+  'सोलह': 16, 'सोलहा': 16, 'सोलवां': 16, 'सोलहवां': 16, '16': 16,
+  'सत्रह': 17, '17': 17,
+  'अठारह': 18, 'अट्ठारह': 18, '18': 18,
+  'उन्नीस': 19, '19': 19,
+  'बीस': 20, '20': 20,
+  'इक्कीस': 21, '21': 21,
+  'बाईस': 22, '22': 22,
+  'तेईस': 23, '23': 23,
+  'चौबीस': 24, '24': 24,
+  'पच्चीस': 25, '25': 25,
+  'छब्बीस': 26, '26': 26,
+  'सत्ताईस': 27, '27': 27,
+  'अट्ठाईस': 28, 'अट्ठाइस': 28, '28': 28,
+  'उनतीस': 29, '29': 29,
+  'तीस': 30, '30': 30,
+  'इकतीस': 31, '31': 31,
+};
+
+const MONTH_MAP: Record<string, number> = {
+  // English
+  'jan': 1, 'january': 1,
+  'feb': 2, 'february': 2,
+  'mar': 3, 'march': 3,
+  'apr': 4, 'april': 4,
+  'may': 5,
+  'jun': 6, 'june': 6,
+  'jul': 7, 'july': 7,
+  'aug': 8, 'august': 8,
+  'sep': 9, 'sept': 9, 'september': 9,
+  'oct': 10, 'october': 10,
+  'nov': 11, 'november': 11,
+  'dec': 12, 'december': 12,
+  // Hindi
+  'जनवरी': 1, 'जन': 1,
+  'फ़रवरी': 2, 'फरवरी': 2, 'फेब': 2, 'फ़ेब': 2,
+  'मार्च': 3, 'मार': 3,
+  'अप्रैल': 4, 'अप्रेल': 4, 'अप्रै': 4,
+  'मई': 5,
+  'जून': 6,
+  'जुलाई': 7,
+  'अगस्त': 8, 'अग': 8,
+  'सितंबर': 9, 'सितम्बर': 9, 'सित': 9,
+  'अक्टूबर': 10, 'अक्टू': 10, 'अक्टुबर': 10,
+  'नवंबर': 11, 'नवम्बर': 11, 'नव': 11,
+  'दिसंबर': 12, 'दिसम्बर': 12, 'दिस': 12,
+};
+
+export interface ParsedDateQuery {
+  isDateQuery: boolean;
+  targetDay: number | null; // 1 to 31
+  targetMonth: number | null; // 1 to 12
+  targetYear: number | null; // e.g. 2026
+}
+
 /**
- * ⚡ Matches free-form natural date searches (e.g. "15 नवंबर", "15 अगस्त", "15 nov", "15 november", "15/11", "15-11", "2026-11-15")
- * against an event date string (e.g. "2026-11-15").
+ * ⚡ Extracts precise day, month, and year from free-form natural date searches
+ * Supporting formats: "16 nov", "सोलहा NOV", "15 नवंबर", "16 दिसंबर", "16/11", "16-11", "2026-11-16", etc.
  */
-export function matchDateQuery(rawQuery: string, dateStr?: string | null): boolean {
-  if (!rawQuery || !dateStr) return false;
+export function parseDateQuery(rawQuery: string): ParsedDateQuery {
+  if (!rawQuery) {
+    return { isDateQuery: false, targetDay: null, targetMonth: null, targetYear: null };
+  }
   const q = rawQuery.trim().toLowerCase();
-  if (!q) return false;
-
-  const rawClean = dateStr.trim();
-  if (rawClean.toLowerCase().includes(q)) return true;
-
-  const dateMatch = rawClean.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if (!dateMatch) {
-    return false;
+  if (!q) {
+    return { isDateQuery: false, targetDay: null, targetMonth: null, targetYear: null };
   }
 
-  const year = parseInt(dateMatch[1], 10);
-  const month = parseInt(dateMatch[2], 10);
-  const day = parseInt(dateMatch[3], 10);
-
-  const MONTHS_FULL = [
-    'january', 'february', 'march', 'april', 'may', 'june',
-    'july', 'august', 'september', 'october', 'november', 'december'
-  ];
-  const MONTHS_SHORT = [
-    'jan', 'feb', 'mar', 'apr', 'may', 'jun',
-    'jul', 'aug', 'sep', 'oct', 'nov', 'dec'
-  ];
-  const MONTHS_HINDI = [
-    ['जनवरी', 'जन'],
-    ['फ़रवरी', 'फरवरी', 'फ़ेब', 'फेब'],
-    ['मार्च', 'मार'],
-    ['अप्रैल', 'अप्रै', 'अप्रेल'],
-    ['मई'],
-    ['जून'],
-    ['जुलाई'],
-    ['अगस्त', 'अग'],
-    ['सितंबर', 'सितम्बर', 'सित'],
-    ['अक्टूबर', 'अक्टू', 'अक्टुबर'],
-    ['नवंबर', 'नवम्बर', 'नव'],
-    ['दिसंबर', 'दिसम्बर', 'दिस']
-  ];
-
-  const fullMonth = MONTHS_FULL[month - 1];
-  const shortMonth = MONTHS_SHORT[month - 1];
-  const hindiMonthNames = MONTHS_HINDI[month - 1];
-
-  const padDay = String(day).padStart(2, '0');
-  const padMonth = String(month).padStart(2, '0');
-
-  const representations = [
-    `${day} ${fullMonth}`,
-    `${padDay} ${fullMonth}`,
-    `${fullMonth} ${day}`,
-    `${fullMonth} ${padDay}`,
-    `${day} ${shortMonth}`,
-    `${padDay} ${shortMonth}`,
-    `${shortMonth} ${day}`,
-    `${shortMonth} ${padDay}`,
-    `${day}-${shortMonth}`,
-    `${padDay}-${shortMonth}`,
-    `${day}/${padMonth}`,
-    `${padDay}/${padMonth}`,
-    `${day}-${padMonth}`,
-    `${padDay}-${padMonth}`,
-    `${day}.${padMonth}`,
-    `${padDay}.${padMonth}`,
-    `${day}/${padMonth}/${year}`,
-    `${padDay}/${padMonth}/${year}`,
-    `${day}-${padMonth}-${year}`,
-    `${padDay}-${padMonth}-${year}`,
-    `${day} ${shortMonth} ${year}`,
-    `${day} ${fullMonth} ${year}`,
-    fullMonth,
-    shortMonth,
-  ];
-
-  for (const hName of hindiMonthNames) {
-    representations.push(`${day} ${hName}`);
-    representations.push(`${padDay} ${hName}`);
-    representations.push(`${hName} ${day}`);
-    representations.push(`${hName} ${padDay}`);
-    representations.push(`${day}-${hName}`);
-    representations.push(hName);
+  // 1. Check ISO / numeric date formats:
+  // e.g. "2026-11-16", "16-11-2026", "16/11/2026", "16/11", "16-11", "16.11"
+  const isoMatch = q.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})$/);
+  if (isoMatch) {
+    return {
+      isDateQuery: true,
+      targetYear: parseInt(isoMatch[1], 10),
+      targetMonth: parseInt(isoMatch[2], 10),
+      targetDay: parseInt(isoMatch[3], 10),
+    };
   }
 
-  for (const rep of representations) {
-    if (rep.toLowerCase().includes(q) || q.includes(rep.toLowerCase())) {
-      return true;
+  const dmyYearMatch = q.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
+  if (dmyYearMatch) {
+    return {
+      isDateQuery: true,
+      targetDay: parseInt(dmyYearMatch[1], 10),
+      targetMonth: parseInt(dmyYearMatch[2], 10),
+      targetYear: parseInt(dmyYearMatch[3], 10),
+    };
+  }
+
+  const dmMatch = q.match(/^(\d{1,2})[./-](\d{1,2})$/);
+  if (dmMatch) {
+    const p1 = parseInt(dmMatch[1], 10);
+    const p2 = parseInt(dmMatch[2], 10);
+    if (p1 >= 1 && p1 <= 31 && p2 >= 1 && p2 <= 12) {
+      return {
+        isDateQuery: true,
+        targetDay: p1,
+        targetMonth: p2,
+        targetYear: null,
+      };
     }
   }
 
-  const cleanQ = q.replace(/[^a-z0-9\u0900-\u097F]/g, '');
-  if (cleanQ) {
-    for (const rep of representations) {
-      const cleanRep = rep.toLowerCase().replace(/[^a-z0-9\u0900-\u097F]/g, '');
-      if (cleanRep.includes(cleanQ) || cleanQ.includes(cleanRep)) {
-        return true;
+  // 2. Token-based analysis for natural date combinations:
+  // e.g. "16 nov", "16-nov", "सोलहा nov", "15 नवंबर", "16 दिसंबर", "16th nov", "16 november 2026"
+  const normalized = q
+    .replace(/[./-]/g, ' ')
+    .replace(/(st|nd|rd|th|वां|वीं|वा)\b/gi, '')
+    .trim();
+
+  const tokens = normalized.split(/\s+/).filter(Boolean);
+
+  let detectedMonth: number | null = null;
+  let detectedDay: number | null = null;
+  let detectedYear: number | null = null;
+
+  for (const token of tokens) {
+    // Check year (4 digits)
+    if (/^\d{4}$/.test(token)) {
+      const y = parseInt(token, 10);
+      if (y >= 2020 && y <= 2040) {
+        detectedYear = y;
+        continue;
+      }
+    }
+
+    // Check month word
+    if (MONTH_MAP[token] !== undefined) {
+      detectedMonth = MONTH_MAP[token];
+      continue;
+    }
+
+    // Check Hindi number word or digit for day
+    if (HINDI_NUMBER_WORDS[token] !== undefined) {
+      detectedDay = HINDI_NUMBER_WORDS[token];
+      continue;
+    }
+
+    // Check numeric day
+    if (/^\d{1,2}$/.test(token)) {
+      const d = parseInt(token, 10);
+      if (d >= 1 && d <= 31) {
+        detectedDay = d;
+        continue;
       }
     }
   }
 
-  return false;
+  // If a month was detected, this is strictly a date query!
+  if (detectedMonth !== null) {
+    return {
+      isDateQuery: true,
+      targetDay: detectedDay,
+      targetMonth: detectedMonth,
+      targetYear: detectedYear,
+    };
+  }
+
+  return { isDateQuery: false, targetDay: null, targetMonth: null, targetYear: null };
 }
+
+/**
+ * ⚡ Checks whether a search query represents a date search
+ */
+export function isDateSearchQuery(rawQuery: string): boolean {
+  return parseDateQuery(rawQuery).isDateQuery;
+}
+
+/**
+ * ⚡ Matches free-form natural date searches (e.g. "15 नवंबर", "15 अगस्त", "16 nov", "सोलहा NOV", "15/11", "15-11", "2026-11-15")
+ * against an event date string (e.g. "2026-11-15").
+ * Strict mode: If query specifies a specific day + month, ONLY sub-events on that exact day match!
+ */
+export function matchDateQuery(rawQuery: string, dateStr?: string | null): boolean {
+  if (!rawQuery || !dateStr) return false;
+  const parsed = parseDateQuery(rawQuery);
+  if (!parsed.isDateQuery) {
+    return dateStr.trim().toLowerCase().includes(rawQuery.trim().toLowerCase());
+  }
+
+  const rawClean = dateStr.trim();
+  const dateMatch = rawClean.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (!dateMatch) return false;
+
+  const evYear = parseInt(dateMatch[1], 10);
+  const evMonth = parseInt(dateMatch[2], 10);
+  const evDay = parseInt(dateMatch[3], 10);
+
+  if (parsed.targetYear !== null && evYear !== parsed.targetYear) {
+    return false;
+  }
+  if (parsed.targetMonth !== null && evMonth !== parsed.targetMonth) {
+    return false;
+  }
+  if (parsed.targetDay !== null && evDay !== parsed.targetDay) {
+    return false;
+  }
+
+  return true;
+}
+

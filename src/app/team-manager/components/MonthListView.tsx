@@ -9,7 +9,7 @@ import {
 import RoleAssignDropdown from './RoleAssignDropdown';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { resolveEventCrewVisibility } from '@/lib/permissions/rbacRules';
-import { isSubEventMatch, isRoleMatching } from '../hooks/useTeamManagerFilter';
+import { isSubEventMatch, isRoleMatching, isSlotAssigned } from '../hooks/useTeamManagerFilter';
 
 interface MonthListViewProps {
   projects: FWProject[];
@@ -42,7 +42,7 @@ interface FlattenedSubEvent {
   sortTimestamp: number;
 }
 
-import { resolveSubEventAssignments, matchDateQuery } from '@/lib/team-helpers';
+import { resolveSubEventAssignments, matchDateQuery, isDateSearchQuery } from '@/lib/team-helpers';
 
 export default function MonthListView({
   projects,
@@ -87,16 +87,22 @@ export default function MonthListView({
     const pastOrder: string[] = [];
 
     const q = searchQuery.trim().toLowerCase();
+    const isDateQ = isDateSearchQuery(q);
 
     projects.forEach((project) => {
       if (project.is_archived) return;
 
-      const matchClientName = !q || project.client_name.toLowerCase().includes(q) || ((project as any).title || '').toLowerCase().includes(q);
+      const matchClientName = !isDateQ && (!q || project.client_name.toLowerCase().includes(q) || ((project as any).title || '').toLowerCase().includes(q));
 
       (project.fw_sub_events || []).forEach((se) => {
-        const matchDate = matchDateQuery(q, se.event_date);
-        const matchSubTitle = !q || se.event_title.toLowerCase().includes(q) || (se.venue_name || '').toLowerCase().includes(q) || matchDate;
-        if (!matchClientName && !matchSubTitle) return;
+        if (isDateQ) {
+          // Strict Date Search: Only show sub-events on this exact date!
+          if (!matchDateQuery(q, se.event_date)) return;
+        } else {
+          const matchDate = matchDateQuery(q, se.event_date);
+          const matchSubTitle = !q || se.event_title.toLowerCase().includes(q) || (se.venue_name || '').toLowerCase().includes(q) || matchDate;
+          if (!matchClientName && !matchSubTitle) return;
+        }
 
         // Legacy single role filter (top pill)
         if (selectedRoleFilter !== 'All') {
@@ -113,6 +119,7 @@ export default function MonthListView({
         const isValidDate = !isTbd && d && !isNaN(d.getTime());
 
         if (!isValidDate) {
+          if (isDateQ) return; // Strict date search does not include Date Not Fixed shoots!
           tbdList.push({
             subEvent: se,
             project,
@@ -240,7 +247,7 @@ export default function MonthListView({
             <div className="space-y-4 pt-1">
               {tbdEvents.map(({ subEvent, project }) => {
                 const assignments = resolveSubEventAssignments(subEvent, teamMembers);
-                const assignedCount = assignments.filter((a) => a.assigned_member_id).length;
+                const assignedCount = assignments.filter((a) => isSlotAssigned(a)).length;
                 const totalSlots = assignments.length;
 
                 const isOvernightShoot = Boolean(
@@ -469,7 +476,7 @@ export default function MonthListView({
                     }
 
                     const assignments = resolveSubEventAssignments(subEvent, teamMembers);
-                    const assignedCount = assignments.filter((a) => a.assigned_member_id).length;
+                    const assignedCount = assignments.filter((a) => isSlotAssigned(a)).length;
                     const totalSlots = assignments.length;
 
                     const eventVisibility = resolveEventCrewVisibility(
@@ -686,7 +693,7 @@ export default function MonthListView({
                           }
 
                           const assignments = resolveSubEventAssignments(subEvent, teamMembers);
-                          const assignedCount = assignments.filter((a) => a.assigned_member_id).length;
+                          const assignedCount = assignments.filter((a) => isSlotAssigned(a)).length;
                           const totalSlots = assignments.length;
 
                           const eventVisibility = resolveEventCrewVisibility(

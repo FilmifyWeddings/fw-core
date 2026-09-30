@@ -63,34 +63,74 @@ body {
   transition-duration: 200ms;
 }
 
-/* Custom Scrollbars */
+/* Custom Scrollbars - Luxury Warm Dark Cream & Amber Gold */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #B88628 #F6F2E9;
+}
+
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(241, 245, 249, 0.6);
+  background: #F6F2E9;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #94a3b8;
+  background: #B88628;
   border-radius: 9999px;
-  border: 2px solid transparent;
+  border: 2px solid #F6F2E9;
   background-clip: padding-box;
   transition: background-color 0.2s ease;
 }
 
+::-webkit-scrollbar-thumb:hover {
+  background: #976B1C;
+}
+
+.dark * {
+  scrollbar-color: #A3772C #1F1D1A;
+}
+
 .dark ::-webkit-scrollbar-track {
-  background: rgba(18, 17, 16, 0.6);
+  background: #1F1D1A;
 }
 
 .dark ::-webkit-scrollbar-thumb {
-  background: #475569;
+  background: #A3772C;
+  border: 2px solid #1F1D1A;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #64748b;
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #C49746;
+}
+
+/* Dedicated Team Manager Luxury Dark Cream Scrollbar */
+.scrollbar-dark-cream {
+  scrollbar-width: thin;
+  scrollbar-color: #B88628 #F6F2E9;
+}
+
+.scrollbar-dark-cream::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+.scrollbar-dark-cream::-webkit-scrollbar-track {
+  background: #F6F2E9;
+}
+
+.scrollbar-dark-cream::-webkit-scrollbar-thumb {
+  background: #B88628;
+  border-radius: 9999px;
+  border: 2px solid #F6F2E9;
+  background-clip: padding-box;
+}
+
+.scrollbar-dark-cream::-webkit-scrollbar-thumb:hover {
+  background: #976B1C;
 }
 
 /* Google Sheets Style Minimal Dropdown UI */

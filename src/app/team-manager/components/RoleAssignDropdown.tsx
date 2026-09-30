@@ -109,9 +109,10 @@ export default function RoleAssignDropdown({
   }, [isOpen]);
 
   const memberObj = assignment.fw_team_members || (assignment.assigned_member_id ? teamMembers.find(m => m.id === assignment.assigned_member_id || (Boolean((assignment as any).assigned_member_name) && m.name.toLowerCase() === String((assignment as any).assigned_member_name).toLowerCase())) : null);
-  const isAssigned = Boolean(assignment.assigned_member_id || memberObj);
   const rawName = memberObj?.name || (assignment as any).assigned_member_name || (assignment as any).member_name || '';
   const cleanName = rawName.replace(/\.\.\./g, '').trim();
+  const isPlaceholderName = cleanName.toLowerCase() === 'not fixed' || cleanName.toLowerCase().startsWith('not fixed') || cleanName.toLowerCase() === 'tbd' || cleanName.toLowerCase() === 'unassigned' || cleanName.toLowerCase() === 'pending' || cleanName.toLowerCase() === 'date not fixed';
+  const isAssigned = Boolean(assignment.assigned_member_id && !isPlaceholderName);
   const role = assignment.required_role;
 
   if (isMasked) {

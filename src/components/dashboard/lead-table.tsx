@@ -2164,6 +2164,10 @@ export function LeadTable({
     })();
 
     return matchesSearch && matchesStatus && matchesSource && matchesScore && matchesOwner && matchesColumnFilters && matchesDateRange && matchesSidebar;
+  }).sort((a, b) => {
+    const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return timeB - timeA;
   });
 
   // Pagination lists replaced with Infinite Scroll
