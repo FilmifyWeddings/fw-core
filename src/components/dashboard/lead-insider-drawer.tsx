@@ -141,6 +141,17 @@ const getAuthorFromEmail = (email: string | null | undefined) => {
   };
 };
 
+export const formatDisplayBudget = (rawBudget?: any): string => {
+  if (!rawBudget) return '₹1,50,000';
+  let str = String(rawBudget).trim();
+  // Strip corrupted leading question marks like ??? or ????
+  str = str.replace(/^\?+/, '').trim();
+  // Strip inner ??? like "- ???" or "- ??? 2.5"
+  str = str.replace(/-\s*\?+/, '- ₹').trim();
+  if (str.startsWith('₹') || str.startsWith('$')) return str;
+  return `₹${str}`;
+};
+
 export function LeadInsiderDrawer({
   lead,
   onClose,
@@ -1154,7 +1165,7 @@ export function LeadInsiderDrawer({
 
                           <div className="flex items-center justify-between gap-2 mt-2">
                             <span className="text-base sm:text-lg font-black text-slate-900 dark:text-white font-mono">
-                              {lead.raw_payload?.budget ? (String(lead.raw_payload.budget).startsWith('₹') || String(lead.raw_payload.budget).startsWith('$') ? lead.raw_payload.budget : `₹${lead.raw_payload.budget}`) : '₹1,50,000'}
+                              {formatDisplayBudget(lead.raw_payload?.budget || (lead as any).budget)}
                             </span>
 
                             {/* Quick Action Floating Circles (Call & WhatsApp) */}

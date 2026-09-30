@@ -348,6 +348,20 @@ export async function findFinalQuotationForLead(supabaseClient: any, leadId: str
 
   try {
     const leadShortId = leadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
+    
+    // 1. Check leads table for final_quotation_id (both direct column and raw_payload)
+    let targetFinalId: string | null = null;
+    try {
+      const { data: lead } = await supabaseClient
+        .from('leads')
+        .select('final_quotation_id, quotation_id, raw_payload')
+        .eq('id', leadId)
+        .maybeSingle();
+
+      targetFinalId = lead?.final_quotation_id || (lead as any)?.raw_payload?.final_quotation_id || null;
+    } catch (_) {}
+
+    // 2. Fetch docs from quotation_documents for this lead
     const { data: docs, error: docErr } = await supabaseClient
       .from('quotation_documents')
       .select('id, template_id, lead_id, version, lead_version, content_json, created_at, updated_at')
@@ -355,21 +369,54 @@ export async function findFinalQuotationForLead(supabaseClient: any, leadId: str
       .order('created_at', { ascending: false });
 
     if (!docErr && docs && docs.length > 0) {
+      // Priority A: Direct match with targetFinalId
+      if (targetFinalId) {
+        const match = docs.find((d: any) => 
+          d.template_id === targetFinalId || 
+          d.id === targetFinalId ||
+          (d.template_id && (targetFinalId.includes(d.template_id) || d.template_id.includes(targetFinalId)))
+        );
+        if (match) return match;
+      }
+
+      // Priority B: Any document with is_final = true in content_json
       const finalDoc = docs.find((d: any) => d.content_json?.is_final === true || d.is_final === true);
       if (finalDoc) return finalDoc;
     }
 
-    // Check leads table for final_quotation_id
-    const { data: lead } = await supabaseClient
-      .from('leads')
-      .select('final_quotation_id, quotation_id')
-      .eq('id', leadId)
-      .maybeSingle();
+    // 3. Fallback: Check quotations table for is_final or accepted status
+    try {
+      const { data: quotes } = await supabaseClient
+        .from('quotations')
+        .select('id, quotation_number, client_id, client_name, title, status, financials, content_json, is_final, updated_at')
+        .or(`client_id.eq.${leadId},quotation_number.ilike.%${leadShortId}%`)
+        .order('updated_at', { ascending: false });
 
-    if (lead?.final_quotation_id && docs) {
-      const match = docs.find((d: any) => d.template_id === lead.final_quotation_id || d.id === lead.final_quotation_id);
-      if (match) return match;
-    }
+      if (quotes && quotes.length > 0) {
+        const finalQuote = quotes.find((q: any) => 
+          q.is_final === true || 
+          q.status === 'accepted' || 
+          (targetFinalId && (q.id === targetFinalId || q.quotation_number === targetFinalId))
+        );
+
+        if (finalQuote) {
+          return {
+            id: finalQuote.id,
+            template_id: finalQuote.quotation_number || finalQuote.id,
+            lead_id: leadId,
+            version: 1,
+            content_json: finalQuote.content_json || {
+              pricingPage: {
+                basePrice: finalQuote.financials?.total_amount || 0,
+                totalAmount: finalQuote.financials?.total_amount || 0
+              }
+            },
+            created_at: finalQuote.updated_at,
+            updated_at: finalQuote.updated_at
+          };
+        }
+      }
+    } catch (_) {}
   } catch (err) {
     console.warn('[QuotationSync] Error finding final quotation for lead:', err);
   }
@@ -1099,9 +1146,6 @@ export async function syncBookedLeadOrFinalQuotation({
       if (!finalDoc) {
         finalDoc = await findFinalQuotationForLead(supabaseClient, leadId);
       }
-      if (!finalDoc) {
-        finalDoc = await findLatestQuotationForLead(supabaseClient, leadId);
-      }
 
       // 3. Extract Couple Name strictly (Prioritizes quotation cover couple name over raw contact person)
       const rawPayload = lead.raw_payload || {};
@@ -1122,15 +1166,27 @@ export async function syncBookedLeadOrFinalQuotation({
       const eventType = financials.event_type || lead.event_type || 'Wedding Photography';
 
       // 4. Update or Insert Client Directory (workspace_clients & clients)
-      let workspaceClientId: string | null = null;
+      let workspaceClientId: string | null = lead.client_id || null;
+      let existingWsClient: any = null;
 
-      const { data: existingWsClients } = await supabaseClient
-        .from('workspace_clients')
-        .select('id, name')
-        .or(`lead_id.eq.${leadId},id.eq.${leadId}`)
-        .order('created_at', { ascending: true });
+      if (workspaceClientId) {
+        const { data: clientById } = await supabaseClient
+          .from('workspace_clients')
+          .select('id, name')
+          .eq('id', workspaceClientId)
+          .maybeSingle();
+        if (clientById) existingWsClient = clientById;
+      }
 
-      let existingWsClient = existingWsClients?.[0];
+      if (!existingWsClient) {
+        const { data: existingWsClients } = await supabaseClient
+          .from('workspace_clients')
+          .select('id, name')
+          .or(`lead_id.eq.${leadId},id.eq.${leadId}`)
+          .order('created_at', { ascending: true });
+
+        existingWsClient = existingWsClients?.[0];
+      }
 
       if (!existingWsClient && coupleName) {
         const { data: clientByName } = await supabaseClient
@@ -1142,6 +1198,22 @@ export async function syncBookedLeadOrFinalQuotation({
         if (clientByName) existingWsClient = clientByName;
       }
 
+      // Extract sub-events from final quotation if present, or leave strictly empty
+      const quoteSubEvents = finalDoc?.content_json
+        ? extractSubEventsFromQuotation(finalDoc.content_json, eventDate, mainVenue)
+        : [];
+
+      const clientEventsList = quoteSubEvents.map((se, idx) => ({
+        id: `ev_${Date.now()}_${idx}`,
+        name: se.event_title || eventType,
+        date: se.event_date || eventDate || '',
+        time_start: se.roll_call_time || '',
+        time_end: se.dismissal_estimate_time || '',
+        venue: se.venue_name || ((mainVenue && mainVenue !== 'TBD Venue') ? mainVenue : ''),
+        city: lead.city || '',
+        assigned_crew: (se.roles && se.roles.length > 0) ? se.roles.join(', ') : ''
+      }));
+
       const extendedNotesPayload = JSON.stringify({
         client_code: `CL-${Math.floor(1000 + Math.random() * 9000)}`,
         whatsapp_group_link: lead.whatsapp_group_id ? `https://chat.whatsapp.com/${lead.whatsapp_group_id}` : '',
@@ -1151,18 +1223,7 @@ export async function syncBookedLeadOrFinalQuotation({
         portal_enabled: true,
         plain_notes: `Auto-synced from Booked CRM Lead (${coupleName})`,
         notes: `Auto-synced from Booked CRM Lead (${coupleName})`,
-        events: eventDate ? [
-          {
-            id: `ev_${Date.now()}`,
-            name: eventType,
-            date: eventDate,
-            time_start: '',
-            time_end: '',
-            venue: (mainVenue && mainVenue !== 'TBD Venue') ? mainVenue : '',
-            city: lead.city || '',
-            assigned_crew: ''
-          }
-        ] : []
+        events: clientEventsList
       });
 
       const wsClientPayload = {
@@ -1275,7 +1336,7 @@ export async function syncBookedLeadOrFinalQuotation({
         const { data: existingFin } = await supabaseClient
           .from('client_finance_records')
           .select('id')
-          .eq('client_id', workspaceClientId)
+          .or(`client_id.eq.${workspaceClientId},client_id.eq.${leadId}`)
           .maybeSingle();
 
         if (existingFin?.id) {
@@ -1396,46 +1457,62 @@ export async function syncBookedLeadOrFinalQuotation({
 
       // 7. Post-Production Sync: post_production_projects + deliverables
       try {
-        if (workspaceId && finalDoc?.content_json) {
+        if (workspaceId && finalDoc?.content_json && (workspaceClientId || leadId)) {
           const parsed = parseQuotationDeliverables(finalDoc);
-          const clientTargets = [workspaceClientId, leadId].filter(Boolean) as string[];
+          const targetCId = workspaceClientId || leadId;
           const ppNotes = `quotation_id:${finalDoc.template_id || quotationId || ''};quotation_title:${finalDoc.content_json?.meta?.project_name || `${coupleName} Wedding`};pp_config:${encodeURIComponent(JSON.stringify({ enabled_segments: parsed.enabledSegments }))};`;
 
-          for (const cId of clientTargets) {
-            const { data: existingPPP } = await supabaseClient
-              .from('post_production_projects')
-              .select('id')
-              .eq('client_id', cId)
-              .maybeSingle();
+          // Find existing post_production_projects for either workspaceClientId or leadId
+          const { data: existingPPPs } = await supabaseClient
+            .from('post_production_projects')
+            .select('id, client_id')
+            .or(`client_id.eq.${targetCId},client_id.eq.${leadId}`);
 
-            if (existingPPP) {
+          let primaryPppId: string | null = null;
+
+          if (existingPPPs && existingPPPs.length > 0) {
+            primaryPppId = existingPPPs[0].id;
+            await supabaseClient
+              .from('post_production_projects')
+              .update({
+                client_id: targetCId,
+                deliverables: parsed.deliverables,
+                notes: ppNotes,
+                overall_status: 'active',
+                is_deleted: false,
+                updated_at: now
+              })
+              .eq('id', primaryPppId);
+
+            // Delete any duplicate extra rows (e.g. previously created with leadId)
+            if (existingPPPs.length > 1) {
+              const dupIds = existingPPPs.slice(1).map((p: any) => p.id);
               await supabaseClient
                 .from('post_production_projects')
-                .update({
-                  deliverables: parsed.deliverables,
-                  notes: ppNotes,
-                  overall_status: 'active',
-                  updated_at: now
-                })
-                .eq('id', existingPPP.id);
-            } else {
-              await supabaseClient
-                .from('post_production_projects')
-                .insert({
-                  user_id: workspaceId,
-                  workspace_id: workspaceId,
-                  client_id: cId,
-                  deliverables: parsed.deliverables,
-                  notes: ppNotes,
-                  overall_status: 'active',
-                  created_at: now,
-                  updated_at: now
-                });
+                .delete()
+                .in('id', dupIds);
             }
+          } else {
+            const { data: createdPPP } = await supabaseClient
+              .from('post_production_projects')
+              .insert({
+                user_id: workspaceId,
+                workspace_id: workspaceId,
+                client_id: targetCId,
+                deliverables: parsed.deliverables,
+                notes: ppNotes,
+                overall_status: 'active',
+                is_deleted: false,
+                created_at: now,
+                updated_at: now
+              })
+              .select('id')
+              .single();
+            primaryPppId = createdPPP?.id || null;
           }
 
-          // Link post-production config & deliverables across both workspaceClientId and targetProjectId
-          const configTargets = [workspaceClientId, targetProjectId].filter(Boolean) as string[];
+          // Link post-production config & deliverables across targetCId, targetProjectId, and primaryPppId
+          const configTargets = Array.from(new Set([targetCId, targetProjectId, primaryPppId])).filter(Boolean) as string[];
           for (const pId of configTargets) {
             try {
               await supabaseClient

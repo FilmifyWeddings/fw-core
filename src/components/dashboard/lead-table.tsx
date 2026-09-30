@@ -716,56 +716,69 @@ export function LeadTable({
       return updated;
     });
 
-    // Find the Booked stage from stagesState
-    const bookedStage = stagesState.find((s: any) => 
-      s.id === 'booked' || String(s.name || '').toLowerCase() === 'booked'
-    );
-    const bookedStageId = bookedStage?.id || 'booked';
-    const bookedStageName = bookedStage?.name || 'Booked';
     const updatedFinalId = hasFinal ? (finalItem?.template_id || finalItem?.id || 'final') : null;
 
-    // Synchronize lead row directly so lead.final_quotation_id, stage_id, and status reflect immediately in 0ms without lag
-    setLeads(prev => {
-      const updated = prev.map(l => {
-        if (l.id === leadId) {
-          return {
-            ...l,
-            stage_id: hasFinal ? bookedStageId : l.stage_id,
-            stage: hasFinal ? 'booked' : (l.stage === 'booked' ? 'warm' : l.stage),
-            status: hasFinal ? (bookedStageName as any) : ((l.status as string) === 'booked' || l.status === 'closed' ? 'warm' : l.status),
-            final_quotation_id: updatedFinalId,
-            raw_payload: {
-              ...l.raw_payload,
-              stage_id: hasFinal ? bookedStageId : l.raw_payload?.stage_id,
-              stage: hasFinal ? 'booked' : (l.raw_payload?.stage === 'booked' ? 'warm' : l.raw_payload?.stage),
-              status: hasFinal ? bookedStageName : l.raw_payload?.status,
-              final_quotation_id: updatedFinalId
-            }
-          };
+    // Synchronize lead row directly so lead.final_quotation_id reflects immediately in 0ms without changing stage
+    if (hasFinal) {
+      setLeads(prev => {
+        const updated = prev.map(l => {
+          if (l.id === leadId) {
+            return {
+              ...l,
+              final_quotation_id: updatedFinalId,
+              raw_payload: {
+                ...l.raw_payload,
+                final_quotation_id: updatedFinalId
+              }
+            };
+          }
+          return l;
+        });
+
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('sc_cached_leads', JSON.stringify(updated));
+          } catch (_) {}
         }
-        return l;
+
+        return updated;
       });
 
-      if (typeof window !== 'undefined') {
-        try {
-          localStorage.setItem('sc_cached_leads', JSON.stringify(updated));
-        } catch (_) {}
+      if (onLeadUpdate) {
+        onLeadUpdate(leadId, {
+          final_quotation_id: updatedFinalId
+        });
       }
+    } else {
+      setLeads(prev => {
+        const updated = prev.map(l => {
+          if (l.id === leadId) {
+            return {
+              ...l,
+              final_quotation_id: null,
+              raw_payload: {
+                ...l.raw_payload,
+                final_quotation_id: null
+              }
+            };
+          }
+          return l;
+        });
 
-      return updated;
-    });
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('sc_cached_leads', JSON.stringify(updated));
+          } catch (_) {}
+        }
 
-    // Trigger onLeadUpdate so the background database update executes immediately
-    if (hasFinal && onLeadUpdate) {
-      onLeadUpdate(leadId, {
-        stage_id: bookedStageId,
-        status: 'closed' as any,
-        final_quotation_id: updatedFinalId
+        return updated;
       });
-    } else if (!hasFinal && onLeadUpdate) {
-      onLeadUpdate(leadId, {
-        final_quotation_id: null
-      });
+
+      if (onLeadUpdate) {
+        onLeadUpdate(leadId, {
+          final_quotation_id: null
+        });
+      }
     }
   }, [stagesState, onLeadUpdate]);
 
@@ -1836,24 +1849,32 @@ export function LeadTable({
   // Dynamic Contact Subtext Visibility Resolver
   const renderContactSubtext = (lead: Lead) => {
     if (contactSubtext === 'none') return null;
+    const hasValidPhone = Boolean(lead.phone && lead.phone !== '-' && lead.phone.trim() !== '');
+    const hasValidEmail = Boolean(lead.email && lead.email !== '-' && lead.email !== 'null' && lead.email.trim() !== '');
+
     if (contactSubtext === 'phone') {
+      if (!hasValidPhone) return null;
       return (
         <span className="text-[10px] text-zinc-500 font-mono block mt-0.5 max-w-[170px] truncate">
-          📞 {lead.phone}
+          {lead.phone}
         </span>
       );
     }
     if (contactSubtext === 'email') {
-      return lead.email ? (
+      if (!hasValidEmail) return null;
+      return (
         <span className="text-[10px] text-zinc-500 font-mono block mt-0.5 max-w-[170px] truncate">
-          ✉️ {lead.email}
+          {lead.email}
         </span>
-      ) : null;
+      );
     }
     // 'both'
+    if (!hasValidPhone && !hasValidEmail) return null;
     return (
-      <span className="text-[10px] text-zinc-500 font-mono block mt-0.5 max-w-[170px] truncate">
-        {lead.phone} {lead.email ? `• ${lead.email}` : ''}
+      <span className="text-[10px] text-zinc-500 font-mono flex items-center gap-1.5 mt-0.5 max-w-[190px] truncate">
+        {hasValidPhone && <span>{lead.phone}</span>}
+        {hasValidPhone && hasValidEmail && <span className="w-1 h-1 rounded-full bg-zinc-400 shrink-0 inline-block" />}
+        {hasValidEmail && <span className="truncate">{lead.email}</span>}
       </span>
     );
   };
@@ -2963,7 +2984,9 @@ export function LeadTable({
             const getBudgetValue = (l: Lead) => {
               const raw = l.raw_payload?.budget || l.raw_payload?.deal_value || l.raw_payload?.amount;
               if (raw) {
-                const s = String(raw).trim();
+                let s = String(raw).trim();
+                s = s.replace(/^\?+/, '').trim();
+                s = s.replace(/-\s*\?+/, '- ₹').trim();
                 if (s.startsWith('₹') || s.startsWith('$')) return s;
                 return `₹${s}`;
               }
@@ -3088,27 +3111,38 @@ export function LeadTable({
                         }
                       }}
                       onChange={(val) => {
-                        if (val === 'archived') {
-                          const updatedRaw = { ...(lead.raw_payload || {}), is_archived: true };
-                          setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, stage_id: 'archived', status: 'archived' as any, raw_payload: updatedRaw } : l));
-                          if (onLeadUpdate) {
-                            onLeadUpdate(lead.id, {
-                              stage_id: 'archived',
-                              status: 'archived' as any,
-                              raw_payload: updatedRaw
-                            } as any);
-                          }
-                          return;
-                        }
                         const foundStage = stagesState.find(s => s.id === val || s.name === val);
-                        const targetStageId = foundStage?.id || val;
-                        const targetStatus = (foundStage?.name || val) as any;
-                        setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, stage_id: targetStageId, status: targetStatus } : l));
+                        const targetStageId = val === 'archived' ? 'archived' : (foundStage?.id || val);
+                        const targetStatus = val === 'archived' ? ('archived' as any) : ((foundStage?.name || val) as any);
+                        const updatedRaw = val === 'archived' ? { ...(lead.raw_payload || {}), is_archived: true } : undefined;
+
+                        const isBookedVal = (idOrName?: string | null) => {
+                          if (!idOrName) return false;
+                          const s = String(idOrName).toLowerCase();
+                          if (s === 'booked' || s.includes('book')) return true;
+                          const st = stagesState.find(x => x.id === idOrName || x.name === idOrName);
+                          return Boolean(st?.name?.toLowerCase().includes('book'));
+                        };
+
+                        const isCurrentBooked = isBookedVal(lead.stage_id) || isBookedVal(lead.status) || lead.status === 'closed' || Boolean((lead.raw_payload as any)?.stage?.toLowerCase?.()?.includes('book'));
+                        const isTargetBooked = isBookedVal(targetStageId) || isBookedVal(targetStatus);
+
+                        // Only optimistically update local state if NOT transitioning into or out of Booked (which requires modal confirmation)
+                        if (!isCurrentBooked && !isTargetBooked) {
+                          setLeads(prev => prev.map(l => l.id === lead.id ? { 
+                            ...l, 
+                            stage_id: targetStageId, 
+                            status: targetStatus, 
+                            ...(updatedRaw ? { raw_payload: updatedRaw } : {}) 
+                          } : l));
+                        }
+
                         if (onLeadUpdate) {
                           onLeadUpdate(lead.id, {
                             stage_id: targetStageId,
-                            status: targetStatus
-                          });
+                            status: targetStatus,
+                            ...(updatedRaw ? { raw_payload: updatedRaw } : {})
+                          } as any);
                         }
                       }}
                     />
@@ -3174,13 +3208,10 @@ export function LeadTable({
                     {/* Quotation Quick Icon (3-State: Default dark gray, Draft orange, Final green) */}
                     {(() => {
                       const qSummary = quotationSummaryMap[lead.id];
-                      const statusLower = (lead.status as string || '').toLowerCase();
-                      const isBooked = statusLower === 'booked' || statusLower === 'closed' || (lead as any).stage === 'booked';
                       const isFinal = Boolean(
                         qSummary?.hasFinal === true ||
                         lead.final_quotation_id ||
-                        lead.raw_payload?.final_quotation_id ||
-                        isBooked
+                        lead.raw_payload?.final_quotation_id
                       );
                       const cachedLeadQuotes = typeof window !== 'undefined' ? sessionStorage.getItem(`lead_quotes_cache_${lead.id}`) : null;
                       const hasCachedQuotes = Boolean(cachedLeadQuotes && cachedLeadQuotes !== '[]' && cachedLeadQuotes !== 'null');
@@ -3600,28 +3631,39 @@ export function LeadTable({
                                           });
                                         }
                                       }}
-                                      onChange={(val) => {
-                                        if (val === 'archived') {
-                                          const updatedRaw = { ...(lead.raw_payload || {}), is_archived: true };
-                                          setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, stage_id: 'archived', status: 'archived' as any, raw_payload: updatedRaw } : l));
-                                          if (onLeadUpdate) {
-                                            onLeadUpdate(lead.id, {
-                                              stage_id: 'archived',
-                                              status: 'archived' as any,
-                                              raw_payload: updatedRaw
-                                            } as any);
-                                          }
-                                          return;
-                                        }
+                                       onChange={(val) => {
                                         const foundStage = stagesState.find(s => s.id === val || s.name === val);
-                                        const targetStageId = foundStage?.id || val;
-                                        const targetStatus = (foundStage?.name || val) as any;
-                                        setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, stage_id: targetStageId, status: targetStatus } : l));
+                                        const targetStageId = val === 'archived' ? 'archived' : (foundStage?.id || val);
+                                        const targetStatus = val === 'archived' ? ('archived' as any) : ((foundStage?.name || val) as any);
+                                        const updatedRaw = val === 'archived' ? { ...(lead.raw_payload || {}), is_archived: true } : undefined;
+
+                                        const isBookedVal = (idOrName?: string | null) => {
+                                          if (!idOrName) return false;
+                                          const s = String(idOrName).toLowerCase();
+                                          if (s === 'booked' || s.includes('book')) return true;
+                                          const st = stagesState.find(x => x.id === idOrName || x.name === idOrName);
+                                          return Boolean(st?.name?.toLowerCase().includes('book'));
+                                        };
+
+                                        const isCurrentBooked = isBookedVal(lead.stage_id) || isBookedVal(lead.status) || lead.status === 'closed' || Boolean((lead.raw_payload as any)?.stage?.toLowerCase?.()?.includes('book'));
+                                        const isTargetBooked = isBookedVal(targetStageId) || isBookedVal(targetStatus);
+
+                                        // Only optimistically update local state if NOT transitioning into or out of Booked (which requires modal confirmation)
+                                        if (!isCurrentBooked && !isTargetBooked) {
+                                          setLeads(prev => prev.map(l => l.id === lead.id ? { 
+                                            ...l, 
+                                            stage_id: targetStageId, 
+                                            status: targetStatus, 
+                                            ...(updatedRaw ? { raw_payload: updatedRaw } : {}) 
+                                          } : l));
+                                        }
+
                                         if (onLeadUpdate) {
                                           onLeadUpdate(lead.id, {
                                             stage_id: targetStageId,
-                                            status: targetStatus
-                                          });
+                                            status: targetStatus,
+                                            ...(updatedRaw ? { raw_payload: updatedRaw } : {})
+                                          } as any);
                                         }
                                       }}
                                     />
@@ -4061,13 +4103,10 @@ export function LeadTable({
                             {/* Lead Quotations Management Action (3-State: Default dark gray, Draft orange, Final green) */}
                             {quickActionsConfig.quotation !== false && (() => {
                               const qSummary = quotationSummaryMap[lead.id];
-                              const statusLower = (lead.status as string || '').toLowerCase();
-                              const isBooked = statusLower === 'booked' || statusLower === 'closed' || (lead as any).stage === 'booked';
                               const isFinal = Boolean(
                                 qSummary?.hasFinal === true ||
                                 lead.final_quotation_id ||
-                                lead.raw_payload?.final_quotation_id ||
-                                isBooked
+                                lead.raw_payload?.final_quotation_id
                               );
                               const cachedLeadQuotes = typeof window !== 'undefined' ? sessionStorage.getItem(`lead_quotes_cache_${lead.id}`) : null;
                               const hasCachedQuotes = Boolean(cachedLeadQuotes && cachedLeadQuotes !== '[]' && cachedLeadQuotes !== 'null');
@@ -4753,7 +4792,7 @@ export function LeadTable({
                 
                 {/* Step 1 */}
                 <div className="flex items-start gap-4 relative">
-                  <div className="w-6.5 h-6.5 rounded-full bg-emerald-500 text-black flex items-center justify-center text-[10px] font-bold z-10 shrink-0">✓</div>
+                  <div className="w-6.5 h-6.5 rounded-full bg-emerald-500 text-black flex items-center justify-center text-[10px] font-bold z-10 shrink-0"><Check className="w-3.5 h-3.5" /></div>
                   <div className="bg-zinc-900/40 border border-zinc-900 p-3 rounded-xl flex-1 space-y-1">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-white">WA Welcome Message</span>
@@ -5274,4 +5313,4 @@ function getIngestionTime(dateStr: string) {
     return 'Yesterday';
   }
   return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
-}
+}

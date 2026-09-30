@@ -15,15 +15,16 @@ import {
   Film, 
   CreditCard, 
   ArrowRight,
+  Info,
   ShieldAlert,
   Loader2,
   Sparkles
 } from 'lucide-react';
 import type { Lead } from '@/types';
 
-/* ─────────────────────────────────────────────────────────────
+/* -------------------------------------------------------------
    1. LEAD BOOKING CONFIRMATION MODAL (3D Cream UI)
-───────────────────────────────────────────────────────────── */
+------------------------------------------------------------- */
 export interface LeadBookingConfirmationModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -204,13 +205,13 @@ export const LeadBookingConfirmationModal: React.FC<LeadBookingConfirmationModal
   );
 };
 
-/* ─────────────────────────────────────────────────────────────
+/* -------------------------------------------------------------
    2. LEAD UNBOOKING WARNING & TRASH CONFIRMATION MODAL (3D Cream UI)
-───────────────────────────────────────────────────────────── */
+------------------------------------------------------------- */
 export interface LeadUnbookingTrashModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: (moveToTrash: boolean) => void;
   lead: Lead | null;
   targetStageName?: string;
   leadName?: string;
@@ -226,6 +227,8 @@ export const LeadUnbookingTrashModal: React.FC<LeadUnbookingTrashModalProps> = (
   leadName,
   isSubmitting = false
 }) => {
+  const [removeCardsToTrash, setRemoveCardsToTrash] = React.useState(true);
+
   if (!isOpen || !lead) return null;
 
   const raw = lead.raw_payload || {};
@@ -239,17 +242,17 @@ export const LeadUnbookingTrashModal: React.FC<LeadUnbookingTrashModalProps> = (
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.94, opacity: 0, y: 10 }}
           transition={{ duration: 0.2 }}
-          className="bg-[#FFFDF9] rounded-3xl p-5 sm:p-6 max-w-md w-full border border-rose-200/80 shadow-2xl space-y-4 relative"
+          className="bg-[#FFFDF9] rounded-3xl p-5 sm:p-6 max-w-md w-full border border-[#EAE5DA] shadow-2xl space-y-4 relative"
         >
           {/* Header */}
           <div className="flex items-center justify-between border-b border-[#EAE5DA] pb-3.5">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-rose-500 to-red-600 text-white flex items-center justify-center shadow-md">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-rose-500 to-amber-600 text-white flex items-center justify-center shadow-md">
                 <Trash2 className="w-5 h-5" />
               </div>
               <div>
                 <h3 className="text-base font-black text-slate-900 tracking-tight flex items-center gap-1.5">
-                  Move Linked Cards to Trash?
+                  Confirm Stage Change
                 </h3>
                 <p className="text-xs text-rose-700 font-bold">
                   Moving out of Booked stage to "{targetStageName}"
@@ -266,46 +269,76 @@ export const LeadUnbookingTrashModal: React.FC<LeadUnbookingTrashModalProps> = (
             </button>
           </div>
 
-          {/* Warning Message Card */}
-          <div className="p-3.5 rounded-2xl bg-rose-50/70 border border-rose-200 text-rose-950 space-y-2.5">
+          {/* Client Pill */}
+          <div className="p-3 rounded-2xl bg-white border border-[#EAE5DA] flex items-center justify-between shadow-2xs">
             <div className="flex items-center gap-2">
-              <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
-              <span className="text-xs font-black">
+              <Users className="w-4 h-4 text-slate-500" />
+              <span className="text-xs font-black text-slate-900 truncate max-w-[220px]">
                 {coupleName}
               </span>
             </div>
+            <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-200">
+              Unbooking
+            </span>
+          </div>
 
-            <p className="text-[11px] text-rose-900 font-medium leading-relaxed">
-              Moving this lead out of <strong>Booked</strong> will automatically move all linked cards to their respective module <strong>Trash</strong>:
-            </p>
+          {/* Interactive Checkbox Card (Requested by User) */}
+          <div 
+            onClick={() => setRemoveCardsToTrash(!removeCardsToTrash)}
+            className={`p-3.5 rounded-2xl border transition cursor-pointer select-none flex items-start gap-3 shadow-2xs ${
+              removeCardsToTrash 
+                ? 'bg-rose-50/80 border-rose-300 text-rose-950' 
+                : 'bg-emerald-50/80 border-emerald-300 text-emerald-950'
+            }`}
+          >
+            <input
+              type="checkbox"
+              id="unbooking-trash-checkbox"
+              checked={removeCardsToTrash}
+              onChange={(e) => setRemoveCardsToTrash(e.target.checked)}
+              className="mt-0.5 w-4 h-4 rounded text-rose-600 focus:ring-rose-500 border-slate-300 cursor-pointer"
+            />
+            <div className="space-y-1">
+              <label htmlFor="unbooking-trash-checkbox" className="text-xs font-black cursor-pointer block leading-snug">
+                Remove linked workspace cards and move them to Trash
+              </label>
+              <p className="text-[11px] text-slate-600 font-medium leading-relaxed">
+                {removeCardsToTrash 
+                  ? 'Client Directory, Bookings & Events, Post Production, and Finance cards will be safely moved to Trash (can be restored later).'
+                  : 'Cards will remain active in your workspace modules (only lead status will change).'}
+              </p>
+            </div>
+          </div>
 
-            <div className="space-y-1.5 pt-1 text-[11px] font-bold text-slate-700">
+          {/* List of Affected Modules (when checkbox is checked) */}
+          {removeCardsToTrash ? (
+            <div className="space-y-1.5 pt-0.5 text-[11px] font-bold text-slate-700">
               <div className="flex items-center gap-2 bg-white px-2.5 py-1.5 rounded-xl border border-rose-100 shadow-2xs">
                 <Users className="w-3.5 h-3.5 text-amber-600" />
-                <span>Client Directory Card</span>
-                <span className="ml-auto text-[10px] text-rose-600 font-black">➔ Client Trash</span>
+                <span>Client Directory</span>
+                <span className="ml-auto text-[10px] text-rose-600 font-black flex items-center gap-1"><ArrowRight className="w-3 h-3 text-rose-500" /> Client Trash</span>
               </div>
               <div className="flex items-center gap-2 bg-white px-2.5 py-1.5 rounded-xl border border-rose-100 shadow-2xs">
                 <Calendar className="w-3.5 h-3.5 text-amber-600" />
-                <span>Bookings & Events Card</span>
-                <span className="ml-auto text-[10px] text-rose-600 font-black">➔ Events Trash</span>
+                <span>Bookings & Events</span>
+                <span className="ml-auto text-[10px] text-rose-600 font-black flex items-center gap-1"><ArrowRight className="w-3 h-3 text-rose-500" /> Events Trash</span>
               </div>
               <div className="flex items-center gap-2 bg-white px-2.5 py-1.5 rounded-xl border border-rose-100 shadow-2xs">
                 <Film className="w-3.5 h-3.5 text-amber-600" />
-                <span>Post Production Card</span>
-                <span className="ml-auto text-[10px] text-rose-600 font-black">➔ Post-Prod Trash</span>
+                <span>Post Production</span>
+                <span className="ml-auto text-[10px] text-rose-600 font-black flex items-center gap-1"><ArrowRight className="w-3 h-3 text-rose-500" /> Post-Prod Trash</span>
               </div>
               <div className="flex items-center gap-2 bg-white px-2.5 py-1.5 rounded-xl border border-rose-100 shadow-2xs">
                 <CreditCard className="w-3.5 h-3.5 text-amber-600" />
-                <span>Finance Ledger Record</span>
-                <span className="ml-auto text-[10px] text-rose-600 font-black">➔ Finance Trash</span>
+                <span>Finance & Payments</span>
+                <span className="ml-auto text-[10px] text-rose-600 font-black flex items-center gap-1"><ArrowRight className="w-3 h-3 text-rose-500" /> Finance Trash</span>
               </div>
             </div>
-
-            <p className="text-[10px] text-slate-500 font-medium italic pt-1">
-              Nothing is permanently destroyed. You can restore records anytime from each module's Trash tab.
-            </p>
-          </div>
+          ) : (
+            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 font-medium">
+              <Info className="w-3.5 h-3.5 text-slate-500 inline mr-1" /> Existing cards in Client Directory, Bookings, Post Production, and Finance will <strong>stay intact</strong>.
+            </div>
+          )}
 
           {/* Action Buttons */}
           <div className="pt-2 border-t border-[#EAE5DA] flex items-center justify-between gap-3">
@@ -313,26 +346,30 @@ export const LeadUnbookingTrashModal: React.FC<LeadUnbookingTrashModalProps> = (
               type="button"
               onClick={onClose}
               disabled={isSubmitting}
-              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer transition"
+              className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer transition"
             >
               Keep in Booked
             </button>
 
             <button
               type="button"
-              onClick={onConfirm}
+              onClick={() => onConfirm(removeCardsToTrash)}
               disabled={isSubmitting}
-              className="px-5 py-2.5 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 text-white font-black text-xs rounded-xl shadow-md hover:shadow-lg transition cursor-pointer flex items-center gap-2 disabled:opacity-50"
+              className={`px-5 py-2.5 text-white font-black text-xs rounded-xl shadow-md hover:shadow-lg transition cursor-pointer flex items-center gap-2 disabled:opacity-50 ${
+                removeCardsToTrash 
+                  ? 'bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700' 
+                  : 'bg-gradient-to-r from-slate-700 to-slate-900 hover:from-slate-800 hover:to-black'
+              }`}
             >
               {isSubmitting ? (
                 <>
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Moving to Trash...</span>
+                  <span>Updating...</span>
                 </>
               ) : (
                 <>
-                  <Trash2 className="w-4 h-4" />
-                  <span>Yes, Move to Trash</span>
+                  {removeCardsToTrash ? <Trash2 className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
+                  <span>{removeCardsToTrash ? 'Confirm & Move to Trash' : 'Confirm & Keep Cards'}</span>
                 </>
               )}
             </button>

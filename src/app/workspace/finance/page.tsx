@@ -10,7 +10,7 @@ import {
   Trash2, X, RefreshCw, Sparkles, Phone, Calculator, Tag, PieChart, Wallet, 
   ArrowRight, Bell, Send, Check, Crown, Lock, Unlock, ShieldCheck, Key,
   Eye, EyeOff, AlertCircle, CheckSquare, Square, Pencil, MoreVertical, SlidersHorizontal,
-  MapPin, CheckCheck, UserCheck, UserPlus, Upload
+  MapPin, CheckCheck, UserCheck, UserPlus, Upload, RotateCcw
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { extractFinancialsFromQuotation, normalizeToIsoDate } from '@/lib/quotation-finance-sync';
@@ -177,7 +177,77 @@ export default function FinancePage() {
   // ─────────────────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'received' | 'pending' | 'partially_paid' | 'paid' | 'overdue_only'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'received' | 'pending' | 'partially_paid' | 'paid' | 'overdue_only' | 'trash'>('all');
+  
+  const trashedFinanceCount = useMemo(() => {
+    return financeRecords.filter(rec => 
+      (rec as any).status === 'trash' ||
+      (rec as any).status === 'trashed' ||
+      (rec as any).is_deleted === true ||
+      Boolean((rec as any).deleted_at) ||
+      (rec.client?.status as string) === 'trash' ||
+      (rec.client as any)?.is_deleted === true ||
+      Boolean(rec.notes && typeof rec.notes === 'string' && rec.notes.includes('[status:trash]'))
+    ).length;
+  }, [financeRecords]);
+
+  const handleRestoreFinanceRecord = async (record: ClientFinanceRecord) => {
+    try {
+      const nowIso = new Date().toISOString();
+      const clientId = record.client_id;
+      const { data: { session } } = await supabase.auth.getSession();
+      const workspaceId = session?.user?.id || currentWorkspaceId || 'ws_demo';
+
+      if (workspaceId !== 'ws_demo') {
+        const cleanNotes = (record.notes || '').replace(/\[status:trash\]/g, '').trim();
+        await supabase
+          .from('client_finance_records')
+          .update({
+            status: 'active',
+            is_deleted: false,
+            deleted_at: null,
+            notes: cleanNotes,
+            updated_at: nowIso
+          })
+          .eq('id', record.id);
+
+        if (clientId) {
+          const { data: cl } = await supabase
+            .from('workspace_clients')
+            .select('notes')
+            .eq('id', clientId)
+            .maybeSingle();
+
+          const clCleanNotes = (cl?.notes || '').replace(/\[status:trash\]/g, '').trim();
+          await supabase
+            .from('workspace_clients')
+            .update({
+              status: 'active',
+              is_deleted: false,
+              deleted_at: null,
+              notes: clCleanNotes,
+              updated_at: nowIso
+            })
+            .eq('id', clientId);
+        }
+      }
+
+      setFinanceRecords(prev => prev.map(r => r.id === record.id ? {
+        ...r,
+        status: 'active',
+        is_deleted: false,
+        deleted_at: null,
+        notes: (r.notes || '').replace(/\[status:trash\]/g, '').trim()
+      } : r));
+
+      window.dispatchEvent(new CustomEvent('finance_updated'));
+      window.dispatchEvent(new CustomEvent('client_updated'));
+    } catch (err: any) {
+      console.error('[handleRestoreFinanceRecord] Error:', err);
+      alert('Failed to restore record: ' + err.message);
+    }
+  };
+
   const [locationFilter, setLocationFilter] = useState('all');
   const [paymentModeFilter, setPaymentModeFilter] = useState('all');
   const [revenueTypeFilter, setRevenueTypeFilter] = useState<'ALL' | 'NEW_BOOKING' | 'DUE_BALANCE'>('ALL');
@@ -765,7 +835,7 @@ export default function FinancePage() {
           const [docsRes, leadsRes] = await Promise.all([
             supabase
               .from('quotation_documents')
-              .select('id, template_id, lead_id, version, lead_version, content_json, created_at, updated_at')
+              .select('id, template_id, lead_id, version, lead_version, is_final, content_json, created_at, updated_at')
               .or(`lead_id.in.(${allLookupIds.join(',')}),${shortFilters.join(',')}`)
               .order('created_at', { ascending: false }),
             supabase
@@ -787,7 +857,12 @@ export default function FinancePage() {
                 quoteDocMap.set(doc.template_id, parsed);
                 if (doc.lead_id) {
                   const arr = leadGroups.get(doc.lead_id) || [];
-                  arr.push({ ...parsed, template_id: doc.template_id, version: doc.lead_version || doc.version });
+                  arr.push({ 
+                    ...parsed, 
+                    template_id: doc.template_id, 
+                    version: doc.lead_version || doc.version,
+                    is_final: Boolean((doc as any).is_final || doc.content_json?.is_final === true || ['accepted', 'approved', 'finalized'].includes((doc.content_json?.status || '').toLowerCase()))
+                  });
                   leadGroups.set(doc.lead_id, arr);
                 }
               }
@@ -839,16 +914,36 @@ export default function FinancePage() {
         }
 
         if (existing) {
-          const rawBase = Math.max(0, Math.round(Number(existing.base_package_price) || Number(c.total_package_amount) || 0));
-          const discount = Math.max(0, Math.round(Number(existing.discount_amount) || 0));
-          const accommodation = Math.max(0, Math.round(Number(existing.accommodation_charges) || 0));
-          const travel = Math.max(0, Math.round(Number(existing.travel_charges) || 0));
-          const additional = Math.max(0, Math.round(Number(existing.additional_charges) || 0));
+          const quoteBase = linkedFinalQuote?.base_package_price || linkedFinalQuote?.subtotal_amount || 0;
+          const rawBase = (Number(existing.base_package_price) > 0)
+            ? Math.max(0, Math.round(Number(existing.base_package_price)))
+            : (quoteBase > 0 ? quoteBase : Math.max(0, Math.round(Number(c.total_package_amount) || 0)));
+          const quoteDiscount = linkedFinalQuote?.discount_amount || 0;
+          const discount = (Number(existing.discount_amount) > 0)
+            ? Math.max(0, Math.round(Number(existing.discount_amount)))
+            : quoteDiscount;
+          const quoteAccom = linkedFinalQuote?.accommodation_charges || 0;
+          const accommodation = (Number(existing.accommodation_charges) > 0)
+            ? Math.max(0, Math.round(Number(existing.accommodation_charges)))
+            : quoteAccom;
+          const quoteTravel = linkedFinalQuote?.travel_charges || 0;
+          const travel = (Number(existing.travel_charges) > 0)
+            ? Math.max(0, Math.round(Number(existing.travel_charges)))
+            : quoteTravel;
+          const quoteAdd = linkedFinalQuote?.additional_charges || 0;
+          const additional = (Number(existing.additional_charges) > 0)
+            ? Math.max(0, Math.round(Number(existing.additional_charges)))
+            : quoteAdd;
           const subtotal = Math.max(0, rawBase - discount + accommodation + travel + additional);
-          const gstRate = Number(existing.gst_rate) || 0;
+          const quoteGstRate = linkedFinalQuote?.gst_rate || 0;
+          const gstRate = (Number(existing.gst_rate) > 0)
+            ? Number(existing.gst_rate)
+            : quoteGstRate;
           const gstAmount = Math.round((subtotal * gstRate) / 100);
-          const finalTotal = subtotal + gstAmount;
-          const received = Math.max(0, Math.round(Number(existing.received_amount) || Number(c.paid_amount) || 0));
+          const finalTotal = (Number(existing.final_total_amount) > 0)
+            ? Number(existing.final_total_amount)
+            : (linkedFinalQuote?.final_total_amount ? Number(linkedFinalQuote.final_total_amount) : (subtotal + gstAmount));
+          const received = Math.max(0, Math.round(Number(existing.received_amount) || Number(c.paid_amount) || (linkedFinalQuote?.received_amount || 0)));
           const pending = Math.max(0, finalTotal - received);
 
           finalRecords.push({
@@ -869,15 +964,23 @@ export default function FinancePage() {
             final_total_amount: finalTotal,
             received_amount: received,
             pending_amount: pending,
-            payment_status: pending === 0 && finalTotal > 0 ? 'paid' : received > 0 ? 'partially_paid' : 'pending',
-            milestones: Array.isArray(existing.milestones) ? existing.milestones : []
+            payment_status: (!hasFinalQuotation && finalTotal === 0 && received === 0) ? 'unsettled' : (pending === 0 && finalTotal > 0 ? 'paid' : received > 0 ? 'partially_paid' : 'pending'),
+            milestones: (Array.isArray(existing.milestones) && existing.milestones.length > 0) ? existing.milestones : (Array.isArray(linkedFinalQuote?.milestones) ? linkedFinalQuote.milestones : [])
           });
         } else {
           // CLEAN INITIAL STATE: STRICT ZERO DUMMY DATA FOR NEW BOOKED CLIENTS
-          const basePkg = Math.max(0, Math.round(Number(c.total_package_amount) || 0));
+          const quoteBase = linkedFinalQuote?.base_package_price || linkedFinalQuote?.subtotal_amount || 0;
+          const basePkg = quoteBase > 0 ? quoteBase : Math.max(0, Math.round(Number(c.total_package_amount) || 0));
+          const discount = linkedFinalQuote?.discount_amount || 0;
+          const accommodation = linkedFinalQuote?.accommodation_charges || 0;
+          const travel = linkedFinalQuote?.travel_charges || 0;
+          const additional = linkedFinalQuote?.additional_charges || 0;
           const received = Math.max(0, Math.round(Number(c.paid_amount) || 0));
-          const subtotal = basePkg;
-          const finalTotal = subtotal;
+          const subtotal = Math.max(0, basePkg - discount + accommodation + travel + additional);
+          const gstRate = linkedFinalQuote?.gst_rate || 0;
+          const gstAmount = Math.round((subtotal * gstRate) / 100);
+          const finalTotal = linkedFinalQuote?.final_total_amount ? Number(linkedFinalQuote.final_total_amount) : (subtotal + gstAmount);
+          const effectiveMilestones = Array.isArray(linkedFinalQuote?.milestones) ? linkedFinalQuote.milestones : [];
           const pending = Math.max(0, finalTotal - received);
 
           const newRecord: ClientFinanceRecord = {
@@ -886,23 +989,23 @@ export default function FinancePage() {
             workspace_id: workspaceId,
             client_id: c.id,
             client: { ...c, handled_by: handledBy } as any,
-            has_final_quotation: false,
-            final_quotation_version: undefined,
-            final_quotation_id: undefined,
+            has_final_quotation: hasFinalQuotation,
+            final_quotation_version: finalVersion,
+            final_quotation_id: linkedFinalQuote?.template_id || leadObj?.final_quotation_id || undefined,
             available_quotations: availableQuotes,
             base_package_price: basePkg,
-            discount_amount: 0,
-            accommodation_charges: 0,
-            travel_charges: 0,
-            additional_charges: 0,
+            discount_amount: discount,
+            accommodation_charges: accommodation,
+            travel_charges: travel,
+            additional_charges: additional,
             subtotal_amount: subtotal,
-            gst_rate: 0,
-            gst_amount: 0,
+            gst_rate: gstRate,
+            gst_amount: gstAmount,
             final_total_amount: finalTotal,
             received_amount: received,
             pending_amount: pending,
-            payment_status: pending === 0 && finalTotal > 0 ? 'paid' : received > 0 ? 'partially_paid' : 'pending',
-            milestones: [], // STRICT ZERO DUMMY STEPS
+            payment_status: (!hasFinalQuotation && finalTotal === 0 && received === 0) ? 'unsettled' : (pending === 0 && finalTotal > 0 ? 'paid' : received > 0 ? 'partially_paid' : 'pending'),
+            milestones: effectiveMilestones,
             created_at: c.created_at || new Date().toISOString(),
             updated_at: new Date().toISOString()
           };
@@ -2006,8 +2109,8 @@ export default function FinancePage() {
 
   const filteredRecords = useMemo(() => {
     return financeRecords.filter(rec => {
-      // Exclude soft-deleted / trashed records
-      if (
+      // Soft-deleted / trashed status check
+      const isTrashed = Boolean(
         (rec as any).status === 'trash' ||
         (rec as any).status === 'trashed' ||
         (rec as any).is_deleted === true ||
@@ -2015,8 +2118,12 @@ export default function FinancePage() {
         (rec.client?.status as string) === 'trash' ||
         (rec.client as any)?.is_deleted === true ||
         (rec.notes && typeof rec.notes === 'string' && rec.notes.includes('[status:trash]'))
-      ) {
-        return false;
+      );
+
+      if (statusFilter === 'trash') {
+        if (!isTrashed) return false;
+      } else {
+        if (isTrashed) return false;
       }
 
       const client = rec.client;
@@ -2047,7 +2154,9 @@ export default function FinancePage() {
 
       // Status Filter
       let matchesStatus = true;
-      if (statusFilter === 'overdue_only') {
+      if (statusFilter === 'trash') {
+        matchesStatus = true;
+      } else if (statusFilter === 'overdue_only') {
         const hasOverdue = (rec.milestones || []).some(m => m.due_date && m.due_date < todayStr && m.status !== 'completed' && m.status !== 'paid');
         matchesStatus = hasOverdue;
       } else if (statusFilter === 'pending') {
@@ -2904,7 +3013,32 @@ export default function FinancePage() {
 
           {/* Active Payment Received & Revenue Type Filter Pills on Top */}
           <div className="flex flex-wrap items-center gap-2 pt-1 pb-0.5">
-            {statusFilter === 'received' && (
+            {statusFilter === 'trash' && (
+            <div className="w-full bg-rose-50/90 border border-rose-300 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                  <Trash2 className="w-5 h-5 text-rose-600" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-rose-950 flex items-center gap-2">
+                    Finance Trash ({filteredRecords.length})
+                  </h4>
+                  <p className="text-xs text-rose-700 font-medium">
+                    Soft-deleted finance records. Click <strong>Restore Record</strong> to return them to active ledger.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setStatusFilter('all')}
+                className="px-3.5 py-1.5 bg-white hover:bg-rose-100 text-rose-800 border border-rose-300 rounded-xl text-xs font-black transition cursor-pointer self-start sm:self-auto shrink-0 shadow-2xs"
+              >
+                Exit Trash
+              </button>
+            </div>
+          )}
+          
+          {statusFilter === 'received' && (
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-950 text-xs font-bold shadow-xs">
                 <span className="flex h-2 w-2 relative">
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>

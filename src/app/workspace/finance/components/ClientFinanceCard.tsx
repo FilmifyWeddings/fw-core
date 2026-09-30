@@ -156,6 +156,7 @@ export function ClientFinanceCard({
   const recAmt = dynamicReceived;
   const pendAmt = Math.max(0, finalTotal - recAmt);
   const milestoneGap = finalTotal - milestoneSum;
+  const isUnsettled = (finalTotal <= 0 && recAmt <= 0) || (record as any).payment_status === 'unsettled';
 
   const rawHandled = (client as any)?.assigned_team_member || (client as any)?.handled_by || 'Unassigned';
   const handledBy = isPlaceholderName(rawHandled) ? 'Unassigned' : rawHandled;
@@ -282,13 +283,15 @@ export function ClientFinanceCard({
 
               {/* Status Badge */}
               <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md ${
-                record.payment_status === 'paid' || (finalTotal > 0 && pendAmt === 0)
+                isUnsettled
+                  ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                  : record.payment_status === 'paid' || (finalTotal > 0 && pendAmt === 0)
                   ? 'bg-emerald-50 text-emerald-700'
                   : recAmt > 0
                   ? 'bg-orange-50 text-orange-700'
                   : 'bg-rose-50 text-rose-700'
               }`}>
-                {record.payment_status === 'paid' || (finalTotal > 0 && pendAmt === 0) ? 'Paid Full' : recAmt > 0 ? 'Partially Paid' : 'Pending'}
+                {isUnsettled ? 'Unsettled' : (record.payment_status === 'paid' || (finalTotal > 0 && pendAmt === 0)) ? 'Paid Full' : recAmt > 0 ? 'Partially Paid' : 'Pending'}
               </span>
 
             </div>
@@ -310,9 +313,18 @@ export function ClientFinanceCard({
         {/* Right: Net Pending Amount + 3-Dots Action Menu + Chevron Toggle */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           
-          {/* Net Pending Amount (Prominent Red / Emerald) */}
+          {/* Net Pending Amount (Prominent Red / Amber / Emerald) */}
           <div className="text-right">
-            {pendAmt > 0 ? (
+            {isUnsettled ? (
+              <div>
+                <span className="text-xs sm:text-sm font-mono font-black text-amber-700 block leading-tight">
+                  ₹0 Unsettled
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono block hidden sm:block">
+                  No Final Quotation
+                </span>
+              </div>
+            ) : pendAmt > 0 ? (
               <div>
                 <span className="text-xs sm:text-sm font-mono font-black text-rose-600 block leading-tight">
                   ₹{pendAmt.toLocaleString('en-IN')} Due

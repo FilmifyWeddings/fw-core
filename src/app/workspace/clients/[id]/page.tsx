@@ -265,7 +265,7 @@ export default function ClientWorkspaceDetailPage() {
 
   // ── Synced Final Quotation Doc ──
   const finalQuotationDoc = useMemo(() => {
-    return quotationDocs.find(q => q.is_final) || quotationDocs[0] || null;
+    return quotationDocs.find(q => q.is_final) || null;
   }, [quotationDocs]);
 
   // ── Synced Multi-Day Events from Quotation / Extended ──
@@ -333,16 +333,32 @@ export default function ClientWorkspaceDetailPage() {
   // ── Effective ClientFinanceRecord for ClientFinanceCard (100% Master Copy) ──
   const effectiveFinanceRecord: ClientFinanceRecord = useMemo(() => {
     const existing = (financeRecord || {}) as any;
-    const rawBase = Math.max(0, Math.round(Number(existing.base_package_price) || Number(client?.total_package_amount) || 0));
-    const discount = Math.max(0, Math.round(Number(existing.discount_amount) || 0));
-    const accommodation = Math.max(0, Math.round(Number(existing.accommodation_charges) || 0));
-    const travel = Math.max(0, Math.round(Number(existing.travel_charges) || 0));
-    const additional = Math.max(0, Math.round(Number(existing.additional_charges) || 0));
+    const quoteFinancials = finalQuotationDoc?.content_json ? extractFinancialsFromQuotation(finalQuotationDoc.content_json, client?.event_date || eventDate) : null;
+    const hasFinDocPrice = Boolean(quoteFinancials && quoteFinancials.final_total_amount > 0);
+    const rawBase = (Number(existing.base_package_price) > 0)
+      ? Math.max(0, Math.round(Number(existing.base_package_price)))
+      : (hasFinDocPrice ? (quoteFinancials!.base_package_price || quoteFinancials!.subtotal_amount) : Math.max(0, Math.round(Number(client?.total_package_amount) || 0)));
+    const discount = (Number(existing.discount_amount) > 0)
+      ? Math.max(0, Math.round(Number(existing.discount_amount)))
+      : (hasFinDocPrice ? (quoteFinancials!.discount_amount || 0) : 0);
+    const accommodation = (Number(existing.accommodation_charges) > 0)
+      ? Math.max(0, Math.round(Number(existing.accommodation_charges)))
+      : (hasFinDocPrice ? (quoteFinancials!.accommodation_charges || 0) : 0);
+    const travel = (Number(existing.travel_charges) > 0)
+      ? Math.max(0, Math.round(Number(existing.travel_charges)))
+      : (hasFinDocPrice ? (quoteFinancials!.travel_charges || 0) : 0);
+    const additional = (Number(existing.additional_charges) > 0)
+      ? Math.max(0, Math.round(Number(existing.additional_charges)))
+      : (hasFinDocPrice ? (quoteFinancials!.additional_charges || 0) : 0);
     const subtotal = Math.max(0, rawBase - discount + accommodation + travel + additional);
-    const gstRate = Number(existing.gst_rate) || 0;
+    const gstRate = (Number(existing.gst_rate) > 0)
+      ? Number(existing.gst_rate)
+      : (hasFinDocPrice ? (quoteFinancials!.gst_rate || 0) : 0);
     const gstAmount = Math.round((subtotal * gstRate) / 100);
-    const finalTotal = existing.final_total_amount ? Number(existing.final_total_amount) : (subtotal + gstAmount);
-    const received = Math.max(0, Math.round(Number(existing.received_amount) || Number(client?.paid_amount) || 0));
+    const finalTotal = (Number(existing.final_total_amount) > 0)
+      ? Number(existing.final_total_amount)
+      : (hasFinDocPrice ? quoteFinancials!.final_total_amount : (subtotal + gstAmount));
+    const received = Math.max(0, Math.round(Number(existing.received_amount) || Number(client?.paid_amount) || (hasFinDocPrice ? quoteFinancials!.received_amount : 0) || 0));
     const pending = Math.max(0, finalTotal - received);
 
     // Resolve handled_by matching finance page rules (never placeholder defaults like 'Studio PM'!)
@@ -389,8 +405,8 @@ export default function ClientWorkspaceDetailPage() {
       final_total_amount: finalTotal,
       received_amount: received,
       pending_amount: pending,
-      payment_status: existing.payment_status || (received >= finalTotal && finalTotal > 0 ? 'paid' : received > 0 ? 'partially_paid' : 'unpaid'),
-      milestones: existing.milestones || [],
+      payment_status: (!Boolean(finalQuotationDoc || existing.has_final_quotation) && finalTotal === 0 && received === 0) ? 'unsettled' : (existing.payment_status || (received >= finalTotal && finalTotal > 0 ? 'paid' : received > 0 ? 'partially_paid' : 'pending')),
+      milestones: (Array.isArray(existing.milestones) && existing.milestones.length > 0) ? existing.milestones : (hasFinDocPrice && Array.isArray(quoteFinancials!.milestones) ? quoteFinancials!.milestones : []),
       created_at: existing.created_at || client?.created_at || new Date().toISOString(),
       updated_at: existing.updated_at || new Date().toISOString()
     } as any;
@@ -398,7 +414,13 @@ export default function ClientWorkspaceDetailPage() {
 
   // ── Effective PostProductionProjectData for PostProductionCard ──
   const postProdProjectData: PostProductionProjectData = useMemo(() => {
-    const clientDelivs = Array.isArray(postProductionProject?.deliverables) ? postProductionProject.deliverables : [];
+    let clientDelivs: any[] = Array.isArray(postProductionProject?.deliverables) ? (postProductionProject.deliverables as any[]) : [];
+    if ((clientDelivs.length === 0 || isDemoDeliverables(clientDelivs)) && finalQuotationDoc) {
+      const parsed = parseQuotationDeliverables(finalQuotationDoc);
+      if (parsed.deliverables.length > 0) {
+        clientDelivs = parsed.deliverables;
+      }
+    }
     const normalizedDelivs = clientDelivs.map((d: any) => ({
       ...d,
       segment: d.segment ? d.segment.trim() : 'Wedding',
@@ -411,6 +433,12 @@ export default function ClientWorkspaceDetailPage() {
     const segmentsSet = new Set<string>();
     if (Array.isArray((postProductionProject as any)?.enabled_segments)) {
       (postProductionProject as any).enabled_segments.forEach((s: string) => {
+        if (s) segmentsSet.add(s.trim());
+      });
+    }
+    if (finalQuotationDoc) {
+      const parsed = parseQuotationDeliverables(finalQuotationDoc);
+      parsed.enabledSegments?.forEach((s: string) => {
         if (s) segmentsSet.add(s.trim());
       });
     }
@@ -1445,11 +1473,15 @@ export default function ClientWorkspaceDetailPage() {
         is_final: item.template_id === q.template_id
       })));
 
-      // Sync finance
+      // Sync finance and post production
       fetchFinanceAndSyncMilestones(client);
+      fetchPostProduction(client);
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('quotation_finalized', { detail: { clientId: client.id, quotationId: q.template_id } }));
+        window.dispatchEvent(new CustomEvent('finance_updated', { detail: { clientId: client.id } }));
+        window.dispatchEvent(new CustomEvent('post_production_updated', { detail: { clientId: client.id } }));
         localStorage.setItem('post_production_updated', Date.now().toString());
+        localStorage.setItem('finance_updated', Date.now().toString());
       }
     } catch (e) {
       console.error('Error setting final quotation:', e);
@@ -1519,7 +1551,7 @@ export default function ClientWorkspaceDetailPage() {
         .or(`lead_id.eq.${targetLeadId},client_id.eq.${c.id},template_id.ilike.%${leadShort}%`)
         .order('created_at', { ascending: false });
 
-      const finalQuote = quoteDocs?.find((q: any) => q.is_final === true || q.content_json?.is_final === true) || quoteDocs?.[0];
+      const finalQuote = quoteDocs?.find((q: any) => q.is_final === true || q.content_json?.is_final === true || ['accepted', 'approved', 'finalized'].includes((q.status || '').toLowerCase())) || null;
       if (finalQuote) {
         const parsed = parseQuotationDeliverables(finalQuote);
         if (!pppData || deliverables.length === 0 || isDemoDeliverables(deliverables)) {
@@ -1587,7 +1619,7 @@ export default function ClientWorkspaceDetailPage() {
       const totalPaid = Number(c.paid_amount) || 0;
 
       // If no finance record exists or milestones empty, check quotation documents first!
-      if (!finRow || !finRow.milestones || finRow.milestones.length === 0) {
+      if (!finRow || !finRow.milestones || finRow.milestones.length === 0 || Number(finRow.base_package_price) === 0) {
         const targetLeadId = c.lead_id || c.id;
         const leadShort = targetLeadId ? targetLeadId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8) : '';
 
@@ -1603,7 +1635,7 @@ export default function ClientWorkspaceDetailPage() {
         }
 
         const { data: quoteDocs } = await docsQuery;
-        const selectedQuoteDoc = quoteDocs?.find((d: any) => d.is_final === true || d.content_json?.is_final === true) || quoteDocs?.[0];
+        const selectedQuoteDoc = quoteDocs?.find((d: any) => d.is_final === true || d.content_json?.is_final === true || ['accepted', 'approved', 'finalized'].includes((d.status || '').toLowerCase())) || null;
 
         if (selectedQuoteDoc?.content_json) {
           const financials = extractFinancialsFromQuotation(selectedQuoteDoc.content_json, c.event_date);

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Film, Filter, Search, RefreshCw, User, Layers, CheckCircle2, 
-  Clock, AlertTriangle
+  Clock, AlertTriangle, RotateCcw, Trash2
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
@@ -40,6 +40,7 @@ export default function PostProductionPage() {
   const [eventTypes, setEventTypes] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [mounted, setMounted] = useState(false);
+  const [postProdTab, setPostProdTab] = useState<'active' | 'trash'>('active');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Expanded & highlighted cards
@@ -112,6 +113,9 @@ export default function PostProductionPage() {
     };
     window.addEventListener('post_production_settings_updated', handleSettingsUpdated);
     window.addEventListener('quotation_finalized', handleSettingsUpdated);
+    window.addEventListener('post_production_updated', handleSettingsUpdated);
+    window.addEventListener('client_created', handleSettingsUpdated);
+    window.addEventListener('client_updated', handleSettingsUpdated);
     window.addEventListener('storage', (e) => {
       if (e.key === 'sc_cached_pp_projects' || e.key === 'post_production_updated') {
         fetchPostProductionData();
@@ -120,6 +124,9 @@ export default function PostProductionPage() {
     return () => {
       window.removeEventListener('post_production_settings_updated', handleSettingsUpdated);
       window.removeEventListener('quotation_finalized', handleSettingsUpdated);
+      window.removeEventListener('post_production_updated', handleSettingsUpdated);
+      window.removeEventListener('client_created', handleSettingsUpdated);
+      window.removeEventListener('client_updated', handleSettingsUpdated);
     };
   }, []);
 
@@ -355,25 +362,23 @@ export default function PostProductionPage() {
       const cards: PostProductionProjectData[] = [];
 
       for (const client of clientList) {
-        if (
+        const isClientTrash = Boolean(
           client.status === 'trash' || 
           client.status === 'trashed' ||
           (client as any).is_deleted === true || 
           (client.notes && typeof client.notes === 'string' && client.notes.includes('[status:trash]'))
-        ) {
-          continue;
-        }
+        );
 
         const ppp = pppMap.get(client.id) || (client.lead_id ? pppMap.get(client.lead_id) : null);
-        if (
+        const isPppTrash = Boolean(
           ppp && (
             ppp.overall_status === 'trash' ||
             (ppp as any).is_deleted === true ||
             (ppp.notes && typeof ppp.notes === 'string' && ppp.notes.includes('[status:trash]'))
           )
-        ) {
-          continue;
-        }
+        );
+
+        const isCardTrash = isClientTrash || isPppTrash;
 
         const matchedFwProject = (fwProjects || []).find(
           fp => fp.client_name?.toLowerCase() === client.name?.toLowerCase() || fp.id === client.id
@@ -564,6 +569,7 @@ export default function PostProductionPage() {
           project_id: matchedFwProject?.id || client.id,
           workspace_id: workspaceId,
           client_id: client.id,
+          lead_id: client.lead_id || null,
           client_name: client.name,
           couple_names: null,
           event_date: client.event_date || matchedFwProject?.main_date || client.created_at,
@@ -582,7 +588,14 @@ export default function PostProductionPage() {
       // Include any standalone post_production_projects that may not be linked to a client record yet
       if (pppData) {
         for (const p of pppData) {
-          const alreadyAdded = cards.some(c => c.client_id === p.client_id || c.id === p.id);
+          const alreadyAdded = cards.some(c => 
+            c.client_id === p.client_id || 
+            c.id === p.id ||
+            c.lead_id === p.client_id ||
+            ((p as any).lead_id && (c.client_id === (p as any).lead_id || c.lead_id === (p as any).lead_id)) ||
+            clientList.some(cl => (cl.id === c.client_id || cl.lead_id === c.client_id) && (cl.id === p.client_id || cl.lead_id === p.client_id)) ||
+            (Boolean(p.client_name && c.client_name && p.client_name.trim().length >= 3 && c.client_name.toLowerCase().trim() === p.client_name.toLowerCase().trim()))
+          );
           if (!alreadyAdded && p.client_id) {
             let pDeliverables: any[] = Array.isArray(p.deliverables) ? p.deliverables : [];
             pDeliverables = pDeliverables.map(d => {

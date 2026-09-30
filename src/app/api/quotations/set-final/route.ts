@@ -76,13 +76,16 @@ export async function POST(req: NextRequest) {
           }
         }
 
+        const updatePayload: any = {
+          content_json: updatedContent,
+          lead_id: leadId,
+          is_final: shouldUnmark ? false : isTarget,
+          updated_at: now
+        };
+
         const { error: docUpdateErr } = await supabaseAdmin
           .from('quotation_documents')
-          .update({
-            content_json: updatedContent,
-            lead_id: leadId,
-            updated_at: now
-          })
+          .update(updatePayload)
           .eq('id', doc.id);
 
         if (docUpdateErr) {
@@ -212,8 +215,7 @@ export async function POST(req: NextRequest) {
             ...currentPayload,
             final_quotation_id: shouldUnmark ? null : quotationId,
             quotation_id: shouldUnmark ? null : quotationId,
-            ...(clientName ? { couple_name: clientName } : {}),
-            ...(shouldUnmark ? {} : { stage: 'booked', ...(bookedStageId ? { stage_id: bookedStageId } : {}) })
+            ...(clientName ? { couple_name: clientName } : {})
           };
 
           const updateLeadPayload: any = {
@@ -222,13 +224,6 @@ export async function POST(req: NextRequest) {
             raw_payload: updatedPayload,
             updated_at: now
           };
-
-          if (!shouldUnmark) {
-            if (bookedStageId) {
-              updateLeadPayload.stage_id = bookedStageId;
-            }
-            updateLeadPayload.status = 'closed';
-          }
 
           const { error: leadErr } = await supabaseAdmin
             .from('leads')
@@ -254,22 +249,19 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 4. Background asynchronous sync across Client Directory, Booking Events, Post Production, and Finance
-    // Runs in the background so the HTTP response returns to the user in sub-second / milliseconds!
-    (async () => {
-      try {
-        await syncBookedLeadOrFinalQuotation({
-          leadId,
-          quotationId,
-          workspaceId: userId,
-          forceBookedStatus: true,
-          supabaseClient: supabaseAdmin
-        });
-        clearLeadSummaryCache();
-      } catch (syncErr) {
-        console.error('[Set-Final] Background sync exception:', syncErr);
-      }
-    })();
+    // 4. Synchronous sync across Client Directory, Booking Events, Post Production, and Finance
+    try {
+      await syncBookedLeadOrFinalQuotation({
+        leadId,
+        quotationId,
+        workspaceId: userId,
+        forceBookedStatus: true,
+        supabaseClient: supabaseAdmin
+      });
+      clearLeadSummaryCache();
+    } catch (syncErr) {
+      console.error('[Set-Final] Synchronous sync exception:', syncErr);
+    }
 
     return NextResponse.json({
       success: true,

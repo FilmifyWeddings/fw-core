@@ -248,6 +248,7 @@ export function FinanceFiltersModal({
                 <option value="paid">✅ Fully Paid</option>
                 <option value="pending">⏳ Pending Due</option>
                 <option value="overdue_only">⚠️ Overdue Dues Only</option>
+                <option value="trash">🗑️ Trash (Archived / Soft-Deleted)</option>
               </select>
             </div>
 

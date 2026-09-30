@@ -232,6 +232,7 @@ export default function LeadsPage() {
     lead: Lead;
     updatedFields: Partial<Lead>;
     clientName: string;
+    targetStageName?: string;
   } | null>(null);
 
   const [isProcessingStageAction, setIsProcessingStageAction] = useState(false);
@@ -672,7 +673,21 @@ export default function LeadsPage() {
       }
 
       // 2. Fetch Strictly Final Quotation Version for this lead (if chosen)
-      const latestQuote = await findFinalQuotationForLead(supabase, leadId);
+      let latestQuote: any = null;
+      try {
+        const qRes = await fetch(`/api/leads/${leadId}/final-quotation`);
+        if (qRes.ok) {
+          const qData = await qRes.json();
+          if (qData.success && qData.hasFinal && qData.quotation) {
+            latestQuote = qData.quotation;
+          }
+        }
+      } catch (qErr) {
+        console.warn('[autoSyncBookedLeadToClient] Failed to fetch final quotation via API:', qErr);
+      }
+      if (!latestQuote) {
+        latestQuote = await findFinalQuotationForLead(supabase, leadId);
+      }
       if (latestQuote?.content_json) {
         const quoteCouple = extractCoupleNameFromQuotation(latestQuote.content_json);
         if (quoteCouple && quoteCouple !== 'Wedding Client' && quoteCouple !== 'Valued Client') {
@@ -951,16 +966,27 @@ export default function LeadsPage() {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
   };
 
-  const isBookedState = (obj?: Partial<Lead> | null) => {
-    if (!obj) return false;
-    const stageId = (obj.stage_id || '').toLowerCase();
-    const status = (typeof obj.status === 'string' ? obj.status : '').toLowerCase();
-    return stageId.includes('book') || status.includes('book') || stages.some(s => s.id === obj.stage_id && s.name?.toLowerCase().includes('book'));
+  const checkIsBookedStage = (stageIdOrStatus?: string | null): boolean => {
+    if (!stageIdOrStatus) return false;
+    const s = String(stageIdOrStatus).toLowerCase().trim();
+    if (s === 'booked' || s.includes('book') || s === 'closed') return true;
+    const matched = stages.find(st => st.id === stageIdOrStatus || st.name?.toLowerCase() === s);
+    return Boolean(matched?.name?.toLowerCase().includes('book'));
+  };
+
+  const checkIsLeadBooked = (lead?: Partial<Lead> | null): boolean => {
+    if (!lead) return false;
+    if (checkIsBookedStage(lead.stage_id)) return true;
+    if (checkIsBookedStage(lead.status as string)) return true;
+    if (checkIsBookedStage((lead as any).stage)) return true;
+    const raw = lead.raw_payload || {};
+    if (checkIsBookedStage(raw.stage) || checkIsBookedStage(raw.status) || checkIsBookedStage(raw.stage_id)) return true;
+    return false;
   };
 
   const executeLeadUpdate = async (leadId: string, updatedFields: Partial<Lead>) => {
     const currentLead = leads.find(l => l.id === leadId);
-    const isNowBooked = isBookedState(updatedFields);
+    const isNowBooked = checkIsBookedStage(updatedFields.stage_id) || checkIsBookedStage(updatedFields.status as string) || checkIsBookedStage((updatedFields as any).stage);
 
     // Optimistic UI Update
     setLeads(prev => {
@@ -1016,9 +1042,7 @@ export default function LeadsPage() {
 
         // AUTO-CONVERT TO CLIENT WHEN STAGE IS "BOOKED"
         if (isNowBooked && currentLead) {
-          if (!updatedFields.final_quotation_id) {
-            await autoSyncBookedLeadToClient(leadId, currentLead, updatedFields);
-          }
+          await autoSyncBookedLeadToClient(leadId, currentLead, updatedFields);
         }
       } catch (err) {
         console.error("Database update error:", err);
@@ -1028,37 +1052,94 @@ export default function LeadsPage() {
 
   const handleLeadUpdate = async (leadId: string, updatedFields: Partial<Lead>) => {
     const currentLead = leads.find(l => l.id === leadId);
-    const wasBooked = isBookedState(currentLead);
-    const isNowBooked = isBookedState(updatedFields);
+    const wasBooked = checkIsLeadBooked(currentLead);
+    const isNowBooked = checkIsBookedStage(updatedFields.stage_id) || checkIsBookedStage(updatedFields.status as string) || checkIsBookedStage((updatedFields as any).stage);
 
     // Case 1: Moving OUT of "Booked" -> Show 3D Cream warning confirmation modal
-    if (wasBooked && !isNowBooked && ('stage_id' in updatedFields || 'status' in updatedFields)) {
+    if (wasBooked && !isNowBooked && ('stage_id' in updatedFields || 'status' in updatedFields || 'stage' in updatedFields)) {
       const clientName = (currentLead as any)?.couple_names || currentLead?.raw_payload?.couple_name || currentLead?.client_name || currentLead?.name || 'Client';
+      const targetStage = stages.find(s => s.id === updatedFields.stage_id || s.name?.toLowerCase() === String(updatedFields.status || '').toLowerCase());
+      const targetStageName = targetStage?.name || (typeof updatedFields.status === 'string' ? updatedFields.status : 'another stage');
+
       setPendingUnbookingAction({
         leadId,
         lead: currentLead!,
         updatedFields,
-        clientName
+        clientName,
+        targetStageName
       });
       return;
     }
 
-    // Case 2: Moving INTO "Booked" -> Show 3D Cream booking confirmation modal
-    if (!wasBooked && isNowBooked && ('stage_id' in updatedFields || 'status' in updatedFields)) {
-      const latestQuote = await findFinalQuotationForLead(supabase, leadId);
-      const hasFinalQuotation = !!latestQuote;
-      const quoteFinancials = latestQuote && latestQuote.content_json
-        ? extractFinancialsFromQuotation(latestQuote.content_json)
-        : null;
+    // Case 2: Moving INTO "Booked" -> Show 3D Cream booking confirmation modal (INSTANT 0ms trigger)
+    if (!wasBooked && isNowBooked && ('stage_id' in updatedFields || 'status' in updatedFields || 'stage' in updatedFields)) {
+      // Synchronous immediate check for 0ms popup
+      const rawLead = currentLead?.raw_payload || {};
+      let initialHasFinal = Boolean(currentLead?.final_quotation_id || rawLead.final_quotation_id);
+      let initialTitle = 'No final quotation attached';
+      let initialAmount = 0;
 
+      if (typeof window !== 'undefined') {
+        try {
+          const summaryMapStr = localStorage.getItem('sc_quotation_summary_map');
+          if (summaryMapStr) {
+            const summaryMap = JSON.parse(summaryMapStr);
+            const summary = summaryMap[leadId];
+            if (summary?.hasFinal) {
+              initialHasFinal = true;
+              const finalV = summary.versions?.find((v: any) => v.is_final);
+              if (finalV) {
+                initialTitle = finalV.title || `Final Quotation (v${finalV.version || 1})`;
+                initialAmount = Number(finalV.totalAmount || finalV.total || finalV.price || 0);
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
+      // Immediately display modal in 0ms
       setPendingBookingAction({
         leadId,
         lead: currentLead!,
         updatedFields,
-        hasFinalQuotation,
-        quotationTitle: latestQuote?.content_json?.meta?.project_name || latestQuote?.name || 'Final Quotation',
-        packageAmount: quoteFinancials?.final_total_amount || 0
+        hasFinalQuotation: initialHasFinal,
+        quotationTitle: initialTitle,
+        packageAmount: initialAmount
       });
+
+      // Background async fetch to verify / enrich details if server has newer data
+      (async () => {
+        try {
+          const qRes = await fetch(`/api/leads/${leadId}/final-quotation`);
+          if (qRes.ok) {
+            const qData = await qRes.json();
+            if (qData.success) {
+              setPendingBookingAction(prev => {
+                if (!prev || prev.leadId !== leadId) return prev;
+                if (qData.hasFinal && qData.quotation) {
+                  return {
+                    ...prev,
+                    hasFinalQuotation: true,
+                    quotationTitle: qData.quotation.title || 'Final Quotation',
+                    packageAmount: qData.quotation.totalAmount || 0
+                  };
+                } else if (!qData.hasFinal) {
+                  return {
+                    ...prev,
+                    hasFinalQuotation: false,
+                    quotationTitle: 'No final quotation attached',
+                    packageAmount: 0
+                  };
+                }
+                return prev;
+              });
+            }
+          }
+        } catch (err) {
+          console.warn('[handleLeadUpdate background final-quotation check]:', err);
+        }
+      })();
+
       return;
     }
 
@@ -1068,11 +1149,38 @@ export default function LeadsPage() {
 
   const handleConfirmBooking = async () => {
     if (!pendingBookingAction) return;
+    const { leadId, updatedFields, quotationTitle, hasFinalQuotation } = pendingBookingAction;
+    setPendingBookingAction(null); // Instant modal dismiss (0ms)
     setIsProcessingStageAction(true);
-    const { leadId, updatedFields } = pendingBookingAction;
+
     try {
+      // 1. Optimistic lead update
       await executeLeadUpdate(leadId, updatedFields);
-      setPendingBookingAction(null);
+
+      // 2. High-speed server-side booking onboarder via supabaseAdmin
+      fetch(`/api/leads/${leadId}/book`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          hasFinalQuotation
+        })
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.clientId) {
+          setLeads(prev => prev.map(l => l.id === leadId ? { ...l, client_id: data.clientId } : l));
+        }
+      })
+      .catch(err => console.warn('[handleConfirmBooking API notice]:', err));
+
+      // 3. Dispatch global events so Client Directory, Finance, Post-Prod & Events update
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('client_created', { detail: { leadId } }));
+        window.dispatchEvent(new CustomEvent('client_updated', { detail: { leadId } }));
+        window.dispatchEvent(new CustomEvent('finance_updated', { detail: { leadId } }));
+        window.dispatchEvent(new CustomEvent('post_production_updated', { detail: { leadId } }));
+        window.dispatchEvent(new CustomEvent('team_events_updated', { detail: { leadId } }));
+      }
     } catch (err) {
       console.error('[handleConfirmBooking] Error:', err);
     } finally {
@@ -1080,7 +1188,7 @@ export default function LeadsPage() {
     }
   };
 
-  const handleConfirmUnbooking = async () => {
+  const handleConfirmUnbooking = async (moveToTrash: boolean = true) => {
     if (!pendingUnbookingAction) return;
     setIsProcessingStageAction(true);
     const { leadId, lead, updatedFields, clientName } = pendingUnbookingAction;
@@ -1098,68 +1206,51 @@ export default function LeadsPage() {
         if (cl) resolvedClientId = cl.id;
       }
 
-      if (resolvedClientId) {
-        // A. Workspace Clients Trash
-        const { data: clientObj } = await supabase
-          .from('workspace_clients')
-          .select('notes')
-          .eq('id', resolvedClientId)
-          .maybeSingle();
-        const trashedNotes = (clientObj?.notes || '') + ' [status:trash]';
+      if (moveToTrash) {
+        if (resolvedClientId) {
+          // A. Workspace Clients Trash
+          const { data: clientObj } = await supabase
+            .from('workspace_clients')
+            .select('notes')
+            .eq('id', resolvedClientId)
+            .maybeSingle();
+          const trashedNotes = (clientObj?.notes || '') + ' [status:trash]';
 
-        await supabase
-          .from('workspace_clients')
-          .update({
-            status: 'trash',
-            is_deleted: true,
-            deleted_at: nowIso,
-            notes: trashedNotes,
-            updated_at: nowIso
-          })
-          .eq('id', resolvedClientId);
+          await supabase
+            .from('workspace_clients')
+            .update({
+              status: 'trash',
+              is_deleted: true,
+              deleted_at: nowIso,
+              notes: trashedNotes,
+              updated_at: nowIso
+            })
+            .eq('id', resolvedClientId);
 
-        // B. Client Finance Records Trash
-        await supabase
-          .from('client_finance_records')
-          .update({
-            status: 'trash',
-            is_deleted: true,
-            deleted_at: nowIso,
-            updated_at: nowIso
-          })
-          .eq('client_id', resolvedClientId);
+          // B. Client Finance Records Trash
+          await supabase
+            .from('client_finance_records')
+            .update({
+              status: 'trash',
+              is_deleted: true,
+              deleted_at: nowIso,
+              updated_at: nowIso
+            })
+            .eq('client_id', resolvedClientId);
 
-        // C. Post Production Projects Trash
-        await supabase
-          .from('post_production_projects')
-          .update({
-            overall_status: 'trash',
-            is_deleted: true,
-            deleted_at: nowIso,
-            notes: '[status:trash]',
-            updated_at: nowIso
-          })
-          .eq('client_id', resolvedClientId);
+          // C. Post Production Projects Trash
+          await supabase
+            .from('post_production_projects')
+            .update({
+              overall_status: 'trash',
+              is_deleted: true,
+              deleted_at: nowIso,
+              notes: '[status:trash]',
+              updated_at: nowIso
+            })
+            .eq('client_id', resolvedClientId);
 
-        // D. Bookings & Events Trash (by client_id)
-        await supabase
-          .from('fw_projects')
-          .update({
-            status: 'trash',
-            is_archived: true,
-            updated_at: nowIso
-          })
-          .eq('client_id', resolvedClientId);
-      }
-
-      // Also clean up by clientName if any unlinked fw_projects exist
-      if (clientName) {
-        const { data: projs } = await supabase
-          .from('fw_projects')
-          .select('id')
-          .ilike('client_name', `%${clientName}%`);
-        if (projs && projs.length > 0) {
-          const pIds = projs.map(p => p.id);
+          // D. Bookings & Events Trash (by client_id)
           await supabase
             .from('fw_projects')
             .update({
@@ -1167,7 +1258,37 @@ export default function LeadsPage() {
               is_archived: true,
               updated_at: nowIso
             })
-            .in('id', pIds);
+            .eq('client_id', resolvedClientId);
+        }
+
+        // Also clean up by clientName if any unlinked fw_projects exist
+        if (clientName) {
+          const { data: projs } = await supabase
+            .from('fw_projects')
+            .select('id')
+            .ilike('client_name', `%${clientName}%`);
+          if (projs && projs.length > 0) {
+            const pIds = projs.map(p => p.id);
+            await supabase
+              .from('fw_projects')
+              .update({
+                status: 'trash',
+                is_archived: true,
+                updated_at: nowIso
+              })
+              .in('id', pIds);
+          }
+        }
+
+        // Authoritative server-side unbook call via supabaseAdmin (bypasses RLS)
+        try {
+          await fetch(`/api/leads/${leadId}/unbook`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ moveToTrash: true, clientName })
+          });
+        } catch (apiErr) {
+          console.warn('[handleConfirmUnbooking server API error]:', apiErr);
         }
       }
 
@@ -1178,8 +1299,19 @@ export default function LeadsPage() {
         window.dispatchEvent(new CustomEvent('team_events_updated'));
       }
 
+      // Also ensure final_quotation_id is cleared on lead and raw_payload
+      const fieldsWithClearedFinal = {
+        ...updatedFields,
+        final_quotation_id: null,
+        raw_payload: {
+          ...(lead.raw_payload || {}),
+          final_quotation_id: null,
+          stage: typeof updatedFields.status === 'string' ? updatedFields.status.toLowerCase() : 'warm'
+        }
+      };
+
       // Execute lead update to move to new stage
-      await executeLeadUpdate(leadId, updatedFields);
+      await executeLeadUpdate(leadId, fieldsWithClearedFinal);
       setPendingUnbookingAction(null);
     } catch (err) {
       console.error('[handleConfirmUnbooking] Error:', err);
@@ -1593,8 +1725,9 @@ export default function LeadsPage() {
           <LeadUnbookingTrashModal
             isOpen={!!pendingUnbookingAction}
             onClose={() => setPendingUnbookingAction(null)}
-            onConfirm={handleConfirmUnbooking}
+            onConfirm={(moveToTrash) => handleConfirmUnbooking(moveToTrash)}
             lead={pendingUnbookingAction.lead}
+            targetStageName={pendingUnbookingAction.targetStageName || 'another stage'}
             leadName={pendingUnbookingAction.clientName || pendingUnbookingAction.lead.name || 'This Lead'}
             isSubmitting={isProcessingStageAction}
           />

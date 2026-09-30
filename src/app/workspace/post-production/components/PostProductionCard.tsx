@@ -18,6 +18,7 @@ export interface PostProductionProjectData {
   project_id?: string;
   workspace_id?: string;
   client_id: string;
+  lead_id?: string | null;
   client_name: string;
   couple_names?: string | null;
   event_date?: string | null;
@@ -30,6 +31,7 @@ export interface PostProductionProjectData {
   quotation_title?: string | null;
   enabled_segments?: string[];
   disabled_categories?: Record<string, string[]>;
+  is_trash?: boolean;
 }
 
 interface PostProductionCardProps {

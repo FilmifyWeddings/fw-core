@@ -482,16 +482,28 @@ export function findClientFinalQuotation(client: { id: string; name?: string; le
     return false;
   });
 
-  if (matched.length === 0) return null;
+  // Check if client has an explicit final_quotation_id
+  let explicitFinalId: string | null = (client as any).final_quotation_id || null;
+  if (!explicitFinalId && (client as any).notes && typeof (client as any).notes === 'string') {
+    try {
+      const parsedNotes = JSON.parse((client as any).notes);
+      explicitFinalId = parsedNotes.final_quotation_id || null;
+    } catch (_) {}
+  }
+
+  if (explicitFinalId) {
+    const explicitQ = matched.find(q => q.id === explicitFinalId || q.template_id === explicitFinalId);
+    if (explicitQ) return explicitQ;
+  }
 
   const approved = matched.find(q => 
     q.is_final === true || 
     q.content_json?.is_final === true ||
     q.document_json?.is_final === true ||
-    ['approved', 'accepted', 'finalized', 'booked'].includes((q.status || '').toLowerCase())
+    ['approved', 'accepted', 'finalized'].includes((q.status || '').toLowerCase())
   );
 
-  return approved || matched[0];
+  return approved || null;
 }
 
 /**
