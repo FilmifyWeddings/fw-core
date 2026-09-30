@@ -149,7 +149,7 @@ export default function TeamManagerCardView({
             {/* Sub-Events Stack */}
             <div className="space-y-4">
               {(isCardFilterActive
-                ? (project.fw_sub_events || []).filter(se => isSubEventMatch(se, project, unifiedFilters))
+                ? (project.fw_sub_events || []).filter(se => isSubEventMatch(se, project, unifiedFilters, teamMembers))
                 : (project.fw_sub_events || [])
               ).map((subEvent) => {
                 const isTbd = Boolean((subEvent as any).is_date_tbd) || !subEvent.event_date || isNaN(new Date(subEvent.event_date).getTime());

@@ -56,33 +56,48 @@ export function formatStandardDescription(params: LogActivityParams): string {
 
   switch (actionType) {
     case 'CREW_ASSIGNED':
-      return `Assigned ${memberName} as ${role} for ${evTitle}`;
+      return `Assigned **${memberName}** as **${role}** for **${evTitle}**`;
     case 'CREW_REMOVED':
-      return `Removed ${previousValue || memberName} from ${evTitle}`;
+      return `Removed **${previousValue || memberName}** from **${role}** for **${evTitle}**`;
     case 'CREW_REPLACED':
-      return `Replaced ${prevMember} with ${memberName} as ${role} for ${evTitle}`;
+      return `Replaced **${prevMember}** with **${memberName}** as **${role}** for **${evTitle}**`;
+    case 'EVENT_RENAMED':
+      return `Renamed event from **${previousValue || 'Event'}** to **${newValue || evTitle}**`;
     case 'DATE_UPDATED':
-      return `Changed date of ${evTitle} from ${previousValue || 'TBD'} to ${newValue || 'TBD'}`;
+      return `Changed date of **${evTitle}** from **${previousValue || 'TBD'}** to **${newValue || 'TBD'}**`;
+    case 'TIME_UPDATED':
+    case 'SCHEDULE_SHIFTED':
+      return `Shifted schedule of **${evTitle}** from **${previousValue || 'TBD'}** to **${newValue || 'TBD'}**`;
     case 'LOCATION_UPDATED':
-      return `Updated location for ${evTitle} to "${newValue || 'TBD'}"`;
+    case 'VENUE_UPDATED':
+      return `Updated venue for **${evTitle}** to **"${newValue || 'TBD'}"**`;
     case 'PM_CHANGED':
       return newValue && newValue !== 'Unassigned'
-        ? `Assigned ${newValue} as Project Manager`
+        ? `Assigned **${newValue}** as Project Manager`
         : 'Cleared Project Manager assignment';
     case 'EVENT_ADDED':
-      return `Created new sub-event "${evTitle}"`;
+    case 'SUB_EVENT_ADDED':
+      return `Created new sub-event **"${evTitle}"**`;
     case 'EVENT_DELETED':
-      return `Deleted sub-event "${evTitle}"`;
+    case 'SUB_EVENT_DELETED':
+      return `Deleted sub-event **"${evTitle}"**`;
+    case 'ROLE_ADDED':
+      return `Added **${role}** role slot to **${evTitle}**`;
+    case 'ROLE_REMOVED':
+      return `Removed **${role}** role slot from **${evTitle}**`;
+    case 'NOTES_UPDATED':
+    case 'NOTE_UPDATED':
+      return `Updated operational notes for **${evTitle}**`;
     case 'PROJECT_CREATED':
-      return description || `Created new project "${newValue || ''}"`;
+      return description || `Created new project **"${newValue || ''}"**`;
     case 'PROJECT_UPDATED':
-      return description || (previousValue ? `Updated project title from "${previousValue}" to "${newValue}"` : `Updated project details`);
+      return description || (previousValue ? `Updated project title from **"${previousValue}"** to **"${newValue}"**` : `Updated project details`);
     case 'COMMERCIALS_UPDATED':
-      return description || `Updated remuneration commercials for ${memberName}`;
+      return description || `Updated remuneration commercials for **${memberName}**`;
     case 'RATE_CHANGED':
-      return description || `Updated agreed remuneration for ${memberName} (${role}) to ${newValue || ''}`;
+      return description || `Updated agreed remuneration for **${memberName}** (**${role}**) to **${newValue || ''}**`;
     default:
-      return description || `Recorded activity for ${evTitle}`;
+      return description || `Recorded activity for **${evTitle}**`;
   }
 }
 

@@ -94,7 +94,7 @@ export async function POST(
         await supabaseAdmin
           .from('workspace_clients')
           .update({
-            status: 'trash',
+            status: 'archived',
             is_deleted: true,
             deleted_at: nowIso,
             notes: trashedNotes,

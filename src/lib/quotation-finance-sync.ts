@@ -142,6 +142,20 @@ export function isPlaceholderCoupleName(name?: string | null): boolean {
 }
 
 /**
+ * Normalizes sub-event titles by converting " & " or " and " to " + "
+ * e.g. "Haldi & Engagement" -> "Haldi + Engagement", "Wedding & Reception" -> "Wedding + Reception"
+ * Preserves all single events and existing "+" formats.
+ */
+export function normalizeSubEventTitle(title?: string | null): string {
+  if (!title) return '';
+  return String(title)
+    .replace(/\s*&\s*/g, ' + ')
+    .replace(/\s+and\s+/gi, ' + ')
+    .trim();
+}
+
+
+/**
  * Extracts the primary couple name from any quotation content_json payload (cover page, meta, etc.),
  * prioritizing the couple name entered on the quotation over raw lead names,
  * while strictly ignoring template dummy placeholder names like 'YASH & TWINKLE' or 'Rahul & Neha'.
@@ -774,7 +788,7 @@ export function extractSubEventsFromQuotation(
 
   if (funcItems.length > 0) {
     for (const item of funcItems) {
-      const title = String(item.name || item.title || item.event_title || 'Wedding Event').trim();
+      const title = normalizeSubEventTitle(item.name || item.title || item.event_title || 'Wedding Event');
       const isDateTbd = Boolean(item.dateNotFixed || !item.date || String(item.date).toLowerCase().includes('tbd') || String(item.date).toLowerCase().includes('not fixed'));
       const date = item.date ? normalizeToIsoDate(item.date, fallbackEventDate) : (fallbackEventDate || new Date().toISOString().split('T')[0]);
       const venue = String(item.location || item.venue || fallbackVenue || '').trim();
@@ -820,7 +834,7 @@ export function extractSubEventsFromQuotation(
 
   if (isShootEnabled && contentJson.shootDetails && (contentJson.shootDetails.heading || contentJson.shootDetails.daysText || contentJson.shootDetails.date || contentJson.shootDetails.location || contentJson.shootDetails.crewText)) {
     const shoot = contentJson.shootDetails;
-    const shootTitle = String(shoot.heading || 'Pre-Wedding Shoot').trim();
+    const shootTitle = normalizeSubEventTitle(shoot.heading || 'Pre-Wedding Shoot');
     const alreadyExists = subEvents.some(s => s.event_title.toLowerCase() === shootTitle.toLowerCase());
     if (!alreadyExists) {
       const shootRoles: string[] = [];
@@ -860,7 +874,7 @@ export function extractSubEventsFromQuotation(
     const rawList = contentJson.events || contentJson.event_schedule || contentJson.wedding_events || [];
     if (Array.isArray(rawList) && rawList.length > 0) {
       for (const ev of rawList) {
-        const title = String(ev.title || ev.name || ev.event_name || 'Wedding Event').trim();
+        const title = normalizeSubEventTitle(ev.title || ev.name || ev.event_name || 'Wedding Event');
         const date = ev.date || ev.event_date ? normalizeToIsoDate(ev.date || ev.event_date, fallbackEventDate) : (fallbackEventDate || new Date().toISOString().split('T')[0]);
         const venue = String(ev.venue || ev.location || fallbackVenue || '').trim();
         const startTime = String(ev.start_time || ev.time || '10:00 AM').trim();

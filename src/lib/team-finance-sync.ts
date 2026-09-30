@@ -1143,6 +1143,7 @@ export async function unassignCrewSlot(params: {
         advance_amount: 0,
         paid_amount: 0,
         balance_amount: 0,
+        status: 'pending',
         payment_status: 'pending',
         notes: null
       }).eq('id', cleanAssignId);
@@ -1154,6 +1155,7 @@ export async function unassignCrewSlot(params: {
         advance_amount: 0,
         paid_amount: 0,
         balance_amount: 0,
+        status: 'pending',
         payment_status: 'pending',
         notes: null
       }).eq('sub_event_id', params.subEventId).eq('required_role', params.roleName);

@@ -452,7 +452,7 @@ LEAD & CLIENT CONTEXT:
           },
           body: JSON.stringify({
             leadId: effectiveLead.id,
-            clientName: effectiveLead.name,
+            clientName: effectiveLead.raw_payload?.couple_name || effectiveLead.raw_payload?.couple_names || (effectiveLead as any).couple_names || effectiveLead.client_name || effectiveLead.name,
             explicitTemplateId: activeTemplateId || selectedTemplateId || undefined,
             additionalNotes: notes || undefined
           })

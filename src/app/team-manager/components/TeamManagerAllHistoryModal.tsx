@@ -11,6 +11,7 @@ import {
 import { FWProject, FWSubEvent, FWTeamMember } from '@/types';
 import { ProjectActivityLog, fetchAllTeamManagerActivityLogs } from '@/lib/services/projectAuditService';
 import { getRoleShortCode, getRoleAbbr } from '@/lib/workspace-settings';
+import { renderFormattedDescription } from './ProjectHistoryModal';
 
 export interface TeamManagerAllHistoryModalProps {
   isOpen: boolean;
@@ -609,7 +610,7 @@ export const TeamManagerAllHistoryModal: React.FC<TeamManagerAllHistoryModalProp
 
                               {/* Description Text */}
                               <div className="mt-2.5 text-xs text-slate-700 dark:text-slate-200 font-semibold leading-relaxed">
-                                {log.description}
+                                {renderFormattedDescription(log.description)}
                               </div>
 
                               {/* Context Bridge: Project, Sub-Event, Target Crew */}

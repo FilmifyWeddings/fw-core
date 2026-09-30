@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import { getRoleShortCode, parseRoleAndNumber, formatRoleWithNumber } from '@/lib/workspace-settings';
+import { getRoleShortCode, parseRoleAndNumber, formatRoleWithNumber, isRoleMatching } from '@/lib/workspace-settings';
 
 export interface WorkspaceMemberOption {
   id: string;
@@ -165,6 +165,13 @@ export function resolveSubEventAssignments(
       });
     }
 
+    // 4. Try matching using canonical role matcher
+    if (matchIdx === -1) {
+      matchIdx = remainingExisting.findIndex(a => {
+        return isRoleMatching(formattedRole, a.required_role);
+      });
+    }
+
     if (matchIdx >= 0) {
       const matched = remainingExisting.splice(matchIdx, 1)[0];
       resolvedAssignments.push({
@@ -195,4 +202,110 @@ export function resolveSubEventAssignments(
   });
 
   return resolvedAssignments;
+}
+
+/**
+ * ⚡ Matches free-form natural date searches (e.g. "15 नवंबर", "15 अगस्त", "15 nov", "15 november", "15/11", "15-11", "2026-11-15")
+ * against an event date string (e.g. "2026-11-15").
+ */
+export function matchDateQuery(rawQuery: string, dateStr?: string | null): boolean {
+  if (!rawQuery || !dateStr) return false;
+  const q = rawQuery.trim().toLowerCase();
+  if (!q) return false;
+
+  const rawClean = dateStr.trim();
+  if (rawClean.toLowerCase().includes(q)) return true;
+
+  const dateMatch = rawClean.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (!dateMatch) {
+    return false;
+  }
+
+  const year = parseInt(dateMatch[1], 10);
+  const month = parseInt(dateMatch[2], 10);
+  const day = parseInt(dateMatch[3], 10);
+
+  const MONTHS_FULL = [
+    'january', 'february', 'march', 'april', 'may', 'june',
+    'july', 'august', 'september', 'october', 'november', 'december'
+  ];
+  const MONTHS_SHORT = [
+    'jan', 'feb', 'mar', 'apr', 'may', 'jun',
+    'jul', 'aug', 'sep', 'oct', 'nov', 'dec'
+  ];
+  const MONTHS_HINDI = [
+    ['जनवरी', 'जन'],
+    ['फ़रवरी', 'फरवरी', 'फ़ेब', 'फेब'],
+    ['मार्च', 'मार'],
+    ['अप्रैल', 'अप्रै', 'अप्रेल'],
+    ['मई'],
+    ['जून'],
+    ['जुलाई'],
+    ['अगस्त', 'अग'],
+    ['सितंबर', 'सितम्बर', 'सित'],
+    ['अक्टूबर', 'अक्टू', 'अक्टुबर'],
+    ['नवंबर', 'नवम्बर', 'नव'],
+    ['दिसंबर', 'दिसम्बर', 'दिस']
+  ];
+
+  const fullMonth = MONTHS_FULL[month - 1];
+  const shortMonth = MONTHS_SHORT[month - 1];
+  const hindiMonthNames = MONTHS_HINDI[month - 1];
+
+  const padDay = String(day).padStart(2, '0');
+  const padMonth = String(month).padStart(2, '0');
+
+  const representations = [
+    `${day} ${fullMonth}`,
+    `${padDay} ${fullMonth}`,
+    `${fullMonth} ${day}`,
+    `${fullMonth} ${padDay}`,
+    `${day} ${shortMonth}`,
+    `${padDay} ${shortMonth}`,
+    `${shortMonth} ${day}`,
+    `${shortMonth} ${padDay}`,
+    `${day}-${shortMonth}`,
+    `${padDay}-${shortMonth}`,
+    `${day}/${padMonth}`,
+    `${padDay}/${padMonth}`,
+    `${day}-${padMonth}`,
+    `${padDay}-${padMonth}`,
+    `${day}.${padMonth}`,
+    `${padDay}.${padMonth}`,
+    `${day}/${padMonth}/${year}`,
+    `${padDay}/${padMonth}/${year}`,
+    `${day}-${padMonth}-${year}`,
+    `${padDay}-${padMonth}-${year}`,
+    `${day} ${shortMonth} ${year}`,
+    `${day} ${fullMonth} ${year}`,
+    fullMonth,
+    shortMonth,
+  ];
+
+  for (const hName of hindiMonthNames) {
+    representations.push(`${day} ${hName}`);
+    representations.push(`${padDay} ${hName}`);
+    representations.push(`${hName} ${day}`);
+    representations.push(`${hName} ${padDay}`);
+    representations.push(`${day}-${hName}`);
+    representations.push(hName);
+  }
+
+  for (const rep of representations) {
+    if (rep.toLowerCase().includes(q) || q.includes(rep.toLowerCase())) {
+      return true;
+    }
+  }
+
+  const cleanQ = q.replace(/[^a-z0-9\u0900-\u097F]/g, '');
+  if (cleanQ) {
+    for (const rep of representations) {
+      const cleanRep = rep.toLowerCase().replace(/[^a-z0-9\u0900-\u097F]/g, '');
+      if (cleanRep.includes(cleanQ) || cleanQ.includes(cleanRep)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }

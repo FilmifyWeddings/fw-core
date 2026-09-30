@@ -486,7 +486,7 @@ export default function RoleAssignDropdown({
             </motion.div>
           </AnimatePresence>
 
-          {/* DUPLICATE ASSIGNMENT CONFIRMATION MODAL */}
+          {/* DUPLICATE / MULTI-SLOT ASSIGNMENT CONFIRMATION MODAL */}
           {confirmModalData && (
             <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150" onClick={(e) => e.stopPropagation()}>
               <div className="bg-white rounded-2xl p-5 max-w-sm w-full shadow-2xl border border-slate-200 space-y-4">
@@ -495,12 +495,12 @@ export default function RoleAssignDropdown({
                     <AlertCircle className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-black text-slate-900">Reassign Crew Member</h3>
+                    <h3 className="text-sm font-black text-slate-900">Multi-Slot Assignment</h3>
                     <p className="text-xs text-slate-600 mt-1">
-                      <span className="font-bold text-slate-900">{confirmModalData.memberName}</span> is currently assigned as <span className="font-bold text-amber-800">&quot;{confirmModalData.existingRole}&quot;</span> in this event.
+                      <span className="font-bold text-slate-900">{confirmModalData.memberName}</span> is already assigned as <span className="font-bold text-amber-800">&quot;{confirmModalData.existingRole}&quot;</span> in this event.
                     </p>
                     <p className="text-xs text-slate-600 mt-1">
-                      Do you want to reassign them to <span className="font-bold text-indigo-700">&quot;{confirmModalData.newRole}&quot;</span>?
+                      Assign them to <span className="font-bold text-indigo-700">&quot;{confirmModalData.newRole}&quot;</span> as well? (Both slots will remain assigned).
                     </p>
                   </div>
                 </div>
@@ -522,7 +522,7 @@ export default function RoleAssignDropdown({
                     }}
                     className="px-4 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-600/20 transition cursor-pointer"
                   >
-                    Reassign Member
+                    Assign to this slot too
                   </button>
                 </div>
               </div>

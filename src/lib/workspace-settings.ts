@@ -345,6 +345,62 @@ export function getRoleShortCode(roleName?: string | null, customRoles?: Workspa
   return formatRoleWithNumber(baseCode, number);
 }
 
+/**
+ * ⚡ Canonical Role Matcher
+ * Resolves short codes (TP, CP, CV, Ass, Dron), full role names, sequential numbered roles (TP 1, TP 2),
+ * and common wedding aliases (e.g. Wedding Photographer <-> Traditional Photographer).
+ */
+export function isRoleMatching(targetRole?: string | null, candidateRole?: string | null): boolean {
+  if (!targetRole || !candidateRole) return false;
+
+  const t = String(targetRole).trim().toLowerCase();
+  const c = String(candidateRole).trim().toLowerCase();
+  if (!t || !c) return false;
+
+  // 1. Direct case-insensitive match
+  if (t === c) return true;
+
+  // 2. Base role match stripping numbers (e.g. "TP 1", "TP 2", "Traditional Photographer 2")
+  const parsedT = parseRoleAndNumber(targetRole);
+  const parsedC = parseRoleAndNumber(candidateRole);
+  const baseT = parsedT.baseRole.trim().toLowerCase();
+  const baseC = parsedC.baseRole.trim().toLowerCase();
+  if (baseT === baseC) return true;
+
+  // 3. Short codes normalization via getRoleShortCode
+  const codeT = getRoleShortCode(baseT).toLowerCase();
+  const codeC = getRoleShortCode(baseC).toLowerCase();
+  if (codeT && codeC && codeT === codeC) return true;
+
+  // 4. Common wedding photography/videography heuristics
+  const isTradPhoto = (s: string) => s.includes('trad') && (s.includes('photo') || s.includes('tp'));
+  const isCandidPhoto = (s: string) => s.includes('candid') && (s.includes('photo') || s.includes('cp'));
+  const isTradVideo = (s: string) => s.includes('trad') && (s.includes('vid') || s.includes('tv'));
+  const isCine = (s: string) => s.includes('cine') || s.includes('kinematic') || s.includes('cv');
+  const isDrone = (s: string) => s.includes('dron') || s.includes('dp');
+  const isAssistant = (s: string) => s.includes('assist') || s.includes('helper') || s.includes('ass') || s.includes('ast');
+
+  if (isTradPhoto(t) && isTradPhoto(c)) return true;
+  if (isCandidPhoto(t) && isCandidPhoto(c)) return true;
+  if (isTradVideo(t) && isTradVideo(c)) return true;
+  if (isCine(t) && isCine(c)) return true;
+  if (isDrone(t) && isDrone(c)) return true;
+  if (isAssistant(t) && isAssistant(c)) return true;
+
+  // 5. Generic "Wedding Photographer" / "Photographer" matching photo roles
+  if (t.includes('wedding photographer') || t === 'photographer') {
+    if (c.includes('photo') || c === 'tp' || c === 'cp' || isTradPhoto(c) || isCandidPhoto(c)) return true;
+  }
+  if (c.includes('wedding photographer') || c === 'photographer') {
+    if (t.includes('photo') || t === 'tp' || t === 'cp' || isTradPhoto(t) || isCandidPhoto(t)) return true;
+  }
+
+  // 6. Substring match for custom roles (e.g. "Live Camera", "Face AI", "Makeup Art")
+  if (t.includes(c) || c.includes(t)) return true;
+
+  return false;
+}
+
 export function getRoleAbbr(role: string = '', customRoles?: WorkspaceCrewRole[]): string {
   if (!role) return 'CR';
   const { baseRole, number } = parseRoleAndNumber(role);

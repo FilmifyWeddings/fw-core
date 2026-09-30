@@ -42,7 +42,7 @@ interface FlattenedSubEvent {
   sortTimestamp: number;
 }
 
-import { resolveSubEventAssignments } from '@/lib/team-helpers';
+import { resolveSubEventAssignments, matchDateQuery } from '@/lib/team-helpers';
 
 export default function MonthListView({
   projects,
@@ -94,7 +94,8 @@ export default function MonthListView({
       const matchClientName = !q || project.client_name.toLowerCase().includes(q) || ((project as any).title || '').toLowerCase().includes(q);
 
       (project.fw_sub_events || []).forEach((se) => {
-        const matchSubTitle = !q || se.event_title.toLowerCase().includes(q) || (se.venue_name || '').toLowerCase().includes(q);
+        const matchDate = matchDateQuery(q, se.event_date);
+        const matchSubTitle = !q || se.event_title.toLowerCase().includes(q) || (se.venue_name || '').toLowerCase().includes(q) || matchDate;
         if (!matchClientName && !matchSubTitle) return;
 
         // Legacy single role filter (top pill)

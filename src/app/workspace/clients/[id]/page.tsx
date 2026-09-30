@@ -31,7 +31,7 @@ import {
   parseClientExtended, serializeClientExtended, type ClientEventItem, type ClientExtendedData, type StudioCommentItem 
 } from '@/components/clients/client-insider-modal';
 import { fetchWorkspaceTeamMembers, type WorkspaceMemberOption } from '@/lib/team-helpers';
-import { extractFinancialsFromQuotation, normalizeToIsoDate } from '@/lib/quotation-finance-sync';
+import { extractFinancialsFromQuotation, normalizeToIsoDate, normalizeSubEventTitle } from '@/lib/quotation-finance-sync';
 import type { 
   WorkspaceClient, PostProductionProject, DeliverableItem, ClientFinanceRecord, DeliverableStatus, DeliverableComment, FinanceMilestoneItem
 } from '@/types';
@@ -278,7 +278,7 @@ export default function ClientWorkspaceDetailPage() {
       quoteItems.forEach((item: any, idx: number) => {
         quoteEvents.push({
           id: item.id || `quote_event_${idx}`,
-          name: item.name || `Ceremony ${idx + 1}`,
+          name: normalizeSubEventTitle(item.name || `Ceremony ${idx + 1}`),
           date: item.date || 'Date TBD',
           time_start: item.startTime || '',
           time_end: item.endTime || '',
@@ -294,7 +294,7 @@ export default function ClientWorkspaceDetailPage() {
     // 2. Check shootDetails (Pre-Wedding Shoot)
     const shoot = finalQuotationDoc?.content_json?.shootDetails;
     if (shoot && shoot.enabled !== false && shoot.visible !== false && (shoot.heading || shoot.daysText || shoot.location || shoot.crewText)) {
-      const shootTitle = shoot.heading || 'Pre-Wedding Shoot';
+      const shootTitle = normalizeSubEventTitle(shoot.heading || 'Pre-Wedding Shoot');
       const alreadyHasShoot = quoteEvents.some(e => e.name.toLowerCase() === shootTitle.toLowerCase());
       if (!alreadyHasShoot) {
         quoteEvents.unshift({
@@ -318,7 +318,7 @@ export default function ClientWorkspaceDetailPage() {
 
     return (extended.events || []).map((e: any) => ({
       id: e.id,
-      name: e.name,
+      name: normalizeSubEventTitle(e.name),
       date: e.date || 'Date TBD',
       time_start: e.time_start,
       time_end: e.time_end,

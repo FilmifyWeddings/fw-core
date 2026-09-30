@@ -681,13 +681,23 @@ export default function FinancePage() {
       }
 
       const { data: clientData } = await clientQuery;
-      let clientList = clientData ? [...clientData] : [];
+      let clientList = (clientData || []).filter(c => {
+        const isClientTrashed = Boolean(
+          (c.status as string) === 'trash' || 
+          (c as any).status === 'trashed' || 
+          (c as any).status === 'archived' ||
+          (c as any).is_deleted === true || 
+          (c.notes && typeof c.notes === 'string' && c.notes.includes('[status:trash]'))
+        );
+        return !isClientTrashed;
+      });
 
       // Also fetch leads that have final_quotation_id or booked/accepted status to guarantee immediate card appearance
       try {
         let leadsQuery = supabase
           .from('leads')
           .select('*')
+          .neq('status', 'trash')
           .or('final_quotation_id.not.is.null,status.in.(booked,accepted,closed,converted)')
           .order('created_at', { ascending: false })
           .limit(1000);
@@ -699,6 +709,7 @@ export default function FinancePage() {
         const { data: leadsData } = await leadsQuery;
         if (leadsData) {
           for (const lead of leadsData) {
+            if (lead.status === 'trash' || (lead as any).is_deleted === true) continue;
             const coupleName = lead.raw_payload?.couple_name || (lead as any).couple_names || lead.client_name || lead.name || 'Untitled Client';
             const matchedClient = clientList.find(c => {
               const cleanLeadName = coupleName.toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
@@ -746,6 +757,7 @@ export default function FinancePage() {
       let financeQuery = supabase
         .from('client_finance_records')
         .select('*')
+        .neq('status', 'trash')
         .order('created_at', { ascending: false });
 
       if (workspaceId && workspaceId !== 'ws_demo') {
@@ -755,7 +767,11 @@ export default function FinancePage() {
       const { data: financeData } = await financeQuery;
       const financeMap = new Map<string, ClientFinanceRecord>();
       if (financeData) {
-        financeData.forEach(f => financeMap.set(f.client_id, f));
+        financeData.forEach(f => {
+          if (f.status !== 'trash' && !f.is_deleted) {
+            financeMap.set(f.client_id, f);
+          }
+        });
       }
 
       // 3. Fetch Team Members & Finance Milestone Settings

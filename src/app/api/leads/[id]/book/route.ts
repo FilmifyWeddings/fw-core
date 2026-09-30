@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { syncBookedLeadOrFinalQuotation } from '@/lib/quotation-finance-sync';
+import { syncBookedLeadOrFinalQuotation, normalizeSubEventTitle } from '@/lib/quotation-finance-sync';
 
 export const runtime = 'nodejs';
 
@@ -90,7 +90,7 @@ export async function POST(
 
     const eventDate = lead.event_date || raw.event_date || null;
     const mainVenue = lead.location || raw.venue || raw.location || raw.city || '';
-    const eventType = lead.event_type || raw.event_type || 'Wedding Photography';
+    const eventType = normalizeSubEventTitle(lead.event_type || raw.event_type || 'Wedding Photography');
 
     // 3A. Workspace Clients: Locate existing or insert new
     let workspaceClientId: string | null = lead.client_id || null;

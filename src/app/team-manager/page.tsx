@@ -93,7 +93,7 @@ const format12HourTime = (timeStr?: string): string => {
   return `${formattedHours}:${minutes} ${ampm}`;
 };
 
-import { resolveSubEventAssignments } from '@/lib/team-helpers';
+import { resolveSubEventAssignments, matchDateQuery } from '@/lib/team-helpers';
 
 export default function TeamManagerPage() {
   const { workspaceId, workspaceName, isOwner, userRole, permissions, activeWorkspace, availableWorkspaces, userId, userEmail } = useWorkspace();
@@ -616,6 +616,7 @@ export default function TeamManagerPage() {
             )
           )
         `)
+        .neq('status', 'trash')
         .order('created_at', { ascending: false });
 
       if (isAllStudios) {
@@ -883,12 +884,9 @@ export default function TeamManagerPage() {
         const subEventObj = projects
           .flatMap(p => p.fw_sub_events || [])
           .find(se => se.id === activeAssign.sub_event_id);
-        const currentAssignments = subEventObj ? resolveSubEventAssignments(subEventObj, teamMembers) : [];
-        const existingSlot = memberId ? currentAssignments.find(
-          a => a.id !== assignmentId && a.assigned_member_id === memberId
-        ) : null;
 
         // 1. INSTANT OPTIMISTIC UI STATE UPDATE (NO PAGE RELOAD / NO RE-FETCH)
+        // Multi-slot assignment supported: Does NOT unassign member from other slots on this event!
         setProjects(prevProjects =>
           prevProjects.map(proj => ({
             ...proj,
@@ -897,24 +895,8 @@ export default function TeamManagerPage() {
               const existingAssignments = se.fw_assignments || [];
               const exists = existingAssignments.some(a => a.id === assignmentId);
 
-              // If member was in another slot in this event, unassign that slot
-              let intermediate = existingAssignments;
-              if (existingSlot) {
-                intermediate = intermediate.map(a =>
-                  a.id === existingSlot.id
-                    ? {
-                        ...a,
-                        assigned_member_id: null,
-                        assigned_member_name: null,
-                        fw_team_members: null,
-                        status: 'pending'
-                      }
-                    : a
-                );
-              }
-
               const updatedAssignments = exists
-                ? intermediate.map(a =>
+                ? existingAssignments.map(a =>
                     a.id === assignmentId
                       ? { 
                           ...a, 
@@ -925,12 +907,13 @@ export default function TeamManagerPage() {
                           paid_amount: 0,
                           advance_amount: 0,
                           balance_amount: defaultAssignedRate,
-                          payment_status: 'pending'
+                          payment_status: 'pending',
+                          status: memberId ? 'assigned' : 'pending'
                         }
                       : a
                   )
                 : [
-                    ...intermediate,
+                    ...existingAssignments,
                     {
                       id: assignmentId,
                       project_id: activeAssign.project_id,
@@ -944,6 +927,7 @@ export default function TeamManagerPage() {
                       advance_amount: 0,
                       balance_amount: defaultAssignedRate,
                       payment_status: 'pending',
+                      status: memberId ? 'assigned' : 'pending'
                     },
                   ];
               return { ...se, fw_assignments: updatedAssignments };
@@ -958,9 +942,7 @@ export default function TeamManagerPage() {
             .find(se => se.id === activeAssign.sub_event_id);
           const projectObj = projects.find(p => p.id === activeAssign.project_id);
           const prevMem = teamMembers.find(m => m.id === activeAssign.assigned_member_id);
-          const prevName = prevMem?.name || 'Crew Member';
-          const actorName = currentMember?.name || workspaceName || activeWorkspace?.studioName || 'Admin';
-          const actorRole = isOwner ? 'Studio Owner' : (currentMember?.is_sales_person ? 'Sales Person' : 'Project Manager');
+          const prevName = prevMem?.name || (activeAssign as any).assigned_member_name || 'Crew Member';
 
           logCrewAssignmentChange({
             projectId: activeAssign.project_id,
@@ -969,22 +951,44 @@ export default function TeamManagerPage() {
             projectName: projectObj?.client_name || undefined,
             eventTitle: subEventObj?.event_title || 'event',
             previousMemberName: prevName,
-            targetMemberId: prevMem?.id || undefined,
+            targetMemberId: prevMem?.id || activeAssign.assigned_member_id || undefined,
             targetMemberAvatar: prevMem?.avatar_url || undefined,
             roleName: activeAssign.required_role || 'Crew',
             isRemoval: true
           }).catch(() => {});
 
+          // DIRECT & IMMEDIATE BACKEND PURGE TO GUARANTEE 0 GHOST REAPPEARANCES ON REFRESH
           (async () => {
-            await unassignCrewSlot({
-              workspaceId: workspaceId || currentUserId || '',
-              eventId: activeAssign.project_id || undefined,
-              subEventId: activeAssign.sub_event_id || undefined,
-              assignmentId: assignmentId,
-              roleShortCode: (activeAssign as any).role_short_code || activeAssign.required_role?.slice(0, 4) || '',
-              roleName: activeAssign.required_role,
-              teamMemberId: activeAssign.assigned_member_id || undefined
-            });
+            try {
+              const cleanAssignId = String(assignmentId || '');
+              if (cleanAssignId && !cleanAssignId.includes('-role-')) {
+                await supabase
+                  .from('fw_assignments')
+                  .update({
+                    assigned_member_id: null,
+                    assigned_member_name: null,
+                    agreed_amount: 0,
+                    advance_amount: 0,
+                    paid_amount: 0,
+                    balance_amount: 0,
+                    status: 'pending',
+                    payment_status: 'pending'
+                  })
+                  .eq('id', cleanAssignId);
+              }
+
+              await unassignCrewSlot({
+                workspaceId: workspaceId || currentUserId || '',
+                eventId: activeAssign.project_id || undefined,
+                subEventId: activeAssign.sub_event_id || undefined,
+                assignmentId: assignmentId,
+                roleShortCode: (activeAssign as any).role_short_code || activeAssign.required_role?.slice(0, 4) || '',
+                roleName: activeAssign.required_role,
+                teamMemberId: activeAssign.assigned_member_id || undefined
+              });
+            } catch (err) {
+              console.error('[TeamManager] Unassignment error:', err);
+            }
           })();
           return;
         }
@@ -1073,21 +1077,6 @@ export default function TeamManagerPage() {
                 role: activeAssign.required_role || 'Crew',
                 agreed_amount: defaultAmount
               });
-            }
-            // 2. If member was previously assigned to another slot in this sub-event, unassign that old slot in DB first
-            if (existingSlot && existingSlot.id && !String(existingSlot.id).includes('-role-')) {
-              try {
-                await supabase
-                  .from('fw_assignments')
-                  .update({
-                    assigned_member_id: null,
-                    assigned_member_name: null,
-                    status: 'pending'
-                  })
-                  .eq('id', String(existingSlot.id));
-              } catch (e) {
-                console.warn('[TeamManager] Previous slot unassignment notice:', e);
-              }
             }
 
             // 3. Persist assignment to DB
@@ -1289,6 +1278,21 @@ export default function TeamManagerPage() {
               .eq('id', existing.id);
 
             // Audit log schedule shift, date not fixed, venue or instructions changes
+            if (existing.event_title && existing.event_title !== title) {
+              logProjectActivity({
+                projectId,
+                subEventId: existing.id,
+                actorId: currentUserId || undefined,
+                actorName,
+                actorRole,
+                actionType: 'EVENT_RENAMED',
+                eventTitle: title,
+                description: `Renamed event from **${existing.event_title}** to **${title}**`,
+                previousValue: existing.event_title,
+                newValue: title,
+              }).catch(() => {});
+            }
+
             const oldDate = existing.event_date || null;
             const newDate = block.isDateTbd ? null : (block.subEventDate || null);
             const oldTime = existing.start_time_12h || existing.roll_call_time || '';
@@ -1305,7 +1309,7 @@ export default function TeamManagerPage() {
                 actorRole,
                 actionType: 'DATE_TBD_TOGGLED',
                 eventTitle: title,
-                description: `Marked ${title} date as Not Fixed`,
+                description: `Marked **${title}** date as **Not Fixed (TBD)**`,
                 previousValue: oldDate || 'Fixed',
                 newValue: 'Not Fixed',
               }).catch(() => {});
@@ -1318,7 +1322,7 @@ export default function TeamManagerPage() {
                 actorRole,
                 actionType: 'SCHEDULE_SHIFTED',
                 eventTitle: title,
-                description: `Shifted schedule for ${title} from ${oldDateTimeStr || 'TBD'} to ${newDateTimeStr || 'TBD'}`,
+                description: `Shifted schedule for **${title}** from **${oldDateTimeStr || 'TBD'}** to **${newDateTimeStr || 'TBD'}**`,
                 previousValue: oldDateTimeStr || 'TBD',
                 newValue: newDateTimeStr || 'TBD',
               }).catch(() => {});
@@ -1422,6 +1426,20 @@ export default function TeamManagerPage() {
                 .from('fw_assignments')
                 .delete()
                 .in('id', excessUnassignedSlots.map((a: any) => a.id));
+
+              for (const slot of excessUnassignedSlots) {
+                logProjectActivity({
+                  projectId,
+                  subEventId: existing.id,
+                  actorId: currentUserId || undefined,
+                  actorName,
+                  actorRole,
+                  actionType: 'ROLE_REMOVED',
+                  eventTitle: title,
+                  targetRole: slot.required_role,
+                  description: `Removed **${slot.required_role}** role slot from **${title}**`,
+                }).catch(() => {});
+              }
             }
 
             // Insert new unassigned slots for new roles
@@ -1440,6 +1458,20 @@ export default function TeamManagerPage() {
               }));
 
               await supabase.from('fw_assignments').insert(newAssignmentsPayload);
+
+              for (const role of rolesNeeded) {
+                logProjectActivity({
+                  projectId,
+                  subEventId: existing.id,
+                  actorId: currentUserId || undefined,
+                  actorName,
+                  actorRole,
+                  actionType: 'ROLE_ADDED',
+                  eventTitle: title,
+                  targetRole: role,
+                  description: `Added **${role}** role slot to **${title}**`,
+                }).catch(() => {});
+              }
             }
 
           } else {
@@ -1645,15 +1677,20 @@ export default function TeamManagerPage() {
   // Filtered Projects List with Unified Filter Support
   const filteredProjects = useMemo(() => {
     return projects.filter(p => {
-      if (activeTab === 'trash') return p.is_archived;
-      if (p.is_archived) return false;
+      if (activeTab === 'trash') return p.is_archived || p.status === 'trash';
+      if (p.is_archived || p.status === 'trash') return false;
 
-      // 1. Search Query
+      // 1. Search Query (Client Name, Title, Venue, Sub-Event Title, or Natural Date: e.g. "15 नवंबर", "15 august", "15 nov")
       if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchName = p.client_name?.toLowerCase().includes(q);
-        const matchSub = p.fw_sub_events?.some(se => se.event_title?.toLowerCase().includes(q));
-        if (!matchName && !matchSub) return false;
+        const q = searchQuery.toLowerCase().trim();
+        const matchName = (p.client_name || '').toLowerCase().includes(q) || ((p as any).title || '').toLowerCase().includes(q);
+        const matchVenue = (p.main_venue || '').toLowerCase().includes(q);
+        const matchSub = p.fw_sub_events?.some(se => 
+          (se.event_title || '').toLowerCase().includes(q) ||
+          (se.venue_name || '').toLowerCase().includes(q) ||
+          matchDateQuery(q, se.event_date)
+        );
+        if (!matchName && !matchVenue && !matchSub) return false;
       }
 
       // 2. Role Filter (legacy dropdown or unified)
@@ -1768,12 +1805,16 @@ export default function TeamManagerPage() {
     projects.forEach((p) => {
       if (p.is_archived) return;
 
-      // Search Term Filter (Client name, Project title, Sub-event title, Venue)
+      // Search Term Filter (Client name, Project title, Sub-event title, Venue, Date)
       if (searchQuery && searchQuery.trim() !== '') {
         const q = searchQuery.toLowerCase().trim();
         const matchClient = (p.client_name || '').toLowerCase().includes(q);
         const matchProject = ((p as any).title || (p as any).project_name || '').toLowerCase().includes(q);
-        const matchSub = (p.fw_sub_events || []).some(se => (se.event_title || (se as any).name || (se as any).event_type || '').toLowerCase().includes(q));
+        const matchSub = (p.fw_sub_events || []).some(se => 
+          (se.event_title || (se as any).name || (se as any).event_type || '').toLowerCase().includes(q) ||
+          (se.venue_name || '').toLowerCase().includes(q) ||
+          matchDateQuery(q, se.event_date)
+        );
         const matchVenue = (p.main_venue || '').toLowerCase().includes(q);
         if (!matchClient && !matchProject && !matchSub && !matchVenue) return;
       }
@@ -2710,10 +2751,24 @@ export default function TeamManagerPage() {
 
                         {/* HORIZONTAL MODERN GRADIENT SUB-EVENT CARDS STACK */}
                         <div className="space-y-4">
-                          {(isCardFilterActive
-                            ? (project.fw_sub_events || []).filter(se => isSubEventMatch(se, project, unifiedFilters, teamMembers))
-                            : (project.fw_sub_events || [])
-                          ).map((subEvent) => {
+                          {(project.fw_sub_events || [])
+                            .filter(se => {
+                              if (isCardFilterActive && !isSubEventMatch(se, project, unifiedFilters, teamMembers)) {
+                                return false;
+                              }
+                              if (searchQuery.trim()) {
+                                const q = searchQuery.toLowerCase().trim();
+                                const matchProj = (project.client_name || '').toLowerCase().includes(q) || ((project as any).title || '').toLowerCase().includes(q);
+                                if (!matchProj) {
+                                  const matchSub = (se.event_title || '').toLowerCase().includes(q) ||
+                                    (se.venue_name || '').toLowerCase().includes(q) ||
+                                    matchDateQuery(q, se.event_date);
+                                  if (!matchSub) return false;
+                                }
+                              }
+                              return true;
+                            })
+                            .map((subEvent) => {
                             const isTbd = Boolean((subEvent as any).is_date_tbd) || !subEvent.event_date || isNaN(new Date(subEvent.event_date).getTime());
                             const isOvernightShoot = Boolean((subEvent as any).is_overnight) && Boolean((subEvent as any).end_date) && !isNaN(new Date((subEvent as any).end_date).getTime());
 
@@ -3025,9 +3080,22 @@ export default function TeamManagerPage() {
                   {filteredProjects.map((project) => {
                     const isCardFilterActive = checkIsFilterActive(unifiedFilters);
                     const isProjectPmMatched = isPmMatch(project, unifiedFilters);
-                    const subEvents = isCardFilterActive
-                      ? (project.fw_sub_events || []).filter(se => isSubEventMatch(se, project, unifiedFilters, teamMembers))
-                      : (project.fw_sub_events || []);
+                    const subEvents = (project.fw_sub_events || []).filter(se => {
+                      if (isCardFilterActive && !isSubEventMatch(se, project, unifiedFilters, teamMembers)) {
+                        return false;
+                      }
+                      if (searchQuery.trim()) {
+                        const q = searchQuery.toLowerCase().trim();
+                        const matchProj = (project.client_name || '').toLowerCase().includes(q) || ((project as any).title || '').toLowerCase().includes(q);
+                        if (!matchProj) {
+                          const matchSub = (se.event_title || '').toLowerCase().includes(q) ||
+                            (se.venue_name || '').toLowerCase().includes(q) ||
+                            matchDateQuery(q, se.event_date);
+                          if (!matchSub) return false;
+                        }
+                      }
+                      return true;
+                    });
                     const projectGradient = getGradientByProjectId(project.id || project.client_name);
                     const cardHighlightClass = getCardHighlightClass(isCardFilterActive, true);
 

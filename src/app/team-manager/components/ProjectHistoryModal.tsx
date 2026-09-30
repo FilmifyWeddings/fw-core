@@ -30,6 +30,21 @@ function formatLogTime(isoDateStr: string): string {
   }
 }
 
+export function renderFormattedDescription(text: string) {
+  if (!text) return null;
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return (
+        <strong key={i} className="font-black text-neutral-950 dark:text-white">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    return <span key={i}>{part}</span>;
+  });
+}
+
 // Return styling and icon based on actionType
 function getActionConfig(actionType: string) {
   switch (actionType?.toUpperCase()) {
@@ -459,7 +474,7 @@ export const ProjectHistoryModal: React.FC<ProjectHistoryModalProps> = ({
                                 </div>
 
                                 <p className="text-xs text-neutral-700 dark:text-neutral-300 leading-relaxed font-medium">
-                                  {log.description}
+                                  {renderFormattedDescription(log.description)}
                                 </p>
 
                                 {/* Visual Badges:

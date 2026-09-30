@@ -87,40 +87,97 @@ export const EditEventModal: React.FC<EditEventModalProps> = ({
       }
 
       // Log granular changes to Audit Ledger
+      const newTitle = title.trim() || oldTitle;
+      if (oldTitle && oldTitle !== newTitle) {
+        await logProjectActivity({
+          projectId: project.id,
+          subEventId: subEvent.id,
+          actionType: 'EVENT_RENAMED',
+          eventTitle: newTitle,
+          description: `Renamed event from **${oldTitle}** to **${newTitle}**`,
+          previousValue: oldTitle,
+          newValue: newTitle,
+        });
+      }
+
       if (oldVenue !== (venue.trim() || '')) {
         await logProjectActivity({
           projectId: project.id,
           subEventId: subEvent.id,
           actionType: 'VENUE_UPDATED',
-          eventTitle: title,
-          description: `Updated venue for ${title} to "${venue.trim() || 'TBD'}"`,
+          eventTitle: newTitle,
+          description: `Updated venue for **${newTitle}** to **"${venue.trim() || 'TBD'}"**`,
           previousValue: oldVenue || 'TBD',
           newValue: venue.trim() || 'TBD',
         });
       }
 
-      const oldDateTimeStr = [oldDate || 'TBD', subEvent.roll_call_time].filter(Boolean).join(' ');
-      const newDateTimeStr = [isDateTbd ? 'TBD' : (date || 'TBD'), rollCall].filter(Boolean).join(' ');
+      const oldCity = subEvent.location_city || '';
+      if (oldCity !== (city.trim() || '')) {
+        await logProjectActivity({
+          projectId: project.id,
+          subEventId: subEvent.id,
+          actionType: 'LOCATION_UPDATED',
+          eventTitle: newTitle,
+          description: `Updated location city for **${newTitle}** to **"${city.trim() || 'TBD'}"**`,
+          previousValue: oldCity || 'TBD',
+          newValue: city.trim() || 'TBD',
+        });
+      }
 
       if (isDateTbd !== oldTbd && isDateTbd) {
         await logProjectActivity({
           projectId: project.id,
           subEventId: subEvent.id,
           actionType: 'DATE_TBD_TOGGLED',
-          eventTitle: title,
-          description: `Marked ${title} date as Not Fixed`,
+          eventTitle: newTitle,
+          description: `Marked **${newTitle}** date as **Not Fixed (TBD)**`,
           previousValue: oldDate || 'Fixed',
           newValue: 'Not Fixed',
         });
-      } else if (oldDate !== (isDateTbd ? null : date) || (subEvent.roll_call_time && rollCall && subEvent.roll_call_time !== rollCall)) {
+      } else if (oldTbd && !isDateTbd && date) {
         await logProjectActivity({
           projectId: project.id,
           subEventId: subEvent.id,
-          actionType: 'SCHEDULE_SHIFTED',
-          eventTitle: title,
-          description: `Shifted schedule for ${title} from ${oldDateTimeStr || 'TBD'} to ${newDateTimeStr || 'TBD'}`,
-          previousValue: oldDateTimeStr || 'TBD',
-          newValue: newDateTimeStr || 'TBD',
+          actionType: 'DATE_UPDATED',
+          eventTitle: newTitle,
+          description: `Set date for **${newTitle}** to **${date}**`,
+          previousValue: 'Not Fixed (TBD)',
+          newValue: date,
+        });
+      } else if (!isDateTbd && oldDate !== (date || null)) {
+        await logProjectActivity({
+          projectId: project.id,
+          subEventId: subEvent.id,
+          actionType: 'DATE_UPDATED',
+          eventTitle: newTitle,
+          description: `Changed date of **${newTitle}** from **${oldDate || 'TBD'}** to **${date || 'TBD'}**`,
+          previousValue: oldDate || 'TBD',
+          newValue: date || 'TBD',
+        });
+      }
+
+      if (subEvent.roll_call_time && rollCall && subEvent.roll_call_time !== rollCall) {
+        await logProjectActivity({
+          projectId: project.id,
+          subEventId: subEvent.id,
+          actionType: 'TIME_UPDATED',
+          eventTitle: newTitle,
+          description: `Updated call time for **${newTitle}** from **${subEvent.roll_call_time}** to **${rollCall}**`,
+          previousValue: subEvent.roll_call_time,
+          newValue: rollCall,
+        });
+      }
+
+      if (subEvent.dismissal_estimate_time && dismissal && subEvent.dismissal_estimate_time !== dismissal) {
+        await logProjectActivity({
+          projectId: project.id,
+          subEventId: subEvent.id,
+          actionType: 'TIME_UPDATED',
+          eventTitle: newTitle,
+          description: `Updated dismissal time for **${newTitle}** from **${subEvent.dismissal_estimate_time}** to **${dismissal}**`,
+          previousValue: subEvent.dismissal_estimate_time,
+          newValue: dismissal,
         });
       }
 
@@ -129,8 +186,8 @@ export const EditEventModal: React.FC<EditEventModalProps> = ({
           projectId: project.id,
           subEventId: subEvent.id,
           actionType: 'NOTES_UPDATED',
-          eventTitle: title,
-          description: `Updated shoot notes/instructions for ${title}`,
+          eventTitle: newTitle,
+          description: `Updated operational notes for **${newTitle}**`,
         });
       }
 

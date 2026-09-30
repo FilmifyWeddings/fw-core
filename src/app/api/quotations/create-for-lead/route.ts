@@ -72,34 +72,7 @@ export async function POST(req: NextRequest) {
     });
     const nextVersion = maxVersion + 1;
 
-    const docCoupleName = (body.initialDocument?.cover?.coupleName || (body.initialDocument as any)?.coupleName || '').trim();
-    const hasValidDocCouple = docCoupleName && !isPlaceholderCoupleName(docCoupleName);
-
-    const rawLeadCouple = 
-      (hasValidDocCouple ? docCoupleName : null) ||
-      effectiveLead.raw_payload?.couple_name ||
-      effectiveLead.raw_payload?.couple_names ||
-      (effectiveLead as any).couple_names ||
-      ((effectiveLead as any).full_name && !['client', 'valued client', 'lead'].includes((effectiveLead as any).full_name.toLowerCase().trim()) ? (effectiveLead as any).full_name : '') ||
-      (effectiveLead.name && !['client', 'valued client', 'lead'].includes(effectiveLead.name.toLowerCase().trim()) ? effectiveLead.name : '') ||
-      clientNameInput ||
-      'Valued Client';
-
-    const effectiveCoupleName = hasValidDocCouple ? docCoupleName : rawLeadCouple;
-    const leadName = effectiveCoupleName;
-
-    const groomName = (body.initialDocument?.cover?.groomName && !isPlaceholderCoupleName(body.initialDocument.cover.groomName))
-      ? body.initialDocument.cover.groomName.trim()
-      : (effectiveCoupleName.includes('&') ? effectiveCoupleName.split('&')[0].trim() : effectiveCoupleName);
-
-    const brideName = (body.initialDocument?.cover?.brideName && !isPlaceholderCoupleName(body.initialDocument.cover.brideName))
-      ? body.initialDocument.cover.brideName.trim()
-      : (effectiveCoupleName.includes('&') ? effectiveCoupleName.split('&')[1].trim() : 'Partner');
-
-    const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const quotationId = `FW-Q-${leadShortId}-V${nextVersion}-${randomSuffix}`;
-
-    // Deep clone document JSON (using initialDocument if passed, or extract from additionalNotes, else templateDoc)
+    // 2. Extract initial document from body or additionalNotes if provided
     let initialDoc = body.initialDocument;
     if (!initialDoc && body.additionalNotes) {
       try {
@@ -122,6 +95,49 @@ export async function POST(req: NextRequest) {
         console.warn('[create-for-lead] Error extracting additionalNotes:', err);
       }
     }
+
+    const docCoupleName = (
+      initialDoc?.cover?.coupleName || 
+      (initialDoc as any)?.coupleName || 
+      body.initialDocument?.cover?.coupleName || 
+      (body.initialDocument as any)?.coupleName || 
+      ''
+    ).trim();
+    const hasValidDocCouple = docCoupleName && !isPlaceholderCoupleName(docCoupleName);
+
+    const rawGroomBride = [
+      effectiveLead.raw_payload?.groom_name,
+      effectiveLead.raw_payload?.bride_name
+    ].filter(Boolean).map((s: string) => s.trim()).filter(Boolean).join(' & ');
+
+    const rawLeadCouple = 
+      (hasValidDocCouple ? docCoupleName : null) ||
+      effectiveLead.raw_payload?.couple_name ||
+      effectiveLead.raw_payload?.couple_names ||
+      (effectiveLead as any).couple_names ||
+      (rawGroomBride && !isPlaceholderCoupleName(rawGroomBride) ? rawGroomBride : null) ||
+      ((effectiveLead as any).full_name && !['client', 'valued client', 'lead'].includes((effectiveLead as any).full_name.toLowerCase().trim()) ? (effectiveLead as any).full_name : '') ||
+      (effectiveLead.name && !['client', 'valued client', 'lead'].includes(effectiveLead.name.toLowerCase().trim()) ? effectiveLead.name : '') ||
+      clientNameInput ||
+      'Valued Client';
+
+    const effectiveCoupleName = hasValidDocCouple ? docCoupleName : rawLeadCouple;
+    const leadName = effectiveCoupleName;
+
+    const groomName = (initialDoc?.cover?.groomName && !isPlaceholderCoupleName(initialDoc.cover.groomName))
+      ? initialDoc.cover.groomName.trim()
+      : (body.initialDocument?.cover?.groomName && !isPlaceholderCoupleName(body.initialDocument.cover.groomName))
+      ? body.initialDocument.cover.groomName.trim()
+      : (effectiveCoupleName.includes('&') ? effectiveCoupleName.split('&')[0].trim() : effectiveCoupleName);
+
+    const brideName = (initialDoc?.cover?.brideName && !isPlaceholderCoupleName(initialDoc.cover.brideName))
+      ? initialDoc.cover.brideName.trim()
+      : (body.initialDocument?.cover?.brideName && !isPlaceholderCoupleName(body.initialDocument.cover.brideName))
+      ? body.initialDocument.cover.brideName.trim()
+      : (effectiveCoupleName.includes('&') ? effectiveCoupleName.split('&')[1].trim() : 'Partner');
+
+    const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const quotationId = `FW-Q-${leadShortId}-V${nextVersion}-${randomSuffix}`;
 
     const baseSourceDoc = initialDoc ? normalizeQuotationData(initialDoc, templateDoc) : templateDoc;
     const clonedDoc = JSON.parse(JSON.stringify(baseSourceDoc || DEFAULT_AIRY_PROPOSAL));
