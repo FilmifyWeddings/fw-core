@@ -270,27 +270,72 @@ export default function FinancePage() {
     }
   };
 
-  const handlePermanentDeleteFinanceRecord = async (record: ClientFinanceRecord) => {
-    if (!confirm(`Are you sure you want to PERMANENTLY delete finance record for "${record.client?.name || 'this client'}"? This cannot be undone.`)) {
-      return;
-    }
+  const [recordToPermanentlyDelete, setRecordToPermanentlyDelete] = useState<ClientFinanceRecord | null>(null);
+  const [isPermanentlyDeleting, setIsPermanentlyDeleting] = useState(false);
+
+  const handlePermanentDeleteFinanceRecord = (record: ClientFinanceRecord) => {
+    setRecordToPermanentlyDelete(record);
+  };
+
+  const executePermanentDeleteFinanceRecord = async () => {
+    if (!recordToPermanentlyDelete) return;
+    const record = recordToPermanentlyDelete;
+    const targetId = record.id;
+    const targetClientId = record.client_id || record.client?.id;
+    const targetLeadId = record.client?.lead_id;
+
+    setIsPermanentlyDeleting(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const workspaceId = session?.user?.id || currentWorkspaceId || 'ws_demo';
+      const token = session?.access_token;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      if (workspaceId !== 'ws_demo') {
-        await supabase
-          .from('client_finance_records')
-          .delete()
-          .eq('id', record.id);
+      const res = await fetch('/api/workspace/finance/permanent-delete', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          recordId: targetId,
+          clientId: targetClientId,
+          leadId: targetLeadId
+        })
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Server failed to delete record');
       }
 
-      setFinanceRecords(prev => prev.filter(r => r.id !== record.id));
+      // Clean up client-side state
+      setFinanceRecords(prev => prev.filter(r => 
+        r.id !== targetId && 
+        (!targetClientId || r.client_id !== targetClientId) &&
+        (!targetClientId || r.client?.id !== targetClientId)
+      ));
+
+      memCachedFinanceRecords = memCachedFinanceRecords.filter(r => 
+        r.id !== targetId && 
+        (!targetClientId || r.client_id !== targetClientId) &&
+        (!targetClientId || r.client?.id !== targetClientId)
+      );
+
+      try {
+        localStorage.setItem('sc_cached_finance_records', JSON.stringify(memCachedFinanceRecords));
+      } catch (_) {}
+
+      if (targetClientId) {
+        setClients(prev => prev.filter(c => c.id !== targetClientId && c.lead_id !== targetClientId));
+      }
+
       window.dispatchEvent(new CustomEvent('finance_updated'));
       window.dispatchEvent(new CustomEvent('client_updated'));
+
+      setRecordToPermanentlyDelete(null);
     } catch (err: any) {
-      console.error('[handlePermanentDeleteFinanceRecord] Error:', err);
-      alert('Failed to permanently delete record: ' + err.message);
+      console.error('[executePermanentDeleteFinanceRecord] Error:', err);
+      alert('Failed to permanently delete record: ' + (err.message || 'Unknown error'));
+    } finally {
+      setIsPermanentlyDeleting(false);
     }
   };
 
@@ -4512,6 +4557,65 @@ export default function FinancePage() {
                   <>
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>Yes, Move to Trash</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          PERMANENT DELETE FROM TRASH CONFIRMATION MODAL
+      ───────────────────────────────────────────────────────────── */}
+      {recordToPermanentlyDelete && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-rose-100 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0 border border-rose-200">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900">Permanently Delete Record?</h3>
+                <p className="text-xs text-slate-500">
+                  This action cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-rose-50 rounded-2xl border border-rose-200 text-xs text-rose-900 space-y-2">
+              <p className="font-semibold text-rose-800">
+                Are you sure you want to permanently delete the finance record for <strong className="font-black text-rose-950">"{recordToPermanentlyDelete.client?.name || 'this client'}"</strong>?
+              </p>
+              <p className="text-[11px] text-rose-700 leading-relaxed">
+                This will permanently erase all associated payments, installments, and trash data from the database. It cannot be recovered.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setRecordToPermanentlyDelete(null)}
+                disabled={isPermanentlyDeleting}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={executePermanentDeleteFinanceRecord}
+                disabled={isPermanentlyDeleting}
+                className="px-5 py-2 text-xs font-black text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-md transition cursor-pointer flex items-center gap-2"
+              >
+                {isPermanentlyDeleting ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Permanently Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Yes, Permanently Delete</span>
                   </>
                 )}
               </button>

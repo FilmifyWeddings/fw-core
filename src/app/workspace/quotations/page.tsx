@@ -8,7 +8,7 @@ import {
   Plus, Lock, FileText, Image as ImageIcon, Folder, 
   ChevronRight, ExternalLink, Download, Copy, Sparkles, Eye, 
   Upload, HardDrive, CheckCircle2, ArrowRight, X, Trash2,
-  Search, Shield, Check, Layers, Sliders, RefreshCw, Zap, AlertTriangle, Crown
+  Search, Shield, Check, Layers, Sliders, RefreshCw, Zap, AlertTriangle, Crown, Edit3
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manager';
@@ -163,6 +163,7 @@ export default function WorkspaceQuotationsGalleryPage() {
   const [settingDefaultId, setSettingDefaultId] = useState<string | null>(null);
   const [togglingSystemId, setTogglingSystemId] = useState<string | null>(null);
   const [cloningGlobalId, setCloningGlobalId] = useState<string | null>(null);
+  const [openingTemplateId, setOpeningTemplateId] = useState<string | null>(null);
   const [deletingQuote, setDeletingQuote] = useState<SavedQuotation | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -339,99 +340,21 @@ export default function WorkspaceQuotationsGalleryPage() {
 
   const handleEditTemplate = async (quote: SavedQuotation) => {
     const quoteId = quote.quotation_number || quote.id;
+    setOpeningTemplateId(quoteId);
 
-    if (quote.is_system_template || quoteId === 'FW-2WT85Y0' || quoteId === 'SYSTEM_DEFAULT_WEDDING') {
-      // Studio owner clicked Edit Template on System Preset:
-      // Instantly generate workspace copy and open in MILLISECONDS (0ms transition)!
-      if (quotations.length >= 10) {
-        setQuotaModal({
-          isOpen: true,
-          type: 'quotation',
-          currentCount: quotations.length,
-          maxLimit: 10
-        });
-        return;
-      }
-
-      const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
-      const newId = `FW-USER-${randomSuffix}`;
-      const copyTitle = generateUniqueCopyName(quote.title || 'Wedding - Design 1', quotations.map(q => q.title));
-
-      const baseDoc = quote.content_json || DEFAULT_AIRY_PROPOSAL;
-      const clonedDoc = JSON.parse(JSON.stringify(baseDoc));
-      clonedDoc.designName = copyTitle;
-
-      // 0ms Instant Client Storage Hydration
-      if (typeof window !== 'undefined') {
-        try {
-          sessionStorage.setItem(`current_quotation_doc_${newId}`, JSON.stringify(clonedDoc));
-          sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: newId, document: clonedDoc }));
-          localStorage.setItem(`wg_proposal_draft_${newId}`, JSON.stringify(clonedDoc));
-          cacheDocumentLocal(newId, clonedDoc, 1);
-        } catch (_) {}
-      }
-
-      // 0ms Instant State Sync in Your Designs
-      const currentUserId = userId || 'demo_user';
-      const duplicatedRecord: SavedQuotation = {
-        id: newId,
-        quotation_number: newId,
-        title: copyTitle,
-        client_name: quote.client_name || 'Rahul & Neha',
-        financials: quote.financials || {},
-        content_json: clonedDoc,
-        status: 'draft',
-        is_default: false,
-        is_system_template: false,
-        updated_at: new Date().toISOString()
-      };
-
-      setQuotations(prev => {
-        const nextList = [duplicatedRecord, ...prev];
-        memCachedQuotations = nextList;
-        try {
-          localStorage.setItem('wg_quotations_cache', JSON.stringify(nextList));
-        } catch (_) {}
-        return nextList;
-      });
-
-      // Background DB Persistence (non-blocking)
-      (async () => {
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          const effectiveWsId = session?.user?.id || currentUserId;
-          const token = session?.access_token;
-          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-          if (token) headers['Authorization'] = `Bearer ${token}`;
-          if (userEmail) headers['x-user-email'] = userEmail;
-
-          await fetch('/api/templates/duplicate', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-              sourceTemplateId: quoteId,
-              targetTemplateId: newId,
-              workspaceId: effectiveWsId,
-              title: copyTitle
-            })
-          });
-        } catch (bgErr) {
-          console.warn('[Background Duplicate Error]:', bgErr);
-        }
-      })();
-
-      // Instantly open the editor in milliseconds!
-      router.push(`/workspace/quotations/builder/templet/${newId}`);
-    } else {
-      // Editing an existing user design: pre-seed sessionStorage for 0ms instant transition
-      if (quote.content_json && typeof window !== 'undefined') {
-        try {
-          sessionStorage.setItem(`current_quotation_doc_${quoteId}`, JSON.stringify(quote.content_json));
-          sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: quoteId, document: quote.content_json }));
-        } catch (_) {}
-      }
-      router.push(`/workspace/quotations/builder/templet/${quoteId}`);
+    // 0ms Instant Client Storage Pre-seeding
+    const baseDoc = quote.content_json || DEFAULT_AIRY_PROPOSAL;
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem(`current_quotation_doc_${quoteId}`, JSON.stringify(baseDoc));
+        sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: quoteId, document: baseDoc }));
+        localStorage.setItem(`wg_proposal_draft_${quoteId}`, JSON.stringify(baseDoc));
+        cacheDocumentLocal(quoteId, baseDoc, 1);
+      } catch (_) {}
     }
+
+    // Instantly navigate to builder in milliseconds!
+    router.push(`/workspace/quotations/builder/templet/${quoteId}`);
   };
 
   const handleConfirmDelete = async () => {
@@ -800,7 +723,7 @@ export default function WorkspaceQuotationsGalleryPage() {
         };
 
         const userDesigns: SavedQuotation[] = [];
-        let systemDesign: SavedQuotation | null = null;
+        const systemDesigns: SavedQuotation[] = [];
 
         if (filteredTmplData.length > 0) {
           filteredTmplData.forEach((t: any) => {
@@ -819,18 +742,16 @@ export default function WorkspaceQuotationsGalleryPage() {
             };
 
             if (isSys) {
-              if (!systemDesign || t.is_default) {
-                systemDesign = item;
-              }
+              systemDesigns.push(item);
             } else {
               userDesigns.push(item);
             }
           });
         }
 
-        // Combine: user's custom designs + exactly ONE active system preset
-        if (systemDesign) {
-          combined = [...userDesigns, systemDesign];
+        // Combine: user's custom designs + all active system presets
+        if (systemDesigns.length > 0) {
+          combined = [...userDesigns, ...systemDesigns];
         } else if (userDesigns.length > 0) {
           combined = [...userDesigns, globalSystemTemplate];
         } else {
@@ -1246,14 +1167,21 @@ export default function WorkspaceQuotationsGalleryPage() {
 
                   <button
                     type="button"
-                    disabled={cloningGlobalId === quoteId}
+                    disabled={cloningGlobalId === quoteId || openingTemplateId === quoteId}
                     onClick={() => handleEditTemplate(quote)}
-                    className="w-full py-1.5 rounded-xl border border-amber-600/40 bg-gradient-to-r from-[#B88E4C] to-[#967236] text-white text-[11px] font-extrabold text-center flex items-center justify-center gap-1 shadow-xs hover:brightness-105 transition-all cursor-pointer"
+                    className="w-full py-1.5 rounded-xl border border-amber-600/40 bg-gradient-to-r from-[#B88E4C] to-[#967236] text-white text-[11px] font-extrabold text-center flex items-center justify-center gap-1.5 shadow-xs hover:brightness-105 transition-all cursor-pointer disabled:opacity-85"
                   >
-                    {cloningGlobalId === quoteId ? (
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    ) : null}
-                    <span>Edit Template</span>
+                    {openingTemplateId === quoteId ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Opening Design...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>Edit Template</span>
+                      </>
+                    )}
                   </button>
 
                   {/* SUPER ADMIN CONTROL BUTTON (Only for sushantnawale700@gmail.com) */}
@@ -1769,6 +1697,21 @@ export default function WorkspaceQuotationsGalleryPage() {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Fast Opening Indicator Banner */}
+      <AnimatePresence>
+        {openingTemplateId && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed top-6 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 bg-slate-900/90 text-white backdrop-blur-md rounded-2xl shadow-2xl border border-amber-500/40 flex items-center gap-3 font-sans"
+          >
+            <RefreshCw className="w-4 h-4 text-amber-400 animate-spin" />
+            <span className="text-xs font-bold tracking-wide">Opening Design Editor in milliseconds...</span>
+          </motion.div>
         )}
       </AnimatePresence>
 

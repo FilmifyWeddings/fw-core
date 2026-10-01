@@ -63,36 +63,60 @@ export async function GET(req: NextRequest) {
       return true;
     });
 
-    // Fetch the SINGLE active default system template so every user has exactly 1 system preset
-    const { data: sysTmpls } = await supabaseAdmin
+    // Fetch all active published system templates (supports multiple active system presets)
+    let sysQuery = supabaseAdmin
       .from('quotation_templates')
       .select('id, user_id, workspace_id, title, category, is_default, is_system_template, status, updated_at')
-      .eq('is_system_template', true)
-      .eq('status', 'published')
       .not('status', 'in', '("archived","deleted")')
       .not('id', 'ilike', 'FW-Q-%')
       .not('id', 'ilike', 'FW-L-%')
       .order('is_default', { ascending: false })
-      .order('updated_at', { ascending: false })
-      .limit(1);
+      .order('updated_at', { ascending: false });
 
-    const activeSysTmpl = sysTmpls?.[0] || {
-      id: 'FW-2WT85Y0',
-      user_id: 'SYSTEM',
-      workspace_id: null,
-      title: 'System Default Wedding Template',
-      category: 'Wedding',
-      is_default: false,
-      is_system_template: true,
-      status: 'published',
-      updated_at: new Date().toISOString()
-    };
+    if (isSuperAdmin) {
+      // Super admin can see all system templates (to edit, toggle or manage)
+      sysQuery = sysQuery.eq('is_system_template', true);
+    } else {
+      // Regular users see all published system templates
+      sysQuery = sysQuery.eq('is_system_template', true).eq('status', 'published');
+    }
 
-    // User's own designs + exactly ONE active system preset
-    const validTemplates = [...userTemplates, {
-      ...activeSysTmpl,
-      is_default: userTemplates.length === 0 ? true : !!activeSysTmpl.is_default
-    }];
+    const { data: sysTmpls } = await sysQuery;
+
+    const activeSysTmpls = (sysTmpls && sysTmpls.length > 0)
+      ? sysTmpls
+      : [{
+          id: 'FW-2WT85Y0',
+          user_id: 'SYSTEM',
+          workspace_id: null,
+          title: 'System Default Wedding Template',
+          category: 'Wedding',
+          is_default: false,
+          is_system_template: true,
+          status: 'published',
+          updated_at: new Date().toISOString()
+        }];
+
+    // Deduplicate and combine: user's custom designs + all active system templates
+    const seen = new Set<string>();
+    const validTemplates: any[] = [];
+
+    userTemplates.forEach(t => {
+      if (!seen.has(t.id)) {
+        seen.add(t.id);
+        validTemplates.push(t);
+      }
+    });
+
+    activeSysTmpls.forEach(t => {
+      if (!seen.has(t.id)) {
+        seen.add(t.id);
+        validTemplates.push({
+          ...t,
+          is_default: userTemplates.length === 0 ? true : !!t.is_default
+        });
+      }
+    });
 
     const templateIds = validTemplates.map(t => t.id);
 
