@@ -609,12 +609,13 @@ export default function PostProductionPage() {
           event_type: client.event_type || 'Wedding',
           project_manager_id: effectivePMId,
           project_manager_name: effectivePM,
-          overall_status: ppp?.overall_status || (client.status === 'completed' ? 'completed' : 'active'),
+          overall_status: isCardTrash ? 'trash' : (ppp?.overall_status || (client.status === 'completed' ? 'completed' : 'active')),
           deliverables: projectDeliverables,
           quotation_id: quotationId,
           quotation_title: quotationTitle,
           enabled_segments: enabledSegments,
           disabled_categories: disabledCategories,
+          is_trash: isCardTrash,
         });
       }
 
@@ -705,14 +706,24 @@ export default function PostProductionPage() {
   const handleUpdateProject = async (projectId: string, updated: Partial<PostProductionProjectData>) => {
     // 0. Handle Trashing / Soft Delete
     if ((updated as any).overall_status === 'trash' || (updated as any).is_deleted === true) {
-      memCachedPostProdProjects = memCachedPostProdProjects.filter(p => p.id !== projectId);
+      memCachedPostProdProjects = memCachedPostProdProjects.map(p => {
+        if (p.id === projectId) {
+          return { ...p, overall_status: 'trash' as any, is_trash: true };
+        }
+        return p;
+      });
       if (typeof window !== 'undefined') {
         try {
           localStorage.setItem('sc_cached_pp_projects', JSON.stringify(memCachedPostProdProjects));
         } catch (_) {}
       }
       const targetProj = projects.find(p => p.id === projectId);
-      setProjects(prev => prev.filter(p => p.id !== projectId));
+      setProjects(prev => prev.map(p => {
+        if (p.id === projectId) {
+          return { ...p, overall_status: 'trash' as any, is_trash: true };
+        }
+        return p;
+      }));
 
       try {
         const { data: { session } } = await supabase.auth.getSession();
@@ -921,9 +932,126 @@ export default function PostProductionPage() {
     }));
   };
 
+  // Restore Project from Trash
+  const handleRestoreProject = async (projectId: string) => {
+    const target = projects.find(p => p.id === projectId);
+    if (!target) return;
+
+    memCachedPostProdProjects = memCachedPostProdProjects.map(p => {
+      if (p.id === projectId) {
+        return { ...p, overall_status: 'active' as any, is_trash: false };
+      }
+      return p;
+    });
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('sc_cached_pp_projects', JSON.stringify(memCachedPostProdProjects));
+      } catch (_) {}
+    }
+
+    setProjects(prev => prev.map(p => {
+      if (p.id === projectId) {
+        return { ...p, overall_status: 'active' as any, is_trash: false };
+      }
+      return p;
+    }));
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const workspaceId = session?.user?.id || 'ws_demo';
+
+      if (workspaceId !== 'ws_demo') {
+        await supabase
+          .from('post_production_projects')
+          .update({
+            overall_status: 'active',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', projectId);
+
+        if (target.client_id) {
+          await supabase
+            .from('workspace_clients')
+            .update({
+              status: 'active',
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', target.client_id);
+        }
+      }
+    } catch (err) {
+      console.warn('Error restoring post-production project:', err);
+    }
+
+    window.dispatchEvent(new CustomEvent('post_production_updated'));
+    window.dispatchEvent(new CustomEvent('client_updated'));
+  };
+
+  // Permanently Delete Project from Trash
+  const handlePermanentDeleteProject = async (projectId: string) => {
+    if (!window.confirm('Are you sure you want to PERMANENTLY delete this project and all its deliverables? This action cannot be undone.')) {
+      return;
+    }
+
+    const target = projects.find(p => p.id === projectId);
+    if (!target) return;
+
+    memCachedPostProdProjects = memCachedPostProdProjects.filter(p => p.id !== projectId);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('sc_cached_pp_projects', JSON.stringify(memCachedPostProdProjects));
+      } catch (_) {}
+    }
+
+    setProjects(prev => prev.filter(p => p.id !== projectId));
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const workspaceId = session?.user?.id || 'ws_demo';
+
+      if (workspaceId !== 'ws_demo') {
+        const targetIds = [target.project_id, target.client_id, target.id].filter(Boolean) as string[];
+        for (const tid of targetIds) {
+          await supabase.from('post_production_deliverables').delete().eq('project_id', tid);
+          await supabase.from('post_production_project_config').delete().eq('project_id', tid);
+        }
+
+        if (target.client_id) {
+          await supabase.from('post_production_projects').delete().eq('client_id', target.client_id);
+          await supabase.from('workspace_clients').delete().eq('id', target.client_id);
+          await supabase.from('leads').delete().eq('id', target.client_id);
+        } else {
+          await supabase.from('post_production_projects').delete().eq('id', target.id);
+        }
+      }
+    } catch (err) {
+      console.warn('Error permanently deleting project:', err);
+    }
+
+    window.dispatchEvent(new CustomEvent('post_production_updated'));
+    window.dispatchEvent(new CustomEvent('client_updated'));
+  };
+
+  // Trashed & Active Projects Counts
+  const trashedProjectsCount = useMemo(() => {
+    return projects.filter(p => p.overall_status === 'trash' || (p as any).is_trash === true).length;
+  }, [projects]);
+
+  const activeProjectsCount = useMemo(() => {
+    return projects.filter(p => p.overall_status !== 'trash' && !(p as any).is_trash).length;
+  }, [projects]);
+
   // Filtered Projects based on Search & Global Filter Modal
   const filteredProjects = useMemo(() => {
     return projects.filter(p => {
+      // 0. Active vs Trash Tab
+      const isTrash = p.overall_status === 'trash' || (p as any).is_trash === true;
+      if (postProdTab === 'trash') {
+        if (!isTrash) return false;
+      } else {
+        if (isTrash) return false;
+      }
+
       // 1. Text Search
       const q = searchQuery.toLowerCase().trim();
       const matchesSearch = !q ||
@@ -985,7 +1113,7 @@ export default function PostProductionPage() {
 
       return true;
     });
-  }, [projects, searchQuery, filters]);
+  }, [projects, searchQuery, filters, postProdTab]);
 
   // Overdue Deliverables & Delayed Calculation
   const isDeliverableOverdue = (dueDateStr: string | null | undefined, status?: string): boolean => {
@@ -1425,18 +1553,61 @@ export default function PostProductionPage() {
         </div>
 
         {/* ─────────────────────────────────────────────────────────────
-            SEARCH & GLOBAL MULTI-FILTER TRIGGER
+            SEARCH & GLOBAL MULTI-FILTER TRIGGER + ACTIVE / TRASH TOGGLE
         ───────────────────────────────────────────────────────────── */}
         <div className="bg-[#FFFDF9] dark:bg-[#181614] p-4 rounded-2xl border border-[#EAE5DA] dark:border-stone-800 shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="relative w-full md:w-96">
-            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search by client name, couple, PM, or event type..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 text-xs bg-white dark:bg-stone-900 border border-[#EAE5DA] dark:border-stone-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-900 dark:text-stone-100 placeholder:text-slate-400 font-medium"
-            />
+          <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto flex-1">
+            <div className="relative w-full sm:w-80 md:w-96">
+              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search by client name, couple, PM, or event type..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 text-xs bg-white dark:bg-stone-900 border border-[#EAE5DA] dark:border-stone-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-900 dark:text-stone-100 placeholder:text-slate-400 font-medium"
+              />
+            </div>
+
+            {/* Active vs Trash Segmented Switcher */}
+            <div className="flex items-center bg-[#F4EFE6] dark:bg-stone-900/90 p-1 rounded-xl border border-[#E2D9CC] dark:border-stone-800 shadow-[inset_0_1px_2px_rgba(0,0,0,0.06)] self-stretch sm:self-auto">
+              <button
+                type="button"
+                onClick={() => setPostProdTab('active')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
+                  postProdTab === 'active'
+                    ? 'bg-white dark:bg-stone-800 text-slate-900 dark:text-stone-100 shadow-xs border border-[#DDD5C7] dark:border-stone-700'
+                    : 'text-slate-600 dark:text-stone-400 hover:text-slate-900'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5 text-amber-600" />
+                <span>Active Projects</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  postProdTab === 'active' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' : 'bg-slate-200/60 dark:bg-stone-800 text-slate-600 dark:text-stone-400'
+                }`}>
+                  {mounted ? activeProjectsCount : 0}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPostProdTab('trash')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
+                  postProdTab === 'trash'
+                    ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 shadow-xs border border-rose-300 dark:border-rose-800'
+                    : 'text-slate-600 dark:text-stone-400 hover:text-rose-600'
+                }`}
+              >
+                <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                <span>Trash</span>
+                {mounted && trashedProjectsCount > 0 && (
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                    postProdTab === 'trash' ? 'bg-rose-200 text-rose-900 dark:bg-rose-900 dark:text-rose-200' : 'bg-rose-100 text-rose-700'
+                  }`}>
+                    {trashedProjectsCount}
+                  </span>
+                )}
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center gap-3 w-full md:w-auto justify-end">
@@ -1467,18 +1638,22 @@ export default function PostProductionPage() {
           <StudioCoreLiquidLoader label="Loading Segmented Production Pipelines..." fullscreen={false} />
         ) : filteredProjects.length === 0 ? (
           <div className="bg-[#FFFDF9] dark:bg-[#181614] p-12 rounded-2xl border border-dashed border-amber-300/80 text-center space-y-4 shadow-xs">
-            <div className="w-14 h-14 rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 mx-auto flex items-center justify-center">
-              <Film className="w-7 h-7" />
+            <div className={`w-14 h-14 rounded-2xl mx-auto flex items-center justify-center ${
+              postProdTab === 'trash' ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400' : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400'
+            }`}>
+              {postProdTab === 'trash' ? <Trash2 className="w-7 h-7" /> : <Film className="w-7 h-7" />}
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-900 dark:text-stone-100">
-                No Post-Production Projects Match Filters
+                {postProdTab === 'trash' ? 'Trash is Empty' : 'No Post-Production Projects Match Filters'}
               </h3>
               <p className="text-xs text-slate-600 dark:text-stone-400 max-w-md mx-auto mt-1">
-                Try adjusting your search criteria or filter settings, or add a new client from the Client Directory.
+                {postProdTab === 'trash'
+                  ? 'No deleted post-production projects found in trash. Deleted cards can be restored anytime from here.'
+                  : 'Try adjusting your search criteria or filter settings, or add a new client from the Client Directory.'}
               </p>
             </div>
-            {activeFilterCount > 0 && (
+            {activeFilterCount > 0 && postProdTab !== 'trash' && (
               <button
                 type="button"
                 onClick={() => setFilters({
@@ -1513,6 +1688,8 @@ export default function PostProductionPage() {
                 onOpenDrive={handleOpenDrive}
                 onResyncQuotation={() => handleResyncQuotation(project.id, project.client_id)}
                 onDeleteProject={(id) => handleUpdateProject(id, { overall_status: 'trash' as any })}
+                onRestoreProject={handleRestoreProject}
+                onPermanentDeleteProject={handlePermanentDeleteProject}
               />
             ))}
           </div>

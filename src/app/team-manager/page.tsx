@@ -979,8 +979,8 @@ export default function TeamManagerPage() {
                     notes: null
                   })
                   .eq('id', cleanAssignId);
-              } else if (activeAssign.sub_event_id && activeAssign.required_role) {
-                await supabase
+              } else if (activeAssign.sub_event_id) {
+                let q = supabase
                   .from('fw_assignments')
                   .update({
                     assigned_member_id: null,
@@ -994,8 +994,14 @@ export default function TeamManagerPage() {
                     payment_status: 'pending',
                     notes: null
                   })
-                  .eq('sub_event_id', activeAssign.sub_event_id)
-                  .eq('required_role', activeAssign.required_role);
+                  .eq('sub_event_id', activeAssign.sub_event_id);
+
+                if (activeAssign.assigned_member_id) {
+                  q = q.eq('assigned_member_id', activeAssign.assigned_member_id);
+                } else if (activeAssign.required_role) {
+                  q = q.eq('required_role', activeAssign.required_role);
+                }
+                await q;
               }
 
               await unassignCrewSlot({
@@ -1138,10 +1144,10 @@ export default function TeamManagerPage() {
                 advance_amount: 0,
                 balance_amount: defaultAssignedRate,
                 payment_status: 'pending',
-                sub_event_name: subEventObj?.event_title || 'Wedding Event',
+                sub_event_name: subEventObj?.event_title || (subEventObj as any)?.name || 'Wedding Event',
                 sub_event_date: subEventObj?.event_date || new Date().toISOString().split('T')[0],
-                start_time: subEventObj?.roll_call_time || '10:00',
-                end_time: subEventObj?.dismissal_estimate_time || '18:00',
+                start_time: (subEventObj as any)?.start_time || subEventObj?.roll_call_time || '10:00',
+                end_time: (subEventObj as any)?.end_time || subEventObj?.dismissal_estimate_time || '18:00',
                 status: memberId ? 'assigned' : 'pending'
               };
               if (currentUid) {
@@ -3935,14 +3941,17 @@ export default function TeamManagerPage() {
                     setActiveDropdownId(null);
                     setDropdownPos(null);
                   }}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer border ${
                     !isAssigned
-                      ? 'bg-rose-50 text-rose-600'
-                      : 'text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900'
+                      ? 'bg-rose-100 text-rose-700 border-rose-300 font-black'
+                      : 'text-rose-600 bg-rose-50/70 hover:bg-rose-100 hover:text-rose-700 border-rose-200/60'
                   }`}
                 >
-                  <span>• Unassign / Pending</span>
-                  {!isAssigned && <Check className="w-3.5 h-3.5" />}
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                    <span>• Unassign / Pending</span>
+                  </span>
+                  {!isAssigned && <Check className="w-3.5 h-3.5 text-rose-600" />}
                 </button>
 
                 {teamMembers

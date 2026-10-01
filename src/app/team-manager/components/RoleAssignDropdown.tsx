@@ -396,14 +396,17 @@ export default function RoleAssignDropdown({
                     handleClose();
                     onAssignMember(assignment.id, null);
                   }}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer border ${
                     !isAssigned
-                      ? 'bg-rose-50 text-rose-600'
-                      : 'text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900'
+                      ? 'bg-rose-100 text-rose-700 border-rose-300 font-black'
+                      : 'text-rose-600 bg-rose-50/70 hover:bg-rose-100 hover:text-rose-700 border-rose-200/60'
                   }`}
                 >
-                  <span>• Unassign / Pending</span>
-                  {!isAssigned && <Check className="w-3.5 h-3.5" />}
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                    <span>• Unassign / Pending</span>
+                  </span>
+                  {!isAssigned && <Check className="w-3.5 h-3.5 text-rose-600" />}
                 </button>
 
                 {sortedMembers.map((m) => {

@@ -1066,11 +1066,11 @@ export default function WorkspaceTeamPage() {
               <div className="hidden md:block w-full bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden mt-4">
                 {/* Desktop Table Header */}
                 <div className="grid grid-cols-12 gap-4 px-5 py-3.5 bg-slate-50/75 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-400">
-                  <div className="col-span-4">Member Info</div>
+                  <div className="col-span-3">Member Info</div>
                   <div className="col-span-2">Type & Role</div>
                   <div className="col-span-3">Commercials (Agreed / Paid / Due)</div>
                   <div className="col-span-2">Portal Access</div>
-                  <div className="col-span-1 text-right">Actions</div>
+                  <div className="col-span-2 text-right">Actions</div>
                 </div>
 
                 {/* Row List */}

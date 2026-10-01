@@ -15,7 +15,8 @@ import {
   X,
   CreditCard,
   AlertTriangle,
-  Trash2
+  Trash2,
+  RotateCcw
 } from 'lucide-react';
 import { MilestoneSchedule } from './MilestoneSchedule';
 import { HandledByMultiSelect, FinanceTeamMember, isPlaceholderName } from './HandledByMultiSelect';
@@ -41,6 +42,8 @@ interface ClientFinanceCardProps {
   onAddMilestoneStep: (recordId: string) => void;
   onSaveNewTemplate?: (name: string) => void;
   onDeleteRecord?: (record: ClientFinanceRecord) => void;
+  onRestoreRecord?: (record: ClientFinanceRecord) => void;
+  onPermanentDelete?: (record: ClientFinanceRecord) => void;
   statusFilter?: string;
   startDate?: string;
   endDate?: string;
@@ -107,6 +110,8 @@ export function ClientFinanceCard({
   onAddMilestoneStep,
   onSaveNewTemplate,
   onDeleteRecord,
+  onRestoreRecord,
+  onPermanentDelete,
   statusFilter,
   startDate,
   endDate,
@@ -362,6 +367,34 @@ export function ClientFinanceCard({
             </span>
           </div>
 
+          {/* Direct Restore & Delete Buttons when in Trash View */}
+          {statusFilter === 'trash' && (
+            <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+              {onRestoreRecord && (
+                <button
+                  type="button"
+                  onClick={() => onRestoreRecord(record)}
+                  className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-black flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                  title="Restore to Active Ledger"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Restore</span>
+                </button>
+              )}
+              {onPermanentDelete && (
+                <button
+                  type="button"
+                  onClick={() => onPermanentDelete(record)}
+                  className="px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 text-xs font-black flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                  title="Permanently Delete"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Delete</span>
+                </button>
+              )}
+            </div>
+          )}
+
           {/* 3-Dots Context Menu with Outside Click Dismissal */}
           <div className="relative" ref={menuRef} onClick={(e) => e.stopPropagation()}>
             <button
@@ -381,67 +414,100 @@ export function ClientFinanceCard({
                   exit={{ opacity: 0, scale: 0.95, y: -5 }}
                   className="absolute right-0 mt-1 w-52 bg-white rounded-2xl border border-slate-200 shadow-xl py-1.5 z-40 space-y-0.5 text-xs font-bold font-sans"
                 >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOpenMenu(false);
-                      onOpenRecordPayment(record);
-                    }}
-                    className="w-full px-3 py-2 text-left text-emerald-800 hover:bg-emerald-50 flex items-center gap-2 cursor-pointer font-black"
-                  >
-                    <CreditCard className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Record Payment</span>
-                  </button>
+                  {statusFilter === 'trash' ? (
+                    <>
+                      {onRestoreRecord && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOpenMenu(false);
+                            onRestoreRecord(record);
+                          }}
+                          className="w-full px-3 py-2 text-left text-emerald-800 hover:bg-emerald-50 flex items-center gap-2 cursor-pointer font-black"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Restore to Ledger</span>
+                        </button>
+                      )}
+                      {onPermanentDelete && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOpenMenu(false);
+                            onPermanentDelete(record);
+                          }}
+                          className="w-full px-3 py-2 text-left text-rose-600 hover:bg-rose-50 flex items-center gap-2 cursor-pointer border-t border-slate-100 font-bold"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                          <span>Delete Permanently</span>
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpenMenu(false);
+                          onOpenRecordPayment(record);
+                        }}
+                        className="w-full px-3 py-2 text-left text-emerald-800 hover:bg-emerald-50 flex items-center gap-2 cursor-pointer font-black"
+                      >
+                        <CreditCard className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Record Payment</span>
+                      </button>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOpenMenu(false);
-                      onOpenInvoiceModal(record);
-                    }}
-                    className="w-full px-3 py-2 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
-                  >
-                    <FileText className="w-3.5 h-3.5 text-slate-500" />
-                    <span>View / Send Invoice</span>
-                  </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpenMenu(false);
+                          onOpenInvoiceModal(record);
+                        }}
+                        className="w-full px-3 py-2 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
+                      >
+                        <FileText className="w-3.5 h-3.5 text-slate-500" />
+                        <span>View / Send Invoice</span>
+                      </button>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOpenMenu(false);
-                      onOpenPricingEditModal(record);
-                    }}
-                    className="w-full px-3 py-2 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
-                  >
-                    <Pencil className="w-3.5 h-3.5 text-slate-500" />
-                    <span>Edit Pricing Breakdown</span>
-                  </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpenMenu(false);
+                          onOpenPricingEditModal(record);
+                        }}
+                        className="w-full px-3 py-2 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
+                      >
+                        <Pencil className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Edit Pricing Breakdown</span>
+                      </button>
 
-                  {record.client_id && (
-                    <a
-                      href={`/workspace/clients/${record.client_id}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={() => setOpenMenu(false)}
-                      className="w-full px-3 py-2 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
-                      <span>Client Profile</span>
-                    </a>
-                  )}
+                      {record.client_id && (
+                        <a
+                          href={`/workspace/clients/${record.client_id}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={() => setOpenMenu(false)}
+                          className="w-full px-3 py-2 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
+                          <span>Client Profile</span>
+                        </a>
+                      )}
 
-                  {onDeleteRecord && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setOpenMenu(false);
-                        onDeleteRecord(record);
-                      }}
-                      className="w-full px-3 py-2 text-left text-rose-600 hover:bg-rose-50 flex items-center gap-2 cursor-pointer border-t border-slate-100 font-bold"
-                    >
-                      <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-                      <span>Move to Trash</span>
-                    </button>
+                      {onDeleteRecord && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOpenMenu(false);
+                            onDeleteRecord(record);
+                          }}
+                          className="w-full px-3 py-2 text-left text-rose-600 hover:bg-rose-50 flex items-center gap-2 cursor-pointer border-t border-slate-100 font-bold"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                          <span>Move to Trash</span>
+                        </button>
+                      )}
+                    </>
                   )}
                 </motion.div>
               )}

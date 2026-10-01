@@ -191,6 +191,10 @@ export default function FinancePage() {
     ).length;
   }, [financeRecords]);
 
+  const activeFinanceCount = useMemo(() => {
+    return Math.max(0, financeRecords.length - trashedFinanceCount);
+  }, [financeRecords.length, trashedFinanceCount]);
+
   const handleRestoreFinanceRecord = async (record: ClientFinanceRecord) => {
     try {
       const nowIso = new Date().toISOString();
@@ -245,6 +249,30 @@ export default function FinancePage() {
     } catch (err: any) {
       console.error('[handleRestoreFinanceRecord] Error:', err);
       alert('Failed to restore record: ' + err.message);
+    }
+  };
+
+  const handlePermanentDeleteFinanceRecord = async (record: ClientFinanceRecord) => {
+    if (!confirm(`Are you sure you want to PERMANENTLY delete finance record for "${record.client?.name || 'this client'}"? This cannot be undone.`)) {
+      return;
+    }
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const workspaceId = session?.user?.id || currentWorkspaceId || 'ws_demo';
+
+      if (workspaceId !== 'ws_demo') {
+        await supabase
+          .from('client_finance_records')
+          .delete()
+          .eq('id', record.id);
+      }
+
+      setFinanceRecords(prev => prev.filter(r => r.id !== record.id));
+      window.dispatchEvent(new CustomEvent('finance_updated'));
+      window.dispatchEvent(new CustomEvent('client_updated'));
+    } catch (err: any) {
+      console.error('[handlePermanentDeleteFinanceRecord] Error:', err);
+      alert('Failed to permanently delete record: ' + err.message);
     }
   };
 
@@ -2671,23 +2699,29 @@ export default function FinancePage() {
           {/* Top Segmented Tabs Switcher (Mobile Native Grid + Desktop Underline Tabs) */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-2 md:pb-0">
             
-            {/* Mobile 3-Column Segmented Tab Pill (< md) */}
-            <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100/90 rounded-2xl md:hidden text-center">
+            {/* Mobile 4-Column Segmented Tab Pill (< md) */}
+            <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100/90 rounded-2xl md:hidden text-center">
               <button
                 type="button"
-                onClick={() => setActiveTab('clients')}
+                onClick={() => {
+                  setActiveTab('clients');
+                  if (statusFilter === 'trash') setStatusFilter('all');
+                }}
                 className={`py-1.5 px-1 rounded-xl text-xs font-bold transition truncate ${
-                  activeTab === 'clients'
+                  activeTab === 'clients' && statusFilter !== 'trash'
                     ? 'bg-white text-slate-900 shadow-xs font-black'
                     : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
-                Invoices ({filteredRecords.length})
+                Invoices ({statusFilter === 'trash' ? activeFinanceCount : filteredRecords.length})
               </button>
 
               <button
                 type="button"
-                onClick={() => setActiveTab('expenses')}
+                onClick={() => {
+                  setActiveTab('expenses');
+                  if (statusFilter === 'trash') setStatusFilter('all');
+                }}
                 className={`py-1.5 px-1 rounded-xl text-xs font-bold transition truncate ${
                   activeTab === 'expenses'
                     ? 'bg-white text-slate-900 shadow-xs font-black'
@@ -2699,7 +2733,10 @@ export default function FinancePage() {
 
               <button
                 type="button"
-                onClick={() => setActiveTab('analytics')}
+                onClick={() => {
+                  setActiveTab('analytics');
+                  if (statusFilter === 'trash') setStatusFilter('all');
+                }}
                 className={`py-1.5 px-1 rounded-xl text-xs font-bold transition truncate ${
                   activeTab === 'analytics'
                     ? 'bg-white text-slate-900 shadow-xs font-black'
@@ -2708,21 +2745,40 @@ export default function FinancePage() {
               >
                 Analytics
               </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('clients');
+                  setStatusFilter(statusFilter === 'trash' ? 'all' : 'trash');
+                }}
+                className={`py-1.5 px-1 rounded-xl text-xs font-bold transition truncate flex items-center justify-center gap-1 ${
+                  statusFilter === 'trash'
+                    ? 'bg-rose-500 text-white shadow-xs font-black'
+                    : 'text-rose-600 hover:text-rose-700'
+                }`}
+              >
+                <Trash2 className="w-3 h-3" />
+                <span>Trash ({trashedFinanceCount})</span>
+              </button>
             </div>
 
             {/* Desktop Horizontal Tabs (>= md) */}
             <div className="hidden md:flex items-center gap-6">
               <button
-                onClick={() => setActiveTab('clients')}
+                onClick={() => {
+                  setActiveTab('clients');
+                  if (statusFilter === 'trash') setStatusFilter('all');
+                }}
                 className={`flex items-center gap-1.5 pb-2 pt-1 text-xs font-bold transition relative cursor-pointer ${
-                  activeTab === 'clients'
+                  activeTab === 'clients' && statusFilter !== 'trash'
                     ? 'text-amber-800 font-black'
                     : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
                 <FileText className="w-3.5 h-3.5" />
-                <span>Client Invoices & Milestones ({filteredRecords.length})</span>
-                {activeTab === 'clients' && (
+                <span>Client Invoices & Milestones ({statusFilter === 'trash' ? activeFinanceCount : filteredRecords.length})</span>
+                {activeTab === 'clients' && statusFilter !== 'trash' && (
                   <motion.div 
                     layoutId="tabUnderline" 
                     className="absolute bottom-0 left-0 right-0 h-0.5 bg-amber-600 rounded-full"
@@ -2731,7 +2787,10 @@ export default function FinancePage() {
               </button>
 
               <button
-                onClick={() => setActiveTab('expenses')}
+                onClick={() => {
+                  setActiveTab('expenses');
+                  if (statusFilter === 'trash') setStatusFilter('all');
+                }}
                 className={`flex items-center gap-1.5 pb-2 pt-1 text-xs font-bold transition relative cursor-pointer ${
                   activeTab === 'expenses'
                     ? 'text-amber-800 font-black'
@@ -2749,7 +2808,10 @@ export default function FinancePage() {
               </button>
 
               <button
-                onClick={() => setActiveTab('analytics')}
+                onClick={() => {
+                  setActiveTab('analytics');
+                  if (statusFilter === 'trash') setStatusFilter('all');
+                }}
                 className={`flex items-center gap-1.5 pb-2 pt-1 text-xs font-bold transition relative cursor-pointer ${
                   activeTab === 'analytics'
                     ? 'text-amber-800 font-black'
@@ -2762,6 +2824,29 @@ export default function FinancePage() {
                   <motion.div 
                     layoutId="tabUnderline" 
                     className="absolute bottom-0 left-0 right-0 h-0.5 bg-amber-600 rounded-full"
+                  />
+                )}
+              </button>
+
+              {/* Trash View Tab with Badge */}
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('clients');
+                  setStatusFilter(statusFilter === 'trash' ? 'all' : 'trash');
+                }}
+                className={`flex items-center gap-1.5 pb-2 pt-1 text-xs font-bold transition relative cursor-pointer ${
+                  statusFilter === 'trash'
+                    ? 'text-rose-600 font-black'
+                    : 'text-slate-500 hover:text-rose-600'
+                }`}
+              >
+                <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                <span>Trash ({trashedFinanceCount})</span>
+                {statusFilter === 'trash' && (
+                  <motion.div 
+                    layoutId="tabUnderline" 
+                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-rose-600 rounded-full"
                   />
                 )}
               </button>
@@ -3206,6 +3291,8 @@ export default function FinancePage() {
                   revenueTypeFilter={revenueTypeFilter}
                   isDateActive={isDateActive}
                   onDeleteRecord={setRecordToDelete}
+                  onRestoreRecord={handleRestoreFinanceRecord}
+                  onPermanentDelete={handlePermanentDeleteFinanceRecord}
                 />
               ))
             )}

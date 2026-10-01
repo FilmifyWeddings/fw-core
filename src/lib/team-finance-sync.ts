@@ -997,7 +997,7 @@ export async function saveOrUpdateEventPayout(
     const key = `${LS_PAYOUTS_KEY}${workspaceId}_${payload.member_id}`;
     const raw = localStorage.getItem(key);
     let list: TeamEventPayout[] = raw ? JSON.parse(raw) : [];
-    const idx = list.findIndex(p => p.id === payload.id || (p.sub_event_id && p.sub_event_id === payload.sub_event_id));
+    const idx = list.findIndex(p => p.id === payload.id || (p.sub_event_id && p.sub_event_id === payload.sub_event_id && (p.role === payload.role || p.id === payload.id)));
     if (idx >= 0) {
       list[idx] = { ...list[idx], ...payload };
     } else {
@@ -1167,12 +1167,14 @@ export async function unassignCrewSlot(params: {
         let q = supabase.from('crew_assignments_finance').delete().eq('team_member_id', params.teamMemberId);
         if (params.subEventId) q = q.eq('sub_event_id', params.subEventId);
         else if (params.eventId) q = q.eq('event_id', params.eventId);
+        if (params.roleName) q = q.eq('role_name', params.roleName);
         await q;
       } catch (_) {}
       try {
         let q = supabase.from('team_event_payouts').delete().eq('member_id', params.teamMemberId);
         if (params.subEventId) q = q.eq('sub_event_id', params.subEventId);
         else if (params.eventId) q = q.eq('project_id', params.eventId);
+        if (params.roleName) q = q.eq('role', params.roleName);
         await q;
       } catch (_) {}
     }

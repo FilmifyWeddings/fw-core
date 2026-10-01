@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  ChevronDown, Calendar, Layers, FileCheck, Plus, Sparkles, UserCheck, Search, X, RefreshCw, Trash2
+  ChevronDown, Calendar, Layers, FileCheck, Plus, Sparkles, UserCheck, Search, X, RefreshCw, Trash2, RotateCcw
 } from 'lucide-react';
 import { PostProductionDeliverable } from './DeliverableCategorySection';
 import SegmentContainer from './SegmentContainer';
@@ -25,7 +25,7 @@ export interface PostProductionProjectData {
   event_type?: string | null;
   project_manager_id?: string | null;
   project_manager_name?: string | null;
-  overall_status: 'active' | 'delayed' | 'completed';
+  overall_status: 'active' | 'delayed' | 'completed' | 'trash';
   deliverables: PostProductionDeliverable[];
   quotation_id?: string | null;
   quotation_title?: string | null;
@@ -47,6 +47,8 @@ interface PostProductionCardProps {
   onOpenDrive: (itemId: string, currentLink: string) => void;
   onResyncQuotation?: () => void;
   onDeleteProject?: (projectId: string) => void;
+  onRestoreProject?: (projectId: string) => void;
+  onPermanentDeleteProject?: (projectId: string) => void;
 }
 
 export default function PostProductionCard({
@@ -62,6 +64,8 @@ export default function PostProductionCard({
   onOpenDrive,
   onResyncQuotation,
   onDeleteProject,
+  onRestoreProject,
+  onPermanentDeleteProject,
 }: PostProductionCardProps) {
   const [activeSegmentTab, setActiveSegmentTab] = useState<string>('All');
   const [isAddingSegment, setIsAddingSegment] = useState(false);
@@ -438,18 +442,45 @@ export default function PostProductionCard({
             <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
           </button>
 
-          {/* Delete Project to Trash Button */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowDeleteProjectModal(true);
-            }}
-            className="p-2.5 rounded-xl bg-white dark:bg-stone-800 border border-[#EAE5DA] dark:border-stone-700 text-slate-400 hover:text-rose-600 hover:border-rose-300 dark:hover:border-rose-800 transition cursor-pointer shadow-2xs"
-            title="Move Project to Trash"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          {/* Trash vs Active Actions */}
+          {project.overall_status === 'trash' || project.is_trash ? (
+            <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+              {onRestoreProject && (
+                <button
+                  type="button"
+                  onClick={() => onRestoreProject(project.id)}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs font-black hover:bg-emerald-100 flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                  title="Restore Project to Active Pipeline"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Restore</span>
+                </button>
+              )}
+              {onPermanentDeleteProject && (
+                <button
+                  type="button"
+                  onClick={() => onPermanentDeleteProject(project.id)}
+                  className="px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-300 text-xs font-black hover:bg-rose-100 flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                  title="Permanently Delete Project"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Delete</span>
+                </button>
+              )}
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowDeleteProjectModal(true);
+              }}
+              className="p-2.5 rounded-xl bg-white dark:bg-stone-800 border border-[#EAE5DA] dark:border-stone-700 text-slate-400 hover:text-rose-600 hover:border-rose-300 dark:hover:border-rose-800 transition cursor-pointer shadow-2xs"
+              title="Move Project to Trash"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
 

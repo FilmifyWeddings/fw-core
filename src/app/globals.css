@@ -63,10 +63,10 @@ body {
   transition-duration: 200ms;
 }
 
-/* Custom Scrollbars - Luxury Warm Dark Cream & Amber Gold */
+/* Custom Scrollbars - Modern Visible Dark Grey */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #B88628 #F6F2E9;
+  scrollbar-color: #4B5563 #F3F4F6;
 }
 
 ::-webkit-scrollbar {
@@ -75,42 +75,42 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #F6F2E9;
+  background: #F3F4F6;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #B88628;
+  background: #4B5563;
   border-radius: 9999px;
-  border: 2px solid #F6F2E9;
+  border: 2px solid #F3F4F6;
   background-clip: padding-box;
   transition: background-color 0.2s ease;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #976B1C;
+  background: #374151;
 }
 
 .dark * {
-  scrollbar-color: #A3772C #1F1D1A;
+  scrollbar-color: #6B7280 #1F2937;
 }
 
 .dark ::-webkit-scrollbar-track {
-  background: #1F1D1A;
+  background: #1F2937;
 }
 
 .dark ::-webkit-scrollbar-thumb {
-  background: #A3772C;
-  border: 2px solid #1F1D1A;
+  background: #6B7280;
+  border: 2px solid #1F2937;
 }
 
 .dark ::-webkit-scrollbar-thumb:hover {
-  background: #C49746;
+  background: #9CA3AF;
 }
 
-/* Dedicated Team Manager Luxury Dark Cream Scrollbar */
+/* Dedicated Team Manager Visible Dark Grey Scrollbar */
 .scrollbar-dark-cream {
   scrollbar-width: thin;
-  scrollbar-color: #B88628 #F6F2E9;
+  scrollbar-color: #4B5563 #F3F4F6;
 }
 
 .scrollbar-dark-cream::-webkit-scrollbar {
@@ -119,18 +119,18 @@ body {
 }
 
 .scrollbar-dark-cream::-webkit-scrollbar-track {
-  background: #F6F2E9;
+  background: #F3F4F6;
 }
 
 .scrollbar-dark-cream::-webkit-scrollbar-thumb {
-  background: #B88628;
+  background: #4B5563;
   border-radius: 9999px;
-  border: 2px solid #F6F2E9;
+  border: 2px solid #F3F4F6;
   background-clip: padding-box;
 }
 
 .scrollbar-dark-cream::-webkit-scrollbar-thumb:hover {
-  background: #976B1C;
+  background: #374151;
 }
 
 /* Google Sheets Style Minimal Dropdown UI */

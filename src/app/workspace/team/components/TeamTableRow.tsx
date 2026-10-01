@@ -98,7 +98,7 @@ export default function TeamTableRow({
       className="px-4 py-3.5 sm:px-5 hover:bg-slate-50/70 transition-colors grid grid-cols-12 gap-4 items-center cursor-pointer"
     >
       {/* 1. Member Profile & Name (Clickable) */}
-      <div className="col-span-4 flex items-center gap-3 w-full">
+      <div className="col-span-3 flex items-center gap-3 w-full">
         <div className="w-10 h-10 rounded-full shrink-0 overflow-hidden bg-amber-100 text-amber-800 font-bold flex items-center justify-center text-xs border border-slate-200">
           {member.avatar_url ? (
             <img src={member.avatar_url} alt={member.name} className="w-full h-full object-cover"/>
@@ -232,7 +232,7 @@ export default function TeamTableRow({
       </div>
 
       {/* 5. Direct Action Icons */}
-      <div className="col-span-1 flex items-center justify-end gap-1.5 w-full md:w-auto">
+      <div className="col-span-2 flex items-center justify-end gap-1.5 w-full shrink-0">
         {(isPartner || /album|lab|print|editor|video|photo/i.test(member.primary_role || '')) && (
           <button
             type="button"
@@ -255,7 +255,7 @@ export default function TeamTableRow({
             e.stopPropagation();
             handleOpenDetails(member);
           }}
-          className="h-8 w-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
+          className="h-8 w-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer shrink-0"
         >
           <Eye className="w-4 h-4"/>
         </button>
@@ -266,7 +266,7 @@ export default function TeamTableRow({
             e.stopPropagation();
             handleEditMember(member);
           }}
-          className="h-8 w-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-amber-600 transition-colors cursor-pointer"
+          className="h-8 w-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-amber-600 transition-colors cursor-pointer shrink-0"
         >
           <Pencil className="w-4 h-4"/>
         </button>
@@ -277,7 +277,7 @@ export default function TeamTableRow({
             e.stopPropagation();
             handleDeleteMember(member.id);
           }}
-          className="h-8 w-8 flex items-center justify-center rounded-lg border border-red-100 bg-red-50/50 hover:bg-red-50 text-red-500 hover:text-red-700 transition-colors cursor-pointer"
+          className="h-8 w-8 flex items-center justify-center rounded-lg border border-red-100 bg-red-50/50 hover:bg-red-50 text-red-500 hover:text-red-700 transition-colors cursor-pointer shrink-0"
         >
           <Trash2 className="w-4 h-4"/>
         </button>
