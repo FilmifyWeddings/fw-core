@@ -169,7 +169,7 @@ export default function OverviewAnalytics({
       </div>
 
       {/* QUICK MONTH CHIP SELECTOR BAR */}
-      <div className="border-t border-slate-100 pt-3 flex items-center justify-between gap-1 overflow-x-auto scrollbar-thin">
+      <div className="border-t border-slate-100 pt-3 flex items-center justify-between gap-1 overflow-x-auto scrollbar-dark-cream">
         {chartData.map((d) => {
           const isSelected = scopeMode === 'month' && selectedMonth === d.val;
           return (

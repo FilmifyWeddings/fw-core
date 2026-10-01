@@ -236,13 +236,31 @@ export default function FinancePage() {
         }
       }
 
-      setFinanceRecords(prev => prev.map(r => r.id === record.id ? {
+      const cleanNotes = (record.notes || '').replace(/\[status:trash\]/g, '').trim();
+
+      setFinanceRecords(prev => prev.map(r => (r.id === record.id || (clientId && r.client_id === clientId)) ? {
         ...r,
         status: 'active',
         is_deleted: false,
         deleted_at: null,
-        notes: (r.notes || '').replace(/\[status:trash\]/g, '').trim()
+        notes: cleanNotes,
+        client: r.client ? { ...r.client, status: 'active', is_deleted: false } : r.client
       } : r));
+
+      memCachedFinanceRecords = memCachedFinanceRecords.map(r => (r.id === record.id || (clientId && r.client_id === clientId)) ? {
+        ...r,
+        status: 'active',
+        is_deleted: false,
+        deleted_at: null,
+        notes: cleanNotes,
+        client: r.client ? { ...r.client, status: 'active', is_deleted: false } : r.client
+      } : r);
+
+      try {
+        localStorage.setItem('sc_cached_finance_records', JSON.stringify(memCachedFinanceRecords));
+      } catch (_) {}
+
+      setClients(prev => prev.map(c => c.id === clientId ? { ...c, status: 'active', is_deleted: false } : c));
 
       window.dispatchEvent(new CustomEvent('finance_updated'));
       window.dispatchEvent(new CustomEvent('client_updated'));
@@ -709,24 +727,14 @@ export default function FinancePage() {
       }
 
       const { data: clientData } = await clientQuery;
-      let clientList = (clientData || []).filter(c => {
-        const isClientTrashed = Boolean(
-          (c.status as string) === 'trash' || 
-          (c as any).status === 'trashed' || 
-          (c as any).status === 'archived' ||
-          (c as any).is_deleted === true || 
-          (c.notes && typeof c.notes === 'string' && c.notes.includes('[status:trash]'))
-        );
-        return !isClientTrashed;
-      });
+      let clientList = clientData ? [...clientData] : [];
 
       // Also fetch leads that have final_quotation_id or booked/accepted status to guarantee immediate card appearance
       try {
         let leadsQuery = supabase
           .from('leads')
           .select('*')
-          .neq('status', 'trash')
-          .or('final_quotation_id.not.is.null,status.in.(booked,accepted,closed,converted)')
+          .or('final_quotation_id.not.is.null,status.in.(booked,accepted,closed,converted,trash,trashed)')
           .order('created_at', { ascending: false })
           .limit(1000);
 
@@ -737,7 +745,6 @@ export default function FinancePage() {
         const { data: leadsData } = await leadsQuery;
         if (leadsData) {
           for (const lead of leadsData) {
-            if (lead.status === 'trash' || (lead as any).is_deleted === true) continue;
             const coupleName = lead.raw_payload?.couple_name || (lead as any).couple_names || lead.client_name || lead.name || 'Untitled Client';
             const matchedClient = clientList.find(c => {
               const cleanLeadName = coupleName.toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
@@ -785,7 +792,6 @@ export default function FinancePage() {
       let financeQuery = supabase
         .from('client_finance_records')
         .select('*')
-        .neq('status', 'trash')
         .order('created_at', { ascending: false });
 
       if (workspaceId && workspaceId !== 'ws_demo') {
@@ -796,9 +802,7 @@ export default function FinancePage() {
       const financeMap = new Map<string, ClientFinanceRecord>();
       if (financeData) {
         financeData.forEach(f => {
-          if (f.status !== 'trash' && !f.is_deleted) {
-            financeMap.set(f.client_id, f);
-          }
+          financeMap.set(f.client_id, f);
         });
       }
 
@@ -935,25 +939,25 @@ export default function FinancePage() {
       const finalRecords: ClientFinanceRecord[] = [];
 
       for (const c of clientList) {
-        if (
-          c.status === 'trash' || 
-          c.status === 'trashed' ||
+        const isClientTrash = Boolean(
+          (c.status as string) === 'trash' || 
+          (c as any).status === 'trashed' || 
+          (c as any).status === 'archived' ||
           (c as any).is_deleted === true || 
           (c.notes && typeof c.notes === 'string' && c.notes.includes('[status:trash]'))
-        ) {
-          continue;
-        }
+        );
         const existing = financeMap.get(c.id) || (c.lead_id ? financeMap.get(c.lead_id) : undefined);
-        if (
+        const isExistingTrash = Boolean(
           existing && (
             (existing as any).status === 'trash' ||
             (existing as any).status === 'trashed' ||
-            (existing as any).is_deleted === true ||
+            (existing as any).is_deleted === true || 
+            Boolean((existing as any).deleted_at) ||
             (existing.notes && typeof existing.notes === 'string' && existing.notes.includes('[status:trash]'))
           )
-        ) {
-          continue;
-        }
+        );
+        const isCardTrash = isClientTrash || isExistingTrash;
+
         const availableQuotes = (c.lead_id ? allLeadQuotesMap.get(c.lead_id) : []) || [];
         const leadObj = c.lead_id ? leadMap.get(c.lead_id) : null;
         const targetQId = (c as any).final_quotation_id || leadObj?.final_quotation_id || null;
@@ -1036,7 +1040,15 @@ export default function FinancePage() {
 
           finalRecords.push({
             ...existing,
-            client: { ...c, handled_by: handledBy } as any,
+            status: isCardTrash ? 'trash' : existing.payment_status,
+            is_deleted: isCardTrash,
+            deleted_at: isCardTrash ? ((existing as any).deleted_at || new Date().toISOString()) : null,
+            client: { 
+              ...c, 
+              status: isCardTrash ? 'trash' : c.status,
+              is_deleted: isCardTrash,
+              handled_by: handledBy 
+            } as any,
             has_final_quotation: hasFinalQuotation,
             final_quotation_version: finalVersion,
             final_quotation_id: linkedFinalQuote?.template_id || leadObj?.final_quotation_id || undefined,
@@ -1080,7 +1092,15 @@ export default function FinancePage() {
             user_id: workspaceId,
             workspace_id: workspaceId,
             client_id: c.id,
-            client: { ...c, handled_by: handledBy } as any,
+            status: isCardTrash ? 'trash' : undefined,
+            is_deleted: isCardTrash,
+            deleted_at: isCardTrash ? new Date().toISOString() : null,
+            client: { 
+              ...c, 
+              status: isCardTrash ? 'trash' : c.status,
+              is_deleted: isCardTrash,
+              handled_by: handledBy 
+            } as any,
             has_final_quotation: hasFinalQuotation,
             final_quotation_version: finalVersion,
             final_quotation_id: linkedFinalQuote?.template_id || leadObj?.final_quotation_id || undefined,
@@ -1898,9 +1918,11 @@ export default function FinancePage() {
       const clientId = recordToDelete.client_id;
       const { data: { session } } = await supabase.auth.getSession();
       const workspaceId = session?.user?.id || currentWorkspaceId || 'ws_demo';
+      const trashedNotes = (recordToDelete.notes || '').includes('[status:trash]')
+        ? recordToDelete.notes
+        : ((recordToDelete.notes || '') + ' [status:trash]').trim();
 
       if (workspaceId !== 'ws_demo') {
-        const trashedNotes = (recordToDelete.notes || '') + ' [status:trash]';
         await supabase
           .from('client_finance_records')
           .update({
@@ -1919,13 +1941,44 @@ export default function FinancePage() {
           .eq('id', clientId);
       }
 
-      setFinanceRecords(prev => prev.filter(r => r.id !== recordToDelete.id && r.client_id !== clientId));
-      memCachedFinanceRecords = memCachedFinanceRecords.filter(r => r.id !== recordToDelete.id && r.client_id !== clientId);
+      setFinanceRecords(prev => prev.map(r => {
+        if (r.id === recordToDelete.id || (clientId && r.client_id === clientId)) {
+          return {
+            ...r,
+            status: 'trash',
+            is_deleted: true,
+            deleted_at: new Date().toISOString(),
+            notes: trashedNotes,
+            client: r.client ? { ...r.client, status: 'trash', is_deleted: true } : r.client
+          } as any;
+        }
+        return r;
+      }));
+
+      memCachedFinanceRecords = memCachedFinanceRecords.map(r => {
+        if (r.id === recordToDelete.id || (clientId && r.client_id === clientId)) {
+          return {
+            ...r,
+            status: 'trash',
+            is_deleted: true,
+            deleted_at: new Date().toISOString(),
+            notes: trashedNotes,
+            client: r.client ? { ...r.client, status: 'trash', is_deleted: true } : r.client
+          } as any;
+        }
+        return r;
+      });
+
       try {
         localStorage.setItem('sc_cached_finance_records', JSON.stringify(memCachedFinanceRecords));
       } catch (_) {}
 
-      setClients(prev => prev.filter(c => c.id !== clientId));
+      setClients(prev => prev.map(c => {
+        if (c.id === clientId) {
+          return { ...c, status: 'trash', is_deleted: true };
+        }
+        return c;
+      }));
 
       window.dispatchEvent(new CustomEvent('finance_updated'));
       window.dispatchEvent(new CustomEvent('client_updated'));
@@ -3249,18 +3302,30 @@ export default function FinancePage() {
               <StudioCoreLiquidLoader label="Loading Finance & Accounts..." fullscreen={false} />
             ) : filteredRecords.length === 0 ? (
               <div className="text-center py-16 bg-white rounded-3xl border border-slate-100 space-y-3">
-                <Receipt className="w-10 h-10 text-slate-300 mx-auto" />
-                <h3 className="text-base font-black text-slate-800">No matching client records</h3>
-                <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                  No clients match your filter criteria. Try clearing search, team member, or date filters.
-                </p>
-                {activeFiltersCount > 0 && (
-                  <button
-                    onClick={resetAllFilters}
-                    className="px-4 py-2 bg-orange-500 text-white font-bold text-xs rounded-xl shadow-xs"
-                  >
-                    Clear All Filters
-                  </button>
+                {statusFilter === 'trash' ? (
+                  <>
+                    <Trash2 className="w-10 h-10 text-rose-300 mx-auto" />
+                    <h3 className="text-base font-black text-slate-800">Trash is Empty</h3>
+                    <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                      No deleted client finance records found in trash. Deleted records can be restored anytime from here.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <Receipt className="w-10 h-10 text-slate-300 mx-auto" />
+                    <h3 className="text-base font-black text-slate-800">No matching client records</h3>
+                    <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                      No clients match your filter criteria. Try clearing search, team member, or date filters.
+                    </p>
+                    {activeFiltersCount > 0 && (
+                      <button
+                        onClick={resetAllFilters}
+                        className="px-4 py-2 bg-orange-500 text-white font-bold text-xs rounded-xl shadow-xs"
+                      >
+                        Clear All Filters
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             ) : (

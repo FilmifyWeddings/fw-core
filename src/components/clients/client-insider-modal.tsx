@@ -223,7 +223,7 @@ export function ClientInsiderModal({
       setEmail(client.email || '');
       setEventType(client.event_type || 'Wedding');
       setEventDate(client.event_date || '');
-      setStatus(client.status || 'active');
+      setStatus(client.status === 'completed' || client.status === 'archived' ? client.status : 'active');
 
       // Fetch related data
       fetchQuotations(client);

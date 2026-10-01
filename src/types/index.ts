@@ -854,6 +854,9 @@ export interface ClientFinanceRecord {
     created_at: string;
     financials: any;
   }>;
+  status?: string;
+  is_deleted?: boolean;
+  deleted_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -889,7 +892,8 @@ export interface WorkspaceClient {
   event_date?: string | null;
   total_package_amount: number;
   paid_amount: number;
-  status: 'active' | 'completed' | 'archived';
+  status: 'active' | 'completed' | 'archived' | 'trash';
+  is_deleted?: boolean;
   project_manager_id?: string | null;
   project_manager_name?: string | null;
   project_manager_email?: string | null;

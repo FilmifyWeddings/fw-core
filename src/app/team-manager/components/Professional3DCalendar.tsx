@@ -525,7 +525,7 @@ export default function Professional3DCalendar({
           </div>
 
           {/* Events List Container (Scrollable) */}
-          <div className="flex-1 overflow-y-auto space-y-5 pt-4 pr-1 scrollbar-thin">
+          <div className="flex-1 overflow-y-auto space-y-5 pt-4 pr-1 scrollbar-dark-cream">
             {selectedDateProjectGroups.length === 0 ? (
               <div className="h-full min-h-[340px] flex flex-col items-center justify-center text-center p-8 bg-white border border-dashed border-slate-200 rounded-3xl text-slate-400 space-y-3 shadow-2xs">
                 <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">

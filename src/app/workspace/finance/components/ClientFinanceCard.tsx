@@ -248,6 +248,17 @@ export function ClientFinanceCard({
     return null;
   }, [milestones, startDate, endDate, statusFilter]);
 
+  const isCardTrashed = Boolean(
+    statusFilter === 'trash' ||
+    (record as any).status === 'trash' ||
+    (record as any).status === 'trashed' ||
+    (record as any).is_deleted === true ||
+    Boolean((record as any).deleted_at) ||
+    (client?.status as string) === 'trash' ||
+    (client as any)?.is_deleted === true ||
+    Boolean(record.notes && typeof record.notes === 'string' && record.notes.includes('[status:trash]'))
+  );
+
   const step1 = milestones?.[0] || null;
   const step1Date = step1?.paid_date || (step1 as any)?.paidDate || (step1 as any)?.payment_date || step1?.due_date || (record as any).created_at?.split('T')[0];
 
@@ -368,7 +379,7 @@ export function ClientFinanceCard({
           </div>
 
           {/* Direct Restore & Delete Buttons when in Trash View */}
-          {statusFilter === 'trash' && (
+          {isCardTrashed && (
             <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
               {onRestoreRecord && (
                 <button
@@ -414,7 +425,7 @@ export function ClientFinanceCard({
                   exit={{ opacity: 0, scale: 0.95, y: -5 }}
                   className="absolute right-0 mt-1 w-52 bg-white rounded-2xl border border-slate-200 shadow-xl py-1.5 z-40 space-y-0.5 text-xs font-bold font-sans"
                 >
-                  {statusFilter === 'trash' ? (
+                  {isCardTrashed ? (
                     <>
                       {onRestoreRecord && (
                         <button
