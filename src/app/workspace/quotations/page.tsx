@@ -13,7 +13,8 @@ import {
 import { supabase } from '@/lib/supabase';
 import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manager';
 import { MasterMediaModal } from '@/components/MasterMediaModal';
-import { removeCachedDocumentLocal } from '@/lib/indexeddb-cache';
+import { removeCachedDocumentLocal, cacheDocumentLocal } from '@/lib/indexeddb-cache';
+import { DEFAULT_AIRY_PROPOSAL } from '@/lib/quotation-defaults';
 
 import { getThemeFromKey } from '@/lib/quotation-theme';
 import QuotationDocumentCanvas from '@/components/QuotationDocumentCanvas';
@@ -339,14 +340,9 @@ export default function WorkspaceQuotationsGalleryPage() {
   const handleEditTemplate = async (quote: SavedQuotation) => {
     const quoteId = quote.quotation_number || quote.id;
 
-    // RULE: Super Admin (sushantnawale700@gmail.com) ALWAYS edits System Templates directly!
-    if (isSuperAdminUser) {
-      router.push(`/workspace/quotations/builder/templet/${quoteId}`);
-      return;
-    }
-
     if (quote.is_system_template || quoteId === 'FW-2WT85Y0' || quoteId === 'SYSTEM_DEFAULT_WEDDING') {
-      // Check quota limit before cloning system template into user workspace
+      // Studio owner clicked Edit Template on System Preset:
+      // Instantly generate workspace copy and open in MILLISECONDS (0ms transition)!
       if (quotations.length >= 10) {
         setQuotaModal({
           isOpen: true,
@@ -357,33 +353,83 @@ export default function WorkspaceQuotationsGalleryPage() {
         return;
       }
 
-      setCloningGlobalId(quoteId);
+      const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
+      const newId = `FW-USER-${randomSuffix}`;
+      const copyTitle = generateUniqueCopyName(quote.title || 'Wedding - Design 1', quotations.map(q => q.title));
 
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-        if (userEmail) headers['x-user-email'] = userEmail;
+      const baseDoc = quote.content_json || DEFAULT_AIRY_PROPOSAL;
+      const clonedDoc = JSON.parse(JSON.stringify(baseDoc));
+      clonedDoc.designName = copyTitle;
 
-        const res = await fetch('/api/templates/duplicate', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ sourceTemplateId: quoteId })
-        });
-
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed to initialize user template');
-
-        const newId = data.newTemplateId;
-        router.push(`/workspace/quotations/builder/templet/${newId}`);
-      } catch (err: any) {
-        console.error('[Edit Global Template Error]:', err);
-        alert('Could not prepare template: ' + (err.message || 'Unknown error'));
-      } finally {
-        setCloningGlobalId(null);
+      // 0ms Instant Client Storage Hydration
+      if (typeof window !== 'undefined') {
+        try {
+          sessionStorage.setItem(`current_quotation_doc_${newId}`, JSON.stringify(clonedDoc));
+          sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: newId, document: clonedDoc }));
+          localStorage.setItem(`wg_proposal_draft_${newId}`, JSON.stringify(clonedDoc));
+          cacheDocumentLocal(newId, clonedDoc, 1);
+        } catch (_) {}
       }
+
+      // 0ms Instant State Sync in Your Designs
+      const currentUserId = userId || 'demo_user';
+      const duplicatedRecord: SavedQuotation = {
+        id: newId,
+        quotation_number: newId,
+        title: copyTitle,
+        client_name: quote.client_name || 'Rahul & Neha',
+        financials: quote.financials || {},
+        content_json: clonedDoc,
+        status: 'draft',
+        is_default: false,
+        is_system_template: false,
+        updated_at: new Date().toISOString()
+      };
+
+      setQuotations(prev => {
+        const nextList = [duplicatedRecord, ...prev];
+        memCachedQuotations = nextList;
+        try {
+          localStorage.setItem('wg_quotations_cache', JSON.stringify(nextList));
+        } catch (_) {}
+        return nextList;
+      });
+
+      // Background DB Persistence (non-blocking)
+      (async () => {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const effectiveWsId = session?.user?.id || currentUserId;
+          const token = session?.access_token;
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (token) headers['Authorization'] = `Bearer ${token}`;
+          if (userEmail) headers['x-user-email'] = userEmail;
+
+          await fetch('/api/templates/duplicate', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              sourceTemplateId: quoteId,
+              targetTemplateId: newId,
+              workspaceId: effectiveWsId,
+              title: copyTitle
+            })
+          });
+        } catch (bgErr) {
+          console.warn('[Background Duplicate Error]:', bgErr);
+        }
+      })();
+
+      // Instantly open the editor in milliseconds!
+      router.push(`/workspace/quotations/builder/templet/${newId}`);
     } else {
+      // Editing an existing user design: pre-seed sessionStorage for 0ms instant transition
+      if (quote.content_json && typeof window !== 'undefined') {
+        try {
+          sessionStorage.setItem(`current_quotation_doc_${quoteId}`, JSON.stringify(quote.content_json));
+          sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: quoteId, document: quote.content_json }));
+        } catch (_) {}
+      }
       router.push(`/workspace/quotations/builder/templet/${quoteId}`);
     }
   };
@@ -462,8 +508,62 @@ export default function WorkspaceQuotationsGalleryPage() {
     const sourceId = sourceQuote.quotation_number || sourceQuote.id;
     setDuplicatingId(sourceId);
 
+    // 1. Generate unique copy ID and title immediately
+    const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const newId = `FW-USER-${randomSuffix}`;
+    const copyTitle = generateUniqueCopyName(sourceQuote.title || 'Wedding - Design 1', quotations.map(q => q.title));
+
+    // 2. Prepare cloned document content
+    const baseDoc = sourceQuote.content_json || DEFAULT_AIRY_PROPOSAL;
+    const clonedDoc = JSON.parse(JSON.stringify(baseDoc));
+    clonedDoc.designName = copyTitle;
+
+    // 3. 0ms Instant Client Storage Pre-seeding
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem(`current_quotation_doc_${newId}`, JSON.stringify(clonedDoc));
+        sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: newId, document: clonedDoc }));
+        localStorage.setItem(`wg_proposal_draft_${newId}`, JSON.stringify(clonedDoc));
+        cacheDocumentLocal(newId, clonedDoc, 1);
+      } catch (_) {}
+    }
+
+    // 4. INSTANT UI UPDATE in Your Designs (0ms!)
+    const duplicatedRecord: SavedQuotation = {
+      id: newId,
+      quotation_number: newId,
+      title: copyTitle,
+      client_name: sourceQuote.client_name || 'Rahul & Neha',
+      financials: sourceQuote.financials || {},
+      content_json: clonedDoc,
+      status: 'draft',
+      is_default: false,
+      is_system_template: false,
+      updated_at: new Date().toISOString()
+    };
+
+    setQuotations(prev => {
+      const sourceIndex = prev.findIndex(q => (q.quotation_number || q.id) === sourceId);
+      let nextList: SavedQuotation[];
+      if (sourceIndex !== -1) {
+        nextList = [...prev];
+        nextList.splice(sourceIndex + 1, 0, duplicatedRecord);
+      } else {
+        nextList = [duplicatedRecord, ...prev];
+      }
+      memCachedQuotations = nextList;
+      try {
+        localStorage.setItem('wg_quotations_cache', JSON.stringify(nextList));
+      } catch (_) {}
+      return nextList;
+    });
+
+    setToastMessage('Design duplicated successfully');
+    setTimeout(() => setToastMessage(null), 3000);
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      const currentUserId = session?.user?.id || userId || 'demo_user';
       const token = session?.access_token;
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -472,39 +572,27 @@ export default function WorkspaceQuotationsGalleryPage() {
       const res = await fetch('/api/templates/duplicate', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ sourceTemplateId: sourceId })
+        body: JSON.stringify({
+          sourceTemplateId: sourceId,
+          targetTemplateId: newId,
+          workspaceId: currentUserId,
+          title: copyTitle
+        })
       });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Duplication failed');
-
-      const duplicatedRecord: SavedQuotation = {
-        id: data.newTemplateId,
-        quotation_number: data.newTemplateId,
-        title: data.template?.title || data.quotation?.title || `${sourceQuote.title} (Copy)`,
-        client_name: data.quotation?.client_name || sourceQuote.client_name || 'Rahul & Neha',
-        financials: sourceQuote.financials || {},
-        content_json: data.document?.content_json || data.quotation?.content_json,
-        status: data.template?.status || 'draft',
-        is_default: false,
-        is_system_template: data.template?.is_system_template ?? isSuperAdminUser,
-        updated_at: new Date().toISOString()
-      };
-
-      setQuotations(prev => {
-        const sourceIndex = prev.findIndex(q => (q.quotation_number || q.id) === sourceId);
-        if (sourceIndex !== -1) {
-          const nextList = [...prev];
-          nextList.splice(sourceIndex + 1, 0, duplicatedRecord);
-          return nextList;
-        }
-        return [duplicatedRecord, ...prev];
-      });
-
-      setToastMessage('Design duplicated successfully');
-      setTimeout(() => setToastMessage(null), 3000);
     } catch (err: any) {
       console.error('[Duplicate Error]:', err);
+      // Rollback optimistic addition if server failed
+      setQuotations(prev => {
+        const rolledBack = prev.filter(q => (q.quotation_number || q.id) !== newId);
+        memCachedQuotations = rolledBack;
+        try {
+          localStorage.setItem('wg_quotations_cache', JSON.stringify(rolledBack));
+        } catch (_) {}
+        return rolledBack;
+      });
       alert('Duplication failed: ' + (err?.message || 'Unknown error'));
     } finally {
       setDuplicatingId(null);
@@ -711,40 +799,42 @@ export default function WorkspaceQuotationsGalleryPage() {
           updated_at: new Date().toISOString()
         };
 
+        const userDesigns: SavedQuotation[] = [];
+        let systemDesign: SavedQuotation | null = null;
+
         if (filteredTmplData.length > 0) {
-          combined = filteredTmplData.map((t: any) => ({
-            id: t.id,
-            quotation_number: t.id,
-            title: t.title || 'Wedding - Design 1',
-            client_name: 'Rahul & Neha',
-            financials: {},
-            status: 'draft',
-            content_json: docsMap[t.id] || null,
-            is_default: t.is_default || false,
-            is_system_template: t.is_system_template || t.id === 'FW-2WT85Y0',
-            updated_at: t.updated_at
-          }));
-        } else if (qData && qData.length > 0) {
-          combined = qData
-            .filter((q: any) => {
-              const qNum = q.quotation_number || q.id;
-              return validTemplateIds.has(qNum) || validTemplateIds.has(q.id);
-            })
-            .map((q: any) => {
-              const qNum = q.quotation_number || q.id;
-              const tmplMeta = templateMap[qNum] || templateMap[q.id];
-              return {
-                ...q,
-                content_json: docsMap[qNum] || docsMap[q.id] || null,
-                is_default: tmplMeta?.is_default || false,
-                is_system_template: tmplMeta?.is_system_template || qNum === 'FW-2WT85Y0'
-              };
-            });
+          filteredTmplData.forEach((t: any) => {
+            const isSys = Boolean(t.is_system_template || t.id === 'FW-2WT85Y0');
+            const item: SavedQuotation = {
+              id: t.id,
+              quotation_number: t.id,
+              title: t.title || 'Wedding - Design 1',
+              client_name: 'Rahul & Neha',
+              financials: {},
+              status: t.status || 'draft',
+              content_json: docsMap[t.id] || null,
+              is_default: Boolean(t.is_default),
+              is_system_template: isSys,
+              updated_at: t.updated_at
+            };
+
+            if (isSys) {
+              if (!systemDesign || t.is_default) {
+                systemDesign = item;
+              }
+            } else {
+              userDesigns.push(item);
+            }
+          });
         }
 
-        // Only inject fallback if user has absolutely zero templates loaded
-        if (combined.length === 0) {
-          combined.unshift(globalSystemTemplate);
+        // Combine: user's custom designs + exactly ONE active system preset
+        if (systemDesign) {
+          combined = [...userDesigns, systemDesign];
+        } else if (userDesigns.length > 0) {
+          combined = [...userDesigns, globalSystemTemplate];
+        } else {
+          combined = [globalSystemTemplate];
         }
 
         // Check if any template has is_default = true; if none at all, default to first template

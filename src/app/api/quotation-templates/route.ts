@@ -36,8 +36,8 @@ export async function GET(req: NextRequest) {
       .not('id', 'ilike', 'FW-L-%');
 
     if (effectiveUserId) {
-      // Strictly only this user's templates
-      query = query.or(`workspace_id.eq.${effectiveUserId},user_id.eq.${effectiveUserId}`);
+      // Strictly only this user's workspace templates
+      query = query.or(`workspace_id.eq.${effectiveUserId},user_id.eq.${effectiveUserId}`).eq('is_system_template', false);
     } else if (isSuperAdmin && searchParams.get('admin_all') === 'true') {
       // Super admin overview only when explicitly requested
     } else {
@@ -54,43 +54,45 @@ export async function GET(req: NextRequest) {
 
     // Deduplicate by ID and clean list
     const seenIds = new Set<string>();
-    let validTemplates = (templates || []).filter(t => {
+    const userTemplates = (templates || []).filter(t => {
       if (!t.id || seenIds.has(t.id)) return false;
       if (t.id.startsWith('FW-Q-') || t.id.startsWith('FW-L-')) return false;
       if (t.status === 'archived' || t.status === 'deleted') return false;
+      if (t.is_system_template) return false;
       seenIds.add(t.id);
       return true;
     });
 
-    // Ensure the base System Default Template is always available for every user
-    const hasSystemDefault = validTemplates.some(t => t.id === 'FW-2WT85Y0' || t.is_system_template);
-    if (!hasSystemDefault) {
-      const { data: sysTmpl } = await supabaseAdmin
-        .from('quotation_templates')
-        .select('id, user_id, workspace_id, title, category, is_default, is_system_template, status, updated_at')
-        .eq('is_system_template', true)
-        .eq('status', 'published')
-        .limit(1);
+    // Fetch the SINGLE active default system template so every user has exactly 1 system preset
+    const { data: sysTmpls } = await supabaseAdmin
+      .from('quotation_templates')
+      .select('id, user_id, workspace_id, title, category, is_default, is_system_template, status, updated_at')
+      .eq('is_system_template', true)
+      .eq('status', 'published')
+      .not('status', 'in', '("archived","deleted")')
+      .not('id', 'ilike', 'FW-Q-%')
+      .not('id', 'ilike', 'FW-L-%')
+      .order('is_default', { ascending: false })
+      .order('updated_at', { ascending: false })
+      .limit(1);
 
-      if (sysTmpl && sysTmpl.length > 0) {
-        validTemplates.push({
-          ...sysTmpl[0],
-          is_default: validTemplates.length === 0
-        });
-      } else {
-        validTemplates.push({
-          id: 'FW-2WT85Y0',
-          user_id: 'SYSTEM',
-          workspace_id: null,
-          title: 'System Default Wedding Template',
-          category: 'Wedding',
-          is_default: validTemplates.length === 0,
-          is_system_template: true,
-          status: 'published',
-          updated_at: new Date().toISOString()
-        });
-      }
-    }
+    const activeSysTmpl = sysTmpls?.[0] || {
+      id: 'FW-2WT85Y0',
+      user_id: 'SYSTEM',
+      workspace_id: null,
+      title: 'System Default Wedding Template',
+      category: 'Wedding',
+      is_default: false,
+      is_system_template: true,
+      status: 'published',
+      updated_at: new Date().toISOString()
+    };
+
+    // User's own designs + exactly ONE active system preset
+    const validTemplates = [...userTemplates, {
+      ...activeSysTmpl,
+      is_default: userTemplates.length === 0 ? true : !!activeSysTmpl.is_default
+    }];
 
     const templateIds = validTemplates.map(t => t.id);
 

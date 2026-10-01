@@ -13,16 +13,18 @@ export async function POST(req: NextRequest) {
   try {
     const { userId, isSuperAdmin } = await resolveRequestUser(req);
 
-    let workspaceId = userId;
-    const { data: profile } = await supabaseAdmin
-      .from('profiles')
-      .select('id')
-      .eq('id', userId)
-      .maybeSingle();
-    if (profile?.id) workspaceId = profile.id;
-
     const body = await req.json().catch(() => ({}));
-    const { sourceTemplateId } = body;
+    const { sourceTemplateId, targetTemplateId, workspaceId: bodyWsId, title: bodyTitle, asSystemTemplate } = body;
+
+    let workspaceId = bodyWsId || userId;
+    if (!bodyWsId) {
+      const { data: profile } = await supabaseAdmin
+        .from('profiles')
+        .select('id')
+        .eq('id', userId)
+        .maybeSingle();
+      if (profile?.id) workspaceId = profile.id;
+    }
 
     if (!sourceTemplateId) {
       return NextResponse.json({ error: 'sourceTemplateId is required' }, { status: 400 });
@@ -56,7 +58,7 @@ export async function POST(req: NextRequest) {
       docJson = DEFAULT_AIRY_PROPOSAL;
     }
 
-    const title = `${sourceTmpl?.title || sourceLegacyQuote?.title || docJson.designName || 'Quotation Template'} (Copy)`;
+    const title = bodyTitle || `${sourceTmpl?.title || sourceLegacyQuote?.title || docJson.designName || 'Quotation Template'} (Copy)`;
 
     // Deep clone document JSON and generate fresh unique custom page IDs
     const clonedDoc = JSON.parse(JSON.stringify(docJson));
@@ -74,13 +76,13 @@ export async function POST(req: NextRequest) {
       clonedDoc.customPages = regeneratedCustomPages;
     }
 
-    // ── SUPER ADMIN DUPLICATION ENGINE ──
-    if (isSuperAdmin) {
-      const newSystemId = `SYS-WEDDING-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+    // ── GLOBAL SYSTEM TEMPLATE DUPLICATION (ONLY IF EXPLICITLY REQUESTED BY SUPER ADMIN) ──
+    if (isSuperAdmin && asSystemTemplate === true) {
+      const newSystemId = targetTemplateId || `SYS-WEDDING-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 
       const { data: newTmpl, error: tmplInsErr } = await supabaseAdmin
         .from('quotation_templates')
-        .insert({
+        .upsert({
           id: newSystemId,
           workspace_id: null,
           user_id: 'SYSTEM',
@@ -92,7 +94,7 @@ export async function POST(req: NextRequest) {
           status: 'published',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
-        })
+        }, { onConflict: 'id' })
         .select()
         .single();
 
@@ -103,7 +105,7 @@ export async function POST(req: NextRequest) {
 
       await supabaseAdmin
         .from('quotation_documents')
-        .insert({
+        .upsert({
           template_id: newSystemId,
           workspace_id: null,
           user_id: 'SYSTEM',
@@ -111,7 +113,7 @@ export async function POST(req: NextRequest) {
           version: 1,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
-        });
+        }, { onConflict: 'template_id' });
 
       console.log('[Super Admin Duplicated System Template]:', { sourceId: sourceTemplateId, newSystemId });
 
@@ -122,7 +124,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // ── NORMAL USER WORKSPACE DUPLICATION ENGINE ──
+    // ── NORMAL USER & STUDIO OWNER WORKSPACE DUPLICATION ENGINE ──
     // Check workspace template quota limit (Max 10)
     const { count: currentCount } = await supabaseAdmin
       .from('quotation_templates')
@@ -130,7 +132,7 @@ export async function POST(req: NextRequest) {
       .eq('workspace_id', workspaceId)
       .eq('is_system_template', false);
 
-    if ((currentCount || 0) >= 10) {
+    if ((currentCount || 0) >= 10 && !targetTemplateId) {
       return NextResponse.json({ 
         error: 'Quotation Limit Reached: You have reached the maximum limit of 10 quotation designs. Please delete an existing design to create a new one.',
         code: 'QUOTA_EXCEEDED',
@@ -140,14 +142,14 @@ export async function POST(req: NextRequest) {
     }
 
     const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const newTemplateId = `FW-USER-${randomSuffix}`;
+    const newTemplateId = targetTemplateId || `FW-USER-${randomSuffix}`;
 
     const { data: newTmpl, error: tmplInsErr } = await supabaseAdmin
       .from('quotation_templates')
-      .insert({
+      .upsert({
         id: newTemplateId,
         workspace_id: workspaceId,
-        user_id: userId,
+        user_id: userId || workspaceId,
         title,
         category: sourceTmpl?.category || 'Wedding',
         is_system_template: false,
@@ -155,7 +157,7 @@ export async function POST(req: NextRequest) {
         status: 'draft',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
-      })
+      }, { onConflict: 'id' })
       .select()
       .single();
 
@@ -166,29 +168,29 @@ export async function POST(req: NextRequest) {
 
     await supabaseAdmin
       .from('quotation_documents')
-      .insert({
+      .upsert({
         template_id: newTemplateId,
         workspace_id: workspaceId,
-        user_id: userId,
+        user_id: userId || workspaceId,
         content_json: clonedDoc,
         version: 1,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
-      });
+      }, { onConflict: 'template_id' });
 
     // Also sync to quotations table for full backwards compatibility
     try {
-      await supabaseAdmin.from('quotations').insert({
+      await supabaseAdmin.from('quotations').upsert({
         quotation_number: newTemplateId,
         workspace_id: workspaceId,
-        user_id: userId,
+        user_id: userId || workspaceId,
         title,
         client_name: clonedDoc?.cover?.coupleName || 'Rahul & Neha',
         status: 'draft',
         content_json: clonedDoc,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
-      });
+      }, { onConflict: 'quotation_number' });
     } catch (_) {}
 
     return NextResponse.json({
