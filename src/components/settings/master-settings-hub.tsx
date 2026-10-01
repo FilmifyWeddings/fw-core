@@ -633,7 +633,7 @@ export function MasterSettingsHub({ isOpen, onClose, workspaceId, onStagesUpdate
           {/* Main Layout containing sidebar and content area */}
           <div className="flex-1 flex overflow-hidden">
             {/* Sidebar Navigation - Page-Wise Modular Settings */}
-            <div className="w-64 border-r border-slate-200 dark:border-zinc-900 bg-white dark:bg-zinc-950/40 p-4 overflow-y-auto space-y-5 select-none">
+            <div className="w-64 border-r border-slate-200 dark:border-zinc-900 bg-white dark:bg-zinc-950/40 p-4 overflow-y-auto space-y-5 select-none menu-scrollbar">
               
               {/* Page 0: Wedding Functions & Crew Roles Settings */}
               <div className="space-y-1">

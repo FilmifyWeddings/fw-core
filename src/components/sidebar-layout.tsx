@@ -568,7 +568,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
         </div>
 
         {/* Navigation Items */}
-        <nav className="flex-1 overflow-y-auto py-2 px-3 space-y-1 scrollbar-thin scrollbar-thumb-zinc-200">
+        <nav className="flex-1 overflow-y-auto py-2 px-3 space-y-1 menu-scrollbar">
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isDashboard = item.id === 'dashboard';
@@ -803,7 +803,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
               <div className="px-3 pt-3 pb-1 shrink-0">
                 <WorkspaceSwitcher isCollapsed={false} />
               </div>
-              <div className="flex-1 overflow-y-auto py-2 px-3 space-y-1">
+              <div className="flex-1 overflow-y-auto py-2 px-3 space-y-1 menu-scrollbar">
                 {menuItems.map((item) => {
                   const Icon = item.icon;
                   const isActive = item.id === 'bookings'

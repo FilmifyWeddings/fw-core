@@ -124,34 +124,114 @@ body::-webkit-scrollbar-thumb:hover,
   background-color: #6B7280 !important;
 }
 
-/* Dedicated Team Manager Visible Dark Grey Scrollbar */
-.scrollbar-dark-cream,
-.scrollbar-thin {
+/* Dedicated Team Manager & Page Visible Dark Grey Scrollbar */
+.scrollbar-dark-cream {
   scrollbar-width: thin;
   scrollbar-color: #374151 #F1F5F9;
 }
 
-.scrollbar-dark-cream::-webkit-scrollbar,
-.scrollbar-thin::-webkit-scrollbar {
+.scrollbar-dark-cream::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 
-.scrollbar-dark-cream::-webkit-scrollbar-track,
-.scrollbar-thin::-webkit-scrollbar-track {
+.scrollbar-dark-cream::-webkit-scrollbar-track {
   background: #F1F5F9;
 }
 
-.scrollbar-dark-cream::-webkit-scrollbar-thumb,
-.scrollbar-thin::-webkit-scrollbar-thumb {
+.scrollbar-dark-cream::-webkit-scrollbar-thumb {
   background-color: #374151 !important;
   border-radius: 9999px;
   border: 1px solid #E2E8F0;
 }
 
-.scrollbar-dark-cream::-webkit-scrollbar-thumb:hover,
-.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+.scrollbar-dark-cream::-webkit-scrollbar-thumb:hover {
   background-color: #111827 !important;
+}
+
+/* Subtle Thin Scrollbar */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: #D1D5DB transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: #D1D5DB !important;
+  border-radius: 9999px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background-color: #9CA3AF !important;
+}
+
+/* Menu Bar & Sidebar Specific Scrollbar - Subtle & Light (NOT Dark Grey) */
+aside,
+aside *,
+nav.menu-scrollbar,
+.menu-scrollbar,
+.menu-scrollbar * {
+  scrollbar-width: thin !important;
+  scrollbar-color: #E2E8F0 transparent !important;
+}
+
+aside::-webkit-scrollbar,
+aside *::-webkit-scrollbar,
+nav.menu-scrollbar::-webkit-scrollbar,
+.menu-scrollbar::-webkit-scrollbar,
+.menu-scrollbar *::-webkit-scrollbar {
+  width: 5px !important;
+  height: 5px !important;
+}
+
+aside::-webkit-scrollbar-track,
+aside *::-webkit-scrollbar-track,
+nav.menu-scrollbar::-webkit-scrollbar-track,
+.menu-scrollbar::-webkit-scrollbar-track,
+.menu-scrollbar *::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+aside::-webkit-scrollbar-thumb,
+aside *::-webkit-scrollbar-thumb,
+nav.menu-scrollbar::-webkit-scrollbar-thumb,
+.menu-scrollbar::-webkit-scrollbar-thumb,
+.menu-scrollbar *::-webkit-scrollbar-thumb {
+  background-color: #E2E8F0 !important;
+  border-radius: 9999px !important;
+  border: none !important;
+}
+
+aside::-webkit-scrollbar-thumb:hover,
+aside *::-webkit-scrollbar-thumb:hover,
+nav.menu-scrollbar::-webkit-scrollbar-thumb:hover,
+.menu-scrollbar::-webkit-scrollbar-thumb:hover,
+.menu-scrollbar *::-webkit-scrollbar-thumb:hover {
+  background-color: #CBD5E1 !important;
+}
+
+.dark aside,
+.dark aside *,
+.dark nav.menu-scrollbar,
+.dark .menu-scrollbar,
+.dark .menu-scrollbar * {
+  scrollbar-color: #3F3F46 transparent !important;
+}
+
+.dark aside::-webkit-scrollbar-thumb,
+.dark aside *::-webkit-scrollbar-thumb,
+.dark nav.menu-scrollbar::-webkit-scrollbar-thumb,
+.dark .menu-scrollbar::-webkit-scrollbar-thumb,
+.dark .menu-scrollbar *::-webkit-scrollbar-thumb {
+  background-color: #3F3F46 !important;
 }
 
 /* Google Sheets Style Minimal Dropdown UI */
