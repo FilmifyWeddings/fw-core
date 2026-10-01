@@ -117,6 +117,26 @@ async function handleGet(
       if (docJson.content_json && typeof docJson.content_json === 'object') docJson = { ...docJson, ...docJson.content_json };
     }
 
+    // Check if studio owner has a workspace-specific customized document for this template
+    if (!isSuperAdmin && workspaceId && workspaceId !== 'demo_user') {
+      const customId = `FW-CUSTOM-${workspaceId}-${id}`;
+      const { data: customDoc } = await supabaseAdmin
+        .from('quotation_documents')
+        .select('content_json')
+        .eq('template_id', customId)
+        .maybeSingle();
+
+      if (customDoc?.content_json) {
+        let parsed = customDoc.content_json;
+        if (typeof parsed === 'string') {
+          try { parsed = JSON.parse(parsed); } catch (_) {}
+        }
+        if (parsed && typeof parsed === 'object') {
+          docJson = parsed;
+        }
+      }
+    }
+
     if (!tmpl && !docJson && !quoteRec) {
       return NextResponse.json({ error: 'Quotation template or document not found' }, { status: 404 });
     }
@@ -194,6 +214,14 @@ async function handleUpdate(
 
       const newTitle = title || document?.designName || targetTmpl?.title || 'System Default Wedding Template';
 
+      const nextIsSystem = body.is_system_template !== undefined
+        ? Boolean(body.is_system_template)
+        : (targetTmpl?.is_system_template ?? isSystemTemplate);
+
+      const nextStatus = body.status !== undefined
+        ? body.status
+        : (targetTmpl?.status || (nextIsSystem ? 'published' : 'draft'));
+
       await supabaseAdmin
         .from('quotation_templates')
         .upsert({
@@ -202,8 +230,8 @@ async function handleUpdate(
           workspace_id: null,
           title: newTitle,
           category: category || targetTmpl?.category || 'Wedding',
-          is_system_template: true,
-          status: 'published',
+          is_system_template: nextIsSystem,
+          status: nextStatus,
           updated_at: new Date().toISOString()
         }, { onConflict: 'id' });
 
@@ -234,83 +262,27 @@ async function handleUpdate(
       });
     }
 
-    // ── NORMAL USER FORKING ENGINE ──
+    // ── NORMAL STUDIO OWNER ISOLATED PRESET CUSTOMIZATION ──
     if (isSystemTemplate) {
-      // Check workspace template quota limit (Max 10)
-      const { count: currentCount } = await supabaseAdmin
-        .from('quotation_templates')
-        .select('id', { count: 'exact', head: true })
-        .eq('workspace_id', workspaceId)
-        .eq('is_system_template', false);
+      // Save studio-specific customized document without affecting canonical master or other studios
+      const customDocId = `FW-CUSTOM-${workspaceId}-${id}`;
 
-      if ((currentCount || 0) >= 10) {
-        return NextResponse.json({ 
-          error: 'Quotation Limit Reached: You have reached the maximum limit of 10 quotation designs. Please delete an existing design to create a new one.',
-          code: 'QUOTA_EXCEEDED',
-          limit: 10,
-          current: currentCount
-        }, { status: 403 });
-      }
-
-      const randomSuffix = Math.random().toString(36).substring(2, 10).toUpperCase();
-      const newTemplateId = `FW-USER-${randomSuffix}`;
-
-      if (workspaceId && workspaceId !== '00000000-0000-0000-0000-000000000000') {
+      if (document) {
         await supabaseAdmin
-          .from('quotation_templates')
-          .update({ is_default: false })
-          .eq('workspace_id', workspaceId)
-          .not('is_system_template', 'eq', true);
-      } else {
-        await supabaseAdmin
-          .from('quotation_templates')
-          .update({ is_default: false })
-          .eq('user_id', userId)
-          .not('is_system_template', 'eq', true);
+          .from('quotation_documents')
+          .upsert({
+            template_id: customDocId,
+            workspace_id: workspaceId,
+            user_id: userId,
+            content_json: document,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'template_id' });
       }
-
-      const clonedDoc = JSON.parse(JSON.stringify(document || { meta: {}, pages: [] }));
-      if (Array.isArray(clonedDoc.pages)) {
-        clonedDoc.pages = clonedDoc.pages.map((page: any, idx: number) => ({
-          ...page,
-          id: `page_${Date.now()}_${idx}_${Math.random().toString(36).substring(7)}`
-        }));
-      }
-
-      const newTitle = title || clonedDoc.designName || 'Customized Wedding Template';
-
-      await supabaseAdmin
-        .from('quotation_templates')
-        .insert({
-          id: newTemplateId,
-          workspace_id: workspaceId,
-          user_id: userId,
-          title: newTitle,
-          category: category || targetTmpl?.category || 'Wedding',
-          is_system_template: false,
-          is_default: true,
-          status: 'draft',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        });
-
-      await supabaseAdmin
-        .from('quotation_documents')
-        .insert({
-          template_id: newTemplateId,
-          workspace_id: workspaceId,
-          user_id: userId,
-          content_json: clonedDoc,
-          version: 1,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        });
 
       return NextResponse.json({
         success: true,
-        isAutoCloned: true,
-        newTemplateId: newTemplateId,
-        version: 1
+        templateId: id,
+        version: body.version || 1
       });
     }
 

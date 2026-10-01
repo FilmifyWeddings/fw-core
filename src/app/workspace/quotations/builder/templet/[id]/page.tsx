@@ -2243,6 +2243,7 @@ function StudioCoreAiryBuilderContent() {
     }
     return false;
   });
+  const [isCanonicalLoaded, setIsCanonicalLoaded] = useState<boolean>(false);
   const [userId, setUserId] = useState<string>('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -2878,9 +2879,9 @@ function StudioCoreAiryBuilderContent() {
   }, []);
 
   useEffect(() => {
-    if (data.primaryFont) registerFontFace({ name: data.primaryFont.replace(/['"]/g, '').split(',')[0], family: data.primaryFont, category: 'Luxury Serif' });
-    if (data.secondaryFont) registerFontFace({ name: data.secondaryFont.replace(/['"]/g, '').split(',')[0], family: data.secondaryFont, category: 'Minimal Sans-Serif' });
-  }, [data.primaryFont, data.secondaryFont]);
+    if (data?.primaryFont) registerFontFace({ name: data.primaryFont.replace(/['"]/g, '').split(',')[0], family: data.primaryFont, category: 'Luxury Serif' });
+    if (data?.secondaryFont) registerFontFace({ name: data.secondaryFont.replace(/['"]/g, '').split(',')[0], family: data.secondaryFont, category: 'Minimal Sans-Serif' });
+  }, [data?.primaryFont, data?.secondaryFont]);
 
   // Load functions & crew roles from centralized settings and keep synced
   useEffect(() => {
@@ -3185,6 +3186,7 @@ function StudioCoreAiryBuilderContent() {
         isRemoteUpdateRef.current = true;
         setRawData(loadedData);
         setIsDataReady(true);
+        setIsCanonicalLoaded(true);
 
         // Fetch connected Lead data if lead_id is present
         const leadIdToFetch = loadedData.lead_id || json.document?.lead_id;
@@ -3226,9 +3228,11 @@ function StudioCoreAiryBuilderContent() {
       } catch (err) {
         console.warn('[Quotation Initialization Error]:', err);
         setIsDataReady(true);
+        setIsCanonicalLoaded(true);
       } finally {
         isInitialLoadedRef.current = true;
         setIsDataReady(true);
+        setIsCanonicalLoaded(true);
         setAutoSaveStatus('Auto-saved to cloud');
       }
     }
@@ -5364,11 +5368,11 @@ function StudioCoreAiryBuilderContent() {
     </div>
   );
 
-  // Render Guard: Strictly NEVER flash default or demo proposal while loading a lead quotation
+  // Render Guard: Strictly NEVER flash default or demo proposal while canonical document is loading
   const isQuotationRoute = Boolean(routeId && (routeId.startsWith('FW-Q-') || routeId.startsWith('FW-L-') || routeId.length > 15));
-  const isDemoDoc = !data || !data.lead_id || data.cover?.coupleName === 'Rahul & Neha' || data.designName === 'Wedding - Design 1';
+  const isDemoDoc = !data || (!data.lead_id && (data.cover?.coupleName === 'Rahul & Neha' || data.designName === 'Wedding - Design 1'));
 
-  if (!isDataReady || (isQuotationRoute && isDemoDoc)) {
+  if (!isDataReady || (isQuotationRoute && isDemoDoc) || (!isCanonicalLoaded && isDemoDoc)) {
     return (
       <div className="h-screen w-screen bg-[#FDFBF7] flex flex-col items-center justify-center space-y-4 select-none">
         <div className="relative">
@@ -5378,8 +5382,8 @@ function StudioCoreAiryBuilderContent() {
           </div>
         </div>
         <div className="text-center space-y-1">
-          <p className="text-sm font-black tracking-wider text-amber-950 uppercase">Opening Quotation...</p>
-          <p className="text-xs font-semibold text-amber-800/60">Applying your selected studio template design</p>
+          <p className="text-sm font-black tracking-wider text-amber-950 uppercase">Opening Quotation Design...</p>
+          <p className="text-xs font-semibold text-amber-800/60">Applying your selected studio template design in milliseconds</p>
         </div>
       </div>
     );

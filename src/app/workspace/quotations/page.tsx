@@ -192,7 +192,8 @@ export default function WorkspaceQuotationsGalleryPage() {
       const res = await fetch(`/api/templates/${targetId}/toggle-system`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token || ''}`
+          'Authorization': `Bearer ${token || ''}`,
+          'x-user-email': userEmail
         }
       });
 
@@ -343,13 +344,18 @@ export default function WorkspaceQuotationsGalleryPage() {
     setOpeningTemplateId(quoteId);
 
     // 0ms Instant Client Storage Pre-seeding
-    const baseDoc = quote.content_json || DEFAULT_AIRY_PROPOSAL;
+    const baseDoc = quote.content_json;
     if (typeof window !== 'undefined') {
       try {
-        sessionStorage.setItem(`current_quotation_doc_${quoteId}`, JSON.stringify(baseDoc));
-        sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: quoteId, document: baseDoc }));
-        localStorage.setItem(`wg_proposal_draft_${quoteId}`, JSON.stringify(baseDoc));
-        cacheDocumentLocal(quoteId, baseDoc, 1);
+        if (baseDoc && typeof baseDoc === 'object' && Object.keys(baseDoc).length > 0) {
+          sessionStorage.setItem(`current_quotation_doc_${quoteId}`, JSON.stringify(baseDoc));
+          sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: quoteId, document: baseDoc }));
+          localStorage.setItem(`wg_proposal_draft_${quoteId}`, JSON.stringify(baseDoc));
+          cacheDocumentLocal(quoteId, baseDoc, 1);
+        } else {
+          sessionStorage.removeItem(`current_quotation_doc_${quoteId}`);
+          sessionStorage.removeItem('current_active_quotation_doc');
+        }
       } catch (_) {}
     }
 
@@ -1103,14 +1109,19 @@ export default function WorkspaceQuotationsGalleryPage() {
                   <div className="grid grid-cols-2 gap-1.5">
                     <button 
                       type="button"
-                      disabled={cloningGlobalId === quoteId}
+                      disabled={cloningGlobalId === quoteId || openingTemplateId === quoteId}
                       onClick={() => handleEditTemplate(quote)}
-                      className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 text-[10px] font-bold text-center transition-colors cursor-pointer flex items-center justify-center gap-1"
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 text-[10px] font-bold text-center transition-colors cursor-pointer flex items-center justify-center gap-1 disabled:opacity-75"
                     >
-                      {cloningGlobalId === quoteId ? (
+                      {openingTemplateId === quoteId ? (
+                        <>
+                          <RefreshCw className="w-3 h-3 animate-spin text-amber-500" />
+                          <span>Opening...</span>
+                        </>
+                      ) : cloningGlobalId === quoteId ? (
                         <RefreshCw className="w-3 h-3 animate-spin text-amber-500" />
                       ) : null}
-                      <span>Preview</span>
+                      {openingTemplateId !== quoteId && <span>Preview</span>}
                     </button>
                     
                     {/* Instant Duplication placed immediately after original design */}

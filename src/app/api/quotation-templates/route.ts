@@ -28,110 +28,104 @@ export async function GET(req: NextRequest) {
       } catch (err) {}
     }
 
-    let query = supabaseAdmin
-      .from('quotation_templates')
-      .select('id, user_id, workspace_id, title, category, is_default, is_system_template, status, updated_at')
-      .not('status', 'in', '("archived","deleted")')
-      .not('id', 'ilike', 'FW-Q-%')
-      .not('id', 'ilike', 'FW-L-%');
+    const isAdmin = isSuperAdmin || (userEmail?.toLowerCase() === 'sushantnawale700@gmail.com');
 
-    if (effectiveUserId) {
-      // Strictly only this user's workspace templates
-      query = query.or(`workspace_id.eq.${effectiveUserId},user_id.eq.${effectiveUserId}`).eq('is_system_template', false);
-    } else if (isSuperAdmin && searchParams.get('admin_all') === 'true') {
-      // Super admin overview only when explicitly requested
-    } else {
-      // Unauthenticated fallback: only published system templates
-      query = query.eq('is_system_template', true).eq('status', 'published');
-    }
+    let validTemplates: any[] = [];
 
-    const { data: templates, error: tmplErr } = await query.order('updated_at', { ascending: false });
+    if (isAdmin) {
+      // Super Admin sees all system/global templates AND their workspace templates
+      const { data: adminTemplates, error: tmplErr } = await supabaseAdmin
+        .from('quotation_templates')
+        .select('id, user_id, workspace_id, title, category, is_default, is_system_template, status, updated_at')
+        .not('status', 'in', '("archived","deleted")')
+        .not('id', 'ilike', 'FW-Q-%')
+        .not('id', 'ilike', 'FW-L-%')
+        .or(`user_id.eq.SYSTEM,workspace_id.is.null,is_system_template.eq.true${effectiveUserId ? `,workspace_id.eq.${effectiveUserId},user_id.eq.${effectiveUserId}` : ''}`)
+        .order('updated_at', { ascending: false });
 
-    if (tmplErr) {
-      console.error('[Quotation Templates API Error]:', tmplErr);
-      return NextResponse.json({ error: tmplErr.message }, { status: 500 });
-    }
-
-    // Deduplicate by ID and clean list
-    const seenIds = new Set<string>();
-    const userTemplates = (templates || []).filter(t => {
-      if (!t.id || seenIds.has(t.id)) return false;
-      if (t.id.startsWith('FW-Q-') || t.id.startsWith('FW-L-')) return false;
-      if (t.status === 'archived' || t.status === 'deleted') return false;
-      if (t.is_system_template) return false;
-      seenIds.add(t.id);
-      return true;
-    });
-
-    // Fetch all active published system templates (supports multiple active system presets)
-    let sysQuery = supabaseAdmin
-      .from('quotation_templates')
-      .select('id, user_id, workspace_id, title, category, is_default, is_system_template, status, updated_at')
-      .not('status', 'in', '("archived","deleted")')
-      .not('id', 'ilike', 'FW-Q-%')
-      .not('id', 'ilike', 'FW-L-%')
-      .order('is_default', { ascending: false })
-      .order('updated_at', { ascending: false });
-
-    if (isSuperAdmin) {
-      // Super admin can see all system templates (to edit, toggle or manage)
-      sysQuery = sysQuery.eq('is_system_template', true);
-    } else {
-      // Regular users see all published system templates
-      sysQuery = sysQuery.eq('is_system_template', true).eq('status', 'published');
-    }
-
-    const { data: sysTmpls } = await sysQuery;
-
-    const activeSysTmpls = (sysTmpls && sysTmpls.length > 0)
-      ? sysTmpls
-      : [{
-          id: 'FW-2WT85Y0',
-          user_id: 'SYSTEM',
-          workspace_id: null,
-          title: 'System Default Wedding Template',
-          category: 'Wedding',
-          is_default: false,
-          is_system_template: true,
-          status: 'published',
-          updated_at: new Date().toISOString()
-        }];
-
-    // Deduplicate and combine: user's custom designs + all active system templates
-    const seen = new Set<string>();
-    const validTemplates: any[] = [];
-
-    userTemplates.forEach(t => {
-      if (!seen.has(t.id)) {
-        seen.add(t.id);
-        validTemplates.push(t);
+      if (tmplErr) {
+        console.error('[Admin Templates Error]:', tmplErr);
       }
-    });
+      validTemplates = adminTemplates || [];
+    } else {
+      // Regular Studio Owners see:
+      // 1. Their own workspace templates
+      const { data: userTemplates } = await supabaseAdmin
+        .from('quotation_templates')
+        .select('id, user_id, workspace_id, title, category, is_default, is_system_template, status, updated_at')
+        .not('status', 'in', '("archived","deleted")')
+        .not('id', 'ilike', 'FW-Q-%')
+        .not('id', 'ilike', 'FW-L-%')
+        .eq('is_system_template', false)
+        .or(`workspace_id.eq.${effectiveUserId},user_id.eq.${effectiveUserId}`)
+        .order('updated_at', { ascending: false });
 
-    activeSysTmpls.forEach(t => {
-      if (!seen.has(t.id)) {
-        seen.add(t.id);
-        validTemplates.push({
-          ...t,
-          is_default: userTemplates.length === 0 ? true : !!t.is_default
-        });
-      }
-    });
+      // 2. ONLY active published system templates (draft/unpublished are strictly hidden)
+      const { data: activeSysTmpls } = await supabaseAdmin
+        .from('quotation_templates')
+        .select('id, user_id, workspace_id, title, category, is_default, is_system_template, status, updated_at')
+        .eq('is_system_template', true)
+        .eq('status', 'published')
+        .not('status', 'in', '("archived","deleted")')
+        .not('id', 'ilike', 'FW-Q-%')
+        .not('id', 'ilike', 'FW-L-%')
+        .order('is_default', { ascending: false })
+        .order('updated_at', { ascending: false });
+
+      const seen = new Set<string>();
+      (userTemplates || []).forEach(t => {
+        if (!seen.has(t.id)) {
+          seen.add(t.id);
+          validTemplates.push(t);
+        }
+      });
+      (activeSysTmpls || []).forEach(t => {
+        if (!seen.has(t.id)) {
+          seen.add(t.id);
+          validTemplates.push(t);
+        }
+      });
+    }
 
     const templateIds = validTemplates.map(t => t.id);
 
     // Fetch document content_json using supabaseAdmin (bypasses RLS)
     const docsMap: Record<string, any> = {};
     if (templateIds.length > 0) {
-      const { data: docsData } = await supabaseAdmin
+      const customIdMap: Record<string, string> = {};
+      const allQueryIds = [...templateIds];
+
+      if (!isAdmin && effectiveUserId) {
+        validTemplates.forEach(t => {
+          if (t.is_system_template) {
+            const cId = `FW-CUSTOM-${effectiveUserId}-${t.id}`;
+            customIdMap[cId] = t.id;
+            allQueryIds.push(cId);
+          }
+        });
+      }
+
+      const { data: docsData, error: docsErr } = await supabaseAdmin
         .from('quotation_documents')
-        .select('template_id, content_json, document_json')
-        .in('template_id', templateIds);
+        .select('template_id, content_json')
+        .in('template_id', allQueryIds);
+
+      if (docsErr) {
+        console.error('[Quotation Documents Fetch Error]:', docsErr);
+      }
 
       if (docsData) {
+        // First map canonical documents
         docsData.forEach(d => {
-          if (d.template_id) {
-            docsMap[d.template_id] = d.content_json || d.document_json || null;
+          if (d.template_id && d.content_json && !customIdMap[d.template_id]) {
+            docsMap[d.template_id] = d.content_json;
+          }
+        });
+        // Then override with studio-specific customized documents if available
+        docsData.forEach(d => {
+          if (d.template_id && d.content_json && customIdMap[d.template_id]) {
+            const canonicalId = customIdMap[d.template_id];
+            docsMap[canonicalId] = d.content_json;
           }
         });
       }
@@ -149,10 +143,14 @@ export async function GET(req: NextRequest) {
         isDefault = true;
       }
 
+      const docContent = docsMap[t.id] || null;
+      const title = docContent?.designName || t.title;
+
       return {
         ...t,
+        title,
         is_default: isDefault,
-        content_json: docsMap[t.id] || null
+        content_json: docContent
       };
     });
 
