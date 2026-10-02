@@ -3380,16 +3380,21 @@ function StudioCoreAiryBuilderContent() {
 
       const { data: { session } } = await supabase.auth.getSession();
       const userAccessToken = session?.access_token;
+      const userEmail = session?.user?.email;
       const targetTmplId = currentTemplateIdRef.current || (params?.id ? String(params.id) : 'FW-2WT85Y0');
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+      if (userAccessToken) headers['Authorization'] = `Bearer ${userAccessToken}`;
+      if (userEmail) headers['x-user-email'] = userEmail;
 
       const saveRes = await fetch(`/api/templates/${targetTmplId}`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userAccessToken || ''}`
-        },
+        headers,
         body: JSON.stringify({
-          user_id: userId,
+          user_id: session?.user?.id || userId,
+          workspace_id: session?.user?.id || userId,
           version: currentVersionRef.current,
           revision: targetRevision,
           content_json: snapshotData,
@@ -3408,22 +3413,6 @@ function StudioCoreAiryBuilderContent() {
         }
         cacheDocumentLocal(currentTemplateIdRef.current, snapshotData, currentVersionRef.current);
       }
-
-      await fetch(`/api/quotations/${currentTemplateIdRef.current}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userAccessToken || ''}`
-        },
-        body: JSON.stringify({
-          workspace_id: userId || 'demo_user',
-          title: snapshotData.designName || 'Wedding - Design 1',
-          client_name: `${snapshotData.cover?.coupleName || (snapshotData.cover?.groomName ? `${snapshotData.cover.groomName} & ${snapshotData.cover.brideName}` : 'Rahul & Neha')}`,
-          content_json: snapshotData,
-          financials: { total_amount: grandTotal, subtotal, gst_rate: calc.gstPct },
-          status: 'draft'
-        })
-      });
 
       if (realtimeChannelRef.current) {
         realtimeChannelRef.current.send({

@@ -168,14 +168,19 @@ async function handleUpdate(
     const { userId, isSuperAdmin } = await resolveRequestUser(req);
 
     let workspaceId = userId;
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('id', userId)
-      .maybeSingle();
-    if (profile?.id) workspaceId = profile.id;
+    if (userId) {
+      const { data: profile } = await supabaseAdmin
+        .from('profiles')
+        .select('id')
+        .eq('id', userId)
+        .maybeSingle();
+      if (profile?.id) workspaceId = profile.id;
+    }
 
     const body = await req.json().catch(() => ({}));
+    if (!workspaceId && body.workspace_id) workspaceId = body.workspace_id;
+    if (!userId && body.user_id) userId = body.user_id;
+
     const document = body.content_json || body.document;
     const title = body.title;
     const category = body.category;
@@ -186,7 +191,8 @@ async function handleUpdate(
       .eq('id', id)
       .maybeSingle();
 
-    const isSystemTemplate = id === GLOBAL_SYSTEM_TEMPLATE_ID || targetTmpl?.is_system_template || targetTmpl?.user_id === 'SYSTEM' || id.startsWith('SYS-');
+    const SYSTEM_PRESET_IDS = ['FW-USER-SJ05RN', 'FW-2WT85Y0', GLOBAL_SYSTEM_TEMPLATE_ID];
+    const isSystemTemplate = SYSTEM_PRESET_IDS.includes(id) || targetTmpl?.is_system_template || targetTmpl?.user_id === 'SYSTEM' || id.startsWith('SYS-');
 
     // ── SUPER ADMIN DIRECT UPDATE ENGINE ──
     if (isSuperAdmin) {

@@ -352,7 +352,75 @@ export default function WorkspaceQuotationsGalleryPage() {
     const quoteId = quote.quotation_number || quote.id;
     setOpeningTemplateId(quoteId);
 
-    // 0ms Instant Client Storage Pre-seeding
+    // CRITICAL: If regular studio owner edits a System Preset, auto-duplicate into their workspace!
+    if (!isSuperAdminUser && quote.is_system_template) {
+      const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
+      const newId = `FW-USER-${randomSuffix}`;
+      const copyTitle = generateUniqueCopyName(quote.title || 'Wedding - Design 1', quotations.map(q => q.title));
+
+      const baseDoc = quote.content_json || DEFAULT_AIRY_PROPOSAL;
+      const clonedDoc = JSON.parse(JSON.stringify(baseDoc));
+      clonedDoc.designName = copyTitle;
+
+      if (typeof window !== 'undefined') {
+        try {
+          sessionStorage.setItem(`current_quotation_doc_${newId}`, JSON.stringify(clonedDoc));
+          sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: newId, document: clonedDoc }));
+          localStorage.setItem(`wg_proposal_draft_${newId}`, JSON.stringify(clonedDoc));
+          cacheDocumentLocal(newId, clonedDoc, 1);
+        } catch (_) {}
+      }
+
+      const duplicatedRecord: SavedQuotation = {
+        id: newId,
+        quotation_number: newId,
+        title: copyTitle,
+        client_name: quote.client_name || 'Rahul & Neha',
+        financials: quote.financials || {},
+        content_json: clonedDoc,
+        status: 'draft',
+        is_default: false,
+        is_system_template: false,
+        updated_at: new Date().toISOString()
+      };
+
+      setQuotations(prev => {
+        const nextList = [duplicatedRecord, ...prev];
+        memCachedQuotations = nextList;
+        if (userId && userId !== 'demo_user') {
+          try {
+            localStorage.setItem(`wg_quotations_cache_${userId}`, JSON.stringify(nextList));
+          } catch (_) {}
+        }
+        return nextList;
+      });
+
+      // Fire duplicate call in background to persist in DB
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const currentUserId = session?.user?.id || userId || 'demo_user';
+        const token = session?.access_token;
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        if (userEmail) headers['x-user-email'] = userEmail;
+
+        fetch('/api/templates/duplicate', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            sourceTemplateId: quoteId,
+            targetTemplateId: newId,
+            workspaceId: currentUserId,
+            title: copyTitle
+          })
+        }).catch(e => console.error('[Auto-duplicate background sync]:', e));
+      } catch (_) {}
+
+      router.push(`/workspace/quotations/builder/templet/${newId}`);
+      return;
+    }
+
+    // Admin or user's own template: open directly
     const baseDoc = quote.content_json;
     if (typeof window !== 'undefined') {
       try {
@@ -490,9 +558,11 @@ export default function WorkspaceQuotationsGalleryPage() {
         nextList = [duplicatedRecord, ...prev];
       }
       memCachedQuotations = nextList;
-      try {
-        localStorage.setItem('wg_quotations_cache', JSON.stringify(nextList));
-      } catch (_) {}
+      if (userId && userId !== 'demo_user') {
+        try {
+          localStorage.setItem(`wg_quotations_cache_${userId}`, JSON.stringify(nextList));
+        } catch (_) {}
+      }
       return nextList;
     });
 
@@ -526,9 +596,11 @@ export default function WorkspaceQuotationsGalleryPage() {
       setQuotations(prev => {
         const rolledBack = prev.filter(q => (q.quotation_number || q.id) !== newId);
         memCachedQuotations = rolledBack;
-        try {
-          localStorage.setItem('wg_quotations_cache', JSON.stringify(rolledBack));
-        } catch (_) {}
+        if (userId && userId !== 'demo_user') {
+          try {
+            localStorage.setItem(`wg_quotations_cache_${userId}`, JSON.stringify(rolledBack));
+          } catch (_) {}
+        }
         return rolledBack;
       });
       alert('Duplication failed: ' + (err?.message || 'Unknown error'));
@@ -604,6 +676,36 @@ export default function WorkspaceQuotationsGalleryPage() {
       localStorage.removeItem('wg_quotations_cache');
     } catch (_) {}
 
+    // 0ms Instant Client Storage Load (avoids any wait or spinner on refresh!)
+    try {
+      const activeUid = localStorage.getItem('wg_last_active_user_id');
+      let cachedDataStr = activeUid ? localStorage.getItem(`wg_quotations_cache_${activeUid}`) : null;
+      if (!cachedDataStr) {
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.startsWith('wg_quotations_cache_') && k !== 'wg_quotations_cache') {
+            cachedDataStr = localStorage.getItem(k);
+            break;
+          }
+        }
+      }
+
+      if (cachedDataStr) {
+        const parsed = JSON.parse(cachedDataStr);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          memCachedQuotations = parsed;
+          setQuotations(parsed);
+          setLoading(false);
+          const primary = parsed[0];
+          if (primary) {
+            setActiveQuotationId(primary.quotation_number || primary.id || '1');
+            if (primary.client_name) setActiveCoupleName(primary.client_name);
+            if (primary.content_json?.cover?.photoUrl) setActiveCoverPhoto(primary.content_json.cover.photoUrl);
+          }
+        }
+      }
+    } catch (_) {}
+
     if (memCachedUserImages.length > 0) {
       setUserImages(memCachedUserImages);
     } else {
@@ -632,9 +734,9 @@ export default function WorkspaceQuotationsGalleryPage() {
           setUserEmail(session.user.email);
         }
 
-        // Fast load user-scoped cache immediately once user is resolved
         if (currentUserId && currentUserId !== 'demo_user') {
           try {
+            localStorage.setItem('wg_last_active_user_id', currentUserId);
             const userCached = localStorage.getItem(`wg_quotations_cache_${currentUserId}`);
             if (userCached) {
               const parsed = JSON.parse(userCached);
@@ -663,13 +765,26 @@ export default function WorkspaceQuotationsGalleryPage() {
           } catch {}
         }
 
-        // 1. Fetch user & system quotation templates & content_json from authoritative API (bypasses RLS locks)
+        // 1. Fetch user & system quotation templates & user images concurrently in parallel (300ms!)
         const token = session?.access_token;
         const headers: Record<string, string> = {};
         if (token) headers['Authorization'] = `Bearer ${token}`;
         if (session?.user?.email) headers['x-user-email'] = session.user.email;
 
-        const res = await fetch(`/api/quotation-templates?workspace_id=${currentUserId}`, { headers });
+        const [res, imgRes] = await Promise.all([
+          fetch(`/api/quotation-templates?workspace_id=${currentUserId}`, { headers }),
+          supabase
+            .from('user_gallery_images')
+            .select('*')
+            .eq('workspace_id', currentUserId)
+            .order('created_at', { ascending: false })
+        ]);
+
+        if (imgRes.data) {
+          setUserImages(imgRes.data as UserGalleryImage[]);
+          memCachedUserImages = imgRes.data as UserGalleryImage[];
+          localStorage.setItem(`wg_gallery_cache_${currentUserId}`, JSON.stringify(imgRes.data));
+        }
         const apiData = await res.json();
         const tmplData = apiData.templates || [];
 
@@ -778,17 +893,6 @@ export default function WorkspaceQuotationsGalleryPage() {
           setActiveCoverPhoto(primary.content_json.cover.photoUrl);
         }
 
-        const { data: imgData } = await supabase
-          .from('user_gallery_images')
-          .select('*')
-          .eq('workspace_id', currentUserId)
-          .order('created_at', { ascending: false });
-
-        if (imgData) {
-          setUserImages(imgData as UserGalleryImage[]);
-          memCachedUserImages = imgData as UserGalleryImage[];
-          localStorage.setItem(`wg_gallery_cache_${currentUserId}`, JSON.stringify(imgData));
-        }
       } catch (err) {
         console.warn('[QuotationsPage] Silent background sync error:', err);
       } finally {
@@ -1403,7 +1507,8 @@ export default function WorkspaceQuotationsGalleryPage() {
                           return;
                         }
                         setShowQuotationsModal(false); 
-                        router.push('/workspace/quotations/builder/templet/1'); 
+                        const freshId = `FW-USER-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+                        router.push(`/workspace/quotations/builder/templet/${freshId}`); 
                       }}
                       className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 cursor-pointer"
                     >
@@ -1434,13 +1539,16 @@ export default function WorkspaceQuotationsGalleryPage() {
                             ₹{q.financials.total_amount.toLocaleString()}
                           </span>
                         )}
-                        <Link 
-                          href={`/workspace/quotations/builder/templet/${q.quotation_number || q.id}`}
-                          onClick={() => setShowQuotationsModal(false)}
-                          className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm"
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            setShowQuotationsModal(false);
+                            handleEditTemplate(q);
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm cursor-pointer"
                         >
                           Edit
-                        </Link>
+                        </button>
                         {(!q.is_system_template || isSuperAdminUser) && (
                           <button
                             type="button"

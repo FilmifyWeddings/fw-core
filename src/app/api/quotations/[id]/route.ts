@@ -143,7 +143,8 @@ export async function PUT(
       .select()
       .maybeSingle();
 
-    if (content_json) {
+    const isSysTemplateId = id === 'FW-USER-SJ05RN' || id === 'FW-2WT85Y0' || id === 'FW-37C63A54D4';
+    if (content_json && !isSysTemplateId) {
       await supabaseAdmin
         .from('quotation_documents')
         .upsert({

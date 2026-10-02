@@ -140,19 +140,7 @@ export async function resolveRequestUser(req: NextRequest): Promise<RequestUserA
       } catch (_) {}
     }
 
-    let isSuperAdminUser = isSuperAdmin(userEmail, userId);
-    if (!isSuperAdminUser && userId) {
-      try {
-        const { data: prof } = await supabaseAdmin
-          .from('profiles')
-          .select('platform_role')
-          .eq('id', userId)
-          .maybeSingle();
-        if (prof?.platform_role === 'superadmin') {
-          isSuperAdminUser = true;
-        }
-      } catch (_) {}
-    }
+    const isSuperAdminUser = isSuperAdmin(userEmail, userId);
     return { userId, userEmail, isSuperAdmin: isSuperAdminUser };
   } catch (err) {
     return { userId: '', userEmail: null, isSuperAdmin: false };
