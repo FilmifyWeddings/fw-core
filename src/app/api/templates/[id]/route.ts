@@ -146,7 +146,7 @@ async function handleGet(
     const targetWorkspace = tmpl?.workspace_id || tmpl?.user_id || doc?.workspace_id || doc?.user_id || quoteRec?.workspace_id || quoteRec?.user_id;
     const isOwner = isSuperAdmin ||
       isPublicPreview ||
-      tmpl?.is_system_template ||
+      (Boolean(tmpl?.is_system_template) && tmpl?.status === 'published') ||
       !targetWorkspace ||
       targetWorkspace === workspaceId ||
       targetWorkspace === userId ||

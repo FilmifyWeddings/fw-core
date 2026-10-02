@@ -264,8 +264,9 @@ export function getThemeFromKey(key: any) {
     }
   }
 
-  // 3. Exact matching with inverted preference
   const isInverted = lowerKey.includes('inverted') || lowerKey.includes('dark');
+
+  // 3. Strict match honoring inverted preference
   for (const val of Object.values(COLOR_THEMES)) {
     if (isInverted !== !!val.isDark) continue;
     const valId = val.id.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -275,7 +276,17 @@ export function getThemeFromKey(key: any) {
     }
   }
 
-  // 4. General fallback
+  // 4. Fallback matching non-inverted themes first (prevents inverted color flips)
+  for (const val of Object.values(COLOR_THEMES)) {
+    if (!isInverted && val.isDark) continue;
+    const valId = val.id.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const valName = val.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (valName.includes(lowerKey) || lowerKey.includes(valId)) {
+      return val;
+    }
+  }
+
+  // 5. Ultimate fallback if dark was requested or nothing matched
   for (const val of Object.values(COLOR_THEMES)) {
     const valId = val.id.toLowerCase().replace(/[^a-z0-9]/g, '');
     const valName = val.name.toLowerCase().replace(/[^a-z0-9]/g, '');

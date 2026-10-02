@@ -1385,7 +1385,7 @@ export default function QuotationDocumentCanvas({
 }) {
   const loadedData = documentData || {};
   const data = normalizeQuotationData(loadedData);
-  const activeTheme = getThemeFromKey(data.theme);
+  const activeTheme = getThemeFromKey(data.theme || data.look || data.colorPalette || data.palette);
   const pageBgColor = activeTheme.background;
   const textColor = activeTheme.text;
   const kickerColor = activeTheme.kicker || activeTheme.text;
@@ -1456,14 +1456,14 @@ export default function QuotationDocumentCanvas({
                     fontFamily: data.secondaryFont,
                   }}
                 >
-              {(data.cover.photoUrl || data.cover.photo) && (data.cover.frameShape === 'background' || onlyFirstPage) && (
+              {(data.cover.photoUrl || data.cover.photo) && data.cover.frameShape === 'background' && (
                 <SectionImageRenderer
                   photo={data.cover.photoUrl || data.cover.photo}
                   frameShape="background"
                   photoHeight={data.cover.photoHeight}
                   photoWidth={data.cover.photoWidth}
                   photoFocalY={data.cover.photoFocalY}
-                  bgOpacity={onlyFirstPage ? Math.max(data.cover.bgOpacity ?? 50, 50) : (data.cover.bgOpacity ?? 40)}
+                  bgOpacity={data.cover.bgOpacity ?? 40}
                   pageBgColor={pageBgColor}
                   altText="Cover Background"
                 />

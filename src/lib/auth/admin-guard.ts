@@ -3,14 +3,17 @@ import { createServerClient } from '@supabase/ssr';
 import { supabaseAdmin } from '@/lib/supabase';
 
 export const SUPER_ADMIN_EMAIL = 'sushantnawale700@gmail.com';
-export const SUPER_ADMIN_ID = 'f9359a12-3f2e-430c-9cec-2ec9841ec83e';
+export const SUPER_ADMIN_ID = '37c63a54-d4f1-4b99-b546-3d965cd23a37';
+export const SUPER_ADMIN_IDS = [
+  '37c63a54-d4f1-4b99-b546-3d965cd23a37', // sushantnawale700@gmail.com
+  'f9359a12-3f2e-430c-9cec-2ec9841ec83e', // platform admin
+];
 export const SUPER_ADMIN_EMAILS = [
   'sushantnawale700@gmail.com',
-  'filmifyweddings@gmail.com',
 ];
 
 export function isSuperAdmin(email: string | null | undefined, userId?: string | null | undefined): boolean {
-  if (userId && userId === SUPER_ADMIN_ID) return true;
+  if (userId && (SUPER_ADMIN_IDS.includes(userId) || userId === SUPER_ADMIN_ID)) return true;
   if (!email) return false;
   const lower = email.toLowerCase().trim();
   return SUPER_ADMIN_EMAILS.includes(lower);
@@ -18,7 +21,7 @@ export function isSuperAdmin(email: string | null | undefined, userId?: string |
 
 export function isUserSuperAdmin(user: { id?: string; email?: string } | null | undefined): boolean {
   if (!user) return false;
-  if (user.id === SUPER_ADMIN_ID) return true;
+  if (user.id && (SUPER_ADMIN_IDS.includes(user.id) || user.id === SUPER_ADMIN_ID)) return true;
   return isSuperAdmin(user.email, user.id);
 }
 

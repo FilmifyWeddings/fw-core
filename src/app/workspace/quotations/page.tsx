@@ -15,6 +15,7 @@ import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manag
 import { MasterMediaModal } from '@/components/MasterMediaModal';
 import { removeCachedDocumentLocal, cacheDocumentLocal } from '@/lib/indexeddb-cache';
 import { DEFAULT_AIRY_PROPOSAL } from '@/lib/quotation-defaults';
+import { STATIC_CUSTOM_FONTS, registerFontFace, preloadActiveFont } from '@/lib/font-loader';
 
 import { getThemeFromKey } from '@/lib/quotation-theme';
 import QuotationDocumentCanvas from '@/components/QuotationDocumentCanvas';
@@ -77,6 +78,11 @@ function QuotationCardThumbnail({ contentJson, title, coupleName }: { contentJso
     }
   };
 
+  useEffect(() => {
+    if (baseData.primaryFont) preloadActiveFont(baseData.primaryFont);
+    if (baseData.secondaryFont) preloadActiveFont(baseData.secondaryFont);
+  }, [baseData.primaryFont, baseData.secondaryFont]);
+
   const coverObj = baseData.cover || {};
   const currentCoupleName = coverObj.coupleName;
   const isGenericName = !currentCoupleName || currentCoupleName === 'RAHUL & NEHA' || currentCoupleName === 'Rahul & Neha';
@@ -94,8 +100,8 @@ function QuotationCardThumbnail({ contentJson, title, coupleName }: { contentJso
       coupleName: displayCoupleName,
       photoUrl: coverPhoto,
       photo: coverPhoto,
-      frameShape: coverPhoto ? 'background' : (coverObj.frameShape || 'arch'),
-      bgOpacity: coverPhoto ? Math.max(Number(coverObj.bgOpacity) || 60, 60) : 40
+      frameShape: coverObj.frameShape || 'arch',
+      bgOpacity: coverObj.bgOpacity ?? 40
     }
   };
 
@@ -200,16 +206,28 @@ export default function WorkspaceQuotationsGalleryPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to toggle system template');
 
-      setQuotations(prev => prev.map(q => {
-        if ((q.quotation_number || q.id) === targetId) {
-          return {
-            ...q,
-            is_system_template: data.is_system_template,
-            status: data.status
-          };
+      setQuotations(prev => {
+        const nextList = prev.map(q => {
+          if ((q.quotation_number || q.id) === targetId) {
+            return {
+              ...q,
+              is_system_template: data.is_system_template,
+              status: data.status
+            };
+          }
+          return q;
+        });
+        memCachedQuotations = nextList;
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('wg_quotations_cache', JSON.stringify(nextList));
+            if (userId) {
+              localStorage.setItem(`wg_quotations_cache_${userId}`, JSON.stringify(nextList));
+            }
+          } catch (_) {}
         }
-        return q;
-      }));
+        return nextList;
+      });
 
       setToastMessage(data.is_system_template ? 'Published as System Template for Users!' : 'Removed from System Templates');
       setTimeout(() => setToastMessage(null), 3000);
@@ -711,29 +729,14 @@ export default function WorkspaceQuotationsGalleryPage() {
             validTemplateIds.add(t.id);
           });
         }
-        validTemplateIds.add('FW-2WT85Y0');
-
         let combined: SavedQuotation[] = [];
-
-        // Global System Default Wedding Template definition
-        const globalSystemTemplate: SavedQuotation = {
-          id: 'FW-2WT85Y0',
-          quotation_number: 'FW-2WT85Y0',
-          title: 'System Default Wedding Template',
-          client_name: 'Rahul & Neha',
-          financials: {},
-          status: 'published',
-          is_system_template: true,
-          is_default: false,
-          updated_at: new Date().toISOString()
-        };
 
         const userDesigns: SavedQuotation[] = [];
         const systemDesigns: SavedQuotation[] = [];
 
         if (filteredTmplData.length > 0) {
           filteredTmplData.forEach((t: any) => {
-            const isSys = Boolean(t.is_system_template || t.id === 'FW-2WT85Y0');
+            const isSys = Boolean(t.is_system_template);
             const item: SavedQuotation = {
               id: t.id,
               quotation_number: t.id,
@@ -755,14 +758,8 @@ export default function WorkspaceQuotationsGalleryPage() {
           });
         }
 
-        // Combine: user's custom designs + all active system presets
-        if (systemDesigns.length > 0) {
-          combined = [...userDesigns, ...systemDesigns];
-        } else if (userDesigns.length > 0) {
-          combined = [...userDesigns, globalSystemTemplate];
-        } else {
-          combined = [globalSystemTemplate];
-        }
+        // Combine user's designs + active system presets (NO forced phantom fallback templates!)
+        combined = [...userDesigns, ...systemDesigns];
 
         // Check if any template has is_default = true; if none at all, default to first template
         const hasAnyDefault = combined.some(q => q.is_default);
@@ -775,6 +772,9 @@ export default function WorkspaceQuotationsGalleryPage() {
         if (typeof window !== 'undefined') {
           try {
             localStorage.setItem('wg_quotations_cache', JSON.stringify(combined));
+            if (currentUserId) {
+              localStorage.setItem(`wg_quotations_cache_${currentUserId}`, JSON.stringify(combined));
+            }
           } catch (_) {}
         }
         const primary = combined[0];
@@ -1220,88 +1220,23 @@ export default function WorkspaceQuotationsGalleryPage() {
             );
           })
         ) : (
-          /* Default Active Royale Card Fallback */
-          <motion.div 
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200/90 dark:border-zinc-800/90 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative"
-          >
+          <div className="col-span-full py-12 flex flex-col items-center justify-center text-center space-y-3 bg-white dark:bg-zinc-900 rounded-3xl border border-dashed border-slate-200 dark:border-zinc-800 p-8">
+            <div className="w-12 h-12 rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 flex items-center justify-center">
+              <FileText className="w-6 h-6" />
+            </div>
             <div>
-              <div className="relative w-full overflow-hidden">
-                <QuotationCardThumbnail 
-                  title="Wedding - Design 1"
-                  coupleName={activeCoupleName}
-                />
-                <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full bg-emerald-600/90 backdrop-blur-md text-white text-[9px] font-extrabold uppercase tracking-wider shadow-sm z-30">
-                  Active
-                </span>
-              </div>
-
-              <div className="p-3.5 space-y-1">
-                <h4 className="text-sm font-extrabold text-slate-900 dark:text-white truncate">
-                  Wedding - Design 1
-                </h4>
-                <p className="text-[11px] text-slate-500 dark:text-zinc-400 font-medium">
-                  Royale • Wedding ({activeCoupleName})
-                </p>
-              </div>
+              <h4 className="text-sm font-extrabold text-slate-800 dark:text-zinc-200">
+                {quotationSearch ? 'No designs match your search' : 'No quotation designs available yet'}
+              </h4>
+              <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1 max-w-sm">
+                {quotationSearch 
+                  ? 'Try clearing your search query to see all quotation templates.' 
+                  : isSuperAdminUser 
+                    ? 'Create a new design or duplicate a template to publish for your studio owners.' 
+                    : 'System templates published by admin will appear here automatically.'}
+              </p>
             </div>
-
-            <div className="p-3.5 pt-0 space-y-2">
-              <div className="grid grid-cols-2 gap-1.5">
-                <button 
-                  type="button"
-                  onClick={() => router.push(`/workspace/quotations/builder/templet/${activeQuotationId}`)}
-                  className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 text-[10px] font-bold text-center transition-colors cursor-pointer"
-                >
-                  Preview
-                </button>
-                <button 
-                  type="button"
-                  disabled={duplicatingId === activeQuotationId}
-                  onClick={() => handleDuplicateDesign({
-                    id: activeQuotationId,
-                    quotation_number: activeQuotationId,
-                    title: 'Wedding - Design 1',
-                    client_name: activeCoupleName,
-                    financials: {},
-                    status: 'draft',
-                    updated_at: new Date().toISOString()
-                  })}
-                  className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 text-[10px] font-bold text-center transition-colors cursor-pointer flex items-center justify-center gap-1 disabled:opacity-50"
-                >
-                  {duplicatingId === activeQuotationId ? (
-                    <>
-                      <RefreshCw className="w-3 h-3 animate-spin text-amber-500" />
-                      <span>Duplicating...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3 h-3 text-slate-500" />
-                      <span>Duplicate</span>
-                    </>
-                  )}
-                </button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-1.5">
-                <button 
-                  type="button"
-                  onClick={() => router.push('/workspace/clients')}
-                  className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-800 dark:text-zinc-200 text-[10px] font-bold text-center transition-colors cursor-pointer"
-                >
-                  Use for Lead
-                </button>
-
-                <Link
-                  href={`/workspace/quotations/builder/templet/${activeQuotationId}`}
-                  className="px-2.5 py-1.5 rounded-xl border border-amber-600/40 bg-gradient-to-r from-[#B88E4C] to-[#967236] text-white text-[11px] font-extrabold text-center block shadow-sm hover:brightness-105 transition-all"
-                >
-                  Edit
-                </Link>
-              </div>
-            </div>
-          </motion.div>
+          </div>
         )}
 
         {/* CARDS 2-5: Coming Soon Templates */}

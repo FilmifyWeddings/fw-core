@@ -5369,10 +5369,9 @@ function StudioCoreAiryBuilderContent() {
   );
 
   // Render Guard: Strictly NEVER flash default or demo proposal while canonical document is loading
-  const isQuotationRoute = Boolean(routeId && (routeId.startsWith('FW-Q-') || routeId.startsWith('FW-L-') || routeId.length > 15));
-  const isDemoDoc = !data || (!data.lead_id && (data.cover?.coupleName === 'Rahul & Neha' || data.designName === 'Wedding - Design 1'));
+  const isPreseededForRoute = typeof window !== 'undefined' && Boolean(sessionStorage.getItem(`current_quotation_doc_${routeId}`));
 
-  if (!isDataReady || (isQuotationRoute && isDemoDoc) || (!isCanonicalLoaded && isDemoDoc)) {
+  if (!isCanonicalLoaded && !isPreseededForRoute) {
     return (
       <div className="h-screen w-screen bg-[#FDFBF7] flex flex-col items-center justify-center space-y-4 select-none">
         <div className="relative">

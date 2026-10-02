@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
         .not('status', 'in', '("archived","deleted")')
         .not('id', 'ilike', 'FW-Q-%')
         .not('id', 'ilike', 'FW-L-%')
-        .or(`user_id.eq.SYSTEM,workspace_id.is.null,is_system_template.eq.true${effectiveUserId ? `,workspace_id.eq.${effectiveUserId},user_id.eq.${effectiveUserId}` : ''}`)
+        .or(`user_id.eq.SYSTEM,workspace_id.is.null,is_system_template.eq.true,workspace_id.eq.37c63a54-d4f1-4b99-b546-3d965cd23a37,user_id.eq.37c63a54-d4f1-4b99-b546-3d965cd23a37${effectiveUserId ? `,workspace_id.eq.${effectiveUserId},user_id.eq.${effectiveUserId}` : ''}`)
         .order('updated_at', { ascending: false });
 
       if (tmplErr) {
