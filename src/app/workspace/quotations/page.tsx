@@ -358,7 +358,21 @@ export default function WorkspaceQuotationsGalleryPage() {
       const newId = `FW-USER-${randomSuffix}`;
       const copyTitle = generateUniqueCopyName(quote.title || 'Wedding - Design 1', quotations.map(q => q.title));
 
-      const baseDoc = quote.content_json || DEFAULT_AIRY_PROPOSAL;
+      // 1. Authoritative base document fetch: NEVER fall back to demo template if master document exists!
+      let baseDoc = quote.content_json;
+      if (!baseDoc || !baseDoc.pages || !baseDoc.pages.length || !baseDoc.cover) {
+        try {
+          const res = await fetch(`/api/templates/${quoteId}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.document?.content_json && data.document.content_json.pages?.length) {
+              baseDoc = data.document.content_json;
+            }
+          }
+        } catch (_) {}
+      }
+      if (!baseDoc) baseDoc = DEFAULT_AIRY_PROPOSAL;
+
       const clonedDoc = JSON.parse(JSON.stringify(baseDoc));
       clonedDoc.designName = copyTitle;
 
@@ -375,7 +389,7 @@ export default function WorkspaceQuotationsGalleryPage() {
         id: newId,
         quotation_number: newId,
         title: copyTitle,
-        client_name: quote.client_name || 'Rahul & Neha',
+        client_name: clonedDoc.cover?.coupleName || quote.client_name || 'Rahul & Neha',
         financials: quote.financials || {},
         content_json: clonedDoc,
         status: 'draft',
@@ -395,7 +409,7 @@ export default function WorkspaceQuotationsGalleryPage() {
         return nextList;
       });
 
-      // Fire duplicate call in background to persist in DB
+      // 2. Await duplicate call to guarantee the row is inserted into Supabase BEFORE the builder mounts!
       try {
         const { data: { session } } = await supabase.auth.getSession();
         const currentUserId = session?.user?.id || userId || 'demo_user';
@@ -404,7 +418,7 @@ export default function WorkspaceQuotationsGalleryPage() {
         if (token) headers['Authorization'] = `Bearer ${token}`;
         if (userEmail) headers['x-user-email'] = userEmail;
 
-        fetch('/api/templates/duplicate', {
+        const dupRes = await fetch('/api/templates/duplicate', {
           method: 'POST',
           headers,
           body: JSON.stringify({
@@ -413,8 +427,22 @@ export default function WorkspaceQuotationsGalleryPage() {
             workspaceId: currentUserId,
             title: copyTitle
           })
-        }).catch(e => console.error('[Auto-duplicate background sync]:', e));
-      } catch (_) {}
+        });
+        if (dupRes.ok) {
+          const dupJson = await dupRes.json();
+          if (dupJson.document?.content_json) {
+            const authoritativeDoc = dupJson.document.content_json;
+            try {
+              sessionStorage.setItem(`current_quotation_doc_${newId}`, JSON.stringify(authoritativeDoc));
+              sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: newId, document: authoritativeDoc }));
+              localStorage.setItem(`wg_proposal_draft_${newId}`, JSON.stringify(authoritativeDoc));
+              cacheDocumentLocal(newId, authoritativeDoc, 1);
+            } catch (_) {}
+          }
+        }
+      } catch (e) {
+        console.error('[Auto-duplicate sync error]:', e);
+      }
 
       router.push(`/workspace/quotations/builder/templet/${newId}`);
       return;
@@ -693,10 +721,27 @@ export default function WorkspaceQuotationsGalleryPage() {
       if (cachedDataStr) {
         const parsed = JSON.parse(cachedDataStr);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          memCachedQuotations = parsed;
-          setQuotations(parsed);
+          const hydrated = parsed.map((item: any) => {
+            const draftStr = localStorage.getItem(`wg_proposal_draft_${item.id || item.quotation_number}`);
+            if (draftStr) {
+              try {
+                const draftObj = JSON.parse(draftStr);
+                if (draftObj && typeof draftObj === 'object') {
+                  return {
+                    ...item,
+                    title: draftObj.designName || item.title,
+                    client_name: draftObj.cover?.coupleName || item.client_name,
+                    content_json: draftObj
+                  };
+                }
+              } catch (_) {}
+            }
+            return item;
+          });
+          memCachedQuotations = hydrated;
+          setQuotations(hydrated);
           setLoading(false);
-          const primary = parsed[0];
+          const primary = hydrated[0];
           if (primary) {
             setActiveQuotationId(primary.quotation_number || primary.id || '1');
             if (primary.client_name) setActiveCoupleName(primary.client_name);
@@ -741,10 +786,27 @@ export default function WorkspaceQuotationsGalleryPage() {
             if (userCached) {
               const parsed = JSON.parse(userCached);
               if (Array.isArray(parsed) && parsed.length > 0) {
-                memCachedQuotations = parsed;
-                setQuotations(parsed);
+                const hydrated = parsed.map((item: any) => {
+                  const draftStr = localStorage.getItem(`wg_proposal_draft_${item.id || item.quotation_number}`);
+                  if (draftStr) {
+                    try {
+                      const draftObj = JSON.parse(draftStr);
+                      if (draftObj && typeof draftObj === 'object') {
+                        return {
+                          ...item,
+                          title: draftObj.designName || item.title,
+                          client_name: draftObj.cover?.coupleName || item.client_name,
+                          content_json: draftObj
+                        };
+                      }
+                    } catch (_) {}
+                  }
+                  return item;
+                });
+                memCachedQuotations = hydrated;
+                setQuotations(hydrated);
                 setLoading(false);
-                const primary = parsed[0];
+                const primary = hydrated[0];
                 if (primary) {
                   setActiveQuotationId(primary.quotation_number || primary.id || '1');
                   if (primary.client_name) setActiveCoupleName(primary.client_name);
@@ -842,14 +904,18 @@ export default function WorkspaceQuotationsGalleryPage() {
         if (filteredTmplData.length > 0) {
           filteredTmplData.forEach((t: any) => {
             const isSys = Boolean(t.is_system_template);
+            const docObj = docsMap[t.id];
+            const itemTitle = docObj?.designName || t.title || 'Wedding - Design 1';
+            const coupleName = docObj?.cover?.coupleName || (docObj?.cover?.groomName ? `${docObj.cover.groomName} & ${docObj.cover.brideName}` : 'Rahul & Neha');
+
             const item: SavedQuotation = {
               id: t.id,
               quotation_number: t.id,
-              title: t.title || 'Wedding - Design 1',
-              client_name: 'Rahul & Neha',
+              title: itemTitle,
+              client_name: coupleName,
               financials: {},
               status: t.status || 'draft',
-              content_json: docsMap[t.id] || null,
+              content_json: docObj || null,
               is_default: Boolean(t.is_default),
               is_system_template: isSys,
               updated_at: t.updated_at
@@ -1158,8 +1224,8 @@ export default function WorkspaceQuotationsGalleryPage() {
             {quotations.length > 0 ? (
           quotations.map((quote, idx) => {
             const quoteId = quote.quotation_number || quote.id;
-            const customTitle = quote.title || (quote as any).content_json?.designName || 'Wedding - Design 1';
-            const clientName = quote.client_name || activeCoupleName;
+            const customTitle = (quote as any).content_json?.designName || quote.title || 'Wedding - Design 1';
+            const clientName = (quote as any).content_json?.cover?.coupleName || ((quote as any).content_json?.cover?.groomName ? `${(quote as any).content_json.cover.groomName} & ${(quote as any).content_json.cover.brideName}` : quote.client_name || activeCoupleName);
 
             return (
               <motion.div 
@@ -1217,21 +1283,16 @@ export default function WorkspaceQuotationsGalleryPage() {
 
                 <div className="p-3.5 pt-0 space-y-2">
                   <div className="grid grid-cols-2 gap-1.5">
+                    {/* Read-Only Public Clean Preview (NEVER duplicates files!) */}
                     <button 
                       type="button"
-                      disabled={cloningGlobalId === quoteId || openingTemplateId === quoteId}
-                      onClick={() => handleEditTemplate(quote)}
-                      className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 text-[10px] font-bold text-center transition-colors cursor-pointer flex items-center justify-center gap-1 disabled:opacity-75"
+                      onClick={() => {
+                        window.open(`/workspace/quotations/builder/templet/${quoteId}?preview=public&mode=clean`, '_blank');
+                      }}
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 text-[10px] font-bold text-center transition-colors cursor-pointer flex items-center justify-center gap-1.5"
                     >
-                      {openingTemplateId === quoteId ? (
-                        <>
-                          <RefreshCw className="w-3 h-3 animate-spin text-amber-500" />
-                          <span>Opening...</span>
-                        </>
-                      ) : cloningGlobalId === quoteId ? (
-                        <RefreshCw className="w-3 h-3 animate-spin text-amber-500" />
-                      ) : null}
-                      {openingTemplateId !== quoteId && <span>Preview</span>}
+                      <Eye className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Preview</span>
                     </button>
                     
                     {/* Instant Duplication placed immediately after original design */}

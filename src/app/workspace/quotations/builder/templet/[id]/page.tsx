@@ -2305,7 +2305,8 @@ function StudioCoreAiryBuilderContent() {
   }, [userId]);
 
   const tokenParam = searchParams?.get('token') || '';
-  const isPublicPreview = searchParams?.get('preview') === 'public' || !!tokenParam;
+  const isCleanView = searchParams?.get('mode') === 'clean';
+  const isPublicPreview = searchParams?.get('preview') === 'public' || isCleanView || !!tokenParam;
 
   // Modals & Actions for Public Preview
   const [showAcceptModal, setShowAcceptModal] = useState(false);
@@ -3095,7 +3096,8 @@ function StudioCoreAiryBuilderContent() {
         const userAccessToken = session?.access_token;
         const userStudioName = session?.user?.user_metadata?.studioName || session?.user?.user_metadata?.studio_name || (session?.user as any)?.studioName;
 
-        const isPublicPreview = typeof window !== 'undefined' && (new URLSearchParams(window.location.search).get('preview') === 'public' || !!new URLSearchParams(window.location.search).get('token'));
+        const isCleanView = typeof window !== 'undefined' && (new URLSearchParams(window.location.search).get('mode') === 'clean');
+        const isPublicPreview = typeof window !== 'undefined' && (new URLSearchParams(window.location.search).get('preview') === 'public' || isCleanView || !!new URLSearchParams(window.location.search).get('token'));
 
         if (!currentUserId && !isPublicPreview) {
           console.warn('[User Access Lock] No authenticated session found, redirecting to /workspace/quotations');
@@ -3165,8 +3167,11 @@ function StudioCoreAiryBuilderContent() {
 
         if (docContent) {
           // CANONICAL SUPABASE DB DOCUMENT (Primary Source of Truth)
-          loadedData = normalizeQuotationData(docContent);
-          currentVersionRef.current = json.document?.version || 1;
+          const isServerDefault = docContent.cover?.coupleName === 'VALUED CLIENT' || !docContent.pages?.length;
+          if (!isServerDefault || !loadedData) {
+            loadedData = normalizeQuotationData(docContent);
+            currentVersionRef.current = json.document?.version || 1;
+          }
         } else if (cachedLocal?.documentJson) {
           loadedData = normalizeQuotationData(cachedLocal.documentJson);
         }
@@ -3395,6 +3400,7 @@ function StudioCoreAiryBuilderContent() {
         body: JSON.stringify({
           user_id: session?.user?.id || userId,
           workspace_id: session?.user?.id || userId,
+          title: snapshotData.designName,
           version: currentVersionRef.current,
           revision: targetRevision,
           content_json: snapshotData,
@@ -3411,7 +3417,38 @@ function StudioCoreAiryBuilderContent() {
           currentTemplateIdRef.current = resJson.newTemplateId;
           window.history.replaceState(null, '', `/workspace/quotations/builder/templet/${resJson.newTemplateId}`);
         }
-        cacheDocumentLocal(currentTemplateIdRef.current, snapshotData, currentVersionRef.current);
+        const finalId = currentTemplateIdRef.current;
+        cacheDocumentLocal(finalId, snapshotData, currentVersionRef.current);
+
+        // SYNC TO LOCAL STORAGES IMMEDIATELY SO GALLERY CARD IS NEVER STALE:
+        try {
+          sessionStorage.setItem(`current_quotation_doc_${finalId}`, JSON.stringify(snapshotData));
+          localStorage.setItem(`wg_proposal_draft_${finalId}`, JSON.stringify(snapshotData));
+
+          const activeUid = localStorage.getItem('wg_last_active_user_id') || session?.user?.id || userId;
+          if (activeUid) {
+            const cacheKey = `wg_quotations_cache_${activeUid}`;
+            const existingCache = localStorage.getItem(cacheKey);
+            if (existingCache) {
+              const list = JSON.parse(existingCache);
+              if (Array.isArray(list)) {
+                const updatedList = list.map((item: any) => {
+                  if (item.id === finalId || item.quotation_number === finalId) {
+                    return {
+                      ...item,
+                      title: snapshotData.designName || item.title,
+                      client_name: snapshotData.cover?.coupleName || item.client_name,
+                      content_json: snapshotData,
+                      updated_at: new Date().toISOString()
+                    };
+                  }
+                  return item;
+                });
+                localStorage.setItem(cacheKey, JSON.stringify(updatedList));
+              }
+            }
+          }
+        } catch (_) {}
       }
 
       if (realtimeChannelRef.current) {
@@ -5536,6 +5573,63 @@ function StudioCoreAiryBuilderContent() {
         }
       `}</style>
 
+      {/* ── CLEAN READ-ONLY PREVIEW HEADER ── */}
+      {isCleanView && (
+        <header className="h-12 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 px-3 sm:px-5 flex items-center justify-between shrink-0 z-50 shadow-xs no-print">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                if (typeof window !== 'undefined' && window.opener) {
+                  window.close();
+                } else {
+                  router.push('/workspace/quotations');
+                }
+              }}
+              className="px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+            >
+              <span>✕</span>
+              <span>Close Preview</span>
+            </button>
+            <span className="text-xs font-extrabold text-zinc-800 dark:text-zinc-100 truncate max-w-[150px] sm:max-w-[320px]">
+              {data.designName || 'Template Preview'}
+            </span>
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300/50 hidden sm:inline-block">
+              Read-Only Preview
+            </span>
+          </div>
+
+          {/* Viewport Zoom Controls */}
+          <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded-full border border-zinc-200 dark:border-zinc-700 text-[10px] font-bold text-zinc-700 dark:text-zinc-200">
+            <button 
+              type="button" 
+              onClick={() => updateZoomScale(s => s - 0.05)} 
+              className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-full transition-all cursor-pointer" 
+              title="Zoom Out"
+            >
+              <ZoomOut className="w-3 h-3 text-zinc-600 dark:text-zinc-300" />
+            </button>
+            <span className="w-8 sm:w-10 text-center font-mono font-bold text-zinc-800 dark:text-zinc-200 text-[10px]">{Math.round(zoomScale * 100)}%</span>
+            <button 
+              type="button" 
+              onClick={() => updateZoomScale(s => s + 0.05)} 
+              className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-full transition-all cursor-pointer" 
+              title="Zoom In"
+            >
+              <ZoomIn className="w-3 h-3 text-zinc-600 dark:text-zinc-300" />
+            </button>
+            <button 
+              type="button" 
+              onClick={autoFitScale} 
+              className="px-1.5 py-0.5 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-md text-[9px] hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer transition-all hidden sm:inline-block" 
+              title="Fit to Window"
+            >
+              Fit
+            </button>
+          </div>
+        </header>
+      )}
+
       {/* ── TOP HEADER BAR ── */}
       {!isPublicPreview && (
         <header className="h-12 bg-white border-b border-zinc-200 px-3 sm:px-5 flex items-center justify-between shrink-0 z-50 shadow-xs no-print">
@@ -7289,7 +7383,7 @@ function StudioCoreAiryBuilderContent() {
       </AnimatePresence>
 
       {/* ── PUBLIC PREVIEW LIQUID GLASS BOTTOM CLIENT ACTION BAR ── */}
-      {isPublicPreview && (
+      {isPublicPreview && !isCleanView && (
         <div className="fixed bottom-4 left-0 right-0 z-[9000] px-4 pointer-events-none flex justify-center no-print">
           <div className="pointer-events-auto bg-white/85 dark:bg-[#1C1A18]/85 backdrop-blur-xl border border-zinc-200/80 dark:border-zinc-700/80 shadow-[0_12px_40px_rgba(0,0,0,0.18)] rounded-full px-4 py-2 flex items-center justify-center gap-2.5 sm:gap-3">
             <button

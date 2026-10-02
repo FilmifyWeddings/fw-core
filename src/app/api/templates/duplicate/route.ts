@@ -120,7 +120,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         success: true,
         newTemplateId: newSystemId,
-        template: newTmpl
+        template: newTmpl,
+        document: {
+          template_id: newSystemId,
+          content_json: clonedDoc
+        }
       });
     }
 
@@ -196,7 +200,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       newTemplateId: newTemplateId,
-      template: newTmpl
+      template: newTmpl,
+      document: {
+        template_id: newTemplateId,
+        content_json: clonedDoc
+      }
     });
   } catch (error: any) {
     console.error('Error in template duplication:', error);
