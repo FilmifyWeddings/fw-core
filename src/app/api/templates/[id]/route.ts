@@ -117,26 +117,6 @@ async function handleGet(
       if (docJson.content_json && typeof docJson.content_json === 'object') docJson = { ...docJson, ...docJson.content_json };
     }
 
-    // Check if studio owner has a workspace-specific customized document for this template
-    if (!isSuperAdmin && workspaceId && workspaceId !== 'demo_user') {
-      const customId = `FW-CUSTOM-${workspaceId}-${id}`;
-      const { data: customDoc } = await supabaseAdmin
-        .from('quotation_documents')
-        .select('content_json')
-        .eq('template_id', customId)
-        .maybeSingle();
-
-      if (customDoc?.content_json) {
-        let parsed = customDoc.content_json;
-        if (typeof parsed === 'string') {
-          try { parsed = JSON.parse(parsed); } catch (_) {}
-        }
-        if (parsed && typeof parsed === 'object') {
-          docJson = parsed;
-        }
-      }
-    }
-
     if (!tmpl && !docJson && !quoteRec) {
       return NextResponse.json({ error: 'Quotation template or document not found' }, { status: 404 });
     }
@@ -262,31 +242,104 @@ async function handleUpdate(
       });
     }
 
-    // ── NORMAL STUDIO OWNER ISOLATED PRESET CUSTOMIZATION ──
-    if (isSystemTemplate) {
-      // Save studio-specific customized document without affecting canonical master or other studios
-      const customDocId = `FW-CUSTOM-${workspaceId}-${id}`;
+    // ── NORMAL STUDIO OWNER EDITS A SYSTEM TEMPLATE ──
+    // Automatically creates ONE duplicate card in this studio owner's workspace.
+    // The master system template card remains untouched in their gallery.
+    if (!isSuperAdmin && isSystemTemplate) {
+      const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
+      const newTemplateId = `FW-USER-${randomSuffix}`;
+      const newTitle = title || document?.designName || `${targetTmpl?.title || 'Quotation Template'} (Custom)`;
 
-      if (document) {
-        await supabaseAdmin
-          .from('quotation_documents')
-          .upsert({
-            template_id: customDocId,
-            workspace_id: workspaceId,
-            user_id: userId,
-            content_json: document,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'template_id' });
+      const clonedDoc = document ? JSON.parse(JSON.stringify(document)) : {};
+      clonedDoc.designName = newTitle;
+
+      // 1. Insert new duplicate template into quotation_templates for this studio owner
+      const { data: newTmpl, error: tmplErr } = await supabaseAdmin
+        .from('quotation_templates')
+        .insert({
+          id: newTemplateId,
+          workspace_id: workspaceId,
+          user_id: userId || workspaceId,
+          title: newTitle,
+          category: category || targetTmpl?.category || 'Wedding',
+          is_system_template: false,
+          is_default: false,
+          status: 'draft',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (tmplErr) {
+        console.error('[Auto-duplicate System Template Error]:', tmplErr);
       }
+
+      // 2. Insert document into quotation_documents for this studio owner
+      await supabaseAdmin
+        .from('quotation_documents')
+        .insert({
+          template_id: newTemplateId,
+          workspace_id: workspaceId,
+          user_id: userId || workspaceId,
+          content_json: clonedDoc,
+          version: body.version || 1,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
 
       return NextResponse.json({
         success: true,
-        templateId: id,
+        isAutoCloned: true,
+        newTemplateId: newTemplateId,
+        templateId: newTemplateId,
+        version: body.version || 1,
+        template: newTmpl
+      });
+    }
+
+    // ── NORMAL STUDIO OWNER EDITS ANOTHER STUDIO'S TEMPLATE (NON-SYSTEM) ──
+    const isOwnerOfTemplate = !targetTmpl || targetTmpl.workspace_id === workspaceId || targetTmpl.user_id === userId;
+    if (!isSuperAdmin && !isOwnerOfTemplate) {
+      const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
+      const newTemplateId = `FW-USER-${randomSuffix}`;
+      const newTitle = title || document?.designName || `${targetTmpl?.title || 'Quotation Template'} (Copy)`;
+      const clonedDoc = document ? JSON.parse(JSON.stringify(document)) : {};
+      clonedDoc.designName = newTitle;
+
+      await supabaseAdmin.from('quotation_templates').insert({
+        id: newTemplateId,
+        workspace_id: workspaceId,
+        user_id: userId || workspaceId,
+        title: newTitle,
+        category: category || targetTmpl?.category || 'Wedding',
+        is_system_template: false,
+        is_default: false,
+        status: 'draft',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+
+      await supabaseAdmin.from('quotation_documents').insert({
+        template_id: newTemplateId,
+        workspace_id: workspaceId,
+        user_id: userId || workspaceId,
+        content_json: clonedDoc,
+        version: body.version || 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+
+      return NextResponse.json({
+        success: true,
+        isAutoCloned: true,
+        newTemplateId: newTemplateId,
+        templateId: newTemplateId,
         version: body.version || 1
       });
     }
 
-    // ── IN-PLACE DOCUMENT UPDATE (LEAD QUOTATION OR USER MASTER TEMPLATE) ──
+    // ── IN-PLACE DOCUMENT UPDATE (STUDIO OWNER'S OWN WORKSPACE TEMPLATE OR ADMIN TEMPLATE) ──
     const newTitle = title || document?.designName || targetTmpl?.title || 'Wedding Quotation';
 
     // 1. Update quotation_templates if it exists as a template

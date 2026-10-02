@@ -71,7 +71,7 @@ export const DEFAULT_AIRY_PROPOSAL: any = {
   secondaryFont: 'Plus Jakarta Sans',
   designName: 'Minimalist Airy Proposal',
   cover: {
-    coupleName: 'YASH & TWINKLE',
+    coupleName: 'Rahul & Neha',
     eventType: 'WEDDING',
     eventDate: 'DECEMBER 2026',
     location: 'MUMBAI',
@@ -1490,7 +1490,7 @@ export default function QuotationDocumentCanvas({
 
                   <div className={`space-y-3 ${data.cover.frameShape === 'full-width' || (data.cover.imagePosition as string) === 'full' ? 'px-12' : ''}`}>
                     <h1 className="couple-name-heading text-5xl tracking-[0.18em] uppercase font-black leading-tight drop-shadow-sm whitespace-pre-line text-center" style={{ color: textColor, fontFamily: data.primaryFont }}>
-                      {data.cover.coupleName !== undefined ? data.cover.coupleName : (data.cover.groomName ? `${data.cover.groomName} & ${data.cover.brideName}` : 'YASH & TWINKLE')}
+                      {data.cover.coupleName !== undefined ? data.cover.coupleName : (data.cover.groomName ? `${data.cover.groomName} & ${data.cover.brideName}` : (data.designName || 'Rahul & Neha'))}
                     </h1>
                     <h3 className="text-base tracking-[0.2em] uppercase font-bold whitespace-nowrap pt-1" style={{ color: textColor, fontFamily: data.primaryFont }}>
                       {`${(data.cover.eventType || 'WEDDING').toUpperCase()} QUOTATION`}

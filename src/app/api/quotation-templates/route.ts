@@ -92,40 +92,19 @@ export async function GET(req: NextRequest) {
     // Fetch document content_json using supabaseAdmin (bypasses RLS)
     const docsMap: Record<string, any> = {};
     if (templateIds.length > 0) {
-      const customIdMap: Record<string, string> = {};
-      const allQueryIds = [...templateIds];
-
-      if (!isAdmin && effectiveUserId) {
-        validTemplates.forEach(t => {
-          if (t.is_system_template) {
-            const cId = `FW-CUSTOM-${effectiveUserId}-${t.id}`;
-            customIdMap[cId] = t.id;
-            allQueryIds.push(cId);
-          }
-        });
-      }
-
       const { data: docsData, error: docsErr } = await supabaseAdmin
         .from('quotation_documents')
         .select('template_id, content_json')
-        .in('template_id', allQueryIds);
+        .in('template_id', templateIds);
 
       if (docsErr) {
         console.error('[Quotation Documents Fetch Error]:', docsErr);
       }
 
       if (docsData) {
-        // First map canonical documents
         docsData.forEach(d => {
-          if (d.template_id && d.content_json && !customIdMap[d.template_id]) {
+          if (d.template_id && d.content_json) {
             docsMap[d.template_id] = d.content_json;
-          }
-        });
-        // Then override with studio-specific customized documents if available
-        docsData.forEach(d => {
-          if (d.template_id && d.content_json && customIdMap[d.template_id]) {
-            const canonicalId = customIdMap[d.template_id];
-            docsMap[canonicalId] = d.content_json;
           }
         });
       }

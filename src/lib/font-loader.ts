@@ -123,6 +123,13 @@ export async function preloadActiveFont(fontNameOrFamily: string): Promise<void>
     } catch (err) {
       console.warn(`[FontLoader] Error preloading active font ${cleanName}:`, err);
     }
+  } else if (typeof document !== 'undefined' && 'fonts' in document) {
+    try {
+      await Promise.all([
+        document.fonts.load(`16px "${cleanName}"`),
+        document.fonts.load(`bold 16px "${cleanName}"`)
+      ]);
+    } catch (_) {}
   }
 }
 

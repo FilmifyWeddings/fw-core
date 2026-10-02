@@ -6,7 +6,6 @@ export const SUPER_ADMIN_EMAIL = 'sushantnawale700@gmail.com';
 export const SUPER_ADMIN_ID = '37c63a54-d4f1-4b99-b546-3d965cd23a37';
 export const SUPER_ADMIN_IDS = [
   '37c63a54-d4f1-4b99-b546-3d965cd23a37', // sushantnawale700@gmail.com
-  'f9359a12-3f2e-430c-9cec-2ec9841ec83e', // platform admin
 ];
 export const SUPER_ADMIN_EMAILS = [
   'sushantnawale700@gmail.com',

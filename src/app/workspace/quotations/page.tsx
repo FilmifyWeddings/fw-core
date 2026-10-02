@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -15,7 +15,7 @@ import { compressImageClient, uploadMasterImage } from '@/lib/master-image-manag
 import { MasterMediaModal } from '@/components/MasterMediaModal';
 import { removeCachedDocumentLocal, cacheDocumentLocal } from '@/lib/indexeddb-cache';
 import { DEFAULT_AIRY_PROPOSAL } from '@/lib/quotation-defaults';
-import { STATIC_CUSTOM_FONTS, registerFontFace, preloadActiveFont } from '@/lib/font-loader';
+import { STATIC_CUSTOM_FONTS, registerFontFace, preloadActiveFont, loadCustomFontsFromAPI } from '@/lib/font-loader';
 
 import { getThemeFromKey } from '@/lib/quotation-theme';
 import QuotationDocumentCanvas from '@/components/QuotationDocumentCanvas';
@@ -48,6 +48,7 @@ interface UserGalleryImage {
 function QuotationCardThumbnail({ contentJson, title, coupleName }: { contentJson?: any; title?: string; coupleName?: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState<number>(0.28);
+  const [, setFontsReady] = useState<boolean>(false);
 
   useEffect(() => {
     const updateScale = () => {
@@ -63,47 +64,38 @@ function QuotationCardThumbnail({ contentJson, title, coupleName }: { contentJso
     return () => window.removeEventListener('resize', updateScale);
   }, []);
 
-  const baseData = contentJson ? { ...contentJson } : {
-    look: 'cyprus-sand-dune',
-    theme: 'cyprus-sand-dune',
-    primaryFont: 'Cormorant Garamond',
-    secondaryFont: 'Plus Jakarta Sans',
-    designName: title || 'Wedding - Design 1',
-    cover: {
-      coupleName: title || coupleName || 'RAHUL & NEHA',
-      eventType: 'WEDDING',
-      eventDate: 'DECEMBER 2026',
-      location: 'MUMBAI',
-      brandName: 'FILMIFY WEDDINGS'
+  const data = useMemo(() => {
+    if (contentJson && typeof contentJson === 'object' && contentJson.cover) {
+      return contentJson;
     }
-  };
+    return {
+      look: 'cyprus-sand-dune',
+      theme: 'cyprus-sand-dune',
+      primaryFont: 'Cormorant Garamond',
+      secondaryFont: 'Plus Jakarta Sans',
+      designName: title || 'Wedding - Design 1',
+      cover: {
+        coupleName: coupleName || title || 'Rahul & Neha',
+        eventType: 'WEDDING',
+        eventDate: 'DECEMBER 2026',
+        location: 'MUMBAI',
+        brandName: 'FILMIFY WEDDINGS',
+        frameShape: 'arch',
+        bgOpacity: 40
+      }
+    };
+  }, [contentJson, title, coupleName]);
 
   useEffect(() => {
-    if (baseData.primaryFont) preloadActiveFont(baseData.primaryFont);
-    if (baseData.secondaryFont) preloadActiveFont(baseData.secondaryFont);
-  }, [baseData.primaryFont, baseData.secondaryFont]);
-
-  const coverObj = baseData.cover || {};
-  const currentCoupleName = coverObj.coupleName;
-  const isGenericName = !currentCoupleName || currentCoupleName === 'RAHUL & NEHA' || currentCoupleName === 'Rahul & Neha';
-
-  const displayCoupleName = (isGenericName && title && title !== 'Wedding - Design 1' && title !== 'System Default Wedding Template')
-    ? title.toUpperCase()
-    : (currentCoupleName || title || coupleName || 'RAHUL & NEHA');
-
-  const coverPhoto = coverObj.photoUrl || coverObj.photo || coverObj.imageUrl || '';
-
-  const data = {
-    ...baseData,
-    cover: {
-      ...coverObj,
-      coupleName: displayCoupleName,
-      photoUrl: coverPhoto,
-      photo: coverPhoto,
-      frameShape: coverObj.frameShape || 'arch',
-      bgOpacity: coverObj.bgOpacity ?? 40
+    let active = true;
+    const fontsToLoad = [data.primaryFont, data.secondaryFont].filter(Boolean);
+    if (fontsToLoad.length > 0) {
+      Promise.all(fontsToLoad.map(f => preloadActiveFont(f))).then(() => {
+        if (active) setFontsReady(true);
+      });
     }
-  };
+    return () => { active = false; };
+  }, [data.primaryFont, data.secondaryFont]);
 
   return (
     <div 
@@ -220,8 +212,7 @@ export default function WorkspaceQuotationsGalleryPage() {
         memCachedQuotations = nextList;
         if (typeof window !== 'undefined') {
           try {
-            localStorage.setItem('wg_quotations_cache', JSON.stringify(nextList));
-            if (userId) {
+            if (userId && userId !== 'demo_user') {
               localStorage.setItem(`wg_quotations_cache_${userId}`, JSON.stringify(nextList));
             }
           } catch (_) {}
@@ -605,35 +596,13 @@ export default function WorkspaceQuotationsGalleryPage() {
   useEffect(() => {
     setMounted(true);
 
-    // Instant sync from in-memory cache or localStorage on client mount (avoids SSR hydration mismatch)
-    if (memCachedQuotations.length > 0) {
-      setQuotations(memCachedQuotations);
-      setLoading(false);
-      const primary = memCachedQuotations[0];
-      if (primary) {
-        setActiveQuotationId(primary.quotation_number || primary.id || '1');
-        if (primary.client_name) setActiveCoupleName(primary.client_name);
-        if (primary.content_json?.cover?.photoUrl) setActiveCoverPhoto(primary.content_json.cover.photoUrl);
-      }
-    } else {
-      try {
-        const stored = localStorage.getItem('wg_quotations_cache');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            memCachedQuotations = parsed;
-            setQuotations(parsed);
-            setLoading(false);
-            const primary = parsed[0];
-            if (primary) {
-              setActiveQuotationId(primary.quotation_number || primary.id || '1');
-              if (primary.client_name) setActiveCoupleName(primary.client_name);
-              if (primary.content_json?.cover?.photoUrl) setActiveCoverPhoto(primary.content_json.cover.photoUrl);
-            }
-          }
-        }
-      } catch (_) {}
-    }
+    // Register custom font definitions into document.head immediately
+    loadCustomFontsFromAPI();
+
+    // Purge obsolete global quotations cache key to prevent stale mock/cross-user template flashing
+    try {
+      localStorage.removeItem('wg_quotations_cache');
+    } catch (_) {}
 
     if (memCachedUserImages.length > 0) {
       setUserImages(memCachedUserImages);
@@ -661,6 +630,27 @@ export default function WorkspaceQuotationsGalleryPage() {
         setUserId(currentUserId);
         if (session?.user?.email) {
           setUserEmail(session.user.email);
+        }
+
+        // Fast load user-scoped cache immediately once user is resolved
+        if (currentUserId && currentUserId !== 'demo_user') {
+          try {
+            const userCached = localStorage.getItem(`wg_quotations_cache_${currentUserId}`);
+            if (userCached) {
+              const parsed = JSON.parse(userCached);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                memCachedQuotations = parsed;
+                setQuotations(parsed);
+                setLoading(false);
+                const primary = parsed[0];
+                if (primary) {
+                  setActiveQuotationId(primary.quotation_number || primary.id || '1');
+                  if (primary.client_name) setActiveCoupleName(primary.client_name);
+                  if (primary.content_json?.cover?.photoUrl) setActiveCoverPhoto(primary.content_json.cover.photoUrl);
+                }
+              }
+            }
+          } catch (_) {}
         }
 
         const cached = localStorage.getItem(`wg_gallery_cache_${currentUserId}`);
@@ -771,8 +761,7 @@ export default function WorkspaceQuotationsGalleryPage() {
         memCachedQuotations = combined;
         if (typeof window !== 'undefined') {
           try {
-            localStorage.setItem('wg_quotations_cache', JSON.stringify(combined));
-            if (currentUserId) {
+            if (currentUserId && currentUserId !== 'demo_user') {
               localStorage.setItem(`wg_quotations_cache_${currentUserId}`, JSON.stringify(combined));
             }
           } catch (_) {}
@@ -1039,9 +1028,26 @@ export default function WorkspaceQuotationsGalleryPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-5">
         
         {loading && quotations.length === 0 ? (
-          <div className="col-span-full py-16 flex justify-center items-center">
-            <StudioCoreLiquidLoader label="Loading Quotations & Proposals..." fullscreen={false} />
-          </div>
+          Array.from({ length: 5 }).map((_, idx) => (
+            <div 
+              key={`quotation-skeleton-${idx}`} 
+              className="rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200/90 dark:border-zinc-800/90 overflow-hidden shadow-sm animate-pulse flex flex-col justify-between h-[360px]"
+            >
+              <div className="w-full h-52 bg-slate-200/80 dark:bg-zinc-800/80" />
+              <div className="p-3.5 space-y-2">
+                <div className="h-4 bg-slate-200 dark:bg-zinc-800 rounded w-3/4" />
+                <div className="h-3 bg-slate-100 dark:bg-zinc-800/60 rounded w-1/2" />
+              </div>
+              <div className="p-3.5 pt-0 space-y-2">
+                <div className="grid grid-cols-2 gap-1.5">
+                  <div className="h-7 bg-slate-100 dark:bg-zinc-800 rounded-lg" />
+                  <div className="h-7 bg-slate-100 dark:bg-zinc-800 rounded-lg" />
+                </div>
+                <div className="h-7 bg-slate-100 dark:bg-zinc-800 rounded-lg" />
+                <div className="h-8 bg-amber-100/60 dark:bg-amber-950/40 rounded-xl" />
+              </div>
+            </div>
+          ))
         ) : (
           <>
             {/* DYNAMIC USER QUOTATION CARDS (1:1 Thumbnail Sync, Dynamic Custom Title, Instant Duplication) */}

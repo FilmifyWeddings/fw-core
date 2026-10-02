@@ -2195,6 +2195,13 @@ function StudioCoreAiryBuilderContent() {
   const params = useParams();
   const templateId = (params?.id as string) || '';
   const routeId = templateId;
+  const currentTemplateIdRef = useRef<string>(templateId || 'FW-2WT85Y0');
+
+  useEffect(() => {
+    if (params?.id) {
+      currentTemplateIdRef.current = String(params.id);
+    }
+  }, [params?.id]);
 
   const mainContainerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -3373,9 +3380,9 @@ function StudioCoreAiryBuilderContent() {
 
       const { data: { session } } = await supabase.auth.getSession();
       const userAccessToken = session?.access_token;
-      const routeId = params?.id ? String(params.id) : 'FW-2WT85Y0';
+      const targetTmplId = currentTemplateIdRef.current || (params?.id ? String(params.id) : 'FW-2WT85Y0');
 
-      const saveRes = await fetch(`/api/templates/${routeId}`, {
+      const saveRes = await fetch(`/api/templates/${targetTmplId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -3396,12 +3403,13 @@ function StudioCoreAiryBuilderContent() {
           currentVersionRef.current = resJson.version;
         }
         if (resJson.isAutoCloned && resJson.newTemplateId) {
+          currentTemplateIdRef.current = resJson.newTemplateId;
           window.history.replaceState(null, '', `/workspace/quotations/builder/templet/${resJson.newTemplateId}`);
         }
-        cacheDocumentLocal(routeId, snapshotData, currentVersionRef.current);
+        cacheDocumentLocal(currentTemplateIdRef.current, snapshotData, currentVersionRef.current);
       }
 
-      await fetch(`/api/quotations/${routeId}`, {
+      await fetch(`/api/quotations/${currentTemplateIdRef.current}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
