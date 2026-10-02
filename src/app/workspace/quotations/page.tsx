@@ -352,24 +352,21 @@ export default function WorkspaceQuotationsGalleryPage() {
     const quoteId = quote.quotation_number || quote.id;
     setOpeningTemplateId(quoteId);
 
-    // CRITICAL: If regular studio owner edits a System Preset, auto-duplicate into their workspace!
+    // CRITICAL: If regular studio owner edits a System Preset, auto-duplicate into their workspace in 0ms!
     if (!isSuperAdminUser && quote.is_system_template) {
       const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
       const newId = `FW-USER-${randomSuffix}`;
       const copyTitle = generateUniqueCopyName(quote.title || 'Wedding - Design 1', quotations.map(q => q.title));
 
-      // 1. Authoritative base document fetch: NEVER fall back to demo template if master document exists!
+      // 1. Authoritative base document: quote.content_json is already in memory with full pages
       let baseDoc = quote.content_json;
       if (!baseDoc || !baseDoc.pages || !baseDoc.pages.length || !baseDoc.cover) {
-        try {
-          const res = await fetch(`/api/templates/${quoteId}`);
-          if (res.ok) {
-            const data = await res.json();
-            if (data.document?.content_json && data.document.content_json.pages?.length) {
-              baseDoc = data.document.content_json;
-            }
-          }
-        } catch (_) {}
+        if (typeof window !== 'undefined') {
+          try {
+            const draftStr = localStorage.getItem(`wg_proposal_draft_${quoteId}`);
+            if (draftStr) baseDoc = JSON.parse(draftStr);
+          } catch (_) {}
+        }
       }
       if (!baseDoc) baseDoc = DEFAULT_AIRY_PROPOSAL;
 
@@ -409,41 +406,28 @@ export default function WorkspaceQuotationsGalleryPage() {
         return nextList;
       });
 
-      // 2. Await duplicate call to guarantee the row is inserted into Supabase BEFORE the builder mounts!
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
+      // 2. Dispatch background duplicate call WITHOUT BLOCKING route navigation
+      supabase.auth.getSession().then(({ data: { session } }) => {
         const currentUserId = session?.user?.id || userId || 'demo_user';
         const token = session?.access_token;
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Bearer ${token}`;
         if (userEmail) headers['x-user-email'] = userEmail;
 
-        const dupRes = await fetch('/api/templates/duplicate', {
+        fetch('/api/templates/duplicate', {
           method: 'POST',
           headers,
+          keepalive: true,
           body: JSON.stringify({
             sourceTemplateId: quoteId,
             targetTemplateId: newId,
             workspaceId: currentUserId,
             title: copyTitle
           })
-        });
-        if (dupRes.ok) {
-          const dupJson = await dupRes.json();
-          if (dupJson.document?.content_json) {
-            const authoritativeDoc = dupJson.document.content_json;
-            try {
-              sessionStorage.setItem(`current_quotation_doc_${newId}`, JSON.stringify(authoritativeDoc));
-              sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: newId, document: authoritativeDoc }));
-              localStorage.setItem(`wg_proposal_draft_${newId}`, JSON.stringify(authoritativeDoc));
-              cacheDocumentLocal(newId, authoritativeDoc, 1);
-            } catch (_) {}
-          }
-        }
-      } catch (e) {
-        console.error('[Auto-duplicate sync error]:', e);
-      }
+        }).catch(err => console.warn('[Auto-duplicate background sync warning]:', err));
+      }).catch(() => {});
 
+      // 3. 0ms INSTANT NAVIGATION - open in true milliseconds!
       router.push(`/workspace/quotations/builder/templet/${newId}`);
       return;
     }
@@ -692,6 +676,58 @@ export default function WorkspaceQuotationsGalleryPage() {
       category: 'Events'
     }
   ];
+
+  const syncWithLocalDrafts = useCallback(() => {
+    setQuotations(prev => {
+      let hasChanges = false;
+      const updated = prev.map(item => {
+        const itemKey = item.quotation_number || item.id;
+        const draftStr = localStorage.getItem(`wg_proposal_draft_${itemKey}`);
+        if (draftStr) {
+          try {
+            const draftObj = JSON.parse(draftStr);
+            if (draftObj && typeof draftObj === 'object') {
+              const newTitle = draftObj.designName || item.title;
+              const newClient = draftObj.cover?.coupleName || item.client_name;
+              if (newTitle !== item.title || newClient !== item.client_name || JSON.stringify(draftObj) !== JSON.stringify(item.content_json)) {
+                hasChanges = true;
+                return {
+                  ...item,
+                  title: newTitle,
+                  client_name: newClient,
+                  content_json: draftObj
+                };
+              }
+            }
+          } catch (_) {}
+        }
+        return item;
+      });
+
+      if (hasChanges) {
+        memCachedQuotations = updated;
+        return updated;
+      }
+      return prev;
+    });
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener('focus', syncWithLocalDrafts);
+    window.addEventListener('pageshow', syncWithLocalDrafts);
+    window.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        syncWithLocalDrafts();
+      }
+    });
+    window.addEventListener('wg_quotations_updated', syncWithLocalDrafts);
+
+    return () => {
+      window.removeEventListener('focus', syncWithLocalDrafts);
+      window.removeEventListener('pageshow', syncWithLocalDrafts);
+      window.removeEventListener('wg_quotations_updated', syncWithLocalDrafts);
+    };
+  }, [syncWithLocalDrafts]);
 
   useEffect(() => {
     setMounted(true);

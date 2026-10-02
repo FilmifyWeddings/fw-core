@@ -2293,16 +2293,53 @@ function StudioCoreAiryBuilderContent() {
       setHasUnsavedChanges(true);
       setAutoSaveStatus('Editing...');
 
+      // 0ms SYNCHRONOUS LOCAL CACHE & STORAGE SYNC ON EVERY KEYSTROKE
+      if (typeof window !== 'undefined') {
+        try {
+          const currentId = currentTemplateIdRef.current || (params?.id ? String(params.id) : '');
+          if (currentId) {
+            sessionStorage.setItem(`current_quotation_doc_${currentId}`, JSON.stringify(nextData));
+            sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: currentId, document: nextData }));
+            localStorage.setItem(`wg_proposal_draft_${currentId}`, JSON.stringify(nextData));
+
+            const activeUid = localStorage.getItem('wg_last_active_user_id') || userId;
+            if (activeUid) {
+              const cacheKey = `wg_quotations_cache_${activeUid}`;
+              const existingCache = localStorage.getItem(cacheKey);
+              if (existingCache) {
+                const list = JSON.parse(existingCache);
+                if (Array.isArray(list)) {
+                  const updatedList = list.map((item: any) => {
+                    if (item.id === currentId || item.quotation_number === currentId) {
+                      return {
+                        ...item,
+                        title: nextData.designName || item.title,
+                        client_name: nextData.cover?.coupleName || item.client_name,
+                        content_json: nextData,
+                        updated_at: new Date().toISOString()
+                      };
+                    }
+                    return item;
+                  });
+                  localStorage.setItem(cacheKey, JSON.stringify(updatedList));
+                }
+              }
+            }
+            window.dispatchEvent(new Event('wg_quotations_updated'));
+          }
+        } catch (_) {}
+      }
+
       if (pendingSaveTimeoutRef.current) {
         clearTimeout(pendingSaveTimeoutRef.current);
       }
       pendingSaveTimeoutRef.current = setTimeout(() => {
         triggerRevisionSave();
-      }, 750);
+      }, 500);
 
       return nextData;
     });
-  }, [userId]);
+  }, [userId, params]);
 
   const tokenParam = searchParams?.get('token') || '';
   const isCleanView = searchParams?.get('mode') === 'clean';
@@ -3117,15 +3154,20 @@ function StudioCoreAiryBuilderContent() {
             if (direct) {
               sessDocJson = JSON.parse(direct);
             } else {
-              const activeRaw = sessionStorage.getItem('current_active_quotation_doc');
-              if (activeRaw) {
-                const active = JSON.parse(activeRaw);
-                if (active?.document && (!routeId || active.id === routeId || routeId.includes(active.id) || active.id.includes(routeId))) {
-                  sessDocJson = active.document;
+              const draft = localStorage.getItem(`wg_proposal_draft_${routeId}`);
+              if (draft) {
+                sessDocJson = JSON.parse(draft);
+              } else {
+                const activeRaw = sessionStorage.getItem('current_active_quotation_doc');
+                if (activeRaw) {
+                  const active = JSON.parse(activeRaw);
+                  if (active?.document && (!routeId || active.id === routeId || routeId.includes(active.id) || active.id.includes(routeId))) {
+                    sessDocJson = active.document;
+                  }
                 }
               }
             }
-            if (sessDocJson && typeof sessDocJson === 'object') {
+            if (sessDocJson && typeof sessDocJson === 'object' && sessDocJson.pages?.length) {
               const localNormalized = normalizeQuotationData(sessDocJson);
               if (localNormalized.primaryFont) preloadActiveFont(localNormalized.primaryFont);
               if (localNormalized.secondaryFont) preloadActiveFont(localNormalized.secondaryFont);
@@ -3137,7 +3179,7 @@ function StudioCoreAiryBuilderContent() {
 
         // 1. INSTANT LOCAL CACHE HYDRATION (<5ms First Contentful Render)
         const cachedLocal = await getCachedDocumentLocal(routeId);
-        if (cachedLocal?.documentJson) {
+        if (cachedLocal?.documentJson && cachedLocal.documentJson.pages?.length) {
           currentVersionRef.current = cachedLocal.version || 1;
           const localNormalized = normalizeQuotationData(cachedLocal.documentJson);
           if (localNormalized.primaryFont) preloadActiveFont(localNormalized.primaryFont);
@@ -3160,23 +3202,21 @@ function StudioCoreAiryBuilderContent() {
           return;
         }
 
-        const json = await res.json();
+        const json = await res.json().catch(() => ({}));
         let loadedData: any = null;
 
         const docContent = json.document?.content_json || json.document?.document_json || (json.document?.pages ? json.document : null);
 
-        if (docContent) {
+        if (docContent && docContent.pages && docContent.pages.length > 0) {
           // CANONICAL SUPABASE DB DOCUMENT (Primary Source of Truth)
-          const isServerDefault = docContent.cover?.coupleName === 'VALUED CLIENT' || !docContent.pages?.length;
-          if (!isServerDefault || !loadedData) {
-            loadedData = normalizeQuotationData(docContent);
-            currentVersionRef.current = json.document?.version || 1;
-          }
-        } else if (cachedLocal?.documentJson) {
+          loadedData = normalizeQuotationData(docContent);
+          currentVersionRef.current = json.document?.version || 1;
+        } else if (latestDataRef.current && latestDataRef.current.pages && latestDataRef.current.pages.length > 0) {
+          // SAFE GUARD: Never overwrite copied or local document with empty demo template!
+          loadedData = latestDataRef.current;
+        } else if (cachedLocal?.documentJson && cachedLocal.documentJson.pages && cachedLocal.documentJson.pages.length > 0) {
           loadedData = normalizeQuotationData(cachedLocal.documentJson);
-        }
-
-        if (!loadedData) {
+        } else {
           loadedData = { ...DEFAULT_AIRY_PROPOSAL };
         }
 
@@ -3192,13 +3232,30 @@ function StudioCoreAiryBuilderContent() {
         cacheDocumentLocal(routeId, loadedData, currentVersionRef.current);
         try {
           sessionStorage.setItem(`current_quotation_doc_${routeId}`, JSON.stringify(loadedData));
-          localStorage.setItem(`wg_proposal_draft_${currentUserId}`, JSON.stringify(loadedData));
+          localStorage.setItem(`wg_proposal_draft_${routeId}`, JSON.stringify(loadedData));
         } catch (e) {}
 
         isRemoteUpdateRef.current = true;
         setRawData(loadedData);
         setIsDataReady(true);
         setIsCanonicalLoaded(true);
+
+        // If template document did not exist in DB yet (e.g. background duplication in progress), persist loadedData now
+        if (!docContent || !docContent.pages?.length) {
+          fetch(`/api/templates/${routeId}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${userAccessToken || ''}`
+            },
+            body: JSON.stringify({
+              user_id: currentUserId,
+              workspace_id: currentUserId,
+              title: loadedData.designName,
+              content_json: loadedData
+            })
+          }).catch(err => console.warn('[Fallback auto-persist warning]:', err));
+        }
 
         // Fetch connected Lead data if lead_id is present
         const leadIdToFetch = loadedData.lead_id || json.document?.lead_id;
@@ -3296,7 +3353,7 @@ function StudioCoreAiryBuilderContent() {
       isRemoteUpdateRef.current = true;
       setRawData(normalized);
       try {
-        localStorage.setItem(`wg_proposal_draft_${userId}`, JSON.stringify(normalized));
+        localStorage.setItem(`wg_proposal_draft_${routeId}`, JSON.stringify(normalized));
       } catch (e) {}
       cacheDocumentLocal(routeId, normalized, currentVersionRef.current);
       setAutoSaveStatus('Synced in real-time');
@@ -3342,12 +3399,23 @@ function StudioCoreAiryBuilderContent() {
       flushSaveImmediately();
     };
 
+    const handleBeforeUnload = () => {
+      if (isDirtyRef.current) {
+        flushSaveImmediately();
+      }
+    };
+
     window.addEventListener('online', handleOnline);
+    window.addEventListener('beforeunload', handleBeforeUnload);
 
     return () => {
       supabase.removeChannel(channel);
       realtimeChannelRef.current = null;
       window.removeEventListener('online', handleOnline);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      if (isDirtyRef.current) {
+        flushSaveImmediately();
+      }
     };
   }, [params, userId]);
 
@@ -5743,12 +5811,19 @@ function StudioCoreAiryBuilderContent() {
               <Save className="w-3.5 h-3.5 text-amber-400" /> {saving ? '...' : 'Save'}
             </button>
 
-            <Link
-              href="/workspace/quotations"
-              className="p-1 rounded-full hover:bg-zinc-100 text-zinc-500 hover:text-zinc-900 transition-colors ml-1"
+            <button
+              type="button"
+              onClick={() => {
+                if (isDirtyRef.current) {
+                  flushSaveImmediately();
+                }
+                router.push('/workspace/quotations');
+              }}
+              className="p-1 rounded-full hover:bg-zinc-100 text-zinc-500 hover:text-zinc-900 transition-colors ml-1 cursor-pointer"
+              title="Close Builder"
             >
               <X className="w-4 h-4" />
-            </Link>
+            </button>
           </div>
         </header>
       )}

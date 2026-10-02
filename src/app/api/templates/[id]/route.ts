@@ -165,21 +165,20 @@ async function handleUpdate(
 ) {
   try {
     const { id } = await context.params;
-    const { userId, isSuperAdmin } = await resolveRequestUser(req);
+    const { userId: authUserId, isSuperAdmin } = await resolveRequestUser(req);
 
-    let workspaceId = userId;
+    const body = await req.json().catch(() => ({}));
+    let userId = authUserId || body.user_id || '';
+    let workspaceId = body.workspace_id || userId;
     if (userId) {
       const { data: profile } = await supabaseAdmin
         .from('profiles')
-        .select('id')
+        .select('id, workspace_id')
         .eq('id', userId)
         .maybeSingle();
-      if (profile?.id) workspaceId = profile.id;
+      if (profile?.workspace_id) workspaceId = profile.workspace_id;
+      else if (profile?.id && !body.workspace_id) workspaceId = profile.id;
     }
-
-    const body = await req.json().catch(() => ({}));
-    if (!workspaceId && body.workspace_id) workspaceId = body.workspace_id;
-    if (!userId && body.user_id) userId = body.user_id;
 
     const document = body.content_json || body.document;
     const title = body.title;
@@ -305,7 +304,12 @@ async function handleUpdate(
     }
 
     // ── NORMAL STUDIO OWNER EDITS ANOTHER STUDIO'S TEMPLATE (NON-SYSTEM) ──
-    const isOwnerOfTemplate = !targetTmpl || targetTmpl.workspace_id === workspaceId || targetTmpl.user_id === userId;
+    const isOwnerOfTemplate = !targetTmpl || 
+      targetTmpl.workspace_id === workspaceId || 
+      targetTmpl.user_id === userId ||
+      targetTmpl.workspace_id === userId ||
+      targetTmpl.user_id === workspaceId;
+
     if (!isSuperAdmin && !isOwnerOfTemplate) {
       const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
       const newTemplateId = `FW-USER-${randomSuffix}`;
@@ -347,20 +351,26 @@ async function handleUpdate(
 
     // ── IN-PLACE DOCUMENT UPDATE (STUDIO OWNER'S OWN WORKSPACE TEMPLATE OR ADMIN TEMPLATE) ──
     const newTitle = title || document?.designName || targetTmpl?.title || 'Wedding Quotation';
-
-    // 1. Update quotation_templates if it exists as a template
-    if (targetTmpl) {
-      await supabaseAdmin
-        .from('quotation_templates')
-        .update({
-          title: newTitle,
-          category: category || targetTmpl?.category || 'Wedding',
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', id);
+    if (document) {
+      document.designName = newTitle;
     }
 
-    // 2. Update quotation_documents in-place
+    // 1. Upsert quotation_templates (covers existing templates AND client-generated template IDs)
+    await supabaseAdmin
+      .from('quotation_templates')
+      .upsert({
+        id,
+        workspace_id: workspaceId || userId,
+        user_id: userId || workspaceId,
+        title: newTitle,
+        category: category || targetTmpl?.category || 'Wedding',
+        is_system_template: Boolean(targetTmpl?.is_system_template),
+        is_default: Boolean(targetTmpl?.is_default),
+        status: targetTmpl?.status || 'draft',
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'id' });
+
+    // 2. Upsert quotation_documents in-place
     if (document) {
       await supabaseAdmin
         .from('quotation_documents')
@@ -369,23 +379,25 @@ async function handleUpdate(
           workspace_id: workspaceId,
           user_id: userId,
           content_json: document,
-          document_json: document,
           updated_at: new Date().toISOString()
         }, { onConflict: 'template_id' });
 
-      // 3. Update quotations record
+      // 3. Upsert quotations record
       const coupleName = extractCoupleNameFromQuotation(document) || document?.cover?.coupleName || document?.meta?.client_name || 'Valued Client';
       await supabaseAdmin
         .from('quotations')
-        .update({
+        .upsert({
+          id,
+          quotation_number: id,
+          workspace_id: workspaceId,
+          user_id: userId,
           title: newTitle,
           client_name: coupleName,
           couple_names: coupleName,
           content_json: document,
           canvas_data: document,
           updated_at: new Date().toISOString()
-        })
-        .or(`id.eq.${id},quotation_number.eq.${id}`);
+        }, { onConflict: 'quotation_number' });
 
       // 4. Auto-sync with Finance, Booking Events, Post-Production if this quotation is final
       try {
