@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -13,7 +14,7 @@ import { supabase } from '@/lib/supabase';
 
 const MOCK_WORKSPACE_ID = '00000000-0000-0000-0000-000000000000';
 
-type WaTab = 'device' | 'analytics-console' | 'single-send' | 'chat' | 'templates' | 'workflows' | 'groups' | 'analytics' | 'system-health' | 'message-queue';
+type WaTab = 'device' | 'analytics-console' | 'single-send' | 'templates' | 'workflows' | 'groups' | 'analytics' | 'system-health' | 'message-queue';
 type ShootCategory = 'all' | 'wedding' | 'commercial';
 
 const TABS: { id: WaTab; label: string; icon: React.ReactNode; path: string }[] = [
@@ -36,12 +37,6 @@ const TABS: { id: WaTab; label: string; icon: React.ReactNode; path: string }[] 
     path: '/dashboard/integrations/whatsapp-web/single-send'
   },
   {
-    id: 'chat',
-    label: 'Quick Send',
-    icon: <Zap className="w-4 h-4" />,
-    path: '/dashboard/integrations/whatsapp-web/chat'
-  },
-  {
     id: 'templates',
     label: 'Template Hub',
     icon: <FileText className="w-4 h-4" />,
@@ -54,12 +49,6 @@ const TABS: { id: WaTab; label: string; icon: React.ReactNode; path: string }[] 
     path: '/dashboard/integrations/whatsapp-web/workflows'
   },
   {
-    id: 'analytics',
-    label: 'Workflow Analytics',
-    icon: <BarChart3 className="w-4 h-4" />,
-    path: '/dashboard/integrations/whatsapp-web/workflows/analytics'
-  },
-  {
     id: 'groups',
     label: 'Contact Groups',
     icon: <MessageSquare className="w-4 h-4" />,
@@ -70,6 +59,12 @@ const TABS: { id: WaTab; label: string; icon: React.ReactNode; path: string }[] 
     label: 'Message Queue',
     icon: <Inbox className="w-4 h-4" />,
     path: '/dashboard/integrations/whatsapp-web/message-queue'
+  },
+  {
+    id: 'analytics',
+    label: 'Workflow Analytics',
+    icon: <BarChart3 className="w-4 h-4" />,
+    path: '/dashboard/integrations/whatsapp-web/workflows/analytics'
   },
   {
     id: 'system-health',
@@ -99,7 +94,6 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
   let activeTab: WaTab = 'device';
   if (pathname === '/dashboard/integrations/whatsapp-web/analytics') activeTab = 'analytics-console';
   else if (pathname === '/dashboard/integrations/whatsapp-web/single-send') activeTab = 'single-send';
-  else if (pathname === '/dashboard/integrations/whatsapp-web/chat') activeTab = 'chat';
   else if (pathname === '/dashboard/integrations/whatsapp-web/templates') activeTab = 'templates';
   else if (pathname === '/dashboard/integrations/whatsapp-web/workflows') activeTab = 'workflows';
   else if (pathname === '/dashboard/integrations/whatsapp-web/workflows/analytics') activeTab = 'analytics';
@@ -278,13 +272,15 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* ═══ TAB NAVIGATION ═══ */}
-      <div className="flex-shrink-0 flex items-end gap-0 border-b border-zinc-200 dark:border-zinc-800/60 bg-zinc-50 dark:bg-zinc-950/40 dark:bg-[#070708] px-5 z-20">
+      <div className="flex-shrink-0 flex items-end gap-0 border-b border-zinc-200 dark:border-zinc-800/60 bg-zinc-50 dark:bg-zinc-950/40 dark:bg-[#070708] px-5 z-20 overflow-x-auto scrollbar-none">
         {TABS.map((tab) => {
           const isActive = activeTab === tab.id;
+          const href = tab.path + (searchParams.toString() ? `?${searchParams.toString()}` : '');
           return (
-            <button
+            <Link
               key={tab.id}
-              onClick={() => router.push(tab.path + (searchParams.toString() ? `?${searchParams.toString()}` : ''))}
+              href={href}
+              prefetch={true}
               className={`relative flex items-center gap-2 px-4 py-3.5 text-xs font-bold transition-all whitespace-nowrap border-b-2 ${
                 isActive
                   ? 'text-emerald-400 border-emerald-500'
@@ -293,7 +289,7 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
             >
               <span className={isActive ? 'text-emerald-400' : 'text-zinc-400 dark:text-zinc-600'}>{tab.icon}</span>
               {tab.label}
-            </button>
+            </Link>
           );
         })}
       </div>

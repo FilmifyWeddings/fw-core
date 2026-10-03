@@ -94,8 +94,8 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     }
   }, [workspaceId]);
 
-  // Top-level section toggle
-  const [activeSection, setActiveSection] = useState<'templates' | 'group-alerts'>('templates');
+  // Scope filter: all, client, or group
+  const [templateFilter, setTemplateFilter] = useState<'all' | 'client' | 'group'>('all');
 
   // Group Lead Alerts state
   const [alertGroupId, setAlertGroupId] = useState('');
@@ -521,13 +521,13 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
   };
 
   useEffect(() => {
-    if (activeSection === 'group-alerts' && workspaceId && workspaceId !== '00000000-0000-0000-0000-000000000000') {
+    if (templateFilter === 'group' && workspaceId && workspaceId !== '00000000-0000-0000-0000-000000000000') {
       loadSyncedGroups();
       if (syncedGroups.length === 0 && !fetchingGroups) {
         handleFetchGroups();
       }
     }
-  }, [activeSection, workspaceId]);
+  }, [templateFilter, workspaceId]);
 
   // Force-fetch all groups from the Baileys socket via server-side API proxy
   const handleFetchGroups = async () => {
@@ -1042,58 +1042,29 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     return cat === 'group_alert' || cat === 'group_workflow' || cat === 'group' || nm.startsWith('group_') || nm.includes('group_alert');
   };
 
-  // Client Templates (Tab 1) — Excludes Group Templates
+  // Client and Group count
   const clientTemplates = templates.filter(t => !isGroupTemplate(t));
-
-  // Filter templates by query for Client tab
-  const filteredClientTemplates = clientTemplates.filter(t => 
-    t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    t.category.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  // Group Templates (Tab 2) — Only Group Templates
   const groupTemplates = templates.filter(t => isGroupTemplate(t));
 
-  // Statistics calculation for Client tab
-  const approvedCount = clientTemplates.filter(t => t.status === 'approved').length;
-  const pendingCount = clientTemplates.filter(t => t.status === 'pending').length;
-  const rejectedCount = clientTemplates.filter(t => t.status === 'rejected').length;
-  const totalCount = clientTemplates.length;
+  // Filter templates by query and selected filter pill (All, Client, Group)
+  const filteredTemplates = templates.filter(t => {
+    const matchesSearch = t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      t.category.toLowerCase().includes(searchQuery.toLowerCase());
+    if (!matchesSearch) return false;
+
+    if (templateFilter === 'client') return !isGroupTemplate(t);
+    if (templateFilter === 'group') return isGroupTemplate(t);
+    return true;
+  });
+
+  // Statistics calculation
+  const approvedCount = templates.filter(t => t.status === 'approved').length;
+  const pendingCount = templates.filter(t => t.status === 'pending').length;
+  const rejectedCount = templates.filter(t => t.status === 'rejected').length;
+  const totalCount = templates.length;
 
   return (
     <div className="space-y-6">
-      {/* Top-level Section Tabs */}
-      <div className="border border-zinc-200 dark:border-zinc-900 rounded-xl bg-zinc-50 dark:bg-zinc-950/40 p-1 flex gap-1.5 max-w-lg shadow-sm">
-        <button
-          type="button"
-          onClick={() => setActiveSection('templates')}
-          className={`flex-1 py-2.5 px-3 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-            activeSection === 'templates'
-              ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-700 shadow-sm font-bold'
-              : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300'
-          }`}
-        >
-          <FileText className="w-3.5 h-3.5 text-emerald-500" />
-          Client & Drip Templates
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveSection('group-alerts')}
-          className={`flex-1 py-2.5 px-3 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-            activeSection === 'group-alerts'
-              ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-700 shadow-sm font-bold'
-              : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300'
-          }`}
-        >
-          <Users className="w-3.5 h-3.5 text-orange-500" />
-          Group Templates & Automation
-        </button>
-      </div>
-
-      {/* ═══════════════════════════════════════════════════════════════════════ */}
-      {/* SECTION: Templates (existing content)                                  */}
-      {/* ═══════════════════════════════════════════════════════════════════════ */}
-      {activeSection === 'templates' && (<>
       {/* 1. KPI Stats & Template Storage Summary row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-4xl">
         {/* USED Card */}
@@ -1172,26 +1143,79 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
         </div>
       </div>
 
-      {/* 2. Search and Action Bar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input 
-            type="text"
-            placeholder="Search templates..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 text-xs bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-850 dark:text-zinc-300 rounded-xl focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-700 font-medium"
-          />
+      {/* 2. Search, Scope Filter Pills, and Action Buttons */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative w-full sm:w-64">
+            <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input 
+              type="text"
+              placeholder="Search templates..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 text-xs bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-850 dark:text-zinc-300 rounded-xl focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-700 font-medium"
+            />
+          </div>
+
+          {/* Scope Filter Pills */}
+          <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-900 p-1 rounded-xl border border-zinc-200 dark:border-zinc-800 text-xs">
+            <button
+              type="button"
+              onClick={() => setTemplateFilter('all')}
+              className={`px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer text-xs ${
+                templateFilter === 'all'
+                  ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-xs font-bold'
+                  : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300'
+              }`}
+            >
+              All ({templates.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setTemplateFilter('client')}
+              className={`px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer text-xs flex items-center gap-1.5 ${
+                templateFilter === 'client'
+                  ? 'bg-white dark:bg-zinc-800 text-emerald-600 dark:text-emerald-400 shadow-xs font-bold'
+                  : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5 text-emerald-500" />
+              Client & Drip ({clientTemplates.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setTemplateFilter('group')}
+              className={`px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer text-xs flex items-center gap-1.5 ${
+                templateFilter === 'group'
+                  ? 'bg-white dark:bg-zinc-800 text-orange-600 dark:text-orange-400 shadow-xs font-bold'
+                  : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5 text-orange-500" />
+              Group Alerts ({groupTemplates.length})
+            </button>
+          </div>
         </div>
 
-        <button
-          onClick={handleAddNewClick}
-          className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-orange-400 to-amber-500 text-black text-xs font-bold rounded-xl shadow-lg shadow-orange-500/10 hover:opacity-95 transition-all w-full sm:w-auto justify-center"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          Add New Template
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleAddNewGroupTemplateClick}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs font-semibold rounded-xl border border-zinc-200 dark:border-zinc-700 transition-all cursor-pointer"
+            title="Create a template pre-formatted with Lead Alert placeholders"
+          >
+            <Users className="w-3.5 h-3.5 text-orange-500" />
+            <span>+ Group Alert</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleAddNewClick}
+            className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-orange-400 to-amber-500 text-black text-xs font-bold rounded-xl shadow-lg shadow-orange-500/10 hover:opacity-95 transition-all cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>New Template</span>
+          </button>
+        </div>
       </div>
 
       {/* 3. Data Table Grid */}
@@ -1212,21 +1236,32 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
               </tr>
             </thead>
             <tbody>
-              {filteredClientTemplates.length === 0 ? (
+              {filteredTemplates.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-zinc-500">
-                    No client templates found matching filters or criteria.
+                  <td colSpan={7} className="py-8 text-center text-zinc-500 font-mono text-xs">
+                    No templates found matching your search or filter.
                   </td>
                 </tr>
               ) : (
-                filteredClientTemplates.map((template) => (
+                filteredTemplates.map((template) => (
                   <tr key={template.id} className="border-b border-zinc-100 dark:border-zinc-900/40 hover:bg-zinc-50 dark:hover:bg-zinc-900/10 transition-colors">
                     <td className="py-4 px-5">
                       <input type="checkbox" className="rounded bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-orange-500 focus:ring-0" />
                     </td>
                     <td className="py-4 px-5">
                       <div className="space-y-1">
-                        <span className="font-semibold text-zinc-900 dark:text-white">{template.name}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-zinc-900 dark:text-white">{template.name}</span>
+                          {isGroupTemplate(template) ? (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[9px] font-bold rounded-md bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20">
+                              <Users className="w-2.5 h-2.5" /> Group
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[9px] font-bold rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                              <FileText className="w-2.5 h-2.5" /> Client
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-1.5 text-[10px] text-zinc-500 dark:text-zinc-500 font-mono">
                           <span>ID: {template.id.slice(0, 8)}...</span>
                           <button
@@ -1245,7 +1280,11 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                       </div>
                     </td>
                     <td className="py-4 px-5 text-zinc-700 dark:text-zinc-400 capitalize">{template.type}</td>
-                    <td className="py-4 px-5 text-zinc-700 dark:text-zinc-400 capitalize">{template.category}</td>
+                    <td className="py-4 px-5 text-zinc-700 dark:text-zinc-400 capitalize font-medium">
+                      {template.category === 'group_alert' ? '🚨 Group Alert' :
+                       template.category === 'group_workflow' ? '💍 Group Workflow' :
+                       template.category}
+                    </td>
                     <td className="py-4 px-5">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
                         template.status === 'approved' ? 'bg-emerald-500/5 text-emerald-400 border-emerald-500/10' :
@@ -1295,8 +1334,6 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
           </table>
         </div>
       </div>
-      </>
-      )}
 
       {/* 4. Template Builder Modal */}
       <AnimatePresence>
@@ -1997,130 +2034,7 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
         )}
       </AnimatePresence>
 
-      {/* ═══════════════════════════════════════════════════════════════════════ */}
-      {/* SECTION: Group Templates & Automation Hub                             */}
-      {/* ═══════════════════════════════════════════════════════════════════════ */}
-      {activeSection === 'group-alerts' && (
-        <div className="space-y-6">
-          {/* Header Card */}
-          <div className="p-5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 backdrop-blur-md shadow-sm">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center shadow-md">
-                <Users className="w-5 h-5 text-black" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-zinc-900 dark:text-white">Group Templates & Automation Hub</h3>
-                <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
-                  Design customized templates for WhatsApp Groups (Lead Alerts, Team Notifications, Couples Group Anniversary Wishes, etc.)
-                </p>
-              </div>
-            </div>
-          </div>
 
-          {/* Group Templates Table Dock */}
-          <div className="p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 backdrop-blur-md shadow-sm space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h4 className="text-sm font-extrabold text-zinc-900 dark:text-white flex items-center gap-2">
-                  <Layers className="w-4 h-4 text-orange-500" />
-                  Custom Group Templates Library
-                </h4>
-                <p className="text-[10px] text-zinc-400">
-                  Manage multiple templates for sales alerts, shoot schedules, and couple anniversary greetings.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleAddNewGroupTemplateClick}
-                className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-orange-400 to-amber-500 text-black text-xs font-bold rounded-xl shadow-lg shadow-orange-500/10 hover:opacity-95 transition-all cursor-pointer shrink-0"
-              >
-                <Plus className="w-4 h-4" />
-                Add New Group Template
-              </button>
-            </div>
-
-            {/* Table */}
-            <div className="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-zinc-900/60 text-zinc-500 dark:text-zinc-400 border-b border-zinc-200 dark:border-zinc-800 font-mono text-[10px] uppercase tracking-wider">
-                  <tr>
-                    <th className="py-3 px-4">Template Name</th>
-                    <th className="py-3 px-4">Category</th>
-                    <th className="py-3 px-4">Type</th>
-                    <th className="py-3 px-4">Status</th>
-                    <th className="py-3 px-4">Updated</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-900">
-                  {groupTemplates.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="py-8 text-center text-zinc-400 text-xs font-mono">
-                        No custom group templates created yet. Click "+ Add New Group Template" to create one.
-                      </td>
-                    </tr>
-                  ) : (
-                    groupTemplates.map((t) => (
-                      <tr key={t.id} className="hover:bg-slate-50/80 dark:hover:bg-zinc-900/40 transition-colors">
-                        <td className="py-3 px-4">
-                          <div className="font-bold text-zinc-900 dark:text-white flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-orange-400" />
-                            {t.name}
-                          </div>
-                          <span className="text-[9px] font-mono text-zinc-400">{t.language}</span>
-                        </td>
-                        <td className="py-3 px-4 capitalize font-semibold text-zinc-700 dark:text-zinc-300">
-                          {t.category === 'group_alert' ? '🚨 Lead Alert' : t.category === 'group_workflow' ? '💍 Group Workflow' : t.category}
-                        </td>
-                        <td className="py-3 px-4 capitalize font-mono text-zinc-600 dark:text-zinc-400">
-                          {t.type}
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20">
-                            {t.status}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-zinc-400 font-mono text-[10px]">
-                          {new Date(t.updated_at || t.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => handleEditClick(t)}
-                              className="p-1.5 text-zinc-400 hover:text-amber-500 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all cursor-pointer"
-                              title="Edit Template"
-                            >
-                              <Edit className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDuplicateClick(t)}
-                              className="p-1.5 text-zinc-400 hover:text-emerald-500 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all cursor-pointer"
-                              title="Duplicate Template"
-                            >
-                              <Copy className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteTemplate(t)}
-                              className="p-1.5 text-zinc-400 hover:text-rose-500 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all cursor-pointer"
-                              title="Delete Template"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── UNIFIED WHATSAPP TEMPLATE MEDIA GALLERY MODAL (1 GB QUOTA) ── */}
       <WhatsAppTemplateMediaModal 

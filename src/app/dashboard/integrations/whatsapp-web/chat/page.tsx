@@ -1,17 +1,18 @@
 'use client';
 
-import React from 'react';
-import { useBhamstra } from '@/lib/context/BhamstraContext';
-import { BaileysWhatsappWeb } from '@/components/integrations/baileys/baileys-whatsapp-web';
-
-const MOCK_WORKSPACE_ID = '00000000-0000-0000-0000-000000000000';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function WhatsAppChatPage() {
-  const { userId } = useBhamstra();
+  const router = useRouter();
+
+  useEffect(() => {
+    router.replace('/dashboard/integrations/whatsapp-web/single-send');
+  }, [router]);
 
   return (
-    <div className="max-w-7xl mx-auto p-6">
-      <BaileysWhatsappWeb workspaceId={userId || MOCK_WORKSPACE_ID} />
+    <div className="flex items-center justify-center min-h-[400px]">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500"></div>
     </div>
   );
 }
