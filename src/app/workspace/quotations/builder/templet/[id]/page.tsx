@@ -3291,8 +3291,8 @@ function StudioCoreAiryBuilderContent() {
         setIsCanonicalLoaded(true);
 
         // If template document did not exist in DB yet (e.g. background duplication in progress), persist loadedData now
-        // CRITICAL: NEVER perform auto-persist in public preview mode!
-        if (!isPublicPreview && !isDocumentValid(docContent) && isDocumentValid(loadedData)) {
+        // CRITICAL: NEVER perform auto-persist in public preview mode or with demo template!
+        if (!isPublicPreview && !isDocumentValid(docContent) && isDocumentValid(loadedData) && loadedData.designName !== 'Personalised Wedding Quotation') {
           fetch(`/api/templates/${routeId}`, {
             method: 'PATCH',
             headers: {

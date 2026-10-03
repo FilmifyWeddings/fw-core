@@ -348,114 +348,103 @@ export default function WorkspaceQuotationsGalleryPage() {
     }
   };
 
+  const isPoisonedDemoDraft = (draft: any, authenticTitle?: string) => {
+    if (!draft || typeof draft !== 'object') return false;
+    const isDemoTitle = draft.designName === 'Personalised Wedding Quotation' || !draft.designName;
+    const isDemoCouple = draft.cover?.coupleName === 'Valued Client' || !draft.cover?.coupleName;
+    if (isDemoTitle && isDemoCouple && authenticTitle && authenticTitle !== 'Personalised Wedding Quotation') {
+      return true;
+    }
+    return false;
+  };
+
   const handleEditTemplate = async (quote: SavedQuotation) => {
     const quoteId = quote.quotation_number || quote.id;
     setOpeningTemplateId(quoteId);
 
     const isDocValid = (d: any) => Boolean(d && typeof d === 'object' && (d.cover || d.pageSequence?.length || d.pages?.length));
 
-    // CRITICAL: If regular studio owner edits a System Preset, auto-duplicate into their workspace in 0ms!
+    // CRITICAL: If regular studio owner edits a System Preset, auto-duplicate into their workspace!
     if (!isSuperAdminUser && quote.is_system_template) {
-      const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
-      const newId = `FW-USER-${randomSuffix}`;
-      const copyTitle = generateUniqueCopyName(quote.title || 'Wedding - Design 1', quotations.map(q => q.title));
-
-      // 1. Authoritative base document: quote.content_json is already in memory with full pages
-      let baseDoc = quote.content_json;
-      if (!isDocValid(baseDoc)) {
-        if (typeof window !== 'undefined') {
-          try {
-            const draftStr = localStorage.getItem(`wg_proposal_draft_${quoteId}`);
-            if (draftStr) {
-              const parsed = JSON.parse(draftStr);
-              if (isDocValid(parsed)) baseDoc = parsed;
-            }
-          } catch (_) {}
-        }
-      }
-
-      // If still missing or incomplete, fetch authoritative document from API
-      if (!isDocValid(baseDoc)) {
-        try {
-          const fetchRes = await fetch(`/api/templates/${quoteId}`);
-          if (fetchRes.ok) {
-            const fetchJson = await fetchRes.json();
-            const fetchedDoc = fetchJson.document?.content_json || fetchJson.document?.document_json;
-            if (isDocValid(fetchedDoc)) baseDoc = fetchedDoc;
-          }
-        } catch (_) {}
-      }
-
-      if (!baseDoc) baseDoc = DEFAULT_AIRY_PROPOSAL;
-
-      const clonedDoc = JSON.parse(JSON.stringify(baseDoc));
-      clonedDoc.designName = copyTitle;
-
-      if (typeof window !== 'undefined') {
-        try {
-          sessionStorage.setItem(`current_quotation_doc_${newId}`, JSON.stringify(clonedDoc));
-          sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: newId, document: clonedDoc }));
-          localStorage.setItem(`wg_proposal_draft_${newId}`, JSON.stringify(clonedDoc));
-          cacheDocumentLocal(newId, clonedDoc, 1);
-        } catch (_) {}
-      }
-
-      const duplicatedRecord: SavedQuotation = {
-        id: newId,
-        quotation_number: newId,
-        title: copyTitle,
-        client_name: clonedDoc.cover?.coupleName || quote.client_name || 'Rahul & Neha',
-        financials: quote.financials || {},
-        content_json: clonedDoc,
-        status: 'draft',
-        is_default: false,
-        is_system_template: false,
-        updated_at: new Date().toISOString()
-      };
-
-      setQuotations(prev => {
-        const nextList = [duplicatedRecord, ...prev];
-        memCachedQuotations = nextList;
-        const currentUid = userId || (typeof window !== 'undefined' ? localStorage.getItem('wg_last_active_user_id') : '') || 'demo_user';
-        if (currentUid && currentUid !== 'demo_user') {
-          try {
-            localStorage.setItem(`wg_quotations_cache_${currentUid}`, JSON.stringify(nextList));
-          } catch (_) {}
-        }
-        return nextList;
-      });
-
-      // 2. Dispatch background duplicate call WITHOUT BLOCKING route navigation
-      supabase.auth.getSession().then(({ data: { session } }) => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
         const currentUserId = session?.user?.id || userId || 'demo_user';
         const token = session?.access_token;
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Bearer ${token}`;
         if (userEmail) headers['x-user-email'] = userEmail;
 
-        fetch('/api/templates/duplicate', {
+        const copyTitle = generateUniqueCopyName(quote.title || 'Wedding - Design 1', quotations.map(q => q.title));
+
+        // Await the backend duplication so Supabase records exist BEFORE navigating
+        const dupRes = await fetch('/api/templates/duplicate', {
           method: 'POST',
           headers,
-          keepalive: true,
           body: JSON.stringify({
             sourceTemplateId: quoteId,
-            targetTemplateId: newId,
             workspaceId: currentUserId,
             title: copyTitle
           })
-        }).catch(err => console.warn('[Auto-duplicate background sync warning]:', err));
-      }).catch(() => {});
+        });
 
-      // 3. 0ms INSTANT NAVIGATION - open in true milliseconds!
-      router.push(`/workspace/quotations/builder/templet/${newId}`);
-      return;
+        if (!dupRes.ok) {
+          const errData = await dupRes.json().catch(() => ({}));
+          throw new Error(errData.error || 'Failed to duplicate template');
+        }
+
+        const dupJson = await dupRes.json();
+        const createdId = dupJson.newTemplateId;
+        const finalDoc = dupJson.document?.content_json || dupJson.template?.content_json || quote.content_json;
+
+        if (typeof window !== 'undefined') {
+          try {
+            sessionStorage.setItem(`current_quotation_doc_${createdId}`, JSON.stringify(finalDoc));
+            sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: createdId, document: finalDoc }));
+            localStorage.setItem(`wg_proposal_draft_${createdId}`, JSON.stringify(finalDoc));
+            cacheDocumentLocal(createdId, finalDoc, 1);
+          } catch (_) {}
+        }
+
+        const duplicatedRecord: SavedQuotation = {
+          id: createdId,
+          quotation_number: createdId,
+          title: copyTitle,
+          client_name: finalDoc?.cover?.coupleName || (finalDoc?.cover?.groomName ? `${finalDoc.cover.groomName} & ${finalDoc.cover.brideName}` : 'Rahul & Neha'),
+          financials: quote.financials || {},
+          content_json: finalDoc,
+          status: 'draft',
+          is_default: false,
+          is_system_template: false,
+          updated_at: new Date().toISOString()
+        };
+
+        setQuotations(prev => {
+          const nextList = [duplicatedRecord, ...prev];
+          memCachedQuotations = nextList;
+          const currentUid = userId || (typeof window !== 'undefined' ? localStorage.getItem('wg_last_active_user_id') : '') || 'demo_user';
+          if (currentUid && currentUid !== 'demo_user') {
+            try {
+              localStorage.setItem(`wg_quotations_cache_${currentUid}`, JSON.stringify(nextList));
+            } catch (_) {}
+          }
+          return nextList;
+        });
+
+        router.push(`/workspace/quotations/builder/templet/${createdId}`);
+        return;
+      } catch (dupErr: any) {
+        console.error('[handleEditTemplate Error]:', dupErr);
+        alert(dupErr.message || 'Failed to duplicate template. Please try again.');
+        setOpeningTemplateId(null);
+        return;
+      }
     }
 
     // Admin or user's own template: open directly
     const baseDoc = quote.content_json;
     if (typeof window !== 'undefined') {
       try {
-        if (isDocValid(baseDoc)) {
+        if (isDocValid(baseDoc) && !isPoisonedDemoDraft(baseDoc, quote.title)) {
           sessionStorage.setItem(`current_quotation_doc_${quoteId}`, JSON.stringify(baseDoc));
           sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: quoteId, document: baseDoc }));
           localStorage.setItem(`wg_proposal_draft_${quoteId}`, JSON.stringify(baseDoc));
@@ -706,6 +695,10 @@ export default function WorkspaceQuotationsGalleryPage() {
             if (Array.isArray(parsed) && parsed.length > 0) {
               parsed.forEach((cItem: any) => {
                 const cId = cItem.quotation_number || cItem.id;
+                // Skip poisoned demo cards from being resurrected
+                if (cItem.title === 'Personalised Wedding Quotation' && cItem.client_name === 'Valued Client' && String(cId).startsWith('FW-USER-')) {
+                  return;
+                }
                 if (!baseList.some(q => (q.quotation_number || q.id) === cId)) {
                   baseList.unshift(cItem);
                   hasChanges = true;
@@ -722,7 +715,9 @@ export default function WorkspaceQuotationsGalleryPage() {
         if (draftStr) {
           try {
             const draftObj = JSON.parse(draftStr);
-            if (draftObj && typeof draftObj === 'object' && (draftObj.cover || draftObj.pageSequence?.length || draftObj.pages?.length)) {
+            if (isPoisonedDemoDraft(draftObj, item.title)) {
+              localStorage.removeItem(`wg_proposal_draft_${itemKey}`);
+            } else if (draftObj && typeof draftObj === 'object' && (draftObj.cover || draftObj.pageSequence?.length || draftObj.pages?.length)) {
               const newTitle = draftObj.designName || item.title;
               const newClient = draftObj.cover?.coupleName || (draftObj.cover?.groomName ? `${draftObj.cover.groomName} & ${draftObj.cover.brideName}` : item.client_name);
               if (newTitle !== item.title || newClient !== item.client_name || JSON.stringify(draftObj) !== JSON.stringify(item.content_json)) {
@@ -793,23 +788,28 @@ export default function WorkspaceQuotationsGalleryPage() {
       if (cachedDataStr) {
         const parsed = JSON.parse(cachedDataStr);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          const hydrated = parsed.map((item: any) => {
-            const draftStr = localStorage.getItem(`wg_proposal_draft_${item.id || item.quotation_number}`);
-            if (draftStr) {
-              try {
-                const draftObj = JSON.parse(draftStr);
-                if (draftObj && typeof draftObj === 'object') {
-                  return {
-                    ...item,
-                    title: draftObj.designName || item.title,
-                    client_name: draftObj.cover?.coupleName || item.client_name,
-                    content_json: draftObj
-                  };
-                }
-              } catch (_) {}
-            }
-            return item;
-          });
+          const hydrated = parsed
+            .filter((item: any) => !(item.title === 'Personalised Wedding Quotation' && item.client_name === 'Valued Client' && String(item.quotation_number || item.id).startsWith('FW-USER-')))
+            .map((item: any) => {
+              const itemKey = item.quotation_number || item.id;
+              const draftStr = localStorage.getItem(`wg_proposal_draft_${itemKey}`);
+              if (draftStr) {
+                try {
+                  const draftObj = JSON.parse(draftStr);
+                  if (isPoisonedDemoDraft(draftObj, item.title)) {
+                    localStorage.removeItem(`wg_proposal_draft_${itemKey}`);
+                  } else if (draftObj && typeof draftObj === 'object') {
+                    return {
+                      ...item,
+                      title: draftObj.designName || item.title,
+                      client_name: draftObj.cover?.coupleName || item.client_name,
+                      content_json: draftObj
+                    };
+                  }
+                } catch (_) {}
+              }
+              return item;
+            });
           memCachedQuotations = hydrated;
           setQuotations(hydrated);
           setLoading(false);
@@ -858,23 +858,28 @@ export default function WorkspaceQuotationsGalleryPage() {
             if (userCached) {
               const parsed = JSON.parse(userCached);
               if (Array.isArray(parsed) && parsed.length > 0) {
-                const hydrated = parsed.map((item: any) => {
-                  const draftStr = localStorage.getItem(`wg_proposal_draft_${item.id || item.quotation_number}`);
-                  if (draftStr) {
-                    try {
-                      const draftObj = JSON.parse(draftStr);
-                      if (draftObj && typeof draftObj === 'object') {
-                        return {
-                          ...item,
-                          title: draftObj.designName || item.title,
-                          client_name: draftObj.cover?.coupleName || item.client_name,
-                          content_json: draftObj
-                        };
-                      }
-                    } catch (_) {}
-                  }
-                  return item;
-                });
+                const hydrated = parsed
+                  .filter((item: any) => !(item.title === 'Personalised Wedding Quotation' && item.client_name === 'Valued Client' && String(item.quotation_number || item.id).startsWith('FW-USER-')))
+                  .map((item: any) => {
+                    const itemKey = item.quotation_number || item.id;
+                    const draftStr = localStorage.getItem(`wg_proposal_draft_${itemKey}`);
+                    if (draftStr) {
+                      try {
+                        const draftObj = JSON.parse(draftStr);
+                        if (isPoisonedDemoDraft(draftObj, item.title)) {
+                          localStorage.removeItem(`wg_proposal_draft_${itemKey}`);
+                        } else if (draftObj && typeof draftObj === 'object') {
+                          return {
+                            ...item,
+                            title: draftObj.designName || item.title,
+                            client_name: draftObj.cover?.coupleName || item.client_name,
+                            content_json: draftObj
+                          };
+                        }
+                      } catch (_) {}
+                    }
+                    return item;
+                  });
                 memCachedQuotations = hydrated;
                 setQuotations(hydrated);
                 setLoading(false);
@@ -933,7 +938,9 @@ export default function WorkspaceQuotationsGalleryPage() {
               const localDraftStr = localStorage.getItem(`wg_proposal_draft_${t.id}`);
               if (localDraftStr) {
                 const parsedDraft = JSON.parse(localDraftStr);
-                if (parsedDraft && typeof parsedDraft === 'object') {
+                if (isPoisonedDemoDraft(parsedDraft, t.title)) {
+                  localStorage.removeItem(`wg_proposal_draft_${t.id}`);
+                } else if (parsedDraft && typeof parsedDraft === 'object') {
                   docJson = parsedDraft;
                 }
               }
@@ -977,8 +984,12 @@ export default function WorkspaceQuotationsGalleryPage() {
           filteredTmplData.forEach((t: any) => {
             const isSys = Boolean(t.is_system_template);
             const docObj = docsMap[t.id];
-            const itemTitle = docObj?.designName || t.title || 'Wedding - Design 1';
-            const coupleName = docObj?.cover?.coupleName || (docObj?.cover?.groomName ? `${docObj.cover.groomName} & ${docObj.cover.brideName}` : 'Rahul & Neha');
+            const itemTitle = (docObj?.designName && docObj.designName !== 'Personalised Wedding Quotation')
+              ? docObj.designName
+              : (t.title || 'Wedding Quotation');
+            const coupleName = (docObj?.cover?.coupleName && docObj.cover.coupleName !== 'Valued Client')
+              ? docObj.cover.coupleName
+              : (docObj?.cover?.groomName ? `${docObj.cover.groomName} & ${docObj.cover.brideName}` : (t.content_json?.cover?.coupleName || 'Rahul & Neha'));
 
             const item: SavedQuotation = {
               id: t.id,
@@ -987,7 +998,7 @@ export default function WorkspaceQuotationsGalleryPage() {
               client_name: coupleName,
               financials: {},
               status: t.status || 'draft',
-              content_json: docObj || null,
+              content_json: docObj || t.content_json || null,
               is_default: Boolean(t.is_default),
               is_system_template: isSys,
               updated_at: t.updated_at

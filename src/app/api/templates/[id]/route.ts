@@ -383,21 +383,24 @@ async function handleUpdate(
         }, { onConflict: 'template_id' });
 
       // 3. Upsert quotations record
-      const coupleName = document?.cover?.coupleName || (document?.cover?.groomName ? `${document.cover.groomName} & ${document.cover.brideName}` : null) || extractCoupleNameFromQuotation(document) || document?.meta?.client_name || 'Rahul & Neha';
-      await supabaseAdmin
-        .from('quotations')
-        .upsert({
-          id,
-          quotation_number: id,
-          workspace_id: workspaceId,
-          user_id: userId,
-          title: newTitle,
-          client_name: coupleName,
-          couple_names: coupleName,
-          content_json: document,
-          canvas_data: document,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'quotation_number' });
+      try {
+        const coupleName = document?.cover?.coupleName || (document?.cover?.groomName ? `${document.cover.groomName} & ${document.cover.brideName}` : null) || extractCoupleNameFromQuotation(document) || document?.meta?.client_name || 'Rahul & Neha';
+        await supabaseAdmin
+          .from('quotations')
+          .upsert({
+            id,
+            quotation_number: id,
+            workspace_id: workspaceId,
+            user_id: userId,
+            title: newTitle,
+            client_name: coupleName,
+            couple_names: coupleName,
+            canvas_data: document,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'quotation_number' });
+      } catch (quoteUpsertErr) {
+        console.warn('[API templates/[id]] Secondary quotations upsert note:', quoteUpsertErr);
+      }
 
       // 4. Auto-sync with Finance, Booking Events, Post-Production if this quotation is final
       try {
