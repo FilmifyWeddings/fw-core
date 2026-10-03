@@ -2082,6 +2082,15 @@ function normalizeQuotationData(loaded: any) {
   };
 }
 
+function isDocumentValid(doc: any): boolean {
+  if (!doc || typeof doc !== 'object') return false;
+  return Boolean(
+    doc.cover ||
+    (Array.isArray(doc.pageSequence) && doc.pageSequence.length > 0) ||
+    (Array.isArray(doc.pages) && doc.pages.length > 0)
+  );
+}
+
 function calculatePricingTotals(pricing: any) {
   const p = pricing || DEFAULT_AIRY_PROPOSAL.pricingPage;
   const base = Number(p?.basePrice ?? p?.base ?? 0);
@@ -2214,7 +2223,14 @@ function StudioCoreAiryBuilderContent() {
           const sess = sessionStorage.getItem(`current_quotation_doc_${tid}`);
           if (sess) {
             const parsed = JSON.parse(sess);
-            if (parsed && typeof parsed === 'object') {
+            if (isDocumentValid(parsed)) {
+              return normalizeQuotationData(parsed);
+            }
+          }
+          const draft = localStorage.getItem(`wg_proposal_draft_${tid}`);
+          if (draft) {
+            const parsed = JSON.parse(draft);
+            if (isDocumentValid(parsed)) {
               return normalizeQuotationData(parsed);
             }
           }
@@ -2223,7 +2239,9 @@ function StudioCoreAiryBuilderContent() {
         if (activeRaw) {
           const active = JSON.parse(activeRaw);
           if (active?.document && (!tid || active.id === tid || tid.includes(active.id) || active.id.includes(tid))) {
-            return normalizeQuotationData(active.document);
+            if (isDocumentValid(active.document)) {
+              return normalizeQuotationData(active.document);
+            }
           }
         }
       } catch (_) {}
@@ -2238,6 +2256,8 @@ function StudioCoreAiryBuilderContent() {
         if (tid) {
           const sess = sessionStorage.getItem(`current_quotation_doc_${tid}`);
           if (sess) return true;
+          const draft = localStorage.getItem(`wg_proposal_draft_${tid}`);
+          if (draft) return true;
         }
         const activeRaw = sessionStorage.getItem('current_active_quotation_doc');
         if (activeRaw) {
@@ -2309,18 +2329,34 @@ function StudioCoreAiryBuilderContent() {
               if (existingCache) {
                 const list = JSON.parse(existingCache);
                 if (Array.isArray(list)) {
+                  let found = false;
                   const updatedList = list.map((item: any) => {
                     if (item.id === currentId || item.quotation_number === currentId) {
+                      found = true;
                       return {
                         ...item,
                         title: nextData.designName || item.title,
-                        client_name: nextData.cover?.coupleName || item.client_name,
+                        client_name: nextData.cover?.coupleName || (nextData.cover?.groomName ? `${nextData.cover.groomName} & ${nextData.cover.brideName}` : item.client_name),
                         content_json: nextData,
                         updated_at: new Date().toISOString()
                       };
                     }
                     return item;
                   });
+                  if (!found) {
+                    updatedList.unshift({
+                      id: currentId,
+                      quotation_number: currentId,
+                      title: nextData.designName || 'Wedding Quotation',
+                      client_name: nextData.cover?.coupleName || (nextData.cover?.groomName ? `${nextData.cover.groomName} & ${nextData.cover.brideName}` : 'Rahul & Neha'),
+                      financials: {},
+                      content_json: nextData,
+                      status: 'draft',
+                      is_default: false,
+                      is_system_template: false,
+                      updated_at: new Date().toISOString()
+                    });
+                  }
                   localStorage.setItem(cacheKey, JSON.stringify(updatedList));
                 }
               }
@@ -3167,7 +3203,7 @@ function StudioCoreAiryBuilderContent() {
                 }
               }
             }
-            if (sessDocJson && typeof sessDocJson === 'object' && sessDocJson.pages?.length) {
+            if (sessDocJson && isDocumentValid(sessDocJson)) {
               const localNormalized = normalizeQuotationData(sessDocJson);
               if (localNormalized.primaryFont) preloadActiveFont(localNormalized.primaryFont);
               if (localNormalized.secondaryFont) preloadActiveFont(localNormalized.secondaryFont);
@@ -3179,7 +3215,7 @@ function StudioCoreAiryBuilderContent() {
 
         // 1. INSTANT LOCAL CACHE HYDRATION (<5ms First Contentful Render)
         const cachedLocal = await getCachedDocumentLocal(routeId);
-        if (cachedLocal?.documentJson && cachedLocal.documentJson.pages?.length) {
+        if (cachedLocal?.documentJson && isDocumentValid(cachedLocal.documentJson)) {
           currentVersionRef.current = cachedLocal.version || 1;
           const localNormalized = normalizeQuotationData(cachedLocal.documentJson);
           if (localNormalized.primaryFont) preloadActiveFont(localNormalized.primaryFont);
@@ -3205,19 +3241,33 @@ function StudioCoreAiryBuilderContent() {
         const json = await res.json().catch(() => ({}));
         let loadedData: any = null;
 
-        const docContent = json.document?.content_json || json.document?.document_json || (json.document?.pages ? json.document : null);
+        const docContent = json.document?.content_json || json.document?.document_json || (json.document?.cover || json.document?.pageSequence ? json.document : null);
 
-        if (docContent && docContent.pages && docContent.pages.length > 0) {
+        if (isDocumentValid(docContent)) {
           // CANONICAL SUPABASE DB DOCUMENT (Primary Source of Truth)
           loadedData = normalizeQuotationData(docContent);
           currentVersionRef.current = json.document?.version || 1;
-        } else if (latestDataRef.current && latestDataRef.current.pages && latestDataRef.current.pages.length > 0) {
+        } else if (isDocumentValid(latestDataRef.current) && latestDataRef.current.designName !== 'Personalised Wedding Quotation') {
           // SAFE GUARD: Never overwrite copied or local document with empty demo template!
           loadedData = latestDataRef.current;
-        } else if (cachedLocal?.documentJson && cachedLocal.documentJson.pages && cachedLocal.documentJson.pages.length > 0) {
-          loadedData = normalizeQuotationData(cachedLocal.documentJson);
+        } else if (isDocumentValid(cachedLocal?.documentJson)) {
+          loadedData = normalizeQuotationData(cachedLocal?.documentJson);
         } else {
-          loadedData = { ...DEFAULT_AIRY_PROPOSAL };
+          // Fallback to session/local draft before default
+          let fallbackDoc: any = null;
+          if (typeof window !== 'undefined') {
+            try {
+              const s1 = sessionStorage.getItem(`current_quotation_doc_${routeId}`);
+              const s2 = localStorage.getItem(`wg_proposal_draft_${routeId}`);
+              if (s1) fallbackDoc = JSON.parse(s1);
+              else if (s2) fallbackDoc = JSON.parse(s2);
+            } catch (_) {}
+          }
+          if (isDocumentValid(fallbackDoc)) {
+            loadedData = normalizeQuotationData(fallbackDoc);
+          } else {
+            loadedData = { ...DEFAULT_AIRY_PROPOSAL };
+          }
         }
 
         if (userStudioName && (!loadedData.cover?.brandName || loadedData.cover.brandName === 'FILMIFY WEDDINGS')) {
@@ -3241,13 +3291,15 @@ function StudioCoreAiryBuilderContent() {
         setIsCanonicalLoaded(true);
 
         // If template document did not exist in DB yet (e.g. background duplication in progress), persist loadedData now
-        if (!docContent || !docContent.pages?.length) {
+        // CRITICAL: NEVER perform auto-persist in public preview mode!
+        if (!isPublicPreview && !isDocumentValid(docContent) && isDocumentValid(loadedData)) {
           fetch(`/api/templates/${routeId}`, {
             method: 'PATCH',
             headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${userAccessToken || ''}`
             },
+            keepalive: true,
             body: JSON.stringify({
               user_id: currentUserId,
               workspace_id: currentUserId,
@@ -3465,6 +3517,7 @@ function StudioCoreAiryBuilderContent() {
       const saveRes = await fetch(`/api/templates/${targetTmplId}`, {
         method: 'PATCH',
         headers,
+        keepalive: true,
         body: JSON.stringify({
           user_id: session?.user?.id || userId,
           workspace_id: session?.user?.id || userId,
@@ -3500,22 +3553,39 @@ function StudioCoreAiryBuilderContent() {
             if (existingCache) {
               const list = JSON.parse(existingCache);
               if (Array.isArray(list)) {
+                let found = false;
                 const updatedList = list.map((item: any) => {
                   if (item.id === finalId || item.quotation_number === finalId) {
+                    found = true;
                     return {
                       ...item,
                       title: snapshotData.designName || item.title,
-                      client_name: snapshotData.cover?.coupleName || item.client_name,
+                      client_name: snapshotData.cover?.coupleName || (snapshotData.cover?.groomName ? `${snapshotData.cover.groomName} & ${snapshotData.cover.brideName}` : item.client_name),
                       content_json: snapshotData,
                       updated_at: new Date().toISOString()
                     };
                   }
                   return item;
                 });
+                if (!found) {
+                  updatedList.unshift({
+                    id: finalId,
+                    quotation_number: finalId,
+                    title: snapshotData.designName || 'Wedding Quotation',
+                    client_name: snapshotData.cover?.coupleName || (snapshotData.cover?.groomName ? `${snapshotData.cover.groomName} & ${snapshotData.cover.brideName}` : 'Rahul & Neha'),
+                    financials: {},
+                    content_json: snapshotData,
+                    status: 'draft',
+                    is_default: false,
+                    is_system_template: false,
+                    updated_at: new Date().toISOString()
+                  });
+                }
                 localStorage.setItem(cacheKey, JSON.stringify(updatedList));
               }
             }
           }
+          window.dispatchEvent(new Event('wg_quotations_updated'));
         } catch (_) {}
       }
 
@@ -5813,10 +5883,19 @@ function StudioCoreAiryBuilderContent() {
 
             <button
               type="button"
-              onClick={() => {
-                if (isDirtyRef.current) {
-                  flushSaveImmediately();
-                }
+              onClick={async () => {
+                try {
+                  const currentId = currentTemplateIdRef.current || (params?.id ? String(params.id) : '');
+                  if (currentId && latestDataRef.current) {
+                    sessionStorage.setItem(`current_quotation_doc_${currentId}`, JSON.stringify(latestDataRef.current));
+                    localStorage.setItem(`wg_proposal_draft_${currentId}`, JSON.stringify(latestDataRef.current));
+                    cacheDocumentLocal(currentId, latestDataRef.current, currentVersionRef.current);
+                  }
+                  if (isDirtyRef.current) {
+                    await flushSaveImmediately();
+                  }
+                  window.dispatchEvent(new Event('wg_quotations_updated'));
+                } catch (_) {}
                 router.push('/workspace/quotations');
               }}
               className="p-1 rounded-full hover:bg-zinc-100 text-zinc-500 hover:text-zinc-900 transition-colors ml-1 cursor-pointer"

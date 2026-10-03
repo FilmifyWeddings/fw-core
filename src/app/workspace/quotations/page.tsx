@@ -352,6 +352,8 @@ export default function WorkspaceQuotationsGalleryPage() {
     const quoteId = quote.quotation_number || quote.id;
     setOpeningTemplateId(quoteId);
 
+    const isDocValid = (d: any) => Boolean(d && typeof d === 'object' && (d.cover || d.pageSequence?.length || d.pages?.length));
+
     // CRITICAL: If regular studio owner edits a System Preset, auto-duplicate into their workspace in 0ms!
     if (!isSuperAdminUser && quote.is_system_template) {
       const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -360,14 +362,30 @@ export default function WorkspaceQuotationsGalleryPage() {
 
       // 1. Authoritative base document: quote.content_json is already in memory with full pages
       let baseDoc = quote.content_json;
-      if (!baseDoc || !baseDoc.pages || !baseDoc.pages.length || !baseDoc.cover) {
+      if (!isDocValid(baseDoc)) {
         if (typeof window !== 'undefined') {
           try {
             const draftStr = localStorage.getItem(`wg_proposal_draft_${quoteId}`);
-            if (draftStr) baseDoc = JSON.parse(draftStr);
+            if (draftStr) {
+              const parsed = JSON.parse(draftStr);
+              if (isDocValid(parsed)) baseDoc = parsed;
+            }
           } catch (_) {}
         }
       }
+
+      // If still missing or incomplete, fetch authoritative document from API
+      if (!isDocValid(baseDoc)) {
+        try {
+          const fetchRes = await fetch(`/api/templates/${quoteId}`);
+          if (fetchRes.ok) {
+            const fetchJson = await fetchRes.json();
+            const fetchedDoc = fetchJson.document?.content_json || fetchJson.document?.document_json;
+            if (isDocValid(fetchedDoc)) baseDoc = fetchedDoc;
+          }
+        } catch (_) {}
+      }
+
       if (!baseDoc) baseDoc = DEFAULT_AIRY_PROPOSAL;
 
       const clonedDoc = JSON.parse(JSON.stringify(baseDoc));
@@ -398,9 +416,10 @@ export default function WorkspaceQuotationsGalleryPage() {
       setQuotations(prev => {
         const nextList = [duplicatedRecord, ...prev];
         memCachedQuotations = nextList;
-        if (userId && userId !== 'demo_user') {
+        const currentUid = userId || (typeof window !== 'undefined' ? localStorage.getItem('wg_last_active_user_id') : '') || 'demo_user';
+        if (currentUid && currentUid !== 'demo_user') {
           try {
-            localStorage.setItem(`wg_quotations_cache_${userId}`, JSON.stringify(nextList));
+            localStorage.setItem(`wg_quotations_cache_${currentUid}`, JSON.stringify(nextList));
           } catch (_) {}
         }
         return nextList;
@@ -436,14 +455,11 @@ export default function WorkspaceQuotationsGalleryPage() {
     const baseDoc = quote.content_json;
     if (typeof window !== 'undefined') {
       try {
-        if (baseDoc && typeof baseDoc === 'object' && Object.keys(baseDoc).length > 0) {
+        if (isDocValid(baseDoc)) {
           sessionStorage.setItem(`current_quotation_doc_${quoteId}`, JSON.stringify(baseDoc));
           sessionStorage.setItem('current_active_quotation_doc', JSON.stringify({ id: quoteId, document: baseDoc }));
           localStorage.setItem(`wg_proposal_draft_${quoteId}`, JSON.stringify(baseDoc));
           cacheDocumentLocal(quoteId, baseDoc, 1);
-        } else {
-          sessionStorage.removeItem(`current_quotation_doc_${quoteId}`);
-          sessionStorage.removeItem('current_active_quotation_doc');
         }
       } catch (_) {}
     }
@@ -680,15 +696,35 @@ export default function WorkspaceQuotationsGalleryPage() {
   const syncWithLocalDrafts = useCallback(() => {
     setQuotations(prev => {
       let hasChanges = false;
-      const updated = prev.map(item => {
+      const activeUid = (typeof window !== 'undefined' ? localStorage.getItem('wg_last_active_user_id') : '') || userId;
+      let baseList = [...prev];
+      if (activeUid) {
+        try {
+          const cachedStr = localStorage.getItem(`wg_quotations_cache_${activeUid}`);
+          if (cachedStr) {
+            const parsed = JSON.parse(cachedStr);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              parsed.forEach((cItem: any) => {
+                const cId = cItem.quotation_number || cItem.id;
+                if (!baseList.some(q => (q.quotation_number || q.id) === cId)) {
+                  baseList.unshift(cItem);
+                  hasChanges = true;
+                }
+              });
+            }
+          }
+        } catch (_) {}
+      }
+
+      const updated = baseList.map(item => {
         const itemKey = item.quotation_number || item.id;
         const draftStr = localStorage.getItem(`wg_proposal_draft_${itemKey}`);
         if (draftStr) {
           try {
             const draftObj = JSON.parse(draftStr);
-            if (draftObj && typeof draftObj === 'object') {
+            if (draftObj && typeof draftObj === 'object' && (draftObj.cover || draftObj.pageSequence?.length || draftObj.pages?.length)) {
               const newTitle = draftObj.designName || item.title;
-              const newClient = draftObj.cover?.coupleName || item.client_name;
+              const newClient = draftObj.cover?.coupleName || (draftObj.cover?.groomName ? `${draftObj.cover.groomName} & ${draftObj.cover.brideName}` : item.client_name);
               if (newTitle !== item.title || newClient !== item.client_name || JSON.stringify(draftObj) !== JSON.stringify(item.content_json)) {
                 hasChanges = true;
                 return {
@@ -710,7 +746,7 @@ export default function WorkspaceQuotationsGalleryPage() {
       }
       return prev;
     });
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
     window.addEventListener('focus', syncWithLocalDrafts);

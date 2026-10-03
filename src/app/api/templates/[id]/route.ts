@@ -43,7 +43,7 @@ async function handleGet(
         .maybeSingle();
 
       let docJson = sysDoc?.document_json || sysDoc?.content_json;
-      if (!docJson || (typeof docJson === 'object' && !docJson.cover && !docJson.pages?.length)) {
+      if (!docJson || (typeof docJson === 'object' && !docJson.cover && !docJson.pages?.length && !docJson.pageSequence?.length)) {
         docJson = DEFAULT_AIRY_PROPOSAL;
       }
 
@@ -383,7 +383,7 @@ async function handleUpdate(
         }, { onConflict: 'template_id' });
 
       // 3. Upsert quotations record
-      const coupleName = extractCoupleNameFromQuotation(document) || document?.cover?.coupleName || document?.meta?.client_name || 'Valued Client';
+      const coupleName = document?.cover?.coupleName || (document?.cover?.groomName ? `${document.cover.groomName} & ${document.cover.brideName}` : null) || extractCoupleNameFromQuotation(document) || document?.meta?.client_name || 'Rahul & Neha';
       await supabaseAdmin
         .from('quotations')
         .upsert({
