@@ -19,6 +19,7 @@ import { LeadInsiderDrawer } from './lead-insider-drawer';
 import { TeamTasksManager } from './team-tasks-manager';
 import { CRMDropdown, getDynamicBadgeStyle } from './crm-dropdown';
 import { LeadQuotationModal } from './lead-quotation-modal';
+import { prefetchStudioTemplates } from './quotation-template-selector';
 import LeadOwnerSelect from '@/app/workspace/leads/components/LeadOwnerSelect';
 
 const MotionDiv = motionImport.div;
@@ -494,6 +495,10 @@ export function LeadTable({
         window.removeEventListener('storage', handleSettingsSync);
       }
     };
+  }, []);
+
+  useEffect(() => {
+    prefetchStudioTemplates();
   }, []);
 
   useEffect(() => {

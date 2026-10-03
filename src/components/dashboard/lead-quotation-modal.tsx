@@ -11,6 +11,12 @@ import {
 import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { AiQuotationModal } from './ai-quotation-modal';
+import { 
+  QuotationTemplateSelector, 
+  StudioTemplateItem, 
+  getSynchronousCachedTemplates, 
+  persistTemplatesToCache 
+} from './quotation-template-selector';
 
 interface QuotationVersionItem {
   id?: string;
@@ -28,15 +34,6 @@ interface QuotationVersionItem {
     label: string;
     budgetAmount?: number;
   };
-  content_json?: any;
-}
-
-interface StudioTemplateItem {
-  id: string;
-  title: string;
-  category?: string;
-  is_default?: boolean;
-  is_system_template?: boolean;
   content_json?: any;
 }
 
@@ -94,9 +91,15 @@ export function LeadQuotationModal({
   const [confirmingFinalQuotation, setConfirmingFinalQuotation] = useState<QuotationVersionItem | null>(null);
   const [unmarkingFinalQuotation, setUnmarkingFinalQuotation] = useState<QuotationVersionItem | null>(null);
 
-  // Template Picker state
-  const [availableTemplates, setAvailableTemplates] = useState<StudioTemplateItem[]>([]);
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  // Template Picker state (Synchronous initialization from 0ms cache)
+  const [availableTemplates, setAvailableTemplates] = useState<StudioTemplateItem[]>(() => 
+    getSynchronousCachedTemplates(lead?.workspace_id)
+  );
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(() => {
+    const initial = getSynchronousCachedTemplates(lead?.workspace_id);
+    const def = initial.find(t => t.is_default) || initial[0];
+    return def ? def.id : null;
+  });
   const [showTemplateMenu, setShowTemplateMenu] = useState(false);
 
   // AI Quotation Modal state
@@ -222,12 +225,11 @@ export function LeadQuotationModal({
   const loadAvailableTemplates = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const currentUserId = session?.user?.id || '';
+      const currentUserId = session?.user?.id || lead?.workspace_id || '';
       const token = session?.access_token || '';
 
-      const cacheKey = currentUserId ? `studio_templates_cache_${currentUserId}` : 'studio_templates_cache';
-      const cached = safeSessionGet(cacheKey);
-      if (cached && Array.isArray(cached) && cached.length > 0) {
+      const cached = getSynchronousCachedTemplates(currentUserId);
+      if (cached.length > 0) {
         setAvailableTemplates(cached);
         const activeDefault = cached.find((t: StudioTemplateItem) => t.is_default) || cached[0];
         if (activeDefault) {
@@ -240,17 +242,11 @@ export function LeadQuotationModal({
       if (session?.user?.email) headers['x-user-email'] = session.user.email;
 
       const res = await fetch(`/api/quotation-templates?workspace_id=${currentUserId}`, { headers });
-      const text = await res.text();
-      let json: any = {};
-      try {
-        json = text ? JSON.parse(text) : {};
-      } catch (_) {
-        json = {};
-      }
+      const json = await res.json().catch(() => ({}));
 
       if (json.success && Array.isArray(json.templates) && json.templates.length > 0) {
         setAvailableTemplates(json.templates);
-        safeSessionSet(cacheKey, json.templates);
+        persistTemplatesToCache(json.templates, currentUserId);
 
         setSelectedTemplateId(prev => {
           if (prev && json.templates.some((t: StudioTemplateItem) => t.id === prev)) {
@@ -259,22 +255,9 @@ export function LeadQuotationModal({
           const activeDefault = json.templates.find((t: StudioTemplateItem) => t.is_default) || json.templates[0];
           return activeDefault ? activeDefault.id : prev;
         });
-      } else if (availableTemplates.length === 0) {
-        const defaultTemplates: StudioTemplateItem[] = [
-          { id: 'FW-2WT85Y0', title: 'Wedding - Design 1', is_default: true, category: 'Wedding' }
-        ];
-        setAvailableTemplates(defaultTemplates);
-        setSelectedTemplateId(prev => prev || defaultTemplates[0].id);
       }
     } catch (e) {
       console.warn('[LeadQuotationModal] Templates fetch warning:', e);
-      if (availableTemplates.length === 0) {
-        const defaultTemplates: StudioTemplateItem[] = [
-          { id: 'FW-2WT85Y0', title: 'Wedding - Design 1', is_default: true, category: 'Wedding' }
-        ];
-        setAvailableTemplates(defaultTemplates);
-        setSelectedTemplateId(prev => prev || defaultTemplates[0].id);
-      }
     }
   };
 
@@ -711,11 +694,7 @@ export function LeadQuotationModal({
 
   if (!isOpen || !lead) return null;
 
-  const fallbackTemplates: StudioTemplateItem[] = [
-    { id: 'FW-2WT85Y0', title: 'Wedding - Design 1', is_default: true, category: 'Wedding' }
-  ];
-  const effectiveTemplateList = availableTemplates.length > 0 ? availableTemplates : fallbackTemplates;
-  const currentSelectedTemplate = effectiveTemplateList.find(t => t.id === selectedTemplateId) || effectiveTemplateList[0];
+  const currentSelectedTemplate = availableTemplates.find(t => t.id === selectedTemplateId) || availableTemplates[0] || null;
 
   return (
     <>
@@ -1054,58 +1033,17 @@ export function LeadQuotationModal({
               {/* TEMPLATE PICKER DROPDOWN BAR */}
               <div className="px-4 py-2 border-t border-zinc-200 dark:border-zinc-800/80 bg-amber-500/5 relative">
                 <div className="flex items-center justify-between text-xs font-bold text-zinc-700 dark:text-zinc-300">
-                  <span className="text-[10px] uppercase font-black tracking-wider text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                  <span className="text-[10px] uppercase font-black tracking-wider text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
                     <LayoutTemplate className="w-3.5 h-3.5" /> Template to Use:
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => setShowTemplateMenu(!showTemplateMenu)}
-                    className="px-2.5 py-1 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 hover:border-amber-500 text-zinc-900 dark:text-white flex items-center gap-1.5 transition-all text-xs cursor-pointer"
-                  >
-                    <span className="truncate max-w-[170px] font-bold">
-                      {currentSelectedTemplate.title} {currentSelectedTemplate.is_default ? '(Default)' : ''}
-                    </span>
-                    <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
-                  </button>
+                  <QuotationTemplateSelector
+                    templates={availableTemplates}
+                    selectedId={selectedTemplateId}
+                    onSelect={(id) => setSelectedTemplateId(id)}
+                    workspaceId={lead?.workspace_id}
+                    placement="top"
+                  />
                 </div>
-
-                {/* Template Selection Dropdown Menu */}
-                {showTemplateMenu && (
-                  <div className="absolute left-4 right-4 bottom-full mb-1 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-2xl shadow-2xl p-2 z-50 space-y-1 max-h-48 overflow-y-auto">
-                    <span className="text-[9px] uppercase font-black text-zinc-400 block px-2 mb-1">
-                      Select Studio Template to Fork:
-                    </span>
-                    {effectiveTemplateList.map((tmpl, idx) => {
-                      const isSel = tmpl.id === selectedTemplateId || (!selectedTemplateId && tmpl.is_default);
-                      const tmplKey = tmpl.id || `tmpl_item_${idx}`;
-                      return (
-                        <button
-                          key={tmplKey}
-                          type="button"
-                          onClick={() => {
-                            setSelectedTemplateId(tmpl.id);
-                            setShowTemplateMenu(false);
-                          }}
-                          className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-all cursor-pointer ${
-                            isSel
-                              ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 font-black border border-amber-500/30'
-                              : 'hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-200 font-semibold'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 truncate">
-                            <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                            <span className="truncate">{tmpl.title}</span>
-                          </div>
-                          {tmpl.is_default && (
-                            <span className="text-[9px] bg-amber-500/20 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded-full font-extrabold uppercase">
-                              Default
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
               </div>
 
               {/* Modal Footer Actions */}
@@ -1150,7 +1088,7 @@ export function LeadQuotationModal({
         lead={lead}
         quotationId={aiTargetQuotationId}
         selectedTemplateId={selectedTemplateId || currentSelectedTemplate?.id}
-        availableTemplates={effectiveTemplateList}
+        availableTemplates={availableTemplates}
         onApplied={(updatedDoc, targetQId) => {
           setAiModalOpen(false);
           const openingCouple = updatedDoc?.cover?.coupleName || lead?.raw_payload?.couple_name || lead?.client_name || lead?.name || 'Quotation';

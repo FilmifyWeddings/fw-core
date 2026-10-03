@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
+import { QuotationTemplateSelector, StudioTemplateItem } from './quotation-template-selector';
 
 interface AiQuotationModalProps {
   isOpen: boolean;
@@ -16,7 +17,7 @@ interface AiQuotationModalProps {
   lead?: Lead | null;
   quotationId?: string | null;
   selectedTemplateId?: string | null;
-  availableTemplates?: { id: string; title: string; is_default?: boolean; category?: string }[];
+  availableTemplates?: StudioTemplateItem[];
   currentDocumentData?: any;
   onApplied?: (updatedDoc: any, targetQuotationId: string) => void;
 }
@@ -660,7 +661,7 @@ LEAD & CLIENT CONTEXT:
                 </div>
 
                 {/* Selected Studio Template Design */}
-                {availableTemplates && availableTemplates.length > 0 && !quotationId && (
+                {!quotationId && (
                   <div className="flex items-center justify-between p-3 rounded-2xl bg-amber-500/5 dark:bg-zinc-900/60 border border-amber-500/20 dark:border-zinc-800">
                     <div className="flex items-center gap-2">
                       <FileText className="w-4 h-4 text-amber-500 shrink-0" />
@@ -673,17 +674,13 @@ LEAD & CLIENT CONTEXT:
                         </div>
                       </div>
                     </div>
-                    <select
-                      value={activeTemplateId || selectedTemplateId || availableTemplates[0]?.id}
-                      onChange={(e) => setActiveTemplateId(e.target.value)}
-                      className="text-xs font-bold bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white px-3 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 outline-none focus:ring-1 focus:ring-amber-500 shadow-xs cursor-pointer max-w-[190px] truncate"
-                    >
-                      {availableTemplates.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.title} {t.is_default ? '★' : ''}
-                        </option>
-                      ))}
-                    </select>
+                    <QuotationTemplateSelector
+                      templates={availableTemplates}
+                      selectedId={activeTemplateId || selectedTemplateId || null}
+                      onSelect={(id) => setActiveTemplateId(id)}
+                      workspaceId={effectiveLead?.workspace_id}
+                      placement="bottom"
+                    />
                   </div>
                 )}
 
