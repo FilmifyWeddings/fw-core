@@ -773,7 +773,7 @@ export function LeadQuotationModal({
               )}
 
               {/* Quotations List Body */}
-              <div className="p-4 overflow-y-auto overflow-x-hidden flex-1 space-y-3">
+              <div className="p-4 overflow-y-auto overflow-x-hidden flex-1 space-y-3 quotation-dropdown-scroll">
                 {errorMsg && (
                   <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-400 text-xs flex items-center gap-2">
                     <AlertCircle className="w-4 h-4 shrink-0" />

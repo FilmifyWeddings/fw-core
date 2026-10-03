@@ -433,7 +433,7 @@ export function QuotationTemplateSelector({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: placement === 'top' ? 4 : -4, scale: 0.98 }}
             transition={{ duration: 0.15, ease: 'easeOut' }}
-            className={`absolute ${popoverAlignClass} z-[150] w-[290px] sm:w-[320px] max-w-[calc(100vw-32px)] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700/90 rounded-2xl shadow-2xl p-1.5 ${popoverPositionClass} backdrop-blur-xl`}
+            className={`absolute ${popoverAlignClass} z-[150] w-[300px] sm:w-[330px] max-w-[calc(100vw-32px)] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700/90 rounded-2xl shadow-2xl p-1.5 ${popoverPositionClass} backdrop-blur-xl`}
           >
             {/* Popover Header */}
             <div className="px-2.5 py-1.5 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800/80 mb-1">
@@ -446,8 +446,8 @@ export function QuotationTemplateSelector({
               </span>
             </div>
 
-            {/* List of Templates with 1:1 First Page Thumbnails */}
-            <div className="max-h-64 overflow-y-auto space-y-1 p-0.5 overscroll-contain">
+            {/* List of Templates with 1:1 First Page Thumbnails & Smooth Custom Scrollbar */}
+            <div className="max-h-[300px] overflow-y-auto space-y-1.5 p-1 pr-1.5 overscroll-contain quotation-dropdown-scroll">
               {templates.map((tmpl) => {
                 const isSelected = tmpl.id === (currentSelected?.id || selectedId);
                 const themeName = tmpl.content_json?.theme || tmpl.content_json?.look || tmpl.category || 'Wedding';
