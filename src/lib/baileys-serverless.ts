@@ -639,8 +639,7 @@ async function startDirectServerlessQr(
       defaultQueryTimeoutMs: 60_000,
       markOnlineOnConnect: true,
       browser: Browsers.ubuntu('Chrome'),
-      syncFullHistory: true,
-      shouldSyncHistoryMessage: () => true,
+      syncFullHistory: false,
     });
 
     socket.ev.on('creds.update', async (update: Partial<any>) => {
@@ -648,35 +647,24 @@ async function startDirectServerlessQr(
       await saveCreds();
     });
 
-    // ── Capture Phone Chats History Sync ──
-    socket.ev.on('messaging-history.set' as any, async ({ chats: histChats, contacts: histContacts, messages: histMessages }: any) => {
+    // ── Capture Phone Chats History Sync: ONLY preserve groups for automations ──
+    socket.ev.on('messaging-history.set' as any, async ({ chats: histChats }: any) => {
       try {
-        console.log(`[baileys-sync] 📥 Received messaging-history.set: ${histChats?.length || 0} chats, ${histContacts?.length || 0} contacts, ${histMessages?.length || 0} messages`);
-        
         if (histChats && histChats.length > 0) {
-          const chatRows = histChats.map((c: any) => ({
-            workspace_id: workspaceId,
-            jid: c.id,
-            display_name: c.name || c.subject || null,
-            unread_count: c.unreadCount || 0,
-            last_message: c.conversationTimestamp ? 'Synced message' : null,
-            last_message_at: c.conversationTimestamp ? new Date(Number(c.conversationTimestamp) * 1000).toISOString() : new Date().toISOString(),
-            is_group: c.id?.endsWith('@g.us'),
-            updated_at: new Date().toISOString(),
-          }));
-          await supabaseAdmin.from('baileys_chats').upsert(chatRows, { onConflict: 'workspace_id, jid', ignoreDuplicates: false });
-        }
+          const groupRows = histChats
+            .filter((c: any) => c.id?.endsWith('@g.us'))
+            .map((c: any) => ({
+              workspace_id: workspaceId,
+              jid: c.id,
+              display_name: c.name || c.subject || c.id.split('@')[0],
+              unread_count: 0,
+              is_group: true,
+              updated_at: new Date().toISOString(),
+            }));
 
-        if (histContacts && histContacts.length > 0) {
-          const contactRows = histContacts.map((c: any) => ({
-            workspace_id: workspaceId,
-            jid: c.id,
-            name: c.name || c.notify || c.verifiedName || null,
-            push_name: c.notify || null,
-            phone: c.id?.split('@')[0],
-            updated_at: new Date().toISOString(),
-          }));
-          await supabaseAdmin.from('evolution_contacts').upsert(contactRows, { onConflict: 'workspace_id, jid', ignoreDuplicates: false });
+          if (groupRows.length > 0) {
+            await supabaseAdmin.from('baileys_chats').upsert(groupRows, { onConflict: 'workspace_id, jid', ignoreDuplicates: false });
+          }
         }
       } catch (histErr: any) {
         console.warn('[baileys-sync] History sync error:', histErr.message);
@@ -686,44 +674,26 @@ async function startDirectServerlessQr(
     socket.ev.on('chats.set' as any, async ({ chats: histChats }: any) => {
       try {
         if (histChats && histChats.length > 0) {
-          const chatRows = histChats.map((c: any) => ({
-            workspace_id: workspaceId,
-            jid: c.id,
-            display_name: c.name || c.subject || null,
-            unread_count: c.unreadCount || 0,
-            last_message: c.conversationTimestamp ? 'Synced message' : null,
-            last_message_at: c.conversationTimestamp ? new Date(Number(c.conversationTimestamp) * 1000).toISOString() : new Date().toISOString(),
-            is_group: c.id?.endsWith('@g.us'),
-            updated_at: new Date().toISOString(),
-          }));
-          await supabaseAdmin.from('baileys_chats').upsert(chatRows, { onConflict: 'workspace_id, jid', ignoreDuplicates: false });
+          const groupRows = histChats
+            .filter((c: any) => c.id?.endsWith('@g.us'))
+            .map((c: any) => ({
+              workspace_id: workspaceId,
+              jid: c.id,
+              display_name: c.name || c.subject || c.id.split('@')[0],
+              unread_count: 0,
+              is_group: true,
+              updated_at: new Date().toISOString(),
+            }));
+
+          if (groupRows.length > 0) {
+            await supabaseAdmin.from('baileys_chats').upsert(groupRows, { onConflict: 'workspace_id, jid', ignoreDuplicates: false });
+          }
         }
       } catch (_) {}
     });
 
-    socket.ev.on('messages.upsert' as any, async ({ messages: newMsgs, type }: any) => {
-      try {
-        if (!newMsgs || newMsgs.length === 0) return;
-        for (const msg of newMsgs) {
-          const chatJid = msg.key?.remoteJid;
-          if (!chatJid) continue;
-          const text = msg.message?.conversation || 
-                       msg.message?.extendedTextMessage?.text || 
-                       msg.message?.imageMessage?.caption || 
-                       '[media]';
-          
-          await supabaseAdmin.from('evolution_messages').upsert({
-            workspace_id: workspaceId,
-            message_id: msg.key?.id,
-            remote_jid: chatJid,
-            from_me: !!msg.key?.fromMe,
-            message_type: msg.message?.imageMessage ? 'image' : 'text',
-            content: text,
-            status: msg.key?.fromMe ? 'SENT' : 'DELIVERED',
-            timestamp: new Date(Number(msg.messageTimestamp || Date.now() / 1000) * 1000).toISOString(),
-          }, { onConflict: 'workspace_id,message_id' });
-        }
-      } catch (_) {}
+    socket.ev.on('messages.upsert' as any, async () => {
+      // No-op in serverless QR fallback: Do not write incoming messages to avoid duplicates
     });
 
     return new Promise<void>((resolve) => {

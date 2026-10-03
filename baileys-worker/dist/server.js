@@ -472,7 +472,18 @@ async function sendMediaMessage(to, mediaUrl, caption, mimeType, wsId = WORKSPAC
             });
         }
         else if (finalCategory === 'video') {
-            result = await targetSock.sendMessage(to, { video: buffer, caption, mimetype: resolvedMime });
+            if (buffer.length > 16 * 1024 * 1024) {
+                logger.warn({ to, sizeMb: (buffer.length / (1024 * 1024)).toFixed(1) }, '⚠️ Video exceeds WhatsApp 16 MB playable limit, sending as document');
+                result = await targetSock.sendMessage(to, {
+                    document: buffer,
+                    mimetype: resolvedMime || 'video/mp4',
+                    fileName: fileName || 'video.mp4',
+                    caption: caption || undefined,
+                });
+            }
+            else {
+                result = await targetSock.sendMessage(to, { video: buffer, caption: caption || undefined, mimetype: resolvedMime });
+            }
         }
         else if (finalCategory === 'audio') {
             result = await targetSock.sendMessage(to, { audio: buffer, mimetype: resolvedMime, ptt: false });
@@ -1413,20 +1424,26 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
                 }
             });
             localSock.ev.on('messages.upsert', async ({ messages, type }) => {
+                // CRITICAL DATA SAVER: Only process real-time notifications ('notify').
+                // Completely ignore historical sync backfills ('append') which would flood the database with thousands of past messages.
+                if (type !== 'notify')
+                    return;
                 for (const msg of messages) {
                     const chatJid = msg.key?.remoteJid;
                     if (!chatJid || chatJid === 'status@broadcast')
                         continue;
                     const isOutbound = !!msg.key?.fromMe;
+                    const isGroup = chatJid.endsWith('@g.us');
+                    // CRITICAL: Skip all group incoming chatter! Only log outbound CRM actions directed at groups.
+                    if (isGroup && !isOutbound)
+                        continue;
                     const text = msg.message?.conversation ??
                         msg.message?.extendedTextMessage?.text ??
                         msg.message?.imageMessage?.caption ??
                         (msg.message?.imageMessage ? '[image]' : msg.message?.documentMessage ? '[document]' : msg.message?.audioMessage ? '[audio]' : '[media]');
                     const sentAt = new Date(Number(msg.messageTimestamp || Date.now() / 1000) * 1000).toISOString();
-                    const isGroup = chatJid.endsWith('@g.us');
-                    const senderName = msg.pushName || null;
                     logger.info({ workspaceId: wsId, chatJid, isOutbound, text }, `📩 WhatsApp message ${isOutbound ? 'OUTBOUND' : 'INBOUND'}`);
-                    // 1. Insert or update baileys_messages
+                    // 1. Insert or update baileys_messages (CRM outbound delivery logs & 1-on-1 direct lead communications)
                     try {
                         await supabase.from('baileys_messages').upsert({
                             workspace_id: wsId,
@@ -1450,50 +1467,20 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
                             sent_at: sentAt,
                         });
                     }
-                    // 2. Also record in evolution_messages for unified inbox
-                    try {
-                        await supabase.from('evolution_messages').upsert({
-                            workspace_id: wsId,
-                            message_id: msg.key?.id || `bm_${Date.now()}`,
-                            remote_jid: chatJid,
-                            from_me: isOutbound,
-                            message_type: msg.message?.imageMessage ? 'image' : 'text',
-                            content: text,
-                            status: isOutbound ? 'SENT' : 'DELIVERED',
-                            timestamp: sentAt,
-                        }, { onConflict: 'workspace_id,message_id' });
-                    }
-                    catch (_) { }
-                    // 3. Update or insert baileys_chats
-                    const chatUpdate = {
-                        workspace_id: wsId,
-                        jid: chatJid,
-                        is_group: isGroup,
-                        last_message: text,
-                        last_message_at: sentAt,
-                        updated_at: new Date().toISOString(),
-                    };
-                    if (senderName && !isOutbound) {
-                        chatUpdate.display_name = senderName;
-                    }
-                    try {
-                        await supabase.from('baileys_chats').upsert(chatUpdate, {
-                            onConflict: 'workspace_id, jid',
-                            ignoreDuplicates: false
-                        });
-                    }
-                    catch (_) { }
-                    // 4. Save contact name in evolution_contacts if available
-                    if (senderName && !isGroup && !isOutbound) {
+                    // 2. If it's a group and outbound, update last message in baileys_chats
+                    if (isGroup && isOutbound) {
                         try {
-                            await supabase.from('evolution_contacts').upsert({
+                            await supabase.from('baileys_chats').upsert({
                                 workspace_id: wsId,
                                 jid: chatJid,
-                                name: senderName,
-                                push_name: senderName,
-                                phone: chatJid.split('@')[0],
+                                is_group: true,
+                                last_message: text,
+                                last_message_at: sentAt,
                                 updated_at: new Date().toISOString(),
-                            }, { onConflict: 'workspace_id, jid', ignoreDuplicates: false });
+                            }, {
+                                onConflict: 'workspace_id, jid',
+                                ignoreDuplicates: false
+                            });
                         }
                         catch (_) { }
                     }
@@ -1532,51 +1519,77 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
                     }
                 }
             });
-            // History sync listeners
-            localSock.ev.on('messaging-history.set', async ({ chats: histChats, contacts: histContacts }) => {
-                try {
-                    if (histChats && histChats.length > 0) {
-                        const rows = histChats.map((c) => ({
-                            workspace_id: wsId,
-                            jid: c.id,
-                            display_name: c.name || c.subject || null,
-                            unread_count: c.unreadCount || 0,
-                            last_message: c.conversationTimestamp ? 'Synced message' : null,
-                            last_message_at: c.conversationTimestamp ? new Date(Number(c.conversationTimestamp) * 1000).toISOString() : new Date().toISOString(),
-                            is_group: c.id?.endsWith('@g.us'),
-                            updated_at: new Date().toISOString(),
-                        }));
-                        await supabase.from('baileys_chats').upsert(rows, { onConflict: 'workspace_id, jid', ignoreDuplicates: false });
+            // Listen for real-time group metadata updates (e.g. group name changed, new group created)
+            localSock.ev.on('groups.update', async (groupUpdates) => {
+                for (const update of groupUpdates) {
+                    if (!update.id)
+                        continue;
+                    const patch = {
+                        workspace_id: wsId,
+                        jid: update.id,
+                        is_group: true,
+                        updated_at: new Date().toISOString(),
+                    };
+                    if (update.subject) {
+                        patch.display_name = update.subject;
                     }
-                    if (histContacts && histContacts.length > 0) {
-                        const cRows = histContacts.map((c) => ({
+                    try {
+                        await supabase.from('baileys_chats').upsert(patch, {
+                            onConflict: 'workspace_id, jid',
+                            ignoreDuplicates: false,
+                        });
+                    }
+                    catch (_) { }
+                }
+            });
+            localSock.ev.on('group-participants.update', async ({ id }) => {
+                if (!id)
+                    return;
+                try {
+                    const meta = await localSock.groupMetadata(id);
+                    if (meta) {
+                        await supabase.from('baileys_chats').upsert({
                             workspace_id: wsId,
-                            jid: c.id,
-                            name: c.name || c.notify || c.verifiedName || null,
-                            push_name: c.notify || null,
-                            phone: c.id?.split('@')[0],
+                            jid: id,
+                            display_name: meta.subject || id.split('@')[0],
+                            participant_count: meta.participants?.length ?? 0,
+                            is_group: true,
                             updated_at: new Date().toISOString(),
-                        }));
-                        await supabase.from('evolution_contacts').upsert(cRows, { onConflict: 'workspace_id, jid', ignoreDuplicates: false });
+                        }, {
+                            onConflict: 'workspace_id, jid',
+                            ignoreDuplicates: false,
+                        });
                     }
                 }
                 catch (_) { }
             });
-            localSock.ev.on('contacts.set', async ({ contacts: histContacts }) => {
+            // History sync listeners - ONLY preserve Groups for workflows; strictly ignore personal chats and contacts
+            localSock.ev.on('messaging-history.set', async ({ chats: histChats }) => {
                 try {
-                    if (histContacts && histContacts.length > 0) {
-                        const cRows = histContacts.map((c) => ({
+                    if (histChats && histChats.length > 0) {
+                        const groupRows = histChats
+                            .filter((c) => c.id?.endsWith('@g.us'))
+                            .map((c) => ({
                             workspace_id: wsId,
                             jid: c.id,
-                            name: c.name || c.notify || c.verifiedName || null,
-                            push_name: c.notify || null,
-                            phone: c.id?.split('@')[0],
+                            display_name: c.name || c.subject || c.id.split('@')[0],
+                            unread_count: 0,
+                            is_group: true,
                             updated_at: new Date().toISOString(),
                         }));
-                        await supabase.from('evolution_contacts').upsert(cRows, { onConflict: 'workspace_id, jid', ignoreDuplicates: false });
+                        if (groupRows.length > 0) {
+                            await supabase.from('baileys_chats').upsert(groupRows, {
+                                onConflict: 'workspace_id, jid',
+                                ignoreDuplicates: false,
+                            });
+                            logger.info({ count: groupRows.length, workspaceId: wsId }, '✅ Synced WhatsApp groups from history');
+                        }
                     }
                 }
                 catch (_) { }
+            });
+            localSock.ev.on('contacts.set', async () => {
+                // No-op: Do not dump user personal contacts into database
             });
         }
         finally {
@@ -1870,11 +1883,18 @@ function startHealthServer() {
                             return `⚡ *[ ${String(btn.text || '').toUpperCase()} ]*`;
                         }).join('\n\n');
                         const cardMessage = `${text || ''}\n\n━━━━━━━━━━━━━━━━━━━━\n${actionBlocks}\n━━━━━━━━━━━━━━━━━━━━${footer ? `\n_${footer}_` : ''}`;
-                        const sentResult = await targetSock.sendMessage(jid, {
-                            text: cardMessage
-                        });
-                        console.log(`✅ Action card message delivered to ${jid}, ID:`, sentResult?.key?.id);
-                        waMessageId = sentResult?.key?.id ?? null;
+                        if (mediaUrl && typeof mediaUrl === 'string' && mediaUrl.trim() !== '' && mediaUrl !== 'null') {
+                            const detectedMime = mimeType || detectMimeTypeFromUrl(mediaUrl);
+                            logger.info({ jid, mediaUrl: mediaUrl.slice(0, 80), detectedMime }, '📤 Sending action card message WITH media attachment');
+                            waMessageId = await sendMediaMessage(jid, mediaUrl, cardMessage, detectedMime, targetWsId);
+                        }
+                        else {
+                            const sentResult = await targetSock.sendMessage(jid, {
+                                text: cardMessage
+                            });
+                            logger.info({ jid, id: sentResult?.key?.id }, '✅ Action card message delivered');
+                            waMessageId = sentResult?.key?.id ?? null;
+                        }
                         break;
                     }
                     default:
