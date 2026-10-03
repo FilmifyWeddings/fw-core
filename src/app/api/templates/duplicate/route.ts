@@ -194,7 +194,7 @@ export async function POST(req: NextRequest) {
         content_json: clonedDoc,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
-      }, { onConflict: 'quotation_number' });
+      }, { onConflict: 'workspace_id,quotation_number' });
     } catch (_) {}
 
     return NextResponse.json({

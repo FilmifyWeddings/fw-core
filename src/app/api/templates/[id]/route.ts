@@ -385,19 +385,24 @@ async function handleUpdate(
       // 3. Upsert quotations record
       try {
         const coupleName = document?.cover?.coupleName || (document?.cover?.groomName ? `${document.cover.groomName} & ${document.cover.brideName}` : null) || extractCoupleNameFromQuotation(document) || document?.meta?.client_name || 'Rahul & Neha';
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+        const quotePayload: any = {
+          quotation_number: id,
+          workspace_id: workspaceId,
+          user_id: userId,
+          title: newTitle,
+          client_name: coupleName,
+          couple_names: coupleName,
+          canvas_data: document,
+          updated_at: new Date().toISOString()
+        };
+        if (isUUID) {
+          quotePayload.id = id;
+        }
+
         await supabaseAdmin
           .from('quotations')
-          .upsert({
-            id,
-            quotation_number: id,
-            workspace_id: workspaceId,
-            user_id: userId,
-            title: newTitle,
-            client_name: coupleName,
-            couple_names: coupleName,
-            canvas_data: document,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'quotation_number' });
+          .upsert(quotePayload, { onConflict: 'workspace_id,quotation_number' });
       } catch (quoteUpsertErr) {
         console.warn('[API templates/[id]] Secondary quotations upsert note:', quoteUpsertErr);
       }

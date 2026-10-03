@@ -3299,7 +3299,6 @@ function StudioCoreAiryBuilderContent() {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${userAccessToken || ''}`
             },
-            keepalive: true,
             body: JSON.stringify({
               user_id: currentUserId,
               workspace_id: currentUserId,
@@ -3517,7 +3516,6 @@ function StudioCoreAiryBuilderContent() {
       const saveRes = await fetch(`/api/templates/${targetTmplId}`, {
         method: 'PATCH',
         headers,
-        keepalive: true,
         body: JSON.stringify({
           user_id: session?.user?.id || userId,
           workspace_id: session?.user?.id || userId,
@@ -3529,15 +3527,19 @@ function StudioCoreAiryBuilderContent() {
         })
       });
 
-      if (saveRes.ok) {
-        const resJson = await saveRes.json();
-        if (resJson.version) {
-          currentVersionRef.current = resJson.version;
-        }
-        if (resJson.isAutoCloned && resJson.newTemplateId) {
-          currentTemplateIdRef.current = resJson.newTemplateId;
-          window.history.replaceState(null, '', `/workspace/quotations/builder/templet/${resJson.newTemplateId}`);
-        }
+      if (!saveRes.ok) {
+        const errJson = await saveRes.json().catch(() => ({}));
+        throw new Error(errJson.error || `Save failed with status ${saveRes.status}`);
+      }
+
+      const resJson = await saveRes.json();
+      if (resJson.version) {
+        currentVersionRef.current = resJson.version;
+      }
+      if (resJson.isAutoCloned && resJson.newTemplateId) {
+        currentTemplateIdRef.current = resJson.newTemplateId;
+        window.history.replaceState(null, '', `/workspace/quotations/builder/templet/${resJson.newTemplateId}`);
+      }
         const finalId = currentTemplateIdRef.current;
         cacheDocumentLocal(finalId, snapshotData, currentVersionRef.current);
 
@@ -3587,7 +3589,6 @@ function StudioCoreAiryBuilderContent() {
           }
           window.dispatchEvent(new Event('wg_quotations_updated'));
         } catch (_) {}
-      }
 
       if (realtimeChannelRef.current) {
         realtimeChannelRef.current.send({
@@ -3704,9 +3705,10 @@ function StudioCoreAiryBuilderContent() {
     try {
       await flushSaveImmediately();
       alert('Quotation proposal saved to your workspace!');
-    } catch {
-      alert('Saved locally!');
-      setAutoSaveStatus('Saved locally');
+    } catch (err: any) {
+      console.error('Manual save failed:', err);
+      alert(err?.message || 'Save failed. Please check your internet connection.');
+      setAutoSaveStatus('Offline / Retrying');
     }
   };
 
