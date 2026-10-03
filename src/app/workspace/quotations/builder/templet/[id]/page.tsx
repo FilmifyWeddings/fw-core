@@ -3587,7 +3587,52 @@ function StudioCoreAiryBuilderContent() {
               }
             }
           }
+
+          // SYNC STUDIO TEMPLATES CACHE FOR 0ms CRM DROP-DOWN REFLECTION:
+          try {
+            const tmplCacheKeys = [
+              activeUid ? `studio_templates_cache_${activeUid}` : '',
+              'studio_templates_cache'
+            ].filter(Boolean);
+
+            for (const tck of tmplCacheKeys) {
+              const rawTmpl = localStorage.getItem(tck) || sessionStorage.getItem(tck);
+              if (rawTmpl) {
+                const parsedTmplList = JSON.parse(rawTmpl);
+                if (Array.isArray(parsedTmplList)) {
+                  let tmplFound = false;
+                  const updatedTmplList = parsedTmplList.map((t: any) => {
+                    if (t.id === finalId) {
+                      tmplFound = true;
+                      return {
+                        ...t,
+                        title: snapshotData.designName || t.title,
+                        content_json: snapshotData,
+                        updated_at: new Date().toISOString()
+                      };
+                    }
+                    return t;
+                  });
+                  if (!tmplFound) {
+                    updatedTmplList.unshift({
+                      id: finalId,
+                      title: snapshotData.designName || 'Wedding Quotation',
+                      content_json: snapshotData,
+                      category: 'Wedding',
+                      is_default: false,
+                      is_system_template: false,
+                      updated_at: new Date().toISOString()
+                    });
+                  }
+                  localStorage.setItem(tck, JSON.stringify(updatedTmplList));
+                  sessionStorage.setItem(tck, JSON.stringify(updatedTmplList));
+                }
+              }
+            }
+          } catch (_) {}
+
           window.dispatchEvent(new Event('wg_quotations_updated'));
+          window.dispatchEvent(new Event('quotation_template_updated'));
         } catch (_) {}
 
       if (realtimeChannelRef.current) {

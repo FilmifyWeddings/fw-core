@@ -614,7 +614,7 @@ LEAD & CLIENT CONTEXT:
           </div>
 
           {/* Body Content */}
-          <div className="p-5 overflow-y-auto flex-1 space-y-4">
+          <div className="p-5 overflow-y-auto overflow-x-hidden flex-1 space-y-4">
             {errorMsg && (
               <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2.5">
                 <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500" />
@@ -680,6 +680,7 @@ LEAD & CLIENT CONTEXT:
                       onSelect={(id) => setActiveTemplateId(id)}
                       workspaceId={effectiveLead?.workspace_id}
                       placement="bottom"
+                      align="right"
                     />
                   </div>
                 )}
