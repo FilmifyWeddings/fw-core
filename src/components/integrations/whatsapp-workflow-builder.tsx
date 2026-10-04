@@ -9,9 +9,17 @@ import {
   Search, ShieldAlert, Sparkles, ChevronRight, UserCheck, Users,
   GripVertical, Plus, Edit, Copy, PlayCircle, RotateCcw, 
   Database, PauseCircle, MoreVertical, Sliders, X, ArrowLeft,
-  ChevronLeft, ChevronRight as ChevronRightIcon, BarChart3
+  ChevronLeft, ChevronRight as ChevronRightIcon, BarChart3,
+  ChevronDown, FileText, Check
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+
+// Helper to distinguish Group Templates from Client Templates
+const isGroupTemplate = (t: { name?: string; category?: string }) => {
+  const cat = (t.category || '').toLowerCase();
+  const nm = (t.name || '').toLowerCase();
+  return cat === 'group_alert' || cat === 'group_workflow' || cat === 'group' || nm.startsWith('group_') || nm.includes('group_alert');
+};
 
 interface WhatsappWorkflowBuilderProps {
   workspaceId: string;
@@ -63,7 +71,10 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
   const [templates, setTemplates] = useState<Template[]>([]);
   const [syncedWhatsAppGroups, setSyncedWhatsAppGroups] = useState<WhatsAppSyncedGroup[]>([]);
   const [fetchingGroups, setFetchingGroups] = useState(false);
-  const [stepGroupSearch, setStepGroupSearch] = useState<Record<number, string>>({});
+  const [openGroupDropdownIndex, setOpenGroupDropdownIndex] = useState<number | null>(null);
+  const [groupSearchQueries, setGroupSearchQueries] = useState<Record<number, string>>({});
+  const [openTemplateDropdownIndex, setOpenTemplateDropdownIndex] = useState<number | null>(null);
+  const [templateSearchQueries, setTemplateSearchQueries] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [executingId, setExecutingId] = useState<string | null>(null);
@@ -174,6 +185,50 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
   useEffect(() => {
     if (workspaceId && workspaceId !== '00000000-0000-0000-0000-000000000000') {
       loadData();
+
+      // Real-time listener for instant group updates in milliseconds
+      const channel = supabase
+        .channel(`realtime_baileys_chats_${workspaceId}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'baileys_chats' },
+          (payload: any) => {
+            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+              const row = payload.new;
+              if (row && row.is_group) {
+                setSyncedWhatsAppGroups(prev => {
+                  const exists = prev.some(g => g.jid === row.jid);
+                  let updated;
+                  if (exists) {
+                    updated = prev.map(g => g.jid === row.jid ? {
+                      ...g,
+                      display_name: row.display_name || g.display_name,
+                      participant_count: row.participant_count ?? g.participant_count
+                    } : g);
+                  } else {
+                    updated = [...prev, {
+                      jid: row.jid,
+                      display_name: row.display_name || row.jid.split('@')[0],
+                      participant_count: row.participant_count ?? 0,
+                      is_group: true
+                    }];
+                  }
+                  return updated.sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''));
+                });
+              }
+            } else if (payload.eventType === 'DELETE') {
+              const oldRow = payload.old;
+              if (oldRow?.jid) {
+                setSyncedWhatsAppGroups(prev => prev.filter(g => g.jid !== oldRow.jid));
+              }
+            }
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
     }
   }, [workspaceId]);
 
@@ -217,29 +272,55 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
 
   // Add new card step
   const handleAddStep = () => {
-    const defaultTemplate = templates[0];
-    const cat = (defaultTemplate?.category || '').toLowerCase();
-    const isGroup = cat === 'group_alert' || cat === 'group_workflow' || cat === 'group' || (defaultTemplate?.name || '').toLowerCase().startsWith('group_');
-
+    // Default to first client template if available
+    const clientTemplate = templates.find(t => !isGroupTemplate(t)) || templates[0];
     const newStep: WorkflowStep = {
-      template_id: defaultTemplate?.id || '',
-      template_name: defaultTemplate?.name || '',
-      delay_value: 30,
-      delay_unit: 'seconds',
+      template_id: clientTemplate?.id || '',
+      template_name: clientTemplate?.name || '',
+      delay_value: steps.length === 0 ? 0 : 1,
+      delay_unit: steps.length === 0 ? 'seconds' : 'minutes',
       sort_index: steps.length,
-      target_type: isGroup ? 'group' : 'client',
-      target_group_jid: isGroup ? (syncedWhatsAppGroups[0]?.jid || '') : '',
-      target_group_name: isGroup ? (syncedWhatsAppGroups[0]?.display_name || '') : ''
+      target_type: 'client',
+      target_group_jid: '',
+      target_group_name: ''
     };
     setSteps([...steps, newStep]);
   };
 
   const handleUpdateStep = (index: number, field: keyof WorkflowStep, value: any) => {
     const newSteps = [...steps];
-    if (field === 'template_name') {
+    if (field === 'target_type') {
+      const isGroup = value === 'group';
+      const curTemplate = templates.find(t => t.name === newSteps[index].template_name);
+      const isCurGroup = curTemplate ? isGroupTemplate(curTemplate) : false;
+
+      let newTemplateName = newSteps[index].template_name;
+      let newTemplateId = newSteps[index].template_id;
+
+      // If switching to client and current template is group template, auto pick first client template
+      if (!isGroup && isCurGroup) {
+        const clientT = templates.find(t => !isGroupTemplate(t));
+        newTemplateName = clientT?.name || '';
+        newTemplateId = clientT?.id || '';
+      }
+      // If switching to group and current template is client template, auto pick first group template
+      if (isGroup && !isCurGroup) {
+        const groupT = templates.find(t => isGroupTemplate(t));
+        newTemplateName = groupT?.name || '';
+        newTemplateId = groupT?.id || '';
+      }
+
+      newSteps[index] = {
+        ...newSteps[index],
+        target_type: value,
+        template_name: newTemplateName,
+        template_id: newTemplateId,
+        target_group_jid: isGroup ? (newSteps[index].target_group_jid || syncedWhatsAppGroups[0]?.jid || '') : '',
+        target_group_name: isGroup ? (newSteps[index].target_group_name || syncedWhatsAppGroups[0]?.display_name || '') : ''
+      };
+    } else if (field === 'template_name') {
       const selected = templates.find(t => t.name === value);
-      const cat = (selected?.category || '').toLowerCase();
-      const isGroup = cat === 'group_alert' || cat === 'group_workflow' || cat === 'group' || (value || '').toLowerCase().startsWith('group_') || (value || '').toLowerCase().includes('group_alert');
+      const isGroup = selected ? isGroupTemplate(selected) : false;
 
       newSteps[index] = {
         ...newSteps[index],
@@ -944,15 +1025,25 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
               ) : (
                 <div className="space-y-4">
                   {steps.map((step, index) => {
-                    const currentSearch = (stepGroupSearch[index] || '').toLowerCase();
+                    const isGroupTarget = step.target_type === 'group';
+
+                    // Group search filter (search by group name only, NO JID!)
+                    const gQuery = (groupSearchQueries[index] || '').toLowerCase().trim();
                     const filteredGroupsForStep = syncedWhatsAppGroups.filter(g =>
-                      (g.display_name || '').toLowerCase().includes(currentSearch) ||
-                      (g.jid || '').toLowerCase().includes(currentSearch)
+                      (g.display_name || '').toLowerCase().includes(gQuery)
                     );
-                    const selectedTemplate = templates.find(t => t.name === step.template_name);
-                    const isGroupCategory = (selectedTemplate?.category || '').toLowerCase() === 'group_alert' || 
-                                           (selectedTemplate?.category || '').toLowerCase() === 'group_workflow' ||
-                                           (selectedTemplate?.category || '').toLowerCase() === 'group';
+
+                    // Channel-specific template list (strictly separated)
+                    const channelTemplates = templates.filter(t =>
+                      isGroupTarget ? isGroupTemplate(t) : !isGroupTemplate(t)
+                    );
+
+                    // Template search filter
+                    const tQuery = (templateSearchQueries[index] || '').toLowerCase().trim();
+                    const filteredTemplatesForStep = channelTemplates.filter(t =>
+                      t.name.toLowerCase().includes(tQuery) ||
+                      (t.category || '').toLowerCase().includes(tQuery)
+                    );
 
                     return (
                       <React.Fragment key={index}>
@@ -965,7 +1056,7 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                           onDragEnd={handleDragEnd}
                           onDragOver={(e) => e.preventDefault()}
                           className={`p-5 rounded-2xl border shadow-sm transition-all relative group space-y-4 ${
-                            step.target_type === 'group' || isGroupCategory
+                            isGroupTarget
                               ? 'bg-amber-500/5 dark:bg-amber-500/5 border-amber-300/40 dark:border-amber-500/20 hover:border-amber-400'
                               : 'bg-slate-50/80 dark:bg-white/5 border-zinc-200 dark:border-white/10 hover:border-zinc-300 dark:hover:bg-white/10'
                           }`}
@@ -986,7 +1077,7 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                                   type="button"
                                   onClick={() => handleUpdateStep(index, 'target_type', 'client')}
                                   className={`px-2.5 py-1 text-[10px] font-bold rounded-md flex items-center gap-1 transition-all cursor-pointer ${
-                                    step.target_type !== 'group' && !isGroupCategory
+                                    !isGroupTarget
                                       ? 'bg-emerald-500 text-white shadow-sm'
                                       : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300'
                                   }`}
@@ -998,7 +1089,7 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                                   type="button"
                                   onClick={() => handleUpdateStep(index, 'target_type', 'group')}
                                   className={`px-2.5 py-1 text-[10px] font-bold rounded-md flex items-center gap-1 transition-all cursor-pointer ${
-                                    step.target_type === 'group' || isGroupCategory
+                                    isGroupTarget
                                       ? 'bg-gradient-to-r from-orange-400 to-amber-500 text-black shadow-sm'
                                       : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300'
                                   }`}
@@ -1023,35 +1114,118 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                           {/* Node Body Grid */}
                           <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
                             
-                            {/* Message Template (Cols: 5) */}
-                            <div className="md:col-span-5 space-y-1.5">
+                            {/* Message Template (Cols: 5) - Strictly Channel Filtered with Sticky Search */}
+                            <div className="md:col-span-5 space-y-1.5 relative">
                               <div className="flex items-center justify-between">
                                 <label className="text-[9px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider block">
-                                  Message Template
+                                  {isGroupTarget ? 'Group Alert Template' : 'Client Message Template'}
                                 </label>
-                                {isGroupCategory && (
-                                  <span className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-                                    Group Alert Template
-                                  </span>
-                                )}
+                                <span className={`text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                                  isGroupTarget
+                                    ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                                    : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                                }`}>
+                                  {isGroupTarget ? 'Group Templates Only' : 'Client Templates Only'}
+                                </span>
                               </div>
-                              <select
-                                value={step.template_name}
-                                onChange={(e) => handleUpdateStep(index, 'template_name', e.target.value)}
-                                className="w-full px-3 py-2 bg-white dark:bg-zinc-950/80 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs text-zinc-800 dark:text-zinc-300 focus:outline-none focus:border-emerald-500/60 shadow-sm"
-                              >
-                                <option value="">Select Template</option>
-                                <optgroup label="👤 Client & Drip Templates">
-                                  {templates.filter(t => !['group_alert', 'group_workflow', 'group'].includes((t.category || '').toLowerCase()) && !t.name.startsWith('group_')).map(t => (
-                                    <option key={t.id} value={t.name}>{t.name} ({t.type})</option>
-                                  ))}
-                                </optgroup>
-                                <optgroup label="👥 WhatsApp Group Templates">
-                                  {templates.filter(t => ['group_alert', 'group_workflow', 'group'].includes((t.category || '').toLowerCase()) || t.name.startsWith('group_')).map(t => (
-                                    <option key={t.id} value={t.name}>🚨 {t.name} (Group {t.type})</option>
-                                  ))}
-                                </optgroup>
-                              </select>
+
+                              {/* Searchable Template Dropdown Trigger */}
+                              <div className="relative">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenGroupDropdownIndex(null);
+                                    setOpenTemplateDropdownIndex(openTemplateDropdownIndex === index ? null : index);
+                                  }}
+                                  className={`w-full px-3 py-2 bg-white dark:bg-zinc-950/80 border rounded-xl text-xs flex items-center justify-between transition-all cursor-pointer shadow-xs ${
+                                    openTemplateDropdownIndex === index
+                                      ? 'border-emerald-500 ring-2 ring-emerald-500/10 dark:ring-emerald-500/20'
+                                      : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2 truncate pr-2">
+                                    <FileText className={`w-3.5 h-3.5 shrink-0 ${isGroupTarget ? 'text-orange-500' : 'text-emerald-500'}`} />
+                                    <span className={`truncate font-medium ${step.template_name ? 'text-zinc-900 dark:text-white font-semibold' : 'text-zinc-400'}`}>
+                                      {step.template_name || (isGroupTarget ? '-- Choose Group Template --' : '-- Choose Client Template --')}
+                                    </span>
+                                  </div>
+                                  <ChevronDown className={`w-4 h-4 text-zinc-400 transition-transform duration-200 shrink-0 ${openTemplateDropdownIndex === index ? 'rotate-180 text-emerald-500' : ''}`} />
+                                </button>
+
+                                {/* Template Searchable Dropdown Popover */}
+                                <AnimatePresence>
+                                  {openTemplateDropdownIndex === index && (
+                                    <>
+                                      <div
+                                        className="fixed inset-0 z-40"
+                                        onClick={() => setOpenTemplateDropdownIndex(null)}
+                                      />
+                                      <motion.div
+                                        initial={{ opacity: 0, y: -4, scale: 0.98 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        exit={{ opacity: 0, y: -4, scale: 0.98 }}
+                                        transition={{ duration: 0.15 }}
+                                        className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl overflow-hidden"
+                                      >
+                                        {/* Sticky Search Header */}
+                                        <div className="sticky top-0 z-10 p-2.5 bg-white dark:bg-zinc-900 border-b border-zinc-150 dark:border-zinc-800">
+                                          <div className="relative">
+                                            <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                                            <input
+                                              type="text"
+                                              autoFocus
+                                              placeholder={isGroupTarget ? "Search group templates..." : "Search client templates..."}
+                                              value={templateSearchQueries[index] || ''}
+                                              onChange={(e) => setTemplateSearchQueries(prev => ({ ...prev, [index]: e.target.value }))}
+                                              className="w-full pl-8 pr-3 py-1.5 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-emerald-500 font-medium"
+                                            />
+                                          </div>
+                                        </div>
+
+                                        {/* Template Items */}
+                                        <div className="max-h-56 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800/40 p-1">
+                                          {filteredTemplatesForStep.length === 0 ? (
+                                            <div className="p-4 text-center text-xs text-zinc-400 font-mono">
+                                              {isGroupTarget
+                                                ? 'No matching group templates found'
+                                                : 'No matching client templates found'}
+                                            </div>
+                                          ) : (
+                                            filteredTemplatesForStep.map(t => (
+                                              <button
+                                                key={t.id}
+                                                type="button"
+                                                onClick={() => {
+                                                  handleUpdateStep(index, 'template_name', t.name);
+                                                  setOpenTemplateDropdownIndex(null);
+                                                }}
+                                                className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-colors cursor-pointer ${
+                                                  step.template_name === t.name
+                                                    ? 'bg-emerald-500/10 dark:bg-emerald-500/20 font-bold text-emerald-600 dark:text-emerald-400'
+                                                    : 'hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-800 dark:text-zinc-200'
+                                                }`}
+                                              >
+                                                <div className="flex items-center gap-2 truncate pr-2">
+                                                  <FileText className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                                                  <span className="truncate">{t.name}</span>
+                                                </div>
+                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                  <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-zinc-150 dark:bg-zinc-800 text-zinc-500">
+                                                    {t.type}
+                                                  </span>
+                                                  {step.template_name === t.name && (
+                                                    <Check className="w-3.5 h-3.5 text-emerald-500" />
+                                                  )}
+                                                </div>
+                                              </button>
+                                            ))
+                                          )}
+                                        </div>
+                                      </motion.div>
+                                    </>
+                                  )}
+                                </AnimatePresence>
+                              </div>
                             </div>
 
                             {/* Delay Cooldown (Cols: 7) */}
@@ -1089,8 +1263,8 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
 
                           </div>
 
-                          {/* ═══ TARGET WHATSAPP GROUP SEARCH & SELECT DOCK (When Group Target Selected) ═══ */}
-                          {(step.target_type === 'group' || isGroupCategory) && (
+                          {/* ═══ TARGET WHATSAPP GROUP DOCK (Only When Group Target Selected, ZERO GID Strings) ═══ */}
+                          {isGroupTarget && (
                             <div className="p-4 rounded-xl border border-amber-300/40 dark:border-amber-500/20 bg-amber-500/5 dark:bg-amber-500/5 space-y-3">
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
@@ -1105,54 +1279,119 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                                   onClick={fetchSyncedGroups}
                                   disabled={fetchingGroups}
                                   className="flex items-center gap-1 text-[9px] font-bold text-orange-600 dark:text-orange-400 hover:underline cursor-pointer disabled:opacity-50"
+                                  title="Refresh live groups directly from WhatsApp"
                                 >
                                   <RefreshCw className={`w-3 h-3 ${fetchingGroups ? 'animate-spin' : ''}`} />
-                                  {fetchingGroups ? 'Syncing Groups...' : 'Refresh Synced Groups'}
+                                  {fetchingGroups ? 'Syncing...' : 'Refresh Groups'}
                                 </button>
                               </div>
 
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                {/* Search Filter Input */}
-                                <div className="relative">
-                                  <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                                  <input
-                                    type="text"
-                                    placeholder="🔍 Search group name or JID..."
-                                    value={stepGroupSearch[index] || ''}
-                                    onChange={(e) => setStepGroupSearch(prev => ({ ...prev, [index]: e.target.value }))}
-                                    className="w-full pl-8 pr-3 py-2 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-800 dark:text-zinc-200 text-xs rounded-xl focus:outline-none focus:border-orange-400"
-                                  />
-                                </div>
+                              {/* Searchable WhatsApp Group Dropdown with Sticky Search Header */}
+                              <div className="relative">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenTemplateDropdownIndex(null);
+                                    setOpenGroupDropdownIndex(openGroupDropdownIndex === index ? null : index);
+                                  }}
+                                  className={`w-full px-3 py-2.5 bg-white dark:bg-zinc-950 border rounded-xl text-xs flex items-center justify-between transition-all cursor-pointer shadow-xs ${
+                                    openGroupDropdownIndex === index
+                                      ? 'border-orange-500 ring-2 ring-orange-500/10 dark:ring-orange-500/20'
+                                      : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2 truncate pr-2">
+                                    <Users className="w-4 h-4 text-orange-500 shrink-0" />
+                                    <span className={`truncate font-medium ${step.target_group_name ? 'text-zinc-900 dark:text-white font-semibold' : 'text-zinc-400'}`}>
+                                      {step.target_group_name || '-- Choose WhatsApp Group --'}
+                                    </span>
+                                  </div>
+                                  <ChevronDown className={`w-4 h-4 text-zinc-400 transition-transform duration-200 shrink-0 ${openGroupDropdownIndex === index ? 'rotate-180 text-orange-500' : ''}`} />
+                                </button>
 
-                                {/* Group Selector Dropdown */}
-                                <div>
-                                  <select
-                                    value={step.target_group_jid || ''}
-                                    onChange={(e) => handleUpdateStep(index, 'target_group_jid', e.target.value)}
-                                    className="w-full px-3 py-2 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-800 dark:text-zinc-200 text-xs rounded-xl focus:outline-none focus:border-orange-400 font-medium"
-                                  >
-                                    <option value="">-- Choose WhatsApp Group --</option>
-                                    {filteredGroupsForStep.length === 0 ? (
-                                      <option value="" disabled>No matching WhatsApp groups found</option>
-                                    ) : (
-                                      filteredGroupsForStep.map(g => (
-                                        <option key={g.jid} value={g.jid}>
-                                          {g.display_name} ({g.participant_count || 0} members)
-                                        </option>
-                                      ))
-                                    )}
-                                  </select>
-                                </div>
+                                {/* Group Searchable Dropdown Popover */}
+                                <AnimatePresence>
+                                  {openGroupDropdownIndex === index && (
+                                    <>
+                                      <div
+                                        className="fixed inset-0 z-40"
+                                        onClick={() => setOpenGroupDropdownIndex(null)}
+                                      />
+                                      <motion.div
+                                        initial={{ opacity: 0, y: -4, scale: 0.98 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        exit={{ opacity: 0, y: -4, scale: 0.98 }}
+                                        transition={{ duration: 0.15 }}
+                                        className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl overflow-hidden"
+                                      >
+                                        {/* STICKY SEARCH HEADER */}
+                                        <div className="sticky top-0 z-10 p-2.5 bg-white dark:bg-zinc-900 border-b border-zinc-150 dark:border-zinc-800">
+                                          <div className="relative">
+                                            <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                                            <input
+                                              type="text"
+                                              autoFocus
+                                              placeholder="Search group name..."
+                                              value={groupSearchQueries[index] || ''}
+                                              onChange={(e) => setGroupSearchQueries(prev => ({ ...prev, [index]: e.target.value }))}
+                                              className="w-full pl-8 pr-3 py-1.5 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-orange-400 font-medium"
+                                            />
+                                          </div>
+                                        </div>
+
+                                        {/* GROUP ITEMS */}
+                                        <div className="max-h-56 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800/40 p-1">
+                                          {filteredGroupsForStep.length === 0 ? (
+                                            <div className="p-4 text-center text-xs text-zinc-400 font-mono">
+                                              No matching WhatsApp groups found
+                                            </div>
+                                          ) : (
+                                            filteredGroupsForStep.map(g => (
+                                              <button
+                                                key={g.jid}
+                                                type="button"
+                                                onClick={() => {
+                                                  handleUpdateStep(index, 'target_group_jid', g.jid);
+                                                  setOpenGroupDropdownIndex(null);
+                                                }}
+                                                className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-colors cursor-pointer ${
+                                                  step.target_group_jid === g.jid
+                                                    ? 'bg-orange-500/10 dark:bg-orange-500/20 font-bold text-orange-600 dark:text-orange-400'
+                                                    : 'hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-800 dark:text-zinc-200'
+                                                }`}
+                                              >
+                                                <div className="flex items-center gap-2 truncate pr-2">
+                                                  <Users className="w-3.5 h-3.5 text-orange-500 shrink-0" />
+                                                  <span className="truncate">{g.display_name}</span>
+                                                </div>
+                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                  <span className="text-[10px] text-zinc-400 font-mono">
+                                                    {g.participant_count ?? 0} members
+                                                  </span>
+                                                  {step.target_group_jid === g.jid && (
+                                                    <Check className="w-3.5 h-3.5 text-orange-500" />
+                                                  )}
+                                                </div>
+                                              </button>
+                                            ))
+                                          )}
+                                        </div>
+                                      </motion.div>
+                                    </>
+                                  )}
+                                </AnimatePresence>
                               </div>
 
-                              {/* Selected Group Active JID Badge */}
-                              {step.target_group_jid && (
-                                <div className="flex items-center justify-between text-[10px] text-zinc-500 dark:text-zinc-400 font-mono bg-white dark:bg-zinc-900/80 px-3 py-1.5 rounded-lg border border-zinc-150 dark:border-zinc-800">
-                                  <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-bold">
-                                    <CheckCircle2 className="w-3 h-3" />
-                                    Active Target: <span className="font-sans font-extrabold text-zinc-900 dark:text-white">{step.target_group_name || 'Selected Group'}</span>
+                              {/* Selected Group Active Target Display (ZERO GID Strings Shown) */}
+                              {step.target_group_name && (
+                                <div className="flex items-center justify-between text-xs bg-white dark:bg-zinc-900/90 px-3.5 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-xs">
+                                  <span className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-bold">
+                                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                                    Active Target: <span className="font-sans font-extrabold text-zinc-900 dark:text-white">{step.target_group_name}</span>
                                   </span>
-                                  <span className="text-[9px] text-zinc-400">{step.target_group_jid}</span>
+                                  <span className="text-[10px] font-semibold text-zinc-400">
+                                    {syncedWhatsAppGroups.find(g => g.jid === step.target_group_jid)?.participant_count || 0} members
+                                  </span>
                                 </div>
                               )}
                             </div>

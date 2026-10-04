@@ -1563,6 +1563,48 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId) {
                 }
                 catch (_) { }
             });
+            // Real-time listener for newly created or joined WhatsApp groups
+            localSock.ev.on('groups.upsert', async (newGroups) => {
+                for (const group of newGroups) {
+                    if (!group.id)
+                        continue;
+                    try {
+                        await supabase.from('baileys_chats').upsert({
+                            workspace_id: wsId,
+                            jid: group.id,
+                            display_name: group.subject || group.id.split('@')[0],
+                            participant_count: group.participants?.length ?? 0,
+                            is_group: true,
+                            updated_at: new Date().toISOString(),
+                        }, {
+                            onConflict: 'workspace_id, jid',
+                            ignoreDuplicates: false,
+                        });
+                        logger.info({ jid: group.id, subject: group.subject }, '✨ Realtime new WhatsApp group synced');
+                    }
+                    catch (_) { }
+                }
+            });
+            // Real-time listener for chats upsert to catch group creations
+            localSock.ev.on('chats.upsert', async (chats) => {
+                for (const chat of chats) {
+                    if (!chat.id || !chat.id.endsWith('@g.us'))
+                        continue;
+                    try {
+                        await supabase.from('baileys_chats').upsert({
+                            workspace_id: wsId,
+                            jid: chat.id,
+                            display_name: chat.name || chat.subject || chat.id.split('@')[0],
+                            is_group: true,
+                            updated_at: new Date().toISOString(),
+                        }, {
+                            onConflict: 'workspace_id, jid',
+                            ignoreDuplicates: false,
+                        });
+                    }
+                    catch (_) { }
+                }
+            });
             // History sync listeners - ONLY preserve Groups for workflows; strictly ignore personal chats and contacts
             localSock.ev.on('messaging-history.set', async ({ chats: histChats }) => {
                 try {
