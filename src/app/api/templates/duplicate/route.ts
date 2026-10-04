@@ -63,6 +63,10 @@ export async function POST(req: NextRequest) {
     // Deep clone document JSON and generate fresh unique custom page IDs
     const clonedDoc = JSON.parse(JSON.stringify(docJson));
     clonedDoc.designName = title;
+    delete clonedDoc.lead_id;
+    delete clonedDoc.client_id;
+    delete clonedDoc.lead_version;
+    delete clonedDoc.is_final;
 
     if (clonedDoc.customPages && typeof clonedDoc.customPages === 'object') {
       const regeneratedCustomPages: Record<string, any> = {};

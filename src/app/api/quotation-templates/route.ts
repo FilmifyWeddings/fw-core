@@ -91,10 +91,11 @@ export async function GET(req: NextRequest) {
 
     // Fetch document content_json using supabaseAdmin (bypasses RLS)
     const docsMap: Record<string, any> = {};
+    const leadDocsSet = new Set<string>();
     if (templateIds.length > 0) {
       const { data: docsData, error: docsErr } = await supabaseAdmin
         .from('quotation_documents')
-        .select('template_id, content_json')
+        .select('template_id, content_json, lead_id')
         .in('template_id', templateIds);
 
       if (docsErr) {
@@ -106,32 +107,43 @@ export async function GET(req: NextRequest) {
           if (d.template_id && d.content_json) {
             docsMap[d.template_id] = d.content_json;
           }
+          if (d.lead_id || d.content_json?.lead_id) {
+            leadDocsSet.add(d.template_id);
+          }
         });
       }
     }
 
     const hasAnyDefaultInDb = validTemplates.some(t => t.is_default);
 
-    const results = validTemplates.map(t => {
-      let isDefault = false;
-      if (activeDefaultId) {
-        isDefault = t.id === activeDefaultId;
-      } else if (t.is_default) {
-        isDefault = true;
-      } else if (!hasAnyDefaultInDb && t.id === validTemplates[0]?.id) {
-        isDefault = true;
-      }
+    const results = validTemplates
+      .filter(t => {
+        // Exclude lead-specific quotation instances unless it is the user's explicit default template or a system preset
+        if (!t.is_system_template && !t.is_default && t.id !== activeDefaultId && leadDocsSet.has(t.id)) {
+          return false;
+        }
+        return true;
+      })
+      .map(t => {
+        let isDefault = false;
+        if (activeDefaultId) {
+          isDefault = t.id === activeDefaultId;
+        } else if (t.is_default) {
+          isDefault = true;
+        } else if (!hasAnyDefaultInDb && t.id === validTemplates[0]?.id) {
+          isDefault = true;
+        }
 
-      const docContent = docsMap[t.id] || null;
-      const title = docContent?.designName || t.title;
+        const docContent = docsMap[t.id] || null;
+        const title = docContent?.designName || t.title;
 
-      return {
-        ...t,
-        title,
-        is_default: isDefault,
-        content_json: docContent
-      };
-    });
+        return {
+          ...t,
+          title,
+          is_default: isDefault,
+          content_json: docContent
+        };
+      });
 
     // Ensure Default template is at the top of the array
     results.sort((a, b) => (b.is_default ? 1 : 0) - (a.is_default ? 1 : 0));

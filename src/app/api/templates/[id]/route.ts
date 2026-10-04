@@ -355,20 +355,33 @@ async function handleUpdate(
       document.designName = newTitle;
     }
 
-    // 1. Upsert quotation_templates (covers existing templates AND client-generated template IDs)
-    await supabaseAdmin
-      .from('quotation_templates')
-      .upsert({
-        id,
-        workspace_id: workspaceId || userId,
-        user_id: userId || workspaceId,
-        title: newTitle,
-        category: category || targetTmpl?.category || 'Wedding',
-        is_system_template: Boolean(targetTmpl?.is_system_template),
-        is_default: Boolean(targetTmpl?.is_default),
-        status: targetTmpl?.status || 'draft',
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'id' });
+    // 1. Upsert quotation_templates ONLY if this is a master design template (NOT a lead quotation)
+    const isLeadQuotation = Boolean(
+      id.startsWith('FW-Q-') || 
+      id.startsWith('FW-L-') || 
+      document?.lead_id || 
+      body?.lead_id || 
+      body?.client_id || 
+      category === 'LeadQuotation' ||
+      targetTmpl?.category === 'LeadQuotation' ||
+      targetTmpl?.status === 'archived'
+    );
+
+    if (!isLeadQuotation) {
+      await supabaseAdmin
+        .from('quotation_templates')
+        .upsert({
+          id,
+          workspace_id: workspaceId || userId,
+          user_id: userId || workspaceId,
+          title: newTitle,
+          category: category || targetTmpl?.category || 'Wedding',
+          is_system_template: Boolean(targetTmpl?.is_system_template),
+          is_default: Boolean(targetTmpl?.is_default),
+          status: targetTmpl?.status || 'draft',
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'id' });
+    }
 
     // 2. Upsert quotation_documents in-place
     if (document) {

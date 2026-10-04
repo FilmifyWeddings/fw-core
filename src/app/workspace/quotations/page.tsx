@@ -141,6 +141,15 @@ function generateUniqueCopyName(requestedTitle: string, existingTitles: string[]
 let memCachedQuotations: SavedQuotation[] = [];
 let memCachedUserImages: UserGalleryImage[] = [];
 
+const ARCHIVED_LEAD_DESIGNS = new Set([
+  'FW-USER-OKOTVH',
+  'FW-USER-52NYUK',
+  'FW-USER-SFZNFD',
+  'FW-USER-2UADTJ',
+  'FW-USER-D6BORW',
+  'FW-USER-9YDTLG'
+]);
+
 export default function WorkspaceQuotationsGalleryPage() {
   const router = useRouter();
 
@@ -540,6 +549,10 @@ export default function WorkspaceQuotationsGalleryPage() {
     const baseDoc = sourceQuote.content_json || DEFAULT_AIRY_PROPOSAL;
     const clonedDoc = JSON.parse(JSON.stringify(baseDoc));
     clonedDoc.designName = copyTitle;
+    delete clonedDoc.lead_id;
+    delete clonedDoc.client_id;
+    delete clonedDoc.lead_version;
+    delete clonedDoc.is_final;
 
     // 3. 0ms Instant Client Storage Pre-seeding
     if (typeof window !== 'undefined') {
@@ -685,29 +698,7 @@ export default function WorkspaceQuotationsGalleryPage() {
   const syncWithLocalDrafts = useCallback(() => {
     setQuotations(prev => {
       let hasChanges = false;
-      const activeUid = (typeof window !== 'undefined' ? localStorage.getItem('wg_last_active_user_id') : '') || userId;
-      let baseList = [...prev];
-      if (activeUid) {
-        try {
-          const cachedStr = localStorage.getItem(`wg_quotations_cache_${activeUid}`);
-          if (cachedStr) {
-            const parsed = JSON.parse(cachedStr);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              parsed.forEach((cItem: any) => {
-                const cId = cItem.quotation_number || cItem.id;
-                // Skip poisoned demo cards from being resurrected
-                if (cItem.title === 'Personalised Wedding Quotation' && cItem.client_name === 'Valued Client' && String(cId).startsWith('FW-USER-')) {
-                  return;
-                }
-                if (!baseList.some(q => (q.quotation_number || q.id) === cId)) {
-                  baseList.unshift(cItem);
-                  hasChanges = true;
-                }
-              });
-            }
-          }
-        } catch (_) {}
-      }
+      const baseList = prev.filter(q => !ARCHIVED_LEAD_DESIGNS.has(String(q.quotation_number || q.id)));
 
       const updated = baseList.map(item => {
         const itemKey = item.quotation_number || item.id;
@@ -789,7 +780,14 @@ export default function WorkspaceQuotationsGalleryPage() {
         const parsed = JSON.parse(cachedDataStr);
         if (Array.isArray(parsed) && parsed.length > 0) {
           const hydrated = parsed
-            .filter((item: any) => !(item.title === 'Personalised Wedding Quotation' && item.client_name === 'Valued Client' && String(item.quotation_number || item.id).startsWith('FW-USER-')))
+            .filter((item: any) => {
+              const idStr = String(item.quotation_number || item.id);
+              if (ARCHIVED_LEAD_DESIGNS.has(idStr)) return false;
+              if (item.title === 'Personalised Wedding Quotation' && item.client_name === 'Valued Client' && idStr.startsWith('FW-USER-')) {
+                return false;
+              }
+              return true;
+            })
             .map((item: any) => {
               const itemKey = item.quotation_number || item.id;
               const draftStr = localStorage.getItem(`wg_proposal_draft_${itemKey}`);
@@ -859,7 +857,14 @@ export default function WorkspaceQuotationsGalleryPage() {
               const parsed = JSON.parse(userCached);
               if (Array.isArray(parsed) && parsed.length > 0) {
                 const hydrated = parsed
-                  .filter((item: any) => !(item.title === 'Personalised Wedding Quotation' && item.client_name === 'Valued Client' && String(item.quotation_number || item.id).startsWith('FW-USER-')))
+                  .filter((item: any) => {
+                    const idStr = String(item.quotation_number || item.id);
+                    if (ARCHIVED_LEAD_DESIGNS.has(idStr)) return false;
+                    if (item.title === 'Personalised Wedding Quotation' && item.client_name === 'Valued Client' && idStr.startsWith('FW-USER-')) {
+                      return false;
+                    }
+                    return true;
+                  })
                   .map((item: any) => {
                     const itemKey = item.quotation_number || item.id;
                     const draftStr = localStorage.getItem(`wg_proposal_draft_${itemKey}`);
