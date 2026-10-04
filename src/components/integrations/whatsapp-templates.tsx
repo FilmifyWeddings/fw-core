@@ -1180,7 +1180,7 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
               }`}
             >
               <FileText className="w-3.5 h-3.5 text-emerald-500" />
-              Client & Drip ({clientTemplates.length})
+              Single Person ({clientTemplates.length})
             </button>
             <button
               type="button"
@@ -1192,7 +1192,7 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
               }`}
             >
               <Users className="w-3.5 h-3.5 text-orange-500" />
-              Group Alerts ({groupTemplates.length})
+              Group Templates ({groupTemplates.length})
             </button>
           </div>
         </div>
@@ -1205,7 +1205,7 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
             title="Create a template pre-formatted with Lead Alert placeholders"
           >
             <Users className="w-3.5 h-3.5 text-orange-500" />
-            <span>+ Group Alert</span>
+            <span>+ Group Template</span>
           </button>
           <button
             type="button"

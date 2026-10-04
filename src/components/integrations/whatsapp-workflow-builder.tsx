@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { 
@@ -86,6 +87,47 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(25);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const [actionMenu, setActionMenu] = useState<{
+    workflow: Workflow;
+    coords: { top: number; right: number };
+  } | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Dismiss floating action menu on window scroll/resize
+  useEffect(() => {
+    if (!actionMenu) return;
+    const handleDismiss = () => setActionMenu(null);
+    window.addEventListener('scroll', handleDismiss, true);
+    window.addEventListener('resize', handleDismiss);
+    return () => {
+      window.removeEventListener('scroll', handleDismiss, true);
+      window.removeEventListener('resize', handleDismiss);
+    };
+  }, [actionMenu]);
+
+  const toggleActionMenu = (wf: Workflow, targetElem: HTMLElement) => {
+    if (actionMenu?.workflow.id === wf.id) {
+      setActionMenu(null);
+      return;
+    }
+    const rect = targetElem.getBoundingClientRect();
+    const menuHeight = 220;
+    const fitsBelow = rect.bottom + menuHeight <= window.innerHeight - 10;
+    const rightPos = Math.max(12, window.innerWidth - rect.right);
+    const topPos = fitsBelow ? rect.bottom + 6 : Math.max(10, rect.top - menuHeight - 6);
+
+    setActionMenu({
+      workflow: wf,
+      coords: {
+        top: Math.round(topPos),
+        right: Math.round(rightPos)
+      }
+    });
+  };
 
   // Form states
   const [showBuilder, setShowBuilder] = useState(false);
@@ -448,6 +490,7 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
     setEditId(null);
     setShowBuilder(true);
     setActiveMenuId(null);
+    setActionMenu(null);
   };
 
   // Delete Workflow
@@ -469,6 +512,7 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
       localStorage.setItem(`wa_workflows_${workspaceId}`, JSON.stringify(updated));
     } finally {
       setActiveMenuId(null);
+      setActionMenu(null);
     }
   };
 
@@ -499,6 +543,7 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
     } finally {
       setExecutingId(null);
       setActiveMenuId(null);
+      setActionMenu(null);
     }
   };
 
@@ -510,6 +555,7 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
     setWorkflowStatus(workflow.status || 'Active');
     setShowBuilder(true);
     setActiveMenuId(null);
+    setActionMenu(null);
   };
 
   const handleAddNew = () => {
@@ -716,12 +762,14 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                       return (
                         <tr
                           key={wf.id}
-                          className={`hover:bg-slate-50 dark:hover:bg-zinc-800/20 transition-colors border-b border-zinc-100 dark:border-zinc-800/60 ${
+                          onClick={() => handleEditClick(wf)}
+                          className={`hover:bg-slate-50 dark:hover:bg-zinc-800/30 transition-colors border-b border-zinc-100 dark:border-zinc-800/60 cursor-pointer ${
                             isSelected ? 'bg-slate-50/80 dark:bg-zinc-800/10' : ''
                           }`}
+                          title="Click row to edit workflow"
                         >
                           {/* Selector */}
-                          <td className="px-4 text-center py-3" onClick={() => handleSelectRow(wf.id)}>
+                          <td className="px-4 text-center py-3" onClick={(e) => { e.stopPropagation(); handleSelectRow(wf.id); }}>
                             <div className={`w-3.5 h-3.5 rounded border mx-auto flex items-center justify-center cursor-pointer transition-colors ${
                               isSelected ? 'bg-emerald-500 border-emerald-600 text-white' : 'border-zinc-300 hover:border-zinc-400'
                             }`}>
@@ -731,7 +779,7 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
 
                           {/* Name */}
                           <td className={`px-4 font-black truncate py-3 ${dense ? 'py-1.5' : 'py-3'}`}>
-                            <span className="text-zinc-900 dark:text-white hover:text-emerald-600 cursor-pointer block truncate" onClick={() => handleEditClick(wf)}>
+                            <span className="text-zinc-900 dark:text-white hover:text-emerald-600 transition-colors block truncate">
                               {wf.workflow_name}
                             </span>
                           </td>
@@ -742,10 +790,11 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                           </td>
 
                           {/* Status Badge */}
-                          <td className="px-4 text-center py-3">
+                          <td className="px-4 text-center py-3" onClick={(e) => e.stopPropagation()}>
                             <button
+                              type="button"
                               onClick={() => handleToggleStatus(wf)}
-                              className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase border transition-colors ${
+                              className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase border transition-colors cursor-pointer ${
                                 isActive 
                                   ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100' 
                                   : 'bg-zinc-100 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 hover:bg-zinc-200'
@@ -780,64 +829,16 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                           {/* 3-Dot Options dropdown */}
                           <td className="px-4 text-right relative py-3" onClick={e => e.stopPropagation()}>
                             <button
-                              onClick={() => setActiveMenuId(activeMenuId === wf.id ? null : wf.id)}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleActionMenu(wf, e.currentTarget);
+                              }}
                               className="p-1.5 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-white cursor-pointer"
+                              title="Workflow options"
                             >
                               <MoreVertical className="w-4 h-4" />
                             </button>
-
-                            {activeMenuId === wf.id && (
-                              <div
-                                ref={menuRef}
-                                className="absolute right-4 top-11 mt-1 w-44 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-1.5 shadow-2xl flex flex-col gap-1 z-40 text-left"
-                              >
-                                <button
-                                  onClick={() => handleEditClick(wf)}
-                                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-zinc-900 rounded-xl text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer"
-                                >
-                                  <Edit className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                                  Edit Node Flow
-                                </button>
-                                
-                                <button
-                                  onClick={() => handleDuplicate(wf)}
-                                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-zinc-900 rounded-xl text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer"
-                                >
-                                  <Copy className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                                  Duplicate Flow
-                                </button>
-
-                                <button
-                                  onClick={() => handleExecute(wf)}
-                                  disabled={executingId === wf.id}
-                                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-zinc-900 rounded-xl text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer"
-                                >
-                                  <PlayCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                                  {executingId === wf.id ? 'Running...' : 'Execute Sequence'}
-                                </button>
-                                 
-                                <button
-                                  onClick={() => {
-                                    setActiveMenuId(null);
-                                    router.push(`/dashboard/integrations/whatsapp-web/workflows/analytics?workflowId=${wf.id}`);
-                                  }}
-                                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-zinc-900 rounded-xl text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer"
-                                >
-                                  <BarChart3 className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                                  View Analytics
-                                </button>
-
-                                <div className="h-[1px] bg-zinc-100 dark:bg-zinc-900 my-0.5" />
-
-                                <button
-                                  onClick={() => handleDelete(wf.id)}
-                                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-xl text-xs font-semibold text-rose-600 dark:text-rose-400 transition-colors cursor-pointer"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                                  Delete Workflow
-                                </button>
-                              </div>
-                            )}
                           </td>
                         </tr>
                       );
@@ -848,6 +849,104 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
 
             </div>
           </div>
+
+          {/* Floating Row Actions (3-Dots) Menu Portal - Escapes table clipping */}
+          {mounted && typeof document !== 'undefined' && actionMenu && createPortal(
+            <>
+              {/* Fullscreen transparent backdrop for click-outside */}
+              <div 
+                className="fixed inset-0 z-[999998] cursor-default bg-transparent"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActionMenu(null);
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setActionMenu(null);
+                }}
+              />
+
+              {/* Floating Action Menu */}
+              <div 
+                style={{
+                  position: 'fixed',
+                  top: `${actionMenu.coords.top}px`,
+                  right: `${actionMenu.coords.right}px`,
+                  zIndex: 999999,
+                }}
+                className="w-48 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.18)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.7)] flex flex-col gap-1 text-left backdrop-blur-md animate-in fade-in zoom-in-95 duration-100 font-sans select-none"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    const targetWf = actionMenu.workflow;
+                    setActionMenu(null);
+                    handleEditClick(targetWf);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-zinc-900 rounded-xl text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer"
+                >
+                  <Edit className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                  Edit Node Flow
+                </button>
+                
+                <button
+                  type="button"
+                  onClick={() => {
+                    const targetWf = actionMenu.workflow;
+                    setActionMenu(null);
+                    handleDuplicate(targetWf);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-zinc-900 rounded-xl text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                  Duplicate Flow
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const targetWf = actionMenu.workflow;
+                    handleExecute(targetWf);
+                  }}
+                  disabled={executingId === actionMenu.workflow.id}
+                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-zinc-900 rounded-xl text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <PlayCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                  {executingId === actionMenu.workflow.id ? 'Running...' : 'Execute Sequence'}
+                </button>
+                 
+                <button
+                  type="button"
+                  onClick={() => {
+                    const targetWf = actionMenu.workflow;
+                    setActionMenu(null);
+                    router.push(`/dashboard/integrations/whatsapp-web/workflows/analytics?workflowId=${targetWf.id}`);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-zinc-900 rounded-xl text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer"
+                >
+                  <BarChart3 className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                  View Analytics
+                </button>
+
+                <div className="h-[1px] bg-zinc-100 dark:bg-zinc-800 my-0.5" />
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const targetId = actionMenu.workflow.id;
+                    setActionMenu(null);
+                    handleDelete(targetId);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-xl text-xs font-semibold text-rose-600 dark:text-rose-400 transition-colors cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                  Delete Workflow
+                </button>
+              </div>
+            </>,
+            document.body
+          )}
 
           {/* ═══ BOTTOM CONTROLS & PAGINATION ═══ */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-zinc-500 border-t border-zinc-200 dark:border-zinc-800/60 pt-4">

@@ -245,28 +245,6 @@ export default function WhatsAppSingleSendPage() {
     }
   };
 
-  // Generate payload preview
-  const generatePayloadPreview = () => {
-    if (activeMode === 'plain') {
-      return JSON.stringify({
-        to: receiver || '',
-        type: 'text',
-        mode: 'direct',
-        text: messageText || ''
-      }, null, 2);
-    } else {
-      return JSON.stringify({
-        to: receiver || '',
-        type: 'template',
-        mode: 'direct',
-        templateId: selectedTemplateId || '',
-        templateName: selectedTemplate?.name || '',
-        variables: templateVariables,
-        ...(mediaUrlOverride ? { mediaUrl: mediaUrlOverride, mimeType: mediaMimeOverride } : {})
-      }, null, 2);
-    }
-  };
-
   // Submit Handler
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -745,16 +723,6 @@ export default function WhatsAppSingleSendPage() {
               {/* Right Column: Previews */}
               <div className="space-y-4">
                 
-                {/* Meta Payload Preview */}
-                <div className="p-5 rounded-xl border border-slate-200 dark:border-zinc-900 bg-slate-50 dark:bg-zinc-900/20 space-y-2">
-                  <h4 className="text-xs font-bold text-slate-800 dark:text-zinc-300">
-                    Meta Payload Preview
-                  </h4>
-                  <pre className="p-3 bg-[#0a0a0c] border border-zinc-850 rounded-xl text-[10px] text-emerald-450 font-mono overflow-x-auto max-h-48 scroller-thin leading-normal select-text">
-                    {generatePayloadPreview()}
-                  </pre>
-                </div>
-
                 {/* Render Template preview layout */}
                 <div className="p-5 rounded-xl border border-slate-200 dark:border-zinc-900 bg-slate-50 dark:bg-zinc-900/20 min-h-[160px] flex flex-col justify-between">
                   {selectedTemplate ? (

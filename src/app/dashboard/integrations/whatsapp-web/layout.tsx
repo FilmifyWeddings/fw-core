@@ -3,11 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
-  ArrowLeft, ScanQrCode, Zap, FileText, MessageSquare, Layers,
-  ShieldCheck, Wifi, WifiOff, RefreshCw, Building2,
-  ChevronDown, Check, Sparkles, Lock, Globe, Send, BarChart3, Activity, Server, Inbox
+  ArrowLeft, ScanQrCode, FileText, MessageSquare, Layers,
+  Wifi, WifiOff, RefreshCw, Send, BarChart3, Activity, Server, Inbox
 } from 'lucide-react';
 import { BhamstraProvider, useBhamstra } from '@/lib/context/BhamstraContext';
 import { supabase } from '@/lib/supabase';
@@ -15,7 +13,6 @@ import { supabase } from '@/lib/supabase';
 const MOCK_WORKSPACE_ID = '00000000-0000-0000-0000-000000000000';
 
 type WaTab = 'device' | 'analytics-console' | 'single-send' | 'templates' | 'workflows' | 'groups' | 'analytics' | 'system-health' | 'message-queue';
-type ShootCategory = 'all' | 'wedding' | 'commercial';
 
 const TABS: { id: WaTab; label: string; icon: React.ReactNode; path: string }[] = [
   {
@@ -74,19 +71,12 @@ const TABS: { id: WaTab; label: string; icon: React.ReactNode; path: string }[] 
   }
 ];
 
-const SHOOT_CATEGORIES: { value: ShootCategory; label: string; icon: React.ReactNode; color: string }[] = [
-  { value: 'all',        label: 'All Categories',   icon: <Globe className="w-3.5 h-3.5" />,    color: 'text-zinc-400' },
-  { value: 'wedding',    label: 'Wedding Shoots',    icon: <Sparkles className="w-3.5 h-3.5" />, color: 'text-rose-400' },
-  { value: 'commercial', label: 'Commercial Shoots', icon: <Building2 className="w-3.5 h-3.5" />, color: 'text-sky-400' }
-];
-
 function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { userId, workspaceId } = useBhamstra();
 
-  const [categoryOpen, setCategoryOpen] = useState(false);
   const [wsStatus, setWsStatus] = useState<'connected' | 'disconnected' | 'checking'>('checking');
   const [workerStatus, setWorkerStatus] = useState<'online' | 'offline' | 'checking'>('checking');
   const [pollerStatus, setPollerStatus] = useState<'running' | 'stopped' | 'checking'>('checking');
@@ -100,20 +90,6 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
   else if (pathname === '/dashboard/integrations/whatsapp-web/groups') activeTab = 'groups';
   else if (pathname === '/dashboard/integrations/whatsapp-web/message-queue') activeTab = 'message-queue';
   else if (pathname === '/dashboard/integrations/whatsapp-web/system-health') activeTab = 'system-health';
-
-  const shootCategory = (searchParams.get('category') || 'all') as ShootCategory;
-  const activeCategory = SHOOT_CATEGORIES.find(c => c.value === shootCategory) || SHOOT_CATEGORIES[0];
-
-  const handleCategoryChange = (val: ShootCategory) => {
-    setShootCategory(val);
-    setCategoryOpen(false);
-  };
-
-  const setShootCategory = (cat: ShootCategory) => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set('category', cat);
-    router.push(`${pathname}?${params.toString()}`);
-  };
 
   // Sync WA connection status from API (consistent with BaileysQrConnect)
   useEffect(() => {
@@ -185,46 +161,8 @@ function WhatsAppLayoutCore({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        {/* Right: Shoot Category Selector + Status */}
+        {/* Right: Gateway Status Badges */}
         <div className="flex items-center gap-3">
-
-          {/* Shoot Category Filter */}
-          {(activeTab === 'templates' || activeTab === 'workflows') && (
-            <div className="relative">
-              <button
-                onClick={() => setCategoryOpen(o => !o)}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white transition-all"
-              >
-                <span className={activeCategory.color}>{activeCategory.icon}</span>
-                <span>{activeCategory.label}</span>
-                <ChevronDown className={`w-3.5 h-3.5 text-zinc-500 transition-transform ${categoryOpen ? 'rotate-180' : ''}`} />
-              </button>
-
-              <AnimatePresence>
-                {categoryOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -6, scale: 0.97 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -6, scale: 0.97 }}
-                    transition={{ duration: 0.15 }}
-                    className="absolute right-0 top-full mt-1.5 w-52 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-2xl overflow-hidden z-50"
-                  >
-                    {SHOOT_CATEGORIES.map(cat => (
-                      <button
-                        key={cat.value}
-                        onClick={() => handleCategoryChange(cat.value)}
-                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-left"
-                      >
-                        <span className={cat.color}>{cat.icon}</span>
-                        <span className="text-zinc-700 dark:text-zinc-300">{cat.label}</span>
-                        {shootCategory === cat.value && <Check className="w-3 h-3 text-emerald-400 ml-auto" />}
-                      </button>
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          )}
 
           {/* Worker Status Pill */}
           <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[10px] font-bold transition-all ${
