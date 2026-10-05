@@ -55,18 +55,34 @@ export async function PATCH(req: NextRequest) {
 
     // ── Mirror toggle to fb_form_mappings.is_active (legacy webhook check) ───
     try {
-      await supabaseAdmin
+      const { data: existingMapping } = await supabaseAdmin
         .from('fb_form_mappings')
-        .upsert(
-          {
+        .select('id, contact_group_id, mapping_config')
+        .eq('workspace_id', workspaceId)
+        .eq('form_id', form_id)
+        .maybeSingle();
+
+      if (existingMapping) {
+        await supabaseAdmin
+          .from('fb_form_mappings')
+          .update({
+            is_active: is_enabled,
+            form_name: data?.form_name || form_id,
+            updated_at: now,
+          })
+          .eq('id', existingMapping.id);
+      } else {
+        await supabaseAdmin
+          .from('fb_form_mappings')
+          .insert({
             workspace_id: workspaceId,
             form_id,
             form_name: data?.form_name || form_id,
             is_active: is_enabled,
+            created_at: now,
             updated_at: now,
-          },
-          { onConflict: 'workspace_id,form_id', ignoreDuplicates: false }
-        );
+          });
+      }
     } catch (_) {}
 
     // ── Fetch & save questions from Graph API when form is enabled ─────────
@@ -92,18 +108,28 @@ export async function PATCH(req: NextRequest) {
             const res = await fetch(graphUrl);
             const gData = await res.json();
             if (gData?.questions && Array.isArray(gData.questions)) {
-              await supabaseAdmin
+              const { data: curMap } = await supabaseAdmin
                 .from('fb_form_mappings')
-                .upsert({
-                  workspace_id: workspaceId,
-                  form_id,
-                  page_id: formRow.page_id,
-                  form_name: data?.form_name || form_id,
-                  is_active: true,
-                  is_tagging_enabled: true,
-                  mapping_config: { questions: gData.questions },
-                  updated_at: now,
-                }, { onConflict: 'workspace_id,form_id' });
+                .select('id, mapping_config')
+                .eq('workspace_id', workspaceId)
+                .eq('form_id', form_id)
+                .maybeSingle();
+
+              const curConfig = (curMap?.mapping_config as Record<string, any>) || {};
+              const mergedConfig = {
+                ...curConfig,
+                questions: gData.questions,
+              };
+
+              if (curMap) {
+                await supabaseAdmin
+                  .from('fb_form_mappings')
+                  .update({
+                    mapping_config: mergedConfig,
+                    updated_at: now,
+                  })
+                  .eq('id', curMap.id);
+              }
             }
           }
         }

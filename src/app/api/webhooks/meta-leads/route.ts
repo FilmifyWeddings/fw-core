@@ -275,9 +275,13 @@ export async function POST(req: NextRequest) {
 
             resolvedFormName = formEnabled?.form_name || formSetting?.form_name || null;
 
+            const isFormExplicitlyEnabled =
+              formEnabled?.is_enabled === true || formSetting?.is_active === true;
+            const isFormExplicitlyDisabled =
+              formEnabled?.is_enabled === false && formSetting?.is_active === false;
+
             const isFormDisabled =
-              (formEnabled && formEnabled.is_enabled === false) ||
-              (formSetting && formSetting.is_active === false);
+              !isFormExplicitlyEnabled && (formEnabled?.is_enabled === false || formSetting?.is_active === false);
 
             if (isFormDisabled) {
               const disabledFormName = formEnabled?.form_name || formSetting?.form_name || form_id;

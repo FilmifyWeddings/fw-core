@@ -580,12 +580,23 @@ export default function MetaIntegrationPage() {
         setLastSyncTime(new Date().toISOString());
 
         // Fetch available WhatsApp Contact Groups
-        const { data: groupsData } = await supabase
-          .from('whatsapp_contact_groups')
-          .select('id, group_name, group_description');
-        if (groupsData) {
-          setWhatsappGroups(groupsData || []);
-        }
+        try {
+          const { data: groupsData } = await supabase
+            .from('whatsapp_contact_groups')
+            .select('id, group_name, group_description');
+          if (groupsData && groupsData.length > 0) {
+            setWhatsappGroups(groupsData);
+          } else {
+            const gRes = await fetch(`/api/integrations/whatsapp/groups?tenant_id=${wsId}`, { headers });
+            const gJson = await gRes.json();
+            if (gJson.success && Array.isArray(gJson.results) && gJson.results.length > 0) {
+              setWhatsappGroups(gJson.results);
+            } else {
+              const fallback = typeof window !== 'undefined' ? localStorage.getItem(`wa_contact_groups_${wsId}`) : null;
+              if (fallback) setWhatsappGroups(JSON.parse(fallback));
+            }
+          }
+        } catch (_) {}
       } else {
         setIsConnected(false);
         setPages([]);

@@ -307,6 +307,13 @@ export async function GET(req: NextRequest) {
             const status = f.status || 'ACTIVE';
             const leadsCount = f.leads_count || 0;
 
+            const { data: existingForm } = await supabaseAdmin
+              .from('fb_lead_forms')
+              .select('is_enabled')
+              .eq('workspace_id', workspaceId)
+              .eq('form_id', formId)
+              .maybeSingle();
+
             const { data: savedForm } = await supabaseAdmin
               .from('fb_lead_forms')
               .upsert({
@@ -316,7 +323,7 @@ export async function GET(req: NextRequest) {
                 form_name: formName,
                 status,
                 leads_count: leadsCount,
-                is_enabled: false,
+                is_enabled: existingForm?.is_enabled ?? false,
                 updated_at: now,
               }, { onConflict: 'form_id' })
               .select('*')
@@ -424,7 +431,7 @@ export async function GET(req: NextRequest) {
         last_assigned_index: -1
       };
 
-      const isFormEnabled = f.is_sync_enabled ?? f.is_enabled ?? false;
+      const isFormEnabled = (f.is_enabled === true) || (mObj?.is_active === true);
 
       return {
         form_id: f.form_id,

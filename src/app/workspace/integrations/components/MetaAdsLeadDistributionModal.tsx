@@ -111,61 +111,63 @@ export default function MetaAdsLeadDistributionModal({
 
         const memberMap = new Map<string, DistributionMember>();
 
-        // 1. Fetch from fw_team_members strictly querying actual DB columns (no 'role', no 'phone')
+        // 1. Fetch from fw_team_members strictly for THIS workspace/owner
         if (wsId) {
           const { data: fwData } = await supabase
             .from('fw_team_members')
-            .select('id, user_id, name, roles, role_code, is_sales_person, avatar_url, phone_number')
+            .select('id, user_id, name, roles, role_code, primary_role, is_sales_person, avatar_url, phone_number')
             .eq('user_id', wsId);
 
           if (fwData && fwData.length > 0) {
             fwData.forEach((c: any) => {
               if (c.name) {
                 const rolesArr = Array.isArray(c.roles) ? [...c.roles] : [];
-                memberMap.set(c.name.toLowerCase().trim(), {
-                  id: c.id,
-                  user_id: c.user_id,
-                  name: c.name.trim(),
-                  primary_role: c.primary_role || rolesArr[0] || 'Sales Rep',
-                  roles: rolesArr,
-                  role_code: c.role_code,
-                  avatar_url: c.avatar_url,
-                  is_sales_person: isMemberSalesPerson(c),
-                });
+                if (c.primary_role && !rolesArr.includes(c.primary_role)) {
+                  rolesArr.unshift(c.primary_role);
+                }
+                if (isMemberSalesPerson(c)) {
+                  memberMap.set(c.name.toLowerCase().trim(), {
+                    id: c.id,
+                    user_id: c.user_id,
+                    name: c.name.trim(),
+                    primary_role: c.primary_role || 'Sales Person',
+                    roles: rolesArr,
+                    role_code: c.role_code,
+                    avatar_url: c.avatar_url,
+                    is_sales_person: true,
+                  });
+                }
               }
             });
           }
-        }
 
-        // 2. Fetch from profiles
-        const { data: profs } = await supabase
-          .from('profiles')
-          .select('id, name, email, role, avatar_url')
-          .limit(30);
-
-        if (profs && profs.length > 0) {
-          profs.forEach((p: any) => {
-            const cleanName = (p.name || p.email?.split('@')[0] || '').trim();
-            if (cleanName && !memberMap.has(cleanName.toLowerCase())) {
-              const isSales = (p.role || '').toLowerCase().includes('sales') || (p.role || '').toUpperCase() === 'SP';
-              memberMap.set(cleanName.toLowerCase(), {
-                id: p.id,
-                name: cleanName,
-                email: p.email,
-                role: p.role || 'Member',
-                roles: [p.role || 'Member'],
-                primary_role: p.role || 'Member',
-                avatar_url: p.avatar_url,
-                is_sales_person: isSales,
+          // 2. Fetch from workspace_members API for THIS workspace
+          try {
+            const res = await fetch(`/api/workspace/members?workspace_id=${wsId}`, {
+              headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+            });
+            const json = await res.json();
+            if (json.success && Array.isArray(json.members)) {
+              json.members.forEach((m: any) => {
+                if (m.name && isMemberSalesPerson(m)) {
+                  const key = m.name.toLowerCase().trim();
+                  if (!memberMap.has(key)) {
+                    const rolesArr = Array.isArray(m.roles) ? [...m.roles] : (m.primary_role ? [m.primary_role] : []);
+                    memberMap.set(key, {
+                      id: m.id,
+                      user_id: m.workspace_id || wsId,
+                      name: m.name.trim(),
+                      primary_role: m.primary_role || 'Sales Person',
+                      roles: rolesArr,
+                      role_code: m.role_code,
+                      avatar_url: m.avatar_url,
+                      is_sales_person: true,
+                    });
+                  }
+                }
               });
             }
-          });
-        }
-
-        // 3. Fallback defaults if no team members returned
-        if (memberMap.size === 0) {
-          memberMap.set('sales lead', { id: 'def_1', name: 'Sales Lead', role: 'Sales Person', roles: ['Sales Person'], role_code: 'SP', is_sales_person: true });
-          memberMap.set('studio admin', { id: 'def_2', name: 'Studio Admin', role: 'Admin', roles: ['Admin'], is_sales_person: false });
+          } catch (_) {}
         }
 
         setTeamMembers(Array.from(memberMap.values()));

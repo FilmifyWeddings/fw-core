@@ -35,21 +35,46 @@ export async function POST(req: NextRequest) {
       .eq('form_id', form_id)
       .maybeSingle();
 
-    const { data, error } = await supabaseAdmin
+    const { data: existingMapping } = await supabaseAdmin
       .from('fb_form_mappings')
-      .upsert(
-        {
+      .select('id, is_active, page_id, form_name')
+      .eq('workspace_id', workspaceId)
+      .eq('form_id', form_id)
+      .maybeSingle();
+
+    let data: any = null;
+    let error: any = null;
+
+    if (existingMapping) {
+      const res = await supabaseAdmin
+        .from('fb_form_mappings')
+        .update({
+          contact_group_id: contact_group_id || null,
+          updated_at: now,
+        })
+        .eq('id', existingMapping.id)
+        .select('form_id, contact_group_id')
+        .single();
+      data = res.data;
+      error = res.error;
+    } else {
+      const res = await supabaseAdmin
+        .from('fb_form_mappings')
+        .insert({
           workspace_id: workspaceId,
           form_id,
           page_id: formRecord?.page_id || null,
           form_name: formRecord?.form_name || form_id,
+          is_active: true,
           contact_group_id: contact_group_id || null,
+          created_at: now,
           updated_at: now,
-        },
-        { onConflict: 'workspace_id,form_id' }
-      )
-      .select('form_id, contact_group_id')
-      .single();
+        })
+        .select('form_id, contact_group_id')
+        .single();
+      data = res.data;
+      error = res.error;
+    }
 
     if (error) {
       console.error('[Forms Mapping API] Error updating contact_group_id:', error.message, error.code);

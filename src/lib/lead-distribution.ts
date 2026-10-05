@@ -156,6 +156,7 @@ export async function getNextDistributedLeadOwner(
           page_id: pageId || '0',
           form_id: formId,
           form_name: formName || 'Instant Lead Form',
+          is_active: true,
           mapping_config: updatedMapping,
           updated_at: new Date().toISOString()
         }, { onConflict: 'workspace_id,form_id' });

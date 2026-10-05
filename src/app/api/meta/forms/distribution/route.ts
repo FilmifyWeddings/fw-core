@@ -150,18 +150,32 @@ export async function POST(req: NextRequest) {
         distribution_config: distConfig,
       };
 
-      const { error: upsertErr } = await supabaseAdmin
-        .from('fb_form_mappings')
-        .upsert({
-          workspace_id: workspaceId,
-          page_id: pageId,
-          form_id,
-          form_name: formName || 'Instant Lead Form',
-          mapping_config: updatedMappingConfig,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'workspace_id,form_id' });
+      if (existing) {
+        const { error: updateErr } = await supabaseAdmin
+          .from('fb_form_mappings')
+          .update({
+            mapping_config: updatedMappingConfig,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existing.id);
 
-      if (!upsertErr) updatedSuccess = true;
+        if (!updateErr) updatedSuccess = true;
+      } else {
+        const { error: insertErr } = await supabaseAdmin
+          .from('fb_form_mappings')
+          .insert({
+            workspace_id: workspaceId,
+            page_id: pageId,
+            form_id,
+            form_name: formName || 'Instant Lead Form',
+            is_active: true,
+            mapping_config: updatedMappingConfig,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+
+        if (!insertErr) updatedSuccess = true;
+      }
     } catch (_) {}
 
     // 2. Also save to lead_distribution_settings table

@@ -119,32 +119,6 @@ export async function GET(req: NextRequest) {
     const metaData = await metaRes.json();
     const metaForms = metaData.data || [];
 
-    // Auto-save fetched Meta forms strictly with authenticated workspace_id
-    for (const form of metaForms) {
-      await supabaseAdmin.from('fb_lead_forms').upsert({
-        workspace_id: workspaceId,
-        page_id: pageId,
-        form_id: form.id,
-        form_name: form.name,
-        status: form.status || 'ACTIVE',
-        leads_count: form.leads_count || 0,
-        created_time: form.created_time || new Date().toISOString(),
-        is_enabled: true,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'workspace_id,form_id' });
-
-      await supabaseAdmin.from('fb_form_mappings').upsert({
-        workspace_id: workspaceId,
-        page_id: pageId,
-        form_id: form.id,
-        form_name: form.name,
-        is_active: true,
-        is_tagging_enabled: true,
-        mapping_config: { questions: form.questions || [] },
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'workspace_id,form_id' });
-    }
-
     // Existing form mappings strictly from DB for this workspace
     const { data: savedMappings } = await supabaseAdmin
       .from('fb_form_mappings')
@@ -153,6 +127,56 @@ export async function GET(req: NextRequest) {
       .eq('page_id', pageId);
 
     const savedMap = new Map((savedMappings || []).map((m: any) => [m.form_id, m]));
+
+    const { data: savedLeadForms } = await supabaseAdmin
+      .from('fb_lead_forms')
+      .select('*')
+      .eq('workspace_id', workspaceId)
+      .eq('page_id', pageId);
+
+    const savedLeadFormsMap = new Map((savedLeadForms || []).map((f: any) => [f.form_id, f]));
+
+    // Auto-save fetched Meta forms strictly with authenticated workspace_id
+    for (const form of metaForms) {
+      const existingLeadForm = savedLeadFormsMap.get(form.id);
+      const isEnabled = existingLeadForm ? existingLeadForm.is_enabled : false;
+
+      await supabaseAdmin.from('fb_lead_forms').upsert({
+        workspace_id: workspaceId,
+        page_id: pageId,
+        form_id: form.id,
+        form_name: form.name,
+        status: form.status || 'ACTIVE',
+        leads_count: form.leads_count || 0,
+        created_time: form.created_time || new Date().toISOString(),
+        is_enabled: isEnabled,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'workspace_id,form_id' });
+
+      const existingMapping = savedMap.get(form.id);
+      if (existingMapping) {
+        await supabaseAdmin.from('fb_form_mappings').update({
+          form_name: form.name,
+          mapping_config: {
+            ...((existingMapping.mapping_config as any) || {}),
+            questions: form.questions || [],
+          },
+          updated_at: new Date().toISOString(),
+        }).eq('id', existingMapping.id);
+      } else {
+        await supabaseAdmin.from('fb_form_mappings').insert({
+          workspace_id: workspaceId,
+          page_id: pageId,
+          form_id: form.id,
+          form_name: form.name,
+          is_active: isEnabled,
+          is_tagging_enabled: true,
+          mapping_config: { questions: form.questions || [] },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      }
+    }
 
     // Merge Meta forms with saved DB mappings
     const enrichedForms = metaForms.map((form: any) => {

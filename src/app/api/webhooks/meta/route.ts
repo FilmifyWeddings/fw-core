@@ -98,23 +98,24 @@ async function processLeadgenEvent(pageId: string, leadgenId: string, formId?: s
         .eq('form_id', formId)
         .maybeSingle();
 
-      if (formObj && formObj.is_enabled === false) {
-        console.log(`[Meta Webhook Notice] Form ${formId} toggle is OFF. Skipping real-time lead ingestion.`);
-        return;
-      }
-      if (formObj?.form_name) formName = formObj.form_name;
-
       const { data: mapping } = await supabaseAdmin
         .from('fb_form_mappings')
-        .select('contact_group_id, is_active')
+        .select('contact_group_id, is_active, form_name')
         .eq('workspace_id', workspaceId)
         .eq('form_id', formId)
         .maybeSingle();
 
-      if (mapping && mapping.is_active === false && formObj?.is_enabled === false) {
-        console.log(`[Meta Webhook Notice] Form mapping ${formId} is inactive. Skipping lead.`);
+      const isExplicitlyEnabled =
+        formObj?.is_enabled === true || mapping?.is_active === true;
+
+      if (!isExplicitlyEnabled && (formObj?.is_enabled === false || mapping?.is_active === false)) {
+        console.log(`[Meta Webhook Notice] Form ${formId} toggle is OFF. Skipping real-time lead ingestion.`);
         return;
       }
+
+      if (formObj?.form_name) formName = formObj.form_name;
+      else if (mapping?.form_name) formName = (mapping as any).form_name;
+
       if (mapping?.contact_group_id) contactGroupId = mapping.contact_group_id;
     }
 

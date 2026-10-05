@@ -624,18 +624,40 @@ export async function GET(req: NextRequest) {
         } catch (_) {}
 
         // ALSO SAVE FORM INTO fb_form_mappings
-        await supabaseAdmin
+        const { data: existingMapping } = await supabaseAdmin
           .from('fb_form_mappings')
-          .upsert({
-            workspace_id: workspaceId,
-            page_id: page.page_id,
-            form_id: form.form_id,
-            form_name: form.form_name,
-            is_active: currentToggleState,
-            is_tagging_enabled: true,
-            mapping_config: { questions: form.questions || [] },
-            updated_at: new Date().toISOString(),
-          }, { onConflict: 'workspace_id,form_id' });
+          .select('id, contact_group_id, mapping_config')
+          .eq('workspace_id', workspaceId)
+          .eq('form_id', form.form_id)
+          .maybeSingle();
+
+        const curConfig = (existingMapping?.mapping_config as Record<string, any>) || {};
+
+        if (existingMapping) {
+          await supabaseAdmin
+            .from('fb_form_mappings')
+            .update({
+              form_name: form.form_name,
+              is_active: currentToggleState,
+              mapping_config: { ...curConfig, questions: form.questions || [] },
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', existingMapping.id);
+        } else {
+          await supabaseAdmin
+            .from('fb_form_mappings')
+            .insert({
+              workspace_id: workspaceId,
+              page_id: page.page_id,
+              form_id: form.form_id,
+              form_name: form.form_name,
+              is_active: currentToggleState,
+              is_tagging_enabled: true,
+              mapping_config: { questions: form.questions || [] },
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            });
+        }
       }
     }
 

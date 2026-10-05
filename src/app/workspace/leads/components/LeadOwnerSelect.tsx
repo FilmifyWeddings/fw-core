@@ -36,7 +36,7 @@ export function isMemberSalesPerson(member: any): boolean {
   if (String(member.role_code || '').trim().toUpperCase() === 'SP') return true;
   if (Array.isArray(member.role_codes) && member.role_codes.some((c: string) => String(c || '').trim().toUpperCase() === 'SP')) return true;
 
-  // 3. Check array of roles safely
+  // 3. Check array of roles safely - strictly Sales Person / Sales Representative / SP
   const rolesArray: string[] = Array.isArray(member.roles)
     ? [...member.roles]
     : [];
@@ -47,7 +47,12 @@ export function isMemberSalesPerson(member: any): boolean {
 
   return rolesArray.some((r: string) => {
     const clean = String(r || '').trim().toLowerCase();
-    return clean.includes('sales') || clean === 'sp';
+    return clean === 'sales person' ||
+           clean === 'salesperson' ||
+           clean === 'sales rep' ||
+           clean === 'sales representative' ||
+           clean === 'sales executive' ||
+           clean === 'sp';
   });
 }
 
@@ -96,7 +101,7 @@ export default function LeadOwnerSelect({
         // 1. Fetch from fw_team_members strictly querying actual DB columns (no 'role')
         const { data: fwCrew } = await supabase
           .from('fw_team_members')
-          .select('id, user_id, name, roles, role_code, is_sales_person, avatar_url, phone_number')
+          .select('id, user_id, name, roles, role_code, primary_role, is_sales_person, avatar_url, phone_number')
           .eq('user_id', wsId);
 
         if (fwCrew && fwCrew.length > 0) {

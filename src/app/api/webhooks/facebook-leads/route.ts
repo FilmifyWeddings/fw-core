@@ -263,28 +263,40 @@ export async function POST(req: NextRequest) {
           .eq('form_id', resolvedFormId)
           .maybeSingle();
 
+        const { data: formObj } = await supabaseAdmin
+          .from('fb_lead_forms')
+          .select('is_enabled, form_name')
+          .eq('workspace_id', workspaceId)
+          .eq('form_id', resolvedFormId)
+          .maybeSingle();
+
+        const isFormExplicitlyEnabled =
+          formObj?.is_enabled === true || formMapping?.is_active === true;
+
+        if (!isFormExplicitlyEnabled && (formObj?.is_enabled === false || formMapping?.is_active === false)) {
+          console.log('[FB Webhook] Form is inactive. Skipping lead:', resolvedFormId);
+          return NextResponse.json({ success: true, skipped: true, message: 'Form is set to inactive.' });
+        }
+
         if (formMapping) {
-          // If form is explicitly set to inactive, skip ingestion
-          if (formMapping.is_active === false) {
-            console.log('[FB Webhook] Form is inactive. Skipping lead:', resolvedFormId);
-            return NextResponse.json({ success: true, skipped: true, message: 'Form is set to inactive.' });
-          }
           mappingConfig    = (formMapping.mapping_config as Record<string, string>) || {};
           isTaggingEnabled = formMapping.is_tagging_enabled ?? false;
-          formName         = formMapping.form_name || null;
+          formName         = formMapping.form_name || formObj?.form_name || null;
           leadData.whatsapp_group_id = formMapping.contact_group_id || null;
+        } else if (formObj) {
+          formName = formObj.form_name || null;
+        }
 
-          // ── Round-Robin Lead Owner Auto-Distribution Engine ──
-          if (resolvedFormId && workspaceId) {
-            try {
-              const assignedOwner = await getNextDistributedLeadOwner(workspaceId, resolvedFormId);
-              if (assignedOwner) {
-                console.log(`[FB Webhook Round-Robin] Assigning lead for form ${resolvedFormId} to owner: ${assignedOwner}`);
-                (leadData as any).assigned_lead_owner = assignedOwner;
-              }
-            } catch (distErr: any) {
-              console.error('[FB Webhook Distribution Error]:', distErr?.message);
+        // ── Round-Robin Lead Owner Auto-Distribution Engine ──
+        if (resolvedFormId && workspaceId) {
+          try {
+            const assignedOwner = await getNextDistributedLeadOwner(workspaceId, resolvedFormId);
+            if (assignedOwner) {
+              console.log(`[FB Webhook Round-Robin] Assigning lead for form ${resolvedFormId} to owner: ${assignedOwner}`);
+              (leadData as any).assigned_lead_owner = assignedOwner;
             }
+          } catch (distErr: any) {
+            console.error('[FB Webhook Distribution Error]:', distErr?.message);
           }
         }
       }
