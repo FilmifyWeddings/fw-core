@@ -50,8 +50,8 @@ function formatTime(ts: string) {
 }
 
 export default function MessageQueuePage() {
-  const { userId } = useBhamstra();
-  const tenantId = userId || MOCK_WORKSPACE_ID;
+  const { userId, workspaceId } = useBhamstra();
+  const tenantId = (workspaceId && workspaceId !== 'all') ? workspaceId : (userId || MOCK_WORKSPACE_ID);
 
   const [messages, setMessages] = useState<QueueMessage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,19 +65,71 @@ export default function MessageQueuePage() {
   const fetchMessages = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true); else setLoading(true);
     try {
-      let query = supabase
-        .from('baileys_messages')
+      // 1. Fetch from active baileys_action_queue
+      const { data: queueData } = await supabase
+        .from('baileys_action_queue')
         .select('*')
         .eq('workspace_id', tenantId)
         .order('created_at', { ascending: false })
         .limit(200);
 
+      // 2. Fetch from legacy baileys_messages
+      const { data: msgsData } = await supabase
+        .from('baileys_messages')
+        .select('*')
+        .eq('workspace_id', tenantId)
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      const mappedQueue: QueueMessage[] = (queueData || []).map((q: any) => {
+        const p = q.payload || {};
+        const dest = p.to || p.groupId || p.groupJid || '—';
+        const cleanDest = dest.replace('@s.whatsapp.net', '');
+        const textSummary = p.template_name || p.templateName
+          ? `📄 Template: ${p.template_name || p.templateName}`
+          : (p.text || p.caption || (q.action_type === 'group_dispatch' ? '👥 Group Dispatch' : q.action_type));
+
+        let normStatus = q.status;
+        if (q.status === 'done') normStatus = 'sent';
+        else if (q.status === 'processing') normStatus = 'sent';
+        else if (q.status === 'pending') normStatus = 'queued';
+
+        return {
+          id: q.id,
+          wa_message_id: null,
+          chat_jid: cleanDest,
+          message_text: textSummary,
+          status: normStatus,
+          created_at: q.created_at,
+          sent_at: q.processed_at || q.next_retry_at || q.created_at,
+          error_message: q.error_message || q.failure_reason || null,
+          media_type: p.template_name || p.templateName ? 'template' : (q.action_type || null),
+        };
+      });
+
+      const mappedMsgs: QueueMessage[] = (msgsData || []).map((m: any) => ({
+        id: m.id,
+        wa_message_id: m.wa_message_id || null,
+        chat_jid: (m.chat_jid || '—').replace('@s.whatsapp.net', ''),
+        message_text: m.message_text || null,
+        status: m.status || 'queued',
+        created_at: m.created_at,
+        sent_at: m.sent_at || m.created_at,
+        error_message: m.error_message || null,
+        media_type: m.media_type || null,
+      }));
+
+      // Merge and sort newest first
+      const combined = [...mappedQueue, ...mappedMsgs].sort((a, b) => {
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
+
+      let finalMessages = combined;
       if (statusFilter !== 'all') {
-        query = query.eq('status', statusFilter);
+        finalMessages = finalMessages.filter(m => m.status === statusFilter);
       }
 
-      const { data } = await query;
-      setMessages(data || []);
+      setMessages(finalMessages);
     } catch (err) {
       console.error('Failed to fetch messages:', err);
     } finally {

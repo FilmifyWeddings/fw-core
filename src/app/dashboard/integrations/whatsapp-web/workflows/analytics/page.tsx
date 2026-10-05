@@ -120,7 +120,9 @@ function StepNode({
 }) {
   const nodeStatus = stepLog.status;
   const scheduledAt = stepLog.sent_at_formatted;
-  const completedAt = stepLog.updated_at_formatted;
+  const completedAt = (stepLog.updated_at_formatted && stepLog.updated_at_formatted !== '—')
+    ? stepLog.updated_at_formatted
+    : (stepLog.updated_at ? new Date(stepLog.updated_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : '—');
   const errorText = stepLog.error_message;
 
   const nodeColor = {
@@ -131,6 +133,7 @@ function StepNode({
     sent:      'border-emerald-500/40 bg-emerald-500/5',
     delivered: 'border-emerald-500/40 bg-emerald-500/5',
     read:      'border-emerald-500/40 bg-emerald-500/5',
+    stopped:   'border-rose-900/40 bg-rose-950/20',
   }[nodeStatus] || 'border-zinc-800 bg-zinc-900/30';
 
   const iconColor = {
@@ -141,10 +144,12 @@ function StepNode({
     sent:      'text-emerald-400',
     delivered: 'text-emerald-400',
     read:      'text-emerald-400',
+    stopped:   'text-rose-400',
   }[nodeStatus] || 'text-zinc-650';
 
   const StepIcon = ['completed', 'sent', 'delivered', 'read'].includes(nodeStatus) ? CheckCheck
     : nodeStatus === 'failed' ? XCircle
+    : nodeStatus === 'stopped' ? Ban
     : nodeStatus === 'pending' ? Hourglass
     : Circle;
 
@@ -176,18 +181,25 @@ function StepNode({
                 <Clock className="w-3.5 h-3.5 text-zinc-600" />
                 <span className="font-mono text-zinc-455">{scheduledAt}</span>
               </div>
-              {nodeStatus === 'failed' && completedAt !== '—' && (
+              {nodeStatus === 'failed' && (
                 <div className="flex items-center gap-1 text-[10px] text-zinc-500">
-                  <AlertCircle className="w-3.5 h-3.5 text-red-500" />
+                  <AlertCircle className="w-3.5 h-3.5 text-red-500 shrink-0" />
                   <span className="font-semibold text-zinc-400">Failed at:</span>
-                  <span className="font-mono text-red-400/80">{completedAt}</span>
+                  <span className="font-mono text-red-400 font-bold">{completedAt !== '—' ? completedAt : scheduledAt}</span>
                 </div>
               )}
-              {['completed', 'sent', 'delivered', 'read'].includes(nodeStatus) && completedAt !== '—' && (
+              {['completed', 'sent', 'delivered', 'read'].includes(nodeStatus) && (
                 <div className="flex items-center gap-1 text-[10px] text-zinc-500">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                   <span className="font-semibold text-zinc-400">Completed:</span>
-                  <span className="font-mono text-emerald-400/80">{completedAt}</span>
+                  <span className="font-mono text-emerald-400 font-bold">{completedAt !== '—' ? completedAt : scheduledAt}</span>
+                </div>
+              )}
+              {nodeStatus === 'stopped' && (
+                <div className="flex items-center gap-1 text-[10px] text-zinc-500">
+                  <Ban className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                  <span className="font-semibold text-rose-400">Stopped:</span>
+                  <span className="font-mono text-rose-400">{completedAt !== '—' ? completedAt : scheduledAt}</span>
                 </div>
               )}
             </div>
@@ -201,13 +213,14 @@ function StepNode({
           </div>
         </div>
 
-        {/* Right: Retry action */}
+        {/* Right: Orange-tone Retry action */}
         <button
           onClick={onRetry}
-          title="Re-queue this step for manual dispatch"
-          className="shrink-0 p-2 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-amber-500/30 hover:bg-zinc-800 text-zinc-550 hover:text-amber-400 transition-all active:scale-90 cursor-pointer"
+          title="Re-queue this specific step for manual dispatch"
+          className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/40 hover:bg-amber-500 hover:text-zinc-950 text-amber-400 font-bold text-xs shadow-sm transition-all active:scale-95 cursor-pointer"
         >
-          <Play className="w-3.5 h-3.5" />
+          <Play className="w-3.5 h-3.5 fill-current" />
+          <span>Dispatch</span>
         </button>
       </div>
     </div>
@@ -216,8 +229,8 @@ function StepNode({
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 function WorkflowAnalyticsInner() {
-  const { userId } = useBhamstra();
-  const tenantId = userId || MOCK_WORKSPACE_ID;
+  const { userId, workspaceId } = useBhamstra();
+  const tenantId = (workspaceId && workspaceId !== 'all') ? workspaceId : (userId || MOCK_WORKSPACE_ID);
   const searchParams = useSearchParams();
   const urlWorkflowId = searchParams.get('workflowId');
 
@@ -234,6 +247,9 @@ function WorkflowAnalyticsInner() {
   const [selectedExecution, setSelectedExecution] = useState<ExecutionRow | null>(null);
   const [isModalOpen, setIsModalOpen]       = useState(false);
   const [retryingFailed, setRetryingFailed] = useState(false);
+  const [selectedFailedStepIndices, setSelectedFailedStepIndices] = useState<number[]>([]);
+  const [failedStepsModalOpen, setFailedStepsModalOpen] = useState(false);
+  const [resumingWorkflow, setResumingWorkflow] = useState(false);
 
   // ── Data Fetching ──────────────────────────────────────────────────────────
   const fetchData = useCallback(async (isRefresh = false) => {
@@ -367,33 +383,73 @@ function WorkflowAnalyticsInner() {
     }
   };
 
-  const handleRetryFailedSteps = async (execution: ExecutionRow) => {
-    if (!selectedWorkflow) return;
+  const handleOpenRetryFailedModal = (execution: ExecutionRow) => {
+    const retriableLogs = execution.stepsLogs.filter(
+      l => l.status === 'failed' || (l.status === 'pending' && l.error_message)
+    );
+    if (retriableLogs.length === 0) {
+      alert('No failed or stuck steps found to retry.');
+      return;
+    }
+    setSelectedFailedStepIndices(retriableLogs.map(l => l.step_index));
+    setFailedStepsModalOpen(true);
+  };
+
+  const handleConfirmRetrySelectedSteps = async () => {
+    if (!selectedWorkflow || !selectedExecution) return;
+    if (selectedFailedStepIndices.length === 0) {
+      alert('Please select at least one step to retry.');
+      return;
+    }
     setRetryingFailed(true);
     try {
-      const retriableLogs = execution.stepsLogs.filter(
-        l => l.status === 'failed' || (l.status === 'pending' && l.error_message)
-      );
-      if (retriableLogs.length === 0) { alert('No failed or stuck steps found.'); return; }
-
       const activeWsId = tenantId || (selectedWorkflow as any).tenant_id || (selectedWorkflow as any).workspace_id || (selectedWorkflow as any).user_id;
-
       const res = await fetch('/api/workflows/retry-step', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadId: execution.leadId, workflowId: selectedWorkflow.id, workspaceId: activeWsId }),
+        body: JSON.stringify({
+          leadId: selectedExecution.leadId,
+          workflowId: selectedWorkflow.id,
+          stepIndexes: selectedFailedStepIndices,
+          workspaceId: activeWsId
+        }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
         throw new Error(data.error || 'Failed to retry steps');
       }
 
-      alert(`✅ Retried failed/stuck step(s). Queue updated.`);
+      alert(`✅ ${data.message || 'Selected steps re-queued with Anti-Ban pacing!'}`);
+      setFailedStepsModalOpen(false);
       fetchData(true);
     } catch (err: any) {
       alert(`Retry failed: ${err.message}`);
     } finally {
       setRetryingFailed(false);
+    }
+  };
+
+  const handleResumeWorkflow = async (leadId: string) => {
+    if (!selectedWorkflow) return;
+    setResumingWorkflow(true);
+    try {
+      const activeWsId = tenantId || (selectedWorkflow as any).tenant_id || (selectedWorkflow as any).workspace_id || (selectedWorkflow as any).user_id;
+      const res = await fetch('/api/workflows/resume', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId, workflowId: selectedWorkflow.id, workspaceId: activeWsId }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to resume workflow');
+      }
+
+      alert(`✅ ${data.message || 'Workflow resumed.'}`);
+      fetchData(true);
+    } catch (err: any) {
+      alert(`Error: ${err.message}`);
+    } finally {
+      setResumingWorkflow(false);
     }
   };
 
@@ -854,7 +910,7 @@ function WorkflowAnalyticsInner() {
                 </button>
 
                 <button
-                  onClick={() => handleRetryFailedSteps(selectedExecution)}
+                  onClick={() => handleOpenRetryFailedModal(selectedExecution)}
                   disabled={retryingFailed || selectedExecution.stepsLogs.filter(l => l.status === 'failed' || (l.status === 'pending' && l.error_message)).length === 0}
                   className="flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-600 hover:bg-amber-500 active:scale-95 text-white font-bold text-xs rounded-xl transition-all disabled:opacity-40 disabled:scale-100 cursor-pointer"
                 >
@@ -864,13 +920,24 @@ function WorkflowAnalyticsInner() {
                   Retry Failed/Stuck Steps ({selectedExecution.stepsLogs.filter(l => l.status === 'failed' || (l.status === 'pending' && l.error_message)).length})
                 </button>
 
-                <button
-                  onClick={() => handleStopWorkflow(selectedExecution.leadId, selectedExecution.phone)}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-750 hover:text-red-500 dark:hover:text-red-400 active:scale-95 text-zinc-700 dark:text-zinc-300 font-bold text-xs border border-zinc-300 dark:border-zinc-700 hover:border-red-500/30 rounded-xl transition-all cursor-pointer"
-                >
-                  <Ban className="w-3.5 h-3.5" />
-                  Stop Workflow
-                </button>
+                {selectedExecution.status === 'stopped' || selectedExecution.stepsLogs.some(l => l.status === 'stopped' || l.error_message === 'STOPPED') ? (
+                  <button
+                    onClick={() => handleResumeWorkflow(selectedExecution.leadId)}
+                    disabled={resumingWorkflow}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-xs rounded-xl transition-all cursor-pointer shadow-sm disabled:opacity-50"
+                  >
+                    {resumingWorkflow ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+                    Resume Workflow
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleStopWorkflow(selectedExecution.leadId, selectedExecution.phone)}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-750 hover:text-red-500 dark:hover:text-red-400 active:scale-95 text-zinc-700 dark:text-zinc-300 font-bold text-xs border border-zinc-300 dark:border-zinc-700 hover:border-red-500/30 rounded-xl transition-all cursor-pointer"
+                  >
+                    <Ban className="w-3.5 h-3.5" />
+                    Stop Workflow
+                  </button>
+                )}
 
                 <button
                   onClick={() => handleDeleteLead(selectedExecution.leadId, selectedExecution.name)}
@@ -936,6 +1003,111 @@ function WorkflowAnalyticsInner() {
               >
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Failed Steps Selection Modal */}
+      {failedStepsModalOpen && selectedExecution && (
+        <div className="fixed inset-0 z-[100000] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl max-w-lg w-full p-5 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 pb-3">
+              <div>
+                <h3 className="font-extrabold text-base text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-500" />
+                  Select Failed / Stuck Steps to Retry
+                </h3>
+                <p className="text-xs text-zinc-500 mt-0.5">
+                  Choose specific steps to re-dispatch. Dispatched with safe Anti-Ban spacing.
+                </p>
+              </div>
+              <button
+                onClick={() => setFailedStepsModalOpen(false)}
+                className="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2 max-h-72 overflow-y-auto">
+              {selectedExecution.stepsLogs
+                .filter(l => l.status === 'failed' || (l.status === 'pending' && l.error_message))
+                .map(stepLog => {
+                  const isChecked = selectedFailedStepIndices.includes(stepLog.step_index);
+                  return (
+                    <div
+                      key={stepLog.step_index}
+                      onClick={() => {
+                        setSelectedFailedStepIndices(prev =>
+                          prev.includes(stepLog.step_index)
+                            ? prev.filter(i => i !== stepLog.step_index)
+                            : [...prev, stepLog.step_index]
+                        );
+                      }}
+                      className={`p-3 rounded-xl border transition-all cursor-pointer flex items-start gap-3 ${
+                        isChecked
+                          ? 'border-amber-500/50 bg-amber-500/10 dark:bg-amber-500/5'
+                          : 'border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-850'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => {}} // handled by parent div onClick
+                        className="mt-1 w-4 h-4 text-amber-500 rounded border-zinc-400 focus:ring-amber-500/20"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-xs text-zinc-900 dark:text-zinc-200">
+                            Step {stepLog.step_index + 1}: {stepLog.template_name}
+                          </span>
+                          <span className="text-[10px] font-mono text-zinc-400">{stepLog.sent_at_formatted}</span>
+                        </div>
+                        {stepLog.error_message && (
+                          <p className="text-[11px] text-red-500 font-mono mt-1 break-all bg-red-500/5 p-1.5 rounded-lg border border-red-500/10">
+                            {stepLog.error_message}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-zinc-200 dark:border-zinc-800">
+              <button
+                onClick={() => {
+                  const retriable = selectedExecution.stepsLogs.filter(
+                    l => l.status === 'failed' || (l.status === 'pending' && l.error_message)
+                  );
+                  if (selectedFailedStepIndices.length === retriable.length) {
+                    setSelectedFailedStepIndices([]);
+                  } else {
+                    setSelectedFailedStepIndices(retriable.map(l => l.step_index));
+                  }
+                }}
+                className="text-xs font-semibold text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 underline"
+              >
+                {selectedFailedStepIndices.length > 0 ? 'Deselect All' : 'Select All'}
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setFailedStepsModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmRetrySelectedSteps}
+                  disabled={retryingFailed || selectedFailedStepIndices.length === 0}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-amber-600 hover:bg-amber-500 disabled:opacity-50 cursor-pointer shadow-sm"
+                >
+                  {retryingFailed ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+                  Dispatch Selected ({selectedFailedStepIndices.length})
+                </button>
+              </div>
             </div>
           </div>
         </div>

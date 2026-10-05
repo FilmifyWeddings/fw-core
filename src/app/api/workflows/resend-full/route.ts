@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
       .eq('workspace_id', tenantId)
       .in('status', ['failed', 'pending', 'processing', 'done']);
 
-    // 5. Calculate cumulative scheduling starting from NOW
+    // 5. Calculate cumulative scheduling starting from NOW with intelligent Anti-Ban pacing & jitter
     const workflowSteps: any[] = (workflow.workflow_steps || []).slice().sort(
       (a: any, b: any) => a.sort_index - b.sort_index
     );
@@ -66,15 +66,27 @@ export async function POST(req: NextRequest) {
     const stepScheduleMap = new Map<number, string>();
     let driftTime = new Date(); // baseline = NOW()
     
-    for (const step of workflowSteps) {
+    for (let i = 0; i < workflowSteps.length; i++) {
+      const step = workflowSteps[i];
+      let stepDelayMs = 0;
       if (step.delay_unit === 'seconds' && step.delay_value > 0) {
-        driftTime = new Date(driftTime.getTime() + step.delay_value * 1000);
+        stepDelayMs = step.delay_value * 1000;
       } else if (step.delay_unit === 'minutes' && step.delay_value > 0) {
-        driftTime = new Date(driftTime.getTime() + step.delay_value * 60 * 1000);
+        stepDelayMs = step.delay_value * 60 * 1000;
       } else if (step.delay_unit === 'hours' && step.delay_value > 0) {
-        driftTime = new Date(driftTime.getTime() + step.delay_value * 3600 * 1000);
+        stepDelayMs = step.delay_value * 3600 * 1000;
       } else if (step.delay_unit === 'days' && step.delay_value > 0) {
-        driftTime = new Date(driftTime.getTime() + step.delay_value * 24 * 3600 * 1000);
+        stepDelayMs = step.delay_value * 24 * 3600 * 1000;
+      }
+
+      if (i === 0) {
+        // Step 1 dispatches quickly with small 2-4s human jitter
+        driftTime = new Date(driftTime.getTime() + Math.max(stepDelayMs, 2000 + Math.floor(Math.random() * 2000)));
+      } else {
+        // Subsequent steps: Enforce safe human anti-ban interval (at least 12-18s) to prevent spam flags
+        const safeAntiBanMinMs = (12 + Math.floor(Math.random() * 6)) * 1000;
+        const effectiveDelayMs = Math.max(stepDelayMs, safeAntiBanMinMs);
+        driftTime = new Date(driftTime.getTime() + effectiveDelayMs);
       }
       stepScheduleMap.set(step.sort_index, driftTime.toISOString());
     }
@@ -178,6 +190,7 @@ export async function POST(req: NextRequest) {
               groupId: isGroupStep ? targetRecipient : undefined,
               templateId: step.template_id,
               template_name: step.template_name,
+              templateName: step.template_name,
               variables: v_variables,
               leadData: v_variables,
               workflowLogId: logId

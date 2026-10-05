@@ -13,7 +13,7 @@ export async function sendInteractiveTemplateMessage(
   sock: any,
   toJid: string,
   bodyText: string,
-  footerText: string = "StudioCore",
+  footerText: string = "",
   buttonsList: InteractiveButton[],
   mediaUrl?: string
 ) {

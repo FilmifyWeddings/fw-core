@@ -218,8 +218,6 @@ export async function dispatchQuotationPdfWhatsApp({
     `📄 *Quotation: ${quotationTitle}*`,
     clientName ? `👤 Client: ${clientName}` : '',
     amountStr ? `💰 Estimated Total: ${amountStr}` : '',
-    '',
-    `_Sent via StudioCore Automated WhatsApp Service_`,
   ].filter(Boolean).join('\n');
 
   const fileName = `Quotation_${quotationTitle.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`;
@@ -260,8 +258,6 @@ export async function dispatchInvoicePdfWhatsApp({
     `🧾 *Invoice: #${invoiceNumber}*`,
     clientName ? `👤 Client: ${clientName}` : '',
     amountStr ? `💰 Total Amount: ${amountStr}` : '',
-    '',
-    `_Sent via StudioCore Automated WhatsApp Service_`,
   ].filter(Boolean).join('\n');
 
   const fileName = `Invoice_${invoiceNumber.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`;

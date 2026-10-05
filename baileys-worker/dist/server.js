@@ -254,7 +254,7 @@ function formatActionLinksText(rawButtons) {
  * Wraps the interactive message inside viewOnceMessage and relays via sock.relayMessage
  * with a zero-regression fallback to standard sock.sendMessage.
  */
-async function sendInteractiveTemplateMessage(sock, toJid, bodyText, footerText = "StudioCore", buttonsList, mediaUrl) {
+async function sendInteractiveTemplateMessage(sock, toJid, bodyText, footerText = "", buttonsList, mediaUrl) {
     // If no buttons exist, fallback to regular message
     if (!buttonsList || buttonsList.length === 0) {
         const res = await sock.sendMessage(toJid, { text: bodyText });
@@ -503,7 +503,7 @@ async function sendMediaMessage(to, mediaUrl, caption, mimeType, wsId = WORKSPAC
     }
     return result?.key?.id ?? null;
 }
-async function sendTemplateMessage(to, templateId, variables, wsId = WORKSPACE_ID) {
+async function sendTemplateMessage(to, templateId, variables, wsId = WORKSPACE_ID, fallbackTemplateName) {
     const targetSock = await getWorkspaceSocket(wsId);
     let tpl = null;
     // 1. Query tenant_whatsapp_templates first (new schema with type/buttons/payload_json)
@@ -571,6 +571,106 @@ async function sendTemplateMessage(to, templateId, variables, wsId = WORKSPACE_I
                 tpl_buttons: [],
                 tpl_payload: {},
             };
+        }
+    }
+    // 4. Resilient Fallback: If not found by ID within wsId, check tenant_whatsapp_templates globally by ID
+    if (!tpl && templateId) {
+        const { data: globalTenantTpl } = await supabase
+            .from('tenant_whatsapp_templates')
+            .select('body_text, media_url_payload, type, buttons, payload_json')
+            .eq('id', templateId)
+            .maybeSingle();
+        if (globalTenantTpl) {
+            const pj = globalTenantTpl.payload_json || {};
+            const mediaUrl = globalTenantTpl.media_url_payload || pj.mediaUrl || null;
+            let mediaType = null;
+            if (mediaUrl)
+                mediaType = detectMediaCategory(detectMimeTypeFromUrl(mediaUrl));
+            tpl = {
+                body_text: globalTenantTpl.body_text || pj.body || pj.question || '',
+                media_url: mediaUrl,
+                media_type: mediaType,
+                tpl_type: globalTenantTpl.type || null,
+                tpl_buttons: globalTenantTpl.buttons || [],
+                tpl_payload: pj,
+            };
+        }
+    }
+    // 5. Resilient Fallback: If not found by ID, look up by template_name
+    const nameToSearch = fallbackTemplateName || (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(templateId) ? templateId : null);
+    if (!tpl && nameToSearch) {
+        // 5a. Check tenant_whatsapp_templates by template_name within wsId
+        const { data: nameTpl } = await supabase
+            .from('tenant_whatsapp_templates')
+            .select('body_text, media_url_payload, type, buttons, payload_json, id')
+            .eq('template_name', nameToSearch)
+            .eq('tenant_id', wsId)
+            .maybeSingle();
+        if (nameTpl) {
+            const pj = nameTpl.payload_json || {};
+            const mediaUrl = nameTpl.media_url_payload || pj.mediaUrl || null;
+            let mediaType = null;
+            if (mediaUrl)
+                mediaType = detectMediaCategory(detectMimeTypeFromUrl(mediaUrl));
+            tpl = {
+                body_text: nameTpl.body_text || pj.body || pj.question || '',
+                media_url: mediaUrl,
+                media_type: mediaType,
+                tpl_type: nameTpl.type || null,
+                tpl_buttons: nameTpl.buttons || [],
+                tpl_payload: pj,
+            };
+            logger.info({ wsId, templateId, fallbackTemplateName, resolvedId: nameTpl.id }, '✅ Auto-resolved template by template_name in tenant_whatsapp_templates');
+        }
+        else {
+            // 5b. Check whatsapp_templates by name
+            const { data: legacyNameTpl } = await supabase
+                .from('whatsapp_templates')
+                .select('payload, type, buttons, id')
+                .eq('name', nameToSearch)
+                .eq('workspace_id', wsId)
+                .maybeSingle();
+            if (legacyNameTpl) {
+                const payloadObj = legacyNameTpl.payload || {};
+                const legacyMediaUrl = payloadObj.mediaUrl || null;
+                let legacyMediaType = null;
+                if (legacyMediaUrl)
+                    legacyMediaType = detectMediaCategory(detectMimeTypeFromUrl(legacyMediaUrl));
+                tpl = {
+                    body_text: payloadObj.body || payloadObj.question || '',
+                    media_url: legacyMediaUrl,
+                    media_type: legacyMediaType,
+                    tpl_type: legacyNameTpl.type || null,
+                    tpl_buttons: legacyNameTpl.buttons || [],
+                    tpl_payload: payloadObj,
+                };
+                logger.info({ wsId, templateId, fallbackTemplateName, resolvedId: legacyNameTpl.id }, '✅ Auto-resolved template by name in whatsapp_templates');
+            }
+        }
+    }
+    // 6. Case-insensitive name search fallback across tenant
+    if (!tpl && nameToSearch) {
+        const { data: ilikeTpl } = await supabase
+            .from('tenant_whatsapp_templates')
+            .select('body_text, media_url_payload, type, buttons, payload_json, id')
+            .ilike('template_name', nameToSearch)
+            .eq('tenant_id', wsId)
+            .maybeSingle();
+        if (ilikeTpl) {
+            const pj = ilikeTpl.payload_json || {};
+            const mediaUrl = ilikeTpl.media_url_payload || pj.mediaUrl || null;
+            let mediaType = null;
+            if (mediaUrl)
+                mediaType = detectMediaCategory(detectMimeTypeFromUrl(mediaUrl));
+            tpl = {
+                body_text: ilikeTpl.body_text || pj.body || pj.question || '',
+                media_url: mediaUrl,
+                media_type: mediaType,
+                tpl_type: ilikeTpl.type || null,
+                tpl_buttons: ilikeTpl.buttons || [],
+                tpl_payload: pj,
+            };
+            logger.info({ wsId, templateId, fallbackTemplateName, resolvedId: ilikeTpl.id }, '✅ Auto-resolved template by ilike template_name');
         }
     }
     if (!tpl)
@@ -702,7 +802,7 @@ async function sendTemplateMessage(to, templateId, variables, wsId = WORKSPACE_I
         try {
             logger.info({ to, buttonCount: rawButtons.length }, '📤 Sending template with interactive native flow buttons');
             const interactiveMediaUrl = tpl.media_url ? await resolveB2DirectFetchUrl(tpl.media_url) : undefined;
-            const interactiveRes = await sendInteractiveTemplateMessage(targetSock, to, body || '', 'StudioCore', rawButtons, interactiveMediaUrl);
+            const interactiveRes = await sendInteractiveTemplateMessage(targetSock, to, body || '', tpl.tpl_payload?.footer || '', rawButtons, interactiveMediaUrl);
             if (interactiveRes?.messageId) {
                 return interactiveRes.messageId;
             }
@@ -922,8 +1022,12 @@ async function executeAction(action) {
                 break;
             }
             case 'send_template': {
-                const { to, templateId, variables } = action.payload;
-                waMessageId = await sendTemplateMessage(to, templateId, variables, targetWsId);
+                const payload = action.payload;
+                const to = payload.to;
+                const templateId = payload.templateId || payload.template_id;
+                const fallbackName = payload.template_name || payload.templateName;
+                const variables = payload.variables || payload.leadData || {};
+                waMessageId = await sendTemplateMessage(to, templateId, variables, targetWsId, fallbackName);
                 break;
             }
             case 'send_poll': {
@@ -960,7 +1064,7 @@ async function executeAction(action) {
                 const to = payload.to;
                 const text = payload.text;
                 const rawButtons = payload.rawButtons || payload.buttons || [];
-                const footer = payload.footer || 'StudioCore';
+                const footer = payload.footer || '';
                 const buttonsList = rawButtons || [];
                 const actionBlocks = buttonsList.map((btn) => {
                     if (btn.type === 'cta_url' || btn.type === 'url') {
@@ -984,9 +1088,10 @@ async function executeAction(action) {
                 const targetGroup = payload.groupId || payload.groupJid || payload.to || '';
                 const leadData = payload.leadData || payload.variables || {};
                 const templateId = payload.templateId || payload.template_id;
+                const templateName = payload.template_name || payload.templateName;
                 if (templateId) {
                     logger.info({ targetGroup, templateId, workspaceId: targetWsId }, '📤 Dispatching user-configured Group Template');
-                    waMessageId = await sendTemplateMessage(targetGroup, templateId, leadData, targetWsId);
+                    waMessageId = await sendTemplateMessage(targetGroup, templateId, leadData, targetWsId, templateName);
                 }
                 else if (payload.templateStr) {
                     logger.info({ targetGroup, workspaceId: targetWsId }, '📤 Dispatching dynamic Group Alert template');
@@ -1912,7 +2017,7 @@ function startHealthServer() {
                     }
                     case 'buttons': {
                         const rawButtons = payload.rawButtons || payload.buttons || [];
-                        const footer = payload.footer || 'StudioCore';
+                        const footer = payload.footer || '';
                         const buttonsList = rawButtons || [];
                         const actionBlocks = buttonsList.map((btn) => {
                             if (btn.type === 'cta_url' || btn.type === 'url') {

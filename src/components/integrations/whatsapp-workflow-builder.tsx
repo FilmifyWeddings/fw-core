@@ -14,6 +14,7 @@ import {
   ChevronDown, FileText, Check
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { WorkflowExecutionTimelineModal } from '@/components/integrations/WorkflowExecutionTimelineModal';
 
 // Helper to distinguish Group Templates from Client Templates
 const isGroupTemplate = (t: { name?: string; category?: string }) => {
@@ -92,6 +93,7 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
     workflow: Workflow;
     coords: { top: number; right: number };
   } | null>(null);
+  const [selectedWorkflowForTimeline, setSelectedWorkflowForTimeline] = useState<Workflow | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -762,11 +764,11 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                       return (
                         <tr
                           key={wf.id}
-                          onClick={() => handleEditClick(wf)}
+                          onClick={() => setSelectedWorkflowForTimeline(wf)}
                           className={`hover:bg-slate-50 dark:hover:bg-zinc-800/30 transition-colors border-b border-zinc-100 dark:border-zinc-800/60 cursor-pointer ${
                             isSelected ? 'bg-slate-50/80 dark:bg-zinc-800/10' : ''
                           }`}
-                          title="Click row to edit workflow"
+                          title="Click row to view execution timeline & analytics"
                         >
                           {/* Selector */}
                           <td className="px-4 text-center py-3" onClick={(e) => { e.stopPropagation(); handleSelectRow(wf.id); }}>
@@ -921,12 +923,12 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                   onClick={() => {
                     const targetWf = actionMenu.workflow;
                     setActionMenu(null);
-                    router.push(`/dashboard/integrations/whatsapp-web/workflows/analytics?workflowId=${targetWf.id}`);
+                    setSelectedWorkflowForTimeline(targetWf);
                   }}
                   className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-zinc-900 rounded-xl text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer"
                 >
                   <BarChart3 className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                  View Analytics
+                  View Analytics & Timeline
                 </button>
 
                 <div className="h-[1px] bg-zinc-100 dark:bg-zinc-800 my-0.5" />
@@ -1544,6 +1546,16 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
 
           </form>
         </motion.div>
+      )}
+
+      {/* Execution Timeline & Telemetry Modal */}
+      {selectedWorkflowForTimeline && (
+        <WorkflowExecutionTimelineModal
+          isOpen={!!selectedWorkflowForTimeline}
+          onClose={() => setSelectedWorkflowForTimeline(null)}
+          workflow={selectedWorkflowForTimeline}
+          onEditWorkflow={(wf) => handleEditClick(wf)}
+        />
       )}
 
     </div>

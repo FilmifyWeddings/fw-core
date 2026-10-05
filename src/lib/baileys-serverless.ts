@@ -968,9 +968,9 @@ export async function processSingleQueuedAction(
     }
 
     case 'send_template': {
-      const { to, templateId, variables, workflowLogId } = payload as {
-        to: string; templateId: string; variables?: Record<string, string>; workflowLogId?: string;
-      };
+      const rawPayload = payload as any;
+      const { to, templateId, variables, workflowLogId } = rawPayload;
+      const fallbackTemplateName = rawPayload.template_name || rawPayload.templateName;
 
       let tpl: any = null;
 
@@ -1004,6 +1004,63 @@ export async function processSingleQueuedAction(
 
         if (legacyTpl) {
           tpl = legacyTpl;
+        }
+      }
+
+      // 3. Fallback: Check tenant_whatsapp_templates by id globally
+      if (!tpl && templateId) {
+        const { data: globalTpl } = await supabaseAdmin
+          .from('tenant_whatsapp_templates')
+          .select('*')
+          .eq('id', templateId)
+          .maybeSingle();
+
+        if (globalTpl) {
+          tpl = {
+            id: globalTpl.id,
+            name: globalTpl.template_name,
+            type: globalTpl.media_url_payload ? 'media' : 'text',
+            payload: {
+              body: globalTpl.body_text || '',
+              mediaUrl: globalTpl.media_url_payload || ''
+            },
+            buttons: []
+          };
+        }
+      }
+
+      // 4. Fallback: Search by template_name if ID was not found or mismatched
+      const searchName = fallbackTemplateName || (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(templateId) ? templateId : null);
+      if (!tpl && searchName) {
+        const { data: nameTpl } = await supabaseAdmin
+          .from('tenant_whatsapp_templates')
+          .select('*')
+          .eq('template_name', searchName)
+          .eq('tenant_id', workspace_id)
+          .maybeSingle();
+
+        if (nameTpl) {
+          tpl = {
+            id: nameTpl.id,
+            name: nameTpl.template_name,
+            type: nameTpl.media_url_payload ? 'media' : 'text',
+            payload: {
+              body: nameTpl.body_text || '',
+              mediaUrl: nameTpl.media_url_payload || ''
+            },
+            buttons: []
+          };
+        } else {
+          const { data: legacyByName } = await supabaseAdmin
+            .from('whatsapp_templates')
+            .select('*')
+            .eq('name', searchName)
+            .eq('workspace_id', workspace_id)
+            .maybeSingle();
+
+          if (legacyByName) {
+            tpl = legacyByName;
+          }
         }
       }
 

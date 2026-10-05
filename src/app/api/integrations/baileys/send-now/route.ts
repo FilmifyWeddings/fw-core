@@ -16,6 +16,31 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Missing messageId or workspaceId' }, { status: 400 });
     }
 
+    // 1. Check baileys_action_queue first
+    const { data: queueItem } = await supabaseAdmin
+      .from('baileys_action_queue')
+      .select('*')
+      .eq('id', messageId)
+      .eq('workspace_id', workspaceId)
+      .maybeSingle();
+
+    if (queueItem) {
+      await supabaseAdmin
+        .from('baileys_action_queue')
+        .update({
+          status: 'pending',
+          attempt_count: 0,
+          error_message: null,
+          failure_reason: null,
+          next_retry_at: new Date().toISOString(),
+          processed_at: null,
+        })
+        .eq('id', messageId);
+
+      return NextResponse.json({ success: true, message: 'Action re-queued for immediate dispatch' });
+    }
+
+    // 2. Fallback to baileys_messages
     const { data: message, error: fetchErr } = await supabaseAdmin
       .from('baileys_messages')
       .select('*')

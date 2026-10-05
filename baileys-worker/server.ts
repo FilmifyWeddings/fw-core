@@ -315,7 +315,7 @@ async function sendInteractiveTemplateMessage(
   sock: any,
   toJid: string,
   bodyText: string,
-  footerText: string = "StudioCore",
+  footerText: string = "",
   buttonsList: Array<{ id: string; type: 'cta_url' | 'quick_reply' | 'cta_call' | 'url' | 'phone'; text: string; value: string }>,
   mediaUrl?: string
 ): Promise<{ success: boolean; messageId: string }> {
@@ -589,7 +589,8 @@ async function sendTemplateMessage(
   to: string,
   templateId: string,
   variables: Record<string, string>,
-  wsId = WORKSPACE_ID
+  wsId = WORKSPACE_ID,
+  fallbackTemplateName?: string
 ): Promise<string | null> {
   const targetSock = await getWorkspaceSocket(wsId);
 
@@ -672,6 +673,108 @@ async function sendTemplateMessage(
         tpl_buttons: [],
         tpl_payload: {},
       };
+    }
+  }
+
+  // 4. Resilient Fallback: If not found by ID within wsId, check tenant_whatsapp_templates globally by ID
+  if (!tpl && templateId) {
+    const { data: globalTenantTpl } = await supabase
+      .from('tenant_whatsapp_templates')
+      .select('body_text, media_url_payload, type, buttons, payload_json')
+      .eq('id', templateId)
+      .maybeSingle();
+
+    if (globalTenantTpl) {
+      const pj = (globalTenantTpl.payload_json as any) || {};
+      const mediaUrl = globalTenantTpl.media_url_payload || pj.mediaUrl || null;
+      let mediaType: string | null = null;
+      if (mediaUrl) mediaType = detectMediaCategory(detectMimeTypeFromUrl(mediaUrl));
+      tpl = {
+        body_text: globalTenantTpl.body_text || pj.body || pj.question || '',
+        media_url: mediaUrl,
+        media_type: mediaType,
+        tpl_type: (globalTenantTpl as any).type || null,
+        tpl_buttons: (globalTenantTpl as any).buttons || [],
+        tpl_payload: pj,
+      };
+    }
+  }
+
+  // 5. Resilient Fallback: If not found by ID, look up by template_name
+  const nameToSearch = fallbackTemplateName || (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(templateId) ? templateId : null);
+  if (!tpl && nameToSearch) {
+    // 5a. Check tenant_whatsapp_templates by template_name within wsId
+    const { data: nameTpl } = await supabase
+      .from('tenant_whatsapp_templates')
+      .select('body_text, media_url_payload, type, buttons, payload_json, id')
+      .eq('template_name', nameToSearch)
+      .eq('tenant_id', wsId)
+      .maybeSingle();
+
+    if (nameTpl) {
+      const pj = (nameTpl.payload_json as any) || {};
+      const mediaUrl = nameTpl.media_url_payload || pj.mediaUrl || null;
+      let mediaType: string | null = null;
+      if (mediaUrl) mediaType = detectMediaCategory(detectMimeTypeFromUrl(mediaUrl));
+      tpl = {
+        body_text: nameTpl.body_text || pj.body || pj.question || '',
+        media_url: mediaUrl,
+        media_type: mediaType,
+        tpl_type: (nameTpl as any).type || null,
+        tpl_buttons: (nameTpl as any).buttons || [],
+        tpl_payload: pj,
+      };
+      logger.info({ wsId, templateId, fallbackTemplateName, resolvedId: nameTpl.id }, '✅ Auto-resolved template by template_name in tenant_whatsapp_templates');
+    } else {
+      // 5b. Check whatsapp_templates by name
+      const { data: legacyNameTpl } = await supabase
+        .from('whatsapp_templates')
+        .select('payload, type, buttons, id')
+        .eq('name', nameToSearch)
+        .eq('workspace_id', wsId)
+        .maybeSingle();
+
+      if (legacyNameTpl) {
+        const payloadObj = (legacyNameTpl.payload as any) || {};
+        const legacyMediaUrl = payloadObj.mediaUrl || null;
+        let legacyMediaType: string | null = null;
+        if (legacyMediaUrl) legacyMediaType = detectMediaCategory(detectMimeTypeFromUrl(legacyMediaUrl));
+        tpl = {
+          body_text: payloadObj.body || payloadObj.question || '',
+          media_url: legacyMediaUrl,
+          media_type: legacyMediaType,
+          tpl_type: (legacyNameTpl as any).type || null,
+          tpl_buttons: (legacyNameTpl as any).buttons || [],
+          tpl_payload: payloadObj,
+        };
+        logger.info({ wsId, templateId, fallbackTemplateName, resolvedId: legacyNameTpl.id }, '✅ Auto-resolved template by name in whatsapp_templates');
+      }
+    }
+  }
+
+  // 6. Case-insensitive name search fallback across tenant
+  if (!tpl && nameToSearch) {
+    const { data: ilikeTpl } = await supabase
+      .from('tenant_whatsapp_templates')
+      .select('body_text, media_url_payload, type, buttons, payload_json, id')
+      .ilike('template_name', nameToSearch)
+      .eq('tenant_id', wsId)
+      .maybeSingle();
+
+    if (ilikeTpl) {
+      const pj = (ilikeTpl.payload_json as any) || {};
+      const mediaUrl = ilikeTpl.media_url_payload || pj.mediaUrl || null;
+      let mediaType: string | null = null;
+      if (mediaUrl) mediaType = detectMediaCategory(detectMimeTypeFromUrl(mediaUrl));
+      tpl = {
+        body_text: ilikeTpl.body_text || pj.body || pj.question || '',
+        media_url: mediaUrl,
+        media_type: mediaType,
+        tpl_type: (ilikeTpl as any).type || null,
+        tpl_buttons: (ilikeTpl as any).buttons || [],
+        tpl_payload: pj,
+      };
+      logger.info({ wsId, templateId, fallbackTemplateName, resolvedId: ilikeTpl.id }, '✅ Auto-resolved template by ilike template_name');
     }
   }
 
@@ -815,7 +918,7 @@ async function sendTemplateMessage(
         targetSock,
         to,
         body || '',
-        'StudioCore',
+        tpl.tpl_payload?.footer || '',
         rawButtons,
         interactiveMediaUrl
       );
@@ -1074,10 +1177,12 @@ async function executeAction(action: {
         break;
       }
       case 'send_template': {
-        const { to, templateId, variables } = action.payload as {
-          to: string; templateId: string; variables: Record<string, string>;
-        };
-        waMessageId = await sendTemplateMessage(to, templateId, variables, targetWsId);
+        const payload = action.payload as any;
+        const to = payload.to;
+        const templateId = payload.templateId || payload.template_id;
+        const fallbackName = payload.template_name || payload.templateName;
+        const variables = payload.variables || payload.leadData || {};
+        waMessageId = await sendTemplateMessage(to, templateId, variables, targetWsId, fallbackName);
         break;
       }
       case 'send_poll': {
@@ -1111,7 +1216,7 @@ async function executeAction(action: {
         const to = payload.to;
         const text = payload.text;
         const rawButtons = payload.rawButtons || payload.buttons || [];
-        const footer = payload.footer || 'StudioCore';
+        const footer = payload.footer || '';
         const buttonsList = rawButtons || [];
         const actionBlocks = buttonsList.map((btn: any) => {
           if (btn.type === 'cta_url' || btn.type === 'url') {
@@ -1135,10 +1240,11 @@ async function executeAction(action: {
         const targetGroup = payload.groupId || payload.groupJid || payload.to || '';
         const leadData = payload.leadData || payload.variables || {};
         const templateId = payload.templateId || payload.template_id;
+        const templateName = payload.template_name || payload.templateName;
 
         if (templateId) {
           logger.info({ targetGroup, templateId, workspaceId: targetWsId }, '📤 Dispatching user-configured Group Template');
-          waMessageId = await sendTemplateMessage(targetGroup, templateId, leadData, targetWsId);
+          waMessageId = await sendTemplateMessage(targetGroup, templateId, leadData, targetWsId, templateName);
         } else if (payload.templateStr) {
           logger.info({ targetGroup, workspaceId: targetWsId }, '📤 Dispatching dynamic Group Alert template');
           waMessageId = await sendGroupAlert(targetGroup, leadData, payload.templateStr, targetWsId);
@@ -2139,7 +2245,7 @@ function startHealthServer(): http.Server {
           }
           case 'buttons': {
             const rawButtons = payload.rawButtons || payload.buttons || [];
-            const footer = payload.footer || 'StudioCore';
+            const footer = payload.footer || '';
             const buttonsList = rawButtons || [];
 
             const actionBlocks = buttonsList.map((btn: any) => {
