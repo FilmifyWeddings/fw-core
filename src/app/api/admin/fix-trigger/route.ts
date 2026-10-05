@@ -108,11 +108,12 @@ BEGIN
       IF r_step.delay_unit = 'seconds' AND r_step.delay_value > 0 THEN
         v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' seconds')::INTERVAL;
       ELSIF r_step.delay_unit = 'minutes' AND r_step.delay_value > 0 THEN
-        v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' minutes')::INTERVAL;
+        v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' minutes')::INTERVAL + ((floor(random() * 30) + 15) || ' seconds')::INTERVAL;
       ELSIF r_step.delay_unit = 'hours' AND r_step.delay_value > 0 THEN
-        v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' hours')::INTERVAL;
+        v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' hours')::INTERVAL + ((floor(random() * 30) - 15) || ' minutes')::INTERVAL;
       ELSIF r_step.delay_unit = 'days' AND r_step.delay_value > 0 THEN
-        v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' days')::INTERVAL;
+        -- Multi-day followups: apply +/- 35m organic jitter to avoid exact-minute robotic bans
+        v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' days')::INTERVAL + ((floor(random() * 70) - 35) || ' minutes')::INTERVAL;
       END IF;
 
       v_log_id := gen_random_uuid();
@@ -250,11 +251,12 @@ BEGIN
       IF r_step.delay_unit = 'seconds' AND r_step.delay_value > 0 THEN
         v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' seconds')::INTERVAL;
       ELSIF r_step.delay_unit = 'minutes' AND r_step.delay_value > 0 THEN
-        v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' minutes')::INTERVAL;
+        v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' minutes')::INTERVAL + ((floor(random() * 30) + 15) || ' seconds')::INTERVAL;
       ELSIF r_step.delay_unit = 'hours' AND r_step.delay_value > 0 THEN
-        v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' hours')::INTERVAL;
+        v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' hours')::INTERVAL + ((floor(random() * 30) - 15) || ' minutes')::INTERVAL;
       ELSIF r_step.delay_unit = 'days' AND r_step.delay_value > 0 THEN
-        v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' days')::INTERVAL;
+        -- Multi-day followups: apply +/- 35m organic jitter to avoid exact-minute robotic bans
+        v_scheduled_at := v_scheduled_at + (r_step.delay_value || ' days')::INTERVAL + ((floor(random() * 70) - 35) || ' minutes')::INTERVAL;
       END IF;
 
       v_log_id := gen_random_uuid();

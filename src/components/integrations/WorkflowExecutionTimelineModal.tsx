@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useBhamstra } from '@/lib/context/BhamstraContext';
 import {
   X,
@@ -25,6 +26,9 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import Link from 'next/link';
+
+// Global in-memory cache for instant opening (0ms)
+const workflowTelemetryCache = new Map<string, { executions: ExecutionRow[]; timestamp: number }>();
 
 interface WorkflowStep {
   template_id: string;
@@ -108,6 +112,7 @@ export function WorkflowExecutionTimelineModal({
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchLeadQuery, setSearchLeadQuery] = useState('');
+  const [visibleCount, setVisibleCount] = useState(30);
   const [retryingStepId, setRetryingStepId] = useState<string | null>(null);
   const [retryingFull, setRetryingFull] = useState(false);
   const [retryingFailed, setRetryingFailed] = useState(false);
@@ -117,14 +122,22 @@ export function WorkflowExecutionTimelineModal({
   const [failedStepsModalOpen, setFailedStepsModalOpen] = useState(false);
   const [selectedFailedIndices, setSelectedFailedIndices] = useState<number[]>([]);
 
-  const fetchTelemetry = useCallback(async () => {
+  // Delete / Clear Contact History Modal
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [clearingLogs, setClearingLogs] = useState(false);
+
+  const fetchTelemetry = useCallback(async (skipLoadingState = false) => {
     if (!workflow?.id) return;
-    setLoading(true);
+    if (!skipLoadingState) setLoading(true);
     try {
       const activeTenant = tenantId || workflow.tenant_id || workflow.workspace_id;
       const res = await fetch(`/api/integrations/whatsapp/workflows/execution?tenant_id=${activeTenant}&workflow_id=${workflow.id}`);
       const data = await res.json();
       if (data.success && data.executions) {
+        workflowTelemetryCache.set(workflow.id, {
+          executions: data.executions,
+          timestamp: Date.now()
+        });
         setExecutions(data.executions);
         if (!selectedLeadId && data.executions.length > 0) {
           setSelectedLeadId(data.executions[0].leadId);
@@ -139,18 +152,68 @@ export function WorkflowExecutionTimelineModal({
 
   useEffect(() => {
     if (isOpen && workflow?.id) {
-      fetchTelemetry();
+      const cached = workflowTelemetryCache.get(workflow.id);
+      if (cached && cached.executions.length > 0) {
+        setExecutions(cached.executions);
+        if (!selectedLeadId) setSelectedLeadId(cached.executions[0].leadId);
+        setLoading(false);
+        // Background refresh without blank flicker
+        fetchTelemetry(true);
+      } else {
+        fetchTelemetry(false);
+      }
     }
   }, [isOpen, workflow?.id]);
+
+  useEffect(() => {
+    setVisibleCount(30);
+  }, [searchLeadQuery]);
 
   if (!isOpen || !workflow) return null;
 
   const currentExecution = executions.find(e => e.leadId === selectedLeadId) || executions[0] || null;
 
-  const filteredExecutions = executions.filter(e => {
+  const filteredExecutions = useMemo(() => {
+    if (!searchLeadQuery.trim()) return executions;
     const q = searchLeadQuery.toLowerCase();
-    return e.name.toLowerCase().includes(q) || e.phone.includes(q);
-  });
+    return executions.filter(e => e.name.toLowerCase().includes(q) || e.phone.includes(q));
+  }, [executions, searchLeadQuery]);
+
+  const displayedExecutions = useMemo(() => {
+    return filteredExecutions.slice(0, visibleCount);
+  }, [filteredExecutions, visibleCount]);
+
+  const handleScrollSidebar = (e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget;
+    if (target.scrollTop + target.clientHeight >= target.scrollHeight - 150) {
+      if (visibleCount < filteredExecutions.length) {
+        setVisibleCount(prev => prev + 30);
+      }
+    }
+  };
+
+  const handleConfirmClearContactLogs = async () => {
+    if (!currentExecution || !workflow) return;
+    setClearingLogs(true);
+    try {
+      const activeTenant = tenantId || workflow.tenant_id || workflow.workspace_id;
+      const res = await fetch(`/api/integrations/whatsapp/workflows/delete-contact?tenant_id=${activeTenant}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId: currentExecution.leadId, workflowId: workflow.id }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to clear workflow logs');
+      }
+      setShowDeleteModal(false);
+      fetchTelemetry(false);
+    } catch (err: any) {
+      alert(`Clear logs failed: ${err.message}`);
+    } finally {
+      setClearingLogs(false);
+    }
+  };
 
   // Action: Single Step Manual Retry / Dispatch
   const handleRetrySingleStep = async (stepLog: StepLog) => {
@@ -385,8 +448,8 @@ export function WorkflowExecutionTimelineModal({
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-850">
-              {loading ? (
+            <div onScroll={handleScrollSidebar} className="flex-1 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-850 scroller-thin">
+              {loading && executions.length === 0 ? (
                 <div className="py-12 text-center text-zinc-400">
                   <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-amber-500" />
                   <span className="text-xs">Loading contacts...</span>
@@ -397,38 +460,45 @@ export function WorkflowExecutionTimelineModal({
                   <p className="text-[10px] text-zinc-500 mt-1">This workflow has not processed any leads yet.</p>
                 </div>
               ) : (
-                filteredExecutions.map(exec => {
-                  const isSelected = exec.leadId === currentExecution?.leadId;
-                  return (
-                    <div
-                      key={exec.leadId}
-                      onClick={() => setSelectedLeadId(exec.leadId)}
-                      className={`p-3 transition-colors cursor-pointer text-left flex items-center justify-between gap-2 ${
-                        isSelected
-                          ? 'bg-amber-500/10 dark:bg-amber-500/15 border-l-4 border-amber-500'
-                          : 'hover:bg-zinc-100/70 dark:hover:bg-zinc-850/50'
-                      }`}
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-xs text-zinc-900 dark:text-zinc-100 truncate block">
-                            {exec.name}
+                <>
+                  {displayedExecutions.map(exec => {
+                    const isSelected = exec.leadId === currentExecution?.leadId;
+                    return (
+                      <div
+                        key={exec.leadId}
+                        onClick={() => setSelectedLeadId(exec.leadId)}
+                        className={`p-3 transition-colors cursor-pointer text-left flex items-center justify-between gap-2 ${
+                          isSelected
+                            ? 'bg-amber-500/10 dark:bg-amber-500/15 border-l-4 border-amber-500'
+                            : 'hover:bg-zinc-100/70 dark:hover:bg-zinc-850/50'
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-xs text-zinc-900 dark:text-zinc-100 truncate block">
+                              {exec.name}
+                            </span>
+                            <StatusBadge status={exec.status} />
+                          </div>
+                          <span className="font-mono text-[10px] text-zinc-500 block truncate mt-0.5">
+                            +{exec.phone.replace(/[^0-9]/g, '')}
                           </span>
-                          <StatusBadge status={exec.status} />
+                          <div className="flex items-center gap-2 text-[10px] text-zinc-400 mt-1 font-mono">
+                            <span className="text-emerald-500 font-bold">{exec.completedSteps} done</span>
+                            {exec.failedSteps > 0 && <span className="text-red-500 font-bold">· {exec.failedSteps} failed</span>}
+                            {exec.pendingSteps > 0 && <span className="text-amber-500 font-bold">· {exec.pendingSteps} pending</span>}
+                          </div>
                         </div>
-                        <span className="font-mono text-[10px] text-zinc-500 block truncate mt-0.5">
-                          +{exec.phone.replace(/[^0-9]/g, '')}
-                        </span>
-                        <div className="flex items-center gap-2 text-[10px] text-zinc-400 mt-1 font-mono">
-                          <span className="text-emerald-500 font-bold">{exec.completedSteps} done</span>
-                          {exec.failedSteps > 0 && <span className="text-red-500 font-bold">· {exec.failedSteps} failed</span>}
-                          {exec.pendingSteps > 0 && <span className="text-amber-500 font-bold">· {exec.pendingSteps} pending</span>}
-                        </div>
+                        <ChevronRight className={`w-4 h-4 shrink-0 transition-transform ${isSelected ? 'text-amber-500 translate-x-0.5' : 'text-zinc-300 dark:text-zinc-700'}`} />
                       </div>
-                      <ChevronRight className={`w-4 h-4 shrink-0 transition-transform ${isSelected ? 'text-amber-500 translate-x-0.5' : 'text-zinc-300 dark:text-zinc-700'}`} />
+                    );
+                  })}
+                  {displayedExecutions.length < filteredExecutions.length && (
+                    <div className="py-3 text-center text-[10px] text-zinc-400 font-mono bg-zinc-100/40 dark:bg-zinc-900/40">
+                      Showing {displayedExecutions.length} of {filteredExecutions.length} (scroll to load more)
                     </div>
-                  );
-                })
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -517,6 +587,16 @@ export function WorkflowExecutionTimelineModal({
                         <span>Stop Flow</span>
                       </button>
                     )}
+
+                    <button
+                      type="button"
+                      onClick={() => setShowDeleteModal(true)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-500/25 hover:bg-rose-100 dark:hover:bg-rose-950/40 text-rose-500 dark:text-rose-400 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                      title="Clear workflow execution logs for this contact"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Clear History</span>
+                    </button>
                   </div>
                 </div>
 
@@ -789,6 +869,60 @@ export function WorkflowExecutionTimelineModal({
           </div>
         </div>
       )}
+
+      {/* ── Confirm Clear Contact Execution History Modal ── */}
+      <AnimatePresence>
+        {showDeleteModal && currentExecution && (
+          <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl w-full max-w-md shadow-2xl p-6 text-left relative overflow-hidden"
+            >
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-500 shrink-0">
+                  <Trash2 className="w-6 h-6" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-base font-bold text-zinc-900 dark:text-white">Clear Contact History</h3>
+                  <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1 leading-relaxed">
+                    Are you sure you want to clear workflow execution history for <span className="font-bold text-zinc-900 dark:text-zinc-100">"{currentExecution.name}"</span>?
+                  </p>
+                  <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-2">
+                    This will delete all scheduling logs and pending queue messages for the <span className="font-bold text-zinc-300">"{workflow.workflow_name}"</span> workflow.
+                    The contact will remain 100% safe in your CRM. Re-syncing the contact will restart the sequence fresh.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-6 flex items-center justify-end gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-900">
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteModal(false)}
+                  disabled={clearingLogs}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-850 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmClearContactLogs}
+                  disabled={clearingLogs}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-bold text-xs rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-sm shadow-rose-600/30 disabled:opacity-50"
+                >
+                  {clearingLogs ? (
+                    <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Clearing...</>
+                  ) : (
+                    <><Trash2 className="w-3.5 h-3.5" /> Clear History</>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }

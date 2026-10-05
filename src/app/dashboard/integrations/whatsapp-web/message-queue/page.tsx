@@ -124,21 +124,16 @@ export default function MessageQueuePage() {
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       });
 
-      let finalMessages = combined;
-      if (statusFilter !== 'all') {
-        finalMessages = finalMessages.filter(m => m.status === statusFilter);
-      }
-
-      setMessages(finalMessages);
+      setMessages(combined);
     } catch (err) {
       console.error('Failed to fetch messages:', err);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [tenantId, statusFilter]);
+  }, [tenantId]);
 
-  useEffect(() => { fetchMessages(); }, [tenantId]);
+  useEffect(() => { fetchMessages(); }, [fetchMessages]);
 
   const handleSendNow = async (messageId: string) => {
     setSendingId(messageId);
@@ -200,19 +195,48 @@ export default function MessageQueuePage() {
     }
   };
 
-  const filtered = messages.filter(m => {
-    const q = searchQuery.toLowerCase();
-    return m.chat_jid.includes(q) || (m.message_text || '').toLowerCase().includes(q);
-  });
+  const filtered = useMemo(() => {
+    return messages.filter(m => {
+      // 1. Search filter
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matches = m.chat_jid.toLowerCase().includes(q) || (m.message_text || '').toLowerCase().includes(q);
+        if (!matches) return false;
+      }
 
-  const pendingCount = messages.filter(m => m.status === 'queued' || m.status === 'failed').length;
+      // 2. Status filter
+      if (statusFilter === 'all') return true;
+      const s = (m.status || '').toLowerCase();
+      if (statusFilter === 'pending' || statusFilter === 'queued') {
+        return s === 'queued' || s === 'pending' || s === 'processing';
+      }
+      if (statusFilter === 'sent') {
+        return s === 'sent' || s === 'done' || s === 'completed';
+      }
+      if (statusFilter === 'delivered') {
+        return s === 'delivered';
+      }
+      if (statusFilter === 'read') {
+        return s === 'read';
+      }
+      if (statusFilter === 'failed') {
+        return s === 'failed' || s === 'error';
+      }
+      return s === statusFilter;
+    });
+  }, [messages, searchQuery, statusFilter]);
+
+  const pendingCount = messages.filter(m => {
+    const s = (m.status || '').toLowerCase();
+    return s === 'queued' || s === 'pending' || s === 'failed' || s === 'error';
+  }).length;
 
   return (
     <div className="max-w-7xl mx-auto p-4 md:p-6 space-y-6 text-zinc-900 dark:text-zinc-100 min-h-screen">
       <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800/80 pb-4">
         <div>
-          <h1 className="text-2xl font-extrabold bg-gradient-to-r from-emerald-400 via-green-400 to-teal-500 bg-clip-text text-transparent">Message Queue</h1>
-          <p className="text-[11px] text-zinc-500 mt-1">View, filter, and resend queued or failed messages</p>
+          <h1 className="text-2xl font-extrabold bg-gradient-to-r from-emerald-400 via-green-400 to-teal-500 bg-clip-text text-transparent">Message Logs</h1>
+          <p className="text-[11px] text-zinc-500 mt-1">View, filter, and resend queued, sent, or failed messages</p>
         </div>
         <div className="flex items-center gap-2">
           {selectedIds.size > 0 && (
@@ -238,8 +262,8 @@ export default function MessageQueuePage() {
         {[
           { label: 'Total', count: messages.length, color: 'text-blue-400' },
           { label: 'Pending/Failed', count: pendingCount, color: 'text-amber-400' },
-          { label: 'Sent', count: messages.filter(m => m.status === 'sent').length, color: 'text-blue-400' },
-          { label: 'Delivered/Read', count: messages.filter(m => m.status === 'delivered' || m.status === 'read').length, color: 'text-emerald-400' },
+          { label: 'Sent', count: messages.filter(m => ['sent', 'done', 'completed'].includes((m.status || '').toLowerCase())).length, color: 'text-blue-400' },
+          { label: 'Delivered/Read', count: messages.filter(m => ['delivered', 'read'].includes((m.status || '').toLowerCase())).length, color: 'text-emerald-400' },
         ].map(s => (
           <div key={s.label} className="bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/80 rounded-2xl p-4">
             <div className={`text-2xl font-black ${s.color}`}>{s.count}</div>
@@ -264,7 +288,7 @@ export default function MessageQueuePage() {
             className="px-3 py-2 bg-white dark:bg-zinc-950/60 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs text-zinc-900 dark:text-zinc-300 focus:outline-none cursor-pointer"
           >
             <option value="all">All Status</option>
-            <option value="queued">Pending</option>
+            <option value="pending">Pending</option>
             <option value="sent">Sent</option>
             <option value="delivered">Delivered</option>
             <option value="read">Read</option>

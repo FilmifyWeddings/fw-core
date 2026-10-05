@@ -16,6 +16,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { sendMessageServerless } from '@/lib/baileys-serverless';
 import { getGoogleCreds } from '@/lib/google-auth';
+import { calculateSmartAntiBanSchedule } from '@/lib/whatsapp-antiban';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type TriggerType = 'facebook_lead' | 'webhook' | 'manual' | 'crm_entry';
@@ -588,9 +589,16 @@ export async function executeWorkflow(
           console.log(`[workflow-engine] Testing delay inline: Wait ${inlineDelay}ms...`);
           await new Promise(r => setTimeout(r, inlineDelay));
         } else {
-          // Accumulate scheduled timing timestamp for actual run
-          const baseTime = nextScheduledAt ? new Date(nextScheduledAt).getTime() : Date.now();
-          nextScheduledAt = new Date(baseTime + delayMs).toISOString();
+          // Accumulate scheduled timing timestamp for actual run with Smart Anti-Ban jitter & DND guard
+          const baseDate = nextScheduledAt ? new Date(nextScheduledAt) : new Date();
+          const scheduledDate = calculateSmartAntiBanSchedule(
+            baseDate,
+            delayVal,
+            delayUnit,
+            stepExecutionIndex,
+            true
+          );
+          nextScheduledAt = scheduledDate.toISOString();
         }
 
         // Delay node resolves instantly, pass to children

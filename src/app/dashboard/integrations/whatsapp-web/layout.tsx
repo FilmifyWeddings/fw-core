@@ -53,7 +53,7 @@ const TABS: { id: WaTab; label: string; icon: React.ReactNode; path: string }[] 
   },
   {
     id: 'message-queue',
-    label: 'Message Queue',
+    label: 'Message Logs',
     icon: <Inbox className="w-4 h-4" />,
     path: '/dashboard/integrations/whatsapp-web/message-queue'
   },
@@ -62,12 +62,6 @@ const TABS: { id: WaTab; label: string; icon: React.ReactNode; path: string }[] 
     label: 'Workflow Analytics',
     icon: <BarChart3 className="w-4 h-4" />,
     path: '/dashboard/integrations/whatsapp-web/workflows/analytics'
-  },
-  {
-    id: 'system-health',
-    label: 'System Health',
-    icon: <Activity className="w-4 h-4" />,
-    path: '/dashboard/integrations/whatsapp-web/system-health'
   }
 ];
 

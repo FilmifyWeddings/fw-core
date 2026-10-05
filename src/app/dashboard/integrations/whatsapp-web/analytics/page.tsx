@@ -31,7 +31,8 @@ interface AutomationLogItem {
 }
 
 export default function WhatsAppAnalyticsConsolePage() {
-  const { userId } = useBhamstra();
+  const { userId, workspaceId } = useBhamstra();
+  const tenantId = (workspaceId && workspaceId !== 'all') ? workspaceId : (userId || '');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -67,7 +68,8 @@ export default function WhatsAppAnalyticsConsolePage() {
 
   // Fetch only Workflows & Template logs
   const fetchData = async () => {
-    if (!userId) return;
+    const activeTenant = tenantId || userId;
+    if (!activeTenant) return;
     try {
       setRefreshing(true);
 
@@ -76,7 +78,7 @@ export default function WhatsAppAnalyticsConsolePage() {
         supabase
           .from('whatsapp_workflow_logs')
           .select('*')
-          .or('tenant_id.eq.' + userId + ',tenant_id.is.null')
+          .or(`tenant_id.eq.${activeTenant},tenant_id.eq.${userId},tenant_id.is.null`)
           .order('sent_at', { ascending: false })
           .limit(1000),
 
@@ -84,7 +86,7 @@ export default function WhatsAppAnalyticsConsolePage() {
         supabase
           .from('baileys_action_queue')
           .select('*')
-          .eq('workspace_id', userId)
+          .or(`workspace_id.eq.${activeTenant},workspace_id.eq.${userId}`)
           .order('created_at', { ascending: false })
           .limit(1000),
 
@@ -92,7 +94,7 @@ export default function WhatsAppAnalyticsConsolePage() {
         supabase
           .from('whatsapp_automation_logs')
           .select('*')
-          .or('workspace_id.eq.' + userId + ',user_id.eq.' + userId)
+          .or(`workspace_id.eq.${activeTenant},workspace_id.eq.${userId},user_id.eq.${activeTenant},user_id.eq.${userId}`)
           .order('created_at', { ascending: false })
           .limit(500),
 
@@ -100,13 +102,13 @@ export default function WhatsAppAnalyticsConsolePage() {
         supabase
           .from('tenant_whatsapp_templates')
           .select('id, template_name')
-          .eq('tenant_id', userId),
+          .or(`tenant_id.eq.${activeTenant},tenant_id.eq.${userId}`),
 
         // 5. Custom workflows for workflow name lookups
         supabase
           .from('whatsapp_custom_workflows')
           .select('id, workflow_name')
-          .eq('tenant_id', userId),
+          .or(`tenant_id.eq.${activeTenant},tenant_id.eq.${userId}`),
       ]);
 
       if (wfRes.data) setWorkflowLogs(wfRes.data);
@@ -213,9 +215,10 @@ export default function WhatsAppAnalyticsConsolePage() {
     // 2. Process Action Queue (Single Send Templates, Group Broadcasts, Queued Automations)
     queueLogs.forEach(q => {
       if (!q.id || seenIds.has(q.id)) return;
-      seenIds.add(q.id);
-
       const payload = q.payload || {};
+      if (payload.workflowLogId && seenIds.has(payload.workflowLogId)) return;
+      seenIds.add(q.id);
+      if (payload.workflowLogId) seenIds.add(payload.workflowLogId);
       const rawTo = String(payload.to || q.chat_jid || payload.phone || '');
       const phone = rawTo.replace(/@.*$/, '').replace(/[^0-9]/g, '');
       const isGroup = rawTo.endsWith('@g.us') || q.action_type === 'group_broadcast';
@@ -657,13 +660,21 @@ export default function WhatsAppAnalyticsConsolePage() {
               <Activity className="w-4 h-4" />
             </div>
           </div>
-          <div className="flex items-center gap-3 text-xs font-bold text-zinc-800 dark:text-zinc-200">
-            <span className="text-purple-600 dark:text-purple-400">{metrics.workflowCount} Workflows</span>
+          <div className="flex items-center gap-2 text-xs font-bold text-zinc-800 dark:text-zinc-200">
+            <span className="text-purple-600 dark:text-purple-400">{metrics.workflowCount} Workflow Msgs</span>
             <span>•</span>
-            <span className="text-blue-600 dark:text-blue-400">{metrics.templateCount} Templates</span>
+            <span className="text-blue-600 dark:text-blue-400">{metrics.templateCount} Template Msgs</span>
           </div>
-          <div className="mt-2 text-[10px] text-zinc-400 font-mono">
-            {metrics.groupCount} Group Broadcasts
+          <div className="mt-2 text-[10px] text-zinc-400 font-mono flex items-center gap-2">
+            <span>{Object.keys(workflowsMap).length} Active Flows</span>
+            <span>•</span>
+            <span>{Object.keys(templatesMap).length} Templates</span>
+            {metrics.groupCount > 0 && (
+              <>
+                <span>•</span>
+                <span>{metrics.groupCount} Groups</span>
+              </>
+            )}
           </div>
         </div>
 

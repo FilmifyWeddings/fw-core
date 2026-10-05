@@ -138,6 +138,8 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
   const [targetGroup, setTargetGroup] = useState('');
   const [steps, setSteps] = useState<WorkflowStep[]>([]);
   const [workflowStatus, setWorkflowStatus] = useState<'Active' | 'Inactive'>('Active');
+  const [workflowToDelete, setWorkflowToDelete] = useState<Workflow | null>(null);
+  const [deletingWorkflow, setDeletingWorkflow] = useState(false);
 
   // Drag and Drop Ref / states
   const dragItem = useRef<number | null>(null);
@@ -495,11 +497,12 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
     setActionMenu(null);
   };
 
-  // Delete Workflow
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this custom workflow?')) return;
+  // Delete Workflow with Modal Confirmation
+  const confirmDeleteWorkflow = async () => {
+    if (!workflowToDelete) return;
+    setDeletingWorkflow(true);
     try {
-      const res = await fetch(`/api/integrations/whatsapp/workflows?tenant_id=${workspaceId}&workflow_id=${id}`, {
+      const res = await fetch(`/api/integrations/whatsapp/workflows?tenant_id=${workspaceId}&workflow_id=${workflowToDelete.id}`, {
         method: 'DELETE'
       });
       const data = await res.json();
@@ -509,10 +512,12 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
         throw new Error(data.error);
       }
     } catch (err) {
-      const updated = workflows.filter(w => w.id !== id);
+      const updated = workflows.filter(w => w.id !== workflowToDelete.id);
       setWorkflows(updated);
       localStorage.setItem(`wa_workflows_${workspaceId}`, JSON.stringify(updated));
     } finally {
+      setDeletingWorkflow(false);
+      setWorkflowToDelete(null);
       setActiveMenuId(null);
       setActionMenu(null);
     }
@@ -909,19 +914,6 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                   type="button"
                   onClick={() => {
                     const targetWf = actionMenu.workflow;
-                    handleExecute(targetWf);
-                  }}
-                  disabled={executingId === actionMenu.workflow.id}
-                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-zinc-900 rounded-xl text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  <PlayCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                  {executingId === actionMenu.workflow.id ? 'Running...' : 'Execute Sequence'}
-                </button>
-                 
-                <button
-                  type="button"
-                  onClick={() => {
-                    const targetWf = actionMenu.workflow;
                     setActionMenu(null);
                     setSelectedWorkflowForTimeline(targetWf);
                   }}
@@ -936,9 +928,9 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                 <button
                   type="button"
                   onClick={() => {
-                    const targetId = actionMenu.workflow.id;
+                    const targetWf = actionMenu.workflow;
                     setActionMenu(null);
-                    handleDelete(targetId);
+                    setWorkflowToDelete(targetWf);
                   }}
                   className="w-full flex items-center gap-2 px-3 py-2 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-xl text-xs font-semibold text-rose-600 dark:text-rose-400 transition-colors cursor-pointer"
                 >
@@ -1557,6 +1549,58 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
           onEditWorkflow={(wf) => handleEditClick(wf)}
         />
       )}
+
+      {/* ═══ CONFIRM DELETE WORKFLOW MODAL ═══ */}
+      <AnimatePresence>
+        {workflowToDelete && (
+          <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl w-full max-w-md shadow-2xl p-6 text-left relative overflow-hidden"
+            >
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-500 shrink-0">
+                  <Trash2 className="w-6 h-6" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-base font-bold text-zinc-900 dark:text-white">Delete Workflow</h3>
+                  <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1 leading-relaxed">
+                    Are you sure you want to delete <span className="font-bold text-zinc-900 dark:text-zinc-100">"{workflowToDelete.workflow_name}"</span>?
+                  </p>
+                  <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-2">
+                    All automated scheduling nodes and drip messages configured for this flow will be permanently removed. Your CRM contacts will remain intact.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-6 flex items-center justify-end gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-900">
+                <button
+                  type="button"
+                  onClick={() => setWorkflowToDelete(null)}
+                  disabled={deletingWorkflow}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-850 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmDeleteWorkflow}
+                  disabled={deletingWorkflow}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-bold text-xs rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-sm shadow-rose-600/30 disabled:opacity-50"
+                >
+                  {deletingWorkflow ? (
+                    <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Deleting...</>
+                  ) : (
+                    <><Trash2 className="w-3.5 h-3.5" /> Delete Workflow</>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
     </div>
   );

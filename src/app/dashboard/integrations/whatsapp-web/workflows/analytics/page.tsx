@@ -1,6 +1,7 @@
 'use client';
 
 import React, { Suspense, useState, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useBhamstra } from '@/lib/context/BhamstraContext';
 import { supabase } from '@/lib/supabase';
 import { useSearchParams } from 'next/navigation';
@@ -250,6 +251,8 @@ function WorkflowAnalyticsInner() {
   const [selectedFailedStepIndices, setSelectedFailedStepIndices] = useState<number[]>([]);
   const [failedStepsModalOpen, setFailedStepsModalOpen] = useState(false);
   const [resumingWorkflow, setResumingWorkflow] = useState(false);
+  const [leadToDelete, setLeadToDelete] = useState<{ leadId: string; leadName: string } | null>(null);
+  const [clearingLeadLogs, setClearingLeadLogs] = useState(false);
 
   // ── Data Fetching ──────────────────────────────────────────────────────────
   const fetchData = useCallback(async (isRefresh = false) => {
@@ -523,29 +526,30 @@ function WorkflowAnalyticsInner() {
     }
   };
 
-  const handleDeleteLead = async (leadId: string, leadName: string) => {
-    if (!selectedWorkflow) return;
-    if (!window.confirm(
-      `Clear workflow execution history for "${leadName}"?\n\n` +
-      `This will delete all scheduling logs and pending queue items for the "${selectedWorkflow.workflow_name}" workflow.\n\n` +
-      `✅ The contact will remain in your CRM.\n` +
-      `✅ Re-syncing the contact will restart the workflow sequence with fresh timings.`
-    )) return;
+  const handleDeleteLead = (leadId: string, leadName: string) => {
+    setLeadToDelete({ leadId, leadName });
+  };
+
+  const confirmDeleteLead = async () => {
+    if (!leadToDelete || !selectedWorkflow) return;
+    setClearingLeadLogs(true);
     try {
       const res = await fetch(`/api/integrations/whatsapp/workflows/delete-contact?tenant_id=${tenantId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadId, workflowId: selectedWorkflow.id }),
+        body: JSON.stringify({ leadId: leadToDelete.leadId, workflowId: selectedWorkflow.id }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
         throw new Error(data.error || 'Failed to clear workflow logs');
       }
-      alert(`✅ Workflow execution logs cleared (${data.deletedLogCount ?? 0} log(s) removed).\nContact is preserved in CRM. Re-sync to restart the sequence.`);
-      fetchData(true);
+      setLeadToDelete(null);
       setIsModalOpen(false);
+      fetchData(true);
     } catch (err: any) {
       alert(`Clear logs failed: ${err.message}`);
+    } finally {
+      setClearingLeadLogs(false);
     }
   };
 
@@ -1112,6 +1116,60 @@ function WorkflowAnalyticsInner() {
           </div>
         </div>
       )}
+
+      {/* ── Confirm Clear Contact Execution Logs Modal ── */}
+      <AnimatePresence>
+        {leadToDelete && selectedWorkflow && (
+          <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl w-full max-w-md shadow-2xl p-6 text-left relative overflow-hidden"
+            >
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-500 shrink-0">
+                  <Trash2 className="w-6 h-6" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-base font-bold text-zinc-900 dark:text-white">Clear Workflow Logs</h3>
+                  <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1 leading-relaxed">
+                    Clear execution history for <span className="font-bold text-zinc-900 dark:text-zinc-100">"{leadToDelete.leadName}"</span>?
+                  </p>
+                  <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-2">
+                    This will delete all scheduling logs and pending queue messages for <span className="font-bold text-zinc-300">"{selectedWorkflow.workflow_name}"</span>.
+                    The contact will remain preserved in your CRM. Re-syncing will restart the sequence with fresh timings.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-6 flex items-center justify-end gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-900">
+                <button
+                  type="button"
+                  onClick={() => setLeadToDelete(null)}
+                  disabled={clearingLeadLogs}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-850 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmDeleteLead}
+                  disabled={clearingLeadLogs}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-bold text-xs rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-sm shadow-rose-600/30 disabled:opacity-50"
+                >
+                  {clearingLeadLogs ? (
+                    <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Clearing...</>
+                  ) : (
+                    <><Trash2 className="w-3.5 h-3.5" /> Clear History</>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }

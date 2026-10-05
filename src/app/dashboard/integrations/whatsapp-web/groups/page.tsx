@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { BhamstraProvider, useBhamstra } from '@/lib/context/BhamstraContext';
 import { supabase } from '@/lib/supabase';
+import { createPortal } from 'react-dom';
 
 const MOCK_WORKSPACE_ID = '00000000-0000-0000-0000-000000000000';
 
@@ -41,9 +42,15 @@ function WhatsAppGroupsHubCore() {
   
   // Modal / Drawer States
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const [actionMenu, setActionMenu] = useState<{ group: ContactGroup; coords: { top: number; right: number } } | null>(null);
+  const [mounted, setMounted] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showMembersDrawer, setShowMembersDrawer] = useState(false);
+  
+  // Confirmation Modal States
+  const [groupToClear, setGroupToClear] = useState<ContactGroup | null>(null);
+  const [groupToDelete, setGroupToDelete] = useState<ContactGroup | null>(null);
   
   // Selected / Editing States
   const [selectedGroup, setSelectedGroup] = useState<ContactGroup | null>(null);
@@ -59,6 +66,42 @@ function WhatsAppGroupsHubCore() {
   const [memberSearchQuery, setMemberSearchQuery] = useState('');
 
   const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    const handleDismiss = () => setActionMenu(null);
+    if (actionMenu) {
+      window.addEventListener('scroll', handleDismiss, true);
+      window.addEventListener('resize', handleDismiss);
+    }
+    return () => {
+      window.removeEventListener('scroll', handleDismiss, true);
+      window.removeEventListener('resize', handleDismiss);
+    };
+  }, [actionMenu]);
+
+  const toggleActionMenu = (group: ContactGroup, targetElem: HTMLElement) => {
+    if (actionMenu?.group.id === group.id) {
+      setActionMenu(null);
+      return;
+    }
+    const rect = targetElem.getBoundingClientRect();
+    const menuHeight = 180;
+    const fitsBelow = rect.bottom + menuHeight <= window.innerHeight - 10;
+    const rightPos = Math.max(12, window.innerWidth - rect.right);
+    const topPos = fitsBelow ? rect.bottom + 6 : Math.max(10, rect.top - menuHeight - 6);
+
+    setActionMenu({
+      group,
+      coords: {
+        top: Math.round(topPos),
+        right: Math.round(rightPos)
+      }
+    });
+  };
 
   // Fetch initial data
   const loadData = async () => {
@@ -214,23 +257,12 @@ function WhatsAppGroupsHubCore() {
     }
   };
 
-  // Clear Group Records (Dissociate leads)
-  const handleClearGroup = async (group: ContactGroup) => {
-    const count = getLinkedContactsCount(group.id);
-    if (count === 0) {
-      alert('This group has no linked contacts.');
-      setActiveMenuId(null);
-      return;
-    }
-    if (!confirm(`Are you sure you want to dissociate all ${count} contacts from "${group.group_name}"?`)) {
-      setActiveMenuId(null);
-      return;
-    }
-
+  // Clear Group Records Confirmation
+  const confirmClearGroup = async () => {
+    if (!groupToClear) return;
     setActionLoading(true);
     try {
-      // Set group ID to null for all leads currently in this group
-      const groupLeadIds = leads.filter(l => l.whatsapp_group_id === group.id).map(l => l.id);
+      const groupLeadIds = leads.filter(l => l.whatsapp_group_id === groupToClear.id).map(l => l.id);
       
       const { error } = await supabase
         .from('leads')
@@ -243,26 +275,21 @@ function WhatsAppGroupsHubCore() {
       setTimeout(() => setSuccessMessage(''), 3000);
       loadData();
     } catch (err) {
-      // Simulate client-side update
-      setLeads(prev => prev.map(l => l.whatsapp_group_id === group.id ? { ...l, whatsapp_group_id: null } : l));
+      setLeads(prev => prev.map(l => l.whatsapp_group_id === groupToClear.id ? { ...l, whatsapp_group_id: null } : l));
       setSuccessMessage('Cleared group members in sandbox mode.');
       setTimeout(() => setSuccessMessage(''), 3000);
     } finally {
       setActionLoading(false);
-      setActiveMenuId(null);
+      setGroupToClear(null);
     }
   };
 
-  // Delete Group Container
-  const handleDeleteGroup = async (group: ContactGroup) => {
-    if (!confirm(`Are you sure you want to delete the group "${group.group_name}"? Members will be unassigned.`)) {
-      setActiveMenuId(null);
-      return;
-    }
-
+  // Delete Group Container Confirmation
+  const confirmDeleteGroup = async () => {
+    if (!groupToDelete) return;
     setActionLoading(true);
     try {
-      const res = await fetch(`/api/integrations/whatsapp/groups?tenant_id=${tenantId}&group_id=${group.id}`, {
+      const res = await fetch(`/api/integrations/whatsapp/groups?tenant_id=${tenantId}&group_id=${groupToDelete.id}`, {
         method: 'DELETE'
       });
       const data = await res.json();
@@ -274,14 +301,14 @@ function WhatsAppGroupsHubCore() {
         throw new Error(data.error);
       }
     } catch (err) {
-      const updated = groups.filter(g => g.id !== group.id);
+      const updated = groups.filter(g => g.id !== groupToDelete.id);
       setGroups(updated);
       localStorage.setItem(`wa_contact_groups_${tenantId}`, JSON.stringify(updated));
       setSuccessMessage('Deleted from local sandbox database.');
       setTimeout(() => setSuccessMessage(''), 3000);
     } finally {
       setActionLoading(false);
-      setActiveMenuId(null);
+      setGroupToDelete(null);
     }
   };
 
@@ -538,55 +565,19 @@ function WhatsAppGroupsHubCore() {
                           {formattedDate}
                         </td>
 
-                        {/* Actions Menu */}
+                        {/* Actions Menu Trigger */}
                         <td className="py-4 px-4 text-right relative" onClick={e => e.stopPropagation()}>
                           <button
-                            onClick={() => setActiveMenuId(activeMenuId === group.id ? null : group.id)}
-                            className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-850 rounded-lg text-slate-400 dark:text-zinc-550 hover:text-slate-600 dark:hover:text-white transition-colors"
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleActionMenu(group, e.currentTarget);
+                            }}
+                            className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-850 rounded-lg text-slate-400 dark:text-zinc-550 hover:text-slate-600 dark:hover:text-white transition-colors cursor-pointer"
+                            title="Group options"
                           >
                             <MoreVertical className="w-4 h-4" />
                           </button>
-
-                          {activeMenuId === group.id && (
-                            <div
-                              ref={menuRef}
-                              className="absolute right-4 top-10 mt-1 w-48 bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-855 rounded-xl p-1 shadow-lg flex flex-col gap-1 z-40 text-left"
-                            >
-                              <button
-                                onClick={() => handleViewMembers(group)}
-                                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 dark:hover:bg-zinc-900 rounded-lg text-xs font-semibold text-slate-700 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors"
-                              >
-                                <FolderOpen className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                                View Members
-                              </button>
-
-                              <button
-                                onClick={() => handleEditClick(group)}
-                                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 dark:hover:bg-zinc-900 rounded-lg text-xs font-semibold text-slate-700 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors"
-                              >
-                                <Edit2 className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                                Edit Metadata
-                              </button>
-
-                              <button
-                                onClick={() => handleClearGroup(group)}
-                                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 dark:hover:bg-zinc-900 rounded-lg text-xs font-semibold text-slate-700 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors"
-                              >
-                                <Eraser className="w-3.5 h-3.5 text-orange-500 shrink-0" />
-                                Clear Group Members
-                              </button>
-
-                              <div className="h-[1px] bg-slate-100 dark:bg-zinc-900 my-0.5" />
-
-                              <button
-                                onClick={() => handleDeleteGroup(group)}
-                                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg text-xs font-semibold text-slate-500 hover:text-rose-600 dark:hover:text-rose-450 transition-colors"
-                              >
-                                <Trash2 className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                                Delete Group Container
-                              </button>
-                            </div>
-                          )}
                         </td>
                       </tr>
                     );
@@ -598,6 +589,93 @@ function WhatsAppGroupsHubCore() {
           </div>
 
         </div>
+
+        {/* Floating Actions Menu Portal — Escapes table clipping */}
+        {mounted && typeof document !== 'undefined' && actionMenu && createPortal(
+          <>
+            <div
+              className="fixed inset-0 z-[999998] cursor-default bg-transparent"
+              onClick={(e) => {
+                e.stopPropagation();
+                setActionMenu(null);
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setActionMenu(null);
+              }}
+            />
+            <div
+              style={{
+                position: 'fixed',
+                top: `${actionMenu.coords.top}px`,
+                right: `${actionMenu.coords.right}px`,
+                zIndex: 999999,
+              }}
+              className="w-52 bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-855 rounded-2xl p-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.18)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.7)] flex flex-col gap-1 text-left animate-in fade-in zoom-in-95 duration-100 font-sans select-none"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  const g = actionMenu.group;
+                  setActionMenu(null);
+                  handleViewMembers(g);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-zinc-900 rounded-xl text-xs font-semibold text-slate-700 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+              >
+                <FolderOpen className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                View Members
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const g = actionMenu.group;
+                  setActionMenu(null);
+                  handleEditClick(g);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-zinc-900 rounded-xl text-xs font-semibold text-slate-700 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+              >
+                <Edit2 className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                Edit Metadata
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const g = actionMenu.group;
+                  setActionMenu(null);
+                  const count = getLinkedContactsCount(g.id);
+                  if (count === 0) {
+                    alert('This group has no linked contacts.');
+                    return;
+                  }
+                  setGroupToClear(g);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-zinc-900 rounded-xl text-xs font-semibold text-slate-700 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+              >
+                <Eraser className="w-3.5 h-3.5 text-orange-500 shrink-0" />
+                Clear Group Members
+              </button>
+
+              <div className="h-[1px] bg-slate-100 dark:bg-zinc-900 my-0.5" />
+
+              <button
+                type="button"
+                onClick={() => {
+                  const g = actionMenu.group;
+                  setActionMenu(null);
+                  setGroupToDelete(g);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-xl text-xs font-semibold text-rose-600 dark:text-rose-400 transition-colors cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                Delete Group Container
+              </button>
+            </div>
+          </>,
+          document.body
+        )}
 
       </div>
 
@@ -985,6 +1063,110 @@ function WhatsAppGroupsHubCore() {
               </div>
             </motion.div>
           </>
+        )}
+      </AnimatePresence>
+
+      {/* ═══ CONFIRM CLEAR GROUP MEMBERS MODAL ═══ */}
+      <AnimatePresence>
+        {groupToClear && (
+          <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-2xl w-full max-w-md shadow-2xl p-6 text-left relative overflow-hidden"
+            >
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-500 shrink-0">
+                  <Eraser className="w-6 h-6" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">Clear Group Members</h3>
+                  <p className="text-xs text-slate-600 dark:text-zinc-400 mt-1 leading-relaxed">
+                    Are you sure you want to dissociate all <span className="font-bold text-slate-900 dark:text-zinc-100">{getLinkedContactsCount(groupToClear.id)} contacts</span> from <span className="font-bold text-slate-900 dark:text-zinc-100">"{groupToClear.group_name}"</span>?
+                  </p>
+                  <p className="text-[11px] text-slate-400 dark:text-zinc-500 mt-2">
+                    All contacts will remain 100% safe in your CRM. They will simply be unlinked from this automated group.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-6 flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-zinc-900">
+                <button
+                  type="button"
+                  onClick={() => setGroupToClear(null)}
+                  disabled={actionLoading}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-850 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmClearGroup}
+                  disabled={actionLoading}
+                  className="px-4 py-2 bg-orange-600 hover:bg-orange-500 active:scale-95 text-white font-bold text-xs rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-sm shadow-orange-600/30 disabled:opacity-50"
+                >
+                  {actionLoading ? (
+                    <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Clearing...</>
+                  ) : (
+                    <><Eraser className="w-3.5 h-3.5" /> Clear Members</>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ═══ CONFIRM DELETE GROUP CONTAINER MODAL ═══ */}
+      <AnimatePresence>
+        {groupToDelete && (
+          <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-2xl w-full max-w-md shadow-2xl p-6 text-left relative overflow-hidden"
+            >
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-500 shrink-0">
+                  <Trash2 className="w-6 h-6" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">Delete Group Container</h3>
+                  <p className="text-xs text-slate-600 dark:text-zinc-400 mt-1 leading-relaxed">
+                    Are you sure you want to delete <span className="font-bold text-slate-900 dark:text-zinc-100">"{groupToDelete.group_name}"</span>?
+                  </p>
+                  <p className="text-[11px] text-slate-400 dark:text-zinc-500 mt-2">
+                    The group segment container will be deleted. Any linked contacts will be unassigned and remain safe in your CRM.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-6 flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-zinc-900">
+                <button
+                  type="button"
+                  onClick={() => setGroupToDelete(null)}
+                  disabled={actionLoading}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-850 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmDeleteGroup}
+                  disabled={actionLoading}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-bold text-xs rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-sm shadow-rose-600/30 disabled:opacity-50"
+                >
+                  {actionLoading ? (
+                    <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Deleting...</>
+                  ) : (
+                    <><Trash2 className="w-3.5 h-3.5" /> Delete Group</>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
