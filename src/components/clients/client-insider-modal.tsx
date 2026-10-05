@@ -181,6 +181,7 @@ export function ClientInsiderModal({
   const [status, setStatus] = useState<'active' | 'completed' | 'archived'>('active');
   const [isSaving, setIsSaving] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -461,6 +462,14 @@ export function ClientInsiderModal({
     setTimeout(() => setCopiedLink(false), 2500);
   };
 
+  const copyClientCode = () => {
+    if (extended.client_code) {
+      navigator.clipboard.writeText(extended.client_code);
+      setCopiedCode(true);
+      setTimeout(() => setCopiedCode(false), 2500);
+    }
+  };
+
   const shareOnWhatsApp = () => {
     const msg = `Namaste ${name} Ji! 🙏\nHere is your personal StudioCore Wedding Portal to access your Event Schedule, Quotations, Post-Production status & Google Drive delivery links:\n\n🔗 *Portal Link:* ${portalUrl}\n🔐 *Access PIN:* ${extended.portal_pin}\n\nPlease enter your 4-digit PIN to access your wedding space anytime!`;
     const cleanPhone = phone.replace(/[^0-9]/g, '');
@@ -483,15 +492,12 @@ export function ClientInsiderModal({
         ───────────────────────────────────────────────────────────── */}
         <div className="p-5 sm:p-6 bg-gradient-to-r from-amber-50/70 via-[#FFFDF9] to-amber-50/40 border-b border-[#EAE5DA] flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0">
           <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-900 border border-amber-200 flex items-center justify-center font-black text-base shadow-2xs">
-              {extended.client_code ? extended.client_code.split('-')[1] || 'CL' : 'CL'}
+            <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-900 border border-amber-200 flex items-center justify-center font-black text-base shadow-2xs select-none">
+              {name ? (name.replace(/&/g, ' ').trim().split(/\s+/).filter(Boolean).length === 1 ? name.slice(0, 2).toUpperCase() : (name.replace(/&/g, ' ').trim().split(/\s+/)[0][0] + name.replace(/&/g, ' ').trim().split(/\s+/).slice(-1)[0][0]).toUpperCase()) : 'CL'}
             </div>
             <div>
               <div className="flex items-center gap-2.5 flex-wrap">
                 <h2 className="text-xl font-black text-slate-900 tracking-tight">{name}</h2>
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-50 text-amber-800 border border-amber-200 shadow-2xs font-mono">
-                  {extended.client_code}
-                </span>
                 <span className={`px-2.5 py-0.5 rounded-full text-xs font-extrabold border ${
                   status === 'completed'
                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -645,6 +651,24 @@ export function ClientInsiderModal({
                           onChange={(e) => setEventDate(e.target.value)}
                           className="w-full px-3 py-2 bg-[#FAF9F5] border border-[#EAE5DA] rounded-xl font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
                         />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="font-bold text-slate-600 block mb-1">Client Code / ID</label>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 px-3 py-2 bg-[#FAF9F5] border border-[#EAE5DA] rounded-xl font-mono text-xs font-bold text-slate-800 select-all flex items-center justify-between">
+                          <span>{extended.client_code || 'CL-N/A'}</span>
+                          <span className="text-[10px] text-slate-400 font-sans font-medium">Permanent Record</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={copyClientCode}
+                          className="px-3.5 py-2 bg-white border border-[#EAE5DA] hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold transition shadow-2xs shrink-0 flex items-center gap-1.5 cursor-pointer"
+                          title="Copy Client Code"
+                        >
+                          {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-slate-500" />}
+                          <span>{copiedCode ? 'Copied' : 'Copy'}</span>
+                        </button>
                       </div>
                     </div>
                   </div>

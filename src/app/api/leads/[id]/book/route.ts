@@ -39,7 +39,7 @@ export async function POST(
     }
 
     let targetQuotationId = explicitQuotationId || lead.final_quotation_id || (lead.raw_payload as any)?.final_quotation_id || null;
-    const workspaceId = lead.workspace_id || lead.tenant_id || lead.created_by_user_id || 'ws_demo';
+    const workspaceId = body.workspaceId || lead.workspace_id || lead.tenant_id || lead.created_by_user_id || 'ws_demo';
 
     if (!targetQuotationId) {
       const { data: finalQ } = await supabaseAdmin

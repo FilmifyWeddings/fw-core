@@ -730,12 +730,25 @@ export default function FinancePage() {
     window.addEventListener('quotation_finalized', handleQuotationFinalized);
     window.addEventListener('finance_updated', handleQuotationFinalized);
     window.addEventListener('client_created', handleQuotationFinalized);
+    window.addEventListener('client_updated', handleQuotationFinalized);
+    window.addEventListener('team_events_updated', handleQuotationFinalized);
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'sc_booking_sync_event' || e.key === 'finance_updated' || e.key === 'sc_cached_finance_records' || e.key === 'client_created') {
+        handleQuotationFinalized();
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+
     return () => {
       window.removeEventListener('finance_expenses_updated', handleExpensesUpdated);
       window.removeEventListener('team_finance_updated', handleExpensesUpdated);
       window.removeEventListener('quotation_finalized', handleQuotationFinalized);
       window.removeEventListener('finance_updated', handleQuotationFinalized);
       window.removeEventListener('client_created', handleQuotationFinalized);
+      window.removeEventListener('client_updated', handleQuotationFinalized);
+      window.removeEventListener('team_events_updated', handleQuotationFinalized);
+      window.removeEventListener('storage', handleStorage);
     };
   }, [isPinVerified, isCheckingPinStatus, currentWorkspaceId]);
 

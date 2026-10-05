@@ -1170,28 +1170,47 @@ export default function LeadsPage() {
       await executeLeadUpdate(leadId, updatedFields, true);
 
       // 2. High-speed server-side booking onboarder via supabaseAdmin
-      fetch(`/api/leads/${leadId}/book`, {
+      const effectiveWsId = (workspaceId && workspaceId !== 'all') ? workspaceId : (userId || undefined);
+      const bookRes = await fetch(`/api/leads/${leadId}/book`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          hasFinalQuotation
+          hasFinalQuotation,
+          workspaceId: effectiveWsId
         })
-      })
-      .then(res => res.json())
-      .then(data => {
-        if (data.success && data.clientId) {
-          setLeads(prev => prev.map(l => l.id === leadId ? { ...l, client_id: data.clientId } : l));
-        }
-      })
-      .catch(err => console.warn('[handleConfirmBooking API notice]:', err));
+      });
+      const bookData = await bookRes.json().catch(() => ({}));
+      const clientId = bookData?.clientId || null;
 
-      // 3. Dispatch global events so Client Directory, Finance, Post-Prod & Events update
+      if (bookData?.success && clientId) {
+        setLeads(prev => prev.map(l => l.id === leadId ? { ...l, client_id: clientId } : l));
+      }
+
+      // 3. Clear stale caches across all workspace modules for instant 0ms fresh hydration
       if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('client_created', { detail: { leadId } }));
-        window.dispatchEvent(new CustomEvent('client_updated', { detail: { leadId } }));
-        window.dispatchEvent(new CustomEvent('finance_updated', { detail: { leadId } }));
-        window.dispatchEvent(new CustomEvent('post_production_updated', { detail: { leadId } }));
-        window.dispatchEvent(new CustomEvent('team_events_updated', { detail: { leadId } }));
+        try {
+          localStorage.removeItem('sc_cached_clients');
+          localStorage.removeItem('sc_cached_tm_projects');
+          localStorage.removeItem('sc_cached_pp_projects');
+          localStorage.removeItem('sc_cached_finance_records');
+          localStorage.removeItem('sc_cached_finance_clients');
+
+          localStorage.setItem('sc_booking_sync_event', JSON.stringify({
+            leadId,
+            clientId,
+            hasFinalQuotation,
+            coupleName: bookData?.coupleName || null,
+            ts: Date.now()
+          }));
+        } catch (_) {}
+
+        // 4. Dispatch global events so Client Directory, Finance, Post-Prod & Events update INSTANTLY in 0ms
+        window.dispatchEvent(new CustomEvent('client_created', { detail: { leadId, clientId } }));
+        window.dispatchEvent(new CustomEvent('client_updated', { detail: { leadId, clientId } }));
+        window.dispatchEvent(new CustomEvent('finance_updated', { detail: { leadId, clientId } }));
+        window.dispatchEvent(new CustomEvent('post_production_updated', { detail: { leadId, clientId } }));
+        window.dispatchEvent(new CustomEvent('team_events_updated', { detail: { leadId, clientId } }));
+        window.dispatchEvent(new CustomEvent('project_created', { detail: { leadId, clientId } }));
       }
     } catch (err) {
       console.error('[handleConfirmBooking] Error:', err);

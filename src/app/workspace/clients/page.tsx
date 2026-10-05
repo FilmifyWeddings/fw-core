@@ -144,24 +144,35 @@ export default function ClientsPage() {
       try {
         localStorage.removeItem('sc_cached_clients');
       } catch (_) {}
-      fetchClientsAndSyncBookedLeads();
+      fetchClientsAndSyncBookedLeads(true);
     };
     window.addEventListener('quotation_finalized', handleDataRefresh);
     window.addEventListener('finance_updated', handleDataRefresh);
     window.addEventListener('client_created', handleDataRefresh);
     window.addEventListener('client_updated', handleDataRefresh);
     window.addEventListener('post_production_updated', handleDataRefresh);
+    window.addEventListener('team_events_updated', handleDataRefresh);
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'sc_booking_sync_event' || e.key === 'sc_cached_clients' || e.key === 'client_created') {
+        handleDataRefresh();
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+
     return () => {
       window.removeEventListener('quotation_finalized', handleDataRefresh);
       window.removeEventListener('finance_updated', handleDataRefresh);
       window.removeEventListener('client_created', handleDataRefresh);
       window.removeEventListener('client_updated', handleDataRefresh);
       window.removeEventListener('post_production_updated', handleDataRefresh);
+      window.removeEventListener('team_events_updated', handleDataRefresh);
+      window.removeEventListener('storage', handleStorage);
     };
   }, []);
 
-  const fetchClientsAndSyncBookedLeads = async () => {
-    setLoading(true);
+  const fetchClientsAndSyncBookedLeads = async (silent: boolean = false) => {
+    if (!silent && clients.length === 0) setLoading(true);
     try {
       // 1. Fetch user session
       const { data: { session } } = await supabase.auth.getSession();

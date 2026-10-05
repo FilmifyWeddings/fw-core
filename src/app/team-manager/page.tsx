@@ -785,6 +785,43 @@ export default function TeamManagerPage() {
     initUserAndFetch();
   }, [workspaceId]);
 
+  // Reactive listeners for 0ms millisecond propagation of newly booked leads across workspace
+  useEffect(() => {
+    const handleEventsUpdated = () => {
+      const effectiveWsId = workspaceId || currentUserId;
+      memCachedTMProjects = [];
+      try {
+        localStorage.removeItem('sc_cached_tm_projects');
+      } catch (_) {}
+      fetchAllData(effectiveWsId, true);
+    };
+
+    window.addEventListener('team_events_updated', handleEventsUpdated);
+    window.addEventListener('client_created', handleEventsUpdated);
+    window.addEventListener('client_updated', handleEventsUpdated);
+    window.addEventListener('project_created', handleEventsUpdated);
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'sc_booking_sync_event' || e.key === 'sc_cached_tm_projects' || e.key === 'team_events_updated') {
+        const effectiveWsId = workspaceId || currentUserId;
+        memCachedTMProjects = [];
+        try {
+          localStorage.removeItem('sc_cached_tm_projects');
+        } catch (_) {}
+        fetchAllData(effectiveWsId, true);
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      window.removeEventListener('team_events_updated', handleEventsUpdated);
+      window.removeEventListener('client_created', handleEventsUpdated);
+      window.removeEventListener('client_updated', handleEventsUpdated);
+      window.removeEventListener('project_created', handleEventsUpdated);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [workspaceId, currentUserId]);
+
 
   // Handle Team Member Save (Create / Edit)
   const handleSaveTeamMember = async (memberData: {

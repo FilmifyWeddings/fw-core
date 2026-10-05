@@ -121,6 +121,7 @@ export default function ClientWorkspaceDetailPage() {
   const [projectManagerPhone, setProjectManagerPhone] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -2456,6 +2457,14 @@ export default function ClientWorkspaceDetailPage() {
     setTimeout(() => setCopiedLink(false), 2500);
   };
 
+  const copyClientCode = () => {
+    if (extended.client_code) {
+      navigator.clipboard.writeText(extended.client_code);
+      setCopiedCode(true);
+      setTimeout(() => setCopiedCode(false), 2500);
+    }
+  };
+
   const shareOnWhatsApp = () => {
     const msg = `Namaste ${name} Ji! 🙏\nHere is your personal StudioCore Wedding Portal to access your Event Schedule, Quotations, Post-Production status & Google Drive delivery links:\n\n🔗 *Portal Link:* ${portalUrl}\n🔐 *Access PIN:* ${extended.portal_pin}\n\nPlease enter your 4-digit PIN to access your wedding space anytime!`;
     const cleanPhone = phone.replace(/[^0-9]/g, '');
@@ -2530,9 +2539,6 @@ export default function ClientWorkspaceDetailPage() {
             <div className="space-y-1.5">
               <div className="flex items-center gap-2.5 flex-wrap">
                 <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">{name}</h1>
-                <span className="px-3 py-0.5 rounded-full text-xs font-black bg-amber-100 text-amber-900 border border-amber-300 font-mono shadow-2xs">
-                  {extended.client_code}
-                </span>
                 <ClientStatusDropdown
                   status={status}
                   clientId={client?.id}
@@ -2706,6 +2712,25 @@ export default function ClientWorkspaceDetailPage() {
                         onChange={(e) => setEventDate(e.target.value)}
                         className="w-full px-3.5 py-2.5 bg-white border border-[#EAE5DA] rounded-xl font-bold text-slate-900 focus:outline-none"
                       />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Client Code / ID</label>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-[#EAE5DA] rounded-xl font-mono text-xs font-bold text-slate-800 select-all flex items-center justify-between">
+                        <span>{extended.client_code || 'CL-N/A'}</span>
+                        <span className="text-[10px] text-slate-400 font-sans font-medium">Permanent Record</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={copyClientCode}
+                        className="px-3.5 py-2.5 bg-white border border-[#EAE5DA] hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold transition shadow-2xs shrink-0 flex items-center gap-1.5 cursor-pointer"
+                        title="Copy Client Code"
+                      >
+                        {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-slate-500" />}
+                        <span>{copiedCode ? 'Copied' : 'Copy'}</span>
+                      </button>
                     </div>
                   </div>
                 </div>

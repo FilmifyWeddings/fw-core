@@ -109,6 +109,10 @@ export default function PostProductionPage() {
     fetchPostProductionData();
 
     const handleSettingsUpdated = () => {
+      memCachedPostProdProjects = [];
+      try {
+        localStorage.removeItem('sc_cached_pp_projects');
+      } catch (_) {}
       fetchPostProductionData();
     };
     window.addEventListener('post_production_settings_updated', handleSettingsUpdated);
@@ -116,9 +120,11 @@ export default function PostProductionPage() {
     window.addEventListener('post_production_updated', handleSettingsUpdated);
     window.addEventListener('client_created', handleSettingsUpdated);
     window.addEventListener('client_updated', handleSettingsUpdated);
+    window.addEventListener('team_events_updated', handleSettingsUpdated);
+    window.addEventListener('project_created', handleSettingsUpdated);
     window.addEventListener('storage', (e) => {
-      if (e.key === 'sc_cached_pp_projects' || e.key === 'post_production_updated') {
-        fetchPostProductionData();
+      if (e.key === 'sc_cached_pp_projects' || e.key === 'post_production_updated' || e.key === 'sc_booking_sync_event' || e.key === 'client_created') {
+        handleSettingsUpdated();
       }
     });
     return () => {
@@ -127,6 +133,8 @@ export default function PostProductionPage() {
       window.removeEventListener('post_production_updated', handleSettingsUpdated);
       window.removeEventListener('client_created', handleSettingsUpdated);
       window.removeEventListener('client_updated', handleSettingsUpdated);
+      window.removeEventListener('team_events_updated', handleSettingsUpdated);
+      window.removeEventListener('project_created', handleSettingsUpdated);
     };
   }, []);
 
