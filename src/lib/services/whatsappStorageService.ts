@@ -180,6 +180,7 @@ export async function uploadWhatsAppFileAndGetSignedUrl({
   if (isImage && !isVideoOrDoc) {
     try {
       uploadBuffer = await sharp(buffer)
+        .rotate()
         .webp({ quality: 85 })
         .toBuffer();
       uploadMimeType = 'image/webp';

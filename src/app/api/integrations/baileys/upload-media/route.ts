@@ -67,6 +67,7 @@ export async function POST(req: NextRequest) {
       try {
         const sharp = (await import('sharp')).default;
         const compressedBuf = await sharp(fileBuffer)
+          .rotate()
           .resize(2048, 2048, { fit: 'inside', withoutEnlargement: true })
           .webp({ quality: 88 })
           .toBuffer();

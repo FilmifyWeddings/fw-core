@@ -14,7 +14,8 @@ import {
   getWhatsAppTemplateStorageUsage, 
   getCachedWhatsAppTemplateStorageUsage,
   checkWhatsAppStorageQuotaGuard, 
-  StorageQuotaStats 
+  StorageQuotaStats,
+  WhatsAppMediaFile
 } from '@/lib/whatsapp-template-media-manager';
 import { WhatsAppTemplateMediaModal } from '@/components/integrations/whatsapp-template-media-modal';
 
@@ -62,6 +63,7 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     };
   });
   const [showMediaGalleryModal, setShowMediaGalleryModal] = useState(false);
+  const [isSelectingMediaForTemplate, setIsSelectingMediaForTemplate] = useState(false);
   const [quotaWarningModal, setQuotaWarningModal] = useState<string | null>(null);
   const [videoLimitModal, setVideoLimitModal] = useState<{
     isOpen: boolean;
@@ -220,6 +222,54 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     }, 0);
   };
 
+  const applyFormatting = (prefix: string, suffix: string = prefix, placeholder: string = 'text') => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      setTextBody(prev => prev + `${prefix}${placeholder}${suffix}`);
+      return;
+    }
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const currentText = textarea.value;
+    
+    if (start !== end) {
+      const selectedText = currentText.substring(start, end);
+      
+      // If already wrapped with prefix and suffix, toggle unwrap
+      if (
+        selectedText.startsWith(prefix) && 
+        selectedText.endsWith(suffix) && 
+        selectedText.length >= prefix.length + suffix.length
+      ) {
+        const unwrapped = selectedText.slice(prefix.length, selectedText.length - suffix.length);
+        const newText = currentText.substring(0, start) + unwrapped + currentText.substring(end);
+        setTextBody(newText);
+        setTimeout(() => {
+          textarea.focus();
+          textarea.setSelectionRange(start, start + unwrapped.length);
+        }, 0);
+      } else {
+        // Wrap selected text: prefix + selectedText + suffix (e.g. *Selected Text*)
+        const wrapped = `${prefix}${selectedText}${suffix}`;
+        const newText = currentText.substring(0, start) + wrapped + currentText.substring(end);
+        setTextBody(newText);
+        setTimeout(() => {
+          textarea.focus();
+          textarea.setSelectionRange(start, start + wrapped.length);
+        }, 0);
+      }
+    } else {
+      // Nothing selected: insert placeholder and highlight it
+      const inserted = `${prefix}${placeholder}${suffix}`;
+      const newText = currentText.substring(0, start) + inserted + currentText.substring(end);
+      setTextBody(newText);
+      setTimeout(() => {
+        textarea.focus();
+        textarea.setSelectionRange(start + prefix.length, start + prefix.length + placeholder.length);
+      }, 0);
+    }
+  };
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -341,6 +391,18 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
     setMediaMime('');
     setMediaFileName('');
     setMediaFileSize(null);
+  };
+
+  // Attach selected media from WhatsAppTemplateMediaModal into template form state
+  const handleSelectMediaFromFileModal = (file: WhatsAppMediaFile) => {
+    setMediaUrl(file.url);
+    setMediaFileKey(file.fileKey || '');
+    setMediaFileName(file.name);
+    setMediaFileSize(file.size);
+    const detectedMime = file.mime_type || (file.name.match(/\.(mp4|webm|mov|mkv|3gp)$/i) ? 'video/mp4' : (file.name.match(/\.(pdf)$/i) ? 'application/pdf' : 'image/webp'));
+    setMediaMime(detectedMime);
+    setShowMediaGalleryModal(false);
+    setIsSelectingMediaForTemplate(false);
   };
   
   // Text Body state
@@ -835,33 +897,37 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
       <div className="flex items-center gap-1.5 pb-2 border-b border-zinc-150 dark:border-zinc-900 text-xs text-zinc-500 dark:text-zinc-400 font-mono mb-2 w-full">
         <button 
           type="button" 
-          onClick={() => insertAtCursor('*bold*')} 
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => applyFormatting('*', '*', 'bold')} 
           className="w-7 h-7 flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800 font-bold rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800/85 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors cursor-pointer"
-          title="Bold"
+          title="Bold (*text*)"
         >
           B
         </button>
         <button 
           type="button" 
-          onClick={() => insertAtCursor('_italic_')} 
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => applyFormatting('_', '_', 'italic')} 
           className="w-7 h-7 flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800 italic rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800/85 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors cursor-pointer"
-          title="Italic"
+          title="Italic (_text_)"
         >
           I
         </button>
         <button 
           type="button" 
-          onClick={() => insertAtCursor('~strike~')} 
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => applyFormatting('~', '~', 'strike')} 
           className="w-7 h-7 flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800/85 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors cursor-pointer"
-          title="Strikethrough"
+          title="Strikethrough (~text~)"
         >
           <span className="line-through">S</span>
         </button>
         <button 
           type="button" 
-          onClick={() => insertAtCursor('`code`')} 
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => applyFormatting('```', '```', 'code')} 
           className="w-7 h-7 flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800/85 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors cursor-pointer"
-          title="Code"
+          title="Code (```code```)"
         >
           {"</>"}
         </button>
@@ -1557,6 +1623,17 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
 
                                 {/* Actions */}
                                 <div className="flex items-center gap-1.5 shrink-0 ml-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setIsSelectingMediaForTemplate(true);
+                                      setShowMediaGalleryModal(true);
+                                    }}
+                                    className="px-2.5 py-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 rounded-lg border border-emerald-200 dark:border-emerald-800/60 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition cursor-pointer"
+                                    title="Choose another media from studio storage"
+                                  >
+                                    Change Media
+                                  </button>
                                   <input
                                     ref={fileInputRef}
                                     type="file"
@@ -1569,13 +1646,14 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                                     onClick={() => fileInputRef.current?.click()}
                                     disabled={uploading}
                                     className="px-2.5 py-1.5 text-xs font-semibold text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition cursor-pointer disabled:opacity-50"
+                                    title="Upload a new file directly"
                                   >
                                     {uploading ? (
                                       <span className="flex items-center gap-1">
                                         <RefreshCw className="w-3 h-3 animate-spin text-emerald-500" />
                                         Uploading...
                                       </span>
-                                    ) : 'Change'}
+                                    ) : 'Upload New'}
                                   </button>
                                   <button
                                     type="button"
@@ -1588,33 +1666,51 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
                                 </div>
                               </div>
                             ) : (
-                              <div className="flex flex-wrap gap-3 items-center">
-                                <input
-                                  ref={fileInputRef}
-                                  type="file"
-                                  accept="image/*,video/*,application/pdf"
-                                  onChange={handleFileChange}
-                                  className="hidden"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => fileInputRef.current?.click()}
-                                  disabled={uploading}
-                                  className="flex items-center gap-2 px-3.5 py-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:border-zinc-300 transition-all cursor-pointer disabled:opacity-50 shadow-2xs"
-                                >
-                                  {uploading ? (
-                                    <>
-                                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-500" />
-                                      <span>Uploading media...</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Upload className="w-3.5 h-3.5" />
-                                      <span>Upload Media File</span>
-                                    </>
-                                  )}
-                                </button>
-                                <span className="text-[11px] text-zinc-400">Images (max 16 MB) • Videos (max 16 MB WhatsApp limit) • Documents (max 50 MB)</span>
+                              <div className="space-y-2">
+                                <div className="flex flex-wrap gap-2.5 items-center">
+                                  {/* Select Media from Library Button */}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setIsSelectingMediaForTemplate(true);
+                                      setShowMediaGalleryModal(true);
+                                    }}
+                                    className="flex items-center gap-2 px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
+                                  >
+                                    <Folder className="w-3.5 h-3.5" />
+                                    <span>Select Media</span>
+                                  </button>
+
+                                  {/* Upload New Media File Button */}
+                                  <input
+                                    ref={fileInputRef}
+                                    type="file"
+                                    accept="image/*,video/*,application/pdf"
+                                    onChange={handleFileChange}
+                                    className="hidden"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => fileInputRef.current?.click()}
+                                    disabled={uploading}
+                                    className="flex items-center gap-2 px-3.5 py-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:border-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-all cursor-pointer disabled:opacity-50 shadow-2xs"
+                                  >
+                                    {uploading ? (
+                                      <>
+                                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-500" />
+                                        <span>Uploading media...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Upload className="w-3.5 h-3.5" />
+                                        <span>Upload Media File</span>
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
+                                <span className="text-[11px] text-zinc-400 block">
+                                  Choose from previously uploaded studio media or upload a new file. Images (max 16 MB) • Videos (max 16 MB WhatsApp limit) • Documents (max 50 MB)
+                                </span>
                               </div>
                             )}
                           </div>
@@ -2036,12 +2132,18 @@ export function WhatsappTemplates({ workspaceId, shootType = 'all' }: WhatsappTe
 
 
 
-      {/* ── UNIFIED WHATSAPP TEMPLATE MEDIA GALLERY MODAL (1 GB QUOTA) ── */}
+      {/* ── UNIFIED WHATSAPP TEMPLATE MEDIA GALLERY MODAL (500 MB QUOTA) ── */}
       <WhatsAppTemplateMediaModal 
         isOpen={showMediaGalleryModal} 
-        onClose={() => setShowMediaGalleryModal(false)} 
+        onClose={() => {
+          setShowMediaGalleryModal(false);
+          setIsSelectingMediaForTemplate(false);
+        }} 
         workspaceId={workspaceId} 
-        onSelectMediaUrl={(url) => setMediaUrl(url)} 
+        templateName={name || 'template'}
+        selectedMediaUrl={mediaUrl}
+        onSelectMediaFile={isSelectingMediaForTemplate ? handleSelectMediaFromFileModal : undefined}
+        onSelectMediaUrl={isSelectingMediaForTemplate ? ((url) => setMediaUrl(url)) : undefined} 
       />
 
       {/* ── QUOTA EXCEEDED ALERT WARNING MODAL ── */}

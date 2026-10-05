@@ -385,12 +385,14 @@ export async function sendMessageServerless(
 
               let quality = 85;
               let compressedBuffer = await sharp(buffer)
+                .rotate()
                 .jpeg({ quality, progressive: true })
                 .toBuffer();
 
               if (compressedBuffer.length > 4.8 * 1024 * 1024) {
                 quality = 70;
                 compressedBuffer = await sharp(buffer)
+                  .rotate()
                   .resize({ width: 2560, height: 2560, fit: 'inside', withoutEnlargement: true })
                   .jpeg({ quality, progressive: true })
                   .toBuffer();
