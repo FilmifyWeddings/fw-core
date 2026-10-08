@@ -86,7 +86,7 @@ export default function ClientsPage() {
     return teamMembers.filter((m: any) => {
       const typeStr = (m.primary_type || m.type || '').toUpperCase();
       const typesArr = (m.member_types || []).map((t: string) => String(t).toUpperCase());
-      return typeStr === 'IN_HOUSE' || typesArr.includes('IN_HOUSE') || (!typeStr && typesArr.length === 0);
+      return typeStr === 'IN_HOUSE' || typesArr.includes('IN_HOUSE') || m.is_inhouse === true;
     });
   }, [teamMembers]);
 
@@ -1793,7 +1793,7 @@ export default function ClientsPage() {
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}
         leads={leads}
-        teamMembers={teamMembers}
+        teamMembers={inHouseTeamMembers}
         eventTypes={eventTypes}
         onAddCustomEventType={handleAddCustomEventType}
         onSubmit={handleCreateClient}
@@ -1805,7 +1805,7 @@ export default function ClientsPage() {
         isOpen={Boolean(quickAssignClient)}
         onClose={() => setQuickAssignClient(null)}
         client={quickAssignClient}
-        teamMembers={teamMembers}
+        teamMembers={inHouseTeamMembers}
         onAssigned={({ memberId, memberName }) => {
           if (quickAssignClient) {
             setClients(prev => prev.map(c => {

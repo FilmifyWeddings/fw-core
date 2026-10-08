@@ -2057,7 +2057,7 @@ export default function ClientWorkspaceDetailPage() {
     }
   };
 
-  // Save Client Details & PM Assignment
+  // Save Client Details & PM Assignment with 4-Way Cross-Module Sync
   const handleSaveClientDetails = async () => {
     if (!client) return;
     setIsSaving(true);
@@ -2077,7 +2077,7 @@ export default function ClientWorkspaceDetailPage() {
 
       const serializedNotes = serializeClientExtended(updatedExtended);
       const updatedFields: any = {
-        name,
+        name: name.trim(),
         phone,
         email: email.trim() || null,
         event_type: eventType,
@@ -2091,13 +2091,13 @@ export default function ClientWorkspaceDetailPage() {
         updated_at: new Date().toISOString()
       };
 
+      // 1. Direct update on workspace_clients
       const { error } = await supabase
         .from('workspace_clients')
         .update(updatedFields)
         .eq('id', client.id);
 
       if (error) {
-        // Fallback update if direct columns are not yet in DB schema
         delete updatedFields.project_manager_id;
         delete updatedFields.project_manager_name;
         delete updatedFields.project_manager_email;
@@ -2108,40 +2108,61 @@ export default function ClientWorkspaceDetailPage() {
           .eq('id', client.id);
       }
 
-      // Direct dual-sync to fw_projects
-      try {
-        const { error: projErr } = await supabase
-          .from('fw_projects')
-          .update({
-            project_manager_id: projectManagerId || null,
-            project_manager_name: updatedPmName || null,
-            updated_at: new Date().toISOString(),
-          })
-          .or(`client_id.eq.${client.id},client_name.ilike.${name.trim()}`);
-
-        if (projErr) {
-          await supabase
-            .from('fw_projects')
-            .update({
-              project_manager_id: projectManagerId || null,
-              project_manager_name: updatedPmName || null,
-              updated_at: new Date().toISOString(),
+      // 2. Synchronize Couple Name if changed (instant millisecond 4-way sync)
+      const oldCoupleName = client.name?.trim() || '';
+      const newCoupleName = name.trim();
+      if (newCoupleName && oldCoupleName && newCoupleName !== oldCoupleName) {
+        try {
+          await fetch('/api/workspace/sync-card', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'rename_couple',
+              clientId: client.id,
+              leadId: client.lead_id,
+              oldName: oldCoupleName,
+              newName: newCoupleName
             })
-            .ilike('client_name', name.trim());
+          });
+        } catch (syncErr) {
+          console.warn('[handleSaveClientDetails] Couple rename sync warning:', syncErr);
         }
-      } catch {
-        await supabase
-          .from('fw_projects')
-          .update({
-            project_manager_id: projectManagerId || null,
-            project_manager_name: updatedPmName || null,
-            updated_at: new Date().toISOString(),
+      }
+
+      // 3. Synchronize Project Manager assignment across all modules via server endpoint
+      try {
+        await fetch('/api/workspace/sync-card', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'assign_pm',
+            clientId: client.id,
+            leadId: client.lead_id,
+            clientName: newCoupleName,
+            pmId: projectManagerId || null,
+            pmName: updatedPmName || null,
+            pmEmail: updatedPmEmail || null,
+            pmPhone: updatedPmPhone || null,
+            modules: { clientDirectory: true, bookingsEvents: true, postProduction: true }
           })
-          .ilike('client_name', name.trim());
+        });
+      } catch (pmSyncErr) {
+        console.warn('[handleSaveClientDetails] PM sync warning:', pmSyncErr);
+      }
+
+      // 4. Dispatch global window events for instant sub-millisecond sync across tabs
+      window.dispatchEvent(new CustomEvent('client_updated', { detail: { newName: newCoupleName, pmId: projectManagerId, pmName: updatedPmName } }));
+      window.dispatchEvent(new CustomEvent('team_events_updated', { detail: { newName: newCoupleName, pmId: projectManagerId, pmName: updatedPmName } }));
+      window.dispatchEvent(new CustomEvent('post_production_updated', { detail: { newName: newCoupleName, pmId: projectManagerId, pmName: updatedPmName } }));
+      window.dispatchEvent(new CustomEvent('finance_updated', { detail: { newName: newCoupleName } }));
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('sc_booking_sync_event', Date.now().toString());
+        } catch (_) {}
       }
 
       setExtended(updatedExtended);
-      setClient(prev => prev ? ({ ...prev, ...updatedFields, project_manager_name: updatedPmName }) : null);
+      setClient(prev => prev ? ({ ...prev, ...updatedFields, name: newCoupleName, project_manager_name: updatedPmName }) : null);
       setProjectManagerName(updatedPmName);
       setProjectManagerEmail(updatedPmEmail);
       setProjectManagerPhone(updatedPmPhone);

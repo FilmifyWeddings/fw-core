@@ -19,89 +19,40 @@ export const handleAssignClientPM = async (
 ) => {
   const pmId = member ? member.id : null;
   const pmName = member ? member.name : null;
+  const pmEmail = member ? (member.email || null) : null;
+  const pmPhone = member ? (member.phone || null) : null;
 
-  // 1. Update Client Directory (both direct columns and extended notes for maximum compatibility)
   try {
-    const { data: existingClient } = await supabase
-      .from('workspace_clients')
-      .select('id, notes')
-      .eq('id', clientId)
-      .maybeSingle();
+    const res = await fetch('/api/workspace/sync-card', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'assign_pm',
+        clientId,
+        clientName,
+        pmId,
+        pmName,
+        pmEmail,
+        pmPhone,
+        modules: { clientDirectory: true, bookingsEvents: true, postProduction: true }
+      })
+    });
 
-    let updatedNotes = existingClient?.notes;
-    if (existingClient) {
-      try {
-        const ext = parseClientExtended(existingClient as any);
-        const updatedExt = {
-          ...ext,
-          project_manager_id: pmId || '',
-          project_manager_name: pmName || '',
-          project_manager_email: member?.email || '',
-          project_manager_phone: member?.phone || '',
-        };
-        updatedNotes = serializeClientExtended(updatedExt);
-      } catch (e) {
-        console.warn('[handleAssignClientPM] Extended parse warning:', e);
-      }
+    const json = await res.json();
+    if (!json.success) {
+      throw new Error(json.error || 'Failed to assign Project Manager');
     }
 
-    const { error: cErr } = await supabase
-      .from('workspace_clients')
-      .update({
-        project_manager_id: pmId,
-        project_manager_name: pmName,
-        project_manager_email: member ? (member.email || null) : null,
-        project_manager_phone: member ? (member.phone || null) : null,
-        ...(updatedNotes !== undefined ? { notes: updatedNotes } : {}),
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', clientId);
-
-    if (cErr && updatedNotes) {
-      // Fallback update if direct column is not yet present in schema
-      await supabase
-        .from('workspace_clients')
-        .update({
-          notes: updatedNotes,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', clientId);
+    window.dispatchEvent(new CustomEvent('client_updated', { detail: { pmId, pmName } }));
+    window.dispatchEvent(new CustomEvent('team_events_updated', { detail: { pmId, pmName } }));
+    window.dispatchEvent(new CustomEvent('post_production_updated', { detail: { pmId, pmName } }));
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('sc_booking_sync_event', Date.now().toString());
+      } catch (_) {}
     }
   } catch (err) {
-    console.error('[handleAssignClientPM] Error updating workspace_clients:', err);
-  }
-
-  // 2. Direct dual-sync to fw_projects
-  try {
-    const { error: projErr } = await supabase
-      .from('fw_projects')
-      .update({
-        project_manager_id: pmId,
-        project_manager_name: pmName,
-        updated_at: new Date().toISOString(),
-      })
-      .or(`client_id.eq.${clientId},client_name.ilike.${clientName.trim()}`);
-
-    if (projErr) {
-      // Fallback if client_id column is not yet present on fw_projects
-      await supabase
-        .from('fw_projects')
-        .update({
-          project_manager_id: pmId,
-          project_manager_name: pmName,
-          updated_at: new Date().toISOString(),
-        })
-        .ilike('client_name', clientName.trim());
-    }
-  } catch {
-    await supabase
-      .from('fw_projects')
-      .update({
-        project_manager_id: pmId,
-        project_manager_name: pmName,
-        updated_at: new Date().toISOString(),
-      })
-      .ilike('client_name', clientName.trim());
+    console.error('[handleAssignClientPM] Error:', err);
   }
 };
 

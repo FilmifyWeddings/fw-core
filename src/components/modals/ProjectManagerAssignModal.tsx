@@ -118,18 +118,27 @@ export const ProjectManagerAssignModal: React.FC<ProjectManagerAssignModalProps>
     });
   };
 
-  // Filter members list
+  // Strict In-House Filter for Project Manager Assignment
+  const inHouseTeamMembers = useMemo(() => {
+    return teamMembers.filter((m: any) => {
+      const typeStr = (m.primary_type || m.type || '').toUpperCase();
+      const typesArr = (m.member_types || []).map((t: string) => String(t).toUpperCase());
+      return typeStr === 'IN_HOUSE' || typesArr.includes('IN_HOUSE') || m.is_inhouse === true;
+    });
+  }, [teamMembers]);
+
+  // Filter members list strictly from in-house members
   const filteredMembers = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    if (!q) return teamMembers;
-    return teamMembers.filter(m => 
+    if (!q) return inHouseTeamMembers;
+    return inHouseTeamMembers.filter(m => 
       m.name.toLowerCase().includes(q) || 
       (m.role && m.role.toLowerCase().includes(q)) ||
       (m.email && m.email.toLowerCase().includes(q))
     );
-  }, [teamMembers, searchQuery]);
+  }, [inHouseTeamMembers, searchQuery]);
 
-  // Execute assignment save
+  // Execute assignment save via robust server-side endpoint
   const handleSaveAssignment = async () => {
     if (!client) return;
     setIsSubmitting(true);
@@ -144,131 +153,39 @@ export const ProjectManagerAssignModal: React.FC<ProjectManagerAssignModalProps>
       const { data: { session } } = await supabase.auth.getSession();
       const workspaceId = session?.user?.id;
 
-      // 1. Client Directory (workspace_clients)
-      if (targetModules.clientDirectory) {
-        let updatedNotes = client.notes;
-        try {
-          const ext = parseClientExtended(client as any);
-          const updatedExt = {
-            ...ext,
-            project_manager_id: pmId || '',
-            project_manager_name: pmName || '',
-            project_manager_email: pmEmail || '',
-            project_manager_phone: pmPhone || '',
-          };
-          updatedNotes = serializeClientExtended(updatedExt);
-        } catch (_) {}
+      // Call robust server endpoint using supabaseAdmin to guarantee persistence across all 4 modules
+      const res = await fetch('/api/workspace/sync-card', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'assign_pm',
+          clientId: client.id,
+          projectId: (client as any).project_id || client.id,
+          leadId: (client as any).lead_id,
+          clientName: client.name,
+          pmId: pmId || null,
+          pmName: pmName || null,
+          pmEmail: pmEmail || null,
+          pmPhone: pmPhone || null,
+          modules: targetModules,
+          workspaceId
+        })
+      });
 
-        await supabase
-          .from('workspace_clients')
-          .update({
-            project_manager_id: pmId,
-            project_manager_name: pmName,
-            project_manager_email: pmEmail,
-            project_manager_phone: pmPhone,
-            handled_by: pmName,
-            ...(updatedNotes ? { notes: updatedNotes } : {}),
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', client.id);
-      } else {
-        // Unassign from Client Directory if unchecked
-        let updatedNotes = client.notes;
-        try {
-          const ext = parseClientExtended(client as any);
-          const updatedExt = {
-            ...ext,
-            project_manager_id: '',
-            project_manager_name: '',
-            project_manager_email: '',
-            project_manager_phone: '',
-          };
-          updatedNotes = serializeClientExtended(updatedExt);
-        } catch (_) {}
-
-        await supabase
-          .from('workspace_clients')
-          .update({
-            project_manager_id: null,
-            project_manager_name: null,
-            project_manager_email: null,
-            project_manager_phone: null,
-            handled_by: null,
-            ...(updatedNotes ? { notes: updatedNotes } : {}),
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', client.id);
-      }
-
-      // 2. Bookings & Events (fw_projects)
-      if (targetModules.bookingsEvents) {
-        await supabase
-          .from('fw_projects')
-          .update({
-            project_manager_id: pmId,
-            project_manager_name: pmName,
-            updated_at: new Date().toISOString()
-          })
-          .or(`client_id.eq.${client.id},client_name.ilike.%${client.name.trim()}%`);
-      } else {
-        // Unassign from Bookings & Events if unchecked
-        await supabase
-          .from('fw_projects')
-          .update({
-            project_manager_id: null,
-            project_manager_name: null,
-            updated_at: new Date().toISOString()
-          })
-          .or(`client_id.eq.${client.id},client_name.ilike.%${client.name.trim()}%`);
-      }
-
-      // 3. Post Production (post_production_projects)
-      if (targetModules.postProduction) {
-        const { data: existingPPP } = await supabase
-          .from('post_production_projects')
-          .select('id')
-          .eq('client_id', client.id)
-          .maybeSingle();
-
-        if (existingPPP?.id) {
-          await supabase
-            .from('post_production_projects')
-            .update({
-              project_manager_id: pmId,
-              project_manager_name: pmName,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', existingPPP.id);
-        } else if (workspaceId) {
-          await supabase
-            .from('post_production_projects')
-            .insert([{
-              user_id: workspaceId,
-              workspace_id: workspaceId,
-              client_id: client.id,
-              project_manager_id: pmId,
-              project_manager_name: pmName,
-              overall_status: 'active',
-              deliverables: [],
-              notes: `Assigned PM: ${pmName || 'None'}`
-            }]);
-        }
-      } else {
-        // Unassign from Post Production if unchecked
-        await supabase
-          .from('post_production_projects')
-          .update({
-            project_manager_id: null,
-            project_manager_name: null,
-            updated_at: new Date().toISOString()
-          })
-          .eq('client_id', client.id);
+      const jsonRes = await res.json();
+      if (!jsonRes.success) {
+        throw new Error(jsonRes.error || 'Failed to save Project Manager assignment');
       }
 
       // Dispatch global window events for instant sub-millisecond multi-tab sync
-      window.dispatchEvent(new CustomEvent('client_updated'));
-      window.dispatchEvent(new CustomEvent('post_production_updated'));
-      window.dispatchEvent(new CustomEvent('team_events_updated'));
+      window.dispatchEvent(new CustomEvent('client_updated', { detail: { pmId, pmName } }));
+      window.dispatchEvent(new CustomEvent('post_production_updated', { detail: { pmId, pmName } }));
+      window.dispatchEvent(new CustomEvent('team_events_updated', { detail: { pmId, pmName } }));
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('sc_booking_sync_event', Date.now().toString());
+        } catch (_) {}
+      }
 
       onAssigned?.({
         memberId: pmId,
@@ -281,9 +198,9 @@ export const ProjectManagerAssignModal: React.FC<ProjectManagerAssignModalProps>
       });
 
       onClose();
-    } catch (err) {
+    } catch (err: any) {
       console.error('[ProjectManagerAssignModal] Save error:', err);
-      alert('Failed to save project manager assignment.');
+      alert(`Failed to save Project Manager assignment: ${err.message || 'Unknown error'}`);
     } finally {
       setIsSubmitting(false);
     }

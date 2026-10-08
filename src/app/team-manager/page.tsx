@@ -1285,6 +1285,25 @@ export default function TeamManagerPage() {
             previousValue: targetProj.client_name,
             newValue: couplingName,
           }).catch(() => {});
+
+          // Trigger cross-module couple rename sync (Clients, Bookings, Post-Prod, Finance)
+          fetch('/api/workspace/sync-card', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'rename_couple',
+              projectId,
+              oldName: targetProj.client_name,
+              newName: couplingName,
+              workspaceId: activeWorkspace?.id || (targetProj as any)?.workspace_id,
+            }),
+          }).catch(console.error);
+
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('client_updated', { detail: { projectId, newName: couplingName } }));
+            window.dispatchEvent(new CustomEvent('post_production_updated', { detail: { projectId, newName: couplingName } }));
+            window.dispatchEvent(new CustomEvent('finance_updated', { detail: { projectId, newName: couplingName } }));
+          }
         }
 
         const incomingBlockIds = new Set(blocks.map(b => b.id));

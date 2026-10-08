@@ -1006,177 +1006,160 @@ export async function syncQuotationToTeamManagerEvents(
 
     if (!targetProjectId) return null;
 
-    // 2. Fetch existing sub-events & assignments to preserve existing crew assignments with multi-tier matching
+    // 2. Fetch existing sub-events & assignments to update in-place NON-DESTRUCTIVELY
     const { data: existingSubEvents } = await supabaseClient
       .from('fw_sub_events')
-      .select('id, event_title, event_date')
+      .select('*')
       .eq('project_id', targetProjectId);
 
-    interface PreservedCrewItem {
-      memberId: string;
-      memberName?: string | null;
-      memberPhone?: string | null;
-      agreedAmount?: number | null;
-      notes?: string | null;
-      role: string;
-      eventTitle: string;
-      eventDate?: string | null;
-      isUsed?: boolean;
-    }
-
-    const allPreservedCrew: PreservedCrewItem[] = [];
-
-    // Query existing assignments across targetProjectId that have an assigned member
     const { data: existingAssignments } = await supabaseClient
       .from('fw_assignments')
-      .select('id, sub_event_id, required_role, assigned_member_id, assigned_member_name, assigned_member_phone, agreed_amount, notes, sub_event_name, sub_event_date')
-      .eq('project_id', targetProjectId)
-      .not('assigned_member_id', 'is', null);
+      .select('*')
+      .eq('project_id', targetProjectId);
 
-    if (existingAssignments && existingAssignments.length > 0) {
-      existingAssignments.forEach((a: any) => {
-        const se = existingSubEvents?.find((e: any) => e.id === a.sub_event_id);
-        allPreservedCrew.push({
-          memberId: a.assigned_member_id,
-          memberName: a.assigned_member_name || null,
-          memberPhone: a.assigned_member_phone || null,
-          agreedAmount: a.agreed_amount,
-          notes: a.notes,
-          role: (a.required_role || '').trim().toLowerCase(),
-          eventTitle: (se?.event_title || a.sub_event_name || '').trim().toLowerCase(),
-          eventDate: se?.event_date || a.sub_event_date || null,
-          isUsed: false
-        });
-      });
-    }
+    const existingSubEventsList = existingSubEvents || [];
+    const existingAssignmentsList = existingAssignments || [];
+    const usedExistingSubEventIds = new Set<string>();
 
-    // Safely clean old assignments and sub_events for clean resync
-    try {
-      if (existingSubEvents && existingSubEvents.length > 0) {
-        const subEventIds = existingSubEvents.map((e: any) => e.id);
-        await supabaseClient.from('fw_assignments').delete().in('sub_event_id', subEventIds);
-      }
-      await supabaseClient.from('fw_assignments').delete().eq('project_id', targetProjectId);
-      await supabaseClient.from('fw_sub_events').delete().eq('project_id', targetProjectId);
-    } catch (_) {}
-
-    // 3. Insert fresh unique sub-events and restore assignments with robust matching
-    let lastInsertedSubEventId: string | null = null;
-    let lastSubEventDate: string | null = null;
-    let lastSubEventTitle: string = 'Wedding';
-
-    for (const ev of uniqueEvents) {
+    // 3. Process each unique event from quotation NON-DESTRUCTIVELY
+    for (let i = 0; i < uniqueEvents.length; i++) {
+      const ev = uniqueEvents[i];
       const isDateTbd = Boolean(ev.is_date_tbd || !ev.event_date || ev.event_date === 'Date Not Fixed' || ev.event_date.toLowerCase().includes('tbd'));
-      const subEventPayload = {
-        project_id: targetProjectId,
-        event_title: ev.event_title,
-        event_date: isDateTbd ? null : ev.event_date,
-        is_date_tbd: isDateTbd,
-        venue_name: ev.venue_name || null,
-        venue_map_link: ev.venue_map_link || null,
-        roll_call_time: ev.roll_call_time || '10:00 AM',
-        dismissal_estimate_time: ev.dismissal_estimate_time || '06:00 PM',
-        shift_hours_slot: ev.shift_hours_slot || 'Full Day',
-        operational_notes: ev.operational_notes || null,
-        roles: ev.roles,
-        user_id: workspaceId
-      };
+      const evDate = isDateTbd ? null : ev.event_date;
+      const evTitleNorm = ev.event_title.trim().toLowerCase();
 
-      const { data: insertedSubEvent, error: seErr } = await supabaseClient
-        .from('fw_sub_events')
-        .insert([subEventPayload])
-        .select()
-        .single();
+      // Find matching existing sub-event:
+      // 1. Exact title match
+      let matchedSe = existingSubEventsList.find(se => !usedExistingSubEventIds.has(se.id) && se.event_title?.trim().toLowerCase() === evTitleNorm);
+      // 2. Same date match
+      if (!matchedSe && evDate) {
+        matchedSe = existingSubEventsList.find(se => !usedExistingSubEventIds.has(se.id) && se.event_date === evDate);
+      }
+      // 3. Fuzzy title match (e.g. Wedding vs Wedding & Reception)
+      if (!matchedSe) {
+        matchedSe = existingSubEventsList.find(se => !usedExistingSubEventIds.has(se.id) && (
+          (se.event_title || '').toLowerCase().includes(evTitleNorm) ||
+          evTitleNorm.includes((se.event_title || '').toLowerCase())
+        ));
+      }
 
-      if (!seErr && insertedSubEvent) {
-        lastInsertedSubEventId = insertedSubEvent.id;
-        lastSubEventDate = isDateTbd ? (fallbackEventDate || new Date().toISOString().split('T')[0]) : ev.event_date;
-        lastSubEventTitle = ev.event_title;
+      let subEventId: string;
 
-        if (ev.roles.length > 0) {
-          const assignmentsPayload = ev.roles.map((role) => {
-            const roleNorm = role.trim().toLowerCase();
-            const titleNorm = ev.event_title.trim().toLowerCase();
+      if (matchedSe) {
+        usedExistingSubEventIds.add(matchedSe.id);
+        subEventId = matchedSe.id;
 
-            // Multi-tier matching to ensure assigned crew member is NEVER dropped:
-            // 1. Exact role + Exact title match
-            let matched = allPreservedCrew.find(c => !c.isUsed && c.role === roleNorm && c.eventTitle === titleNorm);
+        // Preserve union of existing roles + new quotation roles (NEVER drop existing roles!)
+        const mergedRoles = Array.from(new Set([...(matchedSe.roles || []), ...ev.roles]));
 
-            // 2. Exact role + Same Event Date (e.g. 13 Dec wedding title changed to Wedding & Reception)
-            if (!matched && ev.event_date) {
-              matched = allPreservedCrew.find(c => !c.isUsed && c.role === roleNorm && c.eventDate === ev.event_date);
-            }
+        // Update sub-event IN-PLACE without destroying anything
+        await supabaseClient
+          .from('fw_sub_events')
+          .update({
+            event_title: ev.event_title,
+            event_date: evDate,
+            is_date_tbd: isDateTbd,
+            venue_name: ev.venue_name || matchedSe.venue_name || null,
+            venue_map_link: ev.venue_map_link || matchedSe.venue_map_link || null,
+            roll_call_time: ev.roll_call_time || matchedSe.roll_call_time || '10:00 AM',
+            dismissal_estimate_time: ev.dismissal_estimate_time || matchedSe.dismissal_estimate_time || '06:00 PM',
+            shift_hours_slot: ev.shift_hours_slot || matchedSe.shift_hours_slot || 'Full Day',
+            operational_notes: ev.operational_notes || matchedSe.operational_notes || null,
+            roles: mergedRoles,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', matchedSe.id);
 
-            // 3. Exact role + Fuzzy Title Match
-            if (!matched) {
-              matched = allPreservedCrew.find(c => !c.isUsed && c.role === roleNorm && (
-                c.eventTitle.includes(titleNorm) || titleNorm.includes(c.eventTitle) ||
-                (titleNorm.includes('wedding') && c.eventTitle.includes('wedding')) ||
-                (titleNorm.includes('reception') && c.eventTitle.includes('reception')) ||
-                (titleNorm.includes('haldi') && c.eventTitle.includes('haldi')) ||
-                (titleNorm.includes('sangeet') && c.eventTitle.includes('sangeet'))
-              ));
-            }
+        // Check assignments for this sub-event:
+        const currentSubAssignments = existingAssignmentsList.filter(a => a.sub_event_id === matchedSe.id);
 
-            // 4. Role Fallback: same role on the same project
-            if (!matched) {
-              matched = allPreservedCrew.find(c => !c.isUsed && c.role === roleNorm);
-            }
+        // For each role in ev.roles, ensure a slot exists; ONLY insert missing new slots!
+        const existingRolesCount: Record<string, number> = {};
+        currentSubAssignments.forEach(a => {
+          const rKey = (a.required_role || '').trim().toLowerCase();
+          existingRolesCount[rKey] = (existingRolesCount[rKey] || 0) + 1;
+        });
 
-            if (matched) {
-              matched.isUsed = true;
-            }
-
-            return {
+        const newSlotsToInsert: any[] = [];
+        const neededRolesCount: Record<string, number> = {};
+        for (const role of ev.roles) {
+          const rKey = role.trim().toLowerCase();
+          neededRolesCount[rKey] = (neededRolesCount[rKey] || 0) + 1;
+          const currentCount = existingRolesCount[rKey] || 0;
+          if (neededRolesCount[rKey] > currentCount) {
+            // Need a new slot for this role
+            newSlotsToInsert.push({
               project_id: targetProjectId,
-              sub_event_id: insertedSubEvent.id,
+              sub_event_id: subEventId,
               sub_event_name: ev.event_title,
-              sub_event_date: isDateTbd ? (fallbackEventDate || new Date().toISOString().split('T')[0]) : ev.event_date,
+              sub_event_date: evDate || fallbackEventDate || new Date().toISOString().split('T')[0],
               start_time: ev.roll_call_time || '10:00 AM',
               end_time: ev.dismissal_estimate_time || '06:00 PM',
               required_role: role,
-              assigned_member_id: matched?.memberId || null,
-              assigned_member_name: matched?.memberName || null,
-              assigned_member_phone: matched?.memberPhone || null,
-              agreed_amount: matched?.agreedAmount || null,
-              notes: matched?.notes || null,
-              status: matched?.memberId ? 'assigned' : 'pending',
+              assigned_member_id: null,
+              assigned_member_name: null,
+              assigned_member_phone: null,
+              agreed_amount: null,
+              notes: null,
+              status: 'pending',
               user_id: workspaceId,
               workspace_id: workspaceId,
               client_name: clientName.trim()
-            };
-          });
+            });
+          }
+        }
 
-          await supabaseClient.from('fw_assignments').insert(assignmentsPayload);
+        if (newSlotsToInsert.length > 0) {
+          await supabaseClient.from('fw_assignments').insert(newSlotsToInsert);
+        }
+      } else {
+        // Brand new sub-event: insert cleanly
+        const subEventPayload = {
+          project_id: targetProjectId,
+          event_title: ev.event_title,
+          event_date: evDate,
+          is_date_tbd: isDateTbd,
+          venue_name: ev.venue_name || null,
+          venue_map_link: ev.venue_map_link || null,
+          roll_call_time: ev.roll_call_time || '10:00 AM',
+          dismissal_estimate_time: ev.dismissal_estimate_time || '06:00 PM',
+          shift_hours_slot: ev.shift_hours_slot || 'Full Day',
+          operational_notes: ev.operational_notes || null,
+          roles: ev.roles,
+          user_id: workspaceId
+        };
+
+        const { data: insertedSubEvent, error: seErr } = await supabaseClient
+          .from('fw_sub_events')
+          .insert([subEventPayload])
+          .select()
+          .single();
+
+        if (!seErr && insertedSubEvent) {
+          subEventId = insertedSubEvent.id;
+          if (ev.roles.length > 0) {
+            const initialAssignments = ev.roles.map(role => ({
+              project_id: targetProjectId,
+              sub_event_id: subEventId,
+              sub_event_name: ev.event_title,
+              sub_event_date: evDate || fallbackEventDate || new Date().toISOString().split('T')[0],
+              start_time: ev.roll_call_time || '10:00 AM',
+              end_time: ev.dismissal_estimate_time || '06:00 PM',
+              required_role: role,
+              assigned_member_id: null,
+              assigned_member_name: null,
+              assigned_member_phone: null,
+              agreed_amount: null,
+              notes: null,
+              status: 'pending',
+              user_id: workspaceId,
+              workspace_id: workspaceId,
+              client_name: clientName.trim()
+            }));
+            await supabaseClient.from('fw_assignments').insert(initialAssignments);
+          }
         }
       }
-    }
-
-    // Safety Net: If any previously assigned crew members did not match the quotation's roles,
-    // preserve them on the project under the primary sub-event so human bookings are NEVER lost
-    const remainingUnmatched = allPreservedCrew.filter(c => !c.isUsed && c.memberId);
-    if (remainingUnmatched.length > 0 && lastInsertedSubEventId) {
-      const extraPayload = remainingUnmatched.map((rem) => ({
-        project_id: targetProjectId,
-        sub_event_id: lastInsertedSubEventId,
-        sub_event_name: lastSubEventTitle,
-        sub_event_date: lastSubEventDate || fallbackEventDate || new Date().toISOString().split('T')[0],
-        start_time: '10:00 AM',
-        end_time: '06:00 PM',
-        required_role: rem.role ? (rem.role.charAt(0).toUpperCase() + rem.role.slice(1)) : 'Crew Member',
-        assigned_member_id: rem.memberId,
-        assigned_member_name: rem.memberName || null,
-        assigned_member_phone: rem.memberPhone || null,
-        agreed_amount: rem.agreedAmount || null,
-        notes: rem.notes || null,
-        status: 'assigned',
-        user_id: workspaceId,
-        workspace_id: workspaceId,
-        client_name: clientName.trim()
-      }));
-      try {
-        await supabaseClient.from('fw_assignments').insert(extraPayload);
-      } catch (_) {}
     }
 
     return targetProjectId;
