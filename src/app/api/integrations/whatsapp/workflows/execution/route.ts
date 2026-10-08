@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { parseShortcodes } from '@/lib/baileys-serverless';
+import { calculateSmartAntiBanSchedule } from '@/lib/whatsapp-antiban';
 
 // Helper to format date in Indian Standard Time (IST)
 function formatIST(dateInput: Date | string | number | null | undefined): string {
@@ -190,14 +191,14 @@ export async function GET(req: NextRequest) {
           let stepStatus = 'unsent';
           let errorMsg = null;
 
-          if (step.delay_unit === 'seconds' && step.delay_value > 0) {
-            runningSentAtDate.setSeconds(runningSentAtDate.getSeconds() + step.delay_value);
-          } else if (step.delay_unit === 'minutes' && step.delay_value > 0) {
-            runningSentAtDate.setMinutes(runningSentAtDate.getMinutes() + step.delay_value);
-          } else if (step.delay_unit === 'hours' && step.delay_value > 0) {
-            runningSentAtDate.setHours(runningSentAtDate.getHours() + step.delay_value);
-          } else if (step.delay_unit === 'days' && step.delay_value > 0) {
-            runningSentAtDate.setDate(runningSentAtDate.getDate() + step.delay_value);
+          if (step.delay_value > 0) {
+            runningSentAtDate = calculateSmartAntiBanSchedule(
+              runningSentAtDate,
+              step.delay_value,
+              step.delay_unit,
+              step.sort_index,
+              true
+            );
           }
 
           let sentAtIso = runningSentAtDate.toISOString();

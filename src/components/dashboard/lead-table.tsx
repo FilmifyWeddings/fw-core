@@ -2387,10 +2387,23 @@ export function LeadTable({
   const handleBulkDelete = async () => {
     if (!confirm(`Are you sure you want to delete the ${selectedLeadIds.length} selected leads?`)) return;
     setIsBulkProcessing(true);
+    const idsToDelete = [...selectedLeadIds];
     try {
-      setLeads(prev => prev.filter(l => !selectedLeadIds.includes(l.id)));
-      await supabase.from('leads').delete().in('id', selectedLeadIds);
+      setLeads(prev => prev.filter(l => !idsToDelete.includes(l.id)));
       setSelectedLeadIds([]);
+
+      // Purge via atomic delete-lead endpoint (cleans baileys_action_queue + workflow logs + leads)
+      try {
+        await fetch(`/api/integrations/whatsapp/workflows/delete-lead?tenant_id=${workspaceId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ leadIds: idsToDelete })
+        });
+      } catch {}
+
+      // Guarantee removal from leads & client_leads
+      await supabase.from('leads').delete().in('id', idsToDelete);
+      try { await supabase.from('client_leads').delete().in('id', idsToDelete); } catch {}
     } catch (err) {
       console.error(err);
     } finally {
@@ -5149,9 +5162,21 @@ export function LeadTable({
                     setRowActionMenu(null);
                     if (confirm('Are you sure you want to delete this lead?')) {
                       try {
-                        const { error } = await supabase.from('client_leads').delete().eq('id', targetLead.id);
-                        if (error) throw error;
-                        alert('Lead deleted successfully.');
+                        const targetLeadId = targetLead.id;
+                        setLeads(prev => prev.filter(l => l.id !== targetLeadId));
+                        
+                        try {
+                          await fetch(`/api/integrations/whatsapp/workflows/delete-lead?tenant_id=${workspaceId}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ leadId: targetLeadId })
+                          });
+                        } catch {}
+
+                        await supabase.from('leads').delete().eq('id', targetLeadId);
+                        try { await supabase.from('client_leads').delete().eq('id', targetLeadId); } catch {}
+                        
+                        alert('Lead deleted and queued messages purged successfully.');
                         window.location.reload();
                       } catch (err: any) {
                         alert('Error deleting lead: ' + err.message);

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { forceWakeQueue } from '@/lib/baileys-serverless';
+import { calculateSmartAntiBanSchedule } from '@/lib/whatsapp-antiban';
 
 export async function POST(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -112,12 +113,15 @@ export async function POST(req: NextRequest) {
     // Pre-compute a map of step sort_index → scheduled_at using the same drift algorithm
     const stepScheduleMap = new Map<number, string>();
     let driftTime = new Date(); // baseline = NOW()
-    for (const step of workflowSteps) {
-      if (step.delay_unit === 'seconds' && step.delay_value > 0) {
-        driftTime = new Date(driftTime.getTime() + step.delay_value * 1000);
-      } else if (step.delay_unit === 'hours' && step.delay_value > 0) {
-        driftTime = new Date(driftTime.getTime() + step.delay_value * 3600 * 1000);
-      }
+    for (let i = 0; i < workflowSteps.length; i++) {
+      const step = workflowSteps[i];
+      driftTime = calculateSmartAntiBanSchedule(
+        driftTime,
+        step.delay_value,
+        step.delay_unit,
+        i,
+        true
+      );
       stepScheduleMap.set(step.sort_index, driftTime.toISOString());
     }
 

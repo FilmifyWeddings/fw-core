@@ -966,6 +966,32 @@ async function executeAction(action) {
         throw new Error(`[QueueProcessor Error] Missing user_id/workspace_id for action ${action.id}`);
     }
     console.log(`[QueueProcessor Trace] Processing action ${action.id} with resolved targetWsId: ${targetWsId}`);
+    // Pre-flight check: If workflow log or lead was deleted, abort dispatch immediately
+    const actPayload = (action.payload || {});
+    const checkLogId = actPayload.workflowLogId;
+    const checkLeadId = actPayload.leadId || actPayload.lead_id;
+    if (checkLogId) {
+        const { data: wfLog } = await supabase
+            .from('whatsapp_workflow_logs')
+            .select('id, status')
+            .eq('id', checkLogId)
+            .maybeSingle();
+        if (!wfLog || wfLog.status === 'stopped' || wfLog.status === 'cancelled') {
+            logger.info({ actionId: action.id, checkLogId }, '🛑 Workflow log cancelled or deleted. Skipping dispatch.');
+            return { success: true, waMessageId: null };
+        }
+    }
+    if (checkLeadId) {
+        const { data: leadRow } = await supabase
+            .from('leads')
+            .select('id')
+            .eq('id', checkLeadId)
+            .maybeSingle();
+        if (!leadRow) {
+            logger.info({ actionId: action.id, checkLeadId }, '🛑 Lead was deleted from CRM. Skipping dispatch.');
+            return { success: true, waMessageId: null };
+        }
+    }
     let targetSock;
     try {
         targetSock = await getWorkspaceSocket(targetWsId);

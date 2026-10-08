@@ -605,8 +605,10 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
   );
 
   // Analytics Metrics
+  const TOTAL_EXECUTION_QUOTA = 5000;
   const metricCount = workflows.length;
   const metricUsed = workflows.reduce((sum, w) => sum + (w.execution_count || 0), 0);
+  const metricRemaining = Math.max(0, TOTAL_EXECUTION_QUOTA - metricUsed);
   const metricActive = workflows.filter(w => w.status === 'Active').length;
   const metricInactive = workflows.filter(w => w.status === 'Inactive').length;
 
@@ -641,14 +643,16 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
               </div>
             </div>
 
-            {/* EXEC REMAINING */}
+            {/* EXEC REMAINING / QUOTA */}
             <div className="flex items-center gap-3.5 border-r border-zinc-100 dark:border-zinc-800/60 pr-4 last:border-0 last:pr-0">
               <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
                 <Database className="w-5 h-5" />
               </div>
               <div className="min-w-0">
-                <span className="text-[9px] text-zinc-400 dark:text-zinc-500 font-bold uppercase tracking-wider block">Exec Remaining</span>
-                <span className="text-lg font-black text-emerald-600 dark:text-emerald-400 mt-0.5 block leading-none">5K</span>
+                <span className="text-[9px] text-zinc-400 dark:text-zinc-500 font-bold uppercase tracking-wider block">Exec Left / Quota</span>
+                <span className="text-lg font-black text-emerald-600 dark:text-emerald-400 mt-0.5 block leading-none" title={`${metricRemaining.toLocaleString()} remaining out of 5,000 monthly quota`}>
+                  {metricRemaining.toLocaleString()}
+                </span>
               </div>
             </div>
 

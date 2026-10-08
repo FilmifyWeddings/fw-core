@@ -62,9 +62,11 @@ export default function WhatsAppAnalyticsConsolePage() {
   const [viewMode, setViewMode] = useState<'daily' | 'monthly'>('daily');
   const [hoveredNode, setHoveredNode] = useState<{ index: number; x: number; ySuccess: number; yFailed: number; data: any } | null>(null);
 
-  // Pagination
+  // Pagination & Infinite Scroll (Batch 50)
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 15;
+  const [visibleCount, setVisibleCount] = useState(50);
+  const loadMoreRef = React.useRef<HTMLDivElement>(null);
+  const pageSize = 50;
 
   // Fetch only Workflows & Template logs
   const fetchData = async () => {
@@ -473,7 +475,30 @@ export default function WhatsAppAnalyticsConsolePage() {
     };
   }, [lineChartData]);
 
-  // Paginated Logs
+  // Reset visible count when filters change
+  useEffect(() => {
+    setVisibleCount(50);
+  }, [sourceFilter, statusFilter, searchQuery, startDate, endDate]);
+
+  // Infinite Scroll Slice: Displays 50 items initially, appending 50 on scroll
+  const displayedLogs = useMemo(() => {
+    return filteredData.slice(0, visibleCount);
+  }, [filteredData, visibleCount]);
+
+  // Infinite scroll intersection observer: Auto-loads 50 more on scroll
+  useEffect(() => {
+    if (!loadMoreRef.current) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0]?.isIntersecting && visibleCount < filteredData.length) {
+        setVisibleCount(prev => Math.min(prev + 50, filteredData.length));
+      }
+    }, { threshold: 0.1, rootMargin: '100px' });
+
+    observer.observe(loadMoreRef.current);
+    return () => observer.disconnect();
+  }, [visibleCount, filteredData.length]);
+
+  // Paginated Logs (compat fallback)
   const paginatedLogs = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
     return filteredData.slice(start, start + pageSize);
@@ -1032,14 +1057,14 @@ export default function WhatsAppAnalyticsConsolePage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-900 font-sans">
-              {paginatedLogs.length === 0 ? (
+              {displayedLogs.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="py-12 text-center text-zinc-400 text-xs font-mono">
                     No template or workflow records found matching the filter criteria.
                   </td>
                 </tr>
               ) : (
-                paginatedLogs.map((log) => {
+                displayedLogs.map((log) => {
                   const isSent = ['sent', 'delivered', 'read', 'completed', 'done'].includes(log.status);
                   const isFailed = log.status === 'failed';
 
@@ -1136,31 +1161,27 @@ export default function WhatsAppAnalyticsConsolePage() {
           </table>
         </div>
 
-        {/* Pagination Controls */}
-        <div className="flex items-center justify-between text-xs text-zinc-500 pt-2">
-          <span>Showing {paginatedLogs.length} of {filteredData.length} automation records</span>
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage(p => p - 1)}
-              className="p-1.5 bg-slate-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg disabled:opacity-40 cursor-pointer"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-            </button>
-            <span className="px-2 font-mono font-bold text-zinc-800 dark:text-zinc-200">
-              Page {currentPage} of {totalPages}
+        {/* Infinite Scroll Load More Dock */}
+        {visibleCount < filteredData.length && (
+          <div ref={loadMoreRef} className="p-4 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-zinc-200 dark:border-zinc-800/60 bg-zinc-50/50 dark:bg-zinc-900/20 rounded-xl">
+            <span className="text-xs text-zinc-500 font-mono">
+              Showing <strong className="text-zinc-900 dark:text-zinc-100">{displayedLogs.length}</strong> of <strong className="text-zinc-900 dark:text-zinc-100">{filteredData.length}</strong> activities · Auto-loading 50 more on scroll
             </span>
             <button
               type="button"
-              disabled={currentPage === totalPages}
-              onClick={() => setCurrentPage(p => p + 1)}
-              className="p-1.5 bg-slate-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg disabled:opacity-40 cursor-pointer"
+              onClick={() => setVisibleCount(prev => Math.min(prev + 50, filteredData.length))}
+              className="px-4 py-1.5 text-xs font-bold rounded-lg bg-zinc-200 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-300 dark:hover:bg-zinc-700 transition cursor-pointer"
             >
-              <ChevronRight className="w-3.5 h-3.5" />
+              Load 50 More
             </button>
           </div>
-        </div>
+        )}
+
+        {filteredData.length > 50 && visibleCount >= filteredData.length && (
+          <div className="p-3 text-center text-[11px] text-zinc-400 font-mono border-t border-zinc-200 dark:border-zinc-800/60">
+            ✓ All {filteredData.length} activities loaded
+          </div>
+        )}
 
       </div>
 

@@ -10,65 +10,95 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { leadId } = await req.json();
+    const body = await req.json();
+    const rawIds = body.leadIds || (body.leadId ? [body.leadId] : []);
+    const targetLeadIds = (Array.isArray(rawIds) ? rawIds : [rawIds]).filter(Boolean);
 
-    if (!leadId) {
-      return NextResponse.json({ error: 'Missing leadId parameter' }, { status: 400 });
+    if (targetLeadIds.length === 0) {
+      return NextResponse.json({ error: 'Missing leadId or leadIds parameter' }, { status: 400 });
     }
 
-    // 1. Fetch all workflow logs for this lead
-    const { data: logs, error: logsError } = await supabaseAdmin
+    // 1. Fetch leads first to capture phone numbers before deletion
+    const { data: targetLeads } = await supabaseAdmin
+      .from('leads')
+      .select('id, phone')
+      .in('id', targetLeadIds)
+      .eq('workspace_id', tenantId);
+
+    const cleanPhones = (targetLeads || [])
+      .map(l => (l.phone || '').replace(/[^0-9]/g, ''))
+      .filter(p => p.length >= 7);
+
+    // 2. Fetch all workflow logs for these leads
+    const { data: logs } = await supabaseAdmin
       .from('whatsapp_workflow_logs')
       .select('id')
-      .eq('lead_id', leadId)
+      .in('lead_id', targetLeadIds)
       .eq('tenant_id', tenantId);
-
-    if (logsError) throw logsError;
 
     const logIds = (logs || []).map(l => l.id);
 
-    // 2. Delete matching queue items from baileys_action_queue
-    if (logIds.length > 0) {
-      const { data: queueItems } = await supabaseAdmin
+    // 3. Purge matching queue items from baileys_action_queue by workflowLogId, leadId, or phone
+    const { data: queueItems } = await supabaseAdmin
+      .from('baileys_action_queue')
+      .select('id, payload')
+      .eq('workspace_id', tenantId)
+      .in('status', ['pending', 'failed', 'processing']);
+
+    const queueIdsToDelete = (queueItems || []).filter((item: any) => {
+      const p = item.payload || {};
+      const qWfLogId = p.workflowLogId;
+      const qLeadId = p.leadId || p.lead_id;
+      const qPhone = String(p.to || p.recipient || p.phone || '').replace(/@.*$/, '').replace(/[^0-9]/g, '');
+
+      const matchesLog = qWfLogId && logIds.includes(qWfLogId);
+      const matchesLead = qLeadId && targetLeadIds.includes(qLeadId);
+      const matchesPhone = qPhone && cleanPhones.includes(qPhone);
+
+      return matchesLog || matchesLead || matchesPhone;
+    }).map(i => i.id);
+
+    if (queueIdsToDelete.length > 0) {
+      const { error: qDelErr } = await supabaseAdmin
         .from('baileys_action_queue')
-        .select('id, payload')
-        .eq('workspace_id', tenantId)
-        .in('status', ['pending', 'failed', 'processing']);
+        .delete()
+        .in('id', queueIdsToDelete);
 
-      const toDelete = (queueItems || []).filter(
-        (item: any) => item.payload?.workflowLogId && logIds.includes(item.payload.workflowLogId)
-      );
+      if (qDelErr) console.warn('[delete-lead] Queue delete warning:', qDelErr.message);
+    }
 
-      if (toDelete.length > 0) {
-        const { error: qDelErr } = await supabaseAdmin
-          .from('baileys_action_queue')
-          .delete()
-          .in('id', toDelete.map(i => i.id));
-
-        if (qDelErr) throw qDelErr;
-      }
-
-      // Delete from whatsapp_workflow_logs
+    // 4. Delete from whatsapp_workflow_logs
+    if (logIds.length > 0) {
       const { error: logDelErr } = await supabaseAdmin
         .from('whatsapp_workflow_logs')
         .delete()
         .in('id', logIds);
 
-      if (logDelErr) throw logDelErr;
+      if (logDelErr) console.warn('[delete-lead] Logs delete warning:', logDelErr.message);
     }
 
-    // 3. Delete the lead from leads table (enforcing tenant isolation)
+    // 5. Delete from leads table (enforcing tenant isolation)
     const { error: leadDelErr } = await supabaseAdmin
       .from('leads')
       .delete()
-      .eq('id', leadId)
+      .in('id', targetLeadIds)
       .eq('workspace_id', tenantId);
 
     if (leadDelErr) throw leadDelErr;
 
+    // Also attempt deletion from client_leads if any mirrored records exist
+    try {
+      await supabaseAdmin
+        .from('client_leads')
+        .delete()
+        .in('id', targetLeadIds);
+    } catch {}
+
     return NextResponse.json({
       success: true,
-      message: 'Contact and all associated workflow execution history deleted successfully.'
+      message: `Successfully deleted ${targetLeadIds.length} contact(s) and purged all queued WhatsApp messages.`,
+      purgedQueueCount: queueIdsToDelete.length,
+      purgedLogsCount: logIds.length
     });
 
   } catch (err: any) {

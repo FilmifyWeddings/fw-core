@@ -61,6 +61,8 @@ export default function MessageQueuePage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [sendingId, setSendingId] = useState<string | null>(null);
   const [antiBanOpen, setAntiBanOpen] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(50);
+  const loadMoreRef = React.useRef<HTMLDivElement>(null);
 
   const fetchMessages = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true); else setLoading(true);
@@ -71,7 +73,7 @@ export default function MessageQueuePage() {
         .select('*')
         .eq('workspace_id', tenantId)
         .order('created_at', { ascending: false })
-        .limit(200);
+        .limit(1000);
 
       // 2. Fetch from legacy baileys_messages
       const { data: msgsData } = await supabase
@@ -79,7 +81,7 @@ export default function MessageQueuePage() {
         .select('*')
         .eq('workspace_id', tenantId)
         .order('created_at', { ascending: false })
-        .limit(100);
+        .limit(500);
 
       const mappedQueue: QueueMessage[] = (queueData || []).map((q: any) => {
         const p = q.payload || {};
@@ -226,6 +228,29 @@ export default function MessageQueuePage() {
     });
   }, [messages, searchQuery, statusFilter]);
 
+  // Reset visible count on filter/search change
+  useEffect(() => {
+    setVisibleCount(50);
+  }, [searchQuery, statusFilter]);
+
+  // Slice displayed messages for rapid rendering without DOM lag
+  const displayedMessages = useMemo(() => {
+    return filtered.slice(0, visibleCount);
+  }, [filtered, visibleCount]);
+
+  // Infinite scroll intersection observer: Auto-loads 50 more on scroll
+  useEffect(() => {
+    if (!loadMoreRef.current) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0]?.isIntersecting && visibleCount < filtered.length) {
+        setVisibleCount(prev => Math.min(prev + 50, filtered.length));
+      }
+    }, { threshold: 0.1, rootMargin: '100px' });
+
+    observer.observe(loadMoreRef.current);
+    return () => observer.disconnect();
+  }, [visibleCount, filtered.length]);
+
   const pendingCount = messages.filter(m => {
     const s = (m.status || '').toLowerCase();
     return s === 'queued' || s === 'pending' || s === 'failed' || s === 'error';
@@ -326,7 +351,7 @@ export default function MessageQueuePage() {
                   <Ban className="w-7 h-7 mx-auto mb-2 text-zinc-400 dark:text-zinc-700" />
                   No messages found
                 </td></tr>
-              ) : filtered.map(msg => (
+              ) : displayedMessages.map(msg => (
                 <tr key={msg.id} className="hover:bg-zinc-100 dark:hover:bg-zinc-900/30 transition-colors group">
                   <td className="py-3 px-4">
                     <input
@@ -364,6 +389,27 @@ export default function MessageQueuePage() {
             </tbody>
           </table>
         </div>
+
+        {/* Infinite Scroll Load More Dock */}
+        {visibleCount < filtered.length && (
+          <div ref={loadMoreRef} className="p-4 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-zinc-200 dark:border-zinc-800/60 bg-zinc-50/50 dark:bg-zinc-900/20">
+            <span className="text-xs text-zinc-500 font-mono">
+              Showing <strong className="text-zinc-900 dark:text-zinc-100">{displayedMessages.length}</strong> of <strong className="text-zinc-900 dark:text-zinc-100">{filtered.length}</strong> messages · Auto-loading 50 more on scroll
+            </span>
+            <button
+              onClick={() => setVisibleCount(prev => Math.min(prev + 50, filtered.length))}
+              className="px-4 py-1.5 text-xs font-bold rounded-lg bg-zinc-200 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-300 dark:hover:bg-zinc-700 transition cursor-pointer"
+            >
+              Load 50 More
+            </button>
+          </div>
+        )}
+
+        {filtered.length > 50 && visibleCount >= filtered.length && (
+          <div className="p-3 text-center text-[11px] text-zinc-400 font-mono border-t border-zinc-200 dark:border-zinc-800/60">
+            ✓ All {filtered.length} messages loaded
+          </div>
+        )}
       </div>
 
       <AntiBanConfigModal

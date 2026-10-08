@@ -40,6 +40,11 @@ export function calculateSmartAntiBanSchedule(
   const unit = (delayUnit || 'minutes').toLowerCase();
   const val = Math.max(0, Number(delayValue) || 0);
 
+  // Multi-step anti-ban pacing: 1 to 10 minutes random jitter ("aage peeche")
+  const jitterSign = Math.random() < 0.5 ? -1 : 1;
+  const randomJitterMins = Math.floor(Math.random() * 10) + 1; // 1 to 10 minutes
+  const jitterMs = jitterSign * randomJitterMins * 60 * 1000;
+
   if (unit === 'seconds') {
     // If delay is zero or immediate, first step is 2-4s, subsequent steps 12-20s
     if (val === 0) {
@@ -48,18 +53,18 @@ export function calculateSmartAntiBanSchedule(
       delayMs = val * 1000 + Math.floor(Math.random() * 3000);
     }
   } else if (unit === 'minutes') {
-    // Add 15 to 45 seconds of natural human jitter
-    const jitterSeconds = Math.floor(Math.random() * 30) + 15;
-    delayMs = (val * 60 + jitterSeconds) * 1000;
+    // Base minutes delay + random 1 to 10 minute jitter (minimum 1 minute)
+    const baseMs = val * 60 * 1000;
+    delayMs = Math.max(60 * 1000, baseMs + (stepIndex > 0 || val > 10 ? jitterMs : (randomJitterMins * 15 * 1000)));
   } else if (unit === 'hours') {
-    // Add ±10 to 25 minutes of organic jitter
-    const jitterMinutes = Math.floor(Math.random() * 35) - 15;
-    delayMs = Math.max(1800 * 1000, (val * 60 + jitterMinutes) * 60 * 1000);
+    // Base hours delay + random 1 to 10 minute organic jitter (e.g. 2 hrs ± 1..10 mins)
+    const baseMs = val * 60 * 60 * 1000;
+    delayMs = Math.max(10 * 60 * 1000, baseMs + jitterMs);
   } else if (unit === 'days') {
-    // Multi-Day Followup: Add ±35 to 65 minutes organic jitter
+    // Multi-Day Followup: Base days delay + random 1 to 10 minute organic jitter
     // Prevents clockwork dispatch at the exact same minute everyday
-    const jitterMinutes = Math.floor(Math.random() * 70) - 35;
-    delayMs = (val * 24 * 60 + jitterMinutes) * 60 * 1000;
+    const baseMs = val * 24 * 60 * 60 * 1000;
+    delayMs = Math.max(60 * 60 * 1000, baseMs + jitterMs);
   }
 
   let scheduled = new Date(baseDate.getTime() + delayMs);

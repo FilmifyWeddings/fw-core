@@ -174,6 +174,45 @@ export async function processQueueAction(
     return;
   }
 
+  // ── Step 2.5: Pre-Flight Integrity Check (Never dispatch to deleted leads/contacts) ──
+  const p = (action.payload || {}) as Record<string, any>;
+  const wfLogId = p.workflowLogId;
+  const leadId = p.leadId || p.lead_id;
+
+  if (wfLogId) {
+    const { data: wfLog } = await supabaseAdmin
+      .from('whatsapp_workflow_logs')
+      .select('id, status')
+      .eq('id', wfLogId)
+      .maybeSingle();
+
+    if (!wfLog || wfLog.status === 'stopped' || wfLog.status === 'cancelled') {
+      console.warn(`[QueueProcessor] Action ${id} workflow log ${wfLogId} was deleted, stopped or cancelled. Skipping.`);
+      await supabaseAdmin
+        .from('baileys_action_queue')
+        .update({ status: 'cancelled', failure_reason: 'Workflow log deleted or stopped' })
+        .eq('id', id);
+      return;
+    }
+  }
+
+  if (leadId) {
+    const { data: leadCheck } = await supabaseAdmin
+      .from('leads')
+      .select('id')
+      .eq('id', leadId)
+      .maybeSingle();
+
+    if (!leadCheck) {
+      console.warn(`[QueueProcessor] Action ${id} lead ${leadId} was deleted from CRM. Cancelling dispatch.`);
+      await supabaseAdmin
+        .from('baileys_action_queue')
+        .update({ status: 'cancelled', failure_reason: 'Lead was deleted from CRM' })
+        .eq('id', id);
+      return;
+    }
+  }
+
   try {
     // ── Step 3: Execute the action via the provided handler ──────────────────
     const result = await handler(action);
