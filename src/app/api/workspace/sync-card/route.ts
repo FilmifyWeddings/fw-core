@@ -4,6 +4,11 @@ import { parseClientExtended, serializeClientExtended } from '@/components/clien
 
 export const runtime = 'nodejs';
 
+function isValidUUID(str?: string | null): boolean {
+  if (!str) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+}
+
 /**
  * POST /api/workspace/sync-card
  * Robust server-side card synchronizer powered by supabaseAdmin.
@@ -79,10 +84,12 @@ export async function POST(req: NextRequest) {
           updatedNotes = serializeClientExtended(updatedExt);
         } catch (_) {}
 
-        await supabaseAdmin
+        const safePmId = (pmId && isValidUUID(pmId)) ? pmId : null;
+
+        const { error: updateErr } = await supabaseAdmin
           .from('workspace_clients')
           .update({
-            project_manager_id: pmId || null,
+            project_manager_id: safePmId,
             project_manager_name: pmName || null,
             project_manager_email: pmEmail || null,
             project_manager_phone: pmPhone || null,
@@ -91,6 +98,21 @@ export async function POST(req: NextRequest) {
             updated_at: nowIso
           })
           .eq('id', targetClient.id);
+
+        if (updateErr) {
+          console.warn('[sync-card] Primary update on workspace_clients failed (likely FK constraint), running fallback without project_manager_id column:', updateErr.message);
+          await supabaseAdmin
+            .from('workspace_clients')
+            .update({
+              project_manager_name: pmName || null,
+              project_manager_email: pmEmail || null,
+              project_manager_phone: pmPhone || null,
+              handled_by: pmName || null,
+              ...(updatedNotes ? { notes: updatedNotes } : {}),
+              updated_at: nowIso
+            })
+            .eq('id', targetClient.id);
+        }
       }
 
       // 1B. Update Bookings & Events (`fw_projects`)

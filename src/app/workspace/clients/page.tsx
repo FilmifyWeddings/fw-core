@@ -1810,10 +1810,18 @@ export default function ClientsPage() {
           if (quickAssignClient) {
             setClients(prev => prev.map(c => {
               if (c.id === quickAssignClient.id) {
+                const oldExt = parseClientExtended(c);
+                const updatedExt = {
+                  ...oldExt,
+                  project_manager_id: memberId || '',
+                  project_manager_name: memberName || '',
+                };
+                const updatedNotes = serializeClientExtended(updatedExt);
                 return {
                   ...c,
                   project_manager_id: memberId,
-                  project_manager_name: memberName
+                  project_manager_name: memberName,
+                  notes: updatedNotes
                 };
               }
               return c;

@@ -318,6 +318,34 @@ export function ClientInsiderModal({
 
       if (error) throw error;
 
+      // Instant 4-way cross-module couple rename sync
+      const oldCoupleName = client.name?.trim() || '';
+      const newCoupleName = name.trim();
+
+      if (newCoupleName && oldCoupleName && newCoupleName !== oldCoupleName) {
+        fetch('/api/workspace/sync-card', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'rename_couple',
+            clientId: client.id,
+            leadId: client.lead_id,
+            oldName: oldCoupleName,
+            newName: newCoupleName,
+          })
+        }).catch(console.error);
+
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('client_updated', { detail: { newName: newCoupleName, clientId: client.id } }));
+          window.dispatchEvent(new CustomEvent('team_events_updated', { detail: { newName: newCoupleName, clientId: client.id } }));
+          window.dispatchEvent(new CustomEvent('post_production_updated', { detail: { newName: newCoupleName, clientId: client.id } }));
+          window.dispatchEvent(new CustomEvent('finance_updated', { detail: { newName: newCoupleName } }));
+          try {
+            localStorage.setItem('sc_booking_sync_event', Date.now().toString());
+          } catch (_) {}
+        }
+      }
+
       const fullUpdated: WorkspaceClient = {
         ...client,
         ...updatedFields
