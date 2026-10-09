@@ -16,7 +16,19 @@ export async function GET(request: NextRequest) {
   const role = requestUrl.searchParams.get('role') || 'owner';
   const next = requestUrl.searchParams.get('next');
 
-  const appOrigin = process.env.NEXT_PUBLIC_APP_URL || requestUrl.origin;
+  const forwardedHost = request.headers.get('x-forwarded-host');
+  const forwardedProto = request.headers.get('x-forwarded-proto') || 'https';
+  const host = forwardedHost || request.headers.get('host');
+
+  let appOrigin = host ? `${forwardedProto}://${host}` : requestUrl.origin;
+  if (appOrigin.includes('localhost') && process.env.NODE_ENV === 'production') {
+    appOrigin = 'https://studiocore.in';
+  } else if (!appOrigin || appOrigin.includes('localhost:3000')) {
+    // If not in local dev environment
+    if (process.env.NEXT_PUBLIC_APP_URL && !process.env.NEXT_PUBLIC_APP_URL.includes('localhost')) {
+      appOrigin = process.env.NEXT_PUBLIC_APP_URL;
+    }
+  }
 
   if (code) {
     const cookieStore = await cookies();

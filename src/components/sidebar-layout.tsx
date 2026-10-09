@@ -153,7 +153,7 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
               const isGoogle = session.user.app_metadata?.provider === 'google' ||
                                (session.user.identities && session.user.identities.some((id: any) => id.provider === 'google')) ||
                                p.authProvider === 'google';
-              if (isGoogle && !p.phoneVerified && !p.phone) {
+              if (isGoogle && (!p.phoneVerified || !p.phone)) {
                 setShowGoogleOnboarding(true);
                 if (p.platformRole === 'team_member' || (typeof window !== 'undefined' && window.location.pathname.startsWith('/team'))) {
                   setGoogleOnboardingRole('team_member');
@@ -168,10 +168,11 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
     }
   }, []);
 
-  const handleGoogleOnboardingComplete = useCallback((data: { studioName: string; phone: string; fullName: string; role: string }) => {
+  const handleGoogleOnboardingComplete = useCallback((data: { studioName: string; phone: string; fullName: string; role: string; avatarUrl?: string }) => {
     setShowGoogleOnboarding(false);
     if (data.studioName) setWorkspaceName(data.studioName);
     if (data.fullName) setUserName(data.fullName);
+    if (data.avatarUrl) setUserAvatarUrl(data.avatarUrl);
     if (typeof window !== 'undefined' && window.history.replaceState) {
       try {
         const url = new URL(window.location.href);

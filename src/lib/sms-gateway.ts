@@ -96,25 +96,42 @@ export async function sendSmsOtp({
   if (fast2SmsApiKey) {
     try {
       const national10Digit = cleanPhone.slice(-10);
+      const isQuickRoute = process.env.FAST2SMS_ROUTE === 'q';
+      const payload: any = isQuickRoute
+        ? {
+            route: 'q',
+            message: fullText,
+            numbers: national10Digit,
+          }
+        : {
+            route: 'otp',
+            variables_values: otp,
+            numbers: national10Digit,
+          };
+
       const res = await fetch('https://www.fast2sms.com/dev/bulkV2', {
         method: 'POST',
         headers: {
           'authorization': fast2SmsApiKey,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          route: 'otp',
-          variables_values: otp,
-          numbers: national10Digit,
-        }),
+        body: JSON.stringify(payload),
       });
+
       const json = await res.json().catch(() => ({}));
-      if (res.ok && json.return) {
-        return { success: true, messageId: json.request_id, previewMessage: fullText };
+      if (res.ok && json.return === true) {
+        return { success: true, messageId: json.request_id || json.message?.[0], previewMessage: fullText };
       }
-      console.warn('[Fast2SMS API Response Notice]:', json);
+
+      const errorMessage = Array.isArray(json.message)
+        ? json.message.join(', ')
+        : (json.message || `Fast2SMS dispatch failed (HTTP ${res.status})`);
+
+      console.error('[Fast2SMS API Rejected]:', errorMessage, json);
+      return { success: false, error: errorMessage };
     } catch (err: any) {
-      console.error('[Fast2SMS Error]:', err.message);
+      console.error('[Fast2SMS Network Error]:', err.message);
+      return { success: false, error: err.message || 'Fast2SMS network connection failed' };
     }
   }
 
@@ -138,15 +155,25 @@ export async function sendSmsOtp({
       if (res.ok) {
         return { success: true, previewMessage: fullText };
       }
+      return { success: false, error: `Generic SMS Gateway returned HTTP ${res.status}` };
     } catch (err: any) {
       console.error('[Generic SMS Gateway Error]:', err.message);
+      return { success: false, error: err.message || 'Generic SMS Gateway connection failed' };
     }
   }
 
-  // Fallback: Dispatched successfully in preview / dev mode
+  // 3. Fallback: Development preview mode
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`[Fast2SMS DEV SIMULATION] OTP for +91 ${cleanPhone.slice(-10)}: ${otp}`);
+    return {
+      success: true,
+      messageId: `sim_${Date.now()}`,
+      previewMessage: fullText,
+    };
+  }
+
   return {
-    success: true,
-    messageId: `sim_${Date.now()}`,
-    previewMessage: fullText,
+    success: false,
+    error: 'SMS service is not configured. Please add FAST2SMS_API_KEY in server environment settings.',
   };
 }

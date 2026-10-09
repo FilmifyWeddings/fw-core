@@ -6,17 +6,13 @@ import confetti from 'canvas-confetti';
 import { 
   Building2, Camera, Phone, User, ShieldCheck, 
   ArrowRight, Check, ChevronDown, Search, Loader2, 
-  AlertCircle, Sparkles, MessageSquare, CheckCircle2 
+  AlertCircle, Sparkles, MessageSquare, CheckCircle2,
+  Clock, ShieldAlert, Upload
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
 import { GoogleGLogo } from './GoogleRoleConfirmModal';
-import { 
-  isFirebaseConfigured, 
-  sendGooglePhoneVerification, 
-  verifyGooglePhoneCode 
-} from '@/lib/firebase';
+import { compressImageToDataUrl } from '@/lib/image-compression';
 
-// Supported Country Codes
+// Supported Country Codes (Default: India 🇮🇳 +91)
 const COUNTRIES = [
   { code: '+91', iso: 'in', name: 'India', flag: '🇮🇳' },
   { code: '+1', iso: 'us', name: 'United States', flag: '🇺🇸' },
@@ -37,7 +33,7 @@ interface MandatoryGoogleOnboardingModalProps {
   userEmail?: string;
   userFullName?: string;
   initialRole?: 'owner' | 'team_member';
-  onComplete: (data: { studioName: string; phone: string; fullName: string; role: string }) => void;
+  onComplete: (data: { studioName: string; phone: string; fullName: string; role: string; avatarUrl?: string }) => void;
 }
 
 export default function MandatoryGoogleOnboardingModal({
@@ -53,6 +49,10 @@ export default function MandatoryGoogleOnboardingModal({
   const [role, setRole] = useState<'owner' | 'team_member'>(initialRole);
   const [fullName, setFullName] = useState(userFullName);
   const [studioName, setStudioName] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState<string>('');
+  const [isCompressingAvatar, setIsCompressingAvatar] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+
   const [selectedCountry, setSelectedCountry] = useState(COUNTRIES[0]);
   const [phone, setPhone] = useState('');
 
@@ -61,14 +61,12 @@ export default function MandatoryGoogleOnboardingModal({
   const [countrySearch, setCountrySearch] = useState('');
   const countryDropdownRef = useRef<HTMLDivElement>(null);
 
-  // OTP State
+  // 6-Digit OTP State
   const [digits, setDigits] = useState<string[]>(['', '', '', '', '', '']);
   const [timer, setTimer] = useState<number>(60);
   const [canResend, setCanResend] = useState(false);
+  const [attemptsRemaining, setAttemptsRemaining] = useState<number | null>(null);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
-
-  // Google Identity / Firebase session ref
-  const googleSessionInfoRef = useRef<string | null>(null);
 
   // Loading & Error states
   const [loading, setLoading] = useState(false);
@@ -95,7 +93,7 @@ export default function MandatoryGoogleOnboardingModal({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Countdown timer for OTP
+  // 60-Second Countdown timer for OTP resend
   useEffect(() => {
     if (stage !== 'sms_otp_verify' || timer <= 0) {
       if (timer <= 0) setCanResend(true);
@@ -138,7 +136,23 @@ export default function MandatoryGoogleOnboardingModal({
     } catch (_) {}
   };
 
-  // STEP 1: Send SMS OTP (Google Firebase Phone Auth or Server SMS Gateway)
+  // Avatar upload handler
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      try {
+        setIsCompressingAvatar(true);
+        const compressed = await compressImageToDataUrl(file, 400, 0.85);
+        setAvatarUrl(compressed);
+      } catch (err) {
+        console.error('Avatar upload compression error:', err);
+      } finally {
+        setIsCompressingAvatar(false);
+      }
+    }
+  };
+
+  // STEP 1: Send SMS OTP via Fast2SMS (with Anti-Spam checks)
   const handleSendOtp = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setError(null);
@@ -154,33 +168,7 @@ export default function MandatoryGoogleOnboardingModal({
         throw new Error('Studio / Brand Name is required for Studio Owners');
       }
 
-      // Check if Google Firebase REST API is configured
-      if (isFirebaseConfigured()) {
-        try {
-          const fullInternationalPhone = `${selectedCountry.code}${cleanDigits.slice(-10)}`;
-          const googleRes = await sendGooglePhoneVerification(fullInternationalPhone);
-
-          if (googleRes.success && googleRes.sessionInfo) {
-            googleSessionInfoRef.current = googleRes.sessionInfo;
-            setStage('sms_otp_verify');
-            setTimer(60);
-            setCanResend(false);
-            setDigits(['', '', '', '', '', '']);
-            setSuccessMsg(`Google SMS OTP sent to ${selectedCountry.code} ${cleanDigits.slice(-10)}`);
-
-            setTimeout(() => {
-              inputRefs.current[0]?.focus();
-            }, 150);
-            return;
-          } else {
-            console.warn('[Google SMS Notice]: Falling back to server SMS gateway:', googleRes.error);
-          }
-        } catch (firebaseErr: any) {
-          console.warn('[Google Identity Error]: Falling back to server SMS gateway:', firebaseErr);
-        }
-      }
-
-      // Server SMS Gateway (Fast2SMS / Custom SMS / Console preview)
+      // Fast2SMS Gateway Route (Anti-Spam: max 3/day, 60s cooldown)
       const res = await fetch('/api/auth/send-phone-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -200,7 +188,10 @@ export default function MandatoryGoogleOnboardingModal({
       setTimer(60);
       setCanResend(false);
       setDigits(['', '', '', '', '', '']);
-      setSuccessMsg(`OTP sent via SMS to ${selectedCountry.code} ${cleanDigits.slice(-10)}`);
+      if (typeof json.attemptsRemaining === 'number') {
+        setAttemptsRemaining(json.attemptsRemaining);
+      }
+      setSuccessMsg(`6-Digit OTP sent via SMS to ${selectedCountry.code} ${cleanDigits.slice(-10)}`);
 
       setTimeout(() => {
         inputRefs.current[0]?.focus();
@@ -250,16 +241,6 @@ export default function MandatoryGoogleOnboardingModal({
     setError(null);
 
     try {
-      let isGoogleSuccess = false;
-      if (googleSessionInfoRef.current) {
-        const verifyRes = await verifyGooglePhoneCode(googleSessionInfoRef.current, otp);
-        if (verifyRes.success) {
-          isGoogleSuccess = true;
-        } else {
-          throw new Error(verifyRes.error || 'Invalid or expired 6-digit Google OTP code');
-        }
-      }
-
       const res = await fetch('/api/auth/verify-phone-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -270,7 +251,7 @@ export default function MandatoryGoogleOnboardingModal({
           studioName: studioName.trim() || (fullName.trim() ? `${fullName.trim()}'s Studio` : 'My Studio'),
           role,
           countryCode: selectedCountry.code,
-          firebaseVerified: isGoogleSuccess,
+          avatarUrl: avatarUrl || undefined,
         }),
       });
 
@@ -291,8 +272,9 @@ export default function MandatoryGoogleOnboardingModal({
           phone: json.phone || phone,
           fullName: json.fullName || fullName,
           role: json.role || role,
+          avatarUrl: avatarUrl || undefined,
         });
-      }, 2400);
+      }, 2200);
     } catch (err: any) {
       setError(err.message || 'Invalid or expired OTP code');
     } finally {
@@ -308,17 +290,14 @@ export default function MandatoryGoogleOnboardingModal({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/75 backdrop-blur-sm select-none">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md select-none">
         <motion.div
           initial={{ opacity: 0, scale: 0.94, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.94, y: 20 }}
           transition={{ duration: 0.25 }}
-          className="relative w-full max-w-md bg-[#FFFDF9] rounded-3xl p-5 sm:p-7 border border-[#EAE5DA] shadow-2xl space-y-4"
+          className="relative w-full max-w-md bg-[#FFFDF9] rounded-3xl p-5 sm:p-7 border border-[#EAE5DA] shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto"
         >
-          {/* Invisible Google reCAPTCHA Container */}
-          <div id="firebase-recaptcha-container" />
-
           {/* Header */}
           <div className="text-center space-y-1">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-900 text-xs font-bold shadow-2xs">
@@ -334,7 +313,7 @@ export default function MandatoryGoogleOnboardingModal({
             <p className="text-xs text-slate-500 font-medium">
               {stage === 'celebration_success'
                 ? 'Your account has been activated successfully.'
-                : 'Mobile number verification is mandatory to activate your workspace.'}
+                : 'Mobile number OTP verification is mandatory to activate your workspace.'}
             </p>
           </div>
 
@@ -355,7 +334,7 @@ export default function MandatoryGoogleOnboardingModal({
 
           {/* Error Message */}
           {error && (
-            <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 flex items-start gap-2 text-xs text-rose-700 font-bold animate-shake">
+            <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 flex items-start gap-2 text-xs text-rose-700 font-bold">
               <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
               <span>{error}</span>
             </div>
@@ -374,6 +353,45 @@ export default function MandatoryGoogleOnboardingModal({
           ───────────────────────────────────────────────────────────── */}
           {stage === 'phone_details' && (
             <form onSubmit={handleSendOtp} className="space-y-3 pt-1">
+              {/* Profile Avatar / Logo (Optional) */}
+              <div className="flex items-center gap-3.5 p-2.5 rounded-2xl bg-amber-50/50 border border-amber-200/60">
+                <div className="relative group shrink-0">
+                  <div className="w-12 h-12 rounded-2xl overflow-hidden bg-white border border-[#EAE5DA] shadow-xs flex items-center justify-center">
+                    {avatarUrl ? (
+                      <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-base font-black text-amber-800">
+                        {fullName ? fullName[0].toUpperCase() : 'S'}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => avatarInputRef.current?.click()}
+                    disabled={isCompressingAvatar}
+                    className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-amber-600 text-white flex items-center justify-center shadow hover:bg-amber-700 transition cursor-pointer"
+                    title="Upload photo"
+                  >
+                    {isCompressingAvatar ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Camera className="w-2.5 h-2.5" />}
+                  </button>
+                  <input
+                    ref={avatarInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleAvatarChange}
+                    className="hidden"
+                  />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-bold text-slate-800">
+                    {role === 'owner' ? 'Studio Logo / Photo' : 'Profile Picture'}
+                  </div>
+                  <p className="text-[10px] text-slate-500">
+                    Optional • Tap camera icon to upload
+                  </p>
+                </div>
+              </div>
+
               {/* Role Toggle */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Account Role</label>
@@ -506,9 +524,10 @@ export default function MandatoryGoogleOnboardingModal({
                     />
                   </div>
                 </div>
-                <p className="text-[10px] text-slate-400 font-medium mt-1">
-                  You will receive an OTP via Normal SMS (टेक्स्ट मैसेज) to verify this number.
-                </p>
+                <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium mt-1">
+                  <span>Fast SMS delivery via Fast2SMS</span>
+                  <span className="text-amber-700 font-semibold">Max 3 OTPs / day</span>
+                </div>
               </div>
 
               {/* Submit CTA */}
@@ -525,7 +544,7 @@ export default function MandatoryGoogleOnboardingModal({
                 ) : (
                   <>
                     <MessageSquare className="w-4 h-4" />
-                    <span>Send OTP via SMS (नॉर्मल मैसेज)</span>
+                    <span>Send 6-Digit OTP via SMS</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </>
                 )}
@@ -539,9 +558,16 @@ export default function MandatoryGoogleOnboardingModal({
           {stage === 'sms_otp_verify' && (
             <div className="space-y-4 pt-1">
               <div className="p-3 bg-amber-50/80 rounded-2xl border border-amber-200/80 text-xs text-amber-900 space-y-1">
-                <p className="font-bold">
-                  Enter 6-Digit SMS Verification Code
-                </p>
+                <div className="flex items-center justify-between">
+                  <p className="font-bold">
+                    Enter 6-Digit SMS Verification Code
+                  </p>
+                  {attemptsRemaining !== null && (
+                    <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-amber-200/60 text-amber-900">
+                      {attemptsRemaining} of 3 left today
+                    </span>
+                  )}
+                </div>
                 <p className="text-[11px] text-amber-800">
                   We sent a normal text message to{' '}
                   <strong className="font-mono">{selectedCountry.code} {phone.slice(-10)}</strong>.
@@ -588,7 +614,7 @@ export default function MandatoryGoogleOnboardingModal({
                 )}
               </button>
 
-              {/* Resend & Back */}
+              {/* Resend & Cooldown */}
               <div className="flex items-center justify-between text-xs text-slate-500 pt-1">
                 <button
                   type="button"
@@ -598,16 +624,21 @@ export default function MandatoryGoogleOnboardingModal({
                   ← Change Number
                 </button>
 
-                <button
-                  type="button"
-                  disabled={!canResend || loading}
-                  onClick={handleSendOtp}
-                  className={`font-bold transition cursor-pointer ${
-                    canResend ? 'text-amber-700 hover:text-amber-800 underline' : 'text-slate-400 cursor-not-allowed'
-                  }`}
-                >
-                  {canResend ? 'Resend SMS OTP' : `Resend in ${timer}s`}
-                </button>
+                <div className="flex items-center gap-1.5">
+                  {!canResend && (
+                    <Clock className="w-3.5 h-3.5 text-slate-400 animate-pulse" />
+                  )}
+                  <button
+                    type="button"
+                    disabled={!canResend || loading}
+                    onClick={handleSendOtp}
+                    className={`font-bold transition cursor-pointer ${
+                      canResend ? 'text-amber-700 hover:text-amber-800 underline' : 'text-slate-400 cursor-not-allowed'
+                    }`}
+                  >
+                    {canResend ? 'Resend SMS OTP' : `Resend in ${timer}s`}
+                  </button>
+                </div>
               </div>
             </div>
           )}

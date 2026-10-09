@@ -222,45 +222,56 @@ export default function SmsTemplateSettings() {
             </div>
           </div>
 
-          {/* Gateway Status & Info */}
+          {/* Fast2SMS Gateway Status & Anti-Spam Info */}
           <div className="p-4 rounded-xl bg-gradient-to-br from-amber-50/80 via-white to-amber-50/40 border border-amber-200/90 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-xs font-black text-amber-950">
                 <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
-                <span>Google SMS OTP (Firebase Phone Auth) & Gateway</span>
+                <span>Fast2SMS Gateway & Anti-Spam Protection</span>
               </div>
-              <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-black uppercase tracking-wider border border-blue-200">
-                Google Identity Supported
+              <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-[#0F9D58] text-[10px] font-black uppercase tracking-wider border border-emerald-200">
+                Fast2SMS Active
               </span>
             </div>
 
             <p className="text-[11.5px] text-zinc-600 leading-relaxed">
-              StudioCore supports <strong>Google's official Firebase Phone Authentication</strong> for sending 6-digit SMS OTPs. Google delivers SMS directly to users across India with high delivery rates and free monthly tier.
+              StudioCore uses <strong>Fast2SMS Quick OTP Gateway</strong> for high-speed SMS delivery across India with 100% DND bypass. All OTPs are protected by automatic anti-spam rate limiting.
             </p>
 
-            {/* Google Firebase Setup Steps */}
+            {/* Anti-Spam Protection Badges */}
+            <div className="grid grid-cols-2 gap-2 text-[11px] font-bold">
+              <div className="p-2.5 rounded-xl bg-white border border-amber-200/70 flex items-center gap-2 text-slate-800">
+                <span className="w-5 h-5 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center text-[10px] font-black">60s</span>
+                <span>Cooldown Timer (Resend delay)</span>
+              </div>
+              <div className="p-2.5 rounded-xl bg-white border border-amber-200/70 flex items-center gap-2 text-slate-800">
+                <span className="w-5 h-5 rounded-lg bg-rose-100 text-rose-800 flex items-center justify-center text-[10px] font-black">3x</span>
+                <span>Max 3 OTPs / 24 Hours / Number</span>
+              </div>
+            </div>
+
+            {/* Fast2SMS Setup Steps */}
             <div className="bg-white/90 p-3 rounded-xl border border-amber-200/70 space-y-1.5 text-[11px] text-zinc-700">
               <div className="font-extrabold text-amber-950 flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                <span>Google Console Custom Heading & Template Setup:</span>
+                <span>Fast2SMS API Setup Steps:</span>
               </div>
               <ol className="list-decimal pl-4 space-y-1 text-zinc-600">
                 <li>
-                  <strong>Custom Heading (Sender Title):</strong> Firebase Console ➔ <em>Project Settings ➔ General ➔ Public-facing name</em> में <strong>StudioCore</strong> सेट करें।
+                  <strong>fast2sms.com</strong> पर जाएं और लॉग इन / साइन अप करें।
                 </li>
                 <li>
-                  <strong>Custom SMS Message Template:</strong> Firebase Console ➔ <em>Authentication ➔ Templates ➔ SMS verification</em> में जाकर अपना मनचाहा टेक्स्ट सेट करें (जैसे: <code>%APP_NAME% verification code is %OTP%</code>)।
+                  Left sidebar में <strong>Dev API</strong> पर क्लिक करें और अपनी <strong>Authorization API Key</strong> कॉपी करें।
                 </li>
                 <li>
-                  <strong>Test Phone Numbers (Free Testing):</strong> Firebase Console ➔ <em>Authentication ➔ Sign-in method ➔ Phone ➔ Phone numbers for testing</em> में अपना नंबर व 6-अंकीय टेस्ट OTP (जैसे: <code>123456</code>) जोड़ सकते हैं।
+                  अपने <code>.env.local</code> में जोड़ें: <code>FAST2SMS_API_KEY=your_copied_key_here</code>
                 </li>
               </ol>
             </div>
 
             <div className="pt-1 text-[11px] text-zinc-500 font-mono flex flex-wrap items-center gap-2">
-              <span>Firebase Keys:</span>
-              <span className="px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-800 font-bold">NEXT_PUBLIC_FIREBASE_API_KEY</span>
-              <span className="px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-800 font-bold">NEXT_PUBLIC_FIREBASE_PROJECT_ID</span>
+              <span>Environment Variable:</span>
+              <span className="px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-800 font-bold">FAST2SMS_API_KEY</span>
             </div>
           </div>
         </div>
