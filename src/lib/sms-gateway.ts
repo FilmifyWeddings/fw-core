@@ -97,8 +97,8 @@ export async function sendSmsOtp({
     try {
       const national10Digit = cleanPhone.slice(-10);
 
-      // Attempt 1: Fast2SMS Affordable OTP Route (Cost: ~₹0.20 to ₹0.25 per SMS)
-      let res = await fetch('https://www.fast2sms.com/dev/bulkV2', {
+      // Strict Fast2SMS Affordable OTP Route (Cost: ~₹0.20 to ₹0.25 per SMS)
+      const res = await fetch('https://www.fast2sms.com/dev/bulkV2', {
         method: 'POST',
         headers: {
           'authorization': fast2SmsApiKey,
@@ -111,30 +111,19 @@ export async function sendSmsOtp({
         }),
       });
 
-      let json = await res.json().catch(() => ({}));
-
-      // If OTP route is locked due to website KYC (status_code 996 or 999), fallback to Quick SMS (route: q)
-      if (!json.return && (json.status_code === 996 || json.status_code === 999 || json.status_code === 400)) {
-        console.warn('[Fast2SMS Notice]: OTP route returned status', json.status_code, '- Falling back to Quick SMS route (q)...');
-        res = await fetch('https://www.fast2sms.com/dev/bulkV2', {
-          method: 'POST',
-          headers: {
-            'authorization': fast2SmsApiKey,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            route: 'q',
-            message: fullText,
-            numbers: national10Digit,
-          }),
-        });
-        json = await res.json().catch(() => ({}));
-      }
-
-      console.log('[Fast2SMS API Response]:', json);
+      const json = await res.json().catch(() => ({}));
+      console.log('[Fast2SMS 20-Paise OTP API Response]:', json);
 
       if (res.ok && json.return === true) {
-        return { success: true, messageId: json.request_id || json.message?.[0], previewMessage: fullText };
+        return { success: true, messageId: json.request_id || json.message?.[0], previewMessage: `StudioCore OTP: ${otp}` };
+      }
+
+      // Check if Fast2SMS KYC / Website Verification is pending
+      if (json.status_code === 996 || json.status_code === 999) {
+        return {
+          success: false,
+          error: 'Fast2SMS पर 20 पैसे वाला OTP रूट चालू करने के लिए fast2sms.com/dashboard/kyc-otp पर जाकर अपनी वेबसाइट studiocore.in और आधार KYC वेरिफाई करें।',
+        };
       }
 
       const errorMessage = Array.isArray(json.message)
