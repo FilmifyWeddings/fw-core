@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 echo "=== Starting deployment at $(date) ==="
 cd /var/www/fw-core || exit 1
 
@@ -7,27 +8,21 @@ git fetch origin main
 git reset --hard origin/main
 
 echo "Installing dependencies..."
-npm install
-
-echo "Purging old Next.js build cache and lingering processes..."
-pkill -9 -f 'next build' 2>/dev/null || true
-pkill -9 -f 'processChild.js' 2>/dev/null || true
-rm -rf .next
-rm -rf /var/www/fw-core/node_modules/.es-abstract*
+npm install --no-audit
 
 echo "Building application..."
+pkill -9 -f 'processChild.js' 2>/dev/null || true
+rm -rf /var/www/fw-core/node_modules/.es-abstract*
 NEXT_CPU_COUNT=1 NEXT_BUILD_WORKER_THREADS=0 NODE_OPTIONS="--max-old-space-size=2560" npm run build
 
 echo "Building WhatsApp Persistent Worker..."
 cd /var/www/fw-core/baileys-worker || exit 1
-npm install --include=dev
+npm install --include=dev --no-audit
 npx tsc
 
 echo "Restarting PM2 apps via ecosystem.config.js..."
 cd /var/www/fw-core || exit 1
-pm2 delete baileys-worker 2>/dev/null || true
-pm2 delete fw-core 2>/dev/null || true
-pm2 start ecosystem.config.js --only "baileys-worker,fw-core"
+pm2 reload ecosystem.config.js --only "baileys-worker,fw-core" 2>/dev/null || pm2 restart ecosystem.config.js --only "baileys-worker,fw-core" 2>/dev/null || pm2 start ecosystem.config.js --only "baileys-worker,fw-core"
 pm2 save
 
 echo "=== Deployment completed at $(date) ==="

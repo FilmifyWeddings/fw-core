@@ -1,47 +1,114 @@
 'use client';
 
-import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
-import { getAuth, Auth } from 'firebase/auth';
-
-const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-};
-
 /**
- * Checks whether Google Firebase environment variables are provided.
+ * Lightweight Google Identity Platform / Firebase Phone Auth helper
+ * Uses Google's official Identity Toolkit REST API directly via fetch().
+ * Zero external heavy npm dependencies to prevent VPS build OOM crashes.
  */
+
 export const isFirebaseConfigured = (): boolean => {
   return Boolean(
     process.env.NEXT_PUBLIC_FIREBASE_API_KEY &&
-    process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    (process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN)
   );
 };
 
-let cachedApp: FirebaseApp | null = null;
-let cachedAuth: Auth | null = null;
+export interface GoogleSendOtpResult {
+  success: boolean;
+  sessionInfo?: string;
+  error?: string;
+}
+
+export interface GoogleVerifyOtpResult {
+  success: boolean;
+  phoneNumber?: string;
+  idToken?: string;
+  error?: string;
+}
 
 /**
- * Safely initializes and returns Firebase Auth on the browser.
+ * Dispatches 6-digit SMS OTP using Google Identity Toolkit REST API
  */
-export const getFirebaseAuth = (): Auth | null => {
-  if (typeof window === 'undefined') return null;
-  if (!isFirebaseConfigured()) return null;
+export async function sendGooglePhoneVerification(
+  phoneNumber: string,
+  recaptchaToken: string = ''
+): Promise<GoogleSendOtpResult> {
+  const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
+  if (!apiKey) {
+    return { success: false, error: 'Google Firebase API Key not configured' };
+  }
 
   try {
-    if (!cachedApp) {
-      cachedApp = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+    const url = `https://identitytoolkit.googleapis.com/v1/accounts:sendVerificationCode?key=${apiKey}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        phoneNumber,
+        recaptchaToken: recaptchaToken || undefined,
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      return {
+        success: false,
+        error: data.error?.message || 'Google SMS OTP dispatch failed',
+      };
     }
-    if (!cachedAuth && cachedApp) {
-      cachedAuth = getAuth(cachedApp);
-    }
-    return cachedAuth;
-  } catch (err) {
-    console.warn('[Firebase Auth Init Failed]:', err);
-    return null;
+
+    return {
+      success: true,
+      sessionInfo: data.sessionInfo,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || 'Network error calling Google Identity service',
+    };
   }
-};
+}
+
+/**
+ * Verifies 6-digit SMS OTP using Google Identity Toolkit REST API
+ */
+export async function verifyGooglePhoneCode(
+  sessionInfo: string,
+  code: string
+): Promise<GoogleVerifyOtpResult> {
+  const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
+  if (!apiKey) {
+    return { success: false, error: 'Google Firebase API Key not configured' };
+  }
+
+  try {
+    const url = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPhoneNumber?key=${apiKey}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionInfo,
+        code: code.trim(),
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      return {
+        success: false,
+        error: data.error?.message || 'Invalid or expired Google OTP code',
+      };
+    }
+
+    return {
+      success: true,
+      phoneNumber: data.phoneNumber,
+      idToken: data.idToken,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || 'Network error verifying Google code',
+    };
+  }
+}

@@ -10,8 +10,11 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { GoogleGLogo } from './GoogleRoleConfirmModal';
-import { getFirebaseAuth, isFirebaseConfigured } from '@/lib/firebase';
-import { RecaptchaVerifier, signInWithPhoneNumber, type ConfirmationResult } from 'firebase/auth';
+import { 
+  isFirebaseConfigured, 
+  sendGooglePhoneVerification, 
+  verifyGooglePhoneCode 
+} from '@/lib/firebase';
 
 // Supported Country Codes
 const COUNTRIES = [
@@ -64,9 +67,8 @@ export default function MandatoryGoogleOnboardingModal({
   const [canResend, setCanResend] = useState(false);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  // Google Firebase Phone Auth refs
-  const confirmationResultRef = useRef<ConfirmationResult | null>(null);
-  const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
+  // Google Identity / Firebase session ref
+  const googleSessionInfoRef = useRef<string | null>(null);
 
   // Loading & Error states
   const [loading, setLoading] = useState(false);
@@ -152,37 +154,29 @@ export default function MandatoryGoogleOnboardingModal({
         throw new Error('Studio / Brand Name is required for Studio Owners');
       }
 
-      // Check if Google Firebase Phone Auth is active
-      const auth = getFirebaseAuth();
-      if (auth && isFirebaseConfigured()) {
+      // Check if Google Firebase REST API is configured
+      if (isFirebaseConfigured()) {
         try {
-          if (!recaptchaVerifierRef.current) {
-            recaptchaVerifierRef.current = new RecaptchaVerifier(auth, 'firebase-recaptcha-container', {
-              size: 'invisible',
-            });
-          }
-
           const fullInternationalPhone = `${selectedCountry.code}${cleanDigits.slice(-10)}`;
-          const confirmationResult = await signInWithPhoneNumber(
-            auth,
-            fullInternationalPhone,
-            recaptchaVerifierRef.current
-          );
-          confirmationResultRef.current = confirmationResult;
+          const googleRes = await sendGooglePhoneVerification(fullInternationalPhone);
 
-          setStage('sms_otp_verify');
-          setTimer(60);
-          setCanResend(false);
-          setDigits(['', '', '', '', '', '']);
-          setSuccessMsg(`Google SMS OTP sent to ${selectedCountry.code} ${cleanDigits.slice(-10)}`);
+          if (googleRes.success && googleRes.sessionInfo) {
+            googleSessionInfoRef.current = googleRes.sessionInfo;
+            setStage('sms_otp_verify');
+            setTimer(60);
+            setCanResend(false);
+            setDigits(['', '', '', '', '', '']);
+            setSuccessMsg(`Google SMS OTP sent to ${selectedCountry.code} ${cleanDigits.slice(-10)}`);
 
-          setTimeout(() => {
-            inputRefs.current[0]?.focus();
-          }, 150);
-          return;
+            setTimeout(() => {
+              inputRefs.current[0]?.focus();
+            }, 150);
+            return;
+          } else {
+            console.warn('[Google SMS Notice]: Falling back to server SMS gateway:', googleRes.error);
+          }
         } catch (firebaseErr: any) {
-          console.warn('[Google Firebase Phone Auth Fallback]:', firebaseErr);
-          // If Firebase has rate limit or domain setup pending, seamlessly fall through to server SMS gateway
+          console.warn('[Google Identity Error]: Falling back to server SMS gateway:', firebaseErr);
         }
       }
 
@@ -256,13 +250,13 @@ export default function MandatoryGoogleOnboardingModal({
     setError(null);
 
     try {
-      let isFirebaseSuccess = false;
-      if (confirmationResultRef.current) {
-        try {
-          await confirmationResultRef.current.confirm(otp);
-          isFirebaseSuccess = true;
-        } catch (fbErr: any) {
-          throw new Error('Invalid or expired 6-digit Google OTP code');
+      let isGoogleSuccess = false;
+      if (googleSessionInfoRef.current) {
+        const verifyRes = await verifyGooglePhoneCode(googleSessionInfoRef.current, otp);
+        if (verifyRes.success) {
+          isGoogleSuccess = true;
+        } else {
+          throw new Error(verifyRes.error || 'Invalid or expired 6-digit Google OTP code');
         }
       }
 
@@ -276,7 +270,7 @@ export default function MandatoryGoogleOnboardingModal({
           studioName: studioName.trim() || (fullName.trim() ? `${fullName.trim()}'s Studio` : 'My Studio'),
           role,
           countryCode: selectedCountry.code,
-          firebaseVerified: isFirebaseSuccess,
+          firebaseVerified: isGoogleSuccess,
         }),
       });
 

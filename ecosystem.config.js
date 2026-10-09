@@ -20,7 +20,7 @@ module.exports = {
       cwd: __dirname,
       instances: 1,
       exec_mode: 'fork',
-      max_memory_restart: '800M',
+      max_memory_restart: '1200M',
       kill_timeout: 10000,
       listen_timeout: 30000,
       env: {
