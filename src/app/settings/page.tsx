@@ -58,6 +58,7 @@ import {
 } from '@/lib/workspace-settings';
 import CrewRolesSettings from '@/app/workspace/settings/components/CrewRolesSettings';
 import PostProductionSettingsTab from '@/app/workspace/settings/components/PostProductionSettingsTab';
+import SmsTemplateSettings from '@/components/settings/SmsTemplateSettings';
 
 
 type SettingsTab = 'leads' | 'functions' | 'crew_roles' | 'post_production' | 'quotations' | 'finance' | 'attendance' | 'integrations' | 'team';
@@ -3017,6 +3018,9 @@ export default function SettingsPage() {
                     {metaAutoSync ? 'Active' : 'Disabled'}
                   </button>
                 </div>
+
+                {/* SMS OTP Template & Normal Message Settings */}
+                <SmsTemplateSettings />
               </div>
             )}
 

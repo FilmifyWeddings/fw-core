@@ -44,6 +44,7 @@ import {
   CheckCheck,
 } from 'lucide-react';
 import OtpModal from '@/components/auth/OtpModal';
+import GoogleRoleConfirmModal, { GoogleGLogo } from '@/components/auth/GoogleRoleConfirmModal';
 
 // Comprehensive Country Code Data with Flag Emojis & ISO
 const COUNTRIES = [
@@ -169,6 +170,7 @@ export default function LoginPage() {
   const [otpTargetEmail, setOtpTargetEmail] = useState('');
   const [otpTargetPhone, setOtpTargetPhone] = useState('');
   const [otpPendingMeta, setOtpPendingMeta] = useState<any>(null);
+  const [showGoogleRoleModal, setShowGoogleRoleModal] = useState(false);
 
   // UI state
   const [loading, setLoading] = useState(false);
@@ -1107,6 +1109,29 @@ export default function LoginPage() {
                 </form>
               )}
 
+              {/* ── DIVIDER: OR CONTINUE WITH ── */}
+              <div className="relative my-4">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-[#EBE7DF]" />
+                </div>
+                <div className="relative flex justify-center text-[10px] font-black uppercase tracking-wider text-zinc-400">
+                  <span className="bg-white px-2.5">or continue with</span>
+                </div>
+              </div>
+
+              {/* ── LUXURY 3D GOOGLE SIGN-IN BUTTON ── */}
+              <button
+                type="button"
+                onClick={() => setShowGoogleRoleModal(true)}
+                disabled={loading}
+                className="w-full py-2.5 sm:py-3 rounded-xl bg-white hover:bg-amber-50/40 border border-[#EBE7DF] hover:border-amber-400 text-zinc-800 font-bold text-xs sm:text-sm flex items-center justify-center gap-2.5 shadow-2xs transition-all cursor-pointer group"
+              >
+                <GoogleGLogo className="w-4 h-4 shrink-0" />
+                <span>
+                  Continue with Google as {portal === 'studio' ? 'Studio Owner' : 'Team / Partner'}
+                </span>
+              </button>
+
             </div>
           </div>
 
@@ -1117,6 +1142,13 @@ export default function LoginPage() {
       <footer className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 text-center text-[11px] sm:text-xs text-zinc-500 border-t border-[#EBE7DF]">
         StudioCore Multi-Studio Operating System • Hybrid Studio Owner & Freelancer Architecture
       </footer>
+
+      {/* Google Role Confirmation Modal */}
+      <GoogleRoleConfirmModal
+        isOpen={showGoogleRoleModal}
+        onClose={() => setShowGoogleRoleModal(false)}
+        defaultRole={portal === 'team' ? 'team_member' : 'owner'}
+      />
 
       {/* OTP Verification Modal */}
       <OtpModal

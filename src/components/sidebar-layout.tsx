@@ -15,6 +15,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import StudioProfileEditModal from '@/components/workspace/StudioProfileEditModal';
 import OnboardingCelebrationModal from '@/components/workspace/OnboardingCelebrationModal';
+import MandatoryGoogleOnboardingModal from '@/components/auth/MandatoryGoogleOnboardingModal';
 import { WorkspaceSwitcher } from '@/components/workspace/WorkspaceSwitcher';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 
@@ -84,6 +85,8 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
   const [userAvatarUrl, setUserAvatarUrl] = useState<string>('');
   const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
   const [showOnboardingCelebration, setShowOnboardingCelebration] = useState<boolean>(false);
+  const [showGoogleOnboarding, setShowGoogleOnboarding] = useState<boolean>(false);
+  const [googleOnboardingRole, setGoogleOnboardingRole] = useState<'owner' | 'team_member'>('owner');
   const [leadsSubmenuOpen, setLeadsSubmenuOpen] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [userId, setUserId] = useState<string>('');
@@ -145,6 +148,17 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
                 if (finalName) localStorage.setItem('sc_user_name', finalName);
                 if (finalAvatar) localStorage.setItem('sc_avatar_url', finalAvatar);
               }
+
+              // Detect if user logged in via Google and needs mandatory phone OTP verification
+              const isGoogle = session.user.app_metadata?.provider === 'google' ||
+                               (session.user.identities && session.user.identities.some((id: any) => id.provider === 'google')) ||
+                               p.authProvider === 'google';
+              if (isGoogle && !p.phoneVerified && !p.phone) {
+                setShowGoogleOnboarding(true);
+                if (p.platformRole === 'team_member' || (typeof window !== 'undefined' && window.location.pathname.startsWith('/team'))) {
+                  setGoogleOnboardingRole('team_member');
+                }
+              }
             }
           }
         } catch (_) {}
@@ -153,6 +167,21 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       console.warn('Error loading user profile in sidebar handled safely:', err);
     }
   }, []);
+
+  const handleGoogleOnboardingComplete = useCallback((data: { studioName: string; phone: string; fullName: string; role: string }) => {
+    setShowGoogleOnboarding(false);
+    if (data.studioName) setWorkspaceName(data.studioName);
+    if (data.fullName) setUserName(data.fullName);
+    if (typeof window !== 'undefined' && window.history.replaceState) {
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('google_onboarding');
+        url.searchParams.delete('role');
+        window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
+      } catch (_) {}
+    }
+    fetchUserProfile(true);
+  }, [fetchUserProfile]);
 
   useEffect(() => {
     setMounted(true);
@@ -163,12 +192,22 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       setCollapsed(false);
     }
 
-
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const isParamPresent = params.get('onboarding') === 'true' || params.get('welcome') === 'true';
       const isPending = localStorage.getItem('sc_show_onboarding_celebration') === 'true';
       const isCompleted = localStorage.getItem('sc_welcome_completed') === 'true';
+
+      const isGoogleOnboarding = params.get('google_onboarding') === 'true';
+      if (isGoogleOnboarding) {
+        setShowGoogleOnboarding(true);
+        const roleParam = params.get('role');
+        if (roleParam === 'team_member') {
+          setGoogleOnboardingRole('team_member');
+        } else {
+          setGoogleOnboardingRole('owner');
+        }
+      }
 
       if ((isParamPresent || isPending) && !isCompleted) {
         setShowOnboardingCelebration(true);
@@ -882,6 +921,15 @@ export function SidebarLayout({ children }: SidebarLayoutProps) {
       <OnboardingCelebrationModal
         isOpen={showOnboardingCelebration}
         onClose={() => setShowOnboardingCelebration(false)}
+      />
+
+      {/* Mandatory Google Onboarding Modal (Phone SMS OTP) */}
+      <MandatoryGoogleOnboardingModal
+        isOpen={showGoogleOnboarding}
+        userEmail={userEmail}
+        userFullName={userName}
+        initialRole={googleOnboardingRole}
+        onComplete={handleGoogleOnboardingComplete}
       />
     </div>
   );

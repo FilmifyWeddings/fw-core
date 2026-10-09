@@ -59,6 +59,9 @@ export async function GET(req: NextRequest) {
         youtube: profile?.youtube_handle || userMeta.youtube_handle || '',
         facebook: profile?.facebook_handle || userMeta.facebook_handle || '',
         isOnboarded: !!userMeta.is_onboarded,
+        phoneVerified: !!(profile?.phone_verified || userMeta.phone_verified),
+        platformRole: profile?.platform_role || userMeta.role || userMeta.platform_role || 'owner',
+        authProvider: profile?.auth_provider || userMeta.auth_provider || '',
       },
     });
   } catch (err: any) {

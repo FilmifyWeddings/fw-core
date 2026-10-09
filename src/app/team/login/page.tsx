@@ -22,6 +22,7 @@ import {
   User,
   Phone,
 } from 'lucide-react';
+import GoogleRoleConfirmModal, { GoogleGLogo } from '@/components/auth/GoogleRoleConfirmModal';
 
 const StudioCoreBrandIcon = ({ className = "w-8 h-8" }: { className?: string }) => (
   <div className={`${className} rounded-xl bg-gradient-to-br from-[#D9822B] via-[#C8751F] to-[#A05A12] text-white flex items-center justify-center font-black tracking-wider shadow-sm border border-[#F5C78E]/40 shrink-0 select-none relative overflow-hidden group`}>
@@ -37,6 +38,7 @@ export default function TeamLoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showGoogleModal, setShowGoogleModal] = useState(false);
 
   // Activation flow state for invited crew
   const [isInvited, setIsInvited] = useState(false);
@@ -377,6 +379,27 @@ export default function TeamLoginPage() {
             </form>
           )}
 
+          {/* ── DIVIDER: OR CONTINUE WITH ── */}
+          <div className="relative my-4">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-[#EBE7DF]" />
+            </div>
+            <div className="relative flex justify-center text-[10px] font-black uppercase tracking-wider text-zinc-400">
+              <span className="bg-white px-2.5">or continue with</span>
+            </div>
+          </div>
+
+          {/* ── LUXURY 3D GOOGLE SIGN-IN BUTTON ── */}
+          <button
+            type="button"
+            onClick={() => setShowGoogleModal(true)}
+            disabled={loading}
+            className="w-full py-2.5 sm:py-3 rounded-xl bg-white hover:bg-indigo-50/40 border border-[#EBE7DF] hover:border-indigo-400 text-zinc-800 font-bold text-xs sm:text-sm flex items-center justify-center gap-2.5 shadow-2xs transition-all cursor-pointer group"
+          >
+            <GoogleGLogo className="w-4 h-4 shrink-0" />
+            <span>Continue with Google (Team & Freelancer)</span>
+          </button>
+
           {/* Benefits Info */}
           <div className="mt-6 pt-5 border-t border-[#F0ECE4] grid grid-cols-2 gap-3 text-[11px] text-zinc-500">
             <div className="flex items-center gap-2">
@@ -396,6 +419,13 @@ export default function TeamLoginPage() {
       <footer className="relative z-10 w-full max-w-7xl mx-auto px-6 py-4 text-center text-xs text-zinc-500">
         StudioCore Multi-Studio Crew Network • Safe & Isolated
       </footer>
+
+      {/* Google Role Confirmation Modal */}
+      <GoogleRoleConfirmModal
+        isOpen={showGoogleModal}
+        onClose={() => setShowGoogleModal(false)}
+        defaultRole="team_member"
+      />
     </div>
   );
 }
