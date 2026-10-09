@@ -58,7 +58,9 @@ export default function GoogleRoleConfirmModal({
         document.cookie = `sc_auth_role=${selectedRole}; path=/; max-age=3600; SameSite=Lax`;
       }
 
-      const redirectPath = `${window.location.origin}/auth/callback?role=${selectedRole}`;
+      const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+      const baseOrigin = isLocalhost ? window.location.origin : 'https://studiocore.in';
+      const redirectPath = `${baseOrigin}/auth/callback?role=${selectedRole}`;
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',

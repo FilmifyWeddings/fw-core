@@ -37,18 +37,34 @@ export function AuthRedirectGuard() {
 
     const hash = window.location.hash || '';
     const host = window.location.host || '';
+    const search = window.location.search || '';
 
-    // Check if recovery token is present in the URL hash
-    if (hash.includes('type=recovery') || (hash.includes('access_token=') && !pathname.startsWith('/reset-password'))) {
-      console.log('[AuthRedirectGuard] Recovery hash detected, routing to /reset-password');
-      
-      // If user came via old nip.io domain, bounce to official domain
-      if (host.includes('nip.io') || host.includes('143.244.133.235')) {
+    // ── Auto-heal 1: If user came via old nip.io or VPS IP domain ──
+    if (host.includes('nip.io') || host.includes('143.244.133.235')) {
+      console.log('[AuthRedirectGuard] Old nip.io/IP detected, redirecting to official studiocore.in domain');
+      // If OAuth code landed on nip.io, bounce immediately to /auth/callback on studiocore.in
+      if (search.includes('code=')) {
+        window.location.href = `https://studiocore.in/auth/callback${search}`;
+        return;
+      }
+      if (hash.includes('type=recovery') || hash.includes('access_token=')) {
         window.location.href = `https://studiocore.in/reset-password${hash}`;
         return;
       }
+      window.location.href = `https://studiocore.in${pathname}${search}${hash}`;
+      return;
+    }
 
-      // If on studiocore.in but on root / or another page, redirect to /reset-password
+    // ── Auto-heal 2: If OAuth code landed on root "/" instead of /auth/callback ──
+    if (pathname === '/' && search.includes('code=')) {
+      console.log('[AuthRedirectGuard] Root OAuth code detected, redirecting to /auth/callback');
+      window.location.href = `https://studiocore.in/auth/callback${search}`;
+      return;
+    }
+
+    // ── Check if recovery token is present in the URL hash ──
+    if (hash.includes('type=recovery') || (hash.includes('access_token=') && !pathname.startsWith('/reset-password'))) {
+      console.log('[AuthRedirectGuard] Recovery hash detected, routing to /reset-password');
       if (!pathname.startsWith('/reset-password')) {
         window.location.href = `/reset-password${hash}`;
       }

@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
   const host = forwardedHost || request.headers.get('host');
 
   let appOrigin = host ? `${forwardedProto}://${host}` : requestUrl.origin;
-  if (appOrigin.includes('localhost') && process.env.NODE_ENV === 'production') {
+  if (appOrigin.includes('nip.io') || appOrigin.includes('143.244.133.235') || (appOrigin.includes('localhost') && process.env.NODE_ENV === 'production')) {
     appOrigin = 'https://studiocore.in';
   } else if (!appOrigin || appOrigin.includes('localhost:3000')) {
     // If not in local dev environment
