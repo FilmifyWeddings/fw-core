@@ -57,6 +57,7 @@ export default function ResetPasswordRootPage() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [isTokenValid, setIsTokenValid] = useState(false);
   const [isSupabaseRecovery, setIsSupabaseRecovery] = useState(false);
+  const [recoveryAccessToken, setRecoveryAccessToken] = useState('');
 
   useEffect(() => {
     let isMounted = true;
@@ -79,6 +80,7 @@ export default function ResetPasswordRootPage() {
 
         if (emailFromJwt && isMounted) {
           setIsSupabaseRecovery(true);
+          setRecoveryAccessToken(accessToken);
           setIsTokenValid(true);
           setUserEmail(emailFromJwt);
           setValidating(false);
@@ -138,25 +140,12 @@ export default function ResetPasswordRootPage() {
     setLoading(true);
 
     try {
-      if (isSupabaseRecovery) {
-        const { error: updateErr } = await supabase.auth.updateUser({
-          password: password,
-        });
-
-        if (updateErr) throw updateErr;
-
-        setIsSuccess(true);
-        setTimeout(() => {
-          router.push('/login');
-        }, 2000);
-        return;
-      }
-
       const res = await fetch('/api/auth/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          token: token,
+          accessToken: isSupabaseRecovery ? recoveryAccessToken : undefined,
+          token: token || undefined,
           password: password,
         }),
       });

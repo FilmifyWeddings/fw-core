@@ -241,26 +241,38 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 4. Run cross-module synchronization so all tables (Clients, Finance, Post-Prod, Events) are 100% committed before response
-    try {
-      await syncBookedLeadOrFinalQuotation({
-        leadId,
-        quotationId,
-        workspaceId: userId,
-        forceBookedStatus: true,
-        supabaseClient: supabaseAdmin
-      });
-      clearLeadSummaryCache();
-    } catch (syncErr) {
-      console.error('[Set-Final] Sync exception:', syncErr);
+    // 4. Only synchronize workspace cards if the lead is ALREADY in the booked stage.
+    // If not booked, do NOT force booked status and do NOT create premature cards!
+    const isAlreadyBooked = Boolean(
+      currentLead?.stage === 'booked' ||
+      currentLead?.status === 'booked' ||
+      (currentLead?.status && String(currentLead.status).toLowerCase().includes('book')) ||
+      (bookedStageId && currentLead?.stage_id === bookedStageId)
+    );
+
+    if (isAlreadyBooked) {
+      try {
+        await syncBookedLeadOrFinalQuotation({
+          leadId,
+          quotationId,
+          workspaceId: userId,
+          forceBookedStatus: false,
+          supabaseClient: supabaseAdmin
+        });
+        clearLeadSummaryCache();
+      } catch (syncErr) {
+        console.error('[Set-Final] Sync exception:', syncErr);
+      }
     }
 
     return NextResponse.json({
       success: true,
-      message: 'Final Quotation locked and synchronized with Finance & Bookings!',
+      message: isAlreadyBooked 
+        ? 'Final Quotation locked and synchronized with Bookings!' 
+        : 'Final Quotation locked! Workspace cards will be created when client is confirmed & booked in CRM.',
       quotationId,
       coupleName: clientName,
-      stage_id: bookedStageId
+      stage_id: isAlreadyBooked ? bookedStageId : undefined
     });
   } catch (error: any) {
     console.error('[Set-Final] Error:', error);

@@ -803,6 +803,39 @@ function LoginContent() {
                 </div>
               )}
 
+              {/* ── LUXURY 3D GOOGLE SIGN-IN BUTTON (TOP RECOMMENDED) ── */}
+              <div className="relative mb-5 mt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowGoogleRoleModal(true)}
+                  disabled={loading}
+                  className="relative w-full py-2.5 sm:py-3 px-4 rounded-2xl bg-white hover:bg-amber-50/50 border-2 border-amber-400 hover:border-amber-500 text-zinc-900 font-bold text-xs sm:text-sm flex items-center justify-center gap-2.5 shadow-xs hover:shadow-md transition-all cursor-pointer group"
+                >
+                  {/* Recommended Corner Badge */}
+                  <span className="absolute -top-2.5 right-3 px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-500 text-white text-[9px] font-black uppercase tracking-wider shadow-xs flex items-center gap-1 border border-amber-300/40">
+                    <span>✨</span>
+                    <span>Recommended</span>
+                  </span>
+
+                  <GoogleGLogo className="w-4 h-4 shrink-0 group-hover:scale-110 transition-transform" />
+                  <span className="truncate">
+                    Continue with Google as {portal === 'studio' ? 'Studio Owner' : 'Team Partner'}
+                  </span>
+                </button>
+
+                {/* ── DIVIDER: OR CONTINUE WITH ── */}
+                <div className="relative my-4">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-[#EBE7DF]" />
+                  </div>
+                  <div className="relative flex justify-center text-[10px] font-black uppercase tracking-wider text-zinc-400">
+                    <span className="bg-white px-2.5">
+                      {authMode === 'login' ? 'or log in with details' : 'or enter details manually'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
               {/* ── FORMS ROUTER ── */}
               {authMode === 'login' ? (
                 /* LOGIN FORM */
@@ -1108,29 +1141,6 @@ function LoginContent() {
                   </button>
                 </form>
               )}
-
-              {/* ── DIVIDER: OR CONTINUE WITH ── */}
-              <div className="relative my-4">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-[#EBE7DF]" />
-                </div>
-                <div className="relative flex justify-center text-[10px] font-black uppercase tracking-wider text-zinc-400">
-                  <span className="bg-white px-2.5">or continue with</span>
-                </div>
-              </div>
-
-              {/* ── LUXURY 3D GOOGLE SIGN-IN BUTTON ── */}
-              <button
-                type="button"
-                onClick={() => setShowGoogleRoleModal(true)}
-                disabled={loading}
-                className="w-full py-2.5 sm:py-3 rounded-xl bg-white hover:bg-amber-50/40 border border-[#EBE7DF] hover:border-amber-400 text-zinc-800 font-bold text-xs sm:text-sm flex items-center justify-center gap-2.5 shadow-2xs transition-all cursor-pointer group"
-              >
-                <GoogleGLogo className="w-4 h-4 shrink-0" />
-                <span>
-                  Continue with Google as {portal === 'studio' ? 'Studio Owner' : 'Team / Partner'}
-                </span>
-              </button>
 
             </div>
           </div>

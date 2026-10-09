@@ -594,8 +594,8 @@ export function LeadTable({
         const token = session?.access_token;
         const uid = session?.user?.id;
         const impId = typeof window !== 'undefined' ? localStorage.getItem('impersonated_tenant_id') : null;
-        const studioParam = searchParams?.get('studio') || searchParams?.get('ws');
-        const targetWs = studioParam || impId || uid;
+        const leadWs = (initialLeads || [])[0]?.workspace_id;
+        const targetWs = studioParam || impId || leadWs || uid;
         if (!targetWs) return;
 
         const url = `/api/quotations/lead-summary?workspace_id=${targetWs}${force ? '&refresh=true' : ''}`;

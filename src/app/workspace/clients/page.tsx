@@ -888,21 +888,24 @@ export default function ClientsPage() {
     }
   };
 
-  // 3D Cream Filter Dropdown Options (Pruned to Active Assigned PMs only)
+  // 3D Cream Filter Dropdown Options (Deduplicated by PM name, linking all IDs)
   const pmFilterOptions: Searchable3DCreamSelectOption[] = useMemo(() => {
-    const pmMap = new Map<string, { id: string; name: string }>();
+    const normalizedMap = new Map<string, { displayName: string; ids: Set<string> }>();
     (clients || []).forEach((c: any) => {
       const ext = parseClientExtended(c);
-      const pmId = c.project_manager_id || ext.project_manager_id;
-      const pmName = c.project_manager_name || ext.project_manager_name;
-      if (pmId && pmName) {
-        pmMap.set(pmId, { id: pmId, name: pmName });
-      } else if (pmName) {
-        pmMap.set(pmName, { id: pmName, name: pmName });
+      const rawName = (c.project_manager_name || ext.project_manager_name || '').trim();
+      const rawId = (c.project_manager_id || ext.project_manager_id || '').trim();
+      if (!rawName) return;
+      const normKey = rawName.toLowerCase();
+      if (!normalizedMap.has(normKey)) {
+        normalizedMap.set(normKey, { displayName: rawName, ids: new Set<string>() });
+      }
+      if (rawId) {
+        normalizedMap.get(normKey)!.ids.add(rawId);
       }
     });
 
-    const activePMs = Array.from(pmMap.values());
+    const uniquePMs = Array.from(normalizedMap.values()).sort((a, b) => a.displayName.localeCompare(b.displayName));
 
     return [
       { value: 'all', label: 'All Managers' },
@@ -912,9 +915,9 @@ export default function ClientsPage() {
         badge: 'None',
         badgeClassName: 'bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800',
       },
-      ...activePMs.map(pm => ({
-        value: pm.id || pm.name,
-        label: pm.name,
+      ...uniquePMs.map(pm => ({
+        value: pm.displayName.toLowerCase(),
+        label: pm.displayName,
         badge: 'Active PM',
       })),
     ];
@@ -938,20 +941,12 @@ export default function ClientsPage() {
     ];
   }, [eventTypes]);
 
-  // Filtered Clients List with PM Search, Status, Event Type & Date Scope
-  const filteredClients = useMemo(() => {
-    return clients.filter(client => {
+  // Scope clients by PM, Date Scope, Event Type & Search (excluding status filter)
+  const scopedNonTrashedClients = useMemo(() => {
+    return (clients || []).filter(client => {
       const ext = parseClientExtended(client);
-      const pmName = client.project_manager_name || ext.project_manager_name || '';
-      const pmId = client.project_manager_id || ext.project_manager_id || '';
-
-      const matchesSearch = 
-        client.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        client.phone?.includes(searchQuery) ||
-        client.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        client.event_type?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        ext.client_code?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        pmName.toLowerCase().includes(searchQuery.toLowerCase());
+      const pmName = (client.project_manager_name || ext.project_manager_name || '').trim();
+      const pmId = (client.project_manager_id || ext.project_manager_id || '').trim();
 
       const isClientTrashed = Boolean(
         (client.status as string) === 'trash' || 
@@ -960,13 +955,17 @@ export default function ClientsPage() {
         (client.notes && typeof client.notes === 'string' && client.notes.includes('[status:trash]'))
       );
 
-      let matchesStatus = true;
-      if (statusFilter === 'trash') {
-        matchesStatus = isClientTrashed;
-      } else {
-        if (isClientTrashed) matchesStatus = false;
-        else if (statusFilter !== 'all') matchesStatus = (client.status as any) === statusFilter;
-      }
+      if (isClientTrashed) return false;
+
+      const matchesSearch = 
+        !searchQuery ||
+        client.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        client.phone?.includes(searchQuery) ||
+        client.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        client.event_type?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        ext.client_code?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        pmName.toLowerCase().includes(searchQuery.toLowerCase());
+
       const matchesEventType = eventTypeFilter === 'all' || client.event_type === eventTypeFilter;
 
       const matchesPm =
@@ -974,9 +973,8 @@ export default function ClientsPage() {
           ? true
           : pmFilter === 'unassigned'
           ? !pmId && !pmName
-          : pmId === pmFilter || pmName.toLowerCase() === pmFilter.toLowerCase();
+          : (pmName.toLowerCase() === pmFilter.toLowerCase() || pmId === pmFilter);
 
-      // Date Scope filtering
       let matchesDate = true;
       if (dateScopeMode !== 'all') {
         const rawDate = client.event_date || client.created_at;
@@ -999,9 +997,91 @@ export default function ClientsPage() {
         }
       }
 
-      return matchesSearch && matchesStatus && matchesEventType && matchesPm && matchesDate;
+      return matchesSearch && matchesEventType && matchesPm && matchesDate;
     });
-  }, [clients, searchQuery, statusFilter, eventTypeFilter, pmFilter, dateScopeMode, dateScopeYear, dateScopeMonth, dateScopeStartDate, dateScopeEndDate]);
+  }, [clients, searchQuery, eventTypeFilter, pmFilter, dateScopeMode, dateScopeYear, dateScopeMonth, dateScopeStartDate, dateScopeEndDate]);
+
+  // Scoped Trashed Clients count (updates with PM & Search filter)
+  const scopedTrashedClientsCount = useMemo(() => {
+    return (clients || []).filter(client => {
+      const ext = parseClientExtended(client);
+      const pmName = (client.project_manager_name || ext.project_manager_name || '').trim();
+      const pmId = (client.project_manager_id || ext.project_manager_id || '').trim();
+
+      const isClientTrashed = Boolean(
+        (client.status as string) === 'trash' || 
+        (client as any).status === 'trashed' || 
+        (client as any).is_deleted === true || 
+        (client.notes && typeof client.notes === 'string' && client.notes.includes('[status:trash]'))
+      );
+
+      if (!isClientTrashed) return false;
+
+      const matchesSearch = 
+        !searchQuery ||
+        client.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        client.phone?.includes(searchQuery) ||
+        client.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        client.event_type?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        ext.client_code?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        pmName.toLowerCase().includes(searchQuery.toLowerCase());
+
+      const matchesEventType = eventTypeFilter === 'all' || client.event_type === eventTypeFilter;
+
+      const matchesPm =
+        pmFilter === 'all'
+          ? true
+          : pmFilter === 'unassigned'
+          ? !pmId && !pmName
+          : (pmName.toLowerCase() === pmFilter.toLowerCase() || pmId === pmFilter);
+
+      return matchesSearch && matchesEventType && matchesPm;
+    }).length;
+  }, [clients, searchQuery, eventTypeFilter, pmFilter]);
+
+  // Filtered Clients List with PM Search, Status, Event Type & Date Scope
+  const filteredClients = useMemo(() => {
+    if (statusFilter === 'trash') {
+      return (clients || []).filter(client => {
+        const ext = parseClientExtended(client);
+        const pmName = (client.project_manager_name || ext.project_manager_name || '').trim();
+        const pmId = (client.project_manager_id || ext.project_manager_id || '').trim();
+
+        const isClientTrashed = Boolean(
+          (client.status as string) === 'trash' || 
+          (client as any).status === 'trashed' || 
+          (client as any).is_deleted === true || 
+          (client.notes && typeof client.notes === 'string' && client.notes.includes('[status:trash]'))
+        );
+        if (!isClientTrashed) return false;
+
+        const matchesSearch = 
+          !searchQuery ||
+          client.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          client.phone?.includes(searchQuery) ||
+          client.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          client.event_type?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          ext.client_code?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          pmName.toLowerCase().includes(searchQuery.toLowerCase());
+
+        const matchesEventType = eventTypeFilter === 'all' || client.event_type === eventTypeFilter;
+        const matchesPm =
+          pmFilter === 'all'
+            ? true
+            : pmFilter === 'unassigned'
+            ? !pmId && !pmName
+            : (pmName.toLowerCase() === pmFilter.toLowerCase() || pmId === pmFilter);
+
+        return matchesSearch && matchesEventType && matchesPm;
+      });
+    }
+
+    return scopedNonTrashedClients.filter(client => {
+      if (statusFilter === 'active') return client.status !== 'completed';
+      if (statusFilter === 'completed') return client.status === 'completed';
+      return true;
+    });
+  }, [scopedNonTrashedClients, clients, searchQuery, statusFilter, eventTypeFilter, pmFilter]);
 
   // Active Filter Count & Reset
   const activeFilterCount = useMemo(() => {
@@ -1024,30 +1104,11 @@ export default function ClientsPage() {
     setDateScopeEndDate('');
   };
 
-  // Trashed Clients count
-  const trashedClientsCount = useMemo(() => {
-    return clients.filter(c => 
-      (c.status as string) === 'trash' || 
-      (c as any).status === 'trashed' || 
-      (c as any).is_deleted === true || 
-      (c.notes && typeof c.notes === 'string' && c.notes.includes('[status:trash]'))
-    ).length;
-  }, [clients]);
-
-  // Non-trashed clients
-  const nonTrashedClients = useMemo(() => {
-    return clients.filter(c => !(
-      (c.status as string) === 'trash' || 
-      (c as any).status === 'trashed' || 
-      (c as any).is_deleted === true || 
-      (c.notes && typeof c.notes === 'string' && c.notes.includes('[status:trash]'))
-    ));
-  }, [clients]);
-
-  // Dynamically recalculate top stats cards from filteredClients only
-  const totalClientsCount = nonTrashedClients.length;
-  const activeClientsCount = nonTrashedClients.filter(c => c.status !== 'completed').length;
-  const completedClientsCount = nonTrashedClients.filter(c => c.status === 'completed').length;
+  // Dynamically recalculate top stats cards from filtered scope
+  const totalClientsCount = scopedNonTrashedClients.length;
+  const activeClientsCount = scopedNonTrashedClients.filter(c => c.status !== 'completed').length;
+  const completedClientsCount = scopedNonTrashedClients.filter(c => c.status === 'completed').length;
+  const trashedClientsCount = scopedTrashedClientsCount;
   const totalInvoicesCount = filteredClients.reduce((sum, c) => {
     const fin = financeRecordsMap.get(c.id) || (c.lead_id ? financeRecordsMap.get(c.lead_id) : undefined);
     const cName = (c.name || '').toLowerCase().trim();

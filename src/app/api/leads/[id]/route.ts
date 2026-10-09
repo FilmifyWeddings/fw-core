@@ -20,16 +20,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const payload: any = { ...body, updated_at: new Date().toISOString() };
     
-    // Auto-detect if booking action was requested
+    // Auto-detect if booking action was explicitly requested (never on 'closed' or quotation selection)
     const isBookedNow = Boolean(
       payload.stage === 'booked' ||
       payload.status === 'booked' ||
-      payload.status === 'closed' ||
-      (payload.stage && String(payload.stage).toLowerCase().includes('book')) ||
-      (payload.status && String(payload.status).toLowerCase().includes('book')) ||
-      (body.stage_name && String(body.stage_name).toLowerCase().includes('book')) ||
-      (payload.stage_id && String(payload.stage_id).toLowerCase().includes('book')) ||
-      payload.final_quotation_id
+      (payload.stage && String(payload.stage).toLowerCase() === 'booked') ||
+      (body.stage_name && String(body.stage_name).toLowerCase().includes('book'))
     );
 
     // Strip non-existent columns from leads table payload

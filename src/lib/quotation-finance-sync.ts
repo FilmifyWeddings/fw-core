@@ -925,7 +925,8 @@ export async function syncQuotationToTeamManagerEvents(
   workspaceId: string,
   fallbackEventDate?: string | null,
   fallbackVenue?: string | null,
-  clientId?: string | null
+  clientId?: string | null,
+  allowCreateNewProject: boolean = true
 ) {
   if (!clientName || !contentJson) return null;
 
@@ -986,7 +987,7 @@ export async function syncQuotationToTeamManagerEvents(
           updated_at: new Date().toISOString()
         })
         .eq('id', targetProjectId);
-    } else {
+    } else if (allowCreateNewProject) {
       const { data: newProj, error: projErr } = await supabaseClient
         .from('fw_projects')
         .insert([{
@@ -1002,6 +1003,8 @@ export async function syncQuotationToTeamManagerEvents(
 
       if (projErr) throw projErr;
       if (newProj) targetProjectId = newProj.id;
+    } else {
+      return null;
     }
 
     if (!targetProjectId) return null;
@@ -1187,7 +1190,7 @@ export async function syncBookedLeadOrFinalQuotation({
   leadId,
   quotationId,
   workspaceId: explicitWorkspaceId,
-  forceBookedStatus = true,
+  forceBookedStatus = false,
   supabaseClient = supabaseAdmin
 }: {
   leadId: string;
@@ -1223,6 +1226,27 @@ export async function syncBookedLeadOrFinalQuotation({
       if (leadErr || !lead) {
         console.warn(`[syncBookedLeadOrFinalQuotation] Lead not found or error: ${leadId}`, leadErr);
         return null;
+      }
+
+      // Determine if lead is genuinely in Booked stage or being explicitly booked right now
+      let isBookedStage = Boolean(
+        forceBookedStatus === true ||
+        lead.stage === 'booked' ||
+        lead.status === 'booked' ||
+        (lead.raw_payload?.stage && String(lead.raw_payload.stage).toLowerCase().includes('book'))
+      );
+
+      if (!isBookedStage && lead.stage_id) {
+        try {
+          const { data: stageRow } = await supabaseClient
+            .from('crm_stages')
+            .select('name')
+            .eq('id', lead.stage_id)
+            .maybeSingle();
+          if (stageRow && String(stageRow.name).toLowerCase().includes('book')) {
+            isBookedStage = true;
+          }
+        } catch (_) {}
       }
 
       const workspaceId = lead.workspace_id || explicitWorkspaceId || lead.tenant_id || lead.created_by_user_id || SUPER_ADMIN_ID;
@@ -1380,7 +1404,7 @@ export async function syncBookedLeadOrFinalQuotation({
           .from('workspace_clients')
           .update(wsClientPayload)
           .eq('id', workspaceClientId);
-      } else {
+      } else if (isBookedStage) {
         const { data: clientByName } = await supabaseClient
           .from('workspace_clients')
           .select('id')
@@ -1497,7 +1521,7 @@ export async function syncBookedLeadOrFinalQuotation({
               .delete()
               .in('id', extraIds);
           }
-        } else {
+        } else if (isBookedStage) {
           await supabaseClient
             .from('client_finance_records')
             .insert({
@@ -1545,7 +1569,7 @@ export async function syncBookedLeadOrFinalQuotation({
                 .from('finance_records')
                 .update(legacyFinPayload)
                 .eq('id', existingLegacyFin.id);
-            } else {
+            } else if (isBookedStage) {
               await supabaseClient
                 .from('finance_records')
                 .insert({ ...legacyFinPayload, created_at: now });
@@ -1566,9 +1590,10 @@ export async function syncBookedLeadOrFinalQuotation({
             workspaceId,
             eventDate,
             mainVenue,
-            workspaceClientId
+            workspaceClientId,
+            isBookedStage
           );
-        } else if (workspaceId) {
+        } else if (workspaceId && isBookedStage) {
           // Create master project if doesn't exist
           const { data: existingProjs } = await supabaseClient
             .from('fw_projects')
@@ -1645,7 +1670,7 @@ export async function syncBookedLeadOrFinalQuotation({
                 .delete()
                 .in('id', dupIds);
             }
-          } else {
+          } else if (isBookedStage) {
             const { data: createdPPP } = await supabaseClient
               .from('post_production_projects')
               .insert({
@@ -1665,38 +1690,40 @@ export async function syncBookedLeadOrFinalQuotation({
           }
 
           // Link post-production config & deliverables across targetCId, targetProjectId, and primaryPppId
-          const configTargets = Array.from(new Set([targetCId, targetProjectId, primaryPppId])).filter(Boolean) as string[];
-          for (const pId of configTargets) {
-            try {
-              await supabaseClient
-                .from('post_production_project_config')
-                .upsert({
-                  project_id: pId,
-                  enabled_segments: parsed.enabledSegments || ['Wedding'],
-                  updated_at: now
-                }, { onConflict: 'project_id' });
-            } catch (_) {}
+          if (primaryPppId) {
+            const configTargets = Array.from(new Set([targetCId, targetProjectId, primaryPppId])).filter(Boolean) as string[];
+            for (const pId of configTargets) {
+              try {
+                await supabaseClient
+                  .from('post_production_project_config')
+                  .upsert({
+                    project_id: pId,
+                    enabled_segments: parsed.enabledSegments || ['Wedding'],
+                    updated_at: now
+                  }, { onConflict: 'project_id' });
+              } catch (_) {}
 
-            try {
-              await supabaseClient
-                .from('post_production_deliverables')
-                .delete()
-                .eq('project_id', pId);
+              try {
+                await supabaseClient
+                  .from('post_production_deliverables')
+                  .delete()
+                  .eq('project_id', pId);
 
-              if (parsed.deliverables && parsed.deliverables.length > 0) {
-                const rowsToInsert = parsed.deliverables.map((deliv: any) => ({
-                  project_id: pId,
-                  segment: deliv.segment || 'Wedding',
-                  category: deliv.category || 'Photos',
-                  title: deliv.title,
-                  specs: deliv.specs || deliv.count || null,
-                  status: 'Upcoming',
-                  is_custom: false,
-                  updated_at: now
-                }));
-                await supabaseClient.from('post_production_deliverables').insert(rowsToInsert);
-              }
-            } catch (_) {}
+                if (parsed.deliverables && parsed.deliverables.length > 0) {
+                  const rowsToInsert = parsed.deliverables.map((deliv: any) => ({
+                    project_id: pId,
+                    segment: deliv.segment || 'Wedding',
+                    category: deliv.category || 'Photos',
+                    title: deliv.title,
+                    specs: deliv.specs || deliv.count || null,
+                    status: 'Upcoming',
+                    is_custom: false,
+                    updated_at: now
+                  }));
+                  await supabaseClient.from('post_production_deliverables').insert(rowsToInsert);
+                }
+              } catch (_) {}
+            }
           }
         }
       } catch (ppErr) {
