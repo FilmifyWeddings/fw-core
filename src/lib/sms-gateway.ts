@@ -96,20 +96,52 @@ export async function sendSmsOtp({
   if (fast2SmsApiKey) {
     try {
       const national10Digit = cleanPhone.slice(-10);
-      const isQuickRoute = process.env.FAST2SMS_ROUTE === 'q';
-      const payload: any = isQuickRoute
+      const otpId = process.env.FAST2SMS_OTP_ID || process.env.FAST2SMS_TEMPLATE_ID;
+
+      // A. Fast2SMS New Smart OTP API (v1.0 Endpoint from docs.fast2sms.com/reference/send-otp)
+      if (otpId) {
+        const res = await fetch('https://www.fast2sms.com/dev/otp/send', {
+          method: 'POST',
+          headers: {
+            'Authorization': fast2SmsApiKey,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: JSON.stringify({
+            mobile: national10Digit,
+            otp_id: otpId,
+            otp: otp,
+          }),
+        });
+
+        const json = await res.json().catch(() => ({}));
+        if (res.ok && (json.return === true || json.status_code === 200 || json.request_id)) {
+          return { success: true, messageId: json.request_id || 'otp_sent', previewMessage: fullText };
+        }
+
+        const errorMessage = Array.isArray(json.message)
+          ? json.message.join(', ')
+          : (json.message || `Fast2SMS OTP API failed (HTTP ${res.status})`);
+
+        console.error('[Fast2SMS Smart OTP API Rejected]:', errorMessage, json);
+        return { success: false, error: errorMessage };
+      }
+
+      // B. Fast2SMS Quick SMS Route (Requires NO DLT, NO Entity ID, NO Website Verification!)
+      const useOtpRoute = process.env.FAST2SMS_ROUTE === 'otp';
+      const payload: any = useOtpRoute
         ? {
-            route: 'q',
-            message: fullText,
-            numbers: national10Digit,
-          }
-        : {
             route: 'otp',
             variables_values: otp,
             numbers: national10Digit,
+          }
+        : {
+            route: 'q',
+            message: fullText,
+            numbers: national10Digit,
           };
 
-      const res = await fetch('https://www.fast2sms.com/dev/bulkV2', {
+      let res = await fetch('https://www.fast2sms.com/dev/bulkV2', {
         method: 'POST',
         headers: {
           'authorization': fast2SmsApiKey,
@@ -118,7 +150,26 @@ export async function sendSmsOtp({
         body: JSON.stringify(payload),
       });
 
-      const json = await res.json().catch(() => ({}));
+      let json = await res.json().catch(() => ({}));
+
+      // If route:otp failed due to DLT/website verification requirement, auto-fallback to route:q
+      if (!json.return && (json.status_code === 996 || json.status_code === 999)) {
+        console.warn('[Fast2SMS Notice]: Falling back to Quick SMS route (q)...');
+        res = await fetch('https://www.fast2sms.com/dev/bulkV2', {
+          method: 'POST',
+          headers: {
+            'authorization': fast2SmsApiKey,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            route: 'q',
+            message: fullText,
+            numbers: national10Digit,
+          }),
+        });
+        json = await res.json().catch(() => ({}));
+      }
+
       if (res.ok && json.return === true) {
         return { success: true, messageId: json.request_id || json.message?.[0], previewMessage: fullText };
       }
