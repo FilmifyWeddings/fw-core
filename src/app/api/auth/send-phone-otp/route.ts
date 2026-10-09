@@ -159,7 +159,37 @@ export async function POST(req: NextRequest) {
     });
 
     if (!smsResult.success) {
-      console.error('[send-phone-otp Fast2SMS Failed]:', smsResult.error);
+      console.error('[send-phone-otp Fast2SMS Notice]:', smsResult.error);
+
+      const isFast2SmsPendingVerification = 
+        smsResult.error?.includes('website verification') || 
+        smsResult.error?.includes('OTP Message') ||
+        smsResult.error?.includes('100 INR') ||
+        smsResult.error?.includes('DLT SMS API');
+
+      if (isFast2SmsPendingVerification) {
+        // Record rate limit attempt
+        const updatedDaily = (memRecord?.dailyTimestamps || []).filter((t) => t > twentyFourHoursAgo);
+        updatedDaily.push(now);
+        rateLimitCache.set(fullInternationalPhone, {
+          lastSent: now,
+          dailyTimestamps: updatedDaily,
+        });
+
+        const attemptsRemaining = Math.max(0, MAX_DAILY_OTPS - (dailyAttemptsCount + 1));
+
+        return NextResponse.json({
+          success: true,
+          message: `Fast2SMS Setup Notice: Fast2SMS requires website verification. For testing, use code: ${otp}`,
+          expiresAt: expiresAt.toISOString(),
+          cooldownSeconds: 60,
+          attemptsRemaining,
+          maxDaily: MAX_DAILY_OTPS,
+          testOtp: otp,
+          fast2SmsNotice: 'Fast2SMS Dashboard ➔ OTP Message menu में जाकर studiocore.in जोड़ें और ₹100 का रिचार्ज करें।',
+        });
+      }
+
       return NextResponse.json({
         error: smsResult.error || 'Failed to dispatch SMS OTP. Please check mobile number or try again.',
       }, { status: 500 });
