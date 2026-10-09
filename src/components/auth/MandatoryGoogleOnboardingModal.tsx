@@ -66,7 +66,6 @@ export default function MandatoryGoogleOnboardingModal({
   const [timer, setTimer] = useState<number>(60);
   const [canResend, setCanResend] = useState(false);
   const [attemptsRemaining, setAttemptsRemaining] = useState<number | null>(null);
-  const [testOtpNotice, setTestOtpNotice] = useState<string | null>(null);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   // Loading & Error states
@@ -191,11 +190,6 @@ export default function MandatoryGoogleOnboardingModal({
       setDigits(['', '', '', '', '', '']);
       if (typeof json.attemptsRemaining === 'number') {
         setAttemptsRemaining(json.attemptsRemaining);
-      }
-      if (json.testOtp) {
-        setTestOtpNotice(json.testOtp);
-      } else {
-        setTestOtpNotice(null);
       }
       setSuccessMsg(json.message || `6-Digit OTP sent via SMS to ${selectedCountry.code} ${cleanDigits.slice(-10)}`);
 
@@ -579,32 +573,6 @@ export default function MandatoryGoogleOnboardingModal({
                   <strong className="font-mono">{selectedCountry.code} {phone.slice(-10)}</strong>.
                 </p>
               </div>
-
-              {/* Fast2SMS Verification Alert & Testing Auto-Fill */}
-              {testOtpNotice && (
-                <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-xs text-amber-950 space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold flex items-center gap-1.5 text-amber-900">
-                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                      Fast2SMS Verification Alert
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const codeArr = testOtpNotice.split('');
-                        setDigits(codeArr);
-                        handleVerifyOtp(testOtpNotice);
-                      }}
-                      className="px-2.5 py-1 bg-amber-600 text-white rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-amber-700 transition cursor-pointer shadow-xs"
-                    >
-                      Auto-Fill Code: {testOtpNotice}
-                    </button>
-                  </div>
-                  <p className="text-[11px] text-amber-900/80 leading-relaxed">
-                    Fast2SMS पर वेबसाइट वेरिफिकेशन पेंडिंग है। टेस्टिंग के लिए यह कोड इस्तेमाल करें: <strong>{testOtpNotice}</strong> (Fast2SMS Dashboard में studiocore.in वेरिफ़ाई करें).
-                  </p>
-                </div>
-              )}
 
               {/* 6 Digit Inputs */}
               <div className="flex justify-center gap-2">

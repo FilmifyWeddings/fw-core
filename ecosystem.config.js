@@ -27,7 +27,8 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: '3000',
         NODE_OPTIONS: '--max-http-header-size=131072',
-        FAST2SMS_API_KEY: 'CQoqajhFzSwiNKUprfdsGMZJXkO98BmEe34nbHcTRAD2V07ygI86dTvDFfyneEI3KOUxtrwMksgPuQ1B'
+        FAST2SMS_API_KEY: 'CQoqajhFzSwiNKUprfdsGMZJXkO98BmEe34nbHcTRAD2V07ygI86dTvDFfyneEI3KOUxtrwMksgPuQ1B',
+        FAST2SMS_ROUTE: 'q'
       },
       error_file: 'logs/fw-core-error.log',
       out_file: 'logs/fw-core-out.log',

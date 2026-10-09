@@ -14,6 +14,11 @@ if [ -f "/var/www/fw-core/.env.local" ]; then
   else
     echo "FAST2SMS_API_KEY=CQoqajhFzSwiNKUprfdsGMZJXkO98BmEe34nbHcTRAD2V07ygI86dTvDFfyneEI3KOUxtrwMksgPuQ1B" >> /var/www/fw-core/.env.local
   fi
+  if grep -q "FAST2SMS_ROUTE=" /var/www/fw-core/.env.local; then
+    sed -i 's/^FAST2SMS_ROUTE=.*/FAST2SMS_ROUTE=q/' /var/www/fw-core/.env.local
+  else
+    echo "FAST2SMS_ROUTE=q" >> /var/www/fw-core/.env.local
+  fi
 fi
 
 echo "Installing dependencies..."

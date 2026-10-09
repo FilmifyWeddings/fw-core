@@ -155,14 +155,18 @@ export async function storeOtp({
   }
 
   try {
+    const otpHash = crypto.createHash('sha256').update(otp).digest('hex');
     await supabaseAdmin.from('auth_otps').insert({
       phone: phone || null,
       email: email ? email.toLowerCase() : null,
       otp,
+      otp_hash: otpHash,
       type,
+      purpose: type || 'phone_verification',
       metadata,
       expires_at: new Date(expiresAt).toISOString(),
       verified: false,
+      is_verified: false,
     });
   } catch (err) {
     console.warn('[storeOtp DB fallback to in-memory]:', err);
@@ -202,13 +206,17 @@ export async function generateAndStoreEmailOtp({
   });
 
   try {
+    const otpHash = crypto.createHash('sha256').update(otp).digest('hex');
     await supabaseAdmin.from('auth_otps').insert({
       email,
       phone: phone || null,
       otp,
+      otp_hash: otpHash,
       type,
+      purpose: 'email_verification',
       metadata: { ...metadata, name, phone },
       verified: false,
+      is_verified: false,
       expires_at: expiresAt.toISOString(),
     });
   } catch (err) {
@@ -230,6 +238,7 @@ export async function verifyEmailOtp({
 }): Promise<{ valid: boolean; error?: string; metadata?: any }> {
   const email = rawEmail.trim().toLowerCase();
   const cleanOtp = (otp || '').trim();
+  const otpHash = crypto.createHash('sha256').update(cleanOtp).digest('hex');
 
   // 1. Check in-memory cache
   const cached = emailOtpCache.get(email);
@@ -242,6 +251,12 @@ export async function verifyEmailOtp({
     if (cached.otp === cleanOtp) {
       cached.verified = true;
       emailOtpCache.delete(email);
+      try {
+        await supabaseAdmin
+          .from('auth_otps')
+          .update({ verified: true, is_verified: true })
+          .eq('email', email);
+      } catch (_) {}
       return { valid: true, metadata: cached.metadata };
     }
   }
@@ -252,8 +267,8 @@ export async function verifyEmailOtp({
       .from('auth_otps')
       .select('*')
       .eq('email', email)
-      .eq('otp', cleanOtp)
-      .eq('verified', false)
+      .or(`otp.eq.${cleanOtp},otp_hash.eq.${otpHash}`)
+      .or('verified.eq.false,is_verified.eq.false')
       .gt('expires_at', new Date().toISOString())
       .order('created_at', { ascending: false })
       .limit(1)
@@ -262,7 +277,7 @@ export async function verifyEmailOtp({
     if (!error && data) {
       await supabaseAdmin
         .from('auth_otps')
-        .update({ verified: true })
+        .update({ verified: true, is_verified: true })
         .eq('id', data.id);
 
       return { valid: true, metadata: data.metadata };
@@ -305,13 +320,17 @@ export async function generateAndStoreOtp({
   });
 
   try {
+    const otpHash = crypto.createHash('sha256').update(otp).digest('hex');
     await supabaseAdmin.from('auth_otps').insert({
       phone,
       email: email || null,
       otp,
+      otp_hash: otpHash,
       type,
+      purpose: type === 'verify' ? 'phone_verification' : (type || 'phone_verification'),
       metadata,
       verified: false,
+      is_verified: false,
       expires_at: expiresAt.toISOString(),
     });
   } catch (err) {
@@ -332,18 +351,29 @@ export async function verifyOtp({
   otp: string;
 }): Promise<{ valid: boolean; error?: string; metadata?: any; email?: string }> {
   const phone = normalizePhoneNumber(rawPhone);
+  const cleanDigits = rawPhone.replace(/\D/g, '');
+  const national10 = cleanDigits.slice(-10);
   const cleanOtp = otp.trim();
+  const otpHash = crypto.createHash('sha256').update(cleanOtp).digest('hex');
 
-  const cached = otpCache.get(phone);
+  const cached = otpCache.get(phone) || (national10 ? otpCache.get(`91${national10}`) : undefined);
   if (cached) {
     if (Date.now() > cached.expiresAt) {
       otpCache.delete(phone);
+      if (national10) otpCache.delete(`91${national10}`);
       return { valid: false, error: 'OTP has expired. Please request a new one.' };
     }
 
     if (cached.otp === cleanOtp) {
       cached.verified = true;
       otpCache.delete(phone);
+      if (national10) otpCache.delete(`91${national10}`);
+      try {
+        await supabaseAdmin
+          .from('auth_otps')
+          .update({ verified: true, is_verified: true })
+          .or(`phone.eq.${phone},phone.eq.+${phone},phone.eq.${national10},phone.eq.+91${national10},phone.eq.91${national10}`);
+      } catch (_) {}
       return { valid: true, metadata: cached.metadata, email: cached.email };
     }
   }
@@ -352,9 +382,9 @@ export async function verifyOtp({
     const { data, error } = await supabaseAdmin
       .from('auth_otps')
       .select('*')
-      .eq('phone', phone)
-      .eq('otp', cleanOtp)
-      .eq('verified', false)
+      .or(`phone.eq.${phone},phone.eq.+${phone},phone.eq.${national10},phone.eq.+91${national10},phone.eq.91${national10}`)
+      .or(`otp.eq.${cleanOtp},otp_hash.eq.${otpHash}`)
+      .or('verified.eq.false,is_verified.eq.false')
       .gt('expires_at', new Date().toISOString())
       .order('created_at', { ascending: false })
       .limit(1)
@@ -363,7 +393,7 @@ export async function verifyOtp({
     if (!error && data) {
       await supabaseAdmin
         .from('auth_otps')
-        .update({ verified: true })
+        .update({ verified: true, is_verified: true })
         .eq('id', data.id);
 
       return { valid: true, metadata: data.metadata, email: data.email };
