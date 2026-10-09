@@ -1,62 +1,82 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyOtp } from '@/lib/auth-otp-store';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
 
 export const runtime = 'nodejs';
 
 /**
- * POST /api/auth/verify-phone-otp
- * Verifies 6-digit Fast2SMS OTP and saves phone number, role, studio details, and avatar to Supabase.
- * Strictly non-destructive: only modifies target user's records.
+ * POST /api/auth/save-google-onboarding
+ * Direct, fast onboarding for Google-verified users.
+ * Saves mandatory mobile number, full name, role, studio details, and avatar directly to Supabase.
+ * Strictly non-destructive: only creates or updates the target authenticated user's records.
  */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const { 
-      phone, 
-      otp, 
-      fullName, 
-      studioName, 
-      role = 'owner', 
-      countryCode = '+91', 
-      avatarUrl 
+    const {
+      phone,
+      fullName,
+      studioName,
+      role = 'owner',
+      countryCode = '+91',
+      avatarUrl,
     } = body;
 
+    // 1. Validate Mandatory Mobile Number
     if (!phone) {
-      return NextResponse.json({ error: 'Phone number is required' }, { status: 400 });
+      return NextResponse.json({ error: 'Mobile number is mandatory' }, { status: 400 });
     }
 
     const cleanDigits = String(phone).replace(/\D/g, '');
+    if (cleanDigits.length < 10) {
+      return NextResponse.json({ error: 'Please enter a valid 10-digit mobile number' }, { status: 400 });
+    }
+
     const national10 = cleanDigits.slice(-10);
     const codeDigits = String(countryCode).replace(/\D/g, '') || '91';
     const fullInternationalPhone = `+${codeDigits}${national10}`;
 
-    // 1. If OTP is provided, verify it; otherwise proceed for authenticated Google session
-    if (otp) {
-      const verification = await verifyOtp({
-        phone: fullInternationalPhone,
-        otp: String(otp).trim(),
-      });
-
-      if (!verification.valid) {
-        return NextResponse.json({ error: verification.error || 'Invalid or expired 6-digit OTP code' }, { status: 400 });
-      }
+    // 2. Validate Full Name
+    const cleanFullName = String(fullName || '').trim();
+    if (!cleanFullName) {
+      return NextResponse.json({ error: 'Full Name is required' }, { status: 400 });
     }
 
-    // 2. Resolve Authenticated User Session
+    // 3. Validate Role & Studio Name
+    const targetRole = role === 'team_member' ? 'team_member' : 'owner';
+    const cleanStudioName = String(studioName || '').trim() || (cleanFullName ? `${cleanFullName}'s Studio` : 'My Studio');
+
+    if (targetRole === 'owner' && !cleanStudioName) {
+      return NextResponse.json({ error: 'Studio / Brand Name is required for Studio Owners' }, { status: 400 });
+    }
+
+    // 4. Resolve Authenticated User Session
     const { userId, userEmail } = await resolveRequestUser(req);
     const targetUserId = userId && userId !== 'demo_user' ? userId : null;
 
     if (!targetUserId) {
-      return NextResponse.json({ error: 'User session required to complete phone verification' }, { status: 401 });
+      return NextResponse.json({ error: 'User session required to complete onboarding' }, { status: 401 });
     }
 
-    const cleanFullName = (fullName || '').trim();
-    const cleanStudioName = (studioName || '').trim() || `${cleanFullName}'s Studio`;
-    const targetRole = role === 'team_member' ? 'team_member' : 'owner';
+    // 5. Enforce unique phone number (prevent phone hijacking across accounts)
+    try {
+      const { data: existingProfiles } = await supabaseAdmin
+        .from('profiles')
+        .select('id, phone')
+        .or(`phone.eq.${fullInternationalPhone},phone.eq.${codeDigits}${national10},phone.ilike.%${national10}%`)
+        .limit(2);
 
-    // 3. Update or Upsert into `profiles` table
+      const belongsToOtherUser = existingProfiles?.some((p) => p.id !== targetUserId);
+      if (belongsToOtherUser && existingProfiles && existingProfiles.length > 0) {
+        return NextResponse.json({
+          error: 'This mobile number is already registered with another account. Please use your own unique mobile number.',
+        }, { status: 409 });
+      }
+    } catch (checkErr) {
+      console.warn('[save-google-onboarding]: phone uniqueness check notice:', checkErr);
+    }
+
+    // 6. Non-destructively upsert into `profiles` table
     const profilePayload: any = {
       id: targetUserId,
       email: userEmail,
@@ -82,10 +102,10 @@ export async function POST(req: NextRequest) {
       .upsert(profilePayload, { onConflict: 'id' });
 
     if (profileErr) {
-      console.warn('[verify-phone-otp notice]: profiles upsert fallback notice:', profileErr.message);
+      console.warn('[save-google-onboarding]: profiles upsert notice:', profileErr.message);
     }
 
-    // 4. If Studio Owner, create/update `workspaces` table safely
+    // 7. If Studio Owner, create or update `workspaces` table safely
     if (targetRole === 'owner') {
       try {
         const { data: existingWs } = await supabaseAdmin
@@ -95,9 +115,9 @@ export async function POST(req: NextRequest) {
           .maybeSingle();
 
         if (existingWs) {
-          const wsUpdatePayload: any = { 
-            name: cleanStudioName, 
-            updated_at: new Date().toISOString() 
+          const wsUpdatePayload: any = {
+            name: cleanStudioName,
+            updated_at: new Date().toISOString(),
           };
           if (avatarUrl) wsUpdatePayload.logo_url = avatarUrl;
 
@@ -119,11 +139,11 @@ export async function POST(req: NextRequest) {
             });
         }
       } catch (wsErr) {
-        console.warn('[verify-phone-otp]: workspace creation notice:', wsErr);
+        console.warn('[save-google-onboarding]: workspace creation notice:', wsErr);
       }
     }
 
-    // 5. Update user_metadata in Supabase Auth
+    // 8. Update user_metadata in Supabase Auth
     try {
       const userMetaUpdate: any = {
         full_name: cleanFullName,
@@ -141,19 +161,20 @@ export async function POST(req: NextRequest) {
         user_metadata: userMetaUpdate,
       });
     } catch (authMetaErr) {
-      console.warn('[verify-phone-otp]: auth metadata update notice:', authMetaErr);
+      console.warn('[save-google-onboarding]: auth metadata update notice:', authMetaErr);
     }
 
     return NextResponse.json({
       success: true,
-      message: 'Mobile number verified and profile updated successfully!',
+      message: 'Account profile and workspace activated successfully!',
       role: targetRole,
       phone: fullInternationalPhone,
       studioName: cleanStudioName,
       fullName: cleanFullName,
+      avatarUrl: avatarUrl || undefined,
     });
   } catch (err: any) {
-    console.error('[verify-phone-otp error]:', err);
-    return NextResponse.json({ error: err.message || 'Verification failed' }, { status: 500 });
+    console.error('[save-google-onboarding error]:', err);
+    return NextResponse.json({ error: err.message || 'Failed to complete profile onboarding' }, { status: 500 });
   }
 }
