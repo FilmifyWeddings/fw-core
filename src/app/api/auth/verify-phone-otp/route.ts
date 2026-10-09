@@ -12,10 +12,13 @@ export const runtime = 'nodejs';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const { phone, otp, fullName, studioName, role = 'owner', countryCode = '+91' } = body;
+    const { phone, otp, fullName, studioName, role = 'owner', countryCode = '+91', firebaseVerified = false } = body;
 
-    if (!phone || !otp) {
-      return NextResponse.json({ error: 'Phone number and verification OTP code are required' }, { status: 400 });
+    if (!phone) {
+      return NextResponse.json({ error: 'Phone number is required' }, { status: 400 });
+    }
+    if (!firebaseVerified && !otp) {
+      return NextResponse.json({ error: 'Verification OTP code is required' }, { status: 400 });
     }
 
     const cleanDigits = String(phone).replace(/\D/g, '');
@@ -23,14 +26,16 @@ export async function POST(req: NextRequest) {
     const codeDigits = String(countryCode).replace(/\D/g, '') || '91';
     const fullInternationalPhone = `${codeDigits}${national10}`;
 
-    // 1. Verify OTP
-    const verification = await verifyOtp({
-      phone: fullInternationalPhone,
-      otp: String(otp).trim(),
-    });
+    // 1. Verify OTP if not already verified by Google Firebase
+    if (!firebaseVerified) {
+      const verification = await verifyOtp({
+        phone: fullInternationalPhone,
+        otp: String(otp).trim(),
+      });
 
-    if (!verification.valid) {
-      return NextResponse.json({ error: verification.error || 'Invalid or expired OTP code' }, { status: 400 });
+      if (!verification.valid) {
+        return NextResponse.json({ error: verification.error || 'Invalid or expired OTP code' }, { status: 400 });
+      }
     }
 
     // 2. Resolve Authenticated User

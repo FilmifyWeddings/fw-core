@@ -223,16 +223,44 @@ export default function SmsTemplateSettings() {
           </div>
 
           {/* Gateway Status & Info */}
-          <div className="p-4 rounded-xl bg-amber-50/60 border border-amber-200 space-y-2">
-            <div className="flex items-center gap-2 text-xs font-black text-amber-900">
-              <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
-              <span>SMS Gateway Configuration</span>
+          <div className="p-4 rounded-xl bg-gradient-to-br from-amber-50/80 via-white to-amber-50/40 border border-amber-200/90 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-black text-amber-950">
+                <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>Google SMS OTP (Firebase Phone Auth) & Gateway</span>
+              </div>
+              <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-black uppercase tracking-wider border border-blue-200">
+                Google Identity Supported
+              </span>
             </div>
-            <p className="text-[11px] text-zinc-600 leading-relaxed">
-              StudioCore is configured to dispatch Normal Text SMS OTPs via <strong>Fast2SMS (Quick SMS DLTS free/Custom Route)</strong> or any custom HTTP Webhook Gateway. If no external key is added, SMS OTPs will seamlessly generate and log directly to your server console for instant ₹0 testing.
+
+            <p className="text-[11.5px] text-zinc-600 leading-relaxed">
+              StudioCore supports <strong>Google's official Firebase Phone Authentication</strong> for sending 6-digit SMS OTPs. Google delivers SMS directly to users across India with high delivery rates and free monthly tier.
             </p>
-            <div className="pt-1 text-[11px] text-zinc-500 font-mono">
-              Env Variable: <span className="text-amber-800 font-bold">FAST2SMS_API_KEY</span>
+
+            {/* Google Firebase Setup Steps */}
+            <div className="bg-white/90 p-3 rounded-xl border border-amber-200/70 space-y-1.5 text-[11px] text-zinc-700">
+              <div className="font-extrabold text-amber-950 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                <span>Google Console Custom Heading & Template Setup:</span>
+              </div>
+              <ol className="list-decimal pl-4 space-y-1 text-zinc-600">
+                <li>
+                  <strong>Custom Heading (Sender Title):</strong> Firebase Console ➔ <em>Project Settings ➔ General ➔ Public-facing name</em> में <strong>StudioCore</strong> सेट करें।
+                </li>
+                <li>
+                  <strong>Custom SMS Message Template:</strong> Firebase Console ➔ <em>Authentication ➔ Templates ➔ SMS verification</em> में जाकर अपना मनचाहा टेक्स्ट सेट करें (जैसे: <code>%APP_NAME% verification code is %OTP%</code>)।
+                </li>
+                <li>
+                  <strong>Test Phone Numbers (Free Testing):</strong> Firebase Console ➔ <em>Authentication ➔ Sign-in method ➔ Phone ➔ Phone numbers for testing</em> में अपना नंबर व 6-अंकीय टेस्ट OTP (जैसे: <code>123456</code>) जोड़ सकते हैं।
+                </li>
+              </ol>
+            </div>
+
+            <div className="pt-1 text-[11px] text-zinc-500 font-mono flex flex-wrap items-center gap-2">
+              <span>Firebase Keys:</span>
+              <span className="px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-800 font-bold">NEXT_PUBLIC_FIREBASE_API_KEY</span>
+              <span className="px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-800 font-bold">NEXT_PUBLIC_FIREBASE_PROJECT_ID</span>
             </div>
           </div>
         </div>

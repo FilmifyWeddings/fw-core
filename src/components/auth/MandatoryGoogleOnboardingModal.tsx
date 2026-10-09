@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { GoogleGLogo } from './GoogleRoleConfirmModal';
+import { getFirebaseAuth, isFirebaseConfigured } from '@/lib/firebase';
+import { RecaptchaVerifier, signInWithPhoneNumber, type ConfirmationResult } from 'firebase/auth';
 
 // Supported Country Codes
 const COUNTRIES = [
@@ -61,6 +63,10 @@ export default function MandatoryGoogleOnboardingModal({
   const [timer, setTimer] = useState<number>(60);
   const [canResend, setCanResend] = useState(false);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  // Google Firebase Phone Auth refs
+  const confirmationResultRef = useRef<ConfirmationResult | null>(null);
+  const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
 
   // Loading & Error states
   const [loading, setLoading] = useState(false);
@@ -130,9 +136,9 @@ export default function MandatoryGoogleOnboardingModal({
     } catch (_) {}
   };
 
-  // STEP 1: Send SMS OTP
-  const handleSendOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // STEP 1: Send SMS OTP (Google Firebase Phone Auth or Server SMS Gateway)
+  const handleSendOtp = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setError(null);
     setLoading(true);
 
@@ -146,6 +152,41 @@ export default function MandatoryGoogleOnboardingModal({
         throw new Error('Studio / Brand Name is required for Studio Owners');
       }
 
+      // Check if Google Firebase Phone Auth is active
+      const auth = getFirebaseAuth();
+      if (auth && isFirebaseConfigured()) {
+        try {
+          if (!recaptchaVerifierRef.current) {
+            recaptchaVerifierRef.current = new RecaptchaVerifier(auth, 'firebase-recaptcha-container', {
+              size: 'invisible',
+            });
+          }
+
+          const fullInternationalPhone = `${selectedCountry.code}${cleanDigits.slice(-10)}`;
+          const confirmationResult = await signInWithPhoneNumber(
+            auth,
+            fullInternationalPhone,
+            recaptchaVerifierRef.current
+          );
+          confirmationResultRef.current = confirmationResult;
+
+          setStage('sms_otp_verify');
+          setTimer(60);
+          setCanResend(false);
+          setDigits(['', '', '', '', '', '']);
+          setSuccessMsg(`Google SMS OTP sent to ${selectedCountry.code} ${cleanDigits.slice(-10)}`);
+
+          setTimeout(() => {
+            inputRefs.current[0]?.focus();
+          }, 150);
+          return;
+        } catch (firebaseErr: any) {
+          console.warn('[Google Firebase Phone Auth Fallback]:', firebaseErr);
+          // If Firebase has rate limit or domain setup pending, seamlessly fall through to server SMS gateway
+        }
+      }
+
+      // Server SMS Gateway (Fast2SMS / Custom SMS / Console preview)
       const res = await fetch('/api/auth/send-phone-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -215,6 +256,16 @@ export default function MandatoryGoogleOnboardingModal({
     setError(null);
 
     try {
+      let isFirebaseSuccess = false;
+      if (confirmationResultRef.current) {
+        try {
+          await confirmationResultRef.current.confirm(otp);
+          isFirebaseSuccess = true;
+        } catch (fbErr: any) {
+          throw new Error('Invalid or expired 6-digit Google OTP code');
+        }
+      }
+
       const res = await fetch('/api/auth/verify-phone-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -225,6 +276,7 @@ export default function MandatoryGoogleOnboardingModal({
           studioName: studioName.trim() || (fullName.trim() ? `${fullName.trim()}'s Studio` : 'My Studio'),
           role,
           countryCode: selectedCountry.code,
+          firebaseVerified: isFirebaseSuccess,
         }),
       });
 
@@ -270,6 +322,9 @@ export default function MandatoryGoogleOnboardingModal({
           transition={{ duration: 0.25 }}
           className="relative w-full max-w-md bg-[#FFFDF9] rounded-3xl p-5 sm:p-7 border border-[#EAE5DA] shadow-2xl space-y-4"
         >
+          {/* Invisible Google reCAPTCHA Container */}
+          <div id="firebase-recaptcha-container" />
+
           {/* Header */}
           <div className="text-center space-y-1">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-900 text-xs font-bold shadow-2xs">
