@@ -95,21 +95,42 @@ export async function sendSmsOtp({
   const fast2SmsApiKey = process.env.FAST2SMS_API_KEY;
   if (fast2SmsApiKey) {
     try {
-      // Fast2SMS Quick SMS Route (Direct Delivery: No DLT, No Entity ID, No Website Verification required)
-      const res = await fetch('https://www.fast2sms.com/dev/bulkV2', {
+      const national10Digit = cleanPhone.slice(-10);
+
+      // Attempt 1: Fast2SMS Affordable OTP Route (Cost: ~₹0.20 to ₹0.25 per SMS)
+      let res = await fetch('https://www.fast2sms.com/dev/bulkV2', {
         method: 'POST',
         headers: {
           'authorization': fast2SmsApiKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          route: 'q',
-          message: fullText,
+          route: 'otp',
+          variables_values: otp,
           numbers: national10Digit,
         }),
       });
 
-      const json = await res.json().catch(() => ({}));
+      let json = await res.json().catch(() => ({}));
+
+      // If OTP route is locked due to website KYC (status_code 996 or 999), fallback to Quick SMS (route: q)
+      if (!json.return && (json.status_code === 996 || json.status_code === 999 || json.status_code === 400)) {
+        console.warn('[Fast2SMS Notice]: OTP route returned status', json.status_code, '- Falling back to Quick SMS route (q)...');
+        res = await fetch('https://www.fast2sms.com/dev/bulkV2', {
+          method: 'POST',
+          headers: {
+            'authorization': fast2SmsApiKey,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            route: 'q',
+            message: fullText,
+            numbers: national10Digit,
+          }),
+        });
+        json = await res.json().catch(() => ({}));
+      }
+
       console.log('[Fast2SMS API Response]:', json);
 
       if (res.ok && json.return === true) {
@@ -120,7 +141,7 @@ export async function sendSmsOtp({
         ? json.message.join(', ')
         : (json.message || `Fast2SMS dispatch failed (HTTP ${res.status})`);
 
-      console.error('[Fast2SMS Quick SMS Dispatch Error]:', errorMessage, json);
+      console.error('[Fast2SMS Dispatch Error]:', errorMessage, json);
       return { success: false, error: errorMessage };
     } catch (err: any) {
       console.error('[Fast2SMS Network Error]:', err.message);
