@@ -31,6 +31,9 @@ export const metadata: Metadata = {
     siteName: 'Studio Core',
     type: 'website',
   },
+  other: {
+    fast2sms: 'Hy9cjH1qDSJsW6QZlSv4d2ketD4hGR0Y',
+  },
 };
 
 export default function RootLayout({
@@ -45,6 +48,7 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <head>
+        <meta name="fast2sms" content="Hy9cjH1qDSJsW6QZlSv4d2ketD4hGR0Y" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link 
