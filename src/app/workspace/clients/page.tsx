@@ -460,9 +460,16 @@ export default function ClientsPage() {
       };
 
       // Optimistically update UI
-      setClients((prev) =>
-        prev.map((c) => (c.id === targetClient.id ? { ...c, ...updatedFields } : c))
-      );
+      setClients((prev) => {
+        const next = prev.map((c) => (c.id === targetClient.id ? { ...c, ...updatedFields } : c));
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('sc_cached_clients', JSON.stringify(next));
+            localStorage.setItem('sc_booking_sync_event', Date.now().toString());
+          } catch (_) {}
+        }
+        return next;
+      });
       setQuickAssignClient(null);
 
       // Concurrently execute dual-sync to workspace_clients and fw_projects
@@ -1670,7 +1677,12 @@ export default function ClientsPage() {
                     <div
                       onClick={(e) => {
                         e.stopPropagation();
-                        setQuickAssignClient(client);
+                        const clientExt = parseClientExtended(client);
+                        setQuickAssignClient({
+                          ...client,
+                          project_manager_id: client.project_manager_id || clientExt.project_manager_id || null,
+                          project_manager_name: client.project_manager_name || clientExt.project_manager_name || null,
+                        });
                       }}
                       className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-[#EAE5DA] hover:border-indigo-300 bg-white hover:bg-indigo-50/50 transition-all cursor-pointer shadow-2xs group/pm max-w-full"
                       title="Click to Assign or Change Project Manager"
@@ -1808,24 +1820,34 @@ export default function ClientsPage() {
         teamMembers={inHouseTeamMembers}
         onAssigned={({ memberId, memberName }) => {
           if (quickAssignClient) {
-            setClients(prev => prev.map(c => {
-              if (c.id === quickAssignClient.id) {
-                const oldExt = parseClientExtended(c);
-                const updatedExt = {
-                  ...oldExt,
-                  project_manager_id: memberId || '',
-                  project_manager_name: memberName || '',
-                };
-                const updatedNotes = serializeClientExtended(updatedExt);
-                return {
-                  ...c,
-                  project_manager_id: memberId,
-                  project_manager_name: memberName,
-                  notes: updatedNotes
-                };
+            setClients(prev => {
+              const updated = prev.map(c => {
+                if (c.id === quickAssignClient.id) {
+                  const oldExt = parseClientExtended(c);
+                  const updatedExt = {
+                    ...oldExt,
+                    project_manager_id: memberId || '',
+                    project_manager_name: memberName || '',
+                  };
+                  const updatedNotes = serializeClientExtended(updatedExt);
+                  return {
+                    ...c,
+                    project_manager_id: memberId,
+                    project_manager_name: memberName,
+                    handled_by: memberName,
+                    notes: updatedNotes
+                  };
+                }
+                return c;
+              });
+              if (typeof window !== 'undefined') {
+                try {
+                  localStorage.setItem('sc_cached_clients', JSON.stringify(updated));
+                  localStorage.setItem('sc_booking_sync_event', Date.now().toString());
+                } catch (_) {}
               }
-              return c;
-            }));
+              return updated;
+            });
           }
           setQuickAssignClient(null);
         }}

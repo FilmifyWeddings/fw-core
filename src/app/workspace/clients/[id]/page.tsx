@@ -227,6 +227,27 @@ export default function ClientWorkspaceDetailPage() {
     return opts;
   }, [inHouseTeamMembers]);
 
+  // ── Robust PM Option Resolver to ensure dropdown highlights the correct person ──
+  const resolvedPmValue = useMemo(() => {
+    // 1. Direct match by projectManagerId
+    if (projectManagerId && pmOptions.some(opt => opt.value === projectManagerId)) {
+      return projectManagerId;
+    }
+    // 2. Match by projectManagerName or extended.project_manager_name
+    const nameToMatch = (projectManagerName || extended.project_manager_name || '').toLowerCase().trim();
+    if (nameToMatch) {
+      const matchedOpt = pmOptions.find(opt => opt.value !== '' && opt.label.toLowerCase().trim() === nameToMatch);
+      if (matchedOpt) {
+        return matchedOpt.value;
+      }
+    }
+    // 3. Match extended.project_manager_id
+    if (extended.project_manager_id && pmOptions.some(opt => opt.value === extended.project_manager_id)) {
+      return extended.project_manager_id;
+    }
+    return '';
+  }, [projectManagerId, projectManagerName, extended.project_manager_name, extended.project_manager_id, pmOptions]);
+
   // 👥 Filter Studio Owner + team members with Finance Access strictly matching finance page
   const financeTeamMembers = useMemo(() => {
     const members = extractFinanceMembers(
@@ -511,11 +532,12 @@ export default function ClientWorkspaceDetailPage() {
 
   // ── Instant 1-Click Header PM Assignment ──
   const handleQuickAssignPM = async (newPmId: string) => {
-    setProjectManagerId(newPmId);
     const m = teamMembers.find(mem => mem.id === newPmId);
     const pmN = m?.name || '';
     const pmE = m?.email || '';
     const pmP = m?.phone || '';
+
+    setProjectManagerId(newPmId || '');
     setProjectManagerName(pmN);
     setProjectManagerEmail(pmE);
     setProjectManagerPhone(pmP);
@@ -530,21 +552,103 @@ export default function ClientWorkspaceDetailPage() {
       };
       setExtended(updatedExtended);
 
-      try {
-        await supabase
-          .from('workspace_clients')
-          .update({
-            project_manager_id: newPmId || null,
-            notes: serializeClientExtended(updatedExtended),
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', client.id);
+      const serializedNotes = serializeClientExtended(updatedExtended);
 
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('workspace_client_updated', { detail: { clientId: client.id } }));
+      // Keep local client state in sync
+      setClient(prev => prev ? {
+        ...prev,
+        project_manager_id: newPmId || null,
+        project_manager_name: pmN || null,
+        project_manager_email: pmE || null,
+        project_manager_phone: pmP || null,
+        handled_by: pmN || null,
+        notes: serializedNotes
+      } : prev);
+
+      // 1. Immediately update localStorage cached clients so outside directory card updates in 0 ms!
+      if (typeof window !== 'undefined') {
+        try {
+          const cached = localStorage.getItem('sc_cached_clients');
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed)) {
+              const nextClients = parsed.map(c => {
+                if (c.id === client.id) {
+                  return {
+                    ...c,
+                    project_manager_id: newPmId || null,
+                    project_manager_name: pmN || null,
+                    project_manager_email: pmE || null,
+                    project_manager_phone: pmP || null,
+                    handled_by: pmN || null,
+                    notes: serializedNotes
+                  };
+                }
+                return c;
+              });
+              localStorage.setItem('sc_cached_clients', JSON.stringify(nextClients));
+            }
+          }
+          localStorage.setItem('sc_booking_sync_event', Date.now().toString());
+        } catch (_) {}
+
+        // Dispatch ALL sync events across tabs and modules
+        window.dispatchEvent(new CustomEvent('client_updated', { detail: { clientId: client.id, pmId: newPmId || null, pmName: pmN || null } }));
+        window.dispatchEvent(new CustomEvent('workspace_client_updated', { detail: { clientId: client.id, pmId: newPmId || null, pmName: pmN || null } }));
+        window.dispatchEvent(new CustomEvent('post_production_updated', { detail: { clientId: client.id, pmId: newPmId || null, pmName: pmN || null } }));
+        window.dispatchEvent(new CustomEvent('team_events_updated', { detail: { clientId: client.id, pmId: newPmId || null, pmName: pmN || null } }));
+      }
+
+      // 2. Call /api/workspace/sync-card to persist across DB (workspace_clients, fw_projects, modules)
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const workspaceId = session?.user?.id || client.workspace_id || currentWsId;
+
+        const res = await fetch('/api/workspace/sync-card', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'assign_pm',
+            clientId: client.id,
+            projectId: (client as any).project_id || client.id,
+            leadId: (client as any).lead_id,
+            clientName: client.name,
+            pmId: newPmId || null,
+            pmName: pmN || null,
+            pmEmail: pmE || null,
+            pmPhone: pmP || null,
+            modules: {
+              all: true,
+              clientDirectory: true,
+              bookingsEvents: true,
+              postProduction: true
+            },
+            workspaceId
+          })
+        });
+
+        const syncJson = await res.json();
+        if (!syncJson.success) {
+          throw new Error(syncJson.error || 'Server sync failed');
         }
-      } catch (err) {
-        console.error('Error updating PM:', err);
+      } catch (syncErr) {
+        console.warn('[handleQuickAssignPM] sync-card notice, running direct update:', syncErr);
+        try {
+          await supabase
+            .from('workspace_clients')
+            .update({
+              project_manager_id: newPmId || null,
+              project_manager_name: pmN || null,
+              project_manager_email: pmE || null,
+              project_manager_phone: pmP || null,
+              handled_by: pmN || null,
+              notes: serializedNotes,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', client.id);
+        } catch (dbErr) {
+          console.error('[handleQuickAssignPM] direct DB update error:', dbErr);
+        }
       }
     }
   };
@@ -2157,6 +2261,29 @@ export default function ClientWorkspaceDetailPage() {
       window.dispatchEvent(new CustomEvent('finance_updated', { detail: { newName: newCoupleName } }));
       if (typeof window !== 'undefined') {
         try {
+          const cached = localStorage.getItem('sc_cached_clients');
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed)) {
+              const updatedCache = parsed.map(c => {
+                if (c.id === client.id) {
+                  return {
+                    ...c,
+                    ...updatedFields,
+                    name: newCoupleName,
+                    project_manager_id: projectManagerId || null,
+                    project_manager_name: updatedPmName || null,
+                    project_manager_email: updatedPmEmail || null,
+                    project_manager_phone: updatedPmPhone || null,
+                    handled_by: updatedPmName || null,
+                    notes: serializedNotes
+                  };
+                }
+                return c;
+              });
+              localStorage.setItem('sc_cached_clients', JSON.stringify(updatedCache));
+            }
+          }
           localStorage.setItem('sc_booking_sync_event', Date.now().toString());
         } catch (_) {}
       }
@@ -2612,7 +2739,7 @@ export default function ClientWorkspaceDetailPage() {
               </div>
               <Searchable3DCreamSelect
                 options={pmOptions}
-                value={projectManagerId}
+                value={resolvedPmValue}
                 onChange={(val) => handleQuickAssignPM(val)}
                 placeholder="Assign Project Manager..."
                 searchPlaceholder="Search in-house team..."

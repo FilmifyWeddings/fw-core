@@ -79,10 +79,26 @@ export const ProjectManagerAssignModal: React.FC<ProjectManagerAssignModalProps>
   // Sync initial state when modal opens
   useEffect(() => {
     if (isOpen && client) {
-      const currentPMId = client.project_manager_id || null;
-      const currentPMName = client.project_manager_name || null;
-      setSelectedMemberId(currentPMId);
-      setSelectedMemberName(currentPMName);
+      const ext = parseClientExtended(client);
+      const effectivePMId = client.project_manager_id || ext.project_manager_id || null;
+      const effectivePMName = (client.project_manager_name || ext.project_manager_name || '').trim();
+
+      // Find matching member in teamMembers by ID or Name
+      const matchedMember = teamMembers.find(m => 
+        (effectivePMId && m.id === effectivePMId) ||
+        (effectivePMName && m.name && m.name.toLowerCase().trim() === effectivePMName.toLowerCase())
+      );
+
+      if (matchedMember) {
+        setSelectedMemberId(matchedMember.id);
+        setSelectedMemberName(matchedMember.name);
+      } else if (effectivePMId || effectivePMName) {
+        setSelectedMemberId(effectivePMId);
+        setSelectedMemberName(effectivePMName || null);
+      } else {
+        setSelectedMemberId(null);
+        setSelectedMemberName(null);
+      }
       setSearchQuery('');
       setTargetModules({
         all: true,
@@ -91,7 +107,7 @@ export const ProjectManagerAssignModal: React.FC<ProjectManagerAssignModalProps>
         postProduction: true
       });
     }
-  }, [isOpen, client]);
+  }, [isOpen, client, teamMembers]);
 
   // Handle master "All" toggle
   const handleToggleAll = () => {
@@ -144,9 +160,12 @@ export const ProjectManagerAssignModal: React.FC<ProjectManagerAssignModalProps>
     setIsSubmitting(true);
 
     try {
-      const pmId = selectedMemberId;
-      const pmName = selectedMemberName;
-      const matchedMember = teamMembers.find(m => m.id === pmId);
+      const matchedMember = teamMembers.find(m => 
+        (selectedMemberId && m.id === selectedMemberId) ||
+        (selectedMemberName && m.name && m.name.toLowerCase().trim() === selectedMemberName.toLowerCase().trim())
+      );
+      const effectivePmId = matchedMember ? matchedMember.id : selectedMemberId;
+      const effectivePmName = matchedMember ? matchedMember.name : selectedMemberName;
       const pmEmail = matchedMember?.email || null;
       const pmPhone = matchedMember?.phone || null;
 
@@ -163,8 +182,8 @@ export const ProjectManagerAssignModal: React.FC<ProjectManagerAssignModalProps>
           projectId: (client as any).project_id || client.id,
           leadId: (client as any).lead_id,
           clientName: client.name,
-          pmId: pmId || null,
-          pmName: pmName || null,
+          pmId: effectivePmId || null,
+          pmName: effectivePmName || null,
           pmEmail: pmEmail || null,
           pmPhone: pmPhone || null,
           modules: targetModules,
@@ -177,19 +196,51 @@ export const ProjectManagerAssignModal: React.FC<ProjectManagerAssignModalProps>
         throw new Error(jsonRes.error || 'Failed to save Project Manager assignment');
       }
 
-      // Dispatch global window events for instant sub-millisecond multi-tab sync
-      window.dispatchEvent(new CustomEvent('client_updated', { detail: { pmId, pmName } }));
-      window.dispatchEvent(new CustomEvent('post_production_updated', { detail: { pmId, pmName } }));
-      window.dispatchEvent(new CustomEvent('team_events_updated', { detail: { pmId, pmName } }));
+      // CRITICAL: Immediately update localStorage cached clients so outside & inside cards update in 0ms!
       if (typeof window !== 'undefined') {
         try {
+          const cached = localStorage.getItem('sc_cached_clients');
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed)) {
+              const updatedCache = parsed.map(c => {
+                if (c.id === client.id) {
+                  const oldExt = parseClientExtended(c);
+                  const newExt = {
+                    ...oldExt,
+                    project_manager_id: effectivePmId || '',
+                    project_manager_name: effectivePmName || '',
+                    project_manager_email: pmEmail || '',
+                    project_manager_phone: pmPhone || '',
+                  };
+                  return {
+                    ...c,
+                    project_manager_id: effectivePmId,
+                    project_manager_name: effectivePmName,
+                    project_manager_email: pmEmail,
+                    project_manager_phone: pmPhone,
+                    handled_by: effectivePmName,
+                    notes: serializeClientExtended(newExt)
+                  };
+                }
+                return c;
+              });
+              localStorage.setItem('sc_cached_clients', JSON.stringify(updatedCache));
+            }
+          }
           localStorage.setItem('sc_booking_sync_event', Date.now().toString());
         } catch (_) {}
       }
 
+      // Dispatch global window events for instant sub-millisecond multi-tab sync
+      window.dispatchEvent(new CustomEvent('client_updated', { detail: { pmId: effectivePmId, pmName: effectivePmName } }));
+      window.dispatchEvent(new CustomEvent('workspace_client_updated', { detail: { clientId: client.id, pmId: effectivePmId, pmName: effectivePmName } }));
+      window.dispatchEvent(new CustomEvent('post_production_updated', { detail: { pmId: effectivePmId, pmName: effectivePmName } }));
+      window.dispatchEvent(new CustomEvent('team_events_updated', { detail: { pmId: effectivePmId, pmName: effectivePmName } }));
+
       onAssigned?.({
-        memberId: pmId,
-        memberName: pmName,
+        memberId: effectivePmId,
+        memberName: effectivePmName,
         modules: {
           clientDirectory: targetModules.clientDirectory,
           bookingsEvents: targetModules.bookingsEvents,
@@ -357,26 +408,31 @@ export const ProjectManagerAssignModal: React.FC<ProjectManagerAssignModalProps>
               {/* Members Scrollable List */}
               <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
                 {/* Option: Unassign / Clear */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedMemberId(null);
-                    setSelectedMemberName(null);
-                  }}
-                  className={`w-full p-2.5 rounded-2xl border text-left flex items-center justify-between transition cursor-pointer ${
-                    selectedMemberId === null
-                      ? 'bg-rose-50 border-rose-300 text-rose-950 font-black shadow-2xs'
-                      : 'bg-white hover:bg-rose-50/50 border-slate-200 text-slate-600'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="w-7 h-7 rounded-xl bg-rose-100 text-rose-700 font-black text-xs flex items-center justify-center">
-                      ✕
-                    </span>
-                    <span className="text-xs font-bold">Unassigned / Remove PM</span>
-                  </div>
-                  {selectedMemberId === null && <Check className="w-4 h-4 text-rose-600" />}
-                </button>
+                {(() => {
+                  const isUnassignedSelected = !selectedMemberId && !selectedMemberName;
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedMemberId(null);
+                        setSelectedMemberName(null);
+                      }}
+                      className={`w-full p-2.5 rounded-2xl border text-left flex items-center justify-between transition cursor-pointer ${
+                        isUnassignedSelected
+                          ? 'bg-rose-50 border-rose-300 text-rose-950 font-black shadow-2xs'
+                          : 'bg-white hover:bg-rose-50/50 border-slate-200 text-slate-600'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="w-7 h-7 rounded-xl bg-rose-100 text-rose-700 font-black text-xs flex items-center justify-center">
+                          ✕
+                        </span>
+                        <span className="text-xs font-bold">Unassigned / Remove PM</span>
+                      </div>
+                      {isUnassignedSelected && <Check className="w-4 h-4 text-rose-600" />}
+                    </button>
+                  );
+                })()}
 
                 {filteredMembers.length === 0 ? (
                   <div className="p-4 text-center text-slate-400 text-xs">
@@ -384,7 +440,10 @@ export const ProjectManagerAssignModal: React.FC<ProjectManagerAssignModalProps>
                   </div>
                 ) : (
                   filteredMembers.map((member) => {
-                    const isSelected = selectedMemberId === member.id;
+                    const isSelected = Boolean(
+                      (selectedMemberId && member.id === selectedMemberId) ||
+                      (selectedMemberName && member.name?.toLowerCase().trim() === selectedMemberName.toLowerCase().trim())
+                    );
                     const initials = member.name.split(/\s+/).filter(Boolean).map(n => n[0]).join('').slice(0, 2).toUpperCase();
 
                     return (
