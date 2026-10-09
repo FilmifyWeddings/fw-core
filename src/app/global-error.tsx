@@ -35,13 +35,19 @@ export default function GlobalError({
     return null; // completely disable in local dev
   }
 
-  // 2. Full unregister, storage clear, and hard reload
-  const handleReload = async () => {
+  // 2. Full unregister, cache clear, and hard cache-busting reload
+  const handleReload = async (targetPath?: string) => {
     try {
       if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
         const registrations = await navigator.serviceWorker.getRegistrations();
         for (const registration of registrations) {
           await registration.unregister();
+        }
+      }
+      if (typeof window !== 'undefined' && 'caches' in window) {
+        const cacheNames = await caches.keys();
+        for (const name of cacheNames) {
+          await caches.delete(name);
         }
       }
       if (typeof window !== 'undefined') {
@@ -54,7 +60,8 @@ export default function GlobalError({
       console.error(e);
     }
     if (typeof window !== 'undefined') {
-      window.location.reload();
+      const dest = targetPath || window.location.pathname || '/';
+      window.location.href = `${dest}?fresh=${Date.now()}`;
     } else {
       reset();
     }
@@ -77,12 +84,18 @@ export default function GlobalError({
             </p>
           </div>
 
-          <div className="flex items-center justify-center gap-3 pt-2">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 pt-2">
             <button
-              onClick={handleReload}
-              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-bold transition shadow-sm cursor-pointer"
+              onClick={() => handleReload()}
+              className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-bold transition shadow-sm cursor-pointer"
             >
-              Reload StudioCore
+              Reload & Update
+            </button>
+            <button
+              onClick={() => handleReload('/workspace')}
+              className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition cursor-pointer"
+            >
+              Go to Workspace
             </button>
           </div>
         </div>

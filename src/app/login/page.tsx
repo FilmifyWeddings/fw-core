@@ -119,7 +119,7 @@ const getSanitizedRedirectUrl = (rawRedirect: string | null | undefined, default
   return defaultPath;
 };
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -1173,5 +1173,17 @@ export default function LoginPage() {
         }}
       />
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <React.Suspense fallback={
+      <div className="min-h-screen bg-[#FAF9F5] flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    }>
+      <LoginContent />
+    </React.Suspense>
   );
 }
