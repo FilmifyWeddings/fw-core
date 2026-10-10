@@ -105,7 +105,10 @@ export default function TeamManagerPage() {
     setIsMounted(true);
     if (typeof window !== 'undefined') {
       try {
-        const storedP = localStorage.getItem('sc_cached_tm_projects');
+        const urlParams = new URLSearchParams(window.location.search);
+        const wsParam = urlParams.get('studio') || urlParams.get('ws');
+        const activeUid = wsParam || localStorage.getItem('sc_active_workspace_id') || localStorage.getItem('wg_last_active_user_id') || '';
+        const storedP = (activeUid ? localStorage.getItem(`sc_cached_tm_projects_${activeUid}`) : null) || localStorage.getItem('sc_cached_tm_projects');
         if (storedP) {
           const parsed = JSON.parse(storedP);
           if (Array.isArray(parsed) && parsed.length > 0) {
@@ -114,7 +117,7 @@ export default function TeamManagerPage() {
             setLoading(false);
           }
         }
-        const storedM = localStorage.getItem('sc_cached_tm_members');
+        const storedM = (activeUid ? localStorage.getItem(`sc_cached_tm_members_${activeUid}`) : null) || localStorage.getItem('sc_cached_tm_members');
         if (storedM) {
           const parsed = JSON.parse(storedM);
           if (Array.isArray(parsed) && parsed.length > 0) {
@@ -559,40 +562,8 @@ export default function TeamManagerPage() {
     setStudioPermissionsMap(permMap);
 
     try {
-      // 1. Fetch Team Members for active workspace from both workspace_members and fw_team_members
+      // 1. Prepare independent queries for parallel execution (Sub-300ms ultra-fast cold load)
       const combinedMembers: FWTeamMember[] = [];
-      const wsRatesMap = await fetchWorkspaceMemberRatesMap(uid).catch(() => ({}));
-
-      if (!isAllStudios && uid && uid !== 'all') {
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          const token = session?.access_token;
-          const res = await fetch(`/api/workspace/members?workspace_id=${uid}`, {
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
-          });
-          const json = await res.json();
-          if (json.success && Array.isArray(json.members)) {
-            json.members.forEach((m: any) => {
-              const calculatedRate = (wsRatesMap && (wsRatesMap as any)[m.id] != null) 
-                ? (wsRatesMap as any)[m.id] 
-                : (Number(m.default_daily_rate) || Number(m.daily_rate) || 0);
-
-              combinedMembers.push({
-                id: m.id,
-                user_id: uid,
-                name: m.name || 'Team Member',
-                primary_role: m.primary_role || 'Crew',
-                phone_number: m.phone || '',
-                email: m.email || '',
-                avatar_url: m.avatar_url || '',
-                default_daily_rate: calculatedRate,
-                default_currency: m.default_currency || 'INR',
-                is_active: m.status === 'ACTIVE'
-              });
-            });
-          }
-        } catch (_) {}
-      }
 
       let membersQuery = supabase
         .from('fw_team_members')
@@ -607,9 +578,97 @@ export default function TeamManagerPage() {
         membersQuery = membersQuery.eq('user_id', uid);
       }
 
-      const { data: membersData, error: membersErr } = await membersQuery;
-      if (membersErr) console.warn('[TeamManager] fw_team_members error:', membersErr.message);
+      let projectsQuery = supabase
+        .from('fw_projects')
+        .select(`
+          *,
+          fw_sub_events (
+            *,
+            fw_assignments (
+              *,
+              fw_team_members (*)
+            )
+          )
+        `)
+        .neq('status', 'trash')
+        .order('created_at', { ascending: false });
 
+      if (isAllStudios) {
+        if (targetOwnerIds.length > 0) {
+          projectsQuery = projectsQuery.in('user_id', targetOwnerIds);
+        }
+      } else if (uid && uid !== 'all') {
+        projectsQuery = projectsQuery.eq('user_id', uid);
+      }
+
+      let clientsQuery = supabase
+        .from('workspace_clients')
+        .select('id, name, project_manager_id, project_manager_name, notes');
+      if (isAllStudios) {
+        if (targetOwnerIds.length > 0) {
+          clientsQuery = clientsQuery.in('user_id', targetOwnerIds);
+        }
+      } else if (uid && uid !== 'all') {
+        clientsQuery = clientsQuery.eq('user_id', uid);
+      }
+
+      const fetchMembersApi = async () => {
+        if (!isAllStudios && uid && uid !== 'all') {
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const token = session?.access_token;
+            const res = await fetch(`/api/workspace/members?workspace_id=${uid}`, {
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+            });
+            const json = await res.json();
+            return (json.success && Array.isArray(json.members)) ? json.members : [];
+          } catch (_) {}
+        }
+        return [];
+      };
+
+      // ⚡ EXECUTE ALL 5 QUERIES CONCURRENTLY (Zero-Waterfall Parallel Pipeline)
+      const [
+        wsRatesMap,
+        workspaceMembersList,
+        { data: membersData, error: membersErr },
+        { data: projectsData, error: projectsErr },
+        { data: clientsData, error: clientsErr }
+      ] = await Promise.all([
+        fetchWorkspaceMemberRatesMap(uid).catch(() => ({})),
+        fetchMembersApi(),
+        membersQuery,
+        projectsQuery,
+        clientsQuery
+      ]);
+
+      if (membersErr) console.warn('[TeamManager] fw_team_members error:', membersErr.message);
+      if (projectsErr) console.warn('[TeamManager] fw_projects error:', projectsErr.message);
+      if (clientsErr) console.warn('[TeamManager] workspace_clients fetch warning for PM hydration:', clientsErr.message);
+
+      // Populate workspace_members
+      if (Array.isArray(workspaceMembersList)) {
+        workspaceMembersList.forEach((m: any) => {
+          const calculatedRate = (wsRatesMap && (wsRatesMap as any)[m.id] != null) 
+            ? (wsRatesMap as any)[m.id] 
+            : (Number(m.default_daily_rate) || Number(m.daily_rate) || 0);
+
+          combinedMembers.push({
+            id: m.id,
+            user_id: uid,
+            name: m.name || 'Team Member',
+            primary_role: m.primary_role || 'Crew',
+            phone_number: m.phone || '',
+            email: m.email || '',
+            avatar_url: m.avatar_url || '',
+            default_daily_rate: calculatedRate,
+            default_currency: m.default_currency || 'INR',
+            is_active: m.status === 'ACTIVE'
+          });
+        });
+      }
+
+      // Populate fw_team_members
       if (membersData && membersData.length > 0) {
         membersData.forEach((f: any) => {
           const calculatedRate = (wsRatesMap && (wsRatesMap as any)[f.id] != null)
@@ -636,51 +695,7 @@ export default function TeamManagerPage() {
       setTeamMembers(combinedMembers);
       loadFinancialSummaries(combinedMembers);
 
-      // 2. Fetch Projects for active workspace or consolidated studios
-      let projectsQuery = supabase
-        .from('fw_projects')
-        .select(`
-          *,
-          fw_sub_events (
-            *,
-            fw_assignments (
-              *,
-              fw_team_members (*)
-            )
-          )
-        `)
-        .neq('status', 'trash')
-        .order('created_at', { ascending: false });
-
-      if (isAllStudios) {
-        if (targetOwnerIds.length > 0) {
-          projectsQuery = projectsQuery.in('user_id', targetOwnerIds);
-        }
-      } else if (uid && uid !== 'all') {
-        projectsQuery = projectsQuery.eq('user_id', uid);
-      }
-
-      const { data: projectsData, error: projectsErr } = await projectsQuery;
-      if (projectsErr) console.warn('[TeamManager] fw_projects error:', projectsErr.message);
-
-      // 2b. Hydration Fallback: Fetch workspace_clients to populate PM if project.project_manager_id is null
-      let clientsForHydration: any[] = [];
-      try {
-        let clientsQuery = supabase
-          .from('workspace_clients')
-          .select('id, name, project_manager_id, project_manager_name, notes');
-        if (isAllStudios) {
-          if (targetOwnerIds.length > 0) {
-            clientsQuery = clientsQuery.in('user_id', targetOwnerIds);
-          }
-        } else if (uid && uid !== 'all') {
-          clientsQuery = clientsQuery.eq('user_id', uid);
-        }
-        const { data: cData } = await clientsQuery;
-        if (cData) clientsForHydration = cData;
-      } catch (cErr) {
-        console.warn('[TeamManager] workspace_clients fetch warning for PM hydration:', cErr);
-      }
+      const clientsForHydration: any[] = clientsData || [];
 
       let projectsDataToSet: any[] = (projectsData || []).map((proj: any) => {
         let pmId = proj.project_manager_id || null;
@@ -793,6 +808,10 @@ export default function TeamManagerPage() {
       memCachedTMTeamMembers = combinedMembers;
       if (typeof window !== 'undefined') {
         try {
+          if (uid && uid !== 'all') {
+            localStorage.setItem(`sc_cached_tm_projects_${uid}`, JSON.stringify(projectsDataToSet));
+            localStorage.setItem(`sc_cached_tm_members_${uid}`, JSON.stringify(combinedMembers));
+          }
           localStorage.setItem('sc_cached_tm_projects', JSON.stringify(projectsDataToSet));
           localStorage.setItem('sc_cached_tm_members', JSON.stringify(combinedMembers));
         } catch (_) {}

@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
+import dynamic from 'next/dynamic';
 import { 
   X, FileText, Plus, ExternalLink, Calendar, RefreshCw, AlertCircle, 
   Send, Download, CheckCircle2, DollarSign, Copy, Check, Sparkles, Loader2, 
@@ -11,6 +12,11 @@ import {
 import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { AiQuotationModal } from './ai-quotation-modal';
+
+const QuotationDocumentCanvas = dynamic(
+  () => import('@/components/QuotationDocumentCanvas'),
+  { ssr: false }
+);
 import { 
   QuotationTemplateSelector, 
   StudioTemplateItem, 
@@ -116,6 +122,7 @@ export function LeadQuotationModal({
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [exportStatusText, setExportStatusText] = useState('');
+  const [exportCanvasDoc, setExportCanvasDoc] = useState<any | null>(null);
 
   useEffect(() => {
     if (isOpen && lead?.id) {
@@ -652,17 +659,17 @@ export function LeadQuotationModal({
 
     setDownloadingPdf(templateId);
     setIsExportingPdf(true);
-    setExportProgress(25);
-    setExportStatusText('Preparing high-resolution PDF engine...');
+    setExportProgress(15);
+    setExportStatusText('Hydrating complete quotation document & typography...');
     setErrorMsg(null);
 
     const progressTimer = setInterval(() => {
-      setExportProgress(prev => (prev < 90 ? prev + 15 : prev));
-    }, 200);
+      setExportProgress(prev => (prev < 90 ? prev + 10 : prev));
+    }, 250);
 
     try {
-      const { downloadServerChromiumPdf } = await import('@/lib/pdf-export-engine');
-      setExportStatusText('Hydrating complete quotation document & typography...');
+      const { downloadServerChromiumPdf, exportClientCanvasToPDF } = await import('@/lib/pdf-export-engine');
+      const { loadCustomFontsFromAPI, preloadActiveFont } = await import('@/lib/font-loader');
 
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
@@ -677,24 +684,55 @@ export function LeadQuotationModal({
             const tmplJson = await res.json();
             if (tmplJson?.document?.content_json) {
               fullContentJson = tmplJson.document.content_json;
+            } else if (tmplJson?.template?.content_json) {
+              fullContentJson = tmplJson.template.content_json;
             }
           }
         } catch (_) {}
       }
 
-      setExportStatusText('Rendering Vector A4 Chromium PDF...');
+      setExportStatusText('Registering typography and custom fonts...');
+      try {
+        loadCustomFontsFromAPI();
+        if (fullContentJson?.primaryFont) preloadActiveFont(fullContentJson.primaryFont);
+        if (fullContentJson?.secondaryFont) preloadActiveFont(fullContentJson.secondaryFont);
+      } catch (_) {}
 
-      await downloadServerChromiumPdf({
-        templateId,
-        quotationId: templateId,
-        filename: `${q.title || 'Quotation'}_V${q.version}.pdf`,
-        content_json: fullContentJson,
-        userAccessToken: token,
-        onProgress: (statusMsg: string) => {
+      // Mount the real QuotationDocumentCanvas off-screen (100% pixel-identical to Public View canvas)
+      setExportCanvasDoc(fullContentJson);
+
+      // Allow React to mount the canvas element and ensure fonts and images are ready
+      await new Promise(resolve => setTimeout(resolve, 350));
+      if (typeof document !== 'undefined' && document.fonts) {
+        try {
+          await document.fonts.ready;
+        } catch (_) {}
+      }
+
+      setExportProgress(60);
+      setExportStatusText('Rendering 100% Identical Vector A4 Pages...');
+
+      const filename = `${q.title || 'Quotation'}_V${q.version}.pdf`;
+
+      try {
+        // Primary: Exact same client canvas exporter as the public view
+        await exportClientCanvasToPDF('quotation-full-canvas', filename, (statusMsg: string) => {
           setExportStatusText(statusMsg);
-          setExportProgress(prev => Math.min(prev + 10, 95));
-        }
-      });
+          setExportProgress(prev => Math.min(prev + 5, 95));
+        });
+      } catch (canvasErr) {
+        console.warn('[LeadModal Canvas PDF warning, falling back to server exporter]:', canvasErr);
+        await downloadServerChromiumPdf({
+          templateId,
+          quotationId: templateId,
+          filename,
+          content_json: fullContentJson,
+          userAccessToken: token,
+          onProgress: (statusMsg: string) => {
+            setExportStatusText(statusMsg);
+          }
+        });
+      }
 
       setExportProgress(100);
       setExportStatusText('Download Complete!');
@@ -704,11 +742,12 @@ export function LeadQuotationModal({
       console.error('[Download PDF Error]:', err);
       setErrorMsg(`PDF export error: ${err?.message || 'Could not export file'}`);
     } finally {
+      setExportCanvasDoc(null);
       setTimeout(() => {
         setIsExportingPdf(false);
         setExportProgress(0);
         setDownloadingPdf(null);
-      }, 1500);
+      }, 1200);
     }
   };
 
@@ -1296,6 +1335,25 @@ export function LeadQuotationModal({
               Close
             </button>
           </div>
+        </div>
+      )}
+
+      {/* ── 100% IDENTICAL OFF-SCREEN CONTINUOUS CANVAS FOR PDF EXPORT ── */}
+      {exportCanvasDoc && (
+        <div
+          id="lead-modal-quotation-wrapper"
+          style={{
+            position: 'fixed',
+            left: '-99999px',
+            top: 0,
+            width: '794px',
+            zIndex: -99999,
+            opacity: 0,
+            pointerEvents: 'none',
+            visibility: 'visible',
+          }}
+        >
+          <QuotationDocumentCanvas documentData={exportCanvasDoc} />
         </div>
       )}
     </>

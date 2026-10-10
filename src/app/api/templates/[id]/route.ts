@@ -397,7 +397,7 @@ async function handleUpdate(
       // First, fetch existing document to safeguard lead_id and lead_version across multi-device updates
       const { data: currentDoc } = await supabaseAdmin
         .from('quotation_documents')
-        .select('id, lead_id, lead_version, client_id, is_final, version, content_json')
+        .select('id, lead_id, lead_version, client_id, is_final, version, content_json, created_at')
         .eq('template_id', id)
         .maybeSingle();
 
@@ -479,6 +479,9 @@ async function handleUpdate(
             const actor = body.actor_name || (userId ? 'Studio Admin' : 'User');
             const versionLabel = effectiveLeadVersion ? `v${effectiveLeadVersion}` : (body.version ? `v${body.version}` : 'v1');
 
+            // Skip logging an immediate "updated" audit event if this quotation was just created (< 45s ago)
+            const isFreshlyCreated = !currentDoc || (currentDoc.created_at && (Date.now() - new Date(currentDoc.created_at).getTime() < 45000));
+
             let logWsId = workspaceId;
             if (!isValidUUID(logWsId)) {
               const { data: leadForWs } = await supabaseAdmin.from('leads').select('workspace_id').eq('id', effectiveLeadId).maybeSingle();
@@ -489,7 +492,7 @@ async function handleUpdate(
               logWsId = prof?.id;
             }
 
-            if (isValidUUID(logWsId)) {
+            if (!isFreshlyCreated && isValidUUID(logWsId)) {
               await supabaseAdmin.from('live_logs').insert({
                 workspace_id: logWsId,
                 lead_id: effectiveLeadId,

@@ -72,45 +72,66 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       });
     }
 
-    // Add quotation documents history (synthesizes any historical versions not in live_logs)
+    // Add quotation documents history (synthesizes ONLY historical versions not already logged in live_logs)
     if (quoteDocs && quoteDocs.length > 0) {
       quoteDocs.forEach((qd: any) => {
         const v = qd.lead_version || qd.content_json?.lead_version || qd.version || 1;
         const qTitle = qd.content_json?.designName || qd.content_json?.title || `Quotation (V${v})`;
         const isFinal = Boolean(qd.content_json?.is_final);
+        const qId = qd.template_id || qd.id;
 
-        // Created / finalized event
-        activityList.push({
-          id: `quote_doc_${qd.id || qd.template_id}_created`,
-          type: isFinal ? 'quotation_finalized' : 'quotation_created',
-          message: isFinal 
-            ? `Quotation finalized: "${qTitle}" (v${v})` 
-            : `Quotation created: "${qTitle}" (v${v})`,
-          actor: 'Studio Team',
-          metadata: {
-            action_type: isFinal ? 'quotation_finalized' : 'quotation_created',
-            quotation_id: qd.template_id || qd.id,
-            version: v,
-            title: qTitle
-          },
-          created_at: qd.created_at || qd.updated_at || lead?.created_at,
+        // Check if creation of this quotation version is already logged in live_logs
+        const alreadyLogged = activityList.some(a => {
+          const m = a.metadata || {};
+          const isSameQuote = m.quotation_id === qId || m.template_id === qId;
+          const isSameVersion = Number(m.version) === Number(v) || m.version === `v${v}` || m.version === `V${v}`;
+          const isCreation = a.type === 'quotation_created' || m.action_type === 'quotation_created' || (a.message && a.message.toLowerCase().includes('created quotation'));
+          return (isSameQuote || isSameVersion) && isCreation;
         });
 
-        // Updated event if modified noticeably later
-        if (qd.updated_at && qd.created_at && new Date(qd.updated_at).getTime() - new Date(qd.created_at).getTime() > 120000) {
+        if (!alreadyLogged) {
+          // Created / finalized event
           activityList.push({
-            id: `quote_doc_${qd.id || qd.template_id}_updated`,
-            type: 'quotation_updated',
-            message: `Quotation updated: "${qTitle}" (v${v})`,
+            id: `quote_doc_${qd.id || qd.template_id}_created`,
+            type: isFinal ? 'quotation_finalized' : 'quotation_created',
+            message: isFinal 
+              ? `Quotation finalized: "${qTitle}" (v${v})` 
+              : `Quotation created: "${qTitle}" (v${v})`,
             actor: 'Studio Team',
             metadata: {
-              action_type: 'quotation_updated',
-              quotation_id: qd.template_id || qd.id,
+              action_type: isFinal ? 'quotation_finalized' : 'quotation_created',
+              quotation_id: qId,
               version: v,
               title: qTitle
             },
-            created_at: qd.updated_at,
+            created_at: qd.created_at || qd.updated_at || lead?.created_at,
           });
+        }
+
+        // Updated event if modified noticeably later (only if not already in live_logs)
+        if (qd.updated_at && qd.created_at && new Date(qd.updated_at).getTime() - new Date(qd.created_at).getTime() > 120000) {
+          const updateAlreadyLogged = activityList.some(a => {
+            const m = a.metadata || {};
+            const isSameQuote = m.quotation_id === qId || m.template_id === qId;
+            const isUpdate = a.type === 'quotation_updated' || m.action_type === 'quotation_updated';
+            return isSameQuote && isUpdate;
+          });
+
+          if (!updateAlreadyLogged) {
+            activityList.push({
+              id: `quote_doc_${qd.id || qd.template_id}_updated`,
+              type: 'quotation_updated',
+              message: `Quotation updated: "${qTitle}" (v${v})`,
+              actor: 'Studio Team',
+              metadata: {
+                action_type: 'quotation_updated',
+                quotation_id: qId,
+                version: v,
+                title: qTitle
+              },
+              created_at: qd.updated_at,
+            });
+          }
         }
       });
     }
